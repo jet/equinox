@@ -107,14 +107,17 @@ type GesStreamStore(conn, batchSize, ?maxPermittedBatchReads) =
             log.Information(ex, "TrySync WrongExpectedVersionException")
             return Error () }
 
-type GesToken = { streamVersion: int }
+type GesToken = { streamVersion: int; compactionEventIndex: int option }
 
 type GesEventStreamAdapter<'state, 'event>(store : GesStreamStore, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
-    let tokenOfVersion version : GesToken = { streamVersion = version }
+    let tokenOfVersion version : GesToken = { streamVersion = version; compactionEventIndex = None }
+
+    abstract LoadAll: streamName:string -> log: ILogger -> Async<int*ResolvedEvent[]>
+    default __.LoadAll streamName log = store.Load streamName log
 
     interface IEventStream<GesToken,'state,'event> with
         member __.Load streamName log : Async<StreamState<GesToken, 'state, 'event>> = async {
-            let! version, events = store.Load streamName log
+            let! version, events = __.LoadAll streamName log
             return GesEventSumAdapters.decodeKnownEvents codec events |> StreamState.ofTokenAndEvents (tokenOfVersion version) }
         member __.TrySync streamName log (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
             let encodedEvents : EventData[] = GesEventSumAdapters.encodeEvents codec events
@@ -128,3 +131,9 @@ type GesEventStreamAdapter<'state, 'event>(store : GesStreamStore, codec : Event
                 return Error resync 
             | Ok version' ->
                 return Ok (StreamState.ofTokenAndKnownState (tokenOfVersion version') proposedState) }
+
+type GesSnapshottingEventStreamAdapter<'state, 'event>(store : GesStreamStore, codec : EventSum.IEventSumEncoder<'event, byte[]>, snapshotEventType) =
+    inherit GesEventStreamAdapter<'state, 'event>(store, codec)
+    let isCompactionEvent eventType = eventType = snapshotEventType
+    override __.LoadAll streamName log =
+        store.LoadBackwardsStoppingAtCompactionEvent streamName log isCompactionEvent
