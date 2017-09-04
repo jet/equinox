@@ -1,0 +1,6 @@
+﻿nuget Serilog
+nuget Serilog.Sinks.Observable
+
+group test
+	nuget FsCheck.Xunit
+	nuget unquote

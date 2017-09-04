@@ -1,0 +1,3 @@
+﻿group test
+	nuget FsCheck.Xunit
+	nuget unquote
