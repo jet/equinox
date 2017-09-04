@@ -1,0 +1,3 @@
+﻿nuget EventStore.Client
+nuget FSharp.Control.AsyncSeq
+nuget Serilog

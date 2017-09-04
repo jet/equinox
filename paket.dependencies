@@ -1,0 +1,22 @@
+source https://api.nuget.org/v3/index.json
+framework: auto-detect
+
+nuget FSharp.Control.AsyncSeq
+nuget Newtonsoft.json
+nuget Serilog
+nuget Serilog.Sinks.Observable
+nuget TypeShape
+// <4 for now so we dSon't force dep on 4.6.1
+nuget EventStore.Client < 4
+
+group test
+    source https://api.nuget.org/v3/index.json
+	nuget FSharp.Core
+    nuget FsCheck.xUnit
+    nuget Unquote
+    nuget xunit
+    nuget xunit.runner.visualstudio version_in_path: true
+
+group build
+    source https://api.nuget.org/v3/index.json
+    nuget FAKE
