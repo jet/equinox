@@ -3,19 +3,17 @@
 open Serilog
 
 /// Representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)
-type StreamState<'token,'state,'event> = 'token * 'state option * 'event list
+type StreamState<'state,'event> = obj * 'state option * 'event list
 
 /// Complete interface to the state of an event stream, as dictated by requirements of Foldunk' Handler
-type IEventStream<'token,'state,'event> =
+type IEventStream<'state,'event> =
     abstract Load: streamName: string -> log: ILogger
-        -> Async<StreamState<'token, 'state, 'event>>
-    abstract TrySync: streamName: string -> log: ILogger -> token: 'token * originState: 'state -> events: 'event list * state' : 'state
-        -> Async<Result<StreamState<'token, 'state, 'event>, Async<StreamState<'token, 'state, 'event>>>>
+        -> Async<StreamState<'state, 'event>>
+    abstract TrySync: streamName: string -> log: ILogger -> token: obj * originState: 'state -> events: 'event list * state' : 'state
+        -> Async<Result<StreamState<'state, 'event>, Async<StreamState<'state, 'event>>>>
 
 /// Helpers for derivation of a StreamState
 module StreamState =
-    /// Represent a stream known to be empty
-    let ofEmpty = -1, None, []
     /// Represent a [possibly compacted] array of events with a known token from a store.
     let ofTokenAndEvents token (events: 'event seq) = token, None, List.ofSeq events
     /// Represent a state known to have been persisted to the store
@@ -23,7 +21,7 @@ module StreamState =
     /// Represent a state to be composed from a snapshot together with the successor events
     let ofTokenSnapshotAndEvents token stateSnapshot (successorEvents : 'event list) =
         token, Some stateSnapshot, successorEvents
-    let toTokenAndState fold initial ((token, stateOption, events) : StreamState<'token,'state,'event>) : 'token * 'state =
+    let toTokenAndState fold initial ((token, stateOption, events) : StreamState<'state,'event>) : obj * 'state =
         let baseState = 
             match stateOption with
             | Some state when List.isEmpty events -> state
@@ -50,11 +48,11 @@ type DecisionState<'event, 'state>(fold, originState : 'state) =
 // Exception yielded by command handing function after `count` attempts have yielded conflicts at the point of syncing the result into the stream store
 exception CommandAttemptsExceededException of count: int
 
-type SyncState<'token, 'state, 'event>
-    (   fold, initial, originState : StreamState<'token, 'state, 'event>,
-        trySync : ILogger -> 'token * 'state -> 'event list * 'state
-            -> Async<   Result< StreamState<'token, 'state, 'event>,
-                                Async<StreamState<'token, 'state, 'event>>>>) =
+type SyncState<'state, 'event>
+    (   fold, initial, originState : StreamState<'state, 'event>,
+        trySync : ILogger -> obj * 'state -> 'event list * 'state
+            -> Async<   Result< StreamState<'state, 'event>,
+                                Async<StreamState<'state, 'event>>>>) =
     let tokenAndState = ref (StreamState.toTokenAndState fold initial originState)
     let tryOr log events handleFailure = async {
         let proposedState = fold (snd !tokenAndState) events
@@ -82,7 +80,7 @@ type SyncState<'token, 'state, 'event>
         
 module Handler =
     /// Load the state of a stream from the given store
-    let load fold initial streamName (stream : IEventStream<_,_,_>) log id = async {
+    let load fold initial streamName (stream : IEventStream<_,_>) log id = async {
         let streamName = streamName id
         let! streamState = stream.Load streamName log
         return SyncState(fold, initial, streamState, stream.TrySync streamName) }
@@ -94,7 +92,7 @@ module Handler =
     /// 2b. if conflicting changes, loop to retry against updated state 
     let run (log : ILogger)
             (maxAttempts : int)
-            (sync : SyncState<'token, 'state, 'event>)
+            (sync : SyncState<'state, 'event>)
             (decide : DecisionState<'event, 'state> -> Async<'output * 'event list>)
             : Async<'output> =
         if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")

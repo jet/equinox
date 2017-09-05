@@ -5,8 +5,11 @@ open Foldunk
 
 exception private WrongVersionException of streamName: string * expected: int * value: obj
 
-module private EventArraySteamState =
-    let tokenOfArray (value: 'event array) = Array.length value - 1
+module private EventArrayStreamState =
+    /// Represent a stream known to be empty
+    let ofEmpty () = box -1, None, []
+    
+    let tokenOfArray (value: 'event array) = Array.length value - 1 |> box
     /// Represent a known array of events (without a known folded State)
     let ofEventArray (events: 'event array) = tokenOfArray events, None, List.ofArray events
     /// Represent a known array of Events together with the associated state
@@ -52,22 +55,22 @@ type private ConcurrentArrayStore() =
             Error (unbox conflictingValue)
  
 /// In memory implementation of a stream store - no constraints on memory consumption (but also no persistence!).
-type MemoryStreamStore<'state,'event>() =
+type MemoryStreamStore<'state, 'event>() =
     let store = ConcurrentArrayStore()
-    interface IEventStream<int,'state,'event> with
+    interface IEventStream<'state, 'event> with
         member __.Load streamName log = async {
             match store.TryLoad streamName log with
-            | None -> return StreamState.ofEmpty
-            | Some events -> return EventArraySteamState.ofEventArray events }
+            | None -> return EventArrayStreamState.ofEmpty ()
+            | Some events -> return EventArrayStreamState.ofEventArray events }
         member __.TrySync streamName log (token, snapshotState) (events: 'event list, proposedState) = async {
             let trySyncValue currentValue =
-                if Array.length currentValue <> token + 1 then Error token
+                if Array.length currentValue <> unbox token + 1 then Error (unbox token)
                 else Ok (Seq.append currentValue events)
             match store.TrySync streamName log trySyncValue events with
             | Error conflictingEvents ->
                 let resync = async {
-                    let version = EventArraySteamState.tokenOfArray conflictingEvents
-                    let successorEvents = conflictingEvents |> Seq.skip (token+1) |> List.ofSeq
+                    let version = EventArrayStreamState.tokenOfArray conflictingEvents
+                    let successorEvents = conflictingEvents |> Seq.skip (unbox token+1) |> List.ofSeq
                     return StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
                 return Error resync
-            | Ok events -> return Ok <| EventArraySteamState.ofEventArrayAndKnownState events proposedState }
+            | Ok events -> return Ok <| EventArrayStreamState.ofEventArrayAndKnownState events proposedState }

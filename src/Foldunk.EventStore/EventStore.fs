@@ -11,7 +11,7 @@ module private Append =
         conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
     let loggedWriteEvents (conn : IEventStoreConnection) (log : Serilog.ILogger) (streamName : string) (version : int) (events : EventData[]) = async {
         let! t, result = writeEventsAsync conn streamName version events |> Stopwatch.Time
-        log.Information("{ExernalCall} {Action} {Stream} {Version} {Count} {Latency}", true, "AppendToStreamAsync", streamName, version, events.Length, t.Elapsed)
+        log.Information("{ExternalCall} {Action} {Stream} {Version} {Count} {Latency}", true, "AppendToStreamAsync", streamName, version, events.Length, t.Elapsed)
         return result }
 
 [<RequireQualifiedAccess>]
@@ -28,7 +28,7 @@ module private Read =
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.Time
         let payloadSize = slice.Events |> Array.sumBy (fun e -> e.Event.Data.Length)
         let action = match direction with Direction.Forward -> "ReadStreamEventsForwardAsync" | Direction.Backward -> "ReadStreamEventsBackwardAsync"
-        log.Information("{ExernalCall} {Action} {Stream} {Version} {SliceLength} {TotalPayloadSize} {Latency}", true, action, streamName, startPos, batchSize, payloadSize, t.Elapsed)
+        log.Information("{ExternalCall} {Action} {Stream} {Version} {SliceLength} {TotalPayloadSize} {Latency}", true, action, streamName, startPos, batchSize, payloadSize, t.Elapsed)
         return slice }
     let readBatches (log : Serilog.ILogger) (readSlice : Serilog.ILogger -> int -> Async<StreamEventsSlice>) (maxPermittedBatchReads : int option) (startPosition : int) =
         let rec loop batchCount pos = asyncSeq {
@@ -110,19 +110,19 @@ type GesStreamStore(conn, batchSize, ?maxPermittedBatchReads) =
 type GesToken = { streamVersion: int }
 
 type GesEventStreamAdapter<'state, 'event>(store : GesStreamStore, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
-    let tokenOfVersion version : GesToken = { streamVersion = version }
+    let tokenOfVersion version = box { streamVersion = version }
 
-    interface IEventStream<GesToken,'state,'event> with
-        member __.Load streamName log : Async<StreamState<GesToken, 'state, 'event>> = async {
+    interface IEventStream<'state, 'event> with
+        member __.Load streamName log : Async<StreamState<'state, 'event>> = async {
             let! version, events = store.Load streamName log
             return GesEventSumAdapters.decodeKnownEvents codec events |> StreamState.ofTokenAndEvents (tokenOfVersion version) }
         member __.TrySync streamName log (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
             let encodedEvents : EventData[] = GesEventSumAdapters.encodeEvents codec events
-            let! syncRes = store.TrySync streamName log token.streamVersion encodedEvents
+            let! syncRes = store.TrySync streamName log (unbox token).streamVersion encodedEvents
             match syncRes with
             | Error () ->
                 let resync = async {
-                    let! token, events = store.LoadFromVersion streamName log (token.streamVersion + 1)
+                    let! token, events = store.LoadFromVersion streamName log ((unbox token).streamVersion + 1)
                     let successorEvents = GesEventSumAdapters.decodeKnownEvents codec events |> List.ofSeq
                     return StreamState.ofTokenSnapshotAndEvents (tokenOfVersion token) snapshotState successorEvents }
                 return Error resync 

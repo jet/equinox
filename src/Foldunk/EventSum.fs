@@ -27,6 +27,15 @@ type JsonEncoder
         member __.Encode (value : 'T) = JsonConvert.SerializeObject(value, settings)
         member __.Decode (json : string) = JsonConvert.DeserializeObject<'T>(json, settings)
 
+/// Newtonsoft.Json implementation of IEncoder that encodes directo to a UTF-8 Buffer
+type Utf8JsonEncoder() =
+    // For whatever reason, EventStore does not hyphenate guids respect this approach
+    let settings = Newtonsoft.GetDefaultSettings(useHyphenatedGuids = false, indent = false)
+    interface IEncoder<byte[]> with
+        member __.Empty = null
+        member __.Encode (value : 'T) = JsonConvert.SerializeObject(value, settings) |> System.Text.Encoding.UTF8.GetBytes
+        member __.Decode (json : byte[]) = let x = System.Text.Encoding.UTF8.GetString(json) in JsonConvert.DeserializeObject<'T>(x, settings)
+
 /// Newtonsoft.Json JObject implementation of IEncoder
 type JObjectEncoder
     (   /// Convert .NET PascalCase properties etc. to camelCase; defaults to true
@@ -142,6 +151,10 @@ let generateSumEventEncoder<'Union, 'Format> (encoder : IEncoder<'Format>) =
 /// Generates an event sum encoder using Newtonsoft.Json for individual event types
 let generateJsonSumEncoder<'Union> =
     generateSumEventEncoder<'Union, _> (new JsonEncoder())
+
+/// Generates an event sum encoder using Newtonsoft.Json for individual event types that serializes to a byte buffer
+let generateJsonUtf8SumEncoder<'Union> =
+    generateSumEventEncoder<'Union, _> (new Utf8JsonEncoder())
 
 /// Generates an event sum encoder which uses Newtonsoft.Json.Linq to wrap/unwrap the payload as a JObject
 let generateJObjectSumEncoder<'Union> (encoder: IEncoder<JObject>) =

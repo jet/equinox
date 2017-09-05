@@ -1,5 +1,6 @@
 ﻿nuget Serilog
 nuget Serilog.Sinks.Observable
+nuget EventStore.Client
 
 group test
 	nuget FsCheck.Xunit

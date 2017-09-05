@@ -72,6 +72,49 @@
   <Target Name="AfterBuild">
   </Target>
   -->
+  <ItemGroup>
+    <None Include="paket.references" />
+    <Content Include="App.config" />
+    <Compile Include="Infrastructure.fs" />
+    <Compile Include="CartIntegration.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="mscorlib" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <ProjectReference Include="..\..\..\src\Foldunk.EventStore\Foldunk.EventStore.fsproj">
+      <Name>Foldunk.EventStore</Name>
+      <Project>{92b4acc9-7f30-4727-a4b6-0b6903d0aa08}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj">
+      <Name>Foldunk</Name>
+      <Project>{54cd058f-5b0a-4564-b732-1f6301e120ac}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\Backend\Backend.fsproj">
+      <Name>Backend</Name>
+      <Project>{0d98b603-2ebb-40c2-afe5-083c92efb822}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\Domain\Domain.fsproj">
+      <Name>Domain</Name>
+      <Project>{37b4a45f-039e-4515-8a84-d242dde12d22}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <Reference Include="System.Numerics" />
+  </ItemGroup>
+  <Choose>
+    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And $(TargetFrameworkVersion) == 'v4.5.2'">
+      <ItemGroup>
+        <Reference Include="EventStore.ClientAPI">
+          <HintPath>..\..\..\packages\EventStore.Client\lib\net40\EventStore.ClientAPI.dll</HintPath>
+          <Private>True</Private>
+          <Paket>True</Paket>
+        </Reference>
+      </ItemGroup>
+    </When>
+  </Choose>
   <Choose>
     <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And $(TargetFrameworkVersion) == 'v4.5.2'">
       <ItemGroup>
@@ -1644,36 +1687,4 @@
   </Choose>
   <Import Project="..\..\..\packages\test\NETStandard.Library\build\NETStandard.Library.targets" Condition="Exists('..\..\..\packages\test\NETStandard.Library\build\NETStandard.Library.targets')" Label="Paket" />
   <Import Project="..\..\..\packages\test\NETStandard.Library\build\$(__paket__NETStandard_Library_targets).targets" Condition="Exists('..\..\..\packages\test\NETStandard.Library\build\$(__paket__NETStandard_Library_targets).targets')" Label="Paket" />
-  <ItemGroup>
-    <None Include="paket.references" />
-    <Content Include="App.config" />
-    <Compile Include="Infrastructure.fs" />
-    <Compile Include="CartIntegration.fs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Reference Include="mscorlib" />
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <ProjectReference Include="..\..\..\src\Foldunk.EventStore\Foldunk.EventStore.fsproj">
-      <Name>Foldunk.EventStore</Name>
-      <Project>{92b4acc9-7f30-4727-a4b6-0b6903d0aa08}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj">
-      <Name>Foldunk</Name>
-      <Project>{54cd058f-5b0a-4564-b732-1f6301e120ac}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\Backend\Backend.fsproj">
-      <Name>Backend</Name>
-      <Project>{0d98b603-2ebb-40c2-afe5-083c92efb822}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\Domain\Domain.fsproj">
-      <Name>Domain</Name>
-      <Project>{37b4a45f-039e-4515-8a84-d242dde12d22}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <Reference Include="System.Numerics" />
-  </ItemGroup>
 </Project>
