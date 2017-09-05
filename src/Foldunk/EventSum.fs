@@ -2,7 +2,6 @@
 
 open Foldunk.Serialization
 open Newtonsoft.Json
-open Newtonsoft.Json.Linq
 open System
 open System.Runtime.Serialization
 open TypeShape
@@ -35,18 +34,6 @@ type Utf8JsonEncoder() =
         member __.Empty = null
         member __.Encode (value : 'T) = JsonConvert.SerializeObject(value, settings) |> System.Text.Encoding.UTF8.GetBytes
         member __.Decode (json : byte[]) = let x = System.Text.Encoding.UTF8.GetString(json) in JsonConvert.DeserializeObject<'T>(x, settings)
-
-/// Newtonsoft.Json JObject implementation of IEncoder
-type JObjectEncoder
-    (   /// Convert .NET PascalCase properties etc. to camelCase; defaults to true
-        ?camelCase : bool) =
-
-    let settings = Newtonsoft.GetDefaultSettings(useHyphenatedGuids = false, ?camelCase = camelCase)
-    let serializer = JsonSerializer.Create settings
-    interface IEncoder<JObject> with
-        member __.Empty = JObject.FromObject null
-        member __.Encode (value : 'T) = JObject.FromObject(value, serializer)
-        member __.Decode (jobj : JObject) = jobj.ToObject<'T>(serializer)
 
 // Represents an encoded event
 type EncodedEvent<'Encoding> =
@@ -155,7 +142,3 @@ let generateJsonSumEncoder<'Union> =
 /// Generates an event sum encoder using Newtonsoft.Json for individual event types that serializes to a byte buffer
 let generateJsonUtf8SumEncoder<'Union> =
     generateSumEventEncoder<'Union, _> (new Utf8JsonEncoder())
-
-/// Generates an event sum encoder which uses Newtonsoft.Json.Linq to wrap/unwrap the payload as a JObject
-let generateJObjectSumEncoder<'Union> (encoder: IEncoder<JObject>) =
-    generateSumEventEncoder<'Union, JObject> encoder
