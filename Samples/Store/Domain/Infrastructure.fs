@@ -26,9 +26,9 @@ type SkuId private (id : string) =
     [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
     member __.Value = id
     override __.ToString () = id
-    // NB tests lean on having a ctor of this shape
     new (guid: Guid) = SkuId (guid.ToString("N"))
-    //new() = SkuId(Guid.NewGuid())
+    // NB tests (specifically, empty) lean on having a ctor of this shape
+    new() = SkuId(Guid.NewGuid())
     // NB for validation [and XSS] purposes we prove it translatable to a Guid
     static member Parse(input: string) = SkuId (Guid.Parse input)
 /// Represent as a Guid.ToString("N") output externally
@@ -47,9 +47,9 @@ type RequestId private (id : string) =
     [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
     member __.Value = id
     override __.ToString () = id
-    // NB tests lean on having a ctor of this shape
     new (guid: Guid) = RequestId (guid.ToString("N"))
-    //new() = RequestId(Guid.NewGuid())
+    // NB tests (specifically, empty) lean on having a ctor of this shape
+    new() = RequestId(Guid.NewGuid())
     // NB for validation [and XSS] purposes we prove it translatable to a Guid
     static member Parse(input: string) = RequestId (Guid.Parse input)
 /// Represent as a Guid.ToString("N") output externally

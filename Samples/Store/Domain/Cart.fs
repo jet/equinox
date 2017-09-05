@@ -36,7 +36,7 @@ module Folds =
         | Events.ItemAdded e ->
             { state with items = { skuId = e.skuId; quantity = e.quantity; returnsWaived = false  } :: state.items}
         | Events.ItemRemoved e ->
-            { state with items = state.items |> List.filter (fun x -> x.skuId = e.skuId) }
+            { state with items = state.items |> List.filter (fun x -> x.skuId <> e.skuId) }
         | Events.ItemQuantityChanged e ->
             { state with items = state.items |> List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i) }
         | Events.ItemWaiveReturnsChanged e ->

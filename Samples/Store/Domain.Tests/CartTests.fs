@@ -27,7 +27,7 @@ let verifyCorrectEventGenerationWhenAppropriate cmd =
         | ChangeItemQuantity (_, skuId, quantity) ->    [ mkAddQty skuId (quantity+1)]
         | ChangeWaiveReturns (_, skuId, value) ->       [ mkAdd skuId; mkChangeWaived skuId (not value) ]
         | RemoveItem (_, skuId) ->                      [ mkAdd skuId ]
-    let verifyResultingEventsAreCorrect state: Command * Event list -> unit = function
+    let verifyResultingEventsAreCorrect state state': Command * Event list -> unit = function
         | AddItem (_, csku, quantity),                  [ ItemAdded e ] ->
             test <@ { ItemAddInfo.context = e.context; skuId = csku; quantity = quantity } = e @>
         | ChangeItemQuantity (_, csku, quantity),       [ ItemQuantityChanged e] ->
@@ -35,12 +35,15 @@ let verifyCorrectEventGenerationWhenAppropriate cmd =
         | ChangeWaiveReturns (_, csku, value),          [ ItemWaiveReturnsChanged e] ->
             test <@ { ItemWaiveReturnsInfo.context = e.context; skuId = csku; waived = value } = e @>
         | RemoveItem (_, csku),                         [ ItemRemoved e ] ->
-            test <@ { ItemRemoveInfo.context = e.context; skuId = csku } = e @>
+            test <@ { ItemRemoveInfo.context = e.context; skuId = csku } = e
+                    && state.items |> List.exists (fun x -> x.skuId = csku)
+                    && not (state'.items |> List.exists (fun x -> x.skuId = csku)) @>
         | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
     let initialEvents = cmd |> generateEventsTriggeringNeedForChange
     let state = fold initial initialEvents
     let events = interpret cmd state
-    (cmd, events) |> verifyResultingEventsAreCorrect state
+    let state' = fold state events
+    (cmd, events) |> verifyResultingEventsAreCorrect state state'
 
 /// Processing should allow for any given Command to be retried at will
 let verifyIdempotency (cmd: Command) =
