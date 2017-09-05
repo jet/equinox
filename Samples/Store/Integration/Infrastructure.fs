@@ -3,6 +3,8 @@ module Integration.Infrastructure
 
 open Domain
 open FsCheck
+open Serilog
+open System
 
 type FsCheckGenerators =
     static member CartId = Arb.generate |> Gen.map CartId |> Arb.fromGen
@@ -11,3 +13,32 @@ type FsCheckGenerators =
 
 type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
+
+// Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
+// NB VS does not surface these atm, but other test runners / test reports do
+type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
+    let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null);
+    let writeSeriLogEvent logEvent =
+        use writer = new System.IO.StringWriter()
+        formatter.Format(logEvent, writer);
+        writer |> string |> testOutput.WriteLine
+    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
+        source.Subscribe writeSeriLogEvent
+
+let createLogger hookObservers =
+    LoggerConfiguration()
+        .WriteTo.Observers(Action<_> hookObservers)
+        .CreateLogger()
+
+type LogCaptureBuffer() =
+    let captured = ResizeArray()
+    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
+        source.Subscribe captured.Add
+    member __.Clear () = captured.Clear()
+    member __.Entries = captured.ToArray()
+    member __.ExternalCalls =
+        [ for i in captured do
+            let hasProp name = i.Properties.ContainsKey name 
+            let prop name = (string i.Properties.[name]).Trim '"' 
+            if hasProp "ExternalCall" && prop "ExternalCall" = "True" then
+                yield prop "Action" ]

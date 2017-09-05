@@ -4,82 +4,48 @@ open Backend.Carts
 open Domain
 open EventStore.ClientAPI
 open Foldunk
-open Serilog
 open Swensen.Unquote
 open System
 
-let createLogger hookObservers =
-    LoggerConfiguration()
-        .WriteTo.Observers(Action<_> hookObservers)
-        .CreateLogger()
-
-type LogCapture() =
-    let captured = ResizeArray()
-    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-        source.Subscribe captured.Add
-    member __.Clear () = captured.Clear()
-    member __.Entries = captured.ToArray()
-    member __.ExternalCalls =
-        [ for i in captured do
-            let hasProp name = i.Properties.ContainsKey name 
-            let prop name = (string i.Properties.[name]).Trim '"' 
-            if hasProp "ExternalCall" && prop "ExternalCall" = "True" then
-                yield prop "Action"]
-
-// Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
-type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
-    let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null);
-    let write logEvent =
-        use writer = new System.IO.StringWriter()
-        formatter.Format(logEvent, writer);
-        writer |> string |> testOutput.WriteLine
-    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-        source.Subscribe write
-
 type Tests(testOutputHelper) =
     let output = TestOutputAdapter testOutputHelper
-    let subscribe = output.Subscribe >> ignore
-    let createLoggerWithCapture () =
-        let capture = LogCapture()
-        let hook obs =
-            obs |> subscribe
-            obs |> capture.Subscribe |> ignore
-        createLogger hook, capture
-    let createLogger () =
-        createLogger subscribe
+    let subscribeTestOutputHelper = output.Subscribe >> ignore
+    let createLog () = createLogger subscribeTestOutputHelper
+
+    (* ======== Tests against In-memory Store *)
 
     let createServiceWithInMemoryStore () =
         let store : IEventStream<_,_> = Stores.MemoryStreamStore() :> _
         CartService(store)
 
-    let createServiceWithEventStore batchSize = async {
-        let localhost = System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 1113)
-        let conn = EventStore.ClientAPI.EventStoreConnection.Create(localhost)
-        do! conn.ConnectAsync() |> Async.AwaitTask
-        let store = Foldunk.EventStore.GesStreamStore(conn, batchSize)
-        let streamer : IEventStream<_,_> = Foldunk.EventStore.GesEventStreamAdapter(store, Foldunk.EventSum.generateJsonUtf8SumEncoder<_>) :> _
-        return CartService(streamer) }
-
     [<AutoData>]
-    let ``Basic Flow Execution`` cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
-        let log, service = createLogger (), createServiceWithInMemoryStore ()
+    let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
+            cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
+        let log, service = createLog (), createServiceWithInMemoryStore ()
         let decide (ctx: DecisionState<_,_>) = async {
             Cart.Commands.AddItem args |> Cart.Commands.interpret |> ctx.Execute
             return ctx.Complete ctx.State }
-        let verify = function
-            | { Cart.Folds.State.items = [ item ] } ->
-                let expectedItem : Cart.Folds.ItemInfo = { skuId = skuId; quantity = quantity; returnsWaived = false }
-                test <@ expectedItem = item @>
-            | x -> x |> failwithf "Expected to find item, got %A"
-        let actTrappingStateAsSaved cartId = service.Execute log cartId decide
+
+        // Act: Run the decision twice...
+        let actTrappingStateAsSaved cartId =
+            service.Execute log cartId decide
         let actLoadingStateSeparately cartId = async {
             let! _ = service.Execute log cartId decide
             return! service.Load log cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately 
+
+        // Assert 1. Despite being on different streams (and being in-memory vs re-loaded) we expect the same outcome
         test <@ expected = actual @>
-        verify expected
-        verify actual
+
+        // Assert 2. Verify that the Command got correctly reflected in the state, with no extraneous effects
+        let verifyFoldedStateReflectsCommand = function
+            | { Cart.Folds.State.items = [ item ] } ->
+                let expectedItem : Cart.Folds.ItemInfo = { skuId = skuId; quantity = quantity; returnsWaived = false }
+                test <@ expectedItem = item @>
+            | x -> x |> failwithf "Expected to find item, got %A"
+        verifyFoldedStateReflectsCommand expected
+        verifyFoldedStateReflectsCommand actual
     }
 
     let addAndThenRemoveAllTheThings context cartId skuId log (service: CartService) =
@@ -96,23 +62,44 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData>]
-    let ``Can roundtrip against in memory store`` context cartId skuId = Async.RunSynchronously <| async {
-        let log, service = createLogger (), createServiceWithInMemoryStore ()
+    let ``Can roundtrip against in memory store, correctly folding then events`` context cartId skuId = Async.RunSynchronously <| async {
+        let log, service = createLog (), createServiceWithInMemoryStore ()
 
         do! addAndThenRemoveAllTheThings context cartId skuId log service
         
         do! validateCartIsEmpty cartId log service
     }
 
+    (* ======== Tests against EventStore *)
+
+    let connectToLocalEventStoreNode () = async {
+        let localhost = System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 1113)
+        let conn = EventStore.ClientAPI.EventStoreConnection.Create(localhost)
+        do! conn.ConnectAsync() |> Async.AwaitTask
+        return conn }
+
+    let createServiceWithEventStore conn batchSize =
+        let store   = Foldunk.EventStore.GesStreamStore(conn, batchSize)
+        let encoder = Foldunk.EventSum.generateJsonUtf8SumEncoder<_>
+        CartService(Foldunk.EventStore.GesEventStreamAdapter(store, encoder))
+
+    let createLoggerWithCapture () =
+        let capture = LogCaptureBuffer()
+        let subscribeLogListeners obs =
+            obs |> subscribeTestOutputHelper
+            obs |> capture.Subscribe |> ignore
+        createLogger subscribeLogListeners, capture
+
     [<AutoData()>]
     let ``Can roundtrip against EventStore, correctly batching the reads`` context skuId = Async.RunSynchronously <| async {
         // Dont let FsCheck gen the id as we want data generated by shrinks to accumulate in the stream
         let cartId = Guid.NewGuid() |> CartId
         let log, capture = createLoggerWithCapture ()
+        let! conn = connectToLocalEventStoreNode ()
         let batchSize = 3
-        let! service = createServiceWithEventStore batchSize
+        let service = createServiceWithEventStore conn batchSize
 
-        // The read and the write should produce a single external call each
+        // The command processing should trigger only a single read and a single write call
         do! addAndThenRemoveAllTheThings context cartId skuId log service
         test <@ [ "ReadStreamEventsForwardAsync"; "AppendToStreamAsync" ] = capture.ExternalCalls @>
 

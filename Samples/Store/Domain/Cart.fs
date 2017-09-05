@@ -1,10 +1,9 @@
 ﻿module Domain.Cart
 
 open System
-open System.Runtime.Serialization
 
+// NB - these schemas reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
     type ContextInfo =              {   time: DateTime; requestId: RequestId }
 
     type ItemInfo =                 {   context: ContextInfo; item: ItemInfo }
@@ -15,17 +14,13 @@ module Events =
 
     type Event =
         | ItemAdded                 of ItemAddInfo
-        | [<DataMember(Name="itemRemoved")>] 
-          ItemRemoved               of ItemRemoveInfo
+        | ItemRemoved               of ItemRemoveInfo
         | ItemQuantityChanged       of ItemQuantityChangeInfo
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
         
 module Folds =
-    type ItemInfo =
-        {   skuId: SkuId; quantity: int; returnsWaived: bool }
-
-    type State =
-        {   items: ItemInfo list }
+    type ItemInfo =                 {   skuId: SkuId; quantity: int; returnsWaived: bool }
+    type State =                    {   items: ItemInfo list }
     module State =
         let hasItemWithDifferentWaiveStatus skuId waive state = state.items |> List.exists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
         let hasItemWithDifferentQuantity skuId quantity state = state.items |> List.exists (fun x -> x.skuId = skuId && x.quantity <> quantity)
@@ -50,15 +45,14 @@ module Commands =
     let toEventContext (reqContext: Context) : Events.ContextInfo = { requestId = reqContext.requestId; time = reqContext.time }
 
     type Command =
-        | AddItem of Context * SkuId * quantity: int
-        | ChangeItemQuantity of Context * SkuId * quantity: int
-        | ChangeWaiveReturns of Context * SkuId * waived: bool
-        | RemoveItem of Context * SkuId
+        | AddItem                   of Context * SkuId * quantity: int
+        | ChangeItemQuantity        of Context * SkuId * quantity: int
+        | ChangeWaiveReturns        of Context * SkuId * waived: bool
+        | RemoveItem                of Context * SkuId
 
-    // TODO make idempotent
-    let interpret c (state : Folds.State) =
+    let interpret command (state : Folds.State) =
         let (|Context|) (context : Context) = toEventContext context
-        match c with
+        match command with
         | AddItem (Context c, skuId, quantity) ->
             if state |> Folds.State.hasItemWithSameQuantity skuId quantity then [] else
             [ Events.ItemAdded { context = c; skuId = skuId; quantity = quantity } ]

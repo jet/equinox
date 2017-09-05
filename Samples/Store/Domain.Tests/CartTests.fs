@@ -1,11 +1,13 @@
 ﻿module Domain.Tests.CartTests
 
+open Domain
 open Domain.Cart
 open Domain.Cart.Events
 open Domain.Cart.Folds
 open Domain.Cart.Commands
 open Foldunk.Tests.Infrastructure.Empty
 open Swensen.Unquote
+open System
 
 /// As a basic sanity check, verify the basic properties we'd expect per command if we were to run it on an empty stream
 let verifyCanProcessInInitialState cmd =
