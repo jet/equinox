@@ -34,6 +34,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Integration", "Samples\Stor
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{A7C685D7-1E7B-4E86-922B-25B2EA9FC5D6}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.InMemoryStore", "src\Foldunk.InMemoryStore\Foldunk.InMemoryStore.fsproj", "{A7441FF0-94E6-45E4-B02D-F14ED248516D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -68,6 +70,10 @@ Global
 		{0B2D5815-D6A5-4AAC-9B75-D57B165E2A92}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0B2D5815-D6A5-4AAC-9B75-D57B165E2A92}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0B2D5815-D6A5-4AAC-9B75-D57B165E2A92}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A7441FF0-94E6-45E4-B02D-F14ED248516D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A7441FF0-94E6-45E4-B02D-F14ED248516D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A7441FF0-94E6-45E4-B02D-F14ED248516D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A7441FF0-94E6-45E4-B02D-F14ED248516D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

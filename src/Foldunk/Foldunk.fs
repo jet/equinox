@@ -8,6 +8,16 @@ type StreamToken = { value : obj }
 /// Foldunk-internal representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)
 type StreamState<'state,'event> = StreamToken * 'state option * 'event list
 
+/// Helpers for derivation of a StreamState - shared between EventStore and InMemoryStore
+module StreamState =
+    /// Represent a [possibly compacted] array of events with a known token from a store.
+    let ofTokenAndEvents (token : StreamToken) (events: 'event seq) = token, None, List.ofSeq events
+    /// Represent a state known to have been persisted to the store
+    let ofTokenAndKnownState token state = token, Some state, []
+    /// Represent a state to be composed from a snapshot together with the successor events
+    let ofTokenSnapshotAndEvents token stateSnapshot (successorEvents : 'event list) =
+        token, Some stateSnapshot, successorEvents
+
 /// Maintains state associated with a Command Handling flow
 type DecisionState<'event, 'state>(fold, originState : 'state) =
     let accumulated = ResizeArray<'event>()

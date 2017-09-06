@@ -87,6 +87,11 @@
       <Project>{92b4acc9-7f30-4727-a4b6-0b6903d0aa08}</Project>
       <Private>True</Private>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\src\Foldunk.InMemoryStore\Foldunk.InMemoryStore.fsproj">
+      <Name>Foldunk.InMemoryStore</Name>
+      <Project>{a7441ff0-94e6-45e4-b02d-f14ed248516d}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj">
       <Name>Foldunk</Name>
       <Project>{54cd058f-5b0a-4564-b732-1f6301e120ac}</Project>

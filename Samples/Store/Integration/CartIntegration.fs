@@ -2,7 +2,6 @@
 
 open Backend.Carts
 open Domain
-open EventStore.ClientAPI
 open Foldunk
 open Swensen.Unquote
 open System
@@ -11,10 +10,10 @@ type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger (testOutput.Subscribe >> ignore)
 
-    (* ======== Tests against In-memory Store *)
+    (* ======== Tests against InMemoryStore *)
 
     let createServiceWithInMemoryStore () =
-        let store : Handler.IEventStream<_,_> = Stores.MemoryStreamStore() :> _
+        let store : Handler.IEventStream<_,_> = Stores.InMemoryStore.MemoryStreamStore() :> _
         CartService(store)
 
     [<AutoData>]
@@ -81,9 +80,9 @@ type Tests(testOutputHelper) =
         return conn }
 
     let createServiceWithEventStoreEx conn batchSize =
-        let store               = Foldunk.EventStore.GesStreamStore(conn, batchSize)
+        let store               = Foldunk.Stores.EventStore.GesStreamStore(conn, batchSize)
         let encoder             = Foldunk.EventSum.generateJsonUtf8SumEncoder<_>
-        CartService(Foldunk.EventStore.GesEventStreamAdapter(store, encoder))
+        CartService(Foldunk.Stores.EventStore.GesEventStreamAdapter(store, encoder))
     let createServiceWithEventStoreBatchingOnly conn batchSize = createServiceWithEventStoreEx conn batchSize
 
     let createLoggerWithCapture () =

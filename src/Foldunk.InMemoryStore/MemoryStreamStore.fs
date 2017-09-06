@@ -1,17 +1,7 @@
-﻿namespace Foldunk.Stores
+﻿namespace Foldunk.Stores.InMemoryStore
 
-open Serilog
 open Foldunk
-
-/// Helpers for derivation of a StreamState - shared between EventStore and MemoryStreamStore
-module StreamState =
-    /// Represent a [possibly compacted] array of events with a known token from a store.
-    let ofTokenAndEvents (token : StreamToken) (events: 'event seq) = token, None, List.ofSeq events
-    /// Represent a state known to have been persisted to the store
-    let ofTokenAndKnownState token state = token, Some state, []
-    /// Represent a state to be composed from a snapshot together with the successor events
-    let ofTokenSnapshotAndEvents token stateSnapshot (successorEvents : 'event list) =
-        token, Some stateSnapshot, successorEvents
+open Serilog
 
 exception private WrongVersionException of streamName: string * expected: int * value: obj
 

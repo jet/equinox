@@ -1,8 +1,7 @@
-﻿module Foldunk.EventStore
+﻿module Foldunk.Stores.EventStore
 
 open EventStore.ClientAPI
 open Foldunk
-open Foldunk.Stores
 open FSharp.Control
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
