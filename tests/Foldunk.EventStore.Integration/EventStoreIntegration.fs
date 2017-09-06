@@ -19,7 +19,8 @@ let createGesStream<'event, 'state> eventStoreConnection batchSize (codec : Fold
     let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec)
     Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
 
-let createGesStreamWithCompaction<'event, 'state> eventStoreConnection batchSize compactionEventTypeOption (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName : Foldunk.IStream<'event, 'state> =
+let createGesStreamWithCompactionEventTypeOption<'event, 'state> eventStoreConnection batchSize compactionEventTypeOption (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName
+    : Foldunk.IStream<'event, 'state> =
     let gateway = createGesGateway eventStoreConnection batchSize
     let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec, ?compactionEventType = compactionEventTypeOption)
     Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
@@ -28,7 +29,7 @@ let createCartServiceGesWithoutCompaction eventStoreConnection batchSize =
     Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> createGesStream eventStoreConnection batchSize)
 
 let createCartServiceGesWithCompaction eventStoreConnection batchSize =
-    Backend.Cart.Service(createGesStreamWithCompaction eventStoreConnection batchSize)
+    Backend.Cart.Service(createGesStreamWithCompactionEventTypeOption eventStoreConnection batchSize)
 
 let createCartServiceGes = createCartServiceGesWithCompaction
 

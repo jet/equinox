@@ -54,7 +54,7 @@ type Tests() =
         let! state = service.Read log cartId
         test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        // Because we've gone over a page, we need two reads to load the state, making a total of three
+        // Even though we've gone over a page, we only need a single read to read the state (plus the one from the execute)
         let contains (s : string) (x : string) = x.IndexOf s <> -1
         test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains "ReadStreamEventsBackwardAsync-Duration")
                 3 = Seq.length reads
