@@ -2,33 +2,11 @@
 
 open Serilog
 
-/// Representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)
-type StreamState<'state,'event> = obj * 'state option * 'event list
+/// Store-specific opaque token to be used for synchronization purposes
+type StreamToken = { value : obj }
 
-/// Complete interface to the state of an event stream, as dictated by requirements of Foldunk' Handler
-type IEventStream<'state,'event> =
-    abstract Load: streamName: string -> log: ILogger
-        -> Async<StreamState<'state, 'event>>
-    abstract TrySync: streamName: string -> log: ILogger -> token: obj * originState: 'state -> events: 'event list * state' : 'state
-        -> Async<Result<StreamState<'state, 'event>, Async<StreamState<'state, 'event>>>>
-
-/// Helpers for derivation of a StreamState
-module StreamState =
-    /// Represent a [possibly compacted] array of events with a known token from a store.
-    let ofTokenAndEvents token (events: 'event seq) = token, None, List.ofSeq events
-    /// Represent a state known to have been persisted to the store
-    let ofTokenAndKnownState token state = token, Some state, []
-    /// Represent a state to be composed from a snapshot together with the successor events
-    let ofTokenSnapshotAndEvents token stateSnapshot (successorEvents : 'event list) =
-        token, Some stateSnapshot, successorEvents
-    let toTokenAndState fold initial ((token, stateOption, events) : StreamState<'state,'event>) : obj * 'state =
-        let baseState = 
-            match stateOption with
-            | Some state when List.isEmpty events -> state
-            | Some state -> fold state events
-            | None when List.isEmpty events -> fold initial events
-            | None -> fold initial events
-        token, baseState
+/// Foldunk-internal representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)
+type StreamState<'state,'event> = StreamToken * 'state option * 'event list
 
 /// Maintains state associated with a Command Handling flow
 type DecisionState<'event, 'state>(fold, originState : 'state) =
@@ -48,42 +26,59 @@ type DecisionState<'event, 'state>(fold, originState : 'state) =
 // Exception yielded by command handing function after `count` attempts have yielded conflicts at the point of syncing the result into the stream store
 exception CommandAttemptsExceededException of count: int
 
-type SyncState<'state, 'event>
-    (   fold, initial, originState : StreamState<'state, 'event>,
-        trySync : ILogger -> obj * 'state -> 'event list * 'state
-            -> Async<   Result< StreamState<'state, 'event>,
-                                Async<StreamState<'state, 'event>>>>) =
-    let tokenAndState = ref (StreamState.toTokenAndState fold initial originState)
-    let tryOr log events handleFailure = async {
-        let proposedState = fold (snd !tokenAndState) events
-        let! res = trySync log !tokenAndState (events, proposedState)
-        match res with
-        | Error resync ->
-            return! handleFailure resync
-        | Ok streamState' ->
-            tokenAndState := StreamState.toTokenAndState fold initial streamState'
-            return true }
-
-    member __.State = snd !tokenAndState
-    member __.Token = fst !tokenAndState
-    member __.CreateDecisionState(): DecisionState<'event, 'state> = 
-        DecisionState<'event, 'state>(fold, __.State)
-    member __.TryOrResync log events =
-        let resyncInPreparationForRetry resync = async {
-            let! streamState' = resync
-            tokenAndState := StreamState.toTokenAndState fold initial streamState'
-            return false }
-        tryOr log events resyncInPreparationForRetry
-    member __.TryOrThrow log events attempt =
-        let throw _resync = async { return raise <| CommandAttemptsExceededException attempt }
-        tryOr log events throw |> Async.Ignore
-        
+/// For use in application level code; general across store implementations under the Foldunk.Stores namespace
 module Handler =
+    [<RequireQualifiedAccess>]
+    module Impl =
+        /// Internal implementation
+        type SyncState<'state, 'event>
+            (   fold, initial, originState : StreamState<'state, 'event>,
+                trySync : ILogger -> StreamToken * 'state -> 'event list * 'state -> Async<Result<StreamState<'state, 'event>, Async<StreamState<'state, 'event>>>>) =
+            let toTokenAndState fold initial ((token, stateOption, events) : StreamState<'state,'event>) : StreamToken * 'state =
+                let baseState = 
+                    match stateOption with
+                    | Some state when List.isEmpty events -> state
+                    | Some state -> fold state events
+                    | None when List.isEmpty events -> fold initial events
+                    | None -> fold initial events
+                token, baseState
+            let tokenAndState = ref (toTokenAndState fold initial originState)
+            let tryOr log events handleFailure = async {
+                let proposedState = fold (snd !tokenAndState) events
+                let! res = trySync log !tokenAndState (events, proposedState)
+                match res with
+                | Error resync ->
+                    return! handleFailure resync
+                | Ok streamState' ->
+                    tokenAndState := toTokenAndState fold initial streamState'
+                    return true }
+
+            member __.State = snd !tokenAndState
+            member __.Token = fst !tokenAndState
+            member __.CreateDecisionState(): DecisionState<'event, 'state> = 
+                DecisionState<'event, 'state>(fold, __.State)
+            member __.TryOrResync log events =
+                let resyncInPreparationForRetry resync = async {
+                    let! streamState' = resync
+                    tokenAndState := toTokenAndState fold initial streamState'
+                    return false }
+                tryOr log events resyncInPreparationForRetry
+            member __.TryOrThrow log events attempt =
+                let throw _resync = async { return raise <| CommandAttemptsExceededException attempt }
+                tryOr log events throw |> Async.Ignore
+
+    /// Complete interface to the state of any given event stream, as dictated by requirements of Foldunk' Handler
+    type IEventStream<'state,'event> =
+        abstract Load: streamName: string -> log: ILogger
+            -> Async<StreamState<'state, 'event>>
+        abstract TrySync: streamName: string -> log: ILogger -> token: StreamToken * originState: 'state -> events: 'event list * state' : 'state
+            -> Async<Result<StreamState<'state, 'event>, Async<StreamState<'state, 'event>>>>
+
     /// Load the state of a stream from the given store
     let load fold initial streamName (stream : IEventStream<_,_>) log id = async {
         let streamName = streamName id
         let! streamState = stream.Load streamName log
-        return SyncState(fold, initial, streamState, stream.TrySync streamName) }
+        return Impl.SyncState(fold, initial, streamState, stream.TrySync streamName) }
 
     /// Process a command, ensuring a consistent final state is established on the stream.
     /// 1.  make a decision given the known state
@@ -92,7 +87,7 @@ module Handler =
     /// 2b. if conflicting changes, loop to retry against updated state 
     let run (log : ILogger)
             (maxAttempts : int)
-            (sync : SyncState<'state, 'event>)
+            (sync : Impl.SyncState<'state, 'event>)
             (decide : DecisionState<'event, 'state> -> Async<'output * 'event list>)
             : Async<'output> =
         if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")

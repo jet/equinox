@@ -2,6 +2,7 @@
 
 open EventStore.ClientAPI
 open Foldunk
+open Foldunk.Stores
 open FSharp.Control
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
@@ -82,40 +83,40 @@ module private EventSumAdapters =
 
 type Token = { streamVersion: int }
 module private Token =
-    let private create version : Token =
-        { streamVersion = version }
-    let ofVersion version : Token =
+    let private create version : StreamToken =
+        { value = box { streamVersion = version } }
+    let ofVersion version : StreamToken =
         create version
 
 type GesStreamStore(conn, batchSize, ?maxPermittedBatchReads) =
-    member __.LoadBatched streamName log : Async<Token * ResolvedEvent[]> = async {
+    member __.LoadBatched streamName log : Async<StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom conn batchSize maxPermittedBatchReads streamName log 0
         return Token.ofVersion version, events }
-    member __.LoadFromToken streamName log token : Async<Token * ResolvedEvent[]> = async {
-        let! version, events = Read.loadForwardsFrom conn batchSize maxPermittedBatchReads streamName log (token.streamVersion + 1)
+    member __.LoadFromToken streamName log token : Async<StreamToken * ResolvedEvent[]> = async {
+        let! version, events = Read.loadForwardsFrom conn batchSize maxPermittedBatchReads streamName log ((unbox token).streamVersion + 1)
         return Token.ofVersion version, events }
-    member __.TrySync streamName log token (encodedEvents: EventData array) : Async<Result<Token, unit>> = async {
+    member __.TrySync streamName log (token : StreamToken) (encodedEvents: EventData array) : Async<Result<StreamToken, unit>> = async {
         try
-            let! wr = Write.loggedWriteEvents conn log streamName token.streamVersion encodedEvents
+            let! wr = Write.loggedWriteEvents conn log streamName (unbox token.value).streamVersion encodedEvents
             return Ok (Token.ofVersion wr.NextExpectedVersion)
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
             log.Information(ex, "TrySync WrongExpectedVersionException")
             return Error () }
 
 type GesEventStreamAdapter<'state, 'event>(store : GesStreamStore, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
-    interface IEventStream<'state,'event> with
+    interface Handler.IEventStream<'state,'event> with
         member __.Load streamName log : Async<StreamState<'state, 'event>> = async {
             let! token, events = store.LoadBatched streamName log
-            return EventSumAdapters.decodeKnownEvents codec events |> StreamState.ofTokenAndEvents (box token) }
+            return EventSumAdapters.decodeKnownEvents codec events |> StreamState.ofTokenAndEvents token }
         member __.TrySync streamName log (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
             let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec events
-            let! syncRes = store.TrySync streamName log (unbox token) encodedEvents
+            let! syncRes = store.TrySync streamName log token encodedEvents
             match syncRes with
             | Error () ->
                 let resync = async {
-                    let! token', events = store.LoadFromToken streamName log (unbox token)
+                    let! token', events = store.LoadFromToken streamName log token
                     let successorEvents = EventSumAdapters.decodeKnownEvents codec events |> List.ofSeq
-                    return StreamState.ofTokenSnapshotAndEvents (box token') snapshotState successorEvents }
+                    return StreamState.ofTokenSnapshotAndEvents token' snapshotState successorEvents }
                 return Error resync 
             | Ok token' ->
-                return Ok (StreamState.ofTokenAndKnownState (box token') proposedState) }
+                return Ok (StreamState.ofTokenAndKnownState token' proposedState) }

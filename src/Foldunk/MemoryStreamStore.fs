@@ -3,17 +3,17 @@
 open Serilog
 open Foldunk
 
-exception private WrongVersionException of streamName: string * expected: int * value: obj
+/// Helpers for derivation of a StreamState - shared between EventStore and MemoryStreamStore
+module StreamState =
+    /// Represent a [possibly compacted] array of events with a known token from a store.
+    let ofTokenAndEvents (token : StreamToken) (events: 'event seq) = token, None, List.ofSeq events
+    /// Represent a state known to have been persisted to the store
+    let ofTokenAndKnownState token state = token, Some state, []
+    /// Represent a state to be composed from a snapshot together with the successor events
+    let ofTokenSnapshotAndEvents token stateSnapshot (successorEvents : 'event list) =
+        token, Some stateSnapshot, successorEvents
 
-module private EventArrayStreamState =
-    /// Represent a stream known to be empty
-    let ofEmpty () = box -1, None, []
-    
-    let tokenOfArray (value: 'event array) = Array.length value - 1 |> box
-    /// Represent a known array of events (without a known folded State)
-    let ofEventArray (events: 'event array) = tokenOfArray events, None, List.ofArray events
-    /// Represent a known array of Events together with the associated state
-    let ofEventArrayAndKnownState (events: 'event array) (state: 'state) = tokenOfArray events, Some state, []
+exception private WrongVersionException of streamName: string * expected: int * value: obj
 
 // Maintains a dictionary of boxed typed arrays, raising exceptions if an attempt to extract a value encounters a mismatched type
 type private ConcurrentArrayStore() =
@@ -54,14 +54,27 @@ type private ConcurrentArrayStore() =
         with WrongVersionException(_, _, conflictingValue) ->
             Error (unbox conflictingValue)
  
+/// Internal impl details of MemoryStreamStore 
+module private MemoryStreamStreamState =
+    let private streamTokenOfIndex (streamVersion : int) : StreamToken =
+        { value = box streamVersion }
+    /// Represent a stream known to be empty
+    let ofEmpty () = streamTokenOfIndex -1, None, []
+    
+    let tokenOfArray (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex
+    /// Represent a known array of events (without a known folded State)
+    let ofEventArray (events: 'event array) = tokenOfArray events, None, List.ofArray events
+    /// Represent a known array of Events together with the associated state
+    let ofEventArrayAndKnownState (events: 'event array) (state: 'state) = tokenOfArray events, Some state, []
+
 /// In memory implementation of a stream store - no constraints on memory consumption (but also no persistence!).
 type MemoryStreamStore<'state, 'event>() =
     let store = ConcurrentArrayStore()
-    interface IEventStream<'state, 'event> with
+    interface Handler.IEventStream<'state, 'event> with
         member __.Load streamName log = async {
             match store.TryLoad streamName log with
-            | None -> return EventArrayStreamState.ofEmpty ()
-            | Some events -> return EventArrayStreamState.ofEventArray events }
+            | None -> return MemoryStreamStreamState.ofEmpty ()
+            | Some events -> return MemoryStreamStreamState.ofEventArray events }
         member __.TrySync streamName log (token, snapshotState) (events: 'event list, proposedState) = async {
             let trySyncValue currentValue =
                 if Array.length currentValue <> unbox token + 1 then Error (unbox token)
@@ -69,8 +82,8 @@ type MemoryStreamStore<'state, 'event>() =
             match store.TrySync streamName log trySyncValue events with
             | Error conflictingEvents ->
                 let resync = async {
-                    let version = EventArrayStreamState.tokenOfArray conflictingEvents
+                    let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
                     let successorEvents = conflictingEvents |> Seq.skip (unbox token+1) |> List.ofSeq
                     return StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
                 return Error resync
-            | Ok events -> return Ok <| EventArrayStreamState.ofEventArrayAndKnownState events proposedState }
+            | Ok events -> return Ok <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }
