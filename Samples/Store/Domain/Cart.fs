@@ -17,25 +17,18 @@ module Events =
         | ItemRemoved               of ItemRemoveInfo
         | ItemQuantityChanged       of ItemQuantityChangeInfo
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
-        
+
 module Folds =
     type ItemInfo =                 {   skuId: SkuId; quantity: int; returnsWaived: bool }
     type State =                    {   items: ItemInfo list }
-    module State =
-        let hasItemWithDifferentWaiveStatus skuId waive state = state.items |> List.exists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
-        let hasItemWithDifferentQuantity skuId quantity state = state.items |> List.exists (fun x -> x.skuId = skuId && x.quantity <> quantity)
-        let hasItemWithSameQuantity skuId quantity state      = state.items |> List.exists (fun x -> x.skuId = skuId && x.quantity = quantity)
-        let hasItem skuId state                               = state.items |> List.exists (fun x -> x.skuId = skuId)
         
-    let evolve (state : State) = function
-        | Events.ItemAdded e ->
-            { state with items = { skuId = e.skuId; quantity = e.quantity; returnsWaived = false  } :: state.items}
-        | Events.ItemRemoved e ->
-            { state with items = state.items |> List.filter (fun x -> x.skuId <> e.skuId) }
-        | Events.ItemQuantityChanged e ->
-            { state with items = state.items |> List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i) }
-        | Events.ItemWaiveReturnsChanged e ->
-            { state with items = state.items |> List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i) }
+    let evolve (state : State) cmd =
+        let updateItems f = { state with items = f state.items }
+        match cmd with
+        | Events.ItemAdded e -> updateItems (fun current -> { skuId = e.skuId; quantity = e.quantity; returnsWaived = false  } :: current)
+        | Events.ItemRemoved e -> updateItems (List.filter (fun x -> x.skuId <> e.skuId))
+        | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
+        | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
 
     let initial = { items = [] }
     let fold state = List.fold evolve state
@@ -51,19 +44,24 @@ module Commands =
         | RemoveItem                of Context * SkuId
 
     let interpret command (state : Folds.State) =
-        let (|Context|) (context : Context) = toEventContext context
+        let itemExists f                                    = state.items |> List.exists f
+        let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
+        let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)
+        let itemExistsWithSameQuantity skuId quantity       = itemExists (fun x -> x.skuId = skuId && x.quantity = quantity)
+        let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId)
+        let (|Context|) (context : Context)                 = toEventContext context
         match command with
         | AddItem (Context c, skuId, quantity) ->
-            if state |> Folds.State.hasItemWithSameQuantity skuId quantity then [] else
+            if itemExistsWithSameQuantity skuId quantity then [] else
             [ Events.ItemAdded { context = c; skuId = skuId; quantity = quantity } ]
         | ChangeItemQuantity (Context c, skuId, quantity) ->
-            if not (state |> Folds.State.hasItemWithDifferentQuantity skuId quantity) then [] else
+            if not (itemExistsWithDifferentQuantity skuId quantity) then [] else
             [ Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity } ]
         | ChangeWaiveReturns (Context c, skuId, waived) ->
-            if not (state |> Folds.State.hasItemWithDifferentWaiveStatus skuId waived) then [] else
+            if not (itemExistsWithDifferentWaiveStatus skuId waived) then [] else
             [ Events.ItemWaiveReturnsChanged { context = c; skuId = skuId; waived = waived } ]
         | RemoveItem (Context c, skuId) ->
-            if not (state |> Folds.State.hasItem skuId) then [] else
+            if not (itemExistsWithSkuId skuId) then [] else
             [ Events.ItemRemoved { context = c; skuId = skuId } ]
 
     let streamName (id: CartId) = sprintf "Cart-%s" id.Value

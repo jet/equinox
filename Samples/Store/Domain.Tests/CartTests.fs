@@ -9,34 +9,37 @@ open Foldunk.Tests.Infrastructure.Empty
 open Swensen.Unquote
 open System
 
+let mkAddQty skuId qty          = ItemAdded { empty<ItemAddInfo> with skuId = skuId; quantity = qty }
+let mkAdd skuId                 = mkAddQty skuId 1
+let mkRemove skuId              = ItemRemoved { empty<ItemRemoveInfo> with skuId = skuId }
+let mkChangeWaived skuId value  = ItemWaiveReturnsChanged { empty<ItemWaiveReturnsInfo> with skuId = skuId; waived = value }
+
 /// As a basic sanity check, verify the basic properties we'd expect per command if we were to run it on an empty stream
 let verifyCanProcessInInitialState cmd =
     let events = interpret cmd initial
     match cmd with
-    | AddItem _ ->          test <@ (not << List.isEmpty) events @>
+    | AddItem _ ->
+        test <@ (not << List.isEmpty) events @>
     | ChangeItemQuantity _ 
     | ChangeWaiveReturns _ 
-    | RemoveItem _ ->       test <@ List.isEmpty events @>
-
-let mkAddQty skuId qty = ItemAdded { empty<ItemAddInfo> with skuId = skuId; quantity = qty }
-let mkAdd skuId = mkAddQty skuId 1
-let mkChangeWaived skuId value = ItemWaiveReturnsChanged { empty<ItemWaiveReturnsInfo> with skuId = skuId; waived = value }
+    | RemoveItem _ ->
+        test <@ List.isEmpty events @>
 
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
 let verifyCorrectEventGenerationWhenAppropriate cmd = 
     let generateEventsTriggeringNeedForChange: Command -> Event list = function
-        | AddItem _ ->                                  []
-        | ChangeItemQuantity (_, skuId, quantity) ->    [ mkAddQty skuId (quantity+1)]
-        | ChangeWaiveReturns (_, skuId, value) ->       [ mkAdd skuId; mkChangeWaived skuId (not value) ]
-        | RemoveItem (_, skuId) ->                      [ mkAdd skuId ]
+        | AddItem _ ->                              []
+        | ChangeItemQuantity (_, skuId, quantity) ->[ mkAddQty skuId (quantity+1)]
+        | ChangeWaiveReturns (_, skuId, value) ->   [ mkAdd skuId; mkChangeWaived skuId (not value) ]
+        | RemoveItem (_, skuId) ->                  [ mkAdd skuId ]
     let verifyResultingEventsAreCorrect state state': Command * Event list -> unit = function
-        | AddItem (_, csku, quantity),                  [ ItemAdded e ] ->
+        | AddItem (_, csku, quantity),              [ ItemAdded e ] ->
             test <@ { ItemAddInfo.context = e.context; skuId = csku; quantity = quantity } = e @>
-        | ChangeItemQuantity (_, csku, quantity),       [ ItemQuantityChanged e] ->
+        | ChangeItemQuantity (_, csku, quantity),   [ ItemQuantityChanged e] ->
             test <@ { ItemQuantityChangeInfo.context = e.context; skuId = csku; quantity = quantity } = e @>
-        | ChangeWaiveReturns (_, csku, value),          [ ItemWaiveReturnsChanged e] ->
+        | ChangeWaiveReturns (_, csku, value),      [ ItemWaiveReturnsChanged e] ->
             test <@ { ItemWaiveReturnsInfo.context = e.context; skuId = csku; waived = value } = e @>
-        | RemoveItem (_, csku),                         [ ItemRemoved e ] ->
+        | RemoveItem (_, csku),                     [ ItemRemoved e ] ->
             test <@ { ItemRemoveInfo.context = e.context; skuId = csku } = e
                     && state.items |> List.exists (fun x -> x.skuId = csku)
                     && not (state'.items |> List.exists (fun x -> x.skuId = csku)) @>

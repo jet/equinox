@@ -4,10 +4,10 @@ open Domain
 open Domain.Cart
 open Foldunk
 
-type CartService (streamer : Handler.IEventStream<Cart.Folds.State, Cart.Events.Event>) =
+type CartService(streamer : Handler.IEventStream<Cart.Folds.State, Cart.Events.Event>) =
     let load log = Handler.load Cart.Folds.fold Cart.Folds.initial Cart.Commands.streamName streamer log 
 
-    member __.Run (log : Serilog.ILogger) (cartId : CartId) decide =async {
+    member __.Run (log : Serilog.ILogger) (cartId : CartId) decide = async {
         let maxAttempts = 1
         let! syncState = load log cartId
         return! Handler.run log maxAttempts syncState decide }
