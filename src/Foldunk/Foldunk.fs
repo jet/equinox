@@ -16,8 +16,8 @@ module StreamState =
     /// Represent a state known to have been persisted to the store
     let ofTokenAndKnownState token state = token, Some state, []
     /// Represent a state to be composed from a snapshot together with the successor events
-    let ofTokenSnapshotAndEvents token stateSnapshot (successorEvents : 'event list) =
-        token, Some stateSnapshot, successorEvents
+    let ofTokenSnapshotAndEvents token (snapshotState : 'state) (successorEvents : 'event list) =
+        token, Some snapshotState, successorEvents
 
 /// Maintains state associated with a Command Handling flow
 type DecisionState<'event, 'state>(fold, originState : 'state) =

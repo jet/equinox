@@ -81,10 +81,12 @@ type Tests(testOutputHelper) =
         do! conn.ConnectAsync() |> Async.AwaitTask
         return conn }
 
-    let createServiceWithEventStoreEx conn batchSize =
-        let store               = Foldunk.Stores.EventStore.GesStreamStore(conn, batchSize)
-        let encoder             = Foldunk.EventSum.generateJsonUtf8SumEncoder<_>
-        CartService(Foldunk.Stores.EventStore.GesEventStreamAdapter(store, encoder))
+    let createServiceWithEventStoreEx eventStoreConnection batchSize =
+        let connection          = Foldunk.Stores.EventStore.GesConnection(eventStoreConnection)
+        let gateway             = Foldunk.Stores.EventStore.GesGateway(connection, Foldunk.Stores.EventStore.GesStreamPolicy(batchSize))
+        let codec               = Foldunk.EventSum.generateJsonUtf8SumEncoder<_>
+        let eventStream         = Foldunk.Stores.EventStore.GesEventStream(gateway, codec)
+        CartService(eventStream)
     let createServiceWithEventStoreBatchingOnly conn batchSize = createServiceWithEventStoreEx conn batchSize
 
     let createLoggerWithCapture () =
