@@ -103,7 +103,7 @@ type OptionConverter() =
                 fields.[0]
         serializer.Serialize(writer, value)
 
-    override x.ReadJson(reader, typ, existingValue, serializer) =
+    override x.ReadJson(reader, typ, _existingValue, serializer) =
         let innerType = 
             let innerType = typ.GetGenericArguments().[0]
             if innerType.IsValueType then typedefof<Nullable<_>>.MakeGenericType([|innerType|])

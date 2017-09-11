@@ -3,6 +3,7 @@
 open Serilog
 
 /// Store-specific opaque token to be used for synchronization purposes
+[<NoComparison>]
 type StreamToken = { value : obj }
 
 /// Foldunk-internal representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)

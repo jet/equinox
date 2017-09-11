@@ -6,6 +6,8 @@ open Foldunk
 open Swensen.Unquote
 open System
 
+#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
+
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger (testOutput.Subscribe >> ignore)
