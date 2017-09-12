@@ -63,7 +63,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData>]
-    let ``Can roundtrip against in memory store, correctly folding then events`` context cartId skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against in memory store, correctly folding the events`` context cartId skuId = Async.RunSynchronously <| async {
         let log, service = createLog (), createServiceWithInMemoryStore ()
 
         do! addAndThenRemoveAnItem context cartId skuId log service 5

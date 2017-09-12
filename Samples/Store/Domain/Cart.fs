@@ -1,16 +1,16 @@
 ﻿module Domain.Cart
 
-open System
+let streamName (id: CartId) = sprintf "Cart-%s" id.Value
 
 // NB - these schemas reflect the actual storage formats and hence need to be versioned with care
 module Events =
-    type ContextInfo =              {   time: DateTime; requestId: RequestId }
+    type ContextInfo =              { time: System.DateTime; requestId: RequestId }
 
-    type ItemInfo =                 {   context: ContextInfo; item: ItemInfo }
-    type ItemAddInfo =              {   context: ContextInfo; skuId: SkuId; quantity: int }
-    type ItemRemoveInfo =           {   context: ContextInfo; skuId: SkuId }
-    type ItemQuantityChangeInfo =   {   context: ContextInfo; skuId: SkuId; quantity: int }
-    type ItemWaiveReturnsInfo =     {   context: ContextInfo; skuId: SkuId; waived: bool }
+    type ItemInfo =                 { context: ContextInfo; item: ItemInfo }
+    type ItemAddInfo =              { context: ContextInfo; skuId: SkuId; quantity: int }
+    type ItemRemoveInfo =           { context: ContextInfo; skuId: SkuId }
+    type ItemQuantityChangeInfo =   { context: ContextInfo; skuId: SkuId; quantity: int }
+    type ItemWaiveReturnsInfo =     { context: ContextInfo; skuId: SkuId; waived: bool }
 
     type Event =
         | ItemAdded                 of ItemAddInfo
@@ -19,30 +19,28 @@ module Events =
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
 
 module Folds =
-    type ItemInfo =                 {   skuId: SkuId; quantity: int; returnsWaived: bool }
-    type State =                    {   items: ItemInfo list }
+    type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }
+    type State =                    { items: ItemInfo list }
         
-    let evolve (state : State) cmd =
+    let initial = { items = [] }
+    let evolve (state : State) event =
         let updateItems f = { state with items = f state.items }
-        match cmd with
+        match event with
         | Events.ItemAdded e -> updateItems (fun current -> { skuId = e.skuId; quantity = e.quantity; returnsWaived = false  } :: current)
         | Events.ItemRemoved e -> updateItems (List.filter (fun x -> x.skuId <> e.skuId))
         | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
-
-    let initial = { items = [] }
     let fold state = List.fold evolve state
 
 module Commands =
-    type Context = { time: DateTime; requestId : RequestId }
-    let toEventContext (reqContext: Context) : Events.ContextInfo = { requestId = reqContext.requestId; time = reqContext.time }
-
+    type Context =              { time: System.DateTime; requestId : RequestId }
     type Command =
-        | AddItem                   of Context * SkuId * quantity: int
-        | ChangeItemQuantity        of Context * SkuId * quantity: int
-        | ChangeWaiveReturns        of Context * SkuId * waived: bool
-        | RemoveItem                of Context * SkuId
+        | AddItem               of Context * SkuId * quantity: int
+        | ChangeItemQuantity    of Context * SkuId * quantity: int
+        | ChangeWaiveReturns    of Context * SkuId * waived: bool
+        | RemoveItem            of Context * SkuId
 
+    let toEventContext (reqContext: Context) : Events.ContextInfo = { requestId = reqContext.requestId; time = reqContext.time }
     let interpret command (state : Folds.State) =
         let itemExists f                                    = state.items |> List.exists f
         let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
@@ -63,5 +61,3 @@ module Commands =
         | RemoveItem (Context c, skuId) ->
             if not (itemExistsWithSkuId skuId) then [] else
             [ Events.ItemRemoved { context = c; skuId = skuId } ]
-
-    let streamName (id: CartId) = sprintf "Cart-%s" id.Value

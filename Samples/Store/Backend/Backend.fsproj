@@ -59,6 +59,7 @@
   <ItemGroup>
     <None Include="paket.references" />
     <Compile Include="Infrastructure.fs" />
+    <Compile Include="Favorites.fs" />
     <Compile Include="Carts.fs" />
   </ItemGroup>
   <ItemGroup>

@@ -138,7 +138,7 @@ type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
     member __.LoadBatched streamName log : Async<StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName 0
         return Token.ofVersion version, events }
-    member __.LoadFromToken streamName log token : Async<StreamToken * ResolvedEvent[]> = async {
+    member __.LoadFromToken streamName log (token : StreamToken) : Async<StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName ((unbox token).streamVersion + 1)
         return Token.ofVersion version, events }
     member __.TrySync streamName log (token : StreamToken) (encodedEvents: EventData array) : Async<Result<StreamToken, unit>> = async {

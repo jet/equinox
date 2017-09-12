@@ -64,7 +64,7 @@ let verifyIdempotency (cmd: Command) =
     test <@ events |> List.isEmpty @>
 
 [<Property(MaxTest = 1000)>]
-let ``decide yields correct events, idempotently`` (cmd: Command) =
+let ``interpret yields correct events, idempotently`` (cmd: Command) =
     cmd |> verifyCanProcessInInitialState
     cmd |> verifyCorrectEventGenerationWhenAppropriate
     cmd |> verifyIdempotency

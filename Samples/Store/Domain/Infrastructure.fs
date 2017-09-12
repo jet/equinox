@@ -79,3 +79,23 @@ and private CartIdJsonConverter() =
     override __.Pickle value = value.Value
     /// Input must be a Guid.Parseable value
     override __.UnPickle input = CartId.Parse input
+
+/// ClientId strongly typed id
+[<Sealed; JsonConverter(typeof<ClientIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
+// (Internally a string for most efficient copying semantics)
+type ClientId private (id : string) =
+    inherit Comparable<ClientId, string>(id)
+    [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
+    member __.Value = id
+    override __.ToString () = id
+    // NB tests lean on having a ctor of this shape
+    new (guid: Guid) = ClientId (guid.ToString("N"))
+    // NB for validation [and XSS] purposes we must prove it translatable to a Guid
+    static member Parse(input: string) = ClientId (Guid.Parse input)
+/// Represent as a Guid.ToString("N") output externally
+and private ClientIdJsonConverter() =
+    inherit JsonIsomorphism<ClientId, string>()
+    /// Renders as per Guid.ToString("N")
+    override __.Pickle value = value.Value
+    /// Input must be a Guid.Parseable value
+    override __.UnPickle input = ClientId.Parse input
