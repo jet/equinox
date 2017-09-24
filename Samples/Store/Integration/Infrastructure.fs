@@ -43,8 +43,8 @@ type LogCaptureBuffer() =
     member __.Entries = captured.ToArray()
     member __.ExternalCalls =
         [ for i in captured do
-            let hasProp name = i.Properties.ContainsKey name 
-            let prop name = (string i.Properties.[name]).Trim '"' 
+            let hasProp name = i.Properties.ContainsKey name
+            let prop name = (string i.Properties.[name]).Trim '"'
             if hasProp "ExternalCall" && prop "ExternalCall" = "True" then
                 yield prop "Action" ]
 
@@ -56,7 +56,7 @@ let connectToLocalEventStoreNode () = async {
     do! conn.ConnectAsync() |> Async.AwaitTask
     return conn }
 
-let createGesGateway  maxBatchSize eventStoreConnection =
+let createGesGateway maxBatchSize eventStoreConnection =
     let connection = Foldunk.Stores.EventStore.GesConnection(eventStoreConnection)
     Foldunk.Stores.EventStore.GesGateway(connection, Foldunk.Stores.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
 let createGesStream<'state,'event> (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) gateway =

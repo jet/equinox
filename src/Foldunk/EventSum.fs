@@ -48,7 +48,7 @@ type IEventSumEncoder<'Union, 'Format> =
     abstract Decode : EncodedEvent<'Format> -> 'Union
     abstract TryDecode : EncodedEvent<'Format> -> 'Union option
 
-type private UnionCaseEncoder<'Union, 'Format> = 
+type private UnionCaseEncoder<'Union, 'Format> =
     string * ('Union -> EncodedEvent<'Format>) * (EncodedEvent<'Format> -> 'Union)
 
 /// Generates an event sum encoder given an event encoder instance
@@ -58,8 +58,8 @@ let generateSumEventEncoder<'Union, 'Format> (encoder : IEncoder<'Format>) =
     | Shape.FSharpUnion (:? ShapeFSharpUnion<'Union> as sunion) ->
         let genUnionCaseEncoder (scase : ShapeFSharpUnionCase<'Union>) =
             // extract the event type identifier for given case
-            let eventType = 
-                scase.CaseInfo.GetCustomAttributes() 
+            let eventType =
+                scase.CaseInfo.GetCustomAttributes()
                 |> Seq.tryPick (function :? DataMemberAttribute as dm -> Some dm.Name | _ -> None)
                 |> function Some v -> v | None -> scase.CaseInfo.Name
 
@@ -70,14 +70,14 @@ let generateSumEventEncoder<'Union, 'Format> (encoder : IEncoder<'Format>) =
                 eventType, enc, dec
 
             | [|field|] ->
-                field.Accept { 
+                field.Accept {
                     new IWriteMemberVisitor<'Union, UnionCaseEncoder<'Union, 'Format>> with
                       member __.Visit(sfield : ShapeWriteMember<'Union, 'Field>) =
                         match shapeof<'Field> with
                         | Shape.FSharpRecord _ ->
 
                             let enc u = { EventType = eventType ; Payload = encoder.Encode(sfield.Project u) }
-                            let dec (e:EncodedEvent<'Format>) = 
+                            let dec (e:EncodedEvent<'Format>) =
                                 let u = scase.CreateUninitialized()
                                 let r = encoder.Decode<'Record> e.Payload
                                 sfield.Inject u r
@@ -93,14 +93,14 @@ let generateSumEventEncoder<'Union, 'Format> (encoder : IEncoder<'Format>) =
                 sprintf "Union case '%O' can contain at most one field which should be an F# record" scase.CaseInfo.Name
                 |> invalidArg "Union"
 
-        let eventTypes, caseEncoders, caseDecoders = 
-            sunion.UnionCases 
+        let eventTypes, caseEncoders, caseDecoders =
+            sunion.UnionCases
             |> Array.map genUnionCaseEncoder
             |> Array.unzip3
 
         // check for duplicate union case labels
         let duplicates =
-            eventTypes 
+            eventTypes
             |> Seq.groupBy id
             |> Seq.filter (fun (_,items) -> Seq.length items > 1)
             |> Seq.map fst
@@ -124,14 +124,14 @@ let generateSumEventEncoder<'Union, 'Format> (encoder : IEncoder<'Format>) =
                     let msg = sprintf "Unrecognized event type '%s'" e.EventType
                     raise <| FormatException msg
                 | tag -> caseDecoders.[tag] e
-                
+
             member __.TryDecode e =
                 match unionCases.TryFindIndex e.EventType with
                 | -1 -> None
                 | tag -> caseDecoders.[tag] e |> Some
         }
 
-    | _ -> 
+    | _ ->
         sprintf "Type '%O' is not an F# union" typeof<'Union>
         |> invalidArg "Union"
 

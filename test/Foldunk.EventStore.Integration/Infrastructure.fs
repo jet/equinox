@@ -28,7 +28,7 @@ type LogCaptureBuffer() =
     member __.Entries = captured.ToArray()
     member __.ExternalCalls =
         [ for i in captured do
-            let hasProp name = i.Properties.ContainsKey name 
-            let prop name = (string i.Properties.[name]).Trim '"' 
+            let hasProp name = i.Properties.ContainsKey name
+            let prop name = (string i.Properties.[name]).Trim '"'
             if hasProp "ExternalCall" && prop "ExternalCall" = "True" then
                 yield prop "Action" ]

@@ -11,13 +11,13 @@ type DecisionContext<'event, 'state>(fold, originState : 'state) =
     /// Execute an `interpret` function as `Execute` does, while also propagating a result output thats is yielded as the fst of (result,events) pair
     member __.Decide (interpret : 'state -> 'result * 'event list) =
         let result, newEvents = interpret __.State
-        accumulated.AddRange newEvents 
+        accumulated.AddRange newEvents
         result
     /// Execute an _Async_ `interpret` function as `Execute` does, while also propagating a result output thats is yielded as the fst of (result,events) pair
     // TODO add test coverage
     member __.DecideAsync (interpret : 'state -> Async<'outcome * 'event list>) = async {
         let! result, newEvents = interpret __.State
-        accumulated.AddRange newEvents 
+        accumulated.AddRange newEvents
         return result }
     /// The events that have been pended into this Context as decided by the interpret functions that have been run in the course of the Decision
     member __.Accumulated = accumulated |> List.ofSeq
@@ -54,7 +54,7 @@ module Internal =
         (   fold, initial, originState : StreamState<'state, 'event>,
             trySync : ILogger -> StreamToken * 'state -> 'event list * 'state -> Async<Result<StreamState<'state, 'event>, Async<StreamState<'state, 'event>>>>) =
         let toTokenAndState fold initial ((token, stateOption, events) : StreamState<'state,'event>) : StreamToken * 'state =
-            let baseState = 
+            let baseState =
                 match stateOption with
                 | Some state when List.isEmpty events -> state
                 | Some state -> fold state events
@@ -74,7 +74,7 @@ module Internal =
 
         member __.State = snd !tokenAndState
         member __.Token = fst !tokenAndState
-        member __.CreateDecisionContext(): DecisionContext<'event, 'state> = 
+        member __.CreateDecisionContext(): DecisionContext<'event, 'state> =
             DecisionContext<'event, 'state>(fold, __.State)
         member __.TryOrResync log events =
             let resyncInPreparationForRetry resync = async {
@@ -118,7 +118,7 @@ module Handler =
     /// 1.  make a decision given the known state
     /// 2a. if no changes required, exit with known state
     /// 2b. if saved without conflict, exit with updated state
-    /// 2b. if conflicting changes, loop to retry against updated state 
+    /// 2b. if conflicting changes, loop to retry against updated state
     let run (log : ILogger)
             (maxAttempts : int)
             (sync : Internal.SyncState<'state, 'event>)

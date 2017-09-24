@@ -28,26 +28,27 @@ let verifyCanProcessInInitialState cmd =
         test <@ List.isEmpty events @>
 
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
-let verifyCorrectEventGenerationWhenAppropriate cmd = 
+let verifyCorrectEventGenerationWhenAppropriate cmd =
     let generateEventsTriggeringNeedForChange: Command -> Event list = function
         | Compact ->                                [ (* Command is not designed to be idempotent *) ]
         | Favorite _ ->                             []
         | Unfavorite skuId ->                       [ mkFavorite skuId ]
-    let verifyResultingEventsAreCorrect state state': Command * Event list -> unit = function
+    let verifyResultingEventsAreCorrect state (state' : State) (command, events) =
+        let hasSkuId skuId = state' |> Array.exists (function { skuId = sSkuId } when sSkuId = skuId -> true | _ -> false)
+        match command, events with
         | Compact,                                  [ Compacted { net = netItems } ] ->
-            test <@ netItems = state @>
+            test <@ netItems = state'
+                    // It's critical that it should not have any side-effects on state
+                    && state = state' @>
         | Favorite (_date, skuIds),                  events ->
-            let hasSkuId skuId : Folds.State -> bool = Array.exists (function { skuId = sSkuId } when sSkuId = skuId -> true | _ -> false)
             let isFavoritingEventFor skuId = function
                 | Favorited { skuId = eSkuId } -> eSkuId = skuId
                 | _ -> false
             test <@ skuIds |> List.forall (fun skuId -> events |> List.exists (isFavoritingEventFor skuId))
-                    && skuIds |> List.forall (fun skuId -> state' |> hasSkuId skuId) @>
+                    && skuIds |> List.forall (fun skuId -> hasSkuId skuId) @>
         | Unfavorite skuId,                         [ Unfavorited e] ->
-            let hasSkuId skuId : Folds.State -> bool = Array.exists (function { skuId = sSkuId } when sSkuId = skuId -> true | _ -> false)
-            test <@ state |> hasSkuId skuId
-                    && e = { skuId = skuId}
-                    && not (state' |> hasSkuId skuId) @>
+            test <@ e = { skuId = skuId}
+                    && not (hasSkuId skuId) @>
         | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
     let initialEvents = cmd |> generateEventsTriggeringNeedForChange
     let state = fold initial initialEvents
@@ -61,20 +62,17 @@ let verifyIdempotency (cmd: Command) =
     let mkRandomFavorites () = List.init (rnd.Next(1000)) (ignore >> mkSkuId >> mkFavorite)
     let establish: Event list = cmd |> function
         | Compact _ ->                              mkRandomFavorites ()
-        | Favorite (_,skuIds) ->                    [| for sku in skuIds -> mkFavorite sku |] |> knuthShuffle |> List.ofArray 
+        | Favorite (_,skuIds) ->                    [| for sku in skuIds -> mkFavorite sku |] |> knuthShuffle |> List.ofArray
         | Unfavorite _ ->                           mkRandomFavorites ()
     let state = fold initial establish
     let events = interpret cmd state
-    let state' = fold state events
-    match cmd with
-    | Compact ->
+    match cmd, List.isEmpty events with
+    | Compact, isEmpty ->
         // Command should be unconditional
-        test <@ not (List.isEmpty events)
-                // and not have any side-effects on state
-                && state' = state @>
-    | _ ->
+        test <@ not isEmpty @>
+    | _, isEmpty ->
         // Assert we decided nothing needs to happen
-        test <@ events |> List.isEmpty @>
+        test <@ isEmpty @>
 
 [<Property(MaxTest = 1000)>]
 let ``interpret yields correct events, idempotently`` (cmd: Command) =

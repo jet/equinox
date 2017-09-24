@@ -29,8 +29,8 @@ type Tests() =
     let addAndThenRemoveAnItem context cartId skuId log (service: Carts.Service) count =
         let decide (ctx : DecisionContext<_,_>) = async {
             let run cmd = ctx.Execute(Cart.Commands.interpret cmd)
-            for _ in 1..count do
-                for c in [Cart.Commands.AddItem (context, skuId, 1); Cart.Commands.RemoveItem (context, skuId)] do
+            for i in 1..count do
+                for c in [Cart.Commands.AddItem (context, skuId, i); Cart.Commands.RemoveItem (context, skuId)] do
                     run c
             return ctx.Complete() }
         service.Run log cartId decide
@@ -62,7 +62,7 @@ type Tests() =
         test <@ [ "ReadStreamEventsForwardAsync"; "AppendToStreamAsync" ] = capture.ExternalCalls @>
 
         // Restart the counting
-        capture.Clear() 
+        capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
         do! validateCartIsEmpty cartId log service

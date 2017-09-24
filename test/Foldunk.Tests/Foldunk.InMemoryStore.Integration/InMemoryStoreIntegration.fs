@@ -9,7 +9,7 @@ let inline createInMemoryStreamer<'state,'event> () : Foldunk.IEventStream<'stat
     Foldunk.Stores.InMemoryStore.MemoryStreamStore() :> _
 
 let createServiceWithInMemoryStore () =
-    let streamer = createInMemoryStreamer() 
+    let streamer = createInMemoryStreamer()
     Carts.Service(fun _codec -> streamer)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -33,7 +33,7 @@ type Tests(testOutputHelper) =
             let! _ = service.Run log cartId decide
             return! service.Load log cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
-        let! actual = cartId2 |> actLoadingStateSeparately 
+        let! actual = cartId2 |> actLoadingStateSeparately
 
         // Assert 1. Despite being on different streams (and being in-memory vs re-loaded) we expect the same outcome
         test <@ expected = actual @>

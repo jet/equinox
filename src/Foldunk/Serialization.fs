@@ -31,7 +31,7 @@ type JsonPickler<'T>() =
                     [ match t.BaseType with null -> () | bt -> yield bt
                       yield! t.GetInterfaces()
                       yield! tl ]
-                
+
                 isMatching tail
 
         memoize (fun t -> isMatching [t])
@@ -88,7 +88,7 @@ type ObjectArrayConverter<'T>() =
     override __.WriteJson (_,_,_) = raise <| new NotImplementedException()
 
 /// For Some 1 generates "1", for None generates "null"
-type OptionConverter() =    
+type OptionConverter() =
     inherit JsonConverter()
 
     let getAndCacheUnionCases = FSharpType.GetUnionCases |> memoize
@@ -96,15 +96,15 @@ type OptionConverter() =
     override x.CanConvert(typ) = typ.IsGenericType && typ.GetGenericTypeDefinition() = typedefof<option<_>>
 
     override x.WriteJson(writer, value, serializer) =
-        let value = 
+        let value =
             if value = null then null
-            else 
+            else
                 let _,fields = FSharpValue.GetUnionFields(value, value.GetType())
                 fields.[0]
         serializer.Serialize(writer, value)
 
     override x.ReadJson(reader, typ, _existingValue, serializer) =
-        let innerType = 
+        let innerType =
             let innerType = typ.GetGenericArguments().[0]
             if innerType.IsValueType then typedefof<Nullable<_>>.MakeGenericType([|innerType|])
             else innerType
@@ -114,7 +114,7 @@ type OptionConverter() =
         else
             let value = serializer.Deserialize(reader, innerType)
             if value = null then FSharpValue.MakeUnion(cases.[0], Array.empty)
-            else FSharpValue.MakeUnion(cases.[1], [|value|]) 
+            else FSharpValue.MakeUnion(cases.[1], [|value|])
 
 type GuidConverter() =
     inherit JsonIsomorphism<Guid, string>()
@@ -171,7 +171,7 @@ type Newtonsoft private () =
         JsonConvert.DeserializeObject<'T>(json, settings)
 
 [<NoComparison; NoEquality>]
-type private Union = 
+type private Union =
     {
         cases: UnionCaseInfo[]
         tagReader: obj -> int

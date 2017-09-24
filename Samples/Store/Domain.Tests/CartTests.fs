@@ -20,28 +20,32 @@ let verifyCanProcessInInitialState cmd =
     match cmd with
     | AddItem _ ->
         test <@ (not << List.isEmpty) events @>
-    | ChangeItemQuantity _ 
-    | ChangeWaiveReturns _ 
+    | ChangeItemQuantity _
+    | ChangeWaiveReturns _
     | RemoveItem _ ->
         test <@ List.isEmpty events @>
 
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
-let verifyCorrectEventGenerationWhenAppropriate cmd = 
+let verifyCorrectEventGenerationWhenAppropriate cmd =
     let generateEventsTriggeringNeedForChange: Command -> Event list = function
         | AddItem _ ->                              []
         | ChangeItemQuantity (_, skuId, quantity) ->[ mkAddQty skuId (quantity+1)]
         | ChangeWaiveReturns (_, skuId, value) ->   [ mkAdd skuId; mkChangeWaived skuId (not value) ]
         | RemoveItem (_, skuId) ->                  [ mkAdd skuId ]
-    let verifyResultingEventsAreCorrect state state': Command * Event list -> unit = function
+    let verifyResultingEventsAreCorrect state (state' : State) (command, events) =
+        let find skuId                              = state'.items |> List.find (fun x -> x.skuId = skuId)
+        match command, events with
         | AddItem (_, csku, quantity),              [ ItemAdded e ] ->
-            test <@ { ItemAddInfo.context = e.context; skuId = csku; quantity = quantity } = e @>
-        | ChangeItemQuantity (_, csku, quantity),   [ ItemQuantityChanged e] ->
-            test <@ { ItemQuantityChangeInfo.context = e.context; skuId = csku; quantity = quantity } = e @>
+            test <@ { ItemAddInfo.context = e.context; skuId = csku; quantity = quantity } = e
+                    && quantity = (find csku).quantity @>
+        | ChangeItemQuantity (_, csku, value),   [ ItemQuantityChanged e] ->
+            test <@ { ItemQuantityChangeInfo.context = e.context; skuId = csku; quantity = value } = e
+                    && value = (find csku).quantity @>
         | ChangeWaiveReturns (_, csku, value),      [ ItemWaiveReturnsChanged e] ->
-            test <@ { ItemWaiveReturnsInfo.context = e.context; skuId = csku; waived = value } = e @>
-        | RemoveItem (_, csku),                     [ ItemRemoved e ] ->
+            test <@ { ItemWaiveReturnsInfo.context = e.context; skuId = csku; waived = value } = e
+                   && value = (find csku).returnsWaived @>
+         | RemoveItem (_, csku),                    [ ItemRemoved e ] ->
             test <@ { ItemRemoveInfo.context = e.context; skuId = csku } = e
-                    && state.items |> List.exists (fun x -> x.skuId = csku)
                     && not (state'.items |> List.exists (fun x -> x.skuId = csku)) @>
         | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
     let initialEvents = cmd |> generateEventsTriggeringNeedForChange

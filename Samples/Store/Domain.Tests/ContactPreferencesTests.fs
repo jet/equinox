@@ -15,7 +15,7 @@ let verifyCanProcessInInitialState cmd =
         test <@ (not << List.isEmpty) events @>
 
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
-let verifyCorrectEventGenerationWhenAppropriate cmd = 
+let verifyCorrectEventGenerationWhenAppropriate cmd =
     let generateEventsTriggeringNeedForChange: Command -> Event list = function
         | Update ({ preferences = { quickSurveys = qs } as preferences } as value) ->
             [Updated { value with preferences = { preferences with quickSurveys = not qs}}]

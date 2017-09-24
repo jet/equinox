@@ -75,11 +75,11 @@ and private mkEmptyFuncAux<'T> (ctx : RecTypeManager) : bool -> 'T =
         s.Accept { new IFSharpListVisitor<bool -> 'T> with
             member __.Visit<'t>() = // 'T = 't list
                 let te = mkEmptyFuncCached<'t> ctx
-                wrap(fun max -> if max then [te max] else []) } 
+                wrap(fun max -> if max then [te max] else []) }
 
     | Shape.Array s ->
         s.Accept { new IArrayVisitor<bool -> 'T> with
-            member __.Visit<'t> rank = 
+            member __.Visit<'t> rank =
                 let te = mkEmptyFuncCached<'t> ctx
                 let inline sz m = if m then 1 else 0
                 match rank with
@@ -93,15 +93,15 @@ and private mkEmptyFuncAux<'T> (ctx : RecTypeManager) : bool -> 'T =
         s.Accept { new IFSharpSetVisitor<bool -> 'T> with
             member __.Visit<'t when 't : comparison>() = // 'T = Set<'t>
                 let te = mkEmptyFuncCached<'t> ctx
-                wrap(fun max -> if max then set [|te max|] else Set.empty) } 
+                wrap(fun max -> if max then set [|te max|] else Set.empty) }
 
     | Shape.FSharpMap s ->
         s.Accept { new IFSharpMapVisitor<bool -> 'T> with
             member __.Visit<'k, 'v when 'k : comparison>() = // 'T = Map<'k,'v>
                 let ke, ve = mkEmptyFuncCached<'k> ctx, mkEmptyFuncCached<'v> ctx
-                wrap(fun max -> 
-                        if max then Map.ofArray [|(ke max, ve max)|] 
-                        else Map.empty) } 
+                wrap(fun max ->
+                        if max then Map.ofArray [|(ke max, ve max)|]
+                        else Map.empty) }
 
     | Shape.Tuple (:? ShapeTuple<'T> as shape) ->
         let elemInitializers = shape.Elements |> Array.map mkMemberInitializer
@@ -127,7 +127,7 @@ and private mkEmptyFuncAux<'T> (ctx : RecTypeManager) : bool -> 'T =
 
     | Shape.CliMutable (:? ShapeCliMutable<'T> as shape) ->
         let propInitializers = shape.Properties |> Array.map mkMemberInitializer
-        fun max -> 
+        fun max ->
             let mutable inst = shape.CreateUninitialized()
             if max then
                 for p in propInitializers do inst <- p max inst

@@ -30,17 +30,17 @@ module IdTypes =
     [<Fact>]
     let ``CartId has structural equality semantics`` () =
         let x = Guid.NewGuid()
-        test <@ CartId x = CartId x @> 
+        test <@ CartId x = CartId x @>
 
     [<Fact>]
     let ``ClientId has structural equality semantics`` () =
         let x = Guid.NewGuid()
-        test <@ ClientId x = ClientId x @> 
+        test <@ ClientId x = ClientId x @>
 
     [<Fact>]
     let ``RequestId has structural equality semantics`` () =
         let x = Guid.NewGuid()
-        test <@ RequestId x = RequestId x @> 
+        test <@ RequestId x = RequestId x @>
 
     [<Fact>]
     let ``SkuId has structural equality semantics`` () =

@@ -12,10 +12,11 @@ type Async with
     ///     in a System.AggregateException.
     /// </summary>
     /// <param name="task">Task to be awaited.</param>
+    [<DebuggerStepThrough>]
     static member AwaitTaskCorrect(task : System.Threading.Tasks.Task<'T>) : Async<'T> =
         Async.FromContinuations(fun (sc,ec,_) ->
-            task.ContinueWith(fun (t : System.Threading.Tasks.Task<'T>) -> 
-                if t.IsFaulted then 
+            task.ContinueWith(fun (t : System.Threading.Tasks.Task<'T>) ->
+                if t.IsFaulted then
                     let e = t.Exception
                     if e.InnerExceptions.Count = 1 then ec e.InnerExceptions.[0]
                     else ec e
@@ -26,22 +27,22 @@ type Async with
 module AsyncSeq =
     /// Same as takeWhileAsync, but returns the final element too
     let takeWhileInclusiveAsync p (source : AsyncSeq<'T>) : AsyncSeq<_> = asyncSeq {
-        use ie = source.GetEnumerator() 
+        use ie = source.GetEnumerator()
         let! move = ie.MoveNext()
         let b = ref move
         while b.Value.IsSome do
-            let v = b.Value.Value 
+            let v = b.Value.Value
             yield v
             let! res = p v
-            if res then 
+            if res then
                 let! moven = ie.MoveNext()
                 b := moven
             else
                 b := None }
 
     /// Same as takeWhile, but returns the final element too
-    let takeWhileInclusive p (source : AsyncSeq<'T>) = 
-        takeWhileInclusiveAsync (p >> async.Return) source  
+    let takeWhileInclusive p (source : AsyncSeq<'T>) =
+        takeWhileInclusiveAsync (p >> async.Return) source
 
 type TimeSpan with
     /// Converts a tick count as measured by stopwatch into a TimeSpan value
@@ -63,6 +64,7 @@ type Stopwatch =
     ///     Times a computation, returning the result with a time range measurement.
     /// </summary>
     /// <param name="f">Function to execute & time.</param>
+    [<DebuggerStepThrough>]
     static member Time(f : unit -> 'T) : StopwatchInterval * 'T =
         let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
         let result = f ()
@@ -74,6 +76,7 @@ type Stopwatch =
     ///     Times an async computation, returning the result with a time range measurement.
     /// </summary>
     /// <param name="f">Function to execute & time.</param>
+    [<DebuggerStepThrough>]
     static member Time(f : Async<'T>) : Async<StopwatchInterval * 'T> = async {
         let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
         let! result = f

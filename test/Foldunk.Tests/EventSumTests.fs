@@ -10,7 +10,7 @@ open System.Runtime.Serialization
 open Xunit
 
 // Placeholder event records salvaged from Hulk domain
-type CartCreated = { id: string ; client_id: string } 
+type CartCreated = { id: string ; client_id: string }
 type ZipCodeUpdated = { id: string ; zip_code: string }
 type ItemReturnWaived = { id : string ; retail_sku_id : string ; value: bool }
 type JetCashUsed = { id: string ; value: bool }
@@ -26,7 +26,7 @@ type BasicEventSum =
     | JetCreditsUsed of JetCreditsUsed
     | CartItemRemoved of CartItemRemoved
     | [<DataMember(Name = "Legacy")>] Old_Stuff of CartItemRemoved
-    
+
 let encoder = lazy(generateJsonSumEncoder<BasicEventSum>)
 
 [<Property>]

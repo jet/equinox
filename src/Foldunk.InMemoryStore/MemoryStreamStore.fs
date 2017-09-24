@@ -32,7 +32,7 @@ type private ConcurrentArrayStore() =
 
     /// Attempts a sychronization operation - yields conflicting value if sync function decides there is a conflict
     member __.TrySync streamName log trySyncValue events =
-        let seedStream _streamName = __.Pack events 
+        let seedStream _streamName = __.Pack events
         let updatePackedValue streamName (packedCurrentValue : obj) =
             let currentValue = __.Unpack log streamName packedCurrentValue
             match trySyncValue currentValue with
@@ -43,14 +43,13 @@ type private ConcurrentArrayStore() =
             Ok (unbox boxedSyncedValue)
         with WrongVersionException(_, _, conflictingValue) ->
             Error (unbox conflictingValue)
- 
-/// Internal impl details of MemoryStreamStore 
+
+/// Internal impl details of MemoryStreamStore
 module private MemoryStreamStreamState =
     let private streamTokenOfIndex (streamVersion : int) : Internal.StreamToken =
         { value = box streamVersion }
     /// Represent a stream known to be empty
     let ofEmpty () = streamTokenOfIndex -1, None, []
-    
     let tokenOfArray (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex
     /// Represent a known array of events (without a known folded State)
     let ofEventArray (events: 'event array) = tokenOfArray events, None, List.ofArray events

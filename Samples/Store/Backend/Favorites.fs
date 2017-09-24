@@ -4,7 +4,7 @@ open Domain
 open Foldunk
 
 type Handler(streamer : IEventStream<Favorites.Folds.State, Favorites.Events.Event>, log : Serilog.ILogger, clientId : ClientId, maxAttempts) =
-    let load log = Handler.load Favorites.Folds.fold Favorites.Folds.initial Favorites.streamName streamer log 
+    let load log = Handler.load Favorites.Folds.fold Favorites.Folds.initial Favorites.streamName streamer log
     let execute (ctx : DecisionContext<_,_>) = Favorites.Commands.interpret >> ctx.Execute
     let decide cmd ctx = async {
         cmd |> execute ctx
