@@ -240,11 +240,13 @@ type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
                 | Some compactionEventIndex -> Token.ofStreamVersionAndCompactionEventDataIndex streamVersion compactionEventIndex config.BatchSize version'
         return GatewaySyncResult.Written token }
 
-type GesStreamState<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>, ?initialTokenAndState : Storage.StreamToken * 'state, ?compactionEventType) =
+type GesStreamState<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>, ?initialTokenAndState : Storage.StreamToken * 'state, ?compactionEventType, ?compactionPredicate) =
     let compactionEventAlgorithm =
-        match compactionEventType with
-        | Some eventType -> Some (fun x -> x = eventType)
-        | None -> None
+        match compactionPredicate, compactionEventType with
+        | Some _, Some _ -> failwith "Please supply either a compactionEventType or a compactionPredicate, not both"
+        | (Some _ as pred), None -> pred
+        | None, Some eventType -> Some (fun x -> x = eventType)
+        | None, None -> None
     let loadAlgorithm streamName log =
         match compactionEventAlgorithm with
         | Some predicate -> gateway.LoadBackwardsStoppingAtCompactionEvent streamName log predicate

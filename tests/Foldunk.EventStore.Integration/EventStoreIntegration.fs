@@ -25,13 +25,23 @@ let createGesStreamWithCompactionEventTypeOption<'event, 'state> eventStoreConne
     let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec, ?compactionEventType = compactionEventTypeOption)
     Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
 
+let createGesStreamWithCompactionPredicate<'event, 'state> eventStoreConnection windowSize compactionPredicate (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName
+    : Foldunk.IStream<'event, 'state> =
+    let gateway = createGesGateway eventStoreConnection windowSize
+    let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec, compactionPredicate = compactionPredicate)
+    Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
+
 let createCartServiceGesWithoutCompaction eventStoreConnection batchSize =
     Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> createGesStream eventStoreConnection batchSize)
 
-let createCartServiceGesWithCompaction eventStoreConnection batchSize =
+let createCartServiceGes eventStoreConnection batchSize =
     Backend.Cart.Service(createGesStreamWithCompactionEventTypeOption eventStoreConnection batchSize)
 
-let createCartServiceGes = createCartServiceGesWithCompaction
+let createContactPreferencesServiceGesWithoutCompaction eventStoreConnection =
+    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> createGesStream eventStoreConnection 500)
+
+let createContactPreferencesServiceGes eventStoreConnection =
+    Backend.ContactPreferences.Service(createGesStreamWithCompactionPredicate eventStoreConnection)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -82,36 +92,37 @@ type Tests() =
         test <@ List.replicate (expectedBatches-1) singleSliceForward @ singleBatchForward = capture.ExternalCalls @>
     }
 
+    let singleBatchBackwards = ["ReadStreamEventsBackwardAsync"; "BatchBackward"]
+    let batchBackwardsAndAppend = singleBatchBackwards @ ["AppendToStreamAsync"]
+
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode ()
         let batchSize = 10
-        let service = createCartServiceGesWithCompaction conn batchSize
+        let service = createCartServiceGes conn batchSize
 
         // Trigger 10 events, then reload
         do! addAndThenRemoveItemsManyTimes context cartId skuId log service 5
         let! _ = service.Read log cartId
 
-        let singleBatch = ["ReadStreamEventsBackwardAsync"; "BatchBackward"]
-        let batchAndAppend = singleBatch @ ["AppendToStreamAsync"]
         // ... should see a single read as we are inside the batch threshold
-        test <@ batchAndAppend @ singleBatch = capture.ExternalCalls @>
+        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
 
         // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes context cartId skuId log service 1
-        test <@ batchAndAppend = capture.ExternalCalls @>
+        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 13 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service.Read log cartId
-        test <@ singleBatch = capture.ExternalCalls @>
+        test <@ singleBatchBackwards = capture.ExternalCalls @>
 
         // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes context cartId skuId log service 4
-        test <@ batchAndAppend = capture.ExternalCalls @>
+        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 21 events, we should be able to read them with a single call
         capture.Clear()
@@ -120,5 +131,24 @@ type Tests() =
         do! addAndThenRemoveItemsManyTimes context cartId skuId log service 1
         // and reload the 24 events with a single read
         let! _ = service.Read log cartId
-        test <@ singleBatch @ batchAndAppend @ singleBatch = capture.ExternalCalls @>
+        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+    }
+
+    [<AutoData>]
+    let ``Can correctly read and update values with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
+        let! eventStoreConnection = connectToLocalEventStoreNode ()
+        let log, capture = createLoggerWithCapture ()
+        let service = createContactPreferencesServiceGes eventStoreConnection
+
+        let (Domain.ContactPreferences.Id email) = id
+        for i in 0..49 do
+            let quickSurveysValue = i % 2 = 0
+            do! service.Update log email { value with quickSurveys = quickSurveysValue }
+        // Ensure there will be something to be changed by the Update below
+        do! service.Update log email { value with quickSurveys = not value.quickSurveys }
+
+        capture.Clear()
+        do! service.Update log email value
+        let! actual = service.Read log email
+        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
     }
