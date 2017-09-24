@@ -46,7 +46,7 @@ type private ConcurrentArrayStore() =
  
 /// Internal impl details of MemoryStreamStore 
 module private MemoryStreamStreamState =
-    let private streamTokenOfIndex (streamVersion : int) : StreamToken =
+    let private streamTokenOfIndex (streamVersion : int) : Internal.StreamToken =
         { value = box streamVersion }
     /// Represent a stream known to be empty
     let ofEmpty () = streamTokenOfIndex -1, None, []
@@ -60,7 +60,7 @@ module private MemoryStreamStreamState =
 /// In memory implementation of a stream store - no constraints on memory consumption (but also no persistence!).
 type MemoryStreamStore<'state, 'event>() =
     let store = ConcurrentArrayStore()
-    interface Handler.IEventStream<'state, 'event> with
+    interface IEventStream<'state, 'event> with
         member __.Load streamName log = async {
             match store.TryLoad streamName log with
             | None -> return MemoryStreamStreamState.ofEmpty ()
@@ -74,6 +74,6 @@ type MemoryStreamStore<'state, 'event>() =
                 let resync = async {
                     let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
                     let successorEvents = conflictingEvents |> Seq.skip (unbox token+1) |> List.ofSeq
-                    return StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
+                    return Internal.StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
                 return Error resync
             | Ok events -> return Ok <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }

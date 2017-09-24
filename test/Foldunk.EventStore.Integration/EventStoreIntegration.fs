@@ -45,7 +45,7 @@ type Tests() =
     let createCartServiceWithBatchSize eventStoreConnection batchSize = CartService(createStream eventStoreConnection batchSize)
     let createCartService eventStoreConnection = createCartServiceWithBatchSize eventStoreConnection 500
     let addAndThenRemoveAnItem context cartId skuId log (service: CartService) count =
-        let decide (ctx : DecisionState<_,_>) = async {
+        let decide (ctx : DecisionContext<_,_>) = async {
             let run cmd = ctx.Execute(Cart.Commands.interpret cmd)
             for _ in 1..count do
                 for c in [Cart.Commands.AddItem (context, skuId, 1); Cart.Commands.RemoveItem (context, skuId)] do

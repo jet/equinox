@@ -21,7 +21,7 @@ module Events =
 module Folds =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }
     type State =                    { items: ItemInfo list }
-        
+
     let initial = { items = [] }
     let evolve (state : State) event =
         let updateItems f = { state with items = f state.items }

@@ -12,14 +12,14 @@ type Tests(testOutputHelper) =
     let createLog () = createLogger (testOutput.Subscribe >> ignore)
 
     let createServiceWithInMemoryStore () =
-        let store : Handler.IEventStream<_,_> = Stores.InMemoryStore.MemoryStreamStore() :> _
+        let store : IEventStream<_,_> = Stores.InMemoryStore.MemoryStreamStore() :> _
         CartService(store)
 
     [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
         let log, service = createLog (), createServiceWithInMemoryStore ()
-        let decide (ctx: DecisionState<_,_>) = async {
+        let decide (ctx: DecisionContext<_,_>) = async {
             Cart.Commands.AddItem args |> Cart.Commands.interpret |> ctx.Execute
             return ctx.Complete ctx.State }
 
@@ -46,7 +46,7 @@ type Tests(testOutputHelper) =
     }
 
     let addAndThenRemoveAnItem context cartId skuId log (service: CartService) count =
-        let decide (ctx : DecisionState<_,_>) = async {
+        let decide (ctx : DecisionContext<_,_>) = async {
             let run cmd = ctx.Execute(Cart.Commands.interpret cmd)
             for _ in 1..count do
                 for c in [Cart.Commands.AddItem (context, skuId, 1); Cart.Commands.RemoveItem (context, skuId)] do

@@ -119,9 +119,9 @@ module private EventSumAdapters =
 type Token = { streamVersion: int }
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Token =
-    let private create version : StreamToken =
+    let private create version : Internal.StreamToken =
         { value = box { streamVersion = version } }
-    let ofVersion version : StreamToken =
+    let ofVersion version : Internal.StreamToken =
         create version
 
 type GesConnection(connection, ?readRetryPolicy, ?writeRetryPolicy) =
@@ -133,25 +133,25 @@ type GesStreamPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
     new (maxBatchSize) = GesStreamPolicy(fun () -> maxBatchSize)
     member __.BatchSize = getMaxBatchSize()
     member __.MaxBatches = batchCountLimit
-    
+
 type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
-    member __.LoadBatched streamName log : Async<StreamToken * ResolvedEvent[]> = async {
+    member __.LoadBatched streamName log : Async<Internal.StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName 0
         return Token.ofVersion version, events }
-    member __.LoadFromToken streamName log (token : StreamToken) : Async<StreamToken * ResolvedEvent[]> = async {
+    member __.LoadFromToken streamName log (token : Internal.StreamToken) : Async<Internal.StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName ((unbox token).streamVersion + 1)
         return Token.ofVersion version, events }
-    member __.TrySync streamName log (token : StreamToken) (encodedEvents: EventData array) : Async<Result<StreamToken, unit>> = async {
+    member __.TrySync streamName log (token : Internal.StreamToken) (encodedEvents: EventData array) : Async<Result<Internal.StreamToken, unit>> = async {
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.Connection streamName (unbox token.value).streamVersion encodedEvents
         match wr with
         | Error () -> return Error ()
         | Ok wr -> return Ok (Token.ofVersion wr.NextExpectedVersion) }
     
 type GesEventStream<'state, 'event>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
-    interface Handler.IEventStream<'state,'event> with
-        member __.Load streamName log : Async<StreamState<'state, 'event>> = async {
+    interface IEventStream<'state,'event> with
+        member __.Load streamName log : Async<Internal.StreamState<'state, 'event>> = async {
             let! token, events = gateway.LoadBatched streamName log
-            return EventSumAdapters.decodeKnownEvents codec events |> StreamState.ofTokenAndEvents token }
+            return EventSumAdapters.decodeKnownEvents codec events |> Internal.StreamState.ofTokenAndEvents token }
         member __.TrySync streamName log (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
             let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec events
             let! syncRes = gateway.TrySync streamName log token encodedEvents
@@ -160,7 +160,7 @@ type GesEventStream<'state, 'event>(gateway : GesGateway, codec : EventSum.IEven
                 let resync = async {
                     let! token', events = gateway.LoadFromToken streamName log token
                     let successorEvents = EventSumAdapters.decodeKnownEvents codec events |> List.ofSeq
-                    return StreamState.ofTokenSnapshotAndEvents token' snapshotState successorEvents }
+                    return Internal.StreamState.ofTokenSnapshotAndEvents token' snapshotState successorEvents }
                 return Error resync 
             | Ok token' ->
-                return Ok (StreamState.ofTokenAndKnownState token' proposedState) }
+                return Ok (Internal.StreamState.ofTokenAndKnownState token' proposedState) }

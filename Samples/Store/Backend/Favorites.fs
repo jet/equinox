@@ -3,9 +3,9 @@
 open Domain
 open Foldunk
 
-type FavoritesService(streamer : Handler.IEventStream<Favorites.Folds.State, Favorites.Events.Event>, ?maxAttempts) =
+type FavoritesService(streamer : IEventStream<Favorites.Folds.State, Favorites.Events.Event>, ?maxAttempts) =
     let load log = Handler.load Favorites.Folds.fold Favorites.Folds.initial Favorites.streamName streamer log 
-    let execute (ctx : DecisionState<_,_>) = Favorites.Commands.interpret >> ctx.Execute
+    let execute (ctx : DecisionContext<_,_>) = Favorites.Commands.interpret >> ctx.Execute
     let decide cmd ctx = async {
         cmd |> execute ctx
         return ctx.Complete() }
