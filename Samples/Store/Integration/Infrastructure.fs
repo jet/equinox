@@ -42,3 +42,22 @@ type LogCaptureBuffer() =
             let prop name = (string i.Properties.[name]).Trim '"' 
             if hasProp "ExternalCall" && prop "ExternalCall" = "True" then
                 yield prop "Action" ]
+
+/// Needs an ES instance with default settings
+/// TL;DR: At an elevated command prompt: choco install eventstore-oss; \ProgramData\chocolatey\bin\EventStore.ClusterNode.exe
+let connectToLocalEventStoreNode () = async {
+    let localhost = System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 1113)
+    let conn = EventStore.ClientAPI.EventStoreConnection.Create(localhost)
+    do! conn.ConnectAsync() |> Async.AwaitTask
+    return conn }
+
+let createGesGateway  maxBatchSize eventStoreConnection =
+    let connection = Foldunk.Stores.EventStore.GesConnection(eventStoreConnection)
+    Foldunk.Stores.EventStore.GesGateway(connection, Foldunk.Stores.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
+let createGesStream<'state,'event> (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) gateway =
+    Foldunk.Stores.EventStore.GesEventStream<'state, 'event>(gateway, codec)
+let inline createGesStreamer<'state,'event> eventStoreConnection (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) : Foldunk.IEventStream<'state,'event> =
+    createGesGateway 500 eventStoreConnection |> createGesStream<'state, 'event> codec :> _
+
+let inline createInMemoryStreamer<'state,'event> () : Foldunk.IEventStream<'state,'event> =
+    Foldunk.Stores.InMemoryStore.MemoryStreamStore() :> _

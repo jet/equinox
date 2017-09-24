@@ -11,7 +11,7 @@ let inline konst x _ = x
 /// If None then backoff should stop.
 type Backoff = int -> int option
 
-/// Operations on back off strategies represented as functions (int -> int option)
+/// Operations on back off strategies represented as functions (int -> int option)g
 /// which take an attempt number and produce an interval.
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Backoff =
@@ -103,24 +103,3 @@ module Backoff =
   /// DefaultRandomizationFactor = 0.5
   /// DefaultMultiplier = 1.5
   let DefaultExponentialBoundedRandomized = DefaultExponentialBoundedRandomizedOf DefaultInitialIntervalMs
-
-  // ------------------------------------------------------------------------------------------------------------------------
-
-type Async with
-    /// Retries an async computation. The filter predicate should return true if this should retry and false if this should not retry.
-    static member retryBackoff (attempts:int) (filter:exn -> bool) (backoff:int -> int option) (a:Async<'a>) =
-        let rec go i (ts: int list) = async {
-            try
-                let! res = a
-                return res
-            with ex when filter ex ->
-                if (i = attempts) then return raise (new Exception(sprintf "Retry failed after %i attempts. %s" i (String.Join(" ", ts)), ex))
-                else
-                match backoff i with
-                | Some timeoutMs when timeoutMs > 0 ->
-                    do! Async.Sleep timeoutMs
-                    return! go (i + 1) (timeoutMs :: ts)
-                | _ ->
-                    return! go (i + 1) ts
-        }
-        go 1 []

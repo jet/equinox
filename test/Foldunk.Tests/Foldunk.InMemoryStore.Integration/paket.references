@@ -1,0 +1,7 @@
+﻿nuget Serilog
+nuget Serilog.Sinks.Observable
+
+group test
+	nuget FsCheck.Xunit
+	nuget FSharp.Core redirects: force
+	nuget unquote
