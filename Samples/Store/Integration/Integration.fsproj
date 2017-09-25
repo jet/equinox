@@ -85,6 +85,7 @@
     <Compile Include="CartIntegration.fs" />
     <Compile Include="FavoritesIntegration.fs" />
     <Compile Include="ContactPreferencesIntegration.fs" />
+    <Compile Include="LogIntegration.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
