@@ -1,5 +1,6 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
+open Domain
 open Swensen.Unquote
 open System
 
@@ -57,6 +58,6 @@ type Tests() =
         // Even though we've gone over a page, we only need a single read to read the state (plus the one from the execute)
         let contains (s : string) (x : string) = x.IndexOf s <> -1
         test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains "ReadStreamEventsBackwardAsync-Duration")
-                3 = Seq.length reads
+                2 = Seq.length reads
                 && not (obj.ReferenceEquals(capture, null)) @>
     }

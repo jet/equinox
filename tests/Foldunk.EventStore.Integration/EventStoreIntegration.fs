@@ -10,6 +10,8 @@ let connectToLocalEventStoreNode () = async {
     do! conn.ConnectAsync() |> Async.AwaitTask
     return conn }
 
+let defaultBatchSize = 500
+
 let private createGesGateway eventStoreConnection maxBatchSize =
     let connection = Foldunk.EventStore.GesConnection(eventStoreConnection)
     Foldunk.EventStore.GesGateway(connection, Foldunk.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
@@ -38,7 +40,7 @@ let createCartServiceGes eventStoreConnection batchSize =
     Backend.Cart.Service(createGesStreamWithCompactionEventTypeOption eventStoreConnection batchSize)
 
 let createContactPreferencesServiceGesWithoutCompaction eventStoreConnection =
-    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> createGesStream eventStoreConnection 500)
+    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> createGesStream eventStoreConnection defaultBatchSize)
 
 let createContactPreferencesServiceGes eventStoreConnection =
     Backend.ContactPreferences.Service(createGesStreamWithCompactionPredicate eventStoreConnection)
@@ -141,7 +143,8 @@ type Tests() =
         let service = createContactPreferencesServiceGes eventStoreConnection
 
         let (Domain.ContactPreferences.Id email) = id
-        for i in 0..49 do
+        // Feed some junk into the stream
+        for i in 0..11 do
             let quickSurveysValue = i % 2 = 0
             do! service.Update log email { value with quickSurveys = quickSurveysValue }
         // Ensure there will be something to be changed by the Update below

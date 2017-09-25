@@ -60,6 +60,7 @@
     <Content Include="App.config" />
     <Compile Include="Infrastructure.fs" />
     <Compile Include="EventStoreIntegration.fs" />
+    <Compile Include="EventStoreTokenTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />

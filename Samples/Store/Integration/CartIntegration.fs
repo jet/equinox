@@ -14,6 +14,9 @@ let createServiceGes eventStoreConnection batchSize =
 let createServiceGesWithoutCompactionSemantics eventStoreConnection batchSize =
     Backend.Cart.Service(fun _ignoreCompactionEventType -> createGesStream eventStoreConnection batchSize)
 
+let createServiceWithEventStoreWithoutCompactionSemantics  eventStoreConnection =
+    Backend.Cart.Service(fun _ignoreCompactionEventType -> createGesStream eventStoreConnection defaultBatchSize)
+
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
     service.Flow log cartId <| fun _ctx execute ->
         for i in 1..count do
