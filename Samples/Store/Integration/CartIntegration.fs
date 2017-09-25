@@ -1,4 +1,4 @@
-﻿module Integration.CartIntegration
+﻿module Example.Integration.CartIntegration
 
 open Backend
 open Domain
@@ -9,7 +9,7 @@ open Swensen.Unquote
 
 let createServiceWithInMemoryStore () = Carts.Service(ignore >> createInMemoryStreamer)
 
-let createServiceWithEventStore eventStoreConnection = Carts.Service(createGesStreamer eventStoreConnection)
+let createServiceWithEventStore eventStoreConnection = Carts.Service(createGesStreamer eventStoreConnection 500)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

@@ -84,6 +84,7 @@
     <Compile Include="Infrastructure.fs" />
     <Compile Include="CartTests.fs" />
     <Compile Include="FavoritesTests.fs" />
+    <Compile Include="ContactPreferencesTests.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />

@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Integration.Infrastructure
+module Example.Integration.Infrastructure
 
 open Domain
 open FsCheck
@@ -10,6 +10,11 @@ type FsCheckGenerators =
     static member CartId = Arb.generate |> Gen.map CartId |> Arb.fromGen
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
     static member RequestId = Arb.generate |> Gen.map RequestId |> Arb.fromGen
+    static member ContactPreferencesId =
+        Arb.generate<Guid>
+        |> Gen.map (fun x -> sprintf "%s@test.com" (x.ToString("N")))
+        |> Gen.map ContactPreferences.Id
+        |> Arb.fromGen
 
 type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
@@ -56,8 +61,8 @@ let createGesGateway  maxBatchSize eventStoreConnection =
     Foldunk.Stores.EventStore.GesGateway(connection, Foldunk.Stores.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
 let createGesStream<'state,'event> (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) gateway =
     Foldunk.Stores.EventStore.GesEventStream<'state, 'event>(gateway, codec)
-let inline createGesStreamer<'state,'event> eventStoreConnection (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) : Foldunk.IEventStream<'state,'event> =
-    createGesGateway 500 eventStoreConnection |> createGesStream<'state, 'event> codec :> _
+let inline createGesStreamer<'state,'event> eventStoreConnection batchSize (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) : Foldunk.IEventStream<'state,'event> =
+    createGesGateway batchSize eventStoreConnection |> createGesStream<'state, 'event> codec :> _
 
 let inline createInMemoryStreamer<'state,'event> () : Foldunk.IEventStream<'state,'event> =
     Foldunk.Stores.InMemoryStore.MemoryStreamStore() :> _
