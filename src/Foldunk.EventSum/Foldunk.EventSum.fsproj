@@ -5,14 +5,15 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>0d98b603-2ebb-40c2-afe5-083c92efb822</ProjectGuid>
+    <ProjectGuid>f5491eb1-d072-4262-8184-2a908e1d6175</ProjectGuid>
     <OutputType>Library</OutputType>
-    <RootNamespace>Backend</RootNamespace>
-    <AssemblyName>Backend</AssemblyName>
+    <RootNamespace>Foldunk.Serialization</RootNamespace>
+    <AssemblyName>Foldunk.EventSum</AssemblyName>
+    <UseStandardResourceNames>true</UseStandardResourceNames>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
-    <TargetFSharpCoreVersion>4.4.1.0</TargetFSharpCoreVersion>
+    <TargetFSharpCoreVersion>4.4.0.0</TargetFSharpCoreVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <Name>Backend</Name>
+    <Name>Foldunk.Serialization</Name>
     <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -58,10 +59,8 @@
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
     <None Include="paket.references" />
-    <Compile Include="Infrastructure.fs" />
-    <Compile Include="Favorites.fs" />
-    <Compile Include="Carts.fs" />
-    <Compile Include="ContactPreferences.fs" />
+    <Compile Include="Serialization.fs" />
+    <Compile Include="EventSum.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
@@ -71,27 +70,7 @@
       <HintPath>$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\FSharp\.NETFramework\v4.0\$(TargetFSharpCoreVersion)\FSharp.Core.dll</HintPath>
     </Reference>
     <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <ProjectReference Include="..\..\..\src\Foldunk.EventStore\Foldunk.EventStore.fsproj">
-      <Name>Foldunk.EventStore</Name>
-      <Project>{92b4acc9-7f30-4727-a4b6-0b6903d0aa08}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\src\Foldunk.EventSum\Foldunk.EventSum.fsproj">
-      <Name>Foldunk.EventSum</Name>
-      <Project>{f5491eb1-d072-4262-8184-2a908e1d6175}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj">
-      <Name>Foldunk</Name>
-      <Project>{54cd058f-5b0a-4564-b732-1f6301e120ac}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-    <ProjectReference Include="..\Domain\Domain.fsproj">
-      <Name>Domain</Name>
-      <Project>{37b4a45f-039e-4515-8a84-d242dde12d22}</Project>
-      <Private>True</Private>
-    </ProjectReference>
+    <Reference Include="System.Runtime.Serialization" />
   </ItemGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
@@ -103,8 +82,19 @@
   <Choose>
     <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And $(TargetFrameworkVersion) == 'v4.5.2'">
       <ItemGroup>
-        <Reference Include="Serilog">
-          <HintPath>..\..\..\packages\Serilog\lib\net45\Serilog.dll</HintPath>
+        <Reference Include="Newtonsoft.Json">
+          <HintPath>..\..\packages\Newtonsoft.Json\lib\net45\Newtonsoft.Json.dll</HintPath>
+          <Private>True</Private>
+          <Paket>True</Paket>
+        </Reference>
+      </ItemGroup>
+    </When>
+  </Choose>
+  <Choose>
+    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And $(TargetFrameworkVersion) == 'v4.5.2'">
+      <ItemGroup>
+        <Reference Include="TypeShape">
+          <HintPath>..\..\packages\TypeShape\lib\net40\TypeShape.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>

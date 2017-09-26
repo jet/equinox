@@ -1,0 +1,9 @@
+﻿nuget Newtonsoft.json
+nuget Serilog
+nuget TypeShape
+
+group test
+	nuget fsharp.core redirects: force
+    nuget FsCheck.xUnit
+    nuget Unquote
+    nuget xunit.runner.visualstudio

@@ -96,6 +96,11 @@
       <Project>{92b4acc9-7f30-4727-a4b6-0b6903d0aa08}</Project>
       <Private>True</Private>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\src\Foldunk.EventSum\Foldunk.EventSum.fsproj">
+      <Name>Foldunk.EventSum</Name>
+      <Project>{f5491eb1-d072-4262-8184-2a908e1d6175}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\src\Foldunk.InMemoryStore\Foldunk.InMemoryStore.fsproj">
       <Name>Foldunk.InMemoryStore</Name>
       <Project>{a7441ff0-94e6-45e4-b02d-f14ed248516d}</Project>
@@ -104,6 +109,11 @@
     <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj">
       <Name>Foldunk</Name>
       <Project>{54cd058f-5b0a-4564-b732-1f6301e120ac}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\tests\Foldunk.EventSum.Tests\Foldunk.EventSum.Tests.fsproj">
+      <Name>Foldunk.EventSum.Tests</Name>
+      <Project>{1d9d5e23-683d-497f-bfa2-fbb43bb81205}</Project>
       <Private>True</Private>
     </ProjectReference>
     <ProjectReference Include="..\Backend\Backend.fsproj">
