@@ -26,19 +26,20 @@ let createCartServiceWithEventStoreWithBatchSize batchSize eventStoreConnection 
 let createCartServiceWithEventStore eventStoreConnection = createCartServiceWithEventStoreWithBatchSize 500 eventStoreConnection
 
 type Tests() =
-    let addAndThenRemoveAnItem context cartId skuId log (service: Carts.Service) count =
+    let addAndThenRemoveItems_ exceptTheLastOne context cartId skuId log (service: Carts.Service) count =
         let decide (ctx : DecisionContext<_,_>) = async {
             let run cmd = ctx.Execute(Cart.Commands.interpret cmd)
             for i in 1..count do
-                for c in [Cart.Commands.AddItem (context, skuId, i); Cart.Commands.RemoveItem (context, skuId)] do
-                    run c
+                run <| Cart.Commands.AddItem (context, skuId, i)
+                if not exceptTheLastOne || i <> count then
+                    run <| Cart.Commands.RemoveItem (context, skuId)
             return ctx.Complete() }
         service.Run log cartId decide
 
-    let validateCartIsEmpty cartId log (service: Carts.Service) = async {
-        let! state = service.Load log cartId
-        test <@ Seq.isEmpty state.items @>
-    }
+    let addAndThenRemoveItemsManyTimes context cartId skuId log service count =
+        addAndThenRemoveItems_ false context cartId skuId log service count
+    let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service count =
+        addAndThenRemoveItems_ true context cartId skuId log service count
 
     let createLoggerWithCapture () =
         let capture = LogCaptureBuffer()
@@ -56,18 +57,19 @@ type Tests() =
         let service = createCartServiceWithEventStoreWithBatchSize batchSize conn
 
         // The command processing should trigger only a single read and a single write call
-        let addRemoveCount = 5
-        do! addAndThenRemoveAnItem context cartId skuId log service addRemoveCount
-        let expectedEventCount = 2 * addRemoveCount
+        let addRemoveCount = 6
+        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service addRemoveCount
+        let expectedEventCount = 2 * addRemoveCount - 1
         test <@ [ "ReadStreamEventsForwardAsync"; "AppendToStreamAsync" ] = capture.ExternalCalls @>
 
         // Restart the counting
         capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
-        do! validateCartIsEmpty cartId log service
+        let! state = service.Load log cartId
+        test <@ 6 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        // Need to read 4 batches to read 10 events in batches of 3
+        // Need to read 4 batches to read 11 events in batches of 3
         let expectedBatches = ceil(float expectedEventCount/float batchSize) |> int
         test <@ List.replicate expectedBatches "ReadStreamEventsForwardAsync" = capture.ExternalCalls @>
     }

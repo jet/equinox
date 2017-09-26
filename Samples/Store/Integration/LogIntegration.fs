@@ -8,27 +8,34 @@ open System.Diagnostics
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let createServiceWithEventStore eventStoreConnection = Favorites.Service(createGesStreamer eventStoreConnection 500, 3)
+let batchSize = 500
+let createCartServiceWithEventStore eventStoreConnection = Carts.Service(createGesStreamer eventStoreConnection batchSize)
 
-type Tests() =
-    let createLoggerWithCapture () =
-        let capture = SerilogTracerAdapter(System.Diagnostics.Trace.WriteLine)
-        let subscribeLogListeners obs =
-            obs |> capture.Subscribe |> ignore
-        createLogger subscribeLogListeners, capture
+let createLoggerWithCapture emit =
+    let capture = SerilogTracerAdapter emit
+    let subscribeLogListeners obs =
+        obs |> capture.Subscribe |> ignore
+    createLogger subscribeLogListeners, capture
+
+type Tests(testOutputHelper) =
+    let testOutput = TestOutputAdapter testOutputHelper
+    let createLog () = createLogger (testOutput.Subscribe >> ignore)
 
     [<AutoData>]
-    let ``Can trap and emit log entries`` clientId command = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, correctly batching the reads and folding the events`` context cartId skuId = Async.RunSynchronously <| async {
         let! conn = connectToLocalEventStoreNode ()
-        let log, _ = createLoggerWithCapture ()
-        let service = createServiceWithEventStore conn
+        let buffer = ResizeArray<string>()
+        let emit msg = System.Diagnostics.Trace.WriteLine msg; buffer.Add msg
+        let (log,_), service = createLoggerWithCapture emit, createCartServiceWithEventStore conn
 
-        do! service.Run log clientId command
-        let! items = service.Load log clientId
+        let itemCount = batchSize / 2 + 1
+        do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service itemCount
 
-        match command with
-        | Favorites.Commands.Favorite (_,skuIds) ->
-            test <@ skuIds |> List.forall (fun skuId -> items |> Array.exists (function { skuId = itemSkuId} -> itemSkuId = skuId)) @>
-        | _ ->
-            test <@ Array.isEmpty items@>
+        let! state = service.Load log cartId
+        test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
+
+        // Because we've gone over a page, we need two reads to load the state, making a total of three
+        let contains (s : string) (x : string) = x.IndexOf s <> -1
+        test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains "ReadStreamEventsForwardAsync-Elapsed")
+                3 = Seq.length reads @>
     }

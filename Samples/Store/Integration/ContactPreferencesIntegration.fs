@@ -7,7 +7,8 @@ open Swensen.Unquote
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 let createHandlerWithInMemoryStore id =
-    ContactPreferences.Handler(createInMemoryStreamer(), id, maxAttempts = 5)
+    let store = createInMemoryStore()
+    ContactPreferences.Handler(store, id, maxAttempts = 5)
 
 let createContactPreferencesService eventStoreConnection =
     ContactPreferences.Service(createGesStreamer eventStoreConnection 500)

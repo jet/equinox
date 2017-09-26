@@ -72,7 +72,7 @@ type MemoryStreamStore<'state, 'event>() =
             | Error conflictingEvents ->
                 let resync = async {
                     let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
-                    let successorEvents = conflictingEvents |> Seq.skip (unbox token+1) |> List.ofSeq
+                    let successorEvents = conflictingEvents |> Seq.skip (unbox token + 1) |> List.ofSeq
                     return Internal.StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
                 return Error resync
             | Ok events -> return Ok <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }

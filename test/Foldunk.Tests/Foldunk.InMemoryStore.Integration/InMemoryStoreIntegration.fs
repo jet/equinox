@@ -5,12 +5,12 @@ open Domain
 open Foldunk
 open Swensen.Unquote
 
-let inline createInMemoryStreamer<'state,'event> () : Foldunk.IEventStream<'state,'event> =
+let inline createInMemoryStore<'state,'event> () : Foldunk.IEventStream<'state,'event> =
     Foldunk.Stores.InMemoryStore.MemoryStreamStore() :> _
 
 let createServiceWithInMemoryStore () =
-    let streamer = createInMemoryStreamer()
-    Carts.Service(fun _codec -> streamer)
+    let store = createInMemoryStore()
+    Carts.Service(fun _codec -> store)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

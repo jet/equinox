@@ -107,5 +107,5 @@ let createGesStream<'state,'event> (codec : Foldunk.EventSum.IEventSumEncoder<'e
 let inline createGesStreamer<'state,'event> eventStoreConnection batchSize (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) : Foldunk.IEventStream<'state,'event> =
     createGesGateway batchSize eventStoreConnection |> createGesStream<'state, 'event> codec :> _
 
-let inline createInMemoryStreamer<'state,'event> () : Foldunk.IEventStream<'state,'event> =
+let inline createInMemoryStore<'state,'event> () : Foldunk.IEventStream<'state,'event> =
     Foldunk.Stores.InMemoryStore.MemoryStreamStore() :> _
