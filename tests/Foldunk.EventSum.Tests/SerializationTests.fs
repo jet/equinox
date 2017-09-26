@@ -1,4 +1,4 @@
-﻿module Foldunk.Tests.Serialization
+﻿module Foldunk.Serialization.Tests
 
 open Foldunk.Serialization
 open Newtonsoft.Json

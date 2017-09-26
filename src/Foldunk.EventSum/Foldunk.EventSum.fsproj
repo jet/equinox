@@ -22,8 +22,8 @@
     <Optimize>false</Optimize>
     <Tailcalls>false</Tailcalls>
     <OutputPath>bin\$(Configuration)\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <WarningLevel>5</WarningLevel>
+    <DefineConstants>TRACE;DEBUG;TYPESHAPE_DISABLE_BIGINT</DefineConstants>
+    <WarningLevel>4</WarningLevel>
     <DocumentationFile>bin\$(Configuration)\$(AssemblyName).XML</DocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors />
@@ -34,8 +34,7 @@
     <Optimize>true</Optimize>
     <Tailcalls>true</Tailcalls>
     <OutputPath>bin\$(Configuration)\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <WarningLevel>5</WarningLevel>
+    <DefineConstants>TRACE;TYPESHAPE_DISABLE_BIGINT</DefineConstants>
     <DocumentationFile>bin\$(Configuration)\$(AssemblyName).XML</DocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors />
@@ -58,6 +57,14 @@
   </Choose>
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
+    <Compile Include="..\..\paket-files\eiriktsarpalis\TypeShape\src\TypeShape\MiscUtils.fs">
+      <Paket>True</Paket>
+      <Link>TypeShape_Utils/MiscUtils.fs</Link>
+    </Compile>
+    <Compile Include="..\..\paket-files\eiriktsarpalis\TypeShape\src\TypeShape\TypeShape.fs">
+      <Paket>True</Paket>
+      <Link>TypeShape/TypeShape.fs</Link>
+    </Compile>
     <None Include="paket.references" />
     <Compile Include="Serialization.fs" />
     <Compile Include="EventSum.fs" />
@@ -84,17 +91,6 @@
       <ItemGroup>
         <Reference Include="Newtonsoft.Json">
           <HintPath>..\..\packages\Newtonsoft.Json\lib\net45\Newtonsoft.Json.dll</HintPath>
-          <Private>True</Private>
-          <Paket>True</Paket>
-        </Reference>
-      </ItemGroup>
-    </When>
-  </Choose>
-  <Choose>
-    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And $(TargetFrameworkVersion) == 'v4.5.2'">
-      <ItemGroup>
-        <Reference Include="TypeShape">
-          <HintPath>..\..\packages\TypeShape\lib\net40\TypeShape.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>

@@ -5,8 +5,8 @@ open Domain.Cart
 open Domain.Cart.Events
 open Domain.Cart.Folds
 open Domain.Cart.Commands
-open Foldunk.Tests.Infrastructure.Empty
 open Swensen.Unquote
+open TypeShape_Empty
 open System
 
 let mkAddQty skuId qty          = ItemAdded { empty<ItemAddInfo> with skuId = skuId; quantity = qty }

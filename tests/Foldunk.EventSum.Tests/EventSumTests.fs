@@ -1,12 +1,12 @@
-﻿module Foldunk.Tests.EventSum
+﻿module Foldunk.EventSum.Tests
 
 open Foldunk.EventSum
-open Foldunk.Tests.Infrastructure.Empty
 open FsCheck.Xunit
 open FSharp.Reflection
 open Swensen.Unquote.Assertions
 open System
 open System.Runtime.Serialization
+open TypeShape_Empty
 open Xunit
 
 // Placeholder event records salvaged from Hulk domain

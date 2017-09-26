@@ -20,7 +20,9 @@ module Folds =
         | Events.Updated { preferences = value } -> value
 
     let fold (_state: State) (events: seq<Events.Event>) : State =
-        Seq.tryLast events |> Option.map evolve |> Option.defaultValue initial
+        match Seq.tryLast events |> Option.map evolve with
+        | None -> initial
+        | Some value-> value
 
 module Commands =
     type Command =

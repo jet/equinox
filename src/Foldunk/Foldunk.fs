@@ -88,7 +88,7 @@ module Internal =
                 return false }
             tryOr log events resyncInPreparationForRetry
         member __.TryOrThrow log events attempt =
-            let throw _resync = async { return raise <| CommandAttemptsExceededException attempt }
+            let throw _ = async { return raise <| CommandAttemptsExceededException attempt }
             tryOr log events throw |> Async.Ignore
 
 /// Store-agnostic interface to the state of any given event stream, as dictated by requirements of Foldunk's Handler

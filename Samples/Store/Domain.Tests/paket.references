@@ -1,4 +1,6 @@
-﻿group test
+﻿File: TypeShape.fs TypeShape
+File: MiscUtils.fs TypeShape_Utils
+group test
 	nuget FsCheck.Xunit
 	nuget FSharp.Core redirects: force
 	nuget unquote
