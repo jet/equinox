@@ -15,24 +15,27 @@ let private withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogg
             f log
         retryPolicy withLoggingContextWrapping
 
+[<NoEquality; NoComparison>]
+type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict
+
 module private Write =
     /// Yields `Ok WriteResult` or `Error ()` to signify WrongExpectedVersion
-    let private writeEventsAsync (log : Serilog.ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) : Async<Result<WriteResult,unit>> = async {
+    let private writeEventsAsync (log : Serilog.ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) : Async<EsSyncResult> = async {
         try
             let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
-            return Ok wr
+            return Written wr
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
             log.Information(ex, "TrySync WrongExpectedVersionException")
-            return Error () }
+            return Conflict }
     let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) (log : Serilog.ILogger)
-        : Async<Result<WriteResult,unit>> = async {
+        : Async<EsSyncResult> = async {
         let! t, result = writeEventsAsync log conn streamName version events |> Stopwatch.Time
         log.Information(
             "{ExternalCall} {Action} {Stream} {expectedVersion} {Count} {Latency}",
             true, "AppendToStreamAsync", streamName, version, events.Length, t.Elapsed)
         return result }
     let writeEvents (log : Serilog.ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
-        : Async<Result<WriteResult,unit>> =
+        : Async<EsSyncResult> =
         let call = writeEventsLogged conn streamName version events
         withLoggedRetries retryPolicy "WriteRetry" call log
 
@@ -137,21 +140,26 @@ type GesStreamPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
     member __.BatchSize = getMaxBatchSize()
     member __.MaxBatches = batchCountLimit
 
+[<NoComparison; NoEquality>]
+type GatewaySyncResult = Written of Internal.StreamToken | Conflict
+
 type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
     member __.LoadBatched streamName log : Async<Internal.StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName 0
         return Token.ofVersion version, events }
     member __.LoadFromToken streamName log (token : Internal.StreamToken) : Async<Internal.StreamToken * ResolvedEvent[]> = async {
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName ((unbox token).streamVersion + 1)
+        let token : Token = unbox token.value
+        let streamPosition = token.streamVersion + 1
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName streamPosition
         return Token.ofVersion version, events }
-    member __.TrySync streamName log (token : Internal.StreamToken) (encodedEvents: EventData array) : Async<Result<Internal.StreamToken, unit>> = async {
+    member __.TrySync streamName log (token : Internal.StreamToken) (encodedEvents: EventData array) : Async<GatewaySyncResult> = async {
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.Connection streamName (unbox token.value).streamVersion encodedEvents
         match wr with
-        | Error () -> return Error ()
-        | Ok wr ->
+        | EsSyncResult.Conflict -> return GatewaySyncResult.Conflict
+        | EsSyncResult.Written wr ->
 
         let token = Token.ofVersion wr.NextExpectedVersion
-        return Ok token }
+        return GatewaySyncResult.Written token }
 
 type GesEventStream<'state, 'event>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
     interface IEventStream<'state,'event> with
@@ -162,11 +170,11 @@ type GesEventStream<'state, 'event>(gateway : GesGateway, codec : EventSum.IEven
             let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec events
             let! syncRes = gateway.TrySync streamName log token encodedEvents
             match syncRes with
-            | Error () ->
+            | GatewaySyncResult.Conflict ->
                 let resync = async {
                     let! token', events = gateway.LoadFromToken streamName log token
                     let successorEvents = EventSumAdapters.decodeKnownEvents codec events |> List.ofSeq
                     return Internal.StreamState.ofTokenSnapshotAndEvents token' snapshotState successorEvents }
-                return Error resync
-            | Ok token' ->
-                return Ok (Internal.StreamState.ofTokenAndKnownState token' proposedState) }
+                return Internal.SyncResult.Conflict resync
+            | GatewaySyncResult.Written token' ->
+                return Internal.SyncResult.Written (Internal.StreamState.ofTokenAndKnownState token' proposedState) }

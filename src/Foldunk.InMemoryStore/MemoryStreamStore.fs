@@ -5,6 +5,9 @@ open Serilog
 
 exception private WrongVersionException of streamName: string * expected: int * value: obj
 
+[<NoEquality; NoComparison>]
+type ImsSyncResult<'t> = Written of 't | Conflict of 't
+
 // Maintains a dictionary of boxed typed arrays, raising exceptions if an attempt to extract a value encounters a mismatched type
 type private ConcurrentArrayStore() =
     let streams = System.Collections.Concurrent.ConcurrentDictionary<string,obj>()
@@ -40,9 +43,9 @@ type private ConcurrentArrayStore() =
             | Ok value -> __.Pack value
         try
             let boxedSyncedValue = streams.AddOrUpdate(streamName, seedStream, updatePackedValue)
-            Ok (unbox boxedSyncedValue)
+            ImsSyncResult.Written (unbox boxedSyncedValue)
         with WrongVersionException(_, _, conflictingValue) ->
-            Error (unbox conflictingValue)
+            ImsSyncResult.Conflict (unbox conflictingValue)
 
 /// Internal impl details of MemoryStreamStore
 module private MemoryStreamStreamState =
@@ -69,10 +72,10 @@ type MemoryStreamStore<'state, 'event>() =
                 if Array.length currentValue <> unbox token + 1 then Error (unbox token)
                 else Ok (Seq.append currentValue events)
             match store.TrySync streamName log trySyncValue events with
-            | Error conflictingEvents ->
+            | ImsSyncResult.Conflict conflictingEvents ->
                 let resync = async {
                     let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
                     let successorEvents = conflictingEvents |> Seq.skip (unbox token + 1) |> List.ofSeq
                     return Internal.StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
-                return Error resync
-            | Ok events -> return Ok <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }
+                return Internal.SyncResult.Conflict resync
+            | ImsSyncResult.Written events -> return Internal.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }

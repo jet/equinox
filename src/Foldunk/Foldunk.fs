@@ -49,10 +49,15 @@ module Internal =
         let ofTokenSnapshotAndEvents token (snapshotState : 'state) (successorEvents : 'event list) =
             token, Some snapshotState, successorEvents
 
+    [<NoEquality; NoComparison>]
+    type SyncResult<'state, 'event> =
+        | Written of StreamState<'state, 'event>
+        | Conflict of Async<StreamState<'state, 'event>>
+
     /// Internal implementation
     type SyncState<'state, 'event>
         (   fold, initial, originState : StreamState<'state, 'event>,
-            trySync : ILogger -> StreamToken * 'state -> 'event list * 'state -> Async<Result<StreamState<'state, 'event>, Async<StreamState<'state, 'event>>>>) =
+            trySync : ILogger -> StreamToken * 'state -> 'event list * 'state -> Async<SyncResult<'state, 'event>>) =
         let toTokenAndState fold initial ((token, stateOption, events) : StreamState<'state,'event>) : StreamToken * 'state =
             let baseState =
                 match stateOption with
@@ -66,9 +71,9 @@ module Internal =
             let proposedState = fold (snd !tokenAndState) events
             let! res = trySync log !tokenAndState (events, proposedState)
             match res with
-            | Error resync ->
+            | Conflict resync ->
                 return! handleFailure resync
-            | Ok streamState' ->
+            | Written streamState' ->
                 tokenAndState := toTokenAndState fold initial streamState'
                 return true }
 
@@ -95,10 +100,9 @@ type IEventStream<'state,'event> =
     /// NB the central precondition is that the Stream has not diverged from the state represented by `token`;  where this is not met, the response signals the
     ///    need to reprocess by yielding an Error bearing the conflicting StreamState with which to retry (loaded in a specific manner optimal for the store)
     abstract TrySync: streamName: string -> log: ILogger -> token: Internal.StreamToken * originState: 'state -> events: 'event list * state' : 'state
-        // Response is one of:
-        // - Ok: to signify Synchronization has succeeded, taking the yielded Stream State as the representation of what is understood to be the state
-        // - Error: to signify the synch failed and the deicsion hence needs to be rerun based on the updated Stream State with which the changes conflicted
-        -> Async<Result<Internal.StreamState<'state, 'event>, Async<Internal.StreamState<'state, 'event>>>>
+        // - Written: to signify Synchronization has succeeded, taking the yielded Stream State as the representation of what is understood to be the state
+        // - Conflict: to signify the synch failed and the deicsion hence needs to be rerun based on the updated Stream State with which the changes conflicted
+        -> Async<Internal.SyncResult<'state, 'event>>
 
 /// For use in application level code; general across store implementations under the Foldunk.Stores namespace
 module Handler =
