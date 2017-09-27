@@ -2,8 +2,6 @@
 
 type Id = Id of email: string
 
-let streamName (Id email) = sprintf "ContactPreferences-%s" email // TODO hash >> base64
-
 // NB - these schemas reflect the actual storage formats and hence need to be versioned with care
 module Events =
     type Preferences = { manyPromotions : bool; littlePromotions : bool; productReview : bool; quickSurveys : bool }
@@ -32,3 +30,14 @@ module Commands =
         | Update ({ preferences = preferences } as value) ->
             if state = preferences then [] else
             [ Events.Updated value ]
+
+type Handler(stream) =
+    let handler = Foldunk.Handler(Folds.fold, Folds.initial)
+    member __.Update log email value : Async<unit> =
+        let decide (ctx : Foldunk.DecisionContext<_,_>) = async {
+            let command = Commands.Update { email = email; preferences = value }
+            ctx.Execute <| Commands.interpret command
+            return ctx.Complete () }
+        handler.Run decide log stream
+    member __.Load log : Async<Folds.State> =
+        handler.Load log stream

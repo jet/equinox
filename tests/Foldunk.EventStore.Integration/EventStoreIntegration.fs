@@ -18,15 +18,16 @@ let connectToLocalEventStoreNode () = async {
 let createGesGateway  maxBatchSize eventStoreConnection =
     let connection = Foldunk.Stores.EventStore.GesConnection(eventStoreConnection)
     Foldunk.Stores.EventStore.GesGateway(connection, Foldunk.Stores.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
-let createStream eventStoreConnection maxBatchSize codec : IEventStream<_,_> =
+let createStream eventStoreConnection maxBatchSize codec streamName: IStream<_,_> =
     let gateway = createGesGateway eventStoreConnection maxBatchSize
-    Foldunk.Stores.EventStore.GesEventStream(gateway, codec) :> _
-let createCartServiceEx eventStoreConnection batchSize = Carts.Service(createStream eventStoreConnection batchSize)
-let createCartServiceWithEventStoreWithBatchSize batchSize eventStoreConnection = createCartServiceEx batchSize eventStoreConnection
-let createCartServiceWithEventStore eventStoreConnection = createCartServiceWithEventStoreWithBatchSize 500 eventStoreConnection
+    let store = Foldunk.Stores.EventStore.GesStreamStore(gateway, codec)
+    Foldunk.Stores.EventStore.GesStream(store, streamName) :> _
+let createCartServiceEx batchSize eventStoreConnection = Backend.Cart.Service(createStream eventStoreConnection batchSize)
+let createCartServiceGesWithBatchSize batchSize eventStoreConnection = createCartServiceEx eventStoreConnection batchSize
+let createCartServiceGes eventStoreConnection = createCartServiceGesWithBatchSize 500 eventStoreConnection
 
 type Tests() =
-    let addAndThenRemoveItems_ exceptTheLastOne context cartId skuId log (service: Carts.Service) count =
+    let addAndThenRemoveItems exceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
         let decide (ctx : DecisionContext<_,_>) = async {
             let run cmd = ctx.Execute(Cart.Commands.interpret cmd)
             for i in 1..count do
@@ -37,9 +38,9 @@ type Tests() =
         service.Run log cartId decide
 
     let addAndThenRemoveItemsManyTimes context cartId skuId log service count =
-        addAndThenRemoveItems_ false context cartId skuId log service count
+        addAndThenRemoveItems false context cartId skuId log service count
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service count =
-        addAndThenRemoveItems_ true context cartId skuId log service count
+        addAndThenRemoveItems true context cartId skuId log service count
 
     let createLoggerWithCapture () =
         let capture = LogCaptureBuffer()
@@ -54,7 +55,7 @@ type Tests() =
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode ()
         let batchSize = 3
-        let service = createCartServiceWithEventStoreWithBatchSize batchSize conn
+        let service = createCartServiceGesWithBatchSize batchSize conn
 
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 6

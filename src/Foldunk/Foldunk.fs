@@ -92,40 +92,37 @@ module Internal =
             tryOr log events throw |> Async.Ignore
 
 /// Store-agnostic interface to the state of any given event stream, as dictated by requirements of Foldunk's Handler
-type IEventStream<'state,'event> =
+type IStream<'state,'event> =
     /// Obtain the state from the stream named `streamName`
-    abstract Load: streamName: string -> log: ILogger
+    abstract Load: log: ILogger
         -> Async<Internal.StreamState<'state, 'event>>
     /// Synchronize the state of the stream named `streamName`, appending the supplied `events`, in order to establish the supplied `state` value
     /// NB the central precondition is that the Stream has not diverged from the state represented by `token`;  where this is not met, the response signals the
     ///    need to reprocess by yielding an Error bearing the conflicting StreamState with which to retry (loaded in a specific manner optimal for the store)
-    abstract TrySync: streamName: string -> log: ILogger -> token: Internal.StreamToken * originState: 'state -> events: 'event list * state' : 'state
+    abstract TrySync: log: ILogger -> token: Internal.StreamToken * originState: 'state -> events: 'event list * state' : 'state
         // - Written: to signify Synchronization has succeeded, taking the yielded Stream State as the representation of what is understood to be the state
         // - Conflict: to signify the synch failed and the deicsion hence needs to be rerun based on the updated Stream State with which the changes conflicted
         -> Async<Internal.SyncResult<'state, 'event>>
 
 /// For use in application level code; general across store implementations under the Foldunk.Stores namespace
-module Handler =
+module Handle =
     /// Load the state of a stream from the given stream
-    let load(fold : 'state -> 'event list -> 'state)
-            (initial : 'state)
-            (streamName : 'id -> string)
-            (stream : IEventStream<'state,'event>)
+    let load(stream : IStream<'state,'event>)
             (log : Serilog.ILogger)
-            (id : 'id)
+            (fold : 'state -> 'event list -> 'state)
+            (initial : 'state)
             : Async<Internal.SyncState<'state, 'event>> = async {
-        let streamName = streamName id
-        let! streamState = stream.Load streamName log
-        return Internal.SyncState(fold, initial, streamState, stream.TrySync streamName) }
+        let! streamState = stream.Load log
+        return Internal.SyncState(fold, initial, streamState, stream.TrySync) }
 
     /// Process a command, ensuring a consistent final state is established on the stream.
     /// 1.  make a decision given the known state
     /// 2a. if no changes required, exit with known state
     /// 2b. if saved without conflict, exit with updated state
     /// 2b. if conflicting changes, loop to retry against updated state
-    let run (log : ILogger)
+    let run (sync : Internal.SyncState<'state, 'event>)
+            (log : ILogger)
             (maxAttempts : int)
-            (sync : Internal.SyncState<'state, 'event>)
             (decide : DecisionContext<'event, 'state> -> Async<'output * 'event list>)
             : Async<'output> =
         if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")
@@ -148,3 +145,13 @@ module Handler =
                     return outcome }
         /// Commence, processing based on the incoming state
         loop 1
+
+type Handler<'state,'event>(fold, initial, ?maxAttempts) =
+    member __.Decide decide log (stream : IStream<'state,'event>) = async {
+        let! syncState = Handle.load stream log fold initial
+        return! Handle.run syncState log (defaultArg maxAttempts 3) decide }
+    member __.Run decide log (stream : IStream<'state,'event>) : Async<unit> =
+        __.Decide decide log stream
+    member __.Load log (stream : IStream<'state,'event>) : Async<'state> = async {
+        let! syncState = Handle.load stream log fold initial
+        return syncState.State }

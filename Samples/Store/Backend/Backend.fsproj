@@ -60,7 +60,7 @@
     <None Include="paket.references" />
     <Compile Include="Infrastructure.fs" />
     <Compile Include="Favorites.fs" />
-    <Compile Include="Carts.fs" />
+    <Compile Include="Cart.fs" />
     <Compile Include="ContactPreferences.fs" />
   </ItemGroup>
   <ItemGroup>
@@ -72,11 +72,6 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <ProjectReference Include="..\..\..\src\Foldunk.EventStore\Foldunk.EventStore.fsproj">
-      <Name>Foldunk.EventStore</Name>
-      <Project>{92b4acc9-7f30-4727-a4b6-0b6903d0aa08}</Project>
-      <Private>True</Private>
-    </ProjectReference>
     <ProjectReference Include="..\..\..\src\Foldunk.EventSum\Foldunk.EventSum.fsproj">
       <Name>Foldunk.EventSum</Name>
       <Project>{f5491eb1-d072-4262-8184-2a908e1d6175}</Project>

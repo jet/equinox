@@ -63,22 +63,28 @@ module private MemoryStreamStreamState =
     let ofEventArrayAndKnownState (events: 'event array) (state: 'state) = tokenOfArray events, Some state, []
 
 /// In memory implementation of a stream store - no constraints on memory consumption (but also no persistence!).
-type MemoryStreamStore<'state, 'event>() =
+type InMemoryStreamStore() =
     let store = ConcurrentArrayStore()
-    interface IEventStream<'state, 'event> with
-        member __.Load streamName log = async {
-            match store.TryLoad streamName log with
-            | None -> return MemoryStreamStreamState.ofEmpty ()
-            | Some events -> return MemoryStreamStreamState.ofEventArray events }
-        member __.TrySync streamName log (token, snapshotState) (events: 'event list, proposedState) = async {
-            let trySyncValue currentValue =
-                if Array.length currentValue <> unbox token + 1 then ImsSyncResultInner.Conflict (unbox token)
-                else ImsSyncResultInner.Written (Seq.append currentValue events)
-            match store.TrySync streamName log trySyncValue events with
-            | ImsSyncResult.Conflict conflictingEvents ->
-                let resync = async {
-                    let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
-                    let successorEvents = conflictingEvents |> Seq.skip (unbox token + 1) |> List.ofSeq
-                    return Internal.StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
-                return Internal.SyncResult.Conflict resync
-            | ImsSyncResult.Written events -> return Internal.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }
+    member __.Load streamName log = async {
+        match store.TryLoad<'event> streamName log with
+        | None -> return MemoryStreamStreamState.ofEmpty ()
+        | Some events -> return MemoryStreamStreamState.ofEventArray events }
+    member __.TrySync streamName log (token, snapshotState) (events: 'event list, proposedState) = async {
+        let trySyncValue currentValue =
+            if Array.length currentValue <> unbox token + 1 then ImsSyncResultInner.Conflict (unbox token)
+            else ImsSyncResultInner.Written (Seq.append currentValue events)
+        match store.TrySync streamName log trySyncValue events with
+        | ImsSyncResult.Conflict conflictingEvents ->
+            let resync = async {
+                let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
+                let successorEvents = conflictingEvents |> Seq.skip (unbox token + 1) |> List.ofSeq
+                return Internal.StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
+            return Internal.SyncResult.Conflict resync
+        | ImsSyncResult.Written events -> return Internal.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }
+
+/// In memory stream holding a store specifically for that stream
+type InMemoryStream<'state, 'event>(store : InMemoryStreamStore, streamName) =
+    interface IStream<'state, 'event> with
+        member __.Load log = store.Load streamName log
+        member __.TrySync (log: ILogger) (token: Internal.StreamToken, originState: 'state) (events: 'event list, state': 'state) = 
+            store.TrySync streamName log (token, originState) (events, state')

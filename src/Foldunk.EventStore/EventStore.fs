@@ -161,20 +161,26 @@ type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
         let token = Token.ofVersion wr.NextExpectedVersion
         return GatewaySyncResult.Written token }
 
-type GesEventStream<'state, 'event>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
-    interface IEventStream<'state,'event> with
-        member __.Load streamName log : Async<Internal.StreamState<'state, 'event>> = async {
-            let! token, events = gateway.LoadBatched streamName log
-            return EventSumAdapters.decodeKnownEvents codec events |> Internal.StreamState.ofTokenAndEvents token }
-        member __.TrySync streamName log (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
-            let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec events
-            let! syncRes = gateway.TrySync streamName log token encodedEvents
-            match syncRes with
-            | GatewaySyncResult.Conflict ->
-                let resync = async {
-                    let! token', events = gateway.LoadFromToken streamName log token
-                    let successorEvents = EventSumAdapters.decodeKnownEvents codec events |> List.ofSeq
-                    return Internal.StreamState.ofTokenSnapshotAndEvents token' snapshotState successorEvents }
-                return Internal.SyncResult.Conflict resync
-            | GatewaySyncResult.Written token' ->
-                return Internal.SyncResult.Written (Internal.StreamState.ofTokenAndKnownState token' proposedState) }
+type GesStreamStore<'state, 'event>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
+    member __.Load streamName log : Async<Internal.StreamState<'state, 'event>> = async {
+        let! token, events = gateway.LoadBatched streamName log
+        return EventSumAdapters.decodeKnownEvents codec events |> Internal.StreamState.ofTokenAndEvents token }
+    member __.TrySync streamName log (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
+        let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec events
+        let! syncRes = gateway.TrySync streamName log token encodedEvents
+        match syncRes with
+        | GatewaySyncResult.Conflict ->
+            let resync = async {
+                let! token', events = gateway.LoadFromToken streamName log token
+                let successorEvents = EventSumAdapters.decodeKnownEvents codec events |> List.ofSeq
+                return Internal.StreamState.ofTokenSnapshotAndEvents token' snapshotState successorEvents }
+            return Internal.SyncResult.Conflict resync
+        | GatewaySyncResult.Written token' ->
+            return Internal.SyncResult.Written (Internal.StreamState.ofTokenAndKnownState token' proposedState) }
+
+type GesStream<'state, 'event>(store: GesStreamStore<'state, 'event>, streamName) =
+    interface IStream<'state,'event> with
+        member __.Load log : Async<Internal.StreamState<'state, 'event>> =
+            store.Load streamName log
+        member __.TrySync log (token, snapshotState) (events : 'event list, proposedState: 'state) =
+            store.TrySync streamName log (token, snapshotState) (events, proposedState)

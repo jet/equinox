@@ -1,7 +1,5 @@
 ﻿module Domain.Cart
 
-let streamName (id: CartId) = sprintf "Cart-%s" id.Value
-
 // NB - these schemas reflect the actual storage formats and hence need to be versioned with care
 module Events =
     type ContextInfo =              { time: System.DateTime; requestId: RequestId }
@@ -61,3 +59,12 @@ module Commands =
         | RemoveItem (Context c, skuId) ->
             if not (itemExistsWithSkuId skuId) then [] else
             [ Events.ItemRemoved { context = c; skuId = skuId } ]
+
+type Handler(stream) =
+    let handler = Foldunk.Handler(Folds.fold, Folds.initial)
+    member __.Decide log decide =
+        handler.Decide decide log stream
+    member __.Run log decide =
+        handler.Run decide log stream
+    member __.Load log : Async<Folds.State> =
+        handler.Load log stream

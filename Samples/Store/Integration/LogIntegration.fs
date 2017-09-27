@@ -1,15 +1,13 @@
 ﻿module Example.Integration.LogIntegration
 
-open Domain
-open Backend
 open Swensen.Unquote
-open System
-open System.Diagnostics
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 let batchSize = 500
-let createCartServiceWithEventStore eventStoreConnection = Carts.Service(createGesStreamer eventStoreConnection batchSize)
+let createCartServiceWithEventStore eventStoreConnection =
+    let gateway = createGesGateway eventStoreConnection batchSize
+    Backend.Cart.Service(createGesStream gateway)
 
 let createLoggerWithCapture emit =
     let capture = SerilogTracerAdapter emit
@@ -17,12 +15,9 @@ let createLoggerWithCapture emit =
         obs |> capture.Subscribe |> ignore
     createLogger subscribeLogListeners, capture
 
-type Tests(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger (testOutput.Subscribe >> ignore)
-
+type Tests() =
     [<AutoData>]
-    let ``Can roundtrip against EventStore, correctly batching the reads and folding the events`` context cartId skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, with control over logging, correctly batching the reads and folding the events`` context cartId skuId = Async.RunSynchronously <| async {
         let! conn = connectToLocalEventStoreNode ()
         let buffer = ResizeArray<string>()
         let emit msg = System.Diagnostics.Trace.WriteLine msg; buffer.Add msg
