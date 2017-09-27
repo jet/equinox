@@ -50,10 +50,11 @@ module Commands =
 
 type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial)
-    member __.Run log cmd : Async<unit> =
+    member __.Execute log cmd : Async<unit> =
         let decide (ctx : Foldunk.DecisionContext<_,_>) = async {
-            ctx.Execute <| Commands.interpret cmd
-            return ctx.Complete() }
-        handler.Run decide log stream
+            let execute cmd = ctx.Execute <| Commands.interpret cmd
+            execute cmd
+            return ctx.Complete () }
+        handler.Decide decide log stream
     member __.Load log : Async<Folds.State> =
-        handler.Load log stream
+        handler.Query id log stream

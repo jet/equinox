@@ -1,15 +1,21 @@
-﻿namespace Foldunk.MemoryStore
+﻿/// Implements an in-memory store. This fulfils two goals:
+/// 1. Acts as A target for integration testing allowing end-to-end processing of a decision flow in an efficient test
+/// 2. Illustrates a minimal implemention of the Foldunk Storage interface interconnects for the purpose of writing Store connectors
+namespace Foldunk.MemoryStore
 
 open Foldunk
 open Serilog
 
+/// Equivalent to GetEventStore in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
 exception private WrongVersionException of streamName: string * expected: int * value: obj
 
+/// Internal result used to reflect the outcome of syncing with the entry in the inner ConcurrentDictionary
 [<NoEquality; NoComparison>]
-type ImsSyncResultInner<'t> = Written of 't | Conflict of int
+type ConcurrentDictionarySyncResult<'t> = Written of 't | Conflict of int
 
+/// Response type for ConcurrentArrayStore.TrySync to communicate the outcome and updated state of a stream
 [<NoEquality; NoComparison>]
-type ImsSyncResult<'t> = Written of 't | Conflict of 't
+type ConcurrentArraySyncResult<'t> = Written of 't | Conflict of 't
 
 // Maintains a dictionary of boxed typed arrays, raising exceptions if an attempt to extract a value encounters a mismatched type
 type private ConcurrentArrayStore() =
@@ -37,22 +43,22 @@ type private ConcurrentArrayStore() =
         | true, packed -> __.Unpack log streamName packed |> Some
 
     /// Attempts a sychronization operation - yields conflicting value if sync function decides there is a conflict
-    member __.TrySync streamName log (trySyncValue : 'events array -> ImsSyncResultInner<'event seq>) (events: 'event seq) : ImsSyncResult<'event array> =
+    member __.TrySync streamName log (trySyncValue : 'events array -> ConcurrentDictionarySyncResult<'event seq>) (events: 'event seq) : ConcurrentArraySyncResult<'event array> =
         let seedStream _streamName = __.Pack events
         let updatePackedValue streamName (packedCurrentValue : obj) =
             let currentValue = __.Unpack log streamName packedCurrentValue
             match trySyncValue currentValue with
-            | ImsSyncResultInner.Conflict expectedVersion -> raise (mkWrongVersionException log streamName expectedVersion packedCurrentValue)
-            | ImsSyncResultInner.Written value -> __.Pack value
+            | ConcurrentDictionarySyncResult.Conflict expectedVersion -> raise (mkWrongVersionException log streamName expectedVersion packedCurrentValue)
+            | ConcurrentDictionarySyncResult.Written value -> __.Pack value
         try
             let boxedSyncedValue = streams.AddOrUpdate(streamName, seedStream, updatePackedValue)
-            ImsSyncResult.Written (unbox boxedSyncedValue)
+            ConcurrentArraySyncResult.Written (unbox boxedSyncedValue)
         with WrongVersionException(_, _, conflictingValue) ->
-            ImsSyncResult.Conflict (unbox conflictingValue)
+            ConcurrentArraySyncResult.Conflict (unbox conflictingValue)
 
-/// Internal impl details of MemoryStreamStore
+/// Internal implementation detail of MemoryStreamStore
 module private MemoryStreamStreamState =
-    let private streamTokenOfIndex (streamVersion : int) : Internal.StreamToken =
+    let private streamTokenOfIndex (streamVersion : int) : Storage.StreamToken =
         { value = box streamVersion }
     /// Represent a stream known to be empty
     let ofEmpty () = streamTokenOfIndex -1, None, []
@@ -62,7 +68,7 @@ module private MemoryStreamStreamState =
     /// Represent a known array of Events together with the associated state
     let ofEventArrayAndKnownState (events: 'event array) (state: 'state) = tokenOfArray events, Some state, []
 
-/// In memory implementation of a stream store - no constraints on memory consumption (but also no persistence!).
+/// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type MemoryStreamStore() =
     let store = ConcurrentArrayStore()
     member __.Load streamName log = async {
@@ -71,20 +77,20 @@ type MemoryStreamStore() =
         | Some events -> return MemoryStreamStreamState.ofEventArray events }
     member __.TrySync streamName log (token, snapshotState) (events: 'event list, proposedState) = async {
         let trySyncValue currentValue =
-            if Array.length currentValue <> unbox token + 1 then ImsSyncResultInner.Conflict (unbox token)
-            else ImsSyncResultInner.Written (Seq.append currentValue events)
+            if Array.length currentValue <> unbox token + 1 then ConcurrentDictionarySyncResult.Conflict (unbox token)
+            else ConcurrentDictionarySyncResult.Written (Seq.append currentValue events)
         match store.TrySync streamName log trySyncValue events with
-        | ImsSyncResult.Conflict conflictingEvents ->
+        | ConcurrentArraySyncResult.Conflict conflictingEvents ->
             let resync = async {
                 let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
                 let successorEvents = conflictingEvents |> Seq.skip (unbox token + 1) |> List.ofSeq
-                return Internal.StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
-            return Internal.SyncResult.Conflict resync
-        | ImsSyncResult.Written events -> return Internal.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }
+                return Storage.StreamState.ofTokenSnapshotAndEvents version snapshotState successorEvents }
+            return Storage.SyncResult.Conflict resync
+        | ConcurrentArraySyncResult.Written events -> return Storage.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }
 
-/// In memory stream holding a store specifically for that stream
+/// Represents a specific stream in a MemoryStreamStore
 type MemoryStream<'state, 'event>(store : MemoryStreamStore, streamName) =
     interface IStream<'state, 'event> with
         member __.Load log = store.Load streamName log
-        member __.TrySync (log: ILogger) (token: Internal.StreamToken, originState: 'state) (events: 'event list, state': 'state) = 
+        member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list, state': 'state) = 
             store.TrySync streamName log (token, originState) (events, state')

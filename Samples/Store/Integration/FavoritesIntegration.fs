@@ -21,7 +21,7 @@ type Tests(testOutputHelper) =
         let! conn = connectToLocalEventStoreNode ()
         let log, service = createLog (), createServiceGes conn
 
-        do! service.Run log clientId command
+        do! service.Execute log clientId command
         let! items = service.Load log clientId
 
         match command with
@@ -36,7 +36,7 @@ type Tests(testOutputHelper) =
         let! conn = connectToLocalEventStoreNode ()
         let log, service = createLog (), createServiceGes conn
 
-        do! service.Run log clientId command
+        do! service.Execute log clientId command
         let! items = service.Load log clientId
 
         match command with

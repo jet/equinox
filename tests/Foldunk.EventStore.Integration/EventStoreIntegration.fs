@@ -31,7 +31,7 @@ type Tests() =
                 if not exceptTheLastOne || i <> count then
                     run <| Domain.Cart.Commands.RemoveItem (context, skuId)
             return ctx.Complete() }
-        service.Run log cartId decide
+        service.Decide log cartId decide
 
     let addAndThenRemoveItemsManyTimes context cartId skuId log service count =
         addAndThenRemoveItems false context cartId skuId log service count

@@ -64,7 +64,5 @@ type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial)
     member __.Decide log decide =
         handler.Decide decide log stream
-    member __.Run log decide =
-        handler.Run decide log stream
     member __.Load log : Async<Folds.State> =
-        handler.Load log stream
+        handler.Query id log stream

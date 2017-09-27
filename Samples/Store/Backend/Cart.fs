@@ -11,10 +11,6 @@ type Service(createStream) =
         let handler = handler cartId
         handler.Decide log decide
 
-    member __.Run (log : Serilog.ILogger) (cartId : CartId) decide =
-        let handler = handler cartId
-        handler.Run log decide
-
     member __.Load (log : Serilog.ILogger) (cartId : CartId) =
         let handler = handler cartId
         handler.Load log

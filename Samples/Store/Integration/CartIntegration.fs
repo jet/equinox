@@ -20,7 +20,7 @@ let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (ser
             if i <> count then
                 run <| Domain.Cart.Commands.RemoveItem (context, skuId)
         return ctx.Complete() }
-    service.Run log cartId decide
+    service.Decide log cartId decide
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

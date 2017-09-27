@@ -38,6 +38,6 @@ type Handler(stream) =
             let command = Commands.Update { email = email; preferences = value }
             ctx.Execute <| Commands.interpret command
             return ctx.Complete () }
-        handler.Run decide log stream
+        handler.Decide decide log stream
     member __.Load log : Async<Folds.State> =
-        handler.Load log stream
+        handler.Query id log stream
