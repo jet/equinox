@@ -1,4 +1,4 @@
-﻿module Example.Domain.Tests.CartTests
+﻿module Samples.Store.Domain.Tests.CartTests
 
 open Domain
 open Domain.Cart

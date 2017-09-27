@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.26730.16
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk", "src\Foldunk\Foldunk.fsproj", "{54CD058F-5B0A-4564-B732-1F6301E120AC}"
 EndProject
@@ -11,7 +11,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".paket", ".paket", "{E602D7
 		paket.lock = paket.lock
 	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Example", "Example", "{D67D5A5F-2E59-4514-A997-FEBDC467AAF6}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples.Store", "Samples.Store", "{D67D5A5F-2E59-4514-A997-FEBDC467AAF6}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".project", ".project", "{7E3A7020-AE75-4513-B81A-57FD3E0D0D84}"
 	ProjectSection(SolutionItems) = preProject
@@ -32,9 +32,9 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.EventStore", "src\F
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.EventStore.Integration", "tests\Foldunk.EventStore.Integration\Foldunk.EventStore.Integration.fsproj", "{3DB78BA2-3460-41F9-A3E1-5B945D4FCB79}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.InMemoryStore", "src\Foldunk.InMemoryStore\Foldunk.InMemoryStore.fsproj", "{A7441FF0-94E6-45E4-B02D-F14ED248516D}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.MemoryStore", "src\Foldunk.MemoryStore\Foldunk.MemoryStore.fsproj", "{A7441FF0-94E6-45E4-B02D-F14ED248516D}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.InMemoryStore.Integration", "tests\Foldunk.InMemoryStore.Integration\Foldunk.InMemoryStore.Integration.fsproj", "{B2C695C3-ED04-4094-B672-926440B5F335}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.MemoryStore.Integration", "tests\Foldunk.MemoryStore.Integration\Foldunk.MemoryStore.Integration.fsproj", "{B2C695C3-ED04-4094-B672-926440B5F335}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.EventSum", "src\Foldunk.EventSum\Foldunk.EventSum.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
 EndProject

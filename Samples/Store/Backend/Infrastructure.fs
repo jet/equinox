@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Infrastructure
+module Backend.Infrastructure
 
 open System
 

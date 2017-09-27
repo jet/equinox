@@ -8,7 +8,7 @@
     <ProjectGuid>b2c695c3-ed04-4094-b672-926440b5f335</ProjectGuid>
     <OutputType>Library</OutputType>
     <RootNamespace>Foldunk.InMemoryStore.Integration</RootNamespace>
-    <AssemblyName>Foldunk.InMemoryStore.Integration</AssemblyName>
+    <AssemblyName>Foldunk.MemoryStore.Integration</AssemblyName>
     <UseStandardResourceNames>true</UseStandardResourceNames>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <TargetFSharpCoreVersion>4.4.1.0</TargetFSharpCoreVersion>
@@ -61,7 +61,7 @@
     <None Include="paket.references" />
     <Content Include="App.config" />
     <Compile Include="Infrastructure.fs" />
-    <Compile Include="InMemoryStoreIntegration.fs" />
+    <Compile Include="MemoryStoreIntegration.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
@@ -84,8 +84,8 @@
       <Project>{f5491eb1-d072-4262-8184-2a908e1d6175}</Project>
       <Private>True</Private>
     </ProjectReference>
-    <ProjectReference Include="..\..\src\Foldunk.InMemoryStore\Foldunk.InMemoryStore.fsproj">
-      <Name>Foldunk.InMemoryStore</Name>
+    <ProjectReference Include="..\..\src\Foldunk.MemoryStore\Foldunk.MemoryStore.fsproj">
+      <Name>Foldunk.MemoryStore</Name>
       <Project>{a7441ff0-94e6-45e4-b02d-f14ed248516d}</Project>
       <Private>True</Private>
     </ProjectReference>

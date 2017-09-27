@@ -1,4 +1,4 @@
-﻿module Foldunk.Stores.EventStore
+﻿namespace Foldunk.EventStore
 
 open EventStore.ClientAPI
 open Foldunk
@@ -6,14 +6,15 @@ open FSharp.Control
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
 
-let private withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
-    match retryPolicy with
-    | None -> f log
-    | Some retryPolicy ->
-        let withLoggingContextWrapping count =
-            let log = if count = 0 then log else log.ForContext(contextLabel, string count)
-            f log
-        retryPolicy withLoggingContextWrapping
+module private Impl =
+    let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
+        match retryPolicy with
+        | None -> f log
+        | Some retryPolicy ->
+            let withLoggingContextWrapping count =
+                let log = if count = 0 then log else log.ForContext(contextLabel, string count)
+                f log
+            retryPolicy withLoggingContextWrapping
 
 [<NoEquality; NoComparison>]
 type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict
@@ -37,7 +38,7 @@ module private Write =
     let writeEvents (log : Serilog.ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
         : Async<EsSyncResult> =
         let call = writeEventsLogged conn streamName version events
-        withLoggedRetries retryPolicy "WriteRetry" call log
+        Impl.withLoggedRetries retryPolicy "WriteRetry" call log
 
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward
@@ -90,7 +91,7 @@ module private Read =
             let version = match !versionFromStream with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
             return version, events }
         let call pos = loggedReadSlice conn streamName Direction.Forward batchSize pos
-        let retryingLoggingReadSlice pos = withLoggedRetries retryPolicy "ReadRetry" (call pos)
+        let retryingLoggingReadSlice pos = Impl.withLoggedRetries retryPolicy "ReadRetry" (call pos)
         let batches : AsyncSeq<int option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
         mergeBatches batches
 
@@ -117,23 +118,6 @@ type GesConnection(connection, ?readRetryPolicy, ?writeRetryPolicy) =
     member __.Connection = connection
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
-
-/// Wraps an async computation in a retry loop, passing the (1-based) count into the computation and,
-///   (until `attempts` exhausted) on an exception matching the `filter`, waiting for the timespan chosen by `backoff` before retrying
-let retryWithBackoff (maxAttempts : int) (backoff : int -> TimeSpan option) (f : int -> Async<'a>) =
-    if maxAttempts < 1 then raise (invalidArg "maxAttempts" "Should be >= 1")
-    let rec go attempt = async {
-        try
-            let! res = f attempt
-            return res
-        with ex ->
-            if attempt = maxAttempts then return raise (exn(sprintf "Retry failed after %i attempts." maxAttempts, ex))
-            else
-                match backoff attempt with
-                | Some timespan -> do! Async.Sleep (int timespan.TotalMilliseconds)
-                | None -> ()
-                return! go (attempt + 1) }
-    go 1
 
 type GesStreamPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
     new (maxBatchSize) = GesStreamPolicy(fun () -> maxBatchSize)

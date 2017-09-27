@@ -1,4 +1,4 @@
-﻿namespace Foldunk.Stores.InMemoryStore
+﻿namespace Foldunk.MemoryStore
 
 open Foldunk
 open Serilog
@@ -63,7 +63,7 @@ module private MemoryStreamStreamState =
     let ofEventArrayAndKnownState (events: 'event array) (state: 'state) = tokenOfArray events, Some state, []
 
 /// In memory implementation of a stream store - no constraints on memory consumption (but also no persistence!).
-type InMemoryStreamStore() =
+type MemoryStreamStore() =
     let store = ConcurrentArrayStore()
     member __.Load streamName log = async {
         match store.TryLoad<'event> streamName log with
@@ -83,7 +83,7 @@ type InMemoryStreamStore() =
         | ImsSyncResult.Written events -> return Internal.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }
 
 /// In memory stream holding a store specifically for that stream
-type InMemoryStream<'state, 'event>(store : InMemoryStreamStore, streamName) =
+type MemoryStream<'state, 'event>(store : MemoryStreamStore, streamName) =
     interface IStream<'state, 'event> with
         member __.Load log = store.Load streamName log
         member __.TrySync (log: ILogger) (token: Internal.StreamToken, originState: 'state) (events: 'event list, state': 'state) = 

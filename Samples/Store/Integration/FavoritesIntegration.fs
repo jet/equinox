@@ -1,4 +1,4 @@
-﻿module Example.Integration.FavoritesIntegration
+﻿module Samples.Store.Integration.FavoritesIntegration
 
 open Swensen.Unquote
 

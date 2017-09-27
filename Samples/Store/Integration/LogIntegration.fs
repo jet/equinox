@@ -1,4 +1,4 @@
-﻿module Example.Integration.LogIntegration
+﻿module Samples.Store.Integration.LogIntegration
 
 open Swensen.Unquote
 

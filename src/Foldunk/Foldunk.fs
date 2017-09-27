@@ -39,7 +39,7 @@ module Internal =
     /// Foldunk-internal representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)
     type StreamState<'state,'event> = StreamToken * 'state option * 'event list
 
-    /// Helpers for derivation of a StreamState - shared between EventStore and InMemoryStore
+    /// Helpers for derivation of a StreamState - shared between EventStore and MemoryStore
     module StreamState =
         /// Represent a [possibly compacted] array of events with a known token from a store.
         let ofTokenAndEvents (token : StreamToken) (events: 'event seq) = token, None, List.ofSeq events
@@ -104,8 +104,8 @@ type IStream<'state,'event> =
         // - Conflict: to signify the synch failed and the deicsion hence needs to be rerun based on the updated Stream State with which the changes conflicted
         -> Async<Internal.SyncResult<'state, 'event>>
 
-/// For use in application level code; general across store implementations under the Foldunk.Stores namespace
-module Handle =
+/// For use in application level code; general across *Store implementations
+module private Handle =
     /// Load the state of a stream from the given stream
     let load(stream : IStream<'state,'event>)
             (log : Serilog.ILogger)
@@ -155,3 +155,21 @@ type Handler<'state,'event>(fold, initial, ?maxAttempts) =
     member __.Load log (stream : IStream<'state,'event>) : Async<'state> = async {
         let! syncState = Handle.load stream log fold initial
         return syncState.State }
+
+module Retry =
+    /// Wraps an async computation in a retry loop, passing the (1-based) count into the computation and,
+    ///   (until `attempts` exhausted) on an exception matching the `filter`, waiting for the timespan chosen by `backoff` before retrying
+    let withBackoff (maxAttempts : int) (backoff : int -> System.TimeSpan option) (f : int -> Async<'a>) =
+        if maxAttempts < 1 then raise (invalidArg "maxAttempts" "Should be >= 1")
+        let rec go attempt = async {
+            try
+                let! res = f attempt
+                return res
+            with ex ->
+                if attempt = maxAttempts then return raise (exn(sprintf "Retry failed after %i attempts." maxAttempts, ex))
+                else
+                    match backoff attempt with
+                    | Some timespan -> do! Async.Sleep (int timespan.TotalMilliseconds)
+                    | None -> ()
+                    return! go (attempt + 1) }
+        go 1

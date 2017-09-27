@@ -1,13 +1,13 @@
-﻿module Foldunk.InMemoryStore.Integration.InMemoryStoreIntegration
+﻿module Foldunk.MemoryStore.Integration.MemoryStoreIntegration
 
 open Swensen.Unquote
 
 let inline createMemStore () =
-    Foldunk.Stores.InMemoryStore.InMemoryStreamStore()
+    Foldunk.MemoryStore.MemoryStreamStore()
 let inline createMemStream<'state,'event> store streamName : Foldunk.IStream<'state,'event> =
-    Foldunk.Stores.InMemoryStore.InMemoryStream(store, streamName) :> _
+    Foldunk.MemoryStore.MemoryStream(store, streamName) :> _
 
-let createServiceWithInMemoryStore () =
+let createServiceMem () =
     let store = createMemStore()
     Backend.Cart.Service(fun _codec -> createMemStream store)
 
@@ -20,7 +20,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
-        let log, service = createLog (), createServiceWithInMemoryStore ()
+        let log, service = createLog (), createServiceMem ()
         let decide (ctx: Foldunk.DecisionContext<_,_>) = async {
             Domain.Cart.Commands.AddItem args |> Domain.Cart.Commands.interpret |> ctx.Execute
             return ctx.Complete ctx.State }

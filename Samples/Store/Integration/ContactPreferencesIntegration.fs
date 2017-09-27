@@ -1,4 +1,4 @@
-﻿module Example.Integration.ContactPreferencesIntegration
+﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
 open Swensen.Unquote
 

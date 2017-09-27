@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Foldunk.InMemoryStore.Integration.Infrastructure
+module Foldunk.MemoryStore.Integration.Infrastructure
 
 open Serilog
 

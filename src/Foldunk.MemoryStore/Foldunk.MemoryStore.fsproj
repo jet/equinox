@@ -7,13 +7,13 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>a7441ff0-94e6-45e4-b02d-f14ed248516d</ProjectGuid>
     <OutputType>Library</OutputType>
-    <RootNamespace>Foldunk.InMemoryStore</RootNamespace>
-    <AssemblyName>Foldunk.InMemoryStore</AssemblyName>
+    <RootNamespace>Foldunk.MemoryStore</RootNamespace>
+    <AssemblyName>Foldunk.MemoryStore</AssemblyName>
     <UseStandardResourceNames>true</UseStandardResourceNames>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <TargetFSharpCoreVersion>4.4.0.0</TargetFSharpCoreVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <Name>Foldunk.InMemoryStore</Name>
+    <Name>Foldunk.MemoryStore</Name>
     <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -59,7 +59,7 @@
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
     <None Include="paket.references" />
-    <Compile Include="MemoryStreamStore.fs" />
+    <Compile Include="MemoryStore.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />

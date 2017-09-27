@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Example.Integration.Infrastructure
+module Samples.Store.Integration.Infrastructure
 
 open Domain
 open FsCheck
@@ -100,14 +100,14 @@ let connectToLocalEventStoreNode () = async {
     return conn }
 
 let createGesGateway eventStoreConnection maxBatchSize =
-    let connection = Foldunk.Stores.EventStore.GesConnection(eventStoreConnection)
-    Foldunk.Stores.EventStore.GesGateway(connection, Foldunk.Stores.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
+    let connection = Foldunk.EventStore.GesConnection(eventStoreConnection)
+    Foldunk.EventStore.GesGateway(connection, Foldunk.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
 
 let createGesStream<'state,'event> gateway (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName : Foldunk.IStream<_,_> =
-    let store = Foldunk.Stores.EventStore.GesStreamStore<'state, 'event>(gateway, codec)
-    Foldunk.Stores.EventStore.GesStream<'state, 'event>(store, streamName) :> _
+    let store = Foldunk.EventStore.GesStreamStore<'state, 'event>(gateway, codec)
+    Foldunk.EventStore.GesStream<'state, 'event>(store, streamName) :> _
 
 let inline createMemStore () =
-    Foldunk.Stores.InMemoryStore.InMemoryStreamStore()
+    Foldunk.MemoryStore.MemoryStreamStore()
 let inline createMemStream<'state,'event> store streamName : Foldunk.IStream<'state,'event> =
-    Foldunk.Stores.InMemoryStore.InMemoryStream(store, streamName) :> _
+    Foldunk.MemoryStore.MemoryStream(store, streamName) :> _

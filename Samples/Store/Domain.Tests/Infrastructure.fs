@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Example.Domain.Tests.Infrastructure
+module Samples.Store.Domain.Tests.Infrastructure
 
 open Domain
 open FsCheck

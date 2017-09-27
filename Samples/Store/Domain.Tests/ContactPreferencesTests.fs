@@ -1,4 +1,4 @@
-﻿module Example.Domain.Tests.ContactPreferencesTests
+﻿module Samples.Store.Domain.Tests.ContactPreferencesTests
 
 open Domain.ContactPreferences.Commands
 open Domain.ContactPreferences.Events

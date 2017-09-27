@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Foldunk.Infrastructure
+module Foldunk.EventStore.Infrastructure
 
 open FSharp.Control
 open System

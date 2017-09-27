@@ -1,4 +1,4 @@
-﻿module Example.Domain.Tests.FavoritesTests
+﻿module Samples.Store.Domain.Tests.FavoritesTests
 
 open Domain
 open Domain.Favorites

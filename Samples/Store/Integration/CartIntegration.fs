@@ -1,4 +1,4 @@
-﻿module Example.Integration.CartIntegration
+﻿module Samples.Store.Integration.CartIntegration
 
 open Swensen.Unquote
 
