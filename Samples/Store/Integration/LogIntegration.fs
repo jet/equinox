@@ -1,8 +1,23 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
 open Swensen.Unquote
+open System
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
+type SerilogTracerAdapter(emit) =
+    let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null)
+    let render logEvent =
+        use writer = new System.IO.StringWriter()
+        formatter.Format(logEvent, writer)
+        string writer
+    let handleLogEvent (logEvent : Serilog.Events.LogEvent) =
+        try match logEvent with
+            | SerilogProperty Foldunk.EventStore.Metrics.ExternalTag (Some (SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as metric))) ->
+                logEvent.RemovePropertyIfPresent Foldunk.EventStore.Metrics.ExternalTag
+                render logEvent |> sprintf "%s-Elapsed=%O %s" metric.action metric.interval.Elapsed |> emit
+            | _ -> render logEvent |> emit
+        with _ -> render logEvent |> sprintf "Cannnot log event: %s" |> emit
+    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
+        source.Subscribe handleLogEvent
 
 let batchSize = 500
 let createCartServiceWithEventStore eventStoreConnection =
@@ -14,6 +29,8 @@ let createLoggerWithCapture emit =
     let subscribeLogListeners obs =
         obs |> capture.Subscribe |> ignore
     createLogger subscribeLogListeners, capture
+
+#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type Tests() =
     [<AutoData>]

@@ -1,6 +1,6 @@
 Foldunk
 =======
-Foldunk is a low-dependency set of infrastructure, examples and tests illustrating a consistent approach Event Sourced Decision processing against ordered stream stores in F#.
+Foldunk is a low-dependency set of infrastructure, examples and tests illustrating a consistent approach to Event-sourced Decision processing against ordered stream stores in F#.
 
 Intended audience
 -----------------

@@ -19,6 +19,11 @@ module private Impl =
 [<NoEquality; NoComparison>]
 type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict
 
+module Metrics =
+    [<NoEquality; NoComparison>]
+    type Metric = { interval: StopwatchInterval; action: string }
+    let [<Literal>] ExternalTag = "External"
+
 module private Write =
     /// Yields `Ok WriteResult` or `Error ()` to signify WrongExpectedVersion
     let private writeEventsAsync (log : Serilog.ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) : Async<EsSyncResult> = async {
@@ -31,9 +36,8 @@ module private Write =
     let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) (log : Serilog.ILogger)
         : Async<EsSyncResult> = async {
         let! t, result = writeEventsAsync log conn streamName version events |> Stopwatch.Time
-        log.Information(
-            "{ExternalCall} {Action} {Stream} {expectedVersion} {Count} {Latency}",
-            true, "AppendToStreamAsync", streamName, version, events.Length, t.Elapsed)
+        let metric : Metrics.Metric = { Metrics.interval = t; action = "AppendToStreamAsync" }
+        log.Information("{"+Metrics.ExternalTag+"} {Stream} {expectedVersion} {Count} ", metric, streamName, version, events.Length)
         return result }
     let writeEvents (log : Serilog.ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
         : Async<EsSyncResult> =
@@ -55,9 +59,10 @@ module private Read =
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.Time
         let payloadSize = slice.Events |> Array.sumBy (fun e -> e.Event.Data.Length)
         let action = match direction with Direction.Forward -> "ReadStreamEventsForwardAsync" | Direction.Backward -> "ReadStreamEventsBackwardAsync"
+        let metric : Metrics.Metric = { interval = t; action = action }
         log.Information(
-            "{ExternalCall} {Action} {Stream} {version} {sliceLength} {totalPayloadSize} {Latency}",
-            true, action, streamName, slice.LastEventNumber, batchSize, payloadSize, t.Elapsed)
+            "{"+Metrics.ExternalTag+"} {Stream} {version} {sliceLength} {totalPayloadSize}",
+            metric, streamName, slice.LastEventNumber, batchSize, payloadSize)
         return slice }
     let private readBatches (log : Serilog.ILogger) (readSlice : int -> Serilog.ILogger -> Async<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int)
