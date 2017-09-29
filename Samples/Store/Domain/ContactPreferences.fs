@@ -34,7 +34,7 @@ module Commands =
 type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial)
     member __.Update log email value : Async<unit> =
-        let decide (ctx : Foldunk.DecisionContext<_,_>) = async {
+        let decide (ctx : Foldunk.Context<_,_>) = async {
             let command = Commands.Update { email = email; preferences = value }
             ctx.Execute <| Commands.interpret command
             return ctx.Complete () }

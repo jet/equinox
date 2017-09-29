@@ -2,28 +2,32 @@
 
 open Serilog
 
-/// Exposes State and Accumulates events associated with a Handler.Decide-driven decision flow
-type DecisionContext<'event, 'state>(fold, originState : 'state) =
+/// Maintains a rolling folded State while Accumulating Events decided upon as part of a decision flow
+type Context<'event, 'state>(fold, originState : 'state) =
     let accumulated = ResizeArray<'event>()
-    /// Execute an interpret function, gathering the events (if any) that it decides are necessary into the `Accummulated` sequence
-    member __.Execute (interpret : 'state -> 'event list) =
-        interpret __.State |> accumulated.AddRange
-    /// Execute an `interpret` function as `Execute` does, while also propagating a result output thats is yielded as the fst of (result,events) pair
-    member __.Decide (interpret : 'state -> 'result * 'event list) =
-        let result, newEvents = interpret __.State
+
+    /// The current folded State, based on the Stream's `originState` + any events that have been Accummulated during the the decision flow
+    member __.State = __.Accumulated |> fold originState
+    /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accummulated` sequence
+    member __.Execute (decide : 'state -> 'event list) : unit =
+        decide __.State |> accumulated.AddRange
+    /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accummulated` sequence
+    member __.ExecuteAsync (decide : 'state -> Async<'event list>) : Async<unit> = async {
+        let! events = decide __.State
+        accumulated.AddRange events }
+    /// As per `Execute`, invoke a decision function, while also propagating an outcome yielded as the fst of an (outcome, events) pair
+    member __.Decide (decide : 'state -> 'result * 'event list) =
+        let result, newEvents = decide __.State
         accumulated.AddRange newEvents
         result
-    /// Execute an _Async_ `interpret` function as `Execute` does, while also propagating a result output thats is yielded as the fst of (result,events) pair
-    // TODO add test coverage
-    member __.DecideAsync (interpret : 'state -> Async<'outcome * 'event list>) = async {
-        let! result, newEvents = interpret __.State
+    /// As per `ExecuteAsync`, invoke a decision function, while also propagating an outcome yielded as the fst of an (outcome, events) pair
+    member __.DecideAsync (decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+        let! result, newEvents = decide __.State
         accumulated.AddRange newEvents
         return result }
-    /// The events that have been pended into this Context as decided by the interpret functions that have been run in the course of the Decision
+    /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
     member __.Accumulated = accumulated |> List.ofSeq
-    /// The current folded State, based on the initial Stream State + any events that have been added in the course of this Decision
-    member __.State = __.Accumulated |> fold originState
-    /// Complete the Decision, yielding the supplied `outcome` (which may be unit)
+    /// Used to complete a Decision flow, yielding the supplied `outcome` (which may be unit) along with the Accumulated events to be synced to the stream
     member __.Complete outcome =
         outcome, __.Accumulated
 
@@ -35,7 +39,7 @@ module Storage =
     type StreamToken = { value : obj }
 
     /// Representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)
-    type StreamState<'state,'event> = StreamToken * 'state option * 'event list
+    type StreamState<'event, 'state> = StreamToken * 'state option * 'event list
 
     /// Helpers for derivation of a StreamState - shared between EventStore and MemoryStore
     module StreamState =
@@ -48,22 +52,22 @@ module Storage =
             token, Some snapshotState, successorEvents
 
     [<NoEquality; NoComparison; RequireQualifiedAccess>]
-    type SyncResult<'state, 'event> =
-        | Written of StreamState<'state, 'event>
-        | Conflict of Async<StreamState<'state, 'event>>
+    type SyncResult<'event, 'state> =
+        | Written of StreamState<'event, 'state>
+        | Conflict of Async<StreamState<'event, 'state>>
 
 /// Store-agnostic interface to the state of any given stream of events. Not intended for direct use by consumer code; this is an abstract interface to be implemented by a Store in order for the Application to be able to execute a standarized Flow via the Handler type
-type IStream<'state,'event> =
+type IStream<'event, 'state> =
     /// Obtain the state from the stream named `streamName`
     abstract Load: log: ILogger
-        -> Async<Storage.StreamState<'state, 'event>>
+        -> Async<Storage.StreamState<'event, 'state>>
     /// Synchronize the state of the stream named `streamName`, appending the supplied `events`, in order to establish the supplied `state` value
     /// NB the central precondition is that the Stream has not diverged from the state represented by `token`;  where this is not met, the response signals the
     ///    need to reprocess by yielding an Error bearing the conflicting StreamState with which to retry (loaded in a specific manner optimal for the store)
     abstract TrySync: log: ILogger -> token: Storage.StreamToken * originState: 'state -> events: 'event list * state' : 'state
         // - Written: to signify Synchronization has succeeded, taking the yielded Stream State as the representation of what is understood to be the state
         // - Conflict: to signify the synch failed and the deicsion hence needs to be rerun based on the updated Stream State with which the changes conflicted
-        -> Async<Storage.SyncResult<'state, 'event>>
+        -> Async<Storage.SyncResult<'event, 'state>>
 
 // Exception yielded by Handler.Decide after `count` attempts have yielded conflicts at the point of syncing with the Store
 exception FlowAttemptsExceededException of count: int
@@ -71,10 +75,10 @@ exception FlowAttemptsExceededException of count: int
 /// Internal implementation of the Store agnostic load + run/render. See Handler for App-facing APIs.
 module private Flow =
     /// Represents stream and folding state between the load and run/render phases
-    type SyncState<'state, 'event>
-        (   fold, initial, originState : Storage.StreamState<'state, 'event>,
-            trySync : ILogger -> Storage.StreamToken * 'state -> 'event list * 'state -> Async<Storage.SyncResult<'state, 'event>>) =
-        let toTokenAndState fold initial ((token, stateOption, events) : Storage.StreamState<'state,'event>) : Storage.StreamToken * 'state =
+    type SyncState<'event, 'state>
+        (   fold, initial, originState : Storage.StreamState<'event, 'state>,
+            trySync : ILogger -> Storage.StreamToken * 'state -> 'event list * 'state -> Async<Storage.SyncResult<'event, 'state>>) =
+        let toTokenAndState fold initial ((token, stateOption, events) : Storage.StreamState<'event, 'state>) : Storage.StreamToken * 'state =
             let baseState =
                 match stateOption with
                 | Some state when List.isEmpty events -> state
@@ -95,8 +99,8 @@ module private Flow =
 
         member __.State = snd !tokenAndState
         member __.Token = fst !tokenAndState
-        member __.CreateDecisionContext(): DecisionContext<'event, 'state> =
-            DecisionContext<'event, 'state>(fold, __.State)
+        member __.CreateContext(): Context<'event, 'state> =
+            Context<'event, 'state>(fold, __.State)
         member __.TryOrResync log events =
             let resyncInPreparationForRetry resync = async {
                 let! streamState' = resync
@@ -108,16 +112,16 @@ module private Flow =
             tryOr log events throw |> Async.Ignore
 
     /// Load the state of a stream from the given stream
-    let load(stream : IStream<'state,'event>)
+    let load(stream : IStream<'event, 'state>)
             (log : Serilog.ILogger)
             (fold : 'state -> 'event list -> 'state)
             (initial : 'state)
-            : Async<SyncState<'state, 'event>> = async {
+            : Async<SyncState<'event, 'state>> = async {
         let! streamState = stream.Load log
         return SyncState(fold, initial, streamState, stream.TrySync) }
 
-    /// Render a view of the loaded stare for the purposes of querying the folded State
-    let render (query : 'state -> 'view) (syncState : SyncState<'state, 'event>) : 'view =
+    /// Render a projection from the folded State
+    let render (query : 'state -> 'projection) (syncState : SyncState<'event, 'state>) : 'projection =
         syncState.State |> query
 
     /// Process a command, ensuring a consistent final state is established on the stream.
@@ -125,17 +129,17 @@ module private Flow =
     /// 2a. if no changes required, exit with known state
     /// 2b. if saved without conflict, exit with updated state
     /// 2b. if conflicting changes, loop to retry against updated state
-    let run (sync : SyncState<'state, 'event>)
+    let run (sync : SyncState<'event, 'state>)
             (log : ILogger)
             (maxAttempts : int)
-            (decide : DecisionContext<'event, 'state> -> Async<'output * 'event list>)
+            (decide : Context<'event, 'state> -> Async<'output * 'event list>)
             : Async<'output> =
         if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")
         /// Run a decision cycle - decide what events should be appended given the presented state
         let rec loop attempt: Async<'output> = async {
             //let token, currentState = interpreter.Fold currentState
             let log = log.ForContext("Attempt", attempt)
-            let ctx = sync.CreateDecisionContext()
+            let ctx = sync.CreateContext()
             let! outcome, events = decide ctx
             if List.isEmpty events then
                 return outcome
@@ -151,19 +155,19 @@ module private Flow =
         /// Commence, processing based on the incoming state
         loop 1
 
-/// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic; general across *Store implementations
-type Handler<'state,'event>(fold, initial, ?maxAttempts) =
-    /// Execute the `decide` decision flow, potentially looping `maxAttempts` times. If not syncing, use Query.
-    /// Throws `FlowAttemptsExceededException` if when attempts exhausted 
-    member __.Decide decide log (stream : IStream<'state,'event>) = async {
+/// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic
+type Handler<'event, 'state>(fold, initial, ?maxAttempts) =
+    /// Invoke the supplied `decide` function, syncing the accumulated events at the end. Tries up to `maxAttempts` times in the case of a conflict, throwing
+    /// `FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
+    member __.Decide decide log (stream : IStream<'event, 'state>) = async {
         let! syncState = Flow.load stream log fold initial
         return! Flow.run syncState log (defaultArg maxAttempts 3) decide }
-    /// Project from the folded `State` without executing a decision flow as `Decide` does
-    member __.Query query log (stream : IStream<'state,'event>) : Async<'state> = async {
+    /// Project from the folded `State` (without executing a decision flow or syncing new events to the stream as `Decide` does)
+    member __.Query (projection : 'state -> 'projected) log (stream : IStream<'event, 'state>) : Async<'projected> = async {
         let! syncState = Flow.load stream log fold initial
-        return syncState |> Flow.render query }
+        return syncState |> Flow.render projection }
 
-/// Helper for define backoff policies as part of the retry policy for a store.
+/// Helper for defining backoffs within the definition of a retry policy for a store.
 module Retry =
     /// Wraps an async computation in a retry loop, passing the (1-based) count into the computation and,
     ///   (until `attempts` exhausted) on an exception matching the `filter`, waiting for the timespan chosen by `backoff` before retrying

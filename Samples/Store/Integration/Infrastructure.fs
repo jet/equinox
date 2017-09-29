@@ -72,11 +72,11 @@ let createGesGateway eventStoreConnection maxBatchSize =
     let connection = Foldunk.EventStore.GesConnection(eventStoreConnection)
     Foldunk.EventStore.GesGateway(connection, Foldunk.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
 
-let createGesStream<'state,'event> gateway (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName : Foldunk.IStream<_,_> =
-    let store = Foldunk.EventStore.GesStreamStore<'state, 'event>(gateway, codec)
-    Foldunk.EventStore.GesStream<'state, 'event>(store, streamName) :> _
+let createGesStream<'event, 'state> gateway (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName : Foldunk.IStream<_,_> =
+    let store = Foldunk.EventStore.GesStreamStore<'event, 'state>(gateway, codec)
+    Foldunk.EventStore.GesStream<'event, 'state>(store, streamName) :> _
 
 let inline createMemStore () =
     Foldunk.MemoryStore.MemoryStreamStore()
-let inline createMemStream<'state,'event> store streamName : Foldunk.IStream<'state,'event> =
+let inline createMemStream<'event, 'state> store streamName : Foldunk.IStream<'event, 'state> =
     Foldunk.MemoryStore.MemoryStream(store, streamName) :> _

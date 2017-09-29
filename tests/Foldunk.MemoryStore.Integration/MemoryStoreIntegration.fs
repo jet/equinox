@@ -4,7 +4,7 @@ open Swensen.Unquote
 
 let inline createMemStore () =
     Foldunk.MemoryStore.MemoryStreamStore()
-let inline createMemStream<'state,'event> store streamName : Foldunk.IStream<'state,'event> =
+let inline createMemStream<'event, 'state> store streamName : Foldunk.IStream<'event, 'state> =
     Foldunk.MemoryStore.MemoryStream(store, streamName) :> _
 
 let createServiceMem () =
@@ -21,7 +21,7 @@ type Tests(testOutputHelper) =
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
         let log, service = createLog (), createServiceMem ()
-        let decide (ctx: Foldunk.DecisionContext<_,_>) = async {
+        let decide (ctx: Foldunk.Context<_,_>) = async {
             Domain.Cart.Commands.AddItem args |> Domain.Cart.Commands.interpret |> ctx.Execute
             return ctx.Complete ctx.State }
 

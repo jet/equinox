@@ -150,8 +150,8 @@ type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
         let token = Token.ofVersion wr.NextExpectedVersion
         return GatewaySyncResult.Written token }
 
-type GesStreamStore<'state, 'event>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
-    member __.Load streamName log : Async<Storage.StreamState<'state, 'event>> = async {
+type GesStreamStore<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
+    member __.Load streamName log : Async<Storage.StreamState<'event, 'state>> = async {
         let! token, events = gateway.LoadBatched streamName log
         return EventSumAdapters.decodeKnownEvents codec events |> Storage.StreamState.ofTokenAndEvents token }
     member __.TrySync streamName log (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
@@ -167,9 +167,9 @@ type GesStreamStore<'state, 'event>(gateway : GesGateway, codec : EventSum.IEven
         | GatewaySyncResult.Written token' ->
             return Storage.SyncResult.Written (Storage.StreamState.ofTokenAndKnownState token' proposedState) }
 
-type GesStream<'state, 'event>(store: GesStreamStore<'state, 'event>, streamName) =
-    interface IStream<'state,'event> with
-        member __.Load log : Async<Storage.StreamState<'state, 'event>> =
+type GesStream<'event, 'state>(store: GesStreamStore<'event, 'state>, streamName) =
+    interface IStream<'event, 'state> with
+        member __.Load log : Async<Storage.StreamState<'event, 'state>> =
             store.Load streamName log
         member __.TrySync log (token, snapshotState) (events : 'event list, proposedState: 'state) =
             store.TrySync streamName log (token, snapshotState) (events, proposedState)

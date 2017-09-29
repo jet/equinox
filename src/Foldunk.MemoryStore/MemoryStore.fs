@@ -89,8 +89,8 @@ type MemoryStreamStore() =
         | ConcurrentArraySyncResult.Written events -> return Storage.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState events proposedState }
 
 /// Represents a specific stream in a MemoryStreamStore
-type MemoryStream<'state, 'event>(store : MemoryStreamStore, streamName) =
-    interface IStream<'state, 'event> with
+type MemoryStream<'event, 'state>(store : MemoryStreamStore, streamName) =
+    interface IStream<'event, 'state> with
         member __.Load log = store.Load streamName log
         member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list, state': 'state) = 
             store.TrySync streamName log (token, originState) (events, state')

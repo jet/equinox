@@ -26,7 +26,7 @@ type JsonEncoder
         member __.Encode (value : 'T) = JsonConvert.SerializeObject(value, settings)
         member __.Decode (json : string) = JsonConvert.DeserializeObject<'T>(json, settings)
 
-/// Newtonsoft.Json implementation of IEncoder that encodes directo to a UTF-8 Buffer
+/// Newtonsoft.Json implementation of IEncoder that encodes direct to a UTF-8 Buffer
 type Utf8JsonEncoder() =
     // For whatever reason, EventStore does not hyphenate guids respect this approach
     let settings = Newtonsoft.GetDefaultSettings(useHyphenatedGuids = false, indent = false)

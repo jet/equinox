@@ -24,7 +24,7 @@ let createCartServiceGes eventStoreConnection = createCartServiceGesWithBatchSiz
 
 type Tests() =
     let addAndThenRemoveItems exceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
-        let decide (ctx : Foldunk.DecisionContext<_,_>) = async {
+        let decide (ctx : Foldunk.Context<_,_>) = async {
             let run cmd = ctx.Execute(Domain.Cart.Commands.interpret cmd)
             for i in 1..count do
                 run <| Domain.Cart.Commands.AddItem (context, skuId, i)
