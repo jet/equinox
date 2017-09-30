@@ -27,9 +27,6 @@ type Context<'event, 'state>(fold, originState : 'state) =
         return result }
     /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
     member __.Accumulated = accumulated |> List.ofSeq
-    /// Used to complete a Decision flow, yielding the supplied `outcome` (which may be unit) along with the Accumulated events to be synced to the stream
-    member __.Complete outcome =
-        outcome, __.Accumulated
 
 /// Internal data stuctures. While these are intended to be legible, understand the abstractions involved is only necessary if you are implemening a Store or a decorator thereof.
 [<RequireQualifiedAccess>]
@@ -153,11 +150,33 @@ module private Flow =
 
 /// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic
 type Handler<'event, 'state>(fold, initial, ?maxAttempts) =
-    /// Invoke the supplied `decide` function, syncing the accumulated events at the end. Tries up to `maxAttempts` times in the case of a conflict, throwing
-    /// `FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
-    member __.Decide (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decide: Context<'event, 'state> -> Async<'outcome * 'event list>) = async {
+    let maxAttempts = defaultArg maxAttempts 3
+    /// 0. Invoke the supplied `flow` function 1. attempt to sync the accumulated events to the stream
+    /// Throws FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
+    member __.Run (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (flow: Context<'event, 'state> -> unit) =
+        __.RunAsync stream log (fun ctx -> async { return flow ctx })
+    /// 0. Invoke the supplied _Async_ `flow` function 1. attempt to sync the accumulated events to the stream
+    /// Throws FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
+    member __.RunAsync (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (flowAsync: Context<'event, 'state> -> Async<unit>)
+        : Async<unit> = async {
+        // TODO interpret in terms of DecideAsync
+        let decideAsync ctx = async {
+            do! flowAsync ctx
+            return (), ctx.Accumulated }
         let! syncState = Flow.load fold initial log stream
-        return! Flow.run syncState (defaultArg maxAttempts 3) log decide }
+        return! Flow.run syncState maxAttempts log decideAsync }
+    /// 0. Invoke the supplied `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.
+    /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
+    member __.Decide (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decide: Context<'event, 'state> -> 'outcome * 'event list)
+        : Async<'outcome> =
+        __.DecideAsync stream log <| fun ctx -> async {
+            return decide ctx }
+    /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.syn
+    /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
+    member __.DecideAsync (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decideAsync: Context<'event, 'state> -> Async<'outcome * 'event list>)
+        : Async<'outcome> = async {
+        let! syncState = Flow.load fold initial log stream
+        return! Flow.run syncState maxAttempts log decideAsync }
     /// Project from the folded `State` (without executing a decision flow or syncing new events to the stream as `Decide` does)
     member __.Query (stream : IStream<'event, 'state>) (log: Serilog.ILogger) (projection : 'state -> 'projected) : Async<'projected> = async {
         let! syncState = Flow.load fold initial log stream

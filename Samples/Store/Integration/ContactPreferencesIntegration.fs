@@ -9,8 +9,7 @@ let createServiceMem () =
     Backend.ContactPreferences.Service(fun _codec -> createMemStream store)
 
 let createServiceGes eventStoreConnection =
-    let gateway = createGesGateway eventStoreConnection 500
-    Backend.ContactPreferences.Service(createGesStream gateway)
+    Backend.ContactPreferences.Service(createGesStream eventStoreConnection defaultBatchSize)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

@@ -21,11 +21,6 @@ type SerilogTracerAdapter(emit : string -> unit) =
     member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
         source.Subscribe handleLogEvent
 
-let batchSize = 500
-let createCartServiceWithEventStore eventStoreConnection =
-    let gateway = createGesGateway eventStoreConnection batchSize
-    Backend.Cart.Service(createGesStream gateway)
-
 let createLoggerWithCapture emit =
     let capture = SerilogTracerAdapter emit
     let subscribeLogListeners obs =
@@ -39,7 +34,8 @@ type Tests() =
     let ``Can roundtrip against EventStore, hooking, extracting and substuting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
         let! conn = connectToLocalEventStoreNode ()
         let buffer = ResizeArray<string>()
-        let (log,capture), service = createLoggerWithCapture buffer.Add, createCartServiceWithEventStore conn
+        let batchSize = defaultBatchSize
+        let (log,capture), service = createLoggerWithCapture buffer.Add, CartIntegration.createServiceGes conn batchSize
 
         let itemCount = batchSize / 2 + 1
         do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service itemCount
@@ -49,7 +45,7 @@ type Tests() =
 
         // Because we've gone over a page, we need two reads to load the state, making a total of three
         let contains (s : string) (x : string) = x.IndexOf s <> -1
-        test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains "ReadStreamEventsForwxardAsync-Elapsed")
+        test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains "ReadStreamEventsForwardAsync-Elapsed")
                 3 <= Seq.length reads
                 && not (obj.ReferenceEquals(capture, null)) @>
     }

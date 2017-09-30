@@ -21,15 +21,16 @@ type Tests(testOutputHelper) =
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
         let log, service = createLog (), createServiceMem ()
-        let decide (ctx: Foldunk.Context<_,_>) = async {
-            Domain.Cart.Commands.AddItem args |> Domain.Cart.Commands.interpret |> ctx.Execute
-            return ctx.Complete ctx.State }
+        let flow (ctx: Foldunk.Context<_,_>) execute =
+            Domain.Cart.AddItem args |> execute
+            ctx.State
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
-            service.Decide log cartId decide
+            service.Flow log cartId flow
+
         let actLoadingStateSeparately cartId = async {
-            let! _ = service.Decide log cartId decide
+            let! _ = service.Flow log cartId flow
             return! service.Read log cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately

@@ -30,21 +30,21 @@ module Folds =
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
     let fold state = List.fold evolve state
 
-module Commands =
-    type Context =              { time: System.DateTime; requestId : RequestId }
-    type Command =
-        | AddItem               of Context * SkuId * quantity: int
-        | ChangeItemQuantity    of Context * SkuId * quantity: int
-        | ChangeWaiveReturns    of Context * SkuId * waived: bool
-        | RemoveItem            of Context * SkuId
+type Context =              { time: System.DateTime; requestId : RequestId }
+type Command =
+    | AddItem               of Context * SkuId * quantity: int
+    | ChangeItemQuantity    of Context * SkuId * quantity: int
+    | ChangeWaiveReturns    of Context * SkuId * waived: bool
+    | RemoveItem            of Context * SkuId
 
-    let toEventContext (reqContext: Context) : Events.ContextInfo = { requestId = reqContext.requestId; time = reqContext.time }
+module Commands =
     let interpret command (state : Folds.State) =
         let itemExists f                                    = state.items |> List.exists f
         let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
         let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)
         let itemExistsWithSameQuantity skuId quantity       = itemExists (fun x -> x.skuId = skuId && x.quantity = quantity)
         let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId)
+        let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
         let (|Context|) (context : Context)                 = toEventContext context
         match command with
         | AddItem (Context c, skuId, quantity) ->
@@ -62,7 +62,13 @@ module Commands =
 
 type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial)
-    member __.Decide log decide =
-        handler.Decide stream log decide
+    member __.Flow log flow =
+        handler.Decide stream log <| fun ctx ->
+            let execute = Commands.interpret >> ctx.Execute
+            let outcome = flow ctx execute
+            outcome, ctx.Accumulated
+    member __.Execute log command =
+        __.Flow log <| fun _ctx execute ->
+            execute command
     member __.Read log : Async<Folds.State> =
         handler.Query stream log id

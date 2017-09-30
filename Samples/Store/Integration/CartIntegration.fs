@@ -8,19 +8,15 @@ let createServiceMem () =
     let store = createMemStore ()
     Backend.Cart.Service(fun _codec -> createMemStream store)
 
-let createServiceGes eventStoreConnection =
-    let gateway = createGesGateway eventStoreConnection 500
-    Backend.Cart.Service(createGesStream gateway)
+let createServiceGes eventStoreConnection batchSize =
+    Backend.Cart.Service(createGesStream eventStoreConnection batchSize)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
-    let decide (ctx : Foldunk.Context<_,_>) = async {
-        let run cmd = ctx.Execute(Domain.Cart.Commands.interpret cmd)
+    service.Flow log cartId <| fun _ctx execute ->
         for i in 1..count do
-            run <| Domain.Cart.Commands.AddItem (context, skuId, i)
+            execute <| Domain.Cart.AddItem (context, skuId, i)
             if i <> count then
-                run <| Domain.Cart.Commands.RemoveItem (context, skuId)
-        return ctx.Complete() }
-    service.Decide log cartId decide
+                execute <| Domain.Cart.RemoveItem (context, skuId)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -39,7 +35,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly folding the events`` context cartId skuId = Async.RunSynchronously <| async {
         let! conn = connectToLocalEventStoreNode ()
-        let log, service = createLog (), createServiceGes conn
+        let log, service = createLog (), createServiceGes conn defaultBatchSize
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5
 

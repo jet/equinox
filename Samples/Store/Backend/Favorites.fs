@@ -7,9 +7,9 @@ type Service(createStream) =
     let streamName (clientId : ClientId) = sprintf "Favorites-%s" clientId.Value
     let handler id = Favorites.Handler(streamName id |> createStream codec)
 
-    member __.Execute (log : Serilog.ILogger) (clientId : ClientId) cmd =
+    member __.Execute (log : Serilog.ILogger) (clientId : ClientId) command =
         let handler = handler clientId
-        handler.Execute log cmd
+        handler.Execute log command
 
     member __.Read (log : Serilog.ILogger) (clientId : ClientId) =
         let handler = handler clientId

@@ -16,15 +16,15 @@ module Folds =
     let initial : State = { manyPromotions = false; littlePromotions = false; productReview = false; quickSurveys = false }
     let private evolve = function
         | Events.Updated { preferences = value } -> value
-
     let fold (_state: State) (events: seq<Events.Event>) : State =
         match Seq.tryLast events |> Option.map evolve with
         | None -> initial
         | Some value-> value
 
+type Command =
+    | Update of Events.Value
+
 module Commands =
-    type Command =
-        | Update of Events.Value
     let interpret command (state : Folds.State) =
         match command with
         | Update ({ preferences = preferences } as value) ->
@@ -34,10 +34,8 @@ module Commands =
 type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial)
     member __.Update log email value : Async<unit> =
-        let decide (ctx : Foldunk.Context<_,_>) = async {
-            let command = Commands.Update { email = email; preferences = value }
-            ctx.Execute <| Commands.interpret command
-            return ctx.Complete () }
-        handler.Decide stream log decide
+        handler.Run stream log <| fun ctx ->
+            let execute = Commands.interpret >> ctx.Execute
+            execute <| Update { email = email; preferences = value }
     member __.Read log : Async<Folds.State> =
         handler.Query stream log id

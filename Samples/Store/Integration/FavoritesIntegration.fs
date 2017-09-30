@@ -9,8 +9,7 @@ let createServiceMem () =
     Backend.Favorites.Service(fun _codec -> createMemStream store)
 
 let createServiceGes eventStoreConnection =
-    let gateway = createGesGateway eventStoreConnection 500
-    Backend.Favorites.Service(createGesStream gateway)
+    Backend.Favorites.Service(createGesStream eventStoreConnection defaultBatchSize)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -25,7 +24,7 @@ type Tests(testOutputHelper) =
         let! items = service.Read log clientId
 
         match command with
-        | Domain.Favorites.Commands.Favorite (_,skuIds) ->
+        | Domain.Favorites.Favorite (_,skuIds) ->
             test <@ skuIds |> List.forall (fun skuId -> items |> Array.exists (function { skuId = itemSkuId} -> itemSkuId = skuId)) @>
         | _ ->
             test <@ Array.isEmpty items@>
@@ -40,7 +39,7 @@ type Tests(testOutputHelper) =
         let! items = service.Read log clientId
 
         match command with
-        | Domain.Favorites.Commands.Favorite (_,skuIds) ->
+        | Domain.Favorites.Favorite (_,skuIds) ->
             test <@ skuIds |> List.forall (fun skuId -> items |> Array.exists (function { skuId = itemSkuId} -> itemSkuId = skuId)) @>
         | _ ->
             test <@ Array.isEmpty items@>

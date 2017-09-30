@@ -32,11 +32,11 @@ module Folds =
 
     let contains skuId (state: State) =         state |> Array.exists (fun x -> x.skuId = skuId)
 
-module Commands =
-    type Command =
-        | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
-        | Unfavorite    of skuId : SkuId
+type Command =
+    | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
+    | Unfavorite    of skuId : SkuId
 
+module Commands =
     let interpret command (state : Folds.State) =
         match command with
         | Favorite (date = date; skuIds = skuIds) ->
@@ -49,11 +49,8 @@ module Commands =
 
 type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial)
-    member __.Execute log cmd : Async<unit> =
-        let decide (ctx : Foldunk.Context<_,_>) = async {
-            let execute = Commands.interpret >> ctx.Execute
-            execute cmd
-            return ctx.Complete () }
-        handler.Decide stream log decide
+    member __.Execute log command : Async<unit> =
+        handler.Run stream log <| fun ctx ->
+            (Commands.interpret >> ctx.Execute) command
     member __.Read log : Async<Folds.State> =
         handler.Query stream log id
