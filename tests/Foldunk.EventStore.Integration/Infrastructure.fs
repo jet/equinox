@@ -21,7 +21,7 @@ module SerilogHelpers =
             .Destructure.AsScalar<Foldunk.EventStore.Metrics.Metric>()
             .CreateLogger()
 
-    let (|SerilogProperty|) name (logEvent : Serilog.Events.LogEvent) : Serilog.Events.LogEventPropertyValue option =
+    let (|HasLogEventProperty|) name (logEvent : Serilog.Events.LogEvent) : Serilog.Events.LogEventPropertyValue option =
         match logEvent.Properties.TryGetValue name with
         | true, value -> Some value
         | false, _ -> None
@@ -38,7 +38,7 @@ module SerilogHelpers =
         member __.ExternalCalls =
             captured
             |> Seq.choose (function
-                | SerilogProperty Foldunk.EventStore.Metrics.ExternalTag
+                | HasLogEventProperty Foldunk.EventStore.Metrics.ExternalTag
                     (Some (SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as metric))) -> Some metric.action
                 | _ -> None)
             |> List.ofSeq
