@@ -43,7 +43,8 @@ type private ConcurrentArrayStore() =
         | true, packed -> __.Unpack log streamName packed |> Some
 
     /// Attempts a sychronization operation - yields conflicting value if sync function decides there is a conflict
-    member __.TrySync streamName log (trySyncValue : 'events array -> ConcurrentDictionarySyncResult<'event seq>) (events: 'event seq) : ConcurrentArraySyncResult<'event array> =
+    member __.TrySync streamName (log : Serilog.ILogger)  (trySyncValue : 'events array -> ConcurrentDictionarySyncResult<'event seq>) (events: 'event seq)
+        : ConcurrentArraySyncResult<'event array> =
         let seedStream _streamName = __.Pack events
         let updatePackedValue streamName (packedCurrentValue : obj) =
             let currentValue = __.Unpack log streamName packedCurrentValue
@@ -71,15 +72,15 @@ module private MemoryStreamStreamState =
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type MemoryStreamStore() =
     let store = ConcurrentArrayStore()
-    member __.Load streamName log = async {
+    member __.Load streamName (log : Serilog.ILogger) = async {
         match store.TryLoad<'event> streamName log with
         | None -> return MemoryStreamStreamState.ofEmpty ()
         | Some events -> return MemoryStreamStreamState.ofEventArray events }
-    member __.TrySync streamName log (token, snapshotState) (events: 'event list, proposedState) = async {
+    member __.TrySync streamName (log : Serilog.ILogger)  (token, snapshotState) (events: 'event list, proposedState) = async {
         let trySyncValue currentValue =
             if Array.length currentValue <> unbox token + 1 then ConcurrentDictionarySyncResult.Conflict (unbox token)
             else ConcurrentDictionarySyncResult.Written (Seq.append currentValue events)
-        match store.TrySync streamName log trySyncValue events with
+        match store.TrySync streamName (log : Serilog.ILogger) trySyncValue events with
         | ConcurrentArraySyncResult.Conflict conflictingEvents ->
             let resync = async {
                 let version = MemoryStreamStreamState.tokenOfArray conflictingEvents

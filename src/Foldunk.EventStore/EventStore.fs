@@ -133,15 +133,15 @@ type GesStreamPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
 type GatewaySyncResult = Written of Storage.StreamToken | Conflict
 
 type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
-    member __.LoadBatched streamName log : Async<Storage.StreamToken * ResolvedEvent[]> = async {
+    member __.LoadBatched streamName (log : Serilog.ILogger)  : Async<Storage.StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName 0
         return Token.ofVersion version, events }
-    member __.LoadFromToken streamName log (token : Storage.StreamToken) : Async<Storage.StreamToken * ResolvedEvent[]> = async {
+    member __.LoadFromToken streamName (log : Serilog.ILogger)  (token : Storage.StreamToken) : Async<Storage.StreamToken * ResolvedEvent[]> = async {
         let token : Token = unbox token.value
         let streamPosition = token.streamVersion + 1
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName streamPosition
         return Token.ofVersion version, events }
-    member __.TrySync streamName log (token : Storage.StreamToken) (encodedEvents: EventData array) : Async<GatewaySyncResult> = async {
+    member __.TrySync streamName (log : Serilog.ILogger) (token : Storage.StreamToken) (encodedEvents: EventData array) : Async<GatewaySyncResult> = async {
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.Connection streamName (unbox token.value).streamVersion encodedEvents
         match wr with
         | EsSyncResult.Conflict -> return GatewaySyncResult.Conflict
@@ -154,7 +154,7 @@ type GesStreamStore<'event, 'state>(gateway : GesGateway, codec : EventSum.IEven
     member __.Load streamName log : Async<Storage.StreamState<'event, 'state>> = async {
         let! token, events = gateway.LoadBatched streamName log
         return EventSumAdapters.decodeKnownEvents codec events |> Storage.StreamState.ofTokenAndEvents token }
-    member __.TrySync streamName log (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
+    member __.TrySync streamName (log : Serilog.ILogger)  (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
         let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec events
         let! syncRes = gateway.TrySync streamName log token encodedEvents
         match syncRes with
@@ -169,7 +169,7 @@ type GesStreamStore<'event, 'state>(gateway : GesGateway, codec : EventSum.IEven
 
 type GesStream<'event, 'state>(store: GesStreamStore<'event, 'state>, streamName) =
     interface IStream<'event, 'state> with
-        member __.Load log : Async<Storage.StreamState<'event, 'state>> =
+        member __.Load (log : Serilog.ILogger)  : Async<Storage.StreamState<'event, 'state>> =
             store.Load streamName log
-        member __.TrySync log (token, snapshotState) (events : 'event list, proposedState: 'state) =
+        member __.TrySync (log : Serilog.ILogger)  (token, snapshotState) (events : 'event list, proposedState: 'state) =
             store.TrySync streamName log (token, snapshotState) (events, proposedState)

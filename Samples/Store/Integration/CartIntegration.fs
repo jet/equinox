@@ -32,7 +32,7 @@ type Tests(testOutputHelper) =
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5
 
-        let! state = service.Load log cartId
+        let! state = service.Read log cartId
         test <@ 5 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
     }
 
@@ -43,6 +43,6 @@ type Tests(testOutputHelper) =
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5
 
-        let! state = service.Load log cartId
+        let! state = service.Read log cartId
         test <@ 5 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
     }

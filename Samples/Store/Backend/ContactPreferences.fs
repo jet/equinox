@@ -11,6 +11,6 @@ type Service(createStream) =
         let handler = handler (Domain.ContactPreferences.Id email)
         handler.Update log email value
 
-    member __.Load (log : Serilog.ILogger) email =
+    member __.Read (log : Serilog.ILogger) email =
         let handler = handler (Domain.ContactPreferences.Id email)
-        handler.Load log
+        handler.Read log

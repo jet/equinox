@@ -22,7 +22,7 @@ type Tests(testOutputHelper) =
         let log, service = createLog (), createServiceGes conn
 
         do! service.Execute log clientId command
-        let! items = service.Load log clientId
+        let! items = service.Read log clientId
 
         match command with
         | Domain.Favorites.Commands.Favorite (_,skuIds) ->
@@ -37,7 +37,7 @@ type Tests(testOutputHelper) =
         let log, service = createLog (), createServiceGes conn
 
         do! service.Execute log clientId command
-        let! items = service.Load log clientId
+        let! items = service.Read log clientId
 
         match command with
         | Domain.Favorites.Commands.Favorite (_,skuIds) ->

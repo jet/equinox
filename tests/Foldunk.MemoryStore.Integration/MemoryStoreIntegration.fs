@@ -30,7 +30,7 @@ type Tests(testOutputHelper) =
             service.Decide log cartId decide
         let actLoadingStateSeparately cartId = async {
             let! _ = service.Decide log cartId decide
-            return! service.Load log cartId }
+            return! service.Read log cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately
 

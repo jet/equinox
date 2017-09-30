@@ -11,6 +11,6 @@ type Service(createStream) =
         let handler = handler clientId
         handler.Execute log cmd
 
-    member __.Load (log : Serilog.ILogger) (clientId : ClientId) =
+    member __.Read (log : Serilog.ILogger) (clientId : ClientId) =
         let handler = handler clientId
-        handler.Load log
+        handler.Read log

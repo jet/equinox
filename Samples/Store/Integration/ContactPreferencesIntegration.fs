@@ -23,7 +23,7 @@ type Tests(testOutputHelper) =
         let (Domain.ContactPreferences.Id email) = id
         do! service.Update log email value
 
-        let! actual = service.Load log email
+        let! actual = service.Read log email
         test <@ value = actual @>
     }
 
@@ -35,6 +35,6 @@ type Tests(testOutputHelper) =
         let (Domain.ContactPreferences.Id email) = id
         do! service.Update log email value
 
-        let! actual = service.Load log email
+        let! actual = service.Read log email
         test <@ value = actual @>
     }

@@ -6,8 +6,8 @@ module Events =
     type Unfavorited =                          { skuId: SkuId }
 
     type Event =
-        | Favorited     of Favorited
-        | Unfavorited   of Unfavorited
+        | Favorited                             of Favorited
+        | Unfavorited                           of Unfavorited
 
 module Folds =
     type State = Events.Favorited []
@@ -18,7 +18,6 @@ module Folds =
         let favoriteAll (xs: Events.Favorited seq) = for x in xs do favorite x
         do favoriteAll input
         member __.Favorite (e : Events.Favorited) = favorite e
-        member __.ReplaceAllWith newSet =       dict.Clear(); favoriteAll newSet
         member __.Unfavorite id =               dict.Remove id |> ignore
         member __.AsState =                     Seq.toArray dict.Values
 
@@ -52,9 +51,9 @@ type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial)
     member __.Execute log cmd : Async<unit> =
         let decide (ctx : Foldunk.Context<_,_>) = async {
-            let execute cmd = ctx.Execute <| Commands.interpret cmd
+            let execute = Commands.interpret >> ctx.Execute
             execute cmd
             return ctx.Complete () }
-        handler.Decide decide log stream
-    member __.Load log : Async<Folds.State> =
-        handler.Query id log stream
+        handler.Decide stream log decide
+    member __.Read log : Async<Folds.State> =
+        handler.Query stream log id

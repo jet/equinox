@@ -61,7 +61,7 @@ type Tests() =
         capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
-        let! state = service.Load log cartId
+        let! state = service.Read log cartId
         test <@ 6 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
         // Need to read 4 batches to read 11 events in batches of 3

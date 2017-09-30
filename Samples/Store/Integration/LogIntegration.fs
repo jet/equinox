@@ -44,7 +44,7 @@ type Tests() =
         let itemCount = batchSize / 2 + 1
         do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service itemCount
 
-        let! state = service.Load log cartId
+        let! state = service.Read log cartId
         test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
         // Because we've gone over a page, we need two reads to load the state, making a total of three
