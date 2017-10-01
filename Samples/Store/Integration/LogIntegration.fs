@@ -35,6 +35,7 @@ let createLoggerWithMetricsExtraction emit =
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type Tests() =
+    // Protip: Debug this test to view standard metrics rendering
     [<AutoData>]
     let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
         let! conn = connectToLocalEventStoreNode ()

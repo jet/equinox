@@ -14,12 +14,12 @@ module Folds =
 
     type private InternalState(input: State) =
         let dict = new System.Collections.Generic.Dictionary<SkuId, Events.Favorited>()
-        let favorite (e : Events.Favorited) = dict.[e.skuId] <- e
+        let favorite (e : Events.Favorited) =   dict.[e.skuId] <- e
         let favoriteAll (xs: Events.Favorited seq) = for x in xs do favorite x
         do favoriteAll input
-        member __.Favorite (e : Events.Favorited) = favorite e
+        member __.Favorite(e : Events.Favorited) =  favorite e
         member __.Unfavorite id =               dict.Remove id |> ignore
-        member __.AsState =                     Seq.toArray dict.Values
+        member __.AsState() =                   Seq.toArray dict.Values
 
     let initial : State = [||]
     let private evolve (s: InternalState) = function
@@ -28,9 +28,7 @@ module Folds =
     let fold (state: State) (events: seq<Events.Event>) : State =
         let s = InternalState state
         for e in events do evolve s e
-        s.AsState
-
-    let contains skuId (state: State) =         state |> Array.exists (fun x -> x.skuId = skuId)
+        s.AsState()
 
 type Command =
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
@@ -38,13 +36,14 @@ type Command =
 
 module Commands =
     let interpret command (state : Folds.State) =
+        let doesntHave skuId = state |> Array.exists (fun x -> x.skuId = skuId)
         match command with
         | Favorite (date = date; skuIds = skuIds) ->
             [ for skuId in Seq.distinct skuIds do
-                if not (state |> Folds.contains skuId) then
+                if doesntHave skuId then
                     yield Events.Favorited { date = date; skuId = skuId } ]
         | Unfavorite skuId ->
-            if not (state |> Folds.contains skuId) then [] else
+            if doesntHave skuId then [] else
             [ Events.Unfavorited { skuId = skuId } ]
 
 type Handler(stream) =

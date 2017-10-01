@@ -49,7 +49,7 @@ module SerilogHelpers =
     type LogCaptureBuffer() =
         let captured = ResizeArray()
         member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-            source.Subscribe captured.Add
+            source.Subscribe (fun x -> x.RenderMessage () |> System.Diagnostics.Trace.WriteLine; captured.Add x)
         member __.Clear () = captured.Clear()
         member __.Entries = captured.ToArray()
         member __.ExternalCalls = captured |> Seq.choose (function EsMetric metric -> Some metric.action | _ -> None) |> List.ofSeq

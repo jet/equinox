@@ -16,9 +16,9 @@ module Folds =
     let initial : State = { manyPromotions = false; littlePromotions = false; productReview = false; quickSurveys = false }
     let private evolve = function
         | Events.Updated { preferences = value } -> value
-    let fold (_state: State) (events: seq<Events.Event>) : State =
+    let fold (state: State) (events: seq<Events.Event>) : State =
         match Seq.tryLast events |> Option.map evolve with
-        | None -> initial
+        | None -> state
         | Some value-> value
 
 type Command =

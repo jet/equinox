@@ -44,7 +44,7 @@ let verifyCorrectEventGenerationWhenAppropriate cmd =
         | ChangeWaiveReturns (_, csku, value),      [ ItemWaiveReturnsChanged e] ->
             test <@ { ItemWaiveReturnsInfo.context = e.context; skuId = csku; waived = value } = e
                    && value = (find csku).returnsWaived @>
-         | RemoveItem (_, csku),                    [ ItemRemoved e ] ->
+        | RemoveItem (_, csku),                     [ ItemRemoved e ] ->
             test <@ { ItemRemoveInfo.context = e.context; skuId = csku } = e
                     && not (state'.items |> List.exists (fun x -> x.skuId = csku)) @>
         | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state

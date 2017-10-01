@@ -23,6 +23,7 @@ module Metrics =
     [<NoEquality; NoComparison>]
     type Metric = { interval: StopwatchInterval; action: string } with
         override __.ToString() = sprintf "%s-Elapsed=%O" __.action __.interval.Elapsed 
+    let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
 
 module private Write =
     /// Yields `Ok WriteResult` or `Error ()` to signify WrongExpectedVersion
@@ -37,7 +38,9 @@ module private Write =
         : Async<EsSyncResult> = async {
         let! t, result = writeEventsAsync log conn streamName version events |> Stopwatch.Time
         let metric : Metrics.Metric = { Metrics.interval = t; action = "AppendToStreamAsync" }
-        log.Information("{metric} stream={stream:l} expectedVersion={expectedVersion} count={count} ", metric, streamName, version, events.Length)
+        let eventDataLen (x : EventData) = match x.Data, x.Metadata with Metrics.BlobLen bytes, Metrics.BlobLen metaBytes -> bytes + metaBytes
+        log.Information("{metric} stream={stream:l} expectedVersion={expectedVersion} count={count} bytes={payloadBytes}",
+            metric, streamName, version, events.Length, events |> Array.sumBy eventDataLen)
         return result }
     let writeEvents (log : Serilog.ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
         : Async<EsSyncResult> =
@@ -55,14 +58,13 @@ module private Read =
             | Direction.Forward ->  conn.ReadStreamEventsForwardAsync(streamName, startPos, batchSize, resolveLinkTos = false)
             | Direction.Backward -> conn.ReadStreamEventsBackwardAsync(streamName, startPos, batchSize, resolveLinkTos = false)
         return! call |> Async.AwaitTaskCorrect }
+    let (|ResolvedEventLen|) (x : ResolvedEvent) = match x.Event.Data, x.Event.Metadata with Metrics.BlobLen bytes, Metrics.BlobLen metaBytes -> bytes + metaBytes
     let private loggedReadSlice conn streamName direction batchSize startPos (log : Serilog.ILogger) : Async<StreamEventsSlice> = async {
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.Time
-        let payloadSize = slice.Events |> Array.sumBy (fun e -> e.Event.Data.Length)
         let action = match direction with Direction.Forward -> "ReadStreamEventsForwardAsync" | Direction.Backward -> "ReadStreamEventsBackwardAsync"
         let metric : Metrics.Metric = { interval = t; action = action }
-        log.Information(
-            "{metric} stream={stream:l} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize}",
-            metric, streamName, slice.LastEventNumber, batchSize, payloadSize)
+        log.Information("{metric} stream={stream:l} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize}",
+            metric, streamName, slice.LastEventNumber, batchSize, slice.Events |> Array.sumBy (|ResolvedEventLen|))
         return slice }
     let private readBatches (log : Serilog.ILogger) (readSlice : int -> Serilog.ILogger -> Async<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int)
@@ -136,7 +138,7 @@ type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
     member __.LoadBatched streamName (log : Serilog.ILogger)  : Async<Storage.StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName 0
         return Token.ofVersion version, events }
-    member __.LoadFromToken streamName (log : Serilog.ILogger)  (token : Storage.StreamToken) : Async<Storage.StreamToken * ResolvedEvent[]> = async {
+    member __.LoadFromToken streamName (log : Serilog.ILogger) (token : Storage.StreamToken) : Async<Storage.StreamToken * ResolvedEvent[]> = async {
         let token : Token = unbox token.value
         let streamPosition = token.streamVersion + 1
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName streamPosition

@@ -2,8 +2,6 @@
 
 open Swensen.Unquote
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
-
 /// Needs an ES instance with default settings
 /// TL;DR: At an elevated command prompt: choco install eventstore-oss; \ProgramData\chocolatey\bin\EventStore.ClusterNode.exe
 let connectToLocalEventStoreNode () = async {
@@ -23,6 +21,8 @@ let createGesStream<'event, 'state> eventStoreConnection batchSize (codec : Fold
 let createCartServiceGes eventStoreConnection batchSize =
     Backend.Cart.Service(createGesStream eventStoreConnection batchSize)
 
+#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
+
 type Tests() =
     let addAndThenRemoveItems context cartId skuId log (service: Backend.Cart.Service) count =
         service.Flow log cartId <| fun _ctx execute ->
@@ -39,7 +39,7 @@ type Tests() =
             capture.Subscribe observable |> ignore
         createLogger subscribeLogListeners, capture
 
-    [<AutoData()>]
+    [<AutoData>]
     let ``Can roundtrip against EventStore, correctly batching the reads without compaction`` context cartId skuId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode ()
