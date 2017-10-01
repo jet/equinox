@@ -1,6 +1,5 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
-open Domain
 open Swensen.Unquote
 open System
 

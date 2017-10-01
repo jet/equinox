@@ -129,26 +129,41 @@ module private Read =
         let! t, (version, events) = mergeBatches batches |> Stopwatch.Time
         log |> logBatchRead "LoadF" streamName t events batchSize version
         return version, events }
+    let partitionPayloadFrom firstUsedEventNumber : ResolvedEvent[] -> int * int =
+        let acc (tu,tr) ((ResolvedEventLen bytes) as y) = if y.Event.EventNumber < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
+        Array.fold acc (0,0)
     let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName isCompactionEvent
         : Async<int * ResolvedEvent[]> = async {
-        let mergeFromCompactionPointOrStartFromBackwardsStream (batchesBackward : AsyncSeq<int option * ResolvedEvent[]>) : Async<int * ResolvedEvent[]> = async {
-            let versionFromStream = ref None
+        let mergeFromCompactionPointOrStartFromBackwardsStream (log : ILogger) (batchesBackward : AsyncSeq<int option * ResolvedEvent[]>)
+            : Async<int * ResolvedEvent[]> = async {
+            let versionFromStream, lastBatch = ref None, ref None
             let! tempBackward =
                 batchesBackward
-                |> AsyncSeq.map (function None, events -> events | (Some _) as reportedVersion, events -> versionFromStream := reportedVersion; events)
+                |> AsyncSeq.map (function
+                    | None, events -> lastBatch := Some events; events
+                    | (Some _) as reportedVersion, events -> versionFromStream := reportedVersion; lastBatch := Some events; events)
                 |> AsyncSeq.concatSeq
-                |> AsyncSeq.takeWhileInclusive (not << isCompactionEvent)
+                |> AsyncSeq.takeWhileInclusive (fun x ->
+                    if not (isCompactionEvent x) then true // continue the search
+                    else
+                        match !lastBatch with
+                        | None -> log.Information("GesStop stream={stream} at={eventNumber}", streamName, x.Event.EventNumber)
+                        | Some batch ->
+                            let used, residual = batch |> partitionPayloadFrom x.Event.EventNumber
+                            log.Information("GesStop stream={stream} at={eventNumber} used={used} residual={residual}", streamName, x.Event.EventNumber, used, residual)
+                        false)
                 |> AsyncSeq.toArrayAsync
             let eventsForward = Array.Reverse(tempBackward); tempBackward // sic - relatively cheap, in-place reverse of something we own
             let version = match !versionFromStream with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
             return version, eventsForward }
         let call pos = loggedReadSlice conn streamName Direction.Backward batchSize pos
-        let retryingLoggingReadSlice pos = Impl.withLoggedRetries retryPolicy "ReadRetry" (call pos)
-        let log = log |> logBatchSize batchSize |> logDirection "Backwards" |> logStream streamName
+        let retryingLoggingReadSlice pos = Impl.withLoggedRetries retryPolicy "readAttempt" (call pos)
+        let log = log |> logBatchSize batchSize |> logStream streamName
         let startPosition = StreamPosition.End
-        let batchesBackward : AsyncSeq<int option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
-        let! t, (version, events) = mergeFromCompactionPointOrStartFromBackwardsStream batchesBackward |> Stopwatch.Time
-        log |> logBatchRead "BatchBackward" streamName t events batchSize version 
+        let readlog = log |> logDirection "Backward"
+        let batchesBackward : AsyncSeq<int option * ResolvedEvent[]> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads startPosition
+        let! t, (version, events) = mergeFromCompactionPointOrStartFromBackwardsStream log batchesBackward |> Stopwatch.Time
+        log |> logBatchRead "LoadB" streamName t events batchSize version
         return version, events }
 
 module EventSumAdapters =

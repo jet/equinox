@@ -94,7 +94,7 @@ type Tests() =
         test <@ List.replicate (expectedBatches-1) singleSliceForward @ singleBatchForward = capture.ExternalCalls @>
     }
 
-    let singleBatchBackwards = ["ReadStreamEventsBackwardAsync"; "BatchBackward"]
+    let singleBatchBackwards = ["ReadStreamEventsBackwardAsync"; "ReadB"]
     let batchBackwardsAndAppend = singleBatchBackwards @ ["AppendToStreamAsync"]
 
     [<AutoData>]
@@ -152,6 +152,9 @@ type Tests() =
 
         capture.Clear()
         do! service.Update log email value
-        let! actual = service.Read log email
+
+        let! result = service.Read log email
+        test <@ value = result @>
+
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
     }
