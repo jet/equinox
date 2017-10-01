@@ -37,7 +37,7 @@ module private Write =
         : Async<EsSyncResult> = async {
         let! t, result = writeEventsAsync log conn streamName version events |> Stopwatch.Time
         let metric : Metrics.Metric = { Metrics.interval = t; action = "AppendToStreamAsync" }
-        log.Information("{"+Metrics.ExternalTag+"} {Stream} {expectedVersion} {Count} ", metric, streamName, version, events.Length)
+        log.Information("{"+Metrics.ExternalTag+"} stream={stream:l} expectedVersion={expectedVersion} count={count} ", metric, streamName, version, events.Length)
         return result }
     let writeEvents (log : Serilog.ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
         : Async<EsSyncResult> =
@@ -61,7 +61,7 @@ module private Read =
         let action = match direction with Direction.Forward -> "ReadStreamEventsForwardAsync" | Direction.Backward -> "ReadStreamEventsBackwardAsync"
         let metric : Metrics.Metric = { interval = t; action = action }
         log.Information(
-            "{"+Metrics.ExternalTag+"} {Stream} {version} {sliceLength} {totalPayloadSize}",
+            "{"+Metrics.ExternalTag+"} stream={stream:l} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize}",
             metric, streamName, slice.LastEventNumber, batchSize, payloadSize)
         return slice }
     let private readBatches (log : Serilog.ILogger) (readSlice : int -> Serilog.ILogger -> Async<StreamEventsSlice>)
