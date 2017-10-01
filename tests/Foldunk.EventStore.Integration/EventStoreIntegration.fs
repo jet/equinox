@@ -35,8 +35,8 @@ type Tests() =
 
     let createLoggerWithCapture () =
         let capture = LogCaptureBuffer()
-        let subscribeLogListeners obs =
-            obs |> capture.Subscribe |> ignore
+        let subscribeLogListeners observable =
+            capture.Subscribe observable |> ignore
         createLogger subscribeLogListeners, capture
 
     [<AutoData()>]

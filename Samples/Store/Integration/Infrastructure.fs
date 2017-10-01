@@ -24,7 +24,7 @@ type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
     let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null);
     let writeSeriLogEvent logEvent =
         use writer = new System.IO.StringWriter()
-        formatter.Format(logEvent, writer);
+        formatter.Format(logEvent, writer)
         writer |> string |> testOutput.WriteLine
     member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
         source.Subscribe writeSeriLogEvent
@@ -38,13 +38,13 @@ module SerilogHelpers =
             .Destructure.AsScalar<Foldunk.EventStore.Metrics.Metric>()
             .CreateLogger()
 
-    let (|HasLogEventProperty|) name (logEvent : Serilog.Events.LogEvent) : Serilog.Events.LogEventPropertyValue option =
-        match logEvent.Properties.TryGetValue name with
-        | true, value -> Some value
-        | false, _ -> None
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? Serilog.Events.ScalarValue as x) -> Some x.Value
         | _ -> None
+    let (|EsMetric|_|) (logEvent : Serilog.Events.LogEvent) : Foldunk.EventStore.Metrics.Metric option =
+        logEvent.Properties.Values |> Seq.tryPick (function
+            | (SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as x)) -> Some x
+            | _ -> None)
 
     type LogCaptureBuffer() =
         let captured = ResizeArray()
@@ -52,13 +52,7 @@ module SerilogHelpers =
             source.Subscribe captured.Add
         member __.Clear () = captured.Clear()
         member __.Entries = captured.ToArray()
-        member __.ExternalCalls =
-            captured
-            |> Seq.choose (function
-                | HasLogEventProperty Foldunk.EventStore.Metrics.ExternalTag
-                    (Some (SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as metric))) -> Some metric.action
-                | _ -> None)
-            |> List.ofSeq
+        member __.ExternalCalls = captured |> Seq.choose (function EsMetric metric -> Some metric.action | _ -> None) |> List.ofSeq
 
 /// Needs an ES instance with default settings
 /// TL;DR: At an elevated command prompt: choco install eventstore-oss; \ProgramData\chocolatey\bin\EventStore.ClusterNode.exe
