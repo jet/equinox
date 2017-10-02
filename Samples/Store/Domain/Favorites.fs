@@ -49,7 +49,7 @@ module Commands =
 type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial)
     member __.Execute log command : Async<unit> =
-        handler.Run stream log <| fun ctx ->
+        handler.Run stream log ignore <| fun ctx ->
             (Commands.interpret >> ctx.Execute) command
     member __.Read log : Async<Folds.State> =
         handler.Query stream log id

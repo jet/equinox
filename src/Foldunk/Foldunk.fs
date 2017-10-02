@@ -135,15 +135,16 @@ module private Flow =
             let ctx = sync.CreateContext()
             let! outcome, events = decide ctx
             if List.isEmpty events then
+                log.Debug "No events generated"
                 return outcome
             elif attempt = maxAttempts then
-                log.Debug("Attempts exceeded")
+                log.Debug "Attempts exceeded"
                 do! sync.TryOrThrow log events attempt
                 return outcome
             else
                 let! committed = sync.TryOrResync log events
                 if not committed then
-                    log.Debug("Resyncing and retrying")
+                    log.Debug "Resyncing and retrying"
                     return! loop (attempt + 1)
                 else
                     return outcome }
@@ -153,34 +154,34 @@ module private Flow =
 /// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic
 type Handler<'event, 'state>(fold, initial, ?maxAttempts) =
     let maxAttempts = defaultArg maxAttempts 3
-    /// 0. Invoke the supplied `flow` function 1. attempt to sync the accumulated events to the stream
+    /// 0. Invoke the supplied `flow` function 1. attempt to sync the accumulated events to the stream 2. yield `projection` of the resulting state
     /// Throws FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
-    member __.Run (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (flow: Context<'event, 'state> -> unit) =
-        __.RunAsync stream log (fun ctx -> async { return flow ctx })
-    /// 0. Invoke the supplied _Async_ `flow` function 1. attempt to sync the accumulated events to the stream
+    member __.Run<'view> (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (projection : 'state -> 'view) (flow: Context<'event, 'state> -> unit) =
+        __.Decide stream log <| fun ctx ->
+            do flow ctx
+            (projection ctx.State), ctx.Accumulated
+    /// 0. Invoke the supplied _Async_ `flow` function 1. attempt to sync the accumulated events to the stream 2. yield `projection` of the resulting state
     /// Throws FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
-    member __.RunAsync (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (flowAsync: Context<'event, 'state> -> Async<unit>)
-        : Async<unit> = async {
-        // TODO interpret in terms of DecideAsync
-        let decideAsync ctx = async {
+    member __.RunAsync<'view> (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (projection : 'state -> 'view)
+            (flowAsync: Context<'event, 'state> -> Async<unit>)
+        : Async<'view> =
+        __.DecideAsync stream log <| fun ctx -> async {
             do! flowAsync ctx
-            return (), ctx.Accumulated }
-        let! syncState = Flow.load fold initial log stream
-        return! Flow.run syncState maxAttempts log decideAsync }
+            return (projection ctx.State), ctx.Accumulated }
     /// 0. Invoke the supplied `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.
     /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
-    member __.Decide (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decide: Context<'event, 'state> -> 'outcome * 'event list)
+    member __.Decide<'outcome> (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decide: Context<'event, 'state> -> 'outcome * 'event list)
         : Async<'outcome> =
         __.DecideAsync stream log <| fun ctx -> async {
             return decide ctx }
-    /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.syn
+    /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome
     /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
-    member __.DecideAsync (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decideAsync: Context<'event, 'state> -> Async<'outcome * 'event list>)
+    member __.DecideAsync<'outcome> (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decideAsync: Context<'event, 'state> -> Async<'outcome * 'event list>)
         : Async<'outcome> = async {
         let! syncState = Flow.load fold initial log stream
         return! Flow.run syncState maxAttempts log decideAsync }
     /// Project from the folded `State` (without executing a decision flow or syncing new events to the stream as `Decide` does)
-    member __.Query (stream : IStream<'event, 'state>) (log: Serilog.ILogger) (projection : 'state -> 'projected) : Async<'projected> = async {
+    member __.Query (stream : IStream<'event, 'state>) (log: Serilog.ILogger) (projection : 'state -> 'view) : Async<'view> = async {
         let! syncState = Flow.load fold initial log stream
         return syncState |> Flow.render projection }
 
