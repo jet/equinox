@@ -131,17 +131,19 @@ module private Flow =
         /// Run a decision cycle - decide what events should be appended given the presented state
         let rec loop attempt: Async<'outcome> = async {
             //let token, currentState = interpreter.Fold currentState
-            let log = log.ForContext("Attempt", attempt)
+            let log = log.ForContext("attemptIndex", attempt)
             let ctx = sync.CreateContext()
             let! outcome, events = decide ctx
             if List.isEmpty events then
                 return outcome
             elif attempt = maxAttempts then
+                log.Debug("Attempts exceeded")
                 do! sync.TryOrThrow log events attempt
                 return outcome
             else
                 let! committed = sync.TryOrResync log events
                 if not committed then
+                    log.Debug("Resyncing and retrying")
                     return! loop (attempt + 1)
                 else
                     return outcome }

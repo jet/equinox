@@ -4,12 +4,17 @@ open Swensen.Unquote
 open System
 
 type SerilogMetricsExtractor(emit : string -> unit) =
-    let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null)
+    let render template =
+        let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter(template, null)
+        fun logEvent ->
+            use writer = new System.IO.StringWriter()
+            formatter.Format(logEvent, writer)
+            writer |> string
+    let renderFull = render "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message} {Properties} {NewLine}{Exception}"
+    let renderSummary = render "{Message} {Properties}"
     let emitEvent (logEvent : Serilog.Events.LogEvent) =
-        use writer = new System.IO.StringWriter()
-        formatter.Format(logEvent, writer)
-        writer |> string |> System.Diagnostics.Trace.WriteLine
-        logEvent.RenderMessage() |> emit
+        logEvent |> renderFull |> System.Diagnostics.Trace.Write
+        logEvent |> renderSummary |> emit
     let (|MetricProperty|_|) (logEvent : Serilog.Events.LogEvent) : (string * Foldunk.EventStore.Metrics.Metric) option =
         logEvent.Properties |> Seq.tryPick (function KeyValue (k, SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as m)) -> Some (k,m) | _ -> None)
     let handleLogEvent = function

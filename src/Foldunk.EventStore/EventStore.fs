@@ -36,11 +36,12 @@ module private Write =
             return Conflict }
     let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) (log : Serilog.ILogger)
         : Async<EsSyncResult> = async {
+        let eventDataLen (x : EventData) = match x.Data, x.Metadata with Metrics.BlobLen bytes, Metrics.BlobLen metaBytes -> bytes + metaBytes
+        let log = log.ForContext("count", events.Length).ForContext("bytes", events |> Array.sumBy eventDataLen)
         let! t, result = writeEventsAsync log conn streamName version events |> Stopwatch.Time
         let metric : Metrics.Metric = { Metrics.interval = t; action = "AppendToStreamAsync" }
-        let eventDataLen (x : EventData) = match x.Data, x.Metadata with Metrics.BlobLen bytes, Metrics.BlobLen metaBytes -> bytes + metaBytes
-        log.Information("{metric} stream={stream:l} expectedVersion={expectedVersion} count={count} bytes={payloadBytes}",
-            metric, streamName, version, events.Length, events |> Array.sumBy eventDataLen)
+        // TODO drop expectedVersion when consumption no longer requires that literal; ditto stream when literal formatting no longer required
+        log.ForContext("metric", metric).Information("ES {action:l} expectedVersion={expectedVersion} stream={stream:l}", "Write", version, streamName)
         return result }
     let writeEvents (log : Serilog.ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
         : Async<EsSyncResult> =
@@ -60,22 +61,25 @@ module private Read =
         return! call |> Async.AwaitTaskCorrect }
     let (|ResolvedEventLen|) (x : ResolvedEvent) = match x.Event.Data, x.Event.Metadata with Metrics.BlobLen bytes, Metrics.BlobLen metaBytes -> bytes + metaBytes
     let private loggedReadSlice conn streamName direction batchSize startPos (log : Serilog.ILogger) : Async<StreamEventsSlice> = async {
+        let log = log.ForContext("startPos", startPos)
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.Time
         let action = match direction with Direction.Forward -> "ReadStreamEventsForwardAsync" | Direction.Backward -> "ReadStreamEventsBackwardAsync"
-        let metric : Metrics.Metric = { interval = t; action = action }
-        log.Information("{metric} stream={stream:l} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize}",
-            metric, streamName, slice.LastEventNumber, batchSize, slice.Events |> Array.sumBy (|ResolvedEventLen|))
+        let (metric : Metrics.Metric), bytes = { Metrics.Metric.interval = t; action = action }, slice.Events |> Array.sumBy (|ResolvedEventLen|)
+        // TODO drop sliceLength, totalPayloadSize when consumption no longer requires that literal; ditto stream when literal formatting no longer required
+        log.ForContext("metric", metric).ForContext("bytes", bytes).Information(
+            "ES Slice {action:l} count={count} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize} stream={stream:l}",
+            "Read", slice.Events.Length, slice.LastEventNumber, batchSize, bytes, streamName)
         return slice }
     let private readBatches (log : Serilog.ILogger) (readSlice : int -> Serilog.ILogger -> Async<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int)
         : AsyncSeq<int option * ResolvedEvent[]> =
         let rec loop batchCount pos = asyncSeq {
             match maxPermittedBatchReads with
-            | Some mpbr when batchCount >= mpbr -> invalidOp "batch Limit exceeded"
+            | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
 
-            let batchLogger = log.ForContext("BatchIndex", batchCount)
-            let! slice = readSlice pos batchLogger
+            let batchLog = log.ForContext("batchIndex", batchCount)
+            let! slice = readSlice pos batchLog
             match slice.Status with
             | SliceReadStatus.StreamDeleted -> raise <| EventStore.ClientAPI.Exceptions.StreamDeletedException(slice.Stream)
             | SliceReadStatus.StreamNotFound -> yield Some ExpectedVersion.NoStream, Array.empty
@@ -86,8 +90,8 @@ module private Read =
                     yield! loop (batchCount + 1) slice.NextEventNumber
             | x -> raise <| System.ArgumentOutOfRangeException("SliceReadStatus", x, "Unknown result value") }
         loop 0 startPosition
-    let loadForwardsFrom log retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
-        : Async<int * ResolvedEvent[]> =
+    let loadForwardsFrom (log : Serilog.ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
+        : Async<int * ResolvedEvent[]> = async {
         let mergeBatches (batches: AsyncSeq<int option * ResolvedEvent[]>) = async {
             let versionFromStream = ref None
             let! (events : ResolvedEvent[]) =
@@ -99,8 +103,11 @@ module private Read =
             return version, events }
         let call pos = loggedReadSlice conn streamName Direction.Forward batchSize pos
         let retryingLoggingReadSlice pos = Impl.withLoggedRetries retryPolicy "ReadRetry" (call pos)
+        let log = log.ForContext("batchSize", batchSize).ForContext("direction", "Forward").ForContext("stream", streamName)
         let batches : AsyncSeq<int option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
-        mergeBatches batches
+        let! version, events = mergeBatches batches
+        log.Information("ES Batch Read count={count} version={version}", events.Length, version)
+        return version, events }
 
 module private EventSumAdapters =
     let private encodedEventOfResolvedEvent (x : ResolvedEvent) : EventSum.EncodedEvent<byte[]> =

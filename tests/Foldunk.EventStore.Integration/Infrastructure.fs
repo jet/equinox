@@ -8,6 +8,11 @@ open System
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
     static member RequestId = Arb.generate |> Gen.map RequestId |> Arb.fromGen
+    static member ContactPreferencesId =
+        Arb.generate<Guid>
+        |> Gen.map (fun x -> sprintf "%s@test.com" (x.ToString("N")))
+        |> Gen.map ContactPreferences.Id
+        |> Arb.fromGen
 
 type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
@@ -32,7 +37,8 @@ module SerilogHelpers =
     type LogCaptureBuffer() =
         let captured = ResizeArray()
         member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-            source.Subscribe (fun x -> x.RenderMessage () |> System.Diagnostics.Trace.WriteLine; captured.Add x)
+            source.Subscribe (fun x -> x.RenderMessage () |> System.Diagnostics.Trace.Write; captured.Add x)
         member __.Clear () = captured.Clear()
         member __.Entries = captured.ToArray()
-        member __.ExternalCalls = captured |> Seq.choose (function EsMetric metric -> Some metric.action | _ -> None) |> List.ofSeq
+        member __.ExternalCalls =
+            captured |> Seq.choose (function EsMetric metric -> Some metric.action | _ -> None) |> List.ofSeq

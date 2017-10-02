@@ -36,7 +36,7 @@ type Command =
 
 module Commands =
     let interpret command (state : Folds.State) =
-        let doesntHave skuId = state |> Array.exists (fun x -> x.skuId = skuId)
+        let doesntHave skuId = state |> Array.exists (fun x -> x.skuId = skuId) |> not
         match command with
         | Favorite (date = date; skuIds = skuIds) ->
             [ for skuId in Seq.distinct skuIds do
