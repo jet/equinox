@@ -110,7 +110,7 @@ module private Read =
         log.Information("ES Batch Read count={count} version={version}", events.Length, version)
         return version, events }
 
-module private EventSumAdapters =
+module EventSumAdapters =
     let private encodedEventOfResolvedEvent (x : ResolvedEvent) : EventSum.EncodedEvent<byte[]> =
         { EventType = x.Event.EventType; Payload = x.Event.Data }
     let private eventDataOfEncodedEvent (x : EventSum.EncodedEvent<byte[]>) =
@@ -160,10 +160,14 @@ type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
         let token = Token.ofVersion wr.NextExpectedVersion
         return GatewaySyncResult.Written token }
 
-type GesStreamState<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
+type GesStreamState<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>, ?initialTokenAndState : Storage.StreamToken * 'state) =
+    let knownTokenAndState = ref initialTokenAndState
     member __.Load streamName (log : ILogger) : Async<Storage.StreamState<'event, 'state>> = async {
-        let! token, events = gateway.LoadBatched streamName log
-        return EventSumAdapters.decodeKnownEvents codec events |> Storage.StreamState.ofTokenAndEvents token }
+        match !knownTokenAndState with
+        | Some (token,state) -> knownTokenAndState := None; return token, Some state, List.empty
+        | None ->
+            let! token, events = gateway.LoadBatched streamName log
+            return EventSumAdapters.decodeKnownEvents codec events |> Storage.StreamState.ofTokenAndEvents token }
     member __.TrySync streamName (log : ILogger) (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
         let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec events
         let! syncRes = gateway.TrySync streamName log token encodedEvents

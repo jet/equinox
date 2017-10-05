@@ -163,6 +163,9 @@ type Handler<'event, 'state>(fold, initial, maxAttempts) =
     /// Project from the folded `State` (without executing a decision flow or syncing new events to the stream as `Decide` does)
     member __.Query (stream : IStream<'event, 'state>) (log: ILogger) (projection : 'state -> 'result) : Async<'result> =
         exec stream log <| fun syncState -> projection syncState.State
+    /// Hook for low level integration testing. There are no known cases where this is relevant to any production stream.
+    member __.InternalRawState (stream : IStream<'event, 'state>) (log: ILogger) : Async<Storage.StreamToken * 'state> =
+        exec stream log <| fun syncState -> syncState.TokenAndState
 
 /// Helper for defining backoffs within the definition of a retry policy for a store.
 module Retry =
