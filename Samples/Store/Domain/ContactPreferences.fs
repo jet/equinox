@@ -30,9 +30,9 @@ module Commands =
             [ Events.Updated value ]
 
 type Handler(stream) =
-    let handler = Foldunk.Handler(Folds.fold, Folds.initial)
+    let handler = Foldunk.Handler(Folds.fold, Folds.initial, maxAttempts = 3)
     member __.Update log email value : Async<unit> =
-        handler.Run stream log ignore <| fun ctx ->
+        handler.Decide stream log <| fun ctx ->
             let execute = Commands.interpret >> ctx.Execute
             execute <| Update { email = email; preferences = value }
     member __.Read log : Async<Folds.State> =

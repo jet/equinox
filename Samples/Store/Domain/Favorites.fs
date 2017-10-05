@@ -47,9 +47,10 @@ module Commands =
             [ Events.Unfavorited { skuId = skuId } ]
 
 type Handler(stream) =
-    let handler = Foldunk.Handler(Folds.fold, Folds.initial)
+    let handler = Foldunk.Handler(Folds.fold, Folds.initial, maxAttempts = 3)
     member __.Execute log command : Async<unit> =
-        handler.Run stream log ignore <| fun ctx ->
-            (Commands.interpret >> ctx.Execute) command
+        handler.Decide stream log <| fun ctx ->
+            let execute = Commands.interpret >> ctx.Execute
+            execute command
     member __.Read log : Async<Folds.State> =
         handler.Query stream log id

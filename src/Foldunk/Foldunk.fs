@@ -15,12 +15,12 @@ type Context<'event, 'state>(fold, originState : 'state) =
     member __.ExecuteAsync (decide : 'state -> Async<'event list>) : Async<unit> = async {
         let! events = decide __.State
         accumulated.AddRange events }
-    /// As per `Execute`, invoke a decision function, while also propagating an outcome yielded as the fst of an (outcome, events) pair
+    /// As per `Execute`, invoke a decision function, while also propagating a result yielded as the fst of an (outcome, events) pair
     member __.Decide (decide : 'state -> 'result * 'event list) =
         let result, newEvents = decide __.State
         accumulated.AddRange newEvents
         result
-    /// As per `ExecuteAsync`, invoke a decision function, while also propagating an outcome yielded as the fst of an (outcome, events) pair
+    /// As per `ExecuteAsync`, invoke a decision function, while also propagating a result yielded as the fst of an (outcome, events) pair
     member __.DecideAsync (decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
         let! result, newEvents = decide __.State
         accumulated.AddRange newEvents
@@ -53,7 +53,8 @@ module Storage =
         | Written of StreamState<'event, 'state>
         | Conflict of Async<StreamState<'event, 'state>>
 
-/// Store-agnostic interface to the state of any given stream of events. Not intended for direct use by consumer code; this is an abstract interface to be implemented by a Store in order for the Application to be able to execute a standarized Flow via the Handler type
+/// Store-agnostic interface to the state of any given stream of events. Not intended for direct use by consumer code
+///   this is an abstract interface to be implemented by a Store in order for the Application to be able to execute a standarized Flow via the Handler type
 type IStream<'event, 'state> =
     /// Obtain the state from the stream named `streamName`
     abstract Load: log: ILogger
@@ -83,25 +84,25 @@ module private Flow =
                 | None when List.isEmpty events -> fold initial events
                 | None -> fold initial events
             token, baseState
-        let tokenAndState = ref (toTokenAndState fold initial originState)
+        let mutable tokenAndState = toTokenAndState fold initial originState
         let tryOr log events handleFailure = async {
-            let proposedState = fold (snd !tokenAndState) events
-            let! res = trySync log !tokenAndState (events, proposedState)
+            let proposedState = fold (snd tokenAndState) events
+            let! res = trySync log tokenAndState (events, proposedState)
             match res with
             | Storage.SyncResult.Conflict resync ->
                 return! handleFailure resync
             | Storage.SyncResult.Written streamState' ->
-                tokenAndState := toTokenAndState fold initial streamState'
+                tokenAndState <- toTokenAndState fold initial streamState'
                 return true }
 
-        member __.State = snd !tokenAndState
-        member __.Token = fst !tokenAndState
-        member __.CreateContext(): Context<'event, 'state> =
-            Context<'event, 'state>(fold, __.State)
+        member __.TokenAndState = tokenAndState
+        member __.Token = fst __.TokenAndState
+        member __.State = snd __.TokenAndState
+        member __.CreateContext(): Context<'event, 'state> = Context<'event, 'state>(fold, __.State)
         member __.TryOrResync log events =
             let resyncInPreparationForRetry resync = async {
                 let! streamState' = resync
-                tokenAndState := toTokenAndState fold initial streamState'
+                tokenAndState <- toTokenAndState fold initial streamState'
                 return false }
             tryOr log events resyncInPreparationForRetry
         member __.TryOrThrow log events attempt =
@@ -109,27 +110,21 @@ module private Flow =
             tryOr log events throw |> Async.Ignore
 
     /// Load the state of a stream from the given stream
-    let load(fold : 'state -> 'event list -> 'state) (initial : 'state)
-            (log : Serilog.ILogger) (stream : IStream<'event, 'state>) 
+    let load (fold : 'state -> 'event list -> 'state) (initial : 'state) (log : ILogger) (stream : IStream<'event, 'state>)
         : Async<SyncState<'event, 'state>> = async {
         let! streamState = stream.Load log
         return SyncState(fold, initial, streamState, stream.TrySync) }
-
-    /// Render a projection from the folded State
-    let render (query : 'state -> 'projection) (syncState : SyncState<'event, 'state>)
-        : 'projection =
-        syncState.State |> query
 
     /// Process a command, ensuring a consistent final state is established on the stream.
     /// 1.  make a decision given the known state
     /// 2a. if no changes required, exit with known state
     /// 2b. if saved without conflict, exit with updated state
     /// 2b. if conflicting changes, loop to retry against updated state
-    let run (sync : SyncState<'event, 'state>) (maxAttempts : int) (log : ILogger) (decide : Context<'event, 'state> -> Async<'outcome * 'event list>)
-        : Async<'outcome> =
+    let run (sync : SyncState<'event, 'state>) (maxAttempts : int) (log : ILogger) (decide : Context<'event, 'state> -> Async<'result * 'event list>)
+        : Async<'result> =
         if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")
         /// Run a decision cycle - decide what events should be appended given the presented state
-        let rec loop attempt: Async<'outcome> = async {
+        let rec loop attempt: Async<'result> = async {
             //let token, currentState = interpreter.Fold currentState
             let log = log.ForContext("attemptIndex", attempt)
             let ctx = sync.CreateContext()
@@ -152,38 +147,22 @@ module private Flow =
         loop 1
 
 /// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic
-type Handler<'event, 'state>(fold, initial, ?maxAttempts) =
-    let maxAttempts = defaultArg maxAttempts 3
-    /// 0. Invoke the supplied `flow` function 1. attempt to sync the accumulated events to the stream 2. yield `projection` of the resulting state
+type Handler<'event, 'state>(fold, initial, maxAttempts) =
+    let execAsync stream log f = async { let! syncState = Flow.load fold initial log stream in return! f syncState }
+    let exec stream log f = execAsync stream log <| fun syncState -> async { return f syncState }
+    let runFlow stream log decideAsync = execAsync stream log <| fun syncState -> async { return! Flow.run syncState maxAttempts log decideAsync }
+
+    /// 0. Invoke the supplied `flow` function 1. attempt to sync the accumulated events to the stream 2. yield the `'result`
     /// Throws FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
-    member __.Run<'view> (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (projection : 'state -> 'view) (flow: Context<'event, 'state> -> unit) =
-        __.Decide stream log <| fun ctx ->
-            do flow ctx
-            (projection ctx.State), ctx.Accumulated
-    /// 0. Invoke the supplied _Async_ `flow` function 1. attempt to sync the accumulated events to the stream 2. yield `projection` of the resulting state
+    member __.Decide(stream : IStream<'event, 'state>) (log : ILogger) (flow: Context<'event, 'state> -> 'result) : Async<'result> =
+        runFlow stream log <| fun ctx -> async { let result = flow ctx in return result, ctx.Accumulated }
+    /// 0. Invoke the supplied _Async_ `flowAsync` function 1. attempt to sync the accumulated events to the stream 2. yield the `result`
     /// Throws FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
-    member __.RunAsync<'view> (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (projection : 'state -> 'view)
-            (flowAsync: Context<'event, 'state> -> Async<unit>)
-        : Async<'view> =
-        __.DecideAsync stream log <| fun ctx -> async {
-            do! flowAsync ctx
-            return (projection ctx.State), ctx.Accumulated }
-    /// 0. Invoke the supplied `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.
-    /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
-    member __.Decide<'outcome> (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decide: Context<'event, 'state> -> 'outcome * 'event list)
-        : Async<'outcome> =
-        __.DecideAsync stream log <| fun ctx -> async {
-            return decide ctx }
-    /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome
-    /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
-    member __.DecideAsync<'outcome> (stream : IStream<'event, 'state>) (log : Serilog.ILogger) (decideAsync: Context<'event, 'state> -> Async<'outcome * 'event list>)
-        : Async<'outcome> = async {
-        let! syncState = Flow.load fold initial log stream
-        return! Flow.run syncState maxAttempts log decideAsync }
+    member __.DecideAsync(stream : IStream<'event, 'state>) (log : ILogger) (flowAsync: Context<'event, 'state> -> Async<'result>): Async<'result> =
+        runFlow stream log <| fun ctx -> async { let! result = flowAsync ctx in return result, ctx.Accumulated }
     /// Project from the folded `State` (without executing a decision flow or syncing new events to the stream as `Decide` does)
-    member __.Query (stream : IStream<'event, 'state>) (log: Serilog.ILogger) (projection : 'state -> 'view) : Async<'view> = async {
-        let! syncState = Flow.load fold initial log stream
-        return syncState |> Flow.render projection }
+    member __.Query (stream : IStream<'event, 'state>) (log: ILogger) (projection : 'state -> 'result) : Async<'result> =
+        exec stream log <| fun syncState -> projection syncState.State
 
 /// Helper for defining backoffs within the definition of a retry policy for a store.
 module Retry =

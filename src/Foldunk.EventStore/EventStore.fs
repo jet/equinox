@@ -21,29 +21,30 @@ type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict
 
 module Metrics =
     [<NoEquality; NoComparison>]
-    type Metric = { interval: StopwatchInterval; action: string } with
-        override __.ToString() = sprintf "%s-Elapsed=%O" __.action __.interval.Elapsed 
+    type Metric = { action: string; stream: string; interval: StopwatchInterval } with
+        override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed 
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
 
 module private Write =
     /// Yields `Ok WriteResult` or `Error ()` to signify WrongExpectedVersion
-    let private writeEventsAsync (log : Serilog.ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) : Async<EsSyncResult> = async {
+    let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
+        : Async<EsSyncResult> = async {
         try
             let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
             return Written wr
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
             log.Information(ex, "TrySync WrongExpectedVersionException")
             return Conflict }
-    let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) (log : Serilog.ILogger)
+    let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) (log : ILogger)
         : Async<EsSyncResult> = async {
         let eventDataLen (x : EventData) = match x.Data, x.Metadata with Metrics.BlobLen bytes, Metrics.BlobLen metaBytes -> bytes + metaBytes
         let log = log.ForContext("count", events.Length).ForContext("bytes", events |> Array.sumBy eventDataLen)
         let! t, result = writeEventsAsync log conn streamName version events |> Stopwatch.Time
-        let metric : Metrics.Metric = { Metrics.interval = t; action = "AppendToStreamAsync" }
+        let metric : Metrics.Metric = { Metrics.action = "AppendToStreamAsync"; stream = streamName; interval = t }
         // TODO drop expectedVersion when consumption no longer requires that literal; ditto stream when literal formatting no longer required
-        log.ForContext("metric", metric).Information("ES {action:l} expectedVersion={expectedVersion} stream={stream:l}", "Write", version, streamName)
+        log.ForContext("metric", metric).Information("ES {action:l} expectedVersion={expectedVersion} stream={stream}", "Write", version, streamName)
         return result }
-    let writeEvents (log : Serilog.ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
+    let writeEvents (log : ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
         : Async<EsSyncResult> =
         let call = writeEventsLogged conn streamName version events
         Impl.withLoggedRetries retryPolicy "WriteRetry" call log
@@ -60,17 +61,17 @@ module private Read =
             | Direction.Backward -> conn.ReadStreamEventsBackwardAsync(streamName, startPos, batchSize, resolveLinkTos = false)
         return! call |> Async.AwaitTaskCorrect }
     let (|ResolvedEventLen|) (x : ResolvedEvent) = match x.Event.Data, x.Event.Metadata with Metrics.BlobLen bytes, Metrics.BlobLen metaBytes -> bytes + metaBytes
-    let private loggedReadSlice conn streamName direction batchSize startPos (log : Serilog.ILogger) : Async<StreamEventsSlice> = async {
+    let private loggedReadSlice conn streamName direction batchSize startPos (log : ILogger) : Async<StreamEventsSlice> = async {
         let log = log.ForContext("startPos", startPos)
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.Time
         let action = match direction with Direction.Forward -> "ReadStreamEventsForwardAsync" | Direction.Backward -> "ReadStreamEventsBackwardAsync"
-        let (metric : Metrics.Metric), bytes = { Metrics.Metric.interval = t; action = action }, slice.Events |> Array.sumBy (|ResolvedEventLen|)
+        let (metric : Metrics.Metric), bytes = { Metrics.action = action; stream = streamName; interval = t}, slice.Events |> Array.sumBy (|ResolvedEventLen|)
         // TODO drop sliceLength, totalPayloadSize when consumption no longer requires that literal; ditto stream when literal formatting no longer required
         log.ForContext("metric", metric).ForContext("bytes", bytes).Information(
-            "ES Slice {action:l} count={count} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize} stream={stream:l}",
+            "ES Slice {action:l} count={count} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize} stream={stream}",
             "Read", slice.Events.Length, slice.LastEventNumber, batchSize, bytes, streamName)
         return slice }
-    let private readBatches (log : Serilog.ILogger) (readSlice : int -> Serilog.ILogger -> Async<StreamEventsSlice>)
+    let private readBatches (log : ILogger) (readSlice : int -> ILogger -> Async<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int)
         : AsyncSeq<int option * ResolvedEvent[]> =
         let rec loop batchCount pos = asyncSeq {
@@ -90,7 +91,7 @@ module private Read =
                     yield! loop (batchCount + 1) slice.NextEventNumber
             | x -> raise <| System.ArgumentOutOfRangeException("SliceReadStatus", x, "Unknown result value") }
         loop 0 startPosition
-    let loadForwardsFrom (log : Serilog.ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
+    let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
         : Async<int * ResolvedEvent[]> = async {
         let mergeBatches (batches: AsyncSeq<int option * ResolvedEvent[]>) = async {
             let versionFromStream = ref None
@@ -142,15 +143,15 @@ type GesStreamPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
 type GatewaySyncResult = Written of Storage.StreamToken | Conflict
 
 type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
-    member __.LoadBatched streamName (log : Serilog.ILogger)  : Async<Storage.StreamToken * ResolvedEvent[]> = async {
+    member __.LoadBatched streamName (log : ILogger)  : Async<Storage.StreamToken * ResolvedEvent[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName 0
         return Token.ofVersion version, events }
-    member __.LoadFromToken streamName (log : Serilog.ILogger) (token : Storage.StreamToken) : Async<Storage.StreamToken * ResolvedEvent[]> = async {
+    member __.LoadFromToken streamName (log : ILogger) (token : Storage.StreamToken) : Async<Storage.StreamToken * ResolvedEvent[]> = async {
         let token : Token = unbox token.value
         let streamPosition = token.streamVersion + 1
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection config.BatchSize config.MaxBatches streamName streamPosition
         return Token.ofVersion version, events }
-    member __.TrySync streamName (log : Serilog.ILogger) (token : Storage.StreamToken) (encodedEvents: EventData array) : Async<GatewaySyncResult> = async {
+    member __.TrySync streamName (log : ILogger) (token : Storage.StreamToken) (encodedEvents: EventData array) : Async<GatewaySyncResult> = async {
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.Connection streamName (unbox token.value).streamVersion encodedEvents
         match wr with
         | EsSyncResult.Conflict -> return GatewaySyncResult.Conflict
@@ -159,11 +160,11 @@ type GesGateway(conn : GesConnection, config : GesStreamPolicy) =
         let token = Token.ofVersion wr.NextExpectedVersion
         return GatewaySyncResult.Written token }
 
-type GesStreamStore<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
-    member __.Load streamName log : Async<Storage.StreamState<'event, 'state>> = async {
+type GesStreamState<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>) =
+    member __.Load streamName (log : ILogger) : Async<Storage.StreamState<'event, 'state>> = async {
         let! token, events = gateway.LoadBatched streamName log
         return EventSumAdapters.decodeKnownEvents codec events |> Storage.StreamState.ofTokenAndEvents token }
-    member __.TrySync streamName (log : Serilog.ILogger)  (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
+    member __.TrySync streamName (log : ILogger) (token, snapshotState) (events : 'event list, proposedState: 'state) = async {
         let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec events
         let! syncRes = gateway.TrySync streamName log token encodedEvents
         match syncRes with
@@ -176,9 +177,9 @@ type GesStreamStore<'event, 'state>(gateway : GesGateway, codec : EventSum.IEven
         | GatewaySyncResult.Written token' ->
             return Storage.SyncResult.Written (Storage.StreamState.ofTokenAndKnownState token' proposedState) }
 
-type GesStream<'event, 'state>(store: GesStreamStore<'event, 'state>, streamName) =
+type GesStream<'event, 'state>(store: GesStreamState<'event, 'state>, streamName) =
     interface IStream<'event, 'state> with
-        member __.Load (log : Serilog.ILogger)  : Async<Storage.StreamState<'event, 'state>> =
+        member __.Load (log : ILogger)  : Async<Storage.StreamState<'event, 'state>> =
             store.Load streamName log
-        member __.TrySync (log : Serilog.ILogger)  (token, snapshotState) (events : 'event list, proposedState: 'state) =
+        member __.TrySync (log : ILogger) (token, snapshotState) (events : 'event list, proposedState: 'state) =
             store.TrySync streamName log (token, snapshotState) (events, proposedState)
