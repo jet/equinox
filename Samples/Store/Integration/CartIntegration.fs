@@ -6,10 +6,10 @@ open Swensen.Unquote
 
 let createServiceMem () =
     let store = createMemStore ()
-    Backend.Cart.Service(fun _codec -> createMemStream store)
+    Backend.Cart.Service(fun _codec _compactionEventType -> createMemStream store)
 
 let createServiceGes eventStoreConnection batchSize =
-    Backend.Cart.Service(createGesStream eventStoreConnection batchSize)
+    Backend.Cart.Service(createGesStreamWithCompaction eventStoreConnection batchSize)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
     service.Flow log cartId <| fun _ctx execute ->

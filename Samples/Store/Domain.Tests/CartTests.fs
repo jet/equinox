@@ -18,6 +18,7 @@ let mkChangeWaived skuId value  = ItemWaiveReturnsChanged { empty<ItemWaiveRetur
 let verifyCanProcessInInitialState cmd =
     let events = interpret cmd initial
     match cmd with
+    | Compact
     | AddItem _ ->
         test <@ (not << List.isEmpty) events @>
     | ChangeItemQuantity _
@@ -28,6 +29,7 @@ let verifyCanProcessInInitialState cmd =
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
 let verifyCorrectEventGenerationWhenAppropriate cmd =
     let generateEventsTriggeringNeedForChange: Command -> Event list = function
+        | Compact ->                                [ (* Command is not designed to be idempotent *) ]
         | AddItem _ ->                              []
         | ChangeItemQuantity (_, skuId, quantity) ->[ mkAddQty skuId (quantity+1)]
         | ChangeWaiveReturns (_, skuId, value) ->   [ mkAdd skuId; mkChangeWaived skuId (not value) ]
@@ -35,6 +37,9 @@ let verifyCorrectEventGenerationWhenAppropriate cmd =
     let verifyResultingEventsAreCorrect state (state' : State) (command, events) =
         let find skuId                              = state'.items |> List.find (fun x -> x.skuId = skuId)
         match command, events with
+        | Compact,                                  [ Compacted e ] ->
+            let expectedState = State.ofCompacted e
+            test <@ expectedState = state' @>
         | AddItem (_, csku, quantity),              [ ItemAdded e ] ->
             test <@ { ItemAddInfo.context = e.context; skuId = csku; quantity = quantity } = e
                     && quantity = (find csku).quantity @>
@@ -58,14 +63,20 @@ let verifyCorrectEventGenerationWhenAppropriate cmd =
 let verifyIdempotency (cmd: Command) =
     // Put the aggregate into the state where the command should not trigger an event
     let establish: Event list = cmd |> function
+        | Compact _ ->                              let skuId = SkuId (Guid.NewGuid()) in [ mkAdd skuId; mkRemove skuId]
         | AddItem (_, skuId, qty) ->                [ mkAddQty skuId qty]
         | ChangeItemQuantity (_, skuId, qty) ->     [ mkAddQty skuId qty]
         | ChangeWaiveReturns (_, skuId, value) ->   [ mkAdd skuId; mkChangeWaived skuId value ]
         | RemoveItem _ ->                           []
     let state = fold initial establish
     let events = interpret cmd state
-    // Assert we decided nothing needs to happen
-    test <@ events |> List.isEmpty @>
+    match cmd, not (List.isEmpty events) with
+    | Compact, hasEvents ->
+        // Command should be unconditional
+        test <@ hasEvents @>
+    | _, hasEvents ->
+        // Assert we decided nothing needs to happen
+        test <@ not hasEvents @>
 
 [<Property(MaxTest = 1000)>]
 let ``interpret yields correct events, idempotently`` (cmd: Command) =

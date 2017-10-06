@@ -3,15 +3,15 @@
 open Serilog
 
 /// Maintains a rolling folded State while Accumulating Events decided upon as part of a decision flow
-type Context<'event, 'state>(fold, originState : 'state) =
+type Context<'event, 'state>(fold, originState : 'state, capacityBeforeCompaction : int option) =
     let accumulated = ResizeArray<'event>()
 
-    /// The current folded State, based on the Stream's `originState` + any events that have been Accummulated during the the decision flow
+    /// The current folded State, based on the Stream's `originState` + any events that have been Accumulated during the the decision flow
     member __.State = __.Accumulated |> fold originState
-    /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accummulated` sequence
+    /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
     member __.Execute (decide : 'state -> 'event list) : unit =
         decide __.State |> accumulated.AddRange
-    /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accummulated` sequence
+    /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
     member __.ExecuteAsync (decide : 'state -> Async<'event list>) : Async<unit> = async {
         let! events = decide __.State
         accumulated.AddRange events }
@@ -27,13 +27,16 @@ type Context<'event, 'state>(fold, originState : 'state) =
         return result }
     /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
     member __.Accumulated = accumulated |> List.ofSeq
+    /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
+    member __.IsCompactionDue =
+        capacityBeforeCompaction |> Option.exists (fun max -> accumulated.Count > max)
 
 /// Internal data stuctures. While these are intended to be legible, understand the abstractions involved is only necessary if you are implemening a Store or a decorator thereof.
 [<RequireQualifiedAccess>]
 module Storage =
     /// Store-specific opaque token to be used for synchronization purposes
     [<NoComparison>]
-    type StreamToken = { value : obj }
+    type StreamToken = { value : obj; batchCapacityLimit : int option }
 
     /// Representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)
     type StreamState<'event, 'state> = StreamToken * 'state option * 'event list
@@ -98,7 +101,8 @@ module private Flow =
         member __.TokenAndState = tokenAndState
         member __.Token = fst __.TokenAndState
         member __.State = snd __.TokenAndState
-        member __.CreateContext(): Context<'event, 'state> = Context<'event, 'state>(fold, __.State)
+        member __.CreateContext(): Context<'event, 'state> =
+            Context<'event, 'state>(fold, __.State, __.Token.batchCapacityLimit)
         member __.TryOrResync log events =
             let resyncInPreparationForRetry resync = async {
                 let! streamState' = resync

@@ -20,6 +20,7 @@ let verifyCanProcessInInitialState cmd =
     | Favorite (_,[]) ->
         test <@ List.isEmpty events @>
     // Should always generate something
+    | Compact
     | Favorite _ ->
         test <@ (not << List.isEmpty) events @>
     // Should never generate anything
@@ -29,11 +30,16 @@ let verifyCanProcessInInitialState cmd =
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
 let verifyCorrectEventGenerationWhenAppropriate cmd =
     let generateEventsTriggeringNeedForChange: Command -> Event list = function
+        | Compact ->                                [ (* Command is not designed to be idempotent *) ]
         | Favorite _ ->                             []
         | Unfavorite skuId ->                       [ mkFavorite skuId ]
     let verifyResultingEventsAreCorrect state (state' : State) (command, events) =
         let hasSkuId skuId = state' |> Array.exists (function { skuId = sSkuId } when sSkuId = skuId -> true | _ -> false)
         match command, events with
+        | Compact,                                  [ Compacted { net = netItems } ] ->
+            test <@ netItems = state'
+                    // It's critical that it should not have any side-effects on state
+                    && state = state' @>
         | Favorite (_date, skuIds),                  events ->
             let isFavoritingEventFor skuId = function
                 | Favorited { skuId = eSkuId } -> eSkuId = skuId
@@ -55,11 +61,15 @@ let verifyIdempotency (cmd: Command) =
     // Put the aggregate into the state where the command should not trigger an event
     let mkRandomFavorites () = List.init (rnd.Next(1000)) (ignore >> mkSkuId >> mkFavorite)
     let establish: Event list = cmd |> function
+        | Compact _ ->                              mkRandomFavorites ()
         | Favorite (_,skuIds) ->                    [| for sku in skuIds -> mkFavorite sku |] |> knuthShuffle |> List.ofArray
         | Unfavorite _ ->                           mkRandomFavorites ()
     let state = fold initial establish
     let events = interpret cmd state
     match cmd, List.isEmpty events with
+    | Compact, isEmpty ->
+        // Command should be unconditional
+        test <@ not isEmpty @>
     | _, isEmpty ->
         // Assert we decided nothing needs to happen
         test <@ isEmpty @>

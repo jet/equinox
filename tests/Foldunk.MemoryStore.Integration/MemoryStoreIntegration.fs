@@ -9,7 +9,7 @@ let inline createMemStream<'event, 'state> store streamName : Foldunk.IStream<'e
 
 let createServiceMem () =
     let store = createMemStore()
-    Backend.Cart.Service(fun _codec -> createMemStream store)
+    Backend.Cart.Service(fun _codec _compactionEventType -> createMemStream store)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

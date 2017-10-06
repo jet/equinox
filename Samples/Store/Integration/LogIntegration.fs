@@ -56,7 +56,7 @@ type Tests() =
 
         // Because we've gone over a page, we need two reads to load the state, making a total of three
         let contains (s : string) (x : string) = x.IndexOf s <> -1
-        test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains "ReadStreamEventsForwardAsync-Duration")
+        test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains "ReadStreamEventsBackwardAsync-Duration")
                 3 = Seq.length reads
                 && not (obj.ReferenceEquals(capture, null)) @>
     }
