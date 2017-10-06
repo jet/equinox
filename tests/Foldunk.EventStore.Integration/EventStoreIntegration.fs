@@ -15,8 +15,8 @@ let private createGesGateway eventStoreConnection maxBatchSize =
     Foldunk.EventStore.GesGateway(connection, Foldunk.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
 let createGesStream<'event, 'state> eventStoreConnection batchSize (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName : Foldunk.IStream<_,_> =
     let gateway = createGesGateway eventStoreConnection batchSize
-    let store = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec)
-    Foldunk.EventStore.GesStream<'event, 'state>(store, streamName) :> _
+    let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec)
+    Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
 
 let createCartServiceGes eventStoreConnection batchSize =
     Backend.Cart.Service(createGesStream eventStoreConnection batchSize)
@@ -39,6 +39,10 @@ type Tests() =
             capture.Subscribe observable |> ignore
         createLogger subscribeLogListeners, capture
 
+    let singleSliceForward = "ReadStreamEventsForwardAsync"
+    let singleBatchForward = [singleSliceForward; "BatchForward"]
+    let batchForwardAndAppend = singleBatchForward @ ["AppendToStreamAsync"]
+
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly batching the reads without compaction`` context cartId skuId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
@@ -50,7 +54,7 @@ type Tests() =
         let addRemoveCount = 6
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service addRemoveCount
         let expectedEventCount = 2 * addRemoveCount - 1
-        test <@ [ "ReadStreamEventsForwardAsync"; "AppendToStreamAsync" ] = capture.ExternalCalls @>
+        test <@ batchForwardAndAppend = capture.ExternalCalls @>
 
         // Restart the counting
         capture.Clear()
@@ -61,5 +65,5 @@ type Tests() =
 
         // Need to read 4 batches to read 11 events in batches of 3
         let expectedBatches = ceil(float expectedEventCount/float batchSize) |> int
-        test <@ List.replicate expectedBatches "ReadStreamEventsForwardAsync" = capture.ExternalCalls @>
+        test <@ List.replicate (expectedBatches-1) singleSliceForward @ singleBatchForward = capture.ExternalCalls @>
     }
