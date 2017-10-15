@@ -119,21 +119,21 @@ module private Flow =
     /// 1.  make a decision given the known state
     /// 2a. if no changes required, exit with known state
     /// 2b. if saved without conflict, exit with updated state
-    /// 2b. if conflicting changes, loop to retry against updated state
-    let run (sync : SyncState<'event, 'state>) (maxAttempts : int) (log : ILogger) (decide : Context<'event, 'state> -> Async<'result * 'event list>)
+    /// 2b. if conflicting changes, retry by recommencing at step 1 with the updated state
+    let run (sync : SyncState<'event, 'state>) (maxSyncAttempts : int) (log : ILogger) (decide : Context<'event, 'state> -> Async<'result * 'event list>)
         : Async<'result> =
-        if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")
+        if maxSyncAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxSyncAttempts", maxSyncAttempts, "should be >= 1")
         /// Run a decision cycle - decide what events should be appended given the presented state
         let rec loop attempt: Async<'result> = async {
             //let token, currentState = interpreter.Fold currentState
-            let log = log.ForContext("attemptIndex", attempt)
+            let log = log.ForContext("syncAttempt", attempt)
             let ctx = sync.CreateContext()
             let! outcome, events = decide ctx
             if List.isEmpty events then
                 log.Debug "No events generated"
                 return outcome
-            elif attempt = maxAttempts then
-                log.Debug "Attempts exceeded"
+            elif attempt = maxSyncAttempts then
+                log.Debug "Max Sync Attempts exceeded"
                 do! sync.TryOrThrow log events attempt
                 return outcome
             else

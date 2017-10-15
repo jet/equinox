@@ -40,7 +40,7 @@ type Tests() =
         createLogger subscribeLogListeners, capture
 
     let singleSliceForward = "ReadStreamEventsForwardAsync"
-    let singleBatchForward = [singleSliceForward; "BatchForward"]
+    let singleBatchForward = [singleSliceForward; "LoadF"]
     let batchForwardAndAppend = singleBatchForward @ ["AppendToStreamAsync"]
 
     [<AutoData>]
