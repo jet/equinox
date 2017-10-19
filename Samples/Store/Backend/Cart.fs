@@ -5,7 +5,7 @@ open Domain
 type Service(createStream) =
     let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Cart.Events.Event>
     let streamName (id: CartId) = sprintf "Cart-%s" id.Value
-    let handler id = Cart.Handler(streamName id |> createStream codec)
+    let handler id = Cart.Handler(streamName id |> createStream (Some Cart.Events.Compaction.EventType) codec)
 
     member __.Flow (log : Serilog.ILogger) (cartId : CartId) flow =
         let handler = handler cartId

@@ -60,7 +60,7 @@ type private ConcurrentArrayStore() =
 /// Internal implementation detail of MemoryStreamStore
 module private MemoryStreamStreamState =
     let private streamTokenOfIndex (streamVersion : int) : Storage.StreamToken =
-        { value = box streamVersion }
+        { value = box streamVersion; batchCapacityLimit = None }
     /// Represent a stream known to be empty
     let ofEmpty () = streamTokenOfIndex -1, None, []
     let tokenOfArray (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex

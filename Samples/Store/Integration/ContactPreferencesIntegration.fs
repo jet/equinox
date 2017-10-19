@@ -6,10 +6,13 @@ open Swensen.Unquote
 
 let createServiceMem () =
     let store = createMemStore ()
-    Backend.ContactPreferences.Service(fun _codec -> createMemStream store)
+    Backend.ContactPreferences.Service(fun _batchSize _codec _eventTypePredicate -> createMemStream store)
 
-let createServiceGes eventStoreConnection =
-    Backend.ContactPreferences.Service(createGesStream eventStoreConnection defaultBatchSize)
+let createServiceGesWithCompactionSemantics eventStoreConnection =
+    Backend.ContactPreferences.Service(createGesStreamWithCompactionPredicate eventStoreConnection)
+
+let createServiceGesWithoutCompactionSemantics eventStoreConnection =
+    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> createGesStream eventStoreConnection defaultBatchSize)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -27,9 +30,21 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData>]
-    let ``Can roundtrip against EventStore, correctly folding the events`` id value = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` id value = Async.RunSynchronously <| async {
         let! eventStoreConnection = connectToLocalEventStoreNode ()
-        let log, service = createLog (), createServiceGes eventStoreConnection
+        let log, service = createLog (), createServiceGesWithoutCompactionSemantics eventStoreConnection
+
+        let (Domain.ContactPreferences.Id email) = id
+        do! service.Update log email value
+
+        let! actual = service.Read log email
+        test <@ value = actual @>
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` id value = Async.RunSynchronously <| async {
+        let! eventStoreConnection = connectToLocalEventStoreNode ()
+        let log, service = createLog (), createServiceGesWithCompactionSemantics eventStoreConnection
 
         let (Domain.ContactPreferences.Id email) = id
         do! service.Update log email value

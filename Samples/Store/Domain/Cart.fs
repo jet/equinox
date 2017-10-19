@@ -10,7 +10,14 @@ module Events =
     type ItemQuantityChangeInfo =   { context: ContextInfo; skuId: SkuId; quantity: int }
     type ItemWaiveReturnsInfo =     { context: ContextInfo; skuId: SkuId; waived: bool }
 
+    module Compaction =
+        let [<Literal>] EventType = "compact/1"
+        type StateItemInfo =        { skuId: SkuId; quantity: int; returnsWaived: bool }
+        type State =                { items: StateItemInfo list }
+
     type Event =
+        | [<System.Runtime.Serialization.DataMember(Name = Compaction.EventType)>]
+          Compacted                 of Compaction.State
         | ItemAdded                 of ItemAddInfo
         | ItemRemoved               of ItemRemoveInfo
         | ItemQuantityChanged       of ItemQuantityChangeInfo
@@ -19,11 +26,17 @@ module Events =
 module Folds =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }
     type State =                    { items: ItemInfo list }
-
+    [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+    module State =
+        let toSnapshot (s: State) : Events.Compaction.State =
+            { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
+        let ofCompacted (s: Events.Compaction.State) : State =
+            { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
     let initial = { items = [] }
     let evolve (state : State) event =
         let updateItems f = { state with items = f state.items }
         match event with
+        | Events.Compacted s -> State.ofCompacted s
         | Events.ItemAdded e -> updateItems (fun current -> { skuId = e.skuId; quantity = e.quantity; returnsWaived = false  } :: current)
         | Events.ItemRemoved e -> updateItems (List.filter (fun x -> x.skuId <> e.skuId))
         | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
@@ -32,6 +45,7 @@ module Folds =
 
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
+    | Compact
     | AddItem               of Context * SkuId * quantity: int
     | ChangeItemQuantity    of Context * SkuId * quantity: int
     | ChangeWaiveReturns    of Context * SkuId * waived: bool
@@ -47,6 +61,8 @@ module Commands =
         let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
         let (|Context|) (context : Context)                 = toEventContext context
         match command with
+        | Compact ->
+            [ Events.Compacted (Folds.State.toSnapshot state)]
         | AddItem (Context c, skuId, quantity) ->
             if itemExistsWithSameQuantity skuId quantity then [] else
             [ Events.ItemAdded { context = c; skuId = skuId; quantity = quantity } ]
@@ -66,6 +82,8 @@ type Handler(stream) =
         handler.Decide stream log <| fun ctx ->
             let execute = Commands.interpret >> ctx.Execute
             let result = flow ctx execute
+            if ctx.IsCompactionDue then
+                execute Compact
             result
     member __.Execute log command =
         __.Flow log <| fun _ctx execute ->

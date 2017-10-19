@@ -74,6 +74,18 @@ let createGesStream<'event, 'state> eventStoreConnection batchSize (codec : Fold
     let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec)
     Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
 
+let createGesStreamWithCompactionEventTypeOption<'event, 'state> eventStoreConnection batchSize compactionEventTypeOption (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName
+    : Foldunk.IStream<'event, 'state> =
+    let gateway = createGesGateway eventStoreConnection batchSize
+    let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec, ?compactionEventType = compactionEventTypeOption)
+    Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
+
+let createGesStreamWithCompactionPredicate<'event, 'state> eventStoreConnection windowSize compactionPredicate (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName
+    : Foldunk.IStream<'event, 'state> =
+    let gateway = createGesGateway eventStoreConnection windowSize
+    let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec, compactionPredicate = compactionPredicate)
+    Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
+
 let inline createMemStore () =
     Foldunk.MemoryStore.MemoryStreamStore()
 let createMemStream<'event, 'state> store streamName : Foldunk.IStream<'event, 'state> =
