@@ -129,8 +129,7 @@ module private Flow =
         if maxSyncAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxSyncAttempts", maxSyncAttempts, "should be >= 1")
         /// Run a decision cycle - decide what events should be appended given the presented state
         let rec loop attempt: Async<'result> = async {
-            //let token, currentState = interpreter.Fold currentState
-            let log = log.ForContext("syncAttempt", attempt)
+            let log = if attempt = 1 then log else log.ForContext("syncAttempt", attempt)
             let ctx = sync.CreateContext()
             let! outcome, events = decide ctx
             if List.isEmpty events then
