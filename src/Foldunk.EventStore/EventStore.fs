@@ -236,9 +236,12 @@ module Token =
     let ofCompactionResolvedEventAndVersion (compactionEvent: ResolvedEvent) batchSize streamVersion : Storage.StreamToken =
         ofCompactionEventNumber (Some compactionEvent.Event.EventNumber) 0 batchSize streamVersion
     /// Use an event we are about to write to the stream to infer headroom
-    let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion (compactionEventDataIndex : int) eventsLength batchSize streamVersion'
-        : Storage.StreamToken =
+    let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion compactionEventDataIndex eventsLength batchSize streamVersion' : Storage.StreamToken =
         ofCompactionEventNumber (Some (prevStreamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
+    let private unpackGesStreamVersion (x : Storage.StreamToken) = let x : Token = unbox x.value in x.streamVersion
+    let supersedes current x =
+        let currentVersion, newVersion = unpackGesStreamVersion current, unpackGesStreamVersion x
+        newVersion > currentVersion
 
 type GesConnection(readConnection, ?writeConnection, ?readRetryPolicy, ?writeRetryPolicy) =
     member __.ReadConnection = readConnection
@@ -323,6 +326,53 @@ type GesCategory<'event, 'state>(gateway : GesGateway, codec : UnionEncoder.IUni
         | GatewaySyncResult.Conflict ->         return Storage.SyncResult.Conflict  (load fold state (gateway.LoadFromToken true streamName log token compactionStrategy))
         | GatewaySyncResult.Written token' ->   return Storage.SyncResult.Written   (token', fold state (Seq.ofList events)) }
 
+module Caching =
+    open System.Runtime.Caching
+    type CacheEntry<'state>(initialToken : Storage.StreamToken, initialState :'state) =
+        let mutable currentToken, currentState = initialToken, initialState
+        member __.UpdateIfNewer (other : CacheEntry<'state>) =
+            lock __ <| fun () ->
+                let otherToken, otherState = other.Value
+                if otherToken |> Token.supersedes currentToken then
+                    currentToken <- otherToken
+                    currentState <- otherState
+        member __.Value : Storage.StreamToken  * 'state =
+            lock __ <| fun () ->
+                currentToken, currentState
+
+    type Cache(name, sizeMb : int) =
+        let cache =
+            let config = System.Collections.Specialized.NameValueCollection(1)
+            config.Add("cacheMemoryLimitMegabytes", string sizeMb);
+            new MemoryCache(name, config)
+        member __.UpdateIfNewer (policy : CacheItemPolicy) entry (streamName : string) =
+            match cache.AddOrGetExisting(streamName, box entry, policy) with
+            | null -> ()
+            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry
+            | x -> failwithf "Incompatible cache entry %A" x
+
+    /// Forwards all state changes in all streams of an ICategory to a `tee` function
+    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state>, tee : Storage.StreamToken * 'state -> string -> unit) =
+        let intercept tokenAndState streamName =
+            tee tokenAndState streamName
+            tokenAndState
+        let interceptAsync load streamName = async {
+            let! tokenAndState = load
+            return intercept tokenAndState streamName }
+        interface ICategory<'event, 'state> with
+            member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
+                interceptAsync (inner.Load streamName log) streamName
+            member __.TrySync streamName (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
+                let! syncRes = inner.TrySync streamName log (token, state) events
+                match syncRes with
+                | Storage.SyncResult.Conflict resync -> return Storage.SyncResult.Conflict (interceptAsync resync streamName)
+                | Storage.SyncResult.Written (token', state') -> return Storage.SyncResult.Written (intercept (token', state') streamName) }
+
+    let applyCachingWithSlidingExpiration (cache: Cache) (slidingExpiration : TimeSpan) (category: ICategory<'event, 'state>) : ICategory<'event, 'state> =
+        let policy = new CacheItemPolicy(SlidingExpiration = slidingExpiration)
+        let addOrUpdateSlidingExpirationCacheEntry = CacheEntry >> cache.UpdateIfNewer policy
+        CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
+
 type GesFolder<'event, 'state>(category : GesCategory<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state) =
     interface ICategory<'event, 'state> with
         member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
@@ -338,7 +388,10 @@ type CompactionStrategy =
     | EventType of string
     | Predicate of (string -> bool)
 
-type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction, ?initialTokenAndState) =
+[<NoComparison; RequireQualifiedAccess>]
+type CachingStrategy = SlidingWindow of Caching.Cache * window: TimeSpan
+
+type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction, ?caching, ?initialTokenAndState) =
     member __.Create streamName : Foldunk.IStream<'event, 'state> =
         let compactionPredicateOption =
             match compaction with
@@ -349,7 +402,10 @@ type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
 
         let folder = GesFolder<'event, 'state>(gesCategory, fold, initial)
 
-        let category : ICategory<_,_> = folder :> _
+        let category : ICategory<_,_> =
+            match caching with
+            | None -> folder :> _
+            | Some (CachingStrategy.SlidingWindow(cache, window)) -> Caching.applyCachingWithSlidingExpiration cache window folder
 
         Foldunk.Stream<'event, 'state>(category, streamName, ?initialTokenAndState = initialTokenAndState) :> _
 
