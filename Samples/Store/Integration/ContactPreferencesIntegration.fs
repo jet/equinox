@@ -1,18 +1,22 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
+open Foldunk.EventStore
+open Foldunk.MemoryStore
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let createServiceMem () =
-    let store = createMemStore ()
-    Backend.ContactPreferences.Service(fun _batchSize _codec _eventTypePredicate -> createMemStream store)
+let createMemoryStore () =
+    new VolatileStore()
+
+let createServiceMem store =
+    Backend.ContactPreferences.Service(fun _batchSize _codec _eventTypePredicate -> MemoryStreamBuilder(store).Create)
 
 let createServiceGesWithCompactionSemantics eventStoreConnection =
-    Backend.ContactPreferences.Service(createGesStreamWithCompactionPredicate eventStoreConnection)
+    Backend.ContactPreferences.Service(fun windowSize predicate -> GesStreamBuilder(eventStoreConnection, windowSize, CompactionStrategy.Predicate predicate).Create)
 
 let createServiceGesWithoutCompactionSemantics eventStoreConnection =
-    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> createGesStream eventStoreConnection defaultBatchSize)
+    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(eventStoreConnection, defaultBatchSize).Create)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -20,7 +24,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` id value = Async.RunSynchronously <| async {
-        let log, service = createLog (), createServiceMem ()
+        let store = createMemoryStore ()
+        let log, service = createLog (), createServiceMem store
 
         let (Domain.ContactPreferences.Id email) = id
         do! service.Update log email value

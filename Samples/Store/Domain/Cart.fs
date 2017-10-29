@@ -41,7 +41,7 @@ module Folds =
         | Events.ItemRemoved e -> updateItems (List.filter (fun x -> x.skuId <> e.skuId))
         | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
-    let fold state = List.fold evolve state
+    let fold state = Seq.fold evolve state
 
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =

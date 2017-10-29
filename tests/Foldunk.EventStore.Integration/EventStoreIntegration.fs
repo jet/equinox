@@ -1,5 +1,6 @@
 ﻿module Foldunk.EventStore.Integration.EventStoreIntegration
 
+open Foldunk.EventStore
 open Swensen.Unquote
 
 /// Needs an ES instance with default settings
@@ -12,38 +13,17 @@ let connectToLocalEventStoreNode () = async {
 
 let defaultBatchSize = 500
 
-let private createGesGateway eventStoreConnection maxBatchSize =
-    let connection = Foldunk.EventStore.GesConnection(eventStoreConnection)
-    Foldunk.EventStore.GesGateway(connection, Foldunk.EventStore.GesStreamPolicy(maxBatchSize = maxBatchSize))
-
-let createGesStream<'event, 'state> eventStoreConnection batchSize (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName : Foldunk.IStream<_,_> =
-    let gateway = createGesGateway eventStoreConnection batchSize
-    let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec)
-    Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
-
-let createGesStreamWithCompactionEventTypeOption<'event, 'state> eventStoreConnection batchSize compactionEventTypeOption (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName
-    : Foldunk.IStream<'event, 'state> =
-    let gateway = createGesGateway eventStoreConnection batchSize
-    let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec, ?compactionEventType = compactionEventTypeOption)
-    Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
-
-let createGesStreamWithCompactionPredicate<'event, 'state> eventStoreConnection windowSize compactionPredicate (codec : Foldunk.EventSum.IEventSumEncoder<'event,byte[]>) streamName
-    : Foldunk.IStream<'event, 'state> =
-    let gateway = createGesGateway eventStoreConnection windowSize
-    let streamState = Foldunk.EventStore.GesStreamState<'event, 'state>(gateway, codec, compactionPredicate = compactionPredicate)
-    Foldunk.EventStore.GesStream<'event, 'state>(streamState, streamName) :> _
-
 let createCartServiceGesWithoutCompaction eventStoreConnection batchSize =
-    Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> createGesStream eventStoreConnection batchSize)
+    Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> GesStreamBuilder(eventStoreConnection, batchSize).Create)
 
 let createCartServiceGes eventStoreConnection batchSize =
-    Backend.Cart.Service(createGesStreamWithCompactionEventTypeOption eventStoreConnection batchSize)
+    Backend.Cart.Service(fun compactionEventType -> GesStreamBuilder(eventStoreConnection, batchSize, ?compaction = Option.map CompactionStrategy.EventType compactionEventType).Create)
 
 let createContactPreferencesServiceGesWithoutCompaction eventStoreConnection =
-    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> createGesStream eventStoreConnection defaultBatchSize)
+    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(eventStoreConnection, defaultBatchSize).Create)
 
 let createContactPreferencesServiceGes eventStoreConnection =
-    Backend.ContactPreferences.Service(createGesStreamWithCompactionPredicate eventStoreConnection)
+    Backend.ContactPreferences.Service(fun batchSize compactionPredicate -> GesStreamBuilder(eventStoreConnection, batchSize, CompactionStrategy.Predicate compactionPredicate).Create)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -94,7 +74,7 @@ type Tests() =
         test <@ List.replicate (expectedBatches-1) singleSliceForward @ singleBatchForward = capture.ExternalCalls @>
     }
 
-    let singleBatchBackwards = ["ReadStreamEventsBackwardAsync"; "ReadB"]
+    let singleBatchBackwards = ["ReadStreamEventsBackwardAsync"; "LoadB"]
     let batchBackwardsAndAppend = singleBatchBackwards @ ["AppendToStreamAsync"]
 
     [<AutoData>]

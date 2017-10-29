@@ -1,15 +1,19 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
+open Foldunk.EventStore
+open Foldunk.MemoryStore
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let createServiceMem () =
-    let store = createMemStore ()
-    Backend.Favorites.Service(fun _codec -> createMemStream store)
+let createMemoryStore () =
+    new VolatileStore()
+
+let createServiceMem store =
+    Backend.Favorites.Service(fun _codec -> MemoryStreamBuilder(store).Create)
 
 let createServiceGes eventStoreConnection =
-    Backend.Favorites.Service(createGesStream eventStoreConnection defaultBatchSize)
+    Backend.Favorites.Service(GesStreamBuilder(eventStoreConnection, defaultBatchSize).Create)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

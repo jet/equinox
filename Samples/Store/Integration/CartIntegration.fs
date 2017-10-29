@@ -1,21 +1,25 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
+open Foldunk.EventStore
+open Foldunk.MemoryStore
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let createServiceMem () =
-    let store = createMemStore ()
-    Backend.Cart.Service(fun _codec _compactionEventType -> createMemStream store)
+let createMemoryStore () =
+    new VolatileStore ()
+
+let createServiceMem store =
+    Backend.Cart.Service(fun _codec _compactionEventType -> MemoryStreamBuilder(store).Create)
 
 let createServiceGes eventStoreConnection batchSize =
-    Backend.Cart.Service(createGesStreamWithCompactionEventTypeOption eventStoreConnection batchSize)
+    Backend.Cart.Service(fun cet -> GesStreamBuilder(eventStoreConnection, batchSize, ?compaction = Option.map CompactionStrategy.EventType cet).Create)
 
 let createServiceGesWithoutCompactionSemantics eventStoreConnection batchSize =
-    Backend.Cart.Service(fun _ignoreCompactionEventType -> createGesStream eventStoreConnection batchSize)
+    Backend.Cart.Service(fun _ignoreCompactionEventType -> GesStreamBuilder(eventStoreConnection, batchSize).Create)
 
 let createServiceWithEventStoreWithoutCompactionSemantics  eventStoreConnection =
-    Backend.Cart.Service(fun _ignoreCompactionEventType -> createGesStream eventStoreConnection defaultBatchSize)
+    Backend.Cart.Service(fun _ignoreCompactionEventType -> GesStreamBuilder(eventStoreConnection, defaultBatchSize).Create)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
     service.Flow log cartId <| fun _ctx execute ->
@@ -30,7 +34,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` context cartId skuId = Async.RunSynchronously <| async {
-        let log, service = createLog (), createServiceMem ()
+        let store = createMemoryStore ()
+        let log, service = createLog (), createServiceMem store
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5
 

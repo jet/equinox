@@ -1,15 +1,13 @@
 ﻿module Foldunk.MemoryStore.Integration.MemoryStoreIntegration
 
 open Swensen.Unquote
+open Foldunk.MemoryStore
 
-let inline createMemStore () =
-    Foldunk.MemoryStore.MemoryStreamStore()
-let inline createMemStream<'event, 'state> store streamName : Foldunk.IStream<'event, 'state> =
-    Foldunk.MemoryStore.MemoryStream(store, streamName) :> _
+let createMemoryStore () =
+    new VolatileStore()
 
-let createServiceMem () =
-    let store = createMemStore()
-    Backend.Cart.Service(fun _codec _compactionEventType -> createMemStream store)
+let createServiceMem store =
+    Backend.Cart.Service(fun _codec _eventTypePredicate -> MemoryStreamBuilder(store).Create)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -20,7 +18,8 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
-        let log, service = createLog (), createServiceMem ()
+        let store = createMemoryStore ()
+        let log, service = createLog (), createServiceMem store
         let flow (ctx: Foldunk.Context<_,_>) execute =
             Domain.Cart.AddItem args |> execute
             ctx.State

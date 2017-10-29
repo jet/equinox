@@ -31,44 +31,28 @@ type Context<'event, 'state>(fold, originState : 'state, capacityBeforeCompactio
     member __.IsCompactionDue =
         capacityBeforeCompaction |> Option.exists (fun max -> accumulated.Count > max)
 
-/// Internal data stuctures. While these are intended to be legible, understand the abstractions involved is only necessary if you are implemening a Store or a decorator thereof.
+/// Internal data stuctures. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implemening a Store or a decorator thereof
 [<RequireQualifiedAccess>]
 module Storage =
     /// Store-specific opaque token to be used for synchronization purposes
     [<NoComparison>]
     type StreamToken = { value : obj; batchCapacityLimit : int option }
-
-    /// Representation of a current known state of the stream, including the concurrency token (e.g. Stream Version number)
-    type StreamState<'event, 'state> = StreamToken * 'state option * 'event list
-
-    /// Helpers for derivation of a StreamState - shared between EventStore and MemoryStore
-    module StreamState =
-        /// Represent a [possibly compacted] array of events with a known token from a store.
-        let ofTokenAndEvents (token : StreamToken) (events: 'event seq) = token, None, List.ofSeq events
-        /// Represent a state known to have been persisted to the store
-        let ofTokenAndKnownState token state = token, Some state, []
-        /// Represent a state to be composed from a snapshot together with the successor events
-        let ofTokenSnapshotAndEvents token (snapshotState : 'state) (successorEvents : 'event list) =
-            token, Some snapshotState, successorEvents
-
     [<NoEquality; NoComparison; RequireQualifiedAccess>]
-    type SyncResult<'event, 'state> =
-        | Written of StreamState<'event, 'state>
-        | Conflict of Async<StreamState<'event, 'state>>
+    type SyncResult<'state> =
+        | Written of StreamToken * 'state
+        | Conflict of Async<StreamToken * 'state>
 
-/// Store-agnostic interface to the state of any given stream of events. Not intended for direct use by consumer code
-///   this is an abstract interface to be implemented by a Store in order for the Application to be able to execute a standarized Flow via the Handler type
+/// Interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
 type IStream<'event, 'state> =
-    /// Obtain the state from the stream named `streamName`
-    abstract Load: log: ILogger
-        -> Async<Storage.StreamState<'event, 'state>>
-    /// Synchronize the state of the stream named `streamName`, appending the supplied `events`, in order to establish the supplied `state` value
-    /// NB the central precondition is that the Stream has not diverged from the state represented by `token`;  where this is not met, the response signals the
-    ///    need to reprocess by yielding an Error bearing the conflicting StreamState with which to retry (loaded in a specific manner optimal for the store)
-    abstract TrySync: log: ILogger -> token: Storage.StreamToken * originState: 'state -> events: 'event list * state' : 'state
-        // - Written: to signify Synchronization has succeeded, taking the yielded Stream State as the representation of what is understood to be the state
-        // - Conflict: to signify the synch failed and the deicsion hence needs to be rerun based on the updated Stream State with which the changes conflicted
-        -> Async<Storage.SyncResult<'event, 'state>>
+    /// Obtain the state from the target stream
+    abstract Load: fold: ('state -> 'event seq -> 'state) -> initial: 'state -> log: ILogger
+        -> Async<Storage.StreamToken * 'state>
+    /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
+    /// SyncResult.Written: implies the state is now the value represented by the Result's value
+    /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
+    abstract TrySync: fold: ('state -> 'event seq -> 'state) -> log: ILogger
+        -> token: Storage.StreamToken * originState: 'state -> events: 'event list
+        -> Async<Storage.SyncResult<'state>>
 
 // Exception yielded by Handler.Decide after `count` attempts have yielded conflicts at the point of syncing with the Store
 exception FlowAttemptsExceededException of count: int
@@ -77,25 +61,16 @@ exception FlowAttemptsExceededException of count: int
 module private Flow =
     /// Represents stream and folding state between the load and run/render phases
     type SyncState<'event, 'state>
-        (   fold, initial, originState : Storage.StreamState<'event, 'state>,
-            trySync : ILogger -> Storage.StreamToken * 'state -> 'event list * 'state -> Async<Storage.SyncResult<'event, 'state>>) =
-        let toTokenAndState fold initial ((token, stateOption, events) : Storage.StreamState<'event, 'state>) : Storage.StreamToken * 'state =
-            let baseState =
-                match stateOption with
-                | Some state when List.isEmpty events -> state
-                | Some state -> fold state events
-                | None when List.isEmpty events -> fold initial events
-                | None -> fold initial events
-            token, baseState
-        let mutable tokenAndState = toTokenAndState fold initial originState
+        (   fold, originState : Storage.StreamToken * 'state,
+            trySync : ILogger -> Storage.StreamToken * 'state -> 'event list -> Async<Storage.SyncResult<'state>>) =
+        let mutable tokenAndState = originState
         let tryOr log events handleFailure = async {
-            let proposedState = fold (snd tokenAndState) events
-            let! res = trySync log tokenAndState (events, proposedState)
+            let! res = trySync log tokenAndState events
             match res with
             | Storage.SyncResult.Conflict resync ->
                 return! handleFailure resync
-            | Storage.SyncResult.Written streamState' ->
-                tokenAndState <- toTokenAndState fold initial streamState'
+            | Storage.SyncResult.Written (token', streamState') ->
+                tokenAndState <- token', streamState'
                 return true }
 
         member __.TokenAndState = tokenAndState
@@ -106,21 +81,21 @@ module private Flow =
         member __.TryOrResync log events =
             let resyncInPreparationForRetry resync = async {
                 let! streamState' = resync
-                tokenAndState <- toTokenAndState fold initial streamState'
+                tokenAndState <- streamState'
                 return false }
             tryOr log events resyncInPreparationForRetry
         member __.TryOrThrow log events attempt =
             let throw _ = async { return raise <| FlowAttemptsExceededException attempt }
             tryOr log events throw |> Async.Ignore
 
-    /// Load the state of a stream from the given stream
-    let load (fold : 'state -> 'event list -> 'state) (initial : 'state) (log : ILogger) (stream : IStream<'event, 'state>)
+    /// Obtain a representation of the current state and metadata from the underlying storage stream
+    let load (fold : 'state -> 'event seq -> 'state) (initial : 'state) (log : ILogger) (stream : IStream<'event, 'state>)
         : Async<SyncState<'event, 'state>> = async {
-        let! streamState = stream.Load log
-        return SyncState(fold, initial, streamState, stream.TrySync) }
+        let! streamState = stream.Load fold initial log
+        return SyncState(fold, streamState, stream.TrySync fold) }
 
     /// Process a command, ensuring a consistent final state is established on the stream.
-    /// 1.  make a decision given the known state
+    /// 1.  make a decision predicated on the known state
     /// 2a. if no changes required, exit with known state
     /// 2b. if saved without conflict, exit with updated state
     /// 2b. if conflicting changes, retry by recommencing at step 1 with the updated state
@@ -169,6 +144,32 @@ type Handler<'event, 'state>(fold, initial, maxAttempts) =
     /// Hook for low level integration testing. There are no known cases where this is relevant to any production stream.
     member __.InternalRawState (stream : IStream<'event, 'state>) (log: ILogger) : Async<Storage.StreamToken * 'state> =
         exec stream log <| fun syncState -> syncState.TokenAndState
+
+/// Store-agnostic interface representing interactions an Application can have with a set of streams
+type ICategory<'event, 'state> =
+    /// Obtain the state from the target stream
+    abstract Load : fold: ('state -> 'event seq -> 'state) -> initial: 'state -> streamName: string -> log: ILogger
+        -> Async<Storage.StreamToken * 'state>
+    /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
+    /// - Written: signifies synchronization has succeeded, implying the included StreamState should now be assumed to be the state of the stream
+    /// - Conflict: signifies the synch failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
+    /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
+    ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
+    abstract TrySync : fold: ('state -> 'event seq -> 'state) -> streamName: string -> log: ILogger
+        -> token: Storage.StreamToken * originState: 'state
+        -> events: 'event list
+        -> Async<Storage.SyncResult<'state>>
+
+/// Represents a specific stream in an IStoreCategory
+type Stream<'event, 'state>(category : ICategory<'event, 'state>, streamName, ?initialTokenAndState : Storage.StreamToken * 'state) =
+    let mutable knownTokenAndState = initialTokenAndState
+    interface IStream<'event, 'state> with
+        member __.Load fold initial log =
+            match knownTokenAndState with
+            | Some (token,state) -> async { knownTokenAndState <- None; return token, state }
+            | None -> category.Load fold initial streamName log
+        member __.TrySync fold (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list) =
+            category.TrySync fold streamName log (token, originState) events
 
 /// Helper for defining backoffs within the definition of a retry policy for a store.
 module Retry =
