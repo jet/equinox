@@ -20,6 +20,8 @@ type AutoDataAttribute() =
 [<AutoOpen>]
 module SerilogHelpers =
     open Serilog
+    open Serilog.Events
+
     let createLogger hookObservers =
         LoggerConfiguration()
             .WriteTo.Observers(System.Action<_> hookObservers)
@@ -27,18 +29,25 @@ module SerilogHelpers =
             .CreateLogger()
 
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
-        | (:? Serilog.Events.ScalarValue as x) -> Some x.Value
+        | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
-    let (|EsMetric|_|) (logEvent : Serilog.Events.LogEvent) : Foldunk.EventStore.Metrics.Metric option =
+    let (|EsMetric|_|) (logEvent : LogEvent) : Foldunk.EventStore.Metrics.Metric option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | (SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as x)) -> Some x
+            | SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as x) -> Some x
             | _ -> None)
+
+    let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =
+        match e.Properties.TryGetValue name with
+        | true, (SerilogScalar _ as s) -> Some s | _ -> None
+        | _ -> None
+    let (|SerilogString|_|) : LogEventPropertyValue -> string option = function SerilogScalar (:? string as y) -> Some y | _ -> None
+    let (|SerilogBool|_|) : LogEventPropertyValue -> bool option = function SerilogScalar (:? bool as y) -> Some y | _ -> None
 
     type LogCaptureBuffer() =
         let captured = ResizeArray()
         member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-            source.Subscribe (fun x -> x.RenderMessage () |> System.Diagnostics.Trace.Write; captured.Add x)
+            source.Subscribe (fun x -> x.RenderMessage () |> System.Diagnostics.Trace.WriteLine; captured.Add x)
         member __.Clear () = captured.Clear()
         member __.Entries = captured.ToArray()
-        member __.ExternalCalls =
-            captured |> Seq.choose (function EsMetric metric -> Some metric.action | _ -> None) |> List.ofSeq
+        member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
+        member __.ExternalCalls = __.ChooseCalls (function EsMetric metric -> Some metric.action | _ -> None)

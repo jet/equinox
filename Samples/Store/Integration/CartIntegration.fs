@@ -18,15 +18,12 @@ let createServiceGes eventStoreConnection batchSize =
 let createServiceGesWithoutCompactionSemantics eventStoreConnection batchSize =
     Backend.Cart.Service(fun _ignoreCompactionEventType -> GesStreamBuilder(eventStoreConnection, batchSize).Create)
 
-let createServiceWithEventStoreWithoutCompactionSemantics  eventStoreConnection =
-    Backend.Cart.Service(fun _ignoreCompactionEventType -> GesStreamBuilder(eventStoreConnection, defaultBatchSize).Create)
-
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
-    service.Flow log cartId <| fun _ctx execute ->
+    service.FlowAsync(log, cartId, fun _ctx execute ->
         for i in 1..count do
             execute <| Domain.Cart.AddItem (context, skuId, i)
             if i <> count then
-                execute <| Domain.Cart.RemoveItem (context, skuId)
+                execute <| Domain.Cart.RemoveItem (context, skuId))
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

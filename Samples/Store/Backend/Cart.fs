@@ -8,9 +8,9 @@ type Service(createStream) =
         sprintf "Cart-%s" id.Value
         |> createStream (Some Cart.Events.Compaction.EventType) codec
 
-    member __.Flow (log : Serilog.ILogger) (cartId : CartId) flow =
+    member __.FlowAsync (log : Serilog.ILogger, cartId : CartId, flow, ?prepare) =
         let handler = Cart.Handler(stream cartId)
-        handler.Flow log flow
+        handler.FlowAsync(log, flow, ?prepare = prepare)
 
     member __.Execute (log : Serilog.ILogger) (cartId : CartId) command =
         let handler = Cart.Handler(stream cartId)

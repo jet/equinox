@@ -26,10 +26,10 @@ type Tests(testOutputHelper) =
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
-            service.Flow log cartId flow
+            service.FlowAsync(log, cartId, flow)
 
         let actLoadingStateSeparately cartId = async {
-            let! _ = service.Flow log cartId flow
+            let! _ = service.FlowAsync(log, cartId, flow)
             return! service.Read log cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately

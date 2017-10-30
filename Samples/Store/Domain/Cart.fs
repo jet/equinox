@@ -78,15 +78,15 @@ module Commands =
 
 type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, Folds.initial, maxAttempts = 3)
-    member __.Flow log flow =
-        handler.Decide stream log <| fun ctx ->
+    member __.FlowAsync(log, flow, ?prepare) =
+        handler.DecideAsync stream log <| fun ctx -> async {
             let execute = Commands.interpret >> ctx.Execute
+            match prepare with None -> () | Some prep -> do! prep
             let result = flow ctx execute
             if ctx.IsCompactionDue then
                 execute Compact
-            result
+            return result }
     member __.Execute log command =
-        __.Flow log <| fun _ctx execute ->
-            execute command
+        __.FlowAsync(log, fun _ctx execute -> execute command)
     member __.Read log : Async<Folds.State> =
         handler.Query stream log id
