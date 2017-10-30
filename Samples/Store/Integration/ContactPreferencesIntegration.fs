@@ -6,17 +6,21 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
+let fold, initial= Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
+
 let createMemoryStore () =
     new VolatileStore()
-
 let createServiceMem store =
-    Backend.ContactPreferences.Service(fun _batchSize _codec _eventTypePredicate -> MemoryStreamBuilder(store).Create)
+    Backend.ContactPreferences.Service(fun _batchSize _eventTypePredicate -> MemoryStreamBuilder(store, fold, initial).Create)
 
+let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.ContactPreferences.Events.Event>
 let createServiceGesWithCompactionSemantics eventStoreConnection =
-    Backend.ContactPreferences.Service(fun windowSize predicate -> GesStreamBuilder(eventStoreConnection, windowSize, CompactionStrategy.Predicate predicate).Create)
-
+    let mkStream windowSize predicate =
+        GesStreamBuilder(createGesGateway eventStoreConnection windowSize, codec, fold, initial, CompactionStrategy.Predicate predicate).Create
+    Backend.ContactPreferences.Service(mkStream)
 let createServiceGesWithoutCompactionSemantics eventStoreConnection =
-    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(eventStoreConnection, defaultBatchSize).Create)
+    let gateway = createGesGateway eventStoreConnection defaultBatchSize
+    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

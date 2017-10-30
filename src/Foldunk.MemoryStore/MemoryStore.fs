@@ -70,13 +70,13 @@ module private MemoryStreamStreamState =
     let ofEventArrayAndKnownState fold (state: 'state) (events: 'event array) = tokenOfArray events, fold state events
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
-type MemoryCategory<'event, 'state>(store : VolatileStore) =
+type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
     interface ICategory<'event, 'state> with
-        member __.Load fold initial streamName (log : ILogger) = async {
+        member __.Load streamName (log : ILogger) = async {
             match store.TryLoad<'event> streamName log with
             | None -> return MemoryStreamStreamState.ofEmpty initial
             | Some events -> return MemoryStreamStreamState.ofEventArray fold initial events }
-        member __.TrySync fold streamName (log : ILogger) (token, state) (events: 'event list) = async {
+        member __.TrySync streamName (log : ILogger) (token, state) (events: 'event list) = async {
             let trySyncValue currentValue =
                 if Array.length currentValue <> unbox token + 1 then ConcurrentDictionarySyncResult.Conflict (unbox token)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue events)
@@ -89,7 +89,7 @@ type MemoryCategory<'event, 'state>(store : VolatileStore) =
                 return Storage.SyncResult.Conflict resync
             | ConcurrentArraySyncResult.Written events -> return Storage.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState fold state events }
 
-type MemoryStreamBuilder(store : VolatileStore) =
+type MemoryStreamBuilder<'event, 'state>(store : VolatileStore, fold, initial) =
     member __.Create streamName : Foldunk.IStream<'event, 'state> =
-        let category = MemoryCategory(store)
+        let category = MemoryCategory(store, fold, initial)
         Foldunk.Stream<'event, 'state>(category, streamName) :> _

@@ -13,18 +13,29 @@ let connectToLocalEventStoreNode () = async {
     return conn }
 
 let defaultBatchSize = 500
+let createGesGateway eventStoreConnection batchSize =
+    Foldunk.EventStore.GesGateway(Foldunk.EventStore.GesConnection(eventStoreConnection), Foldunk.EventStore.GesBatchingPolicy(maxBatchSize = batchSize))
 
-let createCartServiceWithoutOptimization eventStoreConnection batchSize =
-    Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> GesStreamBuilder(eventStoreConnection, batchSize).Create)
+module Cart =
+    let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
+    let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.Cart.Events.Event>
+    let createServiceWithoutOptimization eventStoreConnection batchSize =
+        let gateway = createGesGateway eventStoreConnection batchSize
+        Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> GesStreamBuilder(gateway, codec, fold, initial).Create)
+    let createServiceWithCompaction eventStoreConnection batchSize =
+        let gateway = createGesGateway eventStoreConnection batchSize
+        Backend.Cart.Service(fun compactionEventType -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType compactionEventType).Create)
 
-let createCartService eventStoreConnection batchSize =
-    Backend.Cart.Service(fun compactionEventType -> GesStreamBuilder(eventStoreConnection, batchSize, ?compaction = Option.map CompactionStrategy.EventType compactionEventType).Create)
-
-let createContactPreferencesServiceWithoutOptimization eventStoreConnection =
-    Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(eventStoreConnection, defaultBatchSize).Create)
-
-let createContactPreferencesService eventStoreConnection =
-    Backend.ContactPreferences.Service(fun batchSize compactionPredicate -> GesStreamBuilder(eventStoreConnection, batchSize, CompactionStrategy.Predicate compactionPredicate).Create)
+module ContactPreferences =
+    let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
+    let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.ContactPreferences.Events.Event>
+    let createServiceWithoutOptimization eventStoreConnection =
+        let gateway = createGesGateway eventStoreConnection defaultBatchSize
+        Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)
+    let createService eventStoreConnection =
+        let mkStream batchSize compactionPredicate =
+            GesStreamBuilder(createGesGateway eventStoreConnection batchSize, codec, fold, initial, CompactionStrategy.Predicate compactionPredicate).Create
+        Backend.ContactPreferences.Service(mkStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -55,7 +66,7 @@ type Tests() =
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode ()
         let batchSize = 3
-        let service = createCartServiceWithoutOptimization conn batchSize
+        let service = Cart.createServiceWithoutOptimization conn batchSize
 
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 6
@@ -85,7 +96,7 @@ type Tests() =
         let context, cartId, (sku11, sku12, sku21, sku22) = ctx
 
         // establish base stream state
-        let service1 = createCartServiceWithoutOptimization conn batchSize
+        let service1 = Cart.createServiceWithoutOptimization conn batchSize
         let! maybeInitialSku =
             let (streamEmpty, skuId) = initialState
             async {
@@ -118,7 +129,7 @@ type Tests() =
             // Signal conflict generated
             do! s4 }
         let log2, capture2 = createLoggerWithCapture ()
-        let service2 = createCartServiceWithoutOptimization conn batchSize
+        let service2 = Cart.createServiceWithoutOptimization conn batchSize
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
@@ -156,7 +167,7 @@ type Tests() =
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode ()
         let batchSize = 10
-        let service = createCartService conn batchSize
+        let service = Cart.createServiceWithCompaction conn batchSize
 
         // Trigger 10 events, then reload
         do! addAndThenRemoveItemsManyTimes context cartId skuId log service 5
@@ -191,10 +202,10 @@ type Tests() =
     }
 
     [<AutoData>]
-    let ``Can correctly read and update values with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update against EventStore, with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
         let! eventStoreConnection = connectToLocalEventStoreNode ()
         let log, capture = createLoggerWithCapture ()
-        let service = createContactPreferencesService eventStoreConnection
+        let service = ContactPreferences.createService eventStoreConnection
 
         let (Domain.ContactPreferences.Id email) = id
         // Feed some junk into the stream

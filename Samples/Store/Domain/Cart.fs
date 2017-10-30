@@ -77,7 +77,7 @@ module Commands =
             [ Events.ItemRemoved { context = c; skuId = skuId } ]
 
 type Handler(stream) =
-    let handler = Foldunk.Handler(Folds.fold, Folds.initial, maxAttempts = 3)
+    let handler = Foldunk.Handler(Folds.fold, maxAttempts = 3)
     member __.FlowAsync(log, flow, ?prepare) =
         handler.DecideAsync stream log <| fun ctx -> async {
             let execute = Commands.interpret >> ctx.Execute

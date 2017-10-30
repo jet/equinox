@@ -6,17 +6,20 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
+let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
+
 let createMemoryStore () =
     new VolatileStore ()
-
 let createServiceMem store =
-    Backend.Cart.Service(fun _codec _compactionEventType -> MemoryStreamBuilder(store).Create)
+    Backend.Cart.Service(fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
 
+let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.Cart.Events.Event>
 let createServiceGes eventStoreConnection batchSize =
-    Backend.Cart.Service(fun cet -> GesStreamBuilder(eventStoreConnection, batchSize, ?compaction = Option.map CompactionStrategy.EventType cet).Create)
-
+    let gateway = createGesGateway eventStoreConnection batchSize
+    Backend.Cart.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)
 let createServiceGesWithoutCompactionSemantics eventStoreConnection batchSize =
-    Backend.Cart.Service(fun _ignoreCompactionEventType -> GesStreamBuilder(eventStoreConnection, batchSize).Create)
+    let gateway = createGesGateway eventStoreConnection batchSize
+    Backend.Cart.Service(fun _ignoreCompactionEventType -> GesStreamBuilder(gateway, codec, fold, initial).Create)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
     service.FlowAsync(log, cartId, fun _ctx execute ->

@@ -7,7 +7,7 @@ let createMemoryStore () =
     new VolatileStore()
 
 let createServiceMem store =
-    Backend.Cart.Service(fun _codec _eventTypePredicate -> MemoryStreamBuilder(store).Create)
+    Backend.Cart.Service(fun _eventTypePredicate -> MemoryStreamBuilder(store, Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Create)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

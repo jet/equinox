@@ -72,11 +72,6 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <ProjectReference Include="..\..\..\src\Foldunk.EventSum\Foldunk.EventSum.fsproj">
-      <Name>Foldunk.EventSum</Name>
-      <Project>{f5491eb1-d072-4262-8184-2a908e1d6175}</Project>
-      <Private>True</Private>
-    </ProjectReference>
     <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj">
       <Name>Foldunk</Name>
       <Project>{54cd058f-5b0a-4564-b732-1f6301e120ac}</Project>

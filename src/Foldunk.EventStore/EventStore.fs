@@ -268,37 +268,52 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
         return GatewaySyncResult.Written token }
 
 type GesCategory<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>, ?compactionStrategy) =
-    let loadAlgorithm streamName log =
+    let loadAlgorithm load streamName initial log =
+        let batched = load initial (gateway.LoadBatched streamName log None)
+        let compacted predicate = load initial (gateway.LoadBackwardsStoppingAtCompactionEvent streamName log predicate)
         match compactionStrategy with
-        | Some predicate -> gateway.LoadBackwardsStoppingAtCompactionEvent streamName log predicate
-        | None -> gateway.LoadBatched streamName log None
+        | Some predicate -> compacted predicate
+        | None -> batched
+    let load (fold: 'state -> 'event seq -> 'state) initial f = async {
+        let! token, events = f
+        return token, fold initial (EventSumAdapters.decodeKnownEvents codec events) }
+    member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
+        loadAlgorithm (load fold) streamName initial log
+    member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) (streamName : string) token (log : ILogger) : Async<Storage.StreamToken * 'state> =
+        (load fold) state (gateway.LoadFromToken streamName log token compactionStrategy)
+    member __.TrySync (fold: 'state -> 'event seq -> 'state) streamName (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
+        let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec (Seq.ofList events)
+        let! syncRes = gateway.TrySync streamName log token encodedEvents compactionStrategy
+        match syncRes with
+        | GatewaySyncResult.Conflict ->         return Storage.SyncResult.Conflict  (load fold state (gateway.LoadFromToken streamName log token compactionStrategy))
+        | GatewaySyncResult.Written token' ->   return Storage.SyncResult.Written   (token', fold state (Seq.ofList events)) }
+
+type GesFolder<'event, 'state>(category : GesCategory<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state) =
     interface ICategory<'event, 'state> with
-        member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> = async {
-            let! token, events = loadAlgorithm streamName log
-            return token, EventSumAdapters.decodeKnownEvents codec events |> fold initial }
-        member __.TrySync (fold: 'state -> 'event seq -> 'state) streamName (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
-            let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec (Seq.ofList events)
-            let! syncRes = gateway.TrySync streamName log token encodedEvents compactionStrategy
+        member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
+            category.Load fold initial streamName log
+        member __.TrySync streamName (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
+            let! syncRes = category.TrySync fold streamName log (token, state) events
             match syncRes with
-            | GatewaySyncResult.Conflict ->
-                let resync = async {
-                    let! token', events = gateway.LoadFromToken streamName log token compactionStrategy
-                    let successorEvents = EventSumAdapters.decodeKnownEvents codec events
-                    return token', fold state successorEvents }
-                return Storage.SyncResult.Conflict resync
-            | GatewaySyncResult.Written token' ->
-                return Storage.SyncResult.Written (token', fold state (Seq.ofList events)) }
+            | Storage.SyncResult.Conflict resync ->         return Storage.SyncResult.Conflict resync
+            | Storage.SyncResult.Written (token',state') -> return Storage.SyncResult.Written (token',state') }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
-type CompactionStrategy = EventType of string | Predicate of (string -> bool)
+type CompactionStrategy =
+    | EventType of string
+    | Predicate of (string -> bool)
 
-type GesStreamBuilder(eventStoreConnection, batchSize, ?compaction) =
-    member __.Create codec streamName : Foldunk.IStream<'event, 'state> =
-        let gateway = GesGateway(GesConnection(eventStoreConnection), GesBatchingPolicy(maxBatchSize = batchSize))
+type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction, ?initialTokenAndState) =
+    member __.Create streamName : Foldunk.IStream<'event, 'state> =
         let compactionPredicateOption =
             match compaction with
             | None -> None
             | Some (CompactionStrategy.Predicate predicate) -> Some predicate
             | Some (CompactionStrategy.EventType eventType) -> Some (fun x -> x = eventType)
-        let category = GesCategory<'event, 'state>(gateway, codec, ?compactionStrategy = compactionPredicateOption)
-        Foldunk.Stream<'event, 'state>(category, streamName) :> _
+        let gesCategory = GesCategory<'event, 'state>(gateway, codec, ?compactionStrategy = compactionPredicateOption)
+
+        let folder = GesFolder<'event, 'state>(gesCategory, fold, initial)
+
+        let category : ICategory<_,_> = folder :> _
+
+        Foldunk.Stream<'event, 'state>(category, streamName, ?initialTokenAndState = initialTokenAndState) :> _

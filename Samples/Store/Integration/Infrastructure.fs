@@ -64,3 +64,5 @@ let connectToLocalEventStoreNode () = async {
     return conn }
 
 let defaultBatchSize = 500
+let createGesGateway eventStoreConnection batchSize =
+    Foldunk.EventStore.GesGateway(Foldunk.EventStore.GesConnection(eventStoreConnection), Foldunk.EventStore.GesBatchingPolicy(maxBatchSize = batchSize))

@@ -6,14 +6,17 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
+let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
+
 let createMemoryStore () =
     new VolatileStore()
-
 let createServiceMem store =
-    Backend.Favorites.Service(fun _codec -> MemoryStreamBuilder(store).Create)
+    Backend.Favorites.Service(fun _cet -> MemoryStreamBuilder(store, fold, initial).Create)
 
+let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.Favorites.Events.Event>
 let createServiceGes eventStoreConnection =
-    Backend.Favorites.Service(GesStreamBuilder(eventStoreConnection, defaultBatchSize).Create)
+    let gateway = createGesGateway eventStoreConnection defaultBatchSize
+    Backend.Favorites.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

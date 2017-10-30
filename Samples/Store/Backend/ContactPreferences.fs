@@ -3,10 +3,9 @@
 open Domain
 
 type Service(createStream) =
-    static let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<ContactPreferences.Events.Event>
     let stream (ContactPreferences.Id email) =
         sprintf "ContactPreferences-%s" email // TODO hash >> base64
-        |> createStream 1 (fun (_eventType : string) -> true) codec
+        |> createStream 1 (fun (_eventType : string) -> true)
     let handler email =
         ContactPreferences.Handler(stream (Domain.ContactPreferences.Id email))
 
