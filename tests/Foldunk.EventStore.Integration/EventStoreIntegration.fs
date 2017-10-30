@@ -1,6 +1,7 @@
 ﻿module Foldunk.EventStore.Integration.EventStoreIntegration
 
 open Foldunk.EventStore
+open Foldunk.EventStore.Caching
 open Serilog
 open Swensen.Unquote
 open System.Threading
@@ -29,6 +30,10 @@ module Cart =
     let createServiceWithCompaction connection batchSize =
         let gateway = createGesGateway connection batchSize
         Backend.Cart.Service(fun compactionEventType -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType compactionEventType).Create)
+    let createServiceWithCaching eventStoreConnection batchSize cache =
+        let gateway = createGesGateway eventStoreConnection batchSize
+        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        Backend.Cart.Service(fun _ignorecompactionEventType -> GesStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
@@ -233,4 +238,31 @@ type Tests(testOutputHelper) =
         test <@ value = result @>
 
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+        let log, capture = createLoggerWithCapture ()
+        let! conn = connectToLocalEventStoreNode log
+        let batchSize = 1
+        let cache = Caching.Cache("cart", sizeMb = 50)
+        let createServiceCached () = Cart.createServiceWithCaching conn batchSize cache
+        let service1, service2 = createServiceCached (), createServiceCached ()
+
+        // Trigger 10 events, then reload
+        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 5
+        let! _ = service2.Read log cartId
+
+        // ... should see a single read as we are writes are cached
+        test <@ batchForwardAndAppend @ singleBatchForward = capture.ExternalCalls @>
+
+        // Add two more - the roundtrip should only incur a single read
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        test <@ batchForwardAndAppend = capture.ExternalCalls @>
+
+        // While we now have 12 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service2.Read log cartId
+        test <@ singleBatchForward = capture.ExternalCalls @>
     }
