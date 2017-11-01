@@ -346,37 +346,42 @@ module Caching =
             let config = System.Collections.Specialized.NameValueCollection(1)
             config.Add("cacheMemoryLimitMegabytes", string sizeMb);
             new MemoryCache(name, config)
-        member __.UpdateIfNewer (policy : CacheItemPolicy) entry (streamName : string) =
-            match cache.AddOrGetExisting(streamName, box entry, policy) with
+        member __.UpdateIfNewer (policy : CacheItemPolicy) (key : string) entry =
+            match cache.AddOrGetExisting(key, box entry, policy) with
             | null -> ()
             | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
-        member __.TryGet (streamName : string) =
-            match cache.Get streamName with
+        member __.TryGet (key : string) =
+            match cache.Get key with
             | null -> None
             | :? CacheEntry<'state> as existingEntry -> Some existingEntry.Value
             | x -> failwithf "TryGet Incompatible cache entry %A" x
 
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state>, tee : Storage.StreamToken * 'state -> string -> unit) =
-        let intercept tokenAndState streamName =
-            tee tokenAndState streamName
+    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state>, tee : string -> Storage.StreamToken * 'state -> unit) =
+        let intercept streamName tokenAndState =
+            tee streamName tokenAndState
             tokenAndState
         let interceptAsync load streamName = async {
             let! tokenAndState = load
-            return intercept tokenAndState streamName }
+            return intercept streamName tokenAndState }
         interface ICategory<'event, 'state> with
             member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
                 interceptAsync (inner.Load streamName log) streamName
             member __.TrySync streamName (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync streamName log (token, state) events
                 match syncRes with
-                | Storage.SyncResult.Conflict resync -> return Storage.SyncResult.Conflict (interceptAsync resync streamName)
-                | Storage.SyncResult.Written (token', state') -> return Storage.SyncResult.Written (intercept (token', state') streamName) }
+                | Storage.SyncResult.Conflict resync ->             return Storage.SyncResult.Conflict (interceptAsync resync streamName)
+                | Storage.SyncResult.Written (token', state') ->    return Storage.SyncResult.Written (intercept streamName (token', state')) }
 
-    let applyCacheUpdatesWithSlidingExpiration (cache: Cache) (slidingExpiration : TimeSpan) (category: ICategory<'event, 'state>) : ICategory<'event, 'state> =
+    let applyCacheUpdatesWithSlidingExpiration
+            (cache: Cache)
+            (prefix: string)
+            (slidingExpiration : TimeSpan)
+            (category: ICategory<'event, 'state>)
+            : ICategory<'event, 'state> =
         let policy = new CacheItemPolicy(SlidingExpiration = slidingExpiration)
-        let addOrUpdateSlidingExpirationCacheEntry = CacheEntry >> cache.UpdateIfNewer policy
+        let addOrUpdateSlidingExpirationCacheEntry streamName = CacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
 type GesFolder<'event, 'state>(category : GesCategory<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
@@ -385,8 +390,8 @@ type GesFolder<'event, 'state>(category : GesCategory<'event, 'state>, fold: 'st
         let cached token state = category.LoadFromToken fold state streamName token log
         match readCache with
         | None -> batched
-        | Some (cache : Caching.Cache) ->
-            match cache.TryGet streamName with
+        | Some (cache : Caching.Cache, prefix : string) ->
+            match cache.TryGet(prefix + streamName) with
             | None -> batched
             | Some (token, state) -> cached token state
     interface ICategory<'event, 'state> with
@@ -403,8 +408,11 @@ type CompactionStrategy =
     | EventType of string
     | Predicate of (string -> bool)
 
-[<NoComparison; RequireQualifiedAccess>]
-type CachingStrategy = SlidingWindow of Caching.Cache * window: TimeSpan
+[<NoComparison; NoEquality; RequireQualifiedAccess>]
+type CachingStrategy =
+    | SlidingWindow of Caching.Cache * window: TimeSpan
+    /// Prefix is used to distinguish multiple folds per stream
+    | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
 type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction, ?caching, ?initialTokenAndState) =
     member __.Create streamName : Foldunk.IStream<'event, 'state> =
@@ -418,13 +426,17 @@ type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
         let readCacheOption =
             match caching with
             | None -> None
-            | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some cache
+            | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
+            | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some(cache, prefix)
         let folder = GesFolder<'event, 'state>(gesCategory, fold, initial, ?readCache = readCacheOption)
 
         let category : ICategory<_,_> =
             match caching with
             | None -> folder :> _
-            | Some (CachingStrategy.SlidingWindow(cache, window)) -> Caching.applyCacheUpdatesWithSlidingExpiration cache window folder
+            | Some (CachingStrategy.SlidingWindow(cache, window)) ->
+                Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+            | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
+                Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
 
         Foldunk.Stream<'event, 'state>(category, streamName, ?initialTokenAndState = initialTokenAndState) :> _
 
