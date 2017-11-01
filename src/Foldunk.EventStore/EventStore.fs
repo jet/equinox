@@ -372,7 +372,7 @@ module Caching =
                 let! syncRes = inner.TrySync streamName log (token, state) events
                 match syncRes with
                 | Storage.SyncResult.Conflict resync ->             return Storage.SyncResult.Conflict (interceptAsync resync streamName)
-                | Storage.SyncResult.Written (token', state') ->    return Storage.SyncResult.Written (intercept streamName (token', state')) }
+                | Storage.SyncResult.Written (token', state') ->    return Storage.SyncResult.Written (token', state') }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache: Cache)
