@@ -248,7 +248,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
-        let batchSize = 1
+        let batchSize = 10
         let cache = Caching.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithCaching conn batchSize cache
         let service1, service2 = createServiceCached (), createServiceCached ()
