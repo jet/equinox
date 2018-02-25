@@ -1,3 +1,2 @@
 ﻿nuget Newtonsoft.json
-File: TypeShape.fs TypeShape
-File: MiscUtils.fs TypeShape_Utils
+nuget TypeShape

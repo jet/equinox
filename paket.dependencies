@@ -1,25 +1,24 @@
 source https://api.nuget.org/v3/index.json
 framework: auto-detect
 
-nuget FSharp.Control.AsyncSeq
+// <4 for now so we don't force dep on .NET 4.6.1
+nuget EventStore.Client < 4
+nuget FSharp.Core redirects: force
+// <2.0.19 for now so we don't force dep on .NET Standard (and hence .NET 4.6.1)
+nuget FSharp.Control.AsyncSeq < 2.0.19
 nuget Newtonsoft.json
 nuget Serilog
 nuget Serilog.Sinks.Observable
-// <4 for now so we don't force dep on 4.6.1
-nuget EventStore.Client < 4
-github eiriktsarpalis/TypeShape:2.19 src/TypeShape/TypeShape.fs
-github eiriktsarpalis/TypeShape:2.19 src/TypeShape/MiscUtils.fs
+nuget TypeShape
 
-group test
-    source https://api.nuget.org/v3/index.json
-    framework: auto-detect
-
-    nuget FSharp.Core
-    nuget FsCheck.xUnit
-    nuget Unquote
-    nuget xunit
-    nuget xunit.runner.visualstudio version_in_path: true
+# Single group to avoid conflicts
+//group test
+	nuget FsCheck.xUnit
+	nuget Unquote
+	nuget xunit.core redirects: force
+	nuget xunit.runner.visualstudio
 
 group build
     source https://api.nuget.org/v3/index.json
+
     nuget FAKE

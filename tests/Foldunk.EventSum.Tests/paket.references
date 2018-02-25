@@ -1,10 +1,7 @@
-﻿nuget Newtonsoft.json
+﻿nuget FSharp.Core redirects: force
+nuget Newtonsoft.json
 nuget Serilog
-File: TypeShape.fs TypeShape
-File: MiscUtils.fs TypeShape_Utils
-
-group test
-    nuget fsharp.core redirects: force
-    nuget FsCheck.xUnit
-    nuget Unquote
-    nuget xunit.runner.visualstudio
+nuget TypeShape
+nuget Unquote
+nuget xunit.core
+nuget xunit.runner.visualstudio

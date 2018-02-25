@@ -32,6 +32,8 @@ packages.config
 
 # Paket dependency manager
 .paket/paket.exe
+# I'm not prepared to pay the compilation time cost of the current paket restore impl
+/.paket/Paket.Restore.targets
 paket-files/
 
 # FAKE - F# Make

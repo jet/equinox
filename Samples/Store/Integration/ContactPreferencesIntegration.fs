@@ -2,6 +2,7 @@
 
 open Foldunk.EventStore
 open Foldunk.MemoryStore
+open Foldunk.EventSumCodec
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -13,7 +14,7 @@ let createMemoryStore () =
 let createServiceMem store =
     Backend.ContactPreferences.Service(fun _batchSize _eventTypePredicate -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.ContactPreferences.Events.Event>
+let codec = generateJsonUtf8SumEncoder<Domain.ContactPreferences.Events.Event>
 let createServiceGesWithCompactionSemantics eventStoreConnection =
     let mkStream windowSize predicate =
         GesStreamBuilder(createGesGateway eventStoreConnection windowSize, codec, fold, initial, CompactionStrategy.Predicate predicate).Create

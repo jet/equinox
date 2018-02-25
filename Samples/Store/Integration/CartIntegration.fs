@@ -1,6 +1,7 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
 open Foldunk.EventStore
+open Foldunk.EventSumCodec
 open Foldunk.MemoryStore
 open Swensen.Unquote
 
@@ -13,7 +14,7 @@ let createMemoryStore () =
 let createServiceMem store =
     Backend.Cart.Service(fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.Cart.Events.Event>
+let codec = generateJsonUtf8SumEncoder<Domain.Cart.Events.Event>
 let createServiceGes eventStoreConnection batchSize =
     let gateway = createGesGateway eventStoreConnection batchSize
     Backend.Cart.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)

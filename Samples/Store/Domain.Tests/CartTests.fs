@@ -6,7 +6,7 @@ open Domain.Cart.Events
 open Domain.Cart.Folds
 open Domain.Cart.Commands
 open Swensen.Unquote
-open TypeShape_Empty
+open TypeShape.Empty
 open System
 
 let mkAddQty skuId qty          = ItemAdded { empty<ItemAddInfo> with skuId = skuId; quantity = qty }

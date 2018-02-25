@@ -6,6 +6,13 @@ open FSharp.Control
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
 
+#if TYPESHAPE_AS_PACKAGE
+open TypeShape.Core
+open TypeShape.Core.Utils
+#else
+open TypeShape
+#endif
+
 [<AutoOpen>]
 module private Impl =
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =

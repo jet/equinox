@@ -1,8 +1,8 @@
-﻿nuget Serilog
+﻿nuget EventStore.Client
+nuget FsCheck.Xunit
+nuget FSharp.Core
+nuget Serilog
 nuget Serilog.Sinks.Observable
-nuget EventStore.Client
-
-group test
-	nuget FsCheck.Xunit
-	nuget FSharp.Core redirects: force
-	nuget unquote
+nuget TypeShape
+nuget unquote
+nuget xunit.runner.visualstudio

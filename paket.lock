@@ -2,41 +2,31 @@ RESTRICTION: == net452
 NUGET
   remote: https://api.nuget.org/v3/index.json
     EventStore.Client (3.9.5)
-    FSharp.Control.AsyncSeq (2.0.13)
-    Newtonsoft.Json (10.0.3)
-    Serilog (2.5)
-    Serilog.Sinks.Observable (2.0.1)
+    FsCheck (2.10.7)
+      FSharp.Core (>= 4.0.0.1)
+    FsCheck.xUnit (2.10.7)
+      FsCheck (2.10.7)
+      xunit.extensibility.execution (>= 2.2 < 3.0)
+    FSharp.Control.AsyncSeq (2.0.18)
+    FSharp.Core (4.3.4) - redirects: force
+    Newtonsoft.json (11.0.1)
+    Serilog (2.6)
+    Serilog.Sinks.Observable (2.0.2)
       Serilog (>= 2.0)
-GITHUB
-  remote: eiriktsarpalis/TypeShape
-    src/TypeShape/MiscUtils.fs (9b718052f093bd63bfbea519928ff6956958fcaa)
-    src/TypeShape/TypeShape.fs (9b718052f093bd63bfbea519928ff6956958fcaa)
+    TypeShape (4.0)
+      FSharp.Core (>= 3.1.2)
+    Unquote (4.0)
+    xunit.abstractions (2.0.1) - redirects: force
+    xunit.core (2.3.1) - redirects: force
+      xunit.extensibility.core (2.3.1)
+      xunit.extensibility.execution (2.3.1)
+    xunit.extensibility.core (2.3.1) - redirects: force
+      xunit.abstractions (>= 2.0.1)
+    xunit.extensibility.execution (2.3.1) - redirects: force
+      xunit.extensibility.core (2.3.1)
+    xunit.runner.visualstudio (2.3.1)
+
 GROUP build
 NUGET
   remote: https://api.nuget.org/v3/index.json
-    FAKE (4.63.2)
-
-GROUP test
-RESTRICTION: == net452
-NUGET
-  remote: https://api.nuget.org/v3/index.json
-    FsCheck (2.10.2)
-      FSharp.Core (>= 4.1)
-    FsCheck.Xunit (2.10.2)
-      FsCheck (>= 2.10.2)
-      xunit.extensibility.execution (>= 2.2 < 3.0)
-    FSharp.Core (4.2.3)
-    Unquote (3.2)
-    xunit (2.2)
-      xunit.assert (2.2)
-      xunit.core (2.2)
-    xunit.abstractions (2.0.1)
-    xunit.assert (2.2)
-    xunit.core (2.2)
-      xunit.extensibility.core (2.2)
-      xunit.extensibility.execution (2.2)
-    xunit.extensibility.core (2.2)
-      xunit.abstractions (>= 2.0.1)
-    xunit.extensibility.execution (2.2)
-      xunit.extensibility.core (2.2)
-    xunit.runner.visualstudio (2.2.0) - version_in_path: true
+    FAKE (4.64.6)

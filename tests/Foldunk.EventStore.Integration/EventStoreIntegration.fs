@@ -1,6 +1,7 @@
 ﻿module Foldunk.EventStore.Integration.EventStoreIntegration
 
 open Foldunk.EventStore
+open Foldunk.EventSumCodec
 open Swensen.Unquote
 open System.Threading
 
@@ -18,7 +19,7 @@ let createGesGateway eventStoreConnection batchSize =
 
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
-    let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.Cart.Events.Event>
+    let codec = generateJsonUtf8SumEncoder<Domain.Cart.Events.Event>
     let createServiceWithoutOptimization eventStoreConnection batchSize =
         let gateway = createGesGateway eventStoreConnection batchSize
         Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> GesStreamBuilder(gateway, codec, fold, initial).Create)
@@ -28,7 +29,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
-    let codec = Foldunk.EventSum.generateJsonUtf8SumEncoder<Domain.ContactPreferences.Events.Event>
+    let codec = generateJsonUtf8SumEncoder<Domain.ContactPreferences.Events.Event>
     let createServiceWithoutOptimization eventStoreConnection =
         let gateway = createGesGateway eventStoreConnection defaultBatchSize
         Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)

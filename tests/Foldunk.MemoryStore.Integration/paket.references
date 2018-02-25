@@ -1,7 +1,6 @@
-﻿nuget Serilog
+﻿nuget FsCheck.Xunit
+nuget FSharp.Core
+nuget Serilog
 nuget Serilog.Sinks.Observable
-
-group test
-	nuget FsCheck.Xunit
-	nuget FSharp.Core redirects: force
-	nuget unquote
+nuget unquote
+nuget xunit.runner.visualstudio

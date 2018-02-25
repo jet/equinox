@@ -5,7 +5,6 @@ open Serilog
 
 open Domain
 open FsCheck
-open Serilog
 open System
 
 type FsCheckGenerators =
