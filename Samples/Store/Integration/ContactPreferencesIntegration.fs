@@ -14,7 +14,9 @@ let createMemoryStore () =
 let createServiceMem store =
     Backend.ContactPreferences.Service(fun _batchSize _eventTypePredicate -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = generateJsonUtf8SumEncoder<Domain.ContactPreferences.Events.Event>
+let codec =
+    Foldunk.Serialization.Settings.CreateEventStoreDefault()
+    |> Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<Domain.ContactPreferences.Events.Event>
 let createServiceGesWithCompactionSemantics eventStoreConnection =
     let mkStream windowSize predicate =
         GesStreamBuilder(createGesGateway eventStoreConnection windowSize, codec, fold, initial, CompactionStrategy.Predicate predicate).Create

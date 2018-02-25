@@ -22,7 +22,7 @@ type TrickyRecordPayload =
         Item: string
     }
 
-[<JsonConverter(typeof<UnionConverter>)>]
+[<JsonConverter(typeof<Converters.UnionConverter>)>]
 type TestDU =
     | CaseA of TestRecordPayload
     | CaseB
@@ -35,7 +35,7 @@ type TestDU =
     | CaseI of a: TestRecordPayload * b: string
 
 // no camel case, because I want to test "Item" as a record property
-let settings = Newtonsoft.GetDefaultSettings(indent = false, camelCase = false)
+let settings = Settings.CreateDefault(indent = false, camelCase = false)
 
 [<Fact>]
 let ``UnionConverter produces expected output`` () =

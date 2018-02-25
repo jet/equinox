@@ -1,7 +1,6 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
 open Foldunk.EventStore
-open Foldunk.EventSumCodec
 open Foldunk.MemoryStore
 open Swensen.Unquote
 
@@ -14,7 +13,9 @@ let createMemoryStore () =
 let createServiceMem store =
     Backend.Favorites.Service(fun _cet -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = generateJsonUtf8SumEncoder<Domain.Favorites.Events.Event>
+let codec =
+    Foldunk.Serialization.Settings.CreateEventStoreDefault()
+    |> Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<Domain.Favorites.Events.Event>
 let createServiceGes eventStoreConnection =
     let gateway = createGesGateway eventStoreConnection defaultBatchSize
     Backend.Favorites.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)

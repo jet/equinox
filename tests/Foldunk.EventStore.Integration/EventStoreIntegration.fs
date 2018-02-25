@@ -1,7 +1,6 @@
 ﻿module Foldunk.EventStore.Integration.EventStoreIntegration
 
 open Foldunk.EventStore
-open Foldunk.EventSumCodec
 open Swensen.Unquote
 open System.Threading
 
@@ -15,11 +14,13 @@ let connectToLocalEventStoreNode () = async {
 
 let defaultBatchSize = 500
 let createGesGateway eventStoreConnection batchSize =
-    Foldunk.EventStore.GesGateway(Foldunk.EventStore.GesConnection(eventStoreConnection), Foldunk.EventStore.GesBatchingPolicy(maxBatchSize = batchSize))
+    GesGateway(GesConnection(eventStoreConnection), GesBatchingPolicy(maxBatchSize = batchSize))
 
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
-    let codec = generateJsonUtf8SumEncoder<Domain.Cart.Events.Event>
+    let codec =
+        Foldunk.Serialization.Settings.CreateEventStoreDefault()
+        |> Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<Domain.Cart.Events.Event>
     let createServiceWithoutOptimization eventStoreConnection batchSize =
         let gateway = createGesGateway eventStoreConnection batchSize
         Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> GesStreamBuilder(gateway, codec, fold, initial).Create)
@@ -29,7 +30,9 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
-    let codec = generateJsonUtf8SumEncoder<Domain.ContactPreferences.Events.Event>
+    let codec =
+        Foldunk.Serialization.Settings.CreateEventStoreDefault()
+        |> Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<Domain.ContactPreferences.Events.Event>
     let createServiceWithoutOptimization eventStoreConnection =
         let gateway = createGesGateway eventStoreConnection defaultBatchSize
         Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)
