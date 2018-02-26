@@ -5,13 +5,7 @@ open Foldunk
 open FSharp.Control
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
-
-#if TYPESHAPE_AS_PACKAGE
-open TypeShape.Core
-open TypeShape.Core.Utils
-#else
 open TypeShape
-#endif
 
 [<AutoOpen>]
 module private Impl =
@@ -36,7 +30,7 @@ type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict
 module Metrics =
     [<NoEquality; NoComparison>]
     type Metric = { action: string; stream: string; interval: StopwatchInterval } with
-        override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed 
+        override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
     let log action streamName t (log : ILogger) =
         log |> lfc "metric" { action = action; stream = streamName; interval = t }
@@ -53,7 +47,7 @@ module private Write =
             return Conflict }
     let logEventDataBytes events =
         let eventDataLen (x : EventData) = match x.Data, x.Metadata with Metrics.BlobLen bytes, Metrics.BlobLen metaBytes -> bytes + metaBytes
-        events |> Array.sumBy eventDataLen |> logBytes 
+        events |> Array.sumBy eventDataLen |> logBytes
     let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) (log : ILogger)
         : Async<EsSyncResult> = async {
         let log = log |> logEventDataBytes events

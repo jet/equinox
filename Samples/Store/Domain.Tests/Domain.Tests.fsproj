@@ -84,6 +84,11 @@
     <Reference Include="mscorlib" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj">
+      <Name>Foldunk</Name>
+      <Project>{54cd058f-5b0a-4564-b732-1f6301e120ac}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\Domain\Domain.fsproj">
       <Name>Domain</Name>
       <Project>{37b4a45f-039e-4515-8a84-d242dde12d22}</Project>
@@ -118,6 +123,17 @@
       <ItemGroup>
         <Reference Include="FSharp.Core">
           <HintPath>..\..\..\packages\FSharp.Core\lib\net45\FSharp.Core.dll</HintPath>
+          <Private>True</Private>
+          <Paket>True</Paket>
+        </Reference>
+      </ItemGroup>
+    </When>
+  </Choose>
+  <Choose>
+    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And $(TargetFrameworkVersion) == 'v4.5.2'">
+      <ItemGroup>
+        <Reference Include="Serilog">
+          <HintPath>..\..\..\packages\Serilog\lib\net45\Serilog.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>
