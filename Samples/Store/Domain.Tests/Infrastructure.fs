@@ -11,7 +11,7 @@ type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
     static member RequestId = Arb.generate |> Gen.map RequestId |> Arb.fromGen
 
-type PropertyAttribute() =
+type DomainPropertyAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(QuietOnSuccess = true, Arbitrary=[| typeof<FsCheckGenerators> |])
 
 let rnd = new Random()

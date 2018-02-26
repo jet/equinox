@@ -74,7 +74,7 @@ let verifyIdempotency (cmd: Command) =
         // Assert we decided nothing needs to happen
         test <@ isEmpty @>
 
-[<Property(MaxTest = 1000)>]
+[<DomainProperty(MaxTest = 1000)>]
 let ``interpret yields correct events, idempotently`` (cmd: Command) =
     cmd |> verifyCanProcessInInitialState
     cmd |> verifyCorrectEventGenerationWhenAppropriate
