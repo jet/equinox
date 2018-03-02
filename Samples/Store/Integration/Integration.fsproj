@@ -75,6 +75,7 @@
     <None Include="paket.references" />
     <Content Include="App.config" />
     <Compile Include="Infrastructure.fs" />
+    <Compile Include="CodecIntegration.fs" />
     <Compile Include="CartIntegration.fs" />
     <Compile Include="FavoritesIntegration.fs" />
     <Compile Include="ContactPreferencesIntegration.fs" />

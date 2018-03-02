@@ -13,9 +13,7 @@ let createMemoryStore () =
 let createServiceMem store =
     Backend.Cart.Service(fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec =
-    Foldunk.Serialization.Settings.CreateEventStoreDefault()
-    |> Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<Domain.Cart.Events.Event>
+let codec = genCodec<Domain.Cart.Events.Event>
 let createServiceGes eventStoreConnection batchSize =
     let gateway = createGesGateway eventStoreConnection batchSize
     Backend.Cart.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)

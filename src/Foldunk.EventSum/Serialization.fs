@@ -2,7 +2,6 @@
 
 open FSharp.Reflection
 open Newtonsoft.Json
-open Newtonsoft.Json.Converters
 open Newtonsoft.Json.Linq
 open Newtonsoft.Json.Serialization
 open System
@@ -73,21 +72,6 @@ type JsonIsomorphism<'T, 'U>(?targetPickler : JsonPickler<'U>) =
         __.UnPickle target
 
 module Converters =
-    /// Used for converting heterogenous data source
-    /// c.f. http://stackoverflow.com/a/18997172/1670977
-    type ObjectArrayConverter<'T>() =
-        inherit JsonConverter()
-        override __.CanConvert t = t = typeof<'T []>
-        override __.CanWrite = false
-        override __.ReadJson(reader : JsonReader, _ : Type, _ : obj, _ : JsonSerializer) =
-            let token = JToken.Load reader
-            match token.Type with
-            | JTokenType.Array -> token.ToObject<'T []>()
-            | _ -> [|token.ToObject<'T>()|]
-            :> obj
-
-        override __.WriteJson (_,_,_) = raise <| new NotImplementedException()
-
     /// For Some 1 generates "1", for None generates "null"
     type OptionConverter() =
         inherit JsonConverter()
@@ -225,30 +209,18 @@ type Settings private () =
     ///     Creates a default serializer settings used by Json serialization
     /// </summary>
     /// <param name="useHyphenatedGuids">Use hyphenation when serializing guids. Defaults to true.</param>
-    /// <param name="indent">Use multi-line, indented formatting when serializing json; defaults to true.</param>
+    /// <param name="indent">Use multi-line, indented formatting when serializing json; defaults to false.</param>
     static member CreateDefault
-        (   [<Optional;DefaultParameterValue(null)>]?useHyphenatedGuids : bool,
-            [<Optional;DefaultParameterValue(null)>]?indent : bool,
+        (   [<Optional;DefaultParameterValue(null)>]?indent : bool,
             [<Optional;DefaultParameterValue(null)>]?camelCase : bool) =
-        let useHyphenatedGuids = defaultArg useHyphenatedGuids true
-        let formatting = if defaultArg indent true then Formatting.Indented else Formatting.None
+        let indent = defaultArg indent false
+        let camelCase = defaultArg camelCase true
         let resolver : IContractResolver =
-             if defaultArg camelCase true then CamelCasePropertyNamesContractResolver() :> _
+             if camelCase then CamelCasePropertyNamesContractResolver() :> _
              else DefaultContractResolver() :> _
-        let settings =
-            JsonSerializerSettings(
-                ContractResolver = resolver,
-                DateTimeZoneHandling = DateTimeZoneHandling.Utc,
-                DateFormatHandling = DateFormatHandling.IsoDateFormat,
-                Formatting = formatting,
-                NullValueHandling = NullValueHandling.Ignore)
-
-        if not useHyphenatedGuids then settings.Converters.Add(Converters.GuidConverter())
-        settings
-
-    static member CreateEventStoreDefault() =
-        // For whatever reason, EventStore does not hyphenate guids; respect this approach
-        let instance = Settings.CreateDefault(useHyphenatedGuids = false, indent = false)
-        instance.Converters.Add(StringEnumConverter())
-        instance.Converters.Add(Converters.OptionConverter())
-        instance
+        JsonSerializerSettings(
+            ContractResolver = resolver,
+            DateTimeZoneHandling = DateTimeZoneHandling.Utc,
+            DateFormatHandling = DateFormatHandling.IsoDateFormat,
+            Formatting = (if indent then Formatting.Indented else Formatting.None),
+            NullValueHandling = NullValueHandling.Ignore)

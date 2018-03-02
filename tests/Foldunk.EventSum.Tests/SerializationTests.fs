@@ -35,7 +35,7 @@ type TestDU =
     | CaseI of a: TestRecordPayload * b: string
 
 // no camel case, because I want to test "Item" as a record property
-let settings = Settings.CreateDefault(indent = false, camelCase = false)
+let settings = Settings.CreateDefault(camelCase = false)
 
 [<Fact>]
 let ``UnionConverter produces expected output`` () =
