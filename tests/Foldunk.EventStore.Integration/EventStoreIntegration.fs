@@ -60,9 +60,9 @@ type Tests() =
             capture.Subscribe observable |> ignore
         createLogger subscribeLogListeners, capture
 
-    let singleSliceForward = "ReadStreamEventsForwardAsync"
-    let singleBatchForward = [singleSliceForward; "LoadF"]
-    let batchForwardAndAppend = singleBatchForward @ ["AppendToStreamAsync"]
+    let singleSliceForward = EsAct.SliceForward
+    let singleBatchForward = [EsAct.SliceForward; EsAct.BatchForward]
+    let batchForwardAndAppend = singleBatchForward @ [EsAct.Append]
 
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
@@ -158,12 +158,12 @@ type Tests() =
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
        // Intended conflicts pertained
-        let hadConflict= function HasProp "conflict" (SerilogBool true) -> Some () | _ -> None
+        let hadConflict= function EsEvent (EsAction EsAct.AppendConflict) -> Some () | _ -> None
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
-    let singleBatchBackwards = ["ReadStreamEventsBackwardAsync"; "LoadB"]
-    let batchBackwardsAndAppend = singleBatchBackwards @ ["AppendToStreamAsync"]
+    let singleBatchBackwards = [EsAct.SliceBackward; EsAct.BatchBackward]
+    let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
 
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {

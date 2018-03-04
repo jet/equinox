@@ -24,16 +24,26 @@ module SerilogHelpers =
 
     let createLogger hookObservers =
         LoggerConfiguration()
+            .Destructure.With<Foldunk.EventStore.Log.DontDestructureEvents>()
             .WriteTo.Observers(System.Action<_> hookObservers)
-            .Destructure.AsScalar<Foldunk.EventStore.Metrics.Metric>()
             .CreateLogger()
 
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
-    let (|EsMetric|_|) (logEvent : LogEvent) : Foldunk.EventStore.Metrics.Metric option =
+    [<RequireQualifiedAccess>]
+    type EsAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward
+    let (|EsAction|) (evt : Foldunk.EventStore.Log.Event) =
+        match evt with
+        | Foldunk.EventStore.Log.WriteSuccess _ -> EsAct.Append
+        | Foldunk.EventStore.Log.WriteConflict _ -> EsAct.AppendConflict
+        | Foldunk.EventStore.Log.Slice (Foldunk.EventStore.Direction.Forward,_) -> EsAct.SliceForward
+        | Foldunk.EventStore.Log.Slice (Foldunk.EventStore.Direction.Backward,_) -> EsAct.SliceBackward
+        | Foldunk.EventStore.Log.Batch (Foldunk.EventStore.Direction.Forward,_,_) -> EsAct.BatchForward
+        | Foldunk.EventStore.Log.Batch (Foldunk.EventStore.Direction.Backward,_,_) -> EsAct.BatchBackward
+    let (|EsEvent|_|) (logEvent : LogEvent) : Foldunk.EventStore.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as x) -> Some x
+            | SerilogScalar (:? Foldunk.EventStore.Log.Event as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =
@@ -50,4 +60,4 @@ module SerilogHelpers =
         member __.Clear () = captured.Clear()
         member __.Entries = captured.ToArray()
         member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
-        member __.ExternalCalls = __.ChooseCalls (function EsMetric metric -> Some metric.action | _ -> None)
+        member __.ExternalCalls = __.ChooseCalls (function EsEvent (EsAction act) -> Some act | _ -> None)

@@ -34,16 +34,16 @@ module SerilogHelpers =
     open Serilog
     let createLogger hookObservers =
         LoggerConfiguration()
+            .Destructure.With<Foldunk.EventStore.Log.DontDestructureEvents>()
             .WriteTo.Observers(System.Action<_> hookObservers)
-            .Destructure.AsScalar<Foldunk.EventStore.Metrics.Metric>()
             .CreateLogger()
 
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? Serilog.Events.ScalarValue as x) -> Some x.Value
         | _ -> None
-    let (|EsMetric|_|) (logEvent : Serilog.Events.LogEvent) : Foldunk.EventStore.Metrics.Metric option =
+    let (|EsEvent|_|) (logEvent : Serilog.Events.LogEvent) : Foldunk.EventStore.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | (SerilogScalar (:? Foldunk.EventStore.Metrics.Metric as x)) -> Some x
+            | (SerilogScalar (:? Foldunk.EventStore.Log.Event as x)) -> Some x
             | _ -> None)
 
     type LogCaptureBuffer() =
@@ -53,7 +53,7 @@ module SerilogHelpers =
         member __.Clear () = captured.Clear()
         member __.Entries = captured.ToArray()
         member __.ExternalCalls =
-            captured |> Seq.choose (function EsMetric metric -> Some metric.action | _ -> None) |> List.ofSeq
+            captured |> Seq.choose (|EsEvent|_|) |> List.ofSeq
 
 /// Needs an ES instance with default settings
 /// TL;DR: At an elevated command prompt: choco install eventstore-oss; \ProgramData\chocolatey\bin\EventStore.ClusterNode.exe
