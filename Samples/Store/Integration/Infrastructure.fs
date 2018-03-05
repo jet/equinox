@@ -34,7 +34,6 @@ module SerilogHelpers =
     open Serilog
     let createLogger hookObservers =
         LoggerConfiguration()
-            .Destructure.With<Foldunk.EventStore.Log.DontDestructureEvents>()
             .WriteTo.Observers(System.Action<_> hookObservers)
             .CreateLogger()
 
