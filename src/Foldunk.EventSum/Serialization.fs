@@ -134,6 +134,45 @@ module Converters =
     type UnionConverter(discriminator : string) =
         inherit JsonConverter()
 
+        // used when deserializing because the JSON media formatter uses error handling
+        // to invalidate the model state on any error; given that we rely on catching an
+        // exception, that means we would get an invalid model state for a union case containing
+        // a single simple field
+        let cloneJsonSerializerImpl (serializer: JsonSerializer) =
+            let settings =
+                JsonSerializerSettings(
+                    CheckAdditionalContent = serializer.CheckAdditionalContent,
+                    ConstructorHandling = serializer.ConstructorHandling,
+                    Context = serializer.Context,
+                    ContractResolver = serializer.ContractResolver,
+                    Converters = serializer.Converters,
+                    Culture = serializer.Culture,
+                    DateFormatHandling = serializer.DateFormatHandling,
+                    DateFormatString = serializer.DateFormatString,
+                    DateParseHandling = serializer.DateParseHandling,
+                    DateTimeZoneHandling = serializer.DateTimeZoneHandling,
+                    DefaultValueHandling = serializer.DefaultValueHandling,
+                    EqualityComparer = serializer.EqualityComparer,
+                    FloatFormatHandling = serializer.FloatFormatHandling,
+                    FloatParseHandling = serializer.FloatParseHandling,
+                    Formatting = serializer.Formatting,
+                    MaxDepth = serializer.MaxDepth,
+                    MetadataPropertyHandling = serializer.MetadataPropertyHandling,
+                    MissingMemberHandling = serializer.MissingMemberHandling,
+                    NullValueHandling = serializer.NullValueHandling,
+                    ObjectCreationHandling = serializer.ObjectCreationHandling,
+                    PreserveReferencesHandling = serializer.PreserveReferencesHandling,
+                    ReferenceLoopHandling = serializer.ReferenceLoopHandling,
+                    ReferenceResolver = serializer.ReferenceResolver,
+                    SerializationBinder = serializer.SerializationBinder,
+                    StringEscapeHandling = serializer.StringEscapeHandling,
+                    TraceWriter = serializer.TraceWriter,
+                    TypeNameAssemblyFormatHandling = serializer.TypeNameAssemblyFormatHandling,
+                    TypeNameHandling = serializer.TypeNameHandling
+                )
+            JsonSerializer.Create(settings)
+        let cloneJsonSerializer = memoize cloneJsonSerializerImpl
+
         new() = UnionConverter("case")
 
         override __.CanConvert (t: Type) = Union.isUnion t
@@ -196,7 +235,9 @@ module Converters =
                             )
                             |> Array.ofSeq
                             |> JObject
-                        [| obj'.ToObject(fieldInfo.PropertyType, jsonSerializer) |]
+                        // avoid the exception resulting in a model binding failure
+                        let jsonSerializer' = cloneJsonSerializer jsonSerializer
+                        [| obj'.ToObject(fieldInfo.PropertyType, jsonSerializer') |]
                     with _ ->
                         [| simpleFieldValue fieldInfo |]
                 else

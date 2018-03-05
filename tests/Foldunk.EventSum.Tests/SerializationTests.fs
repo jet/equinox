@@ -3,6 +3,7 @@
 open Foldunk.Serialization
 open Newtonsoft.Json
 open Swensen.Unquote.Assertions
+open System.IO
 open System.Text.RegularExpressions
 open Xunit
 
@@ -131,3 +132,18 @@ let ``UnionConverter deserializes properly`` () =
     let i = JsonConvert.DeserializeObject<TestDU>(iJson, settings)
 
     test <@ CaseI ({test = "hi"}, "bye") = i @>
+
+[<Fact>]
+let ``UnionConverter's exception catch doesn't make the model invalid`` () =
+
+    let s = JsonSerializer.CreateDefault()
+    let mutable gotError = false
+    s.Error.Add(fun _ -> gotError <- true)
+
+    let dJson = "{\"case\":\"CaseD\",\"a\":\"hi\"}"
+    use dReader = new StringReader(dJson)
+    use dJsonReader = new JsonTextReader(dReader)
+    let d = s.Deserialize<TestDU>(dJsonReader)
+
+    test <@ (CaseD "hi") = d @>
+    test <@ false = gotError @>
