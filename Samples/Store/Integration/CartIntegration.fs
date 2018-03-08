@@ -14,8 +14,8 @@ let createServiceMem store =
     Backend.Cart.Service(fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = genCodec<Domain.Cart.Events.Event>
-let createServiceGes eventStoreConnection batchSize =
-    let gateway = createGesGateway eventStoreConnection batchSize
+let createServiceGes connection batchSize =
+    let gateway = createGesGateway connection batchSize
     Backend.Cart.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)
 let createServiceGesWithoutCompactionSemantics eventStoreConnection batchSize =
     let gateway = createGesGateway eventStoreConnection batchSize

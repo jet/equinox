@@ -3,18 +3,13 @@
 open Foldunk.EventStore
 open Swensen.Unquote
 open System.Threading
+open System
 
-/// Needs an ES instance with default settings
-/// TL;DR: At an elevated command prompt: choco install eventstore-oss; \ProgramData\chocolatey\bin\EventStore.ClusterNode.exe
-let connectToLocalEventStoreNode () = async {
-    let localhost = System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 1113)
-    let conn = EventStore.ClientAPI.EventStoreConnection.Create(localhost)
-    do! conn.ConnectAsync() |> Async.AwaitTask
-    return conn }
-
+let cfg = GesConnectionBuilder(operationTimeout = TimeSpan.FromSeconds 1., operationRetryLimit = 3, requireMaster = true, log= GesLog.Debug)
+//let connectToLocalEventStoreNode () = cfg.ConnectWithGossip("localhost", "admin", "changeit")
+let connectToLocalEventStoreNode () = cfg.ConnectLoopback("admin", "changeit")
 let defaultBatchSize = 500
-let createGesGateway eventStoreConnection batchSize =
-    GesGateway(GesConnection(eventStoreConnection), GesBatchingPolicy(maxBatchSize = batchSize))
+let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 let serializationSettings = Foldunk.Serialization.Settings.CreateDefault()
 let genCodec<'T> = Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<'T> serializationSettings

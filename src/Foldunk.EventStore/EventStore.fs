@@ -332,3 +332,62 @@ type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
         let category : ICategory<_,_> = folder :> _
 
         Foldunk.Stream<'event, 'state>(category, streamName, ?initialTokenAndState = initialTokenAndState) :> _
+
+// c.f. http://bugsquash.blogspot.com/2012/08/optional-parameters-interop-c-f.html
+type OAttribute = System.Runtime.InteropServices.OptionalAttribute
+type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
+open System.Net
+
+[<RequireQualifiedAccess; NoComparison>]
+type GesLog =
+    | None | Debug | Console
+    | File of string
+    | Custom of EventStore.ClientAPI.ILogger
+
+type GesConnectionBuilder
+    (   operationTimeout: TimeSpan, operationRetryLimit: int, requireMaster: bool, log : GesLog,
+        [<O;D(null)>] ?heartbeatTimeout: TimeSpan, // default 1500 ms
+        [<O;D(null)>] ?logVerbose: bool) = // default no
+    let connSettings credentials =
+        ConnectionSettings.Create()
+            .SetDefaultUserCredentials(credentials)
+            .KeepReconnecting() // default: .LimitReconnectionsTo(10)
+            .FailOnNoServerResponse() // default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
+            .SetOperationTimeoutTo(operationTimeout) // ES default: 7s
+            .LimitRetriesForOperationTo(operationRetryLimit) // ES default: 10
+            |> fun b -> if requireMaster then b.PerformOnMasterOnly() else b.PerformOnAnyNode() // default: PerformOnMasterOnly()
+            |> fun b -> match heartbeatTimeout with Some value -> b.SetHeartbeatTimeout value | _ -> b // default: 1500 ms
+            |> fun b -> if logVerbose = Some true then b.EnableVerboseLogging() else b
+            |> fun b ->
+                match log with
+                | GesLog.None -> b
+                | GesLog.Console -> b.UseConsoleLogger()
+                | GesLog.Debug -> b.UseDebugLogger()
+                | GesLog.File name -> b.UseFileLogger(name)
+                | GesLog.Custom logger -> b.UseCustomLogger(logger)
+
+        |> ConnectionSettingsBuilder.op_Implicit // that's how we build, unfortunately
+
+    /// Yields a Connected IEventStoreConfiguration using a gossip host
+    member __.ConnectWithGossip(gossipHost: string, userName, password) : Async<GesConnection> = async {
+        let connSettings = connSettings (SystemData.UserCredentials(userName, password))
+        let clusterSettings =
+            let gossipSeedEndpoints =
+                [| for a in Dns.GetHostAddresses gossipHost do if a.AddressFamily = Sockets.AddressFamily.InterNetwork then yield IPEndPoint(a, 30778) |]
+            ClusterSettings.Create()
+                .DiscoverClusterViaGossipSeeds().SetGossipSeedEndPoints(gossipSeedEndpoints)
+            |> GossipSeedClusterSettingsBuilder.op_Implicit // that's how we build
+        let conn : IEventStoreConnection = EventStoreConnection.Create(connSettings,clusterSettings)
+        do! conn.ConnectAsync() |> Async.AwaitTask // TODO Correct [does not work for plain Task]
+        return GesConnection(conn) }
+
+    /// Needs an ES instance with default settings
+    /// TL;DR: At an elevated command prompt: choco install eventstore-oss; \ProgramData\chocolatey\bin\EventStore.ClusterNode.exe
+    /// Yields a Connected IEventStoreConfiguration using a gossip host
+    member __.ConnectLoopback(userName, password) : Async<GesConnection> = async {
+        let connSettings = connSettings (SystemData.UserCredentials(userName, password))
+        let localhost = IPEndPoint(IPAddress.Loopback, 1113)
+
+        let conn : IEventStoreConnection = EventStoreConnection.Create(connSettings,localhost)
+        do! conn.ConnectAsync() |> Async.AwaitTask // TODO Correct [does not work for plain Task]
+        return GesConnection(conn) }
