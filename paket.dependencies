@@ -1,11 +1,10 @@
 source https://api.nuget.org/v3/index.json
 framework: auto-detect
 
-// <4 for now so we don't force dep on .NET 4.6.1
-nuget EventStore.Client < 4
+// use int64 indexes so our source can equally compile against `EventStore.Client` and `EventStore.Client.NetCore`
+nuget EventStore.Client >= 4
 nuget FSharp.Core redirects: force
-// <2.0.19 for now so we don't force dep on .NET Standard (and hence .NET 4.6.1)
-nuget FSharp.Control.AsyncSeq < 2.0.19
+nuget FSharp.Control.AsyncSeq
 nuget Newtonsoft.json
 nuget Serilog
 nuget Serilog.Sinks.Observable

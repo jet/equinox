@@ -1,15 +1,16 @@
-RESTRICTION: == net452
+RESTRICTION: || (== net452) (== net461)
 NUGET
   remote: https://api.nuget.org/v3/index.json
-    EventStore.Client (3.9.5)
-    FsCheck (2.10.7)
+    EventStore.Client (4.1)
+    FsCheck (2.10.8)
       FSharp.Core (>= 4.0.0.1)
-    FsCheck.xUnit (2.10.7)
-      FsCheck (2.10.7)
+    FsCheck.xUnit (2.10.8)
+      FsCheck (2.10.8)
       xunit.extensibility.execution (>= 2.2 < 3.0)
-    FSharp.Control.AsyncSeq (2.0.18)
+    FSharp.Control.AsyncSeq (2.0.21)
+      FSharp.Core (>= 3.1.2)
     FSharp.Core (4.3.4) - redirects: force
-    Newtonsoft.json (11.0.1)
+    Newtonsoft.Json (11.0.1)
     Serilog (2.6)
     Serilog.Sinks.Observable (2.0.2)
       Serilog (>= 2.0)
@@ -29,4 +30,4 @@ NUGET
 GROUP build
 NUGET
   remote: https://api.nuget.org/v3/index.json
-    FAKE (4.64.6)
+    FAKE (4.64.10)

@@ -41,7 +41,7 @@ type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
-    let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
+    let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> = async {
         try
             let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
@@ -52,7 +52,7 @@ module private Write =
     let eventDataBytes events =
         let eventDataLen (x : EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
         events |> Array.sumBy eventDataLen
-    let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[]) (log : ILogger)
+    let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[]) (log : ILogger)
         : Async<EsSyncResult> = async {
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
@@ -69,13 +69,13 @@ module private Write =
         (resultLog |> Log.event evt).Information("Ges{action:l} stream={stream} count={count} expectedVersion={expectedVersion} conflict={conflict}",
             "Write", streamName, events.Length, version, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
-    let writeEvents (log : ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int) (events : EventData[])
+    let writeEvents (log : ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> =
         let call = writeEventsLogged conn streamName version events
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
 module private Read =
-    let private readSliceAsync (conn : IEventStoreConnection) (streamName : string) (direction : Direction) (batchSize : int) (startPos : int)
+    let private readSliceAsync (conn : IEventStoreConnection) (streamName : string) (direction : Direction) (batchSize : int) (startPos : int64)
         : Async<StreamEventsSlice> = async {
         let call =
             match direction with
@@ -93,10 +93,10 @@ module private Read =
             "Ges{action:l} stream={stream} count={count} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize}",
             "Read", streamName, count, slice.LastEventNumber, batchSize, bytes)
         return slice }
-    let private readBatches (log : ILogger) (readSlice : int -> ILogger -> Async<StreamEventsSlice>)
-            (maxPermittedBatchReads : int option) (startPosition : int)
-        : AsyncSeq<int option * ResolvedEvent[]> =
-        let rec loop batchCount pos = asyncSeq {
+    let private readBatches (log : ILogger) (readSlice : int64 -> ILogger -> Async<StreamEventsSlice>)
+            (maxPermittedBatchReads : int option) (startPosition : int64)
+        : AsyncSeq<int64 option * ResolvedEvent[]> =
+        let rec loop batchCount pos : AsyncSeq<int64 option * ResolvedEvent[]> = asyncSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
@@ -105,7 +105,7 @@ module private Read =
             let! slice = readSlice pos batchLog
             match slice.Status with
             | SliceReadStatus.StreamDeleted -> raise <| EventStore.ClientAPI.Exceptions.StreamDeletedException(slice.Stream)
-            | SliceReadStatus.StreamNotFound -> yield Some ExpectedVersion.NoStream, Array.empty
+            | SliceReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.NoStream), Array.empty
             | SliceReadStatus.Success ->
                 let version = if batchCount = 0 then Some slice.LastEventNumber else None
                 yield version, slice.Events
@@ -124,8 +124,8 @@ module private Read =
             "Ges{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
     let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
-        : Async<int * ResolvedEvent[]> = async {
-        let mergeBatches (batches: AsyncSeq<int option * ResolvedEvent[]>) = async {
+        : Async<int64 * ResolvedEvent[]> = async {
+        let mergeBatches (batches: AsyncSeq<int64 option * ResolvedEvent[]>) = async {
             let mutable versionFromStream = None
             let! (events : ResolvedEvent[]) =
                 batches
@@ -138,7 +138,7 @@ module private Read =
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let direction = Direction.Forward
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
-        let batches : AsyncSeq<int option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
+        let batches : AsyncSeq<int64 option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
         let! t, (version, events) = mergeBatches batches |> Stopwatch.Time
         log |> logBatchRead direction streamName t events batchSize version
         return version, events }
@@ -146,9 +146,9 @@ module private Read =
         let acc (tu,tr) ((ResolvedEventLen bytes) as y) = if y.Event.EventNumber < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
         Array.fold acc (0,0)
     let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName isCompactionEvent
-        : Async<int * ResolvedEvent[]> = async {
-        let mergeFromCompactionPointOrStartFromBackwardsStream (log : ILogger) (batchesBackward : AsyncSeq<int option * ResolvedEvent[]>)
-            : Async<int * ResolvedEvent[]> = async {
+        : Async<int64 * ResolvedEvent[]> = async {
+        let mergeFromCompactionPointOrStartFromBackwardsStream (log : ILogger) (batchesBackward : AsyncSeq<int64 option * ResolvedEvent[]>)
+            : Async<int64 * ResolvedEvent[]> = async {
             let versionFromStream, lastBatch = ref None, ref None
             let! tempBackward =
                 batchesBackward
@@ -172,10 +172,10 @@ module private Read =
         let call pos = loggedReadSlice conn streamName Direction.Backward batchSize pos
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let startPosition = StreamPosition.End
+        let startPosition = int64 StreamPosition.End
         let direction = Direction.Backward
         let readlog = log |> Log.prop "direction" direction
-        let batchesBackward : AsyncSeq<int option * ResolvedEvent[]> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads startPosition
+        let batchesBackward : AsyncSeq<int64 option * ResolvedEvent[]> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads startPosition
         let! t, (version, events) = mergeFromCompactionPointOrStartFromBackwardsStream log batchesBackward |> Stopwatch.Time
         log |> logBatchRead direction streamName t events batchSize version
         return version, events }
@@ -190,7 +190,7 @@ module EventSumAdapters =
     let decodeKnownEvents (codec : EventSum.IEventSumEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
         xs |> Seq.map encodedEventOfResolvedEvent |> Seq.choose codec.TryDecode
 
-type Token = { streamVersion: int; compactionEventNumber: int option }
+type Token = { streamVersion: int64; compactionEventNumber: int64 option }
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Token =
@@ -200,10 +200,10 @@ module Token =
     let ofNonCompacting streamVersion : Storage.StreamToken =
         create None None streamVersion
     // headroom before compaction is necessary given the stated knowledge of the last (if known) `compactionEventNumberOption`
-    let private batchCapacityLimit compactedEventNumberOption unstoredEventsPending batchSize streamVersion =
+    let private batchCapacityLimit compactedEventNumberOption unstoredEventsPending (batchSize : int) (streamVersion : int64) : int =
         match compactedEventNumberOption with
-        | Some compactionEventNumber -> (batchSize - unstoredEventsPending) - (streamVersion - compactionEventNumber + 1) |> max 0
-        | None -> (batchSize - unstoredEventsPending) - (streamVersion + 1) - 1 |> max 0
+        | Some (compactionEventNumber : int64) -> (batchSize - unstoredEventsPending) - int (streamVersion - compactionEventNumber + 1L) |> max 0
+        | None -> (batchSize - unstoredEventsPending) - (int streamVersion + 1) - 1 |> max 0
     let (*private*) ofCompactionEventNumber compactedEventNumberOption unstoredEventsPending batchSize streamVersion : Storage.StreamToken =
         let batchCapacityLimit = batchCapacityLimit compactedEventNumberOption unstoredEventsPending batchSize streamVersion
         create compactedEventNumberOption (Some batchCapacityLimit) streamVersion
@@ -218,8 +218,9 @@ module Token =
     let ofCompactionResolvedEventAndVersion (compactionEvent: ResolvedEvent) batchSize streamVersion : Storage.StreamToken =
         ofCompactionEventNumber (Some compactionEvent.Event.EventNumber) 0 batchSize streamVersion
     /// Use an event we are about to write to the stream to infer headroom
-    let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion compactionEventDataIndex eventsLength batchSize streamVersion' : Storage.StreamToken =
-        ofCompactionEventNumber (Some (prevStreamVersion + 1 + compactionEventDataIndex)) eventsLength batchSize streamVersion'
+    let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion (compactionEventDataIndex : int) eventsLength batchSize streamVersion'
+        : Storage.StreamToken =
+        ofCompactionEventNumber (Some (prevStreamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
 
 type GesConnection(connection, ?readRetryPolicy, ?writeRetryPolicy) =
     member __.Connection = connection
@@ -238,7 +239,7 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
     let isResolvedEventEventType predicate (x:ResolvedEvent) = predicate x.Event.EventType
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     member __.LoadBatched streamName log isCompactionEventType: Async<Storage.StreamToken * ResolvedEvent[]> = async {
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName 0
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, events
         | Some isCompactionEvent ->
@@ -254,7 +255,7 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
         | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, events }
     member __.LoadFromToken streamName log (token : Storage.StreamToken) isCompactionEventType
         : Async<Storage.StreamToken * ResolvedEvent[]> = async {
-        let streamPosition = (unbox token.value).streamVersion + 1
+        let streamPosition = (unbox token.value).streamVersion + 1L
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName streamPosition
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, events

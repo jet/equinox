@@ -34,20 +34,20 @@ let ``ofUncompactedVersion - batchCapacityLimit`` streamVersion batchSize expect
     ; InlineData(   0,  2, 1, 3, 0)
     ; InlineData(   1,  2, 1, 3, 0)
     ; InlineData(   2,  2, 1, 3, 1)>]
-let ``ofPreviousTokenAndEventsLength - batchCapacityLimit`` (previousCompactionEventNumber : System.Nullable<int>) streamVersion eventsLength batchSize expectedCapacity =
+let ``ofPreviousTokenAndEventsLength - batchCapacityLimit`` (previousCompactionEventNumber : System.Nullable<int64>) streamVersion eventsLength batchSize expectedCapacity =
     let previousToken =
-        if not previousCompactionEventNumber.HasValue then Token.ofCompactionEventNumber None 0 -84 -42
-        else Token.ofCompactionEventNumber (Some previousCompactionEventNumber.Value) 0 -84 -42
+        if not previousCompactionEventNumber.HasValue then Token.ofCompactionEventNumber None 0 -84 -42L
+        else Token.ofCompactionEventNumber (Some previousCompactionEventNumber.Value) 0 -84 -42L
     let _, _, batchCapacityLimit = unpack <| Token.ofPreviousTokenAndEventsLength previousToken eventsLength batchSize streamVersion
     test <@ Some expectedCapacity = batchCapacityLimit @>
 
 [<Property>]
-let ``Properties of tokens based on various generation mechanisms `` streamVersion (previousCompactionEventNumber : int option) eventsLength batchSize =
+let ``Properties of tokens based on various generation mechanisms `` streamVersion (previousCompactionEventNumber : int64 option) eventsLength batchSize =
     let ovStreamVersion, ovCompactionEventNumber, ovBatchCapacityLimit =
         unpack <| Token.ofNonCompacting streamVersion
     let uvStreamVersion, uvCompactionEventNumber, uvBatchCapacityLimit =
         unpack <| Token.ofUncompactedVersion batchSize streamVersion
-    let previousToken = Token.ofCompactionEventNumber previousCompactionEventNumber 0 -84 -42
+    let previousToken = Token.ofCompactionEventNumber previousCompactionEventNumber 0 -84 -42L
     let peStreamVersion, peCompactionEventNumber, peBatchCapacityLimit =
         unpack <| Token.ofPreviousTokenAndEventsLength previousToken eventsLength batchSize streamVersion
 
@@ -63,8 +63,8 @@ let ``Properties of tokens based on various generation mechanisms `` streamVersi
 
     // BatchCapacityLimit
     test <@ None = ovBatchCapacityLimit @>
-    let rawUncompactedBatchCapacityLimit batchSize streamVersion = batchSize - streamVersion - 2
-    let rawCompactedBatchCapacityLimit compactionEventNumber batchSize streamVersion = batchSize - (streamVersion - compactionEventNumber) - 1
+    let rawUncompactedBatchCapacityLimit batchSize streamVersion = batchSize - int streamVersion - 2
+    let rawCompactedBatchCapacityLimit compactionEventNumber batchSize streamVersion = batchSize - int (streamVersion - compactionEventNumber) - 1
     test <@ Some (rawUncompactedBatchCapacityLimit batchSize streamVersion |> max 0) = uvBatchCapacityLimit @>
     let rawExpectedFromPreviousCompactionEventNumber =
         match previousCompactionEventNumber with
