@@ -6,8 +6,7 @@ open System.Threading
 open System
 
 let cfg = GesConnectionBuilder(operationTimeout = TimeSpan.FromSeconds 1., operationRetryLimit = 3, requireMaster = true, log= GesLog.Debug)
-//let connectToLocalEventStoreNode () = cfg.ConnectWithGossip("localhost", "admin", "changeit")
-let connectToLocalEventStoreNode () = cfg.ConnectLoopback("admin", "changeit")
+let connectToLocalEventStoreNode () = cfg.ConnectWithGossip("localhost", "admin", "changeit")
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
