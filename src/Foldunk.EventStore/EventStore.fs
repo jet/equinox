@@ -369,28 +369,19 @@ type GesConnectionBuilder
         |> ConnectionSettingsBuilder.op_Implicit // that's how we build, unfortunately
 
     /// Needs an ES instance with gossip running on a single node.
-    /// TL;DR: At an elevated command prompt: cinst eventstore-oss -y; $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0
-    /// The connection port hosts the server metadata endpoint, which you can see gossip info by going to http://127.0.0.1:2113/gossip
+    /// TL;DR: At an elevated command prompt: 
+    ///    cinst eventstore-oss -y; &$env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+    /// The connection port hosts the server metadata endpoint, which you can see gossip info by going to http://127.0.0.1:30778/gossip
+    /// Changed the port to be 30778 to correspond to where the closed-source version of ES runs its manager nodes by default
     /// Yields a Connected IEventStoreConfiguration using a gossip host
     member __.ConnectWithGossip(gossipHost: string, userName, password) : Async<GesConnection> = async {
         let connSettings = connSettings (SystemData.UserCredentials(userName, password))
         let clusterSettings =
             let gossipSeedEndpoints =
-                [| for a in Dns.GetHostAddresses gossipHost do if a.AddressFamily = Sockets.AddressFamily.InterNetwork then yield IPEndPoint(a, 2113) |]
+                [| for a in Dns.GetHostAddresses gossipHost do if a.AddressFamily = Sockets.AddressFamily.InterNetwork then yield IPEndPoint(a, 30778) |]
             ClusterSettings.Create()
                 .DiscoverClusterViaGossipSeeds().SetGossipSeedEndPoints(gossipSeedEndpoints)
             |> GossipSeedClusterSettingsBuilder.op_Implicit // that's how we build
         let conn : IEventStoreConnection = EventStoreConnection.Create(connSettings,clusterSettings)
-        do! conn.ConnectAsync() |> Async.AwaitTask // TODO Correct [does not work for plain Task]
-        return GesConnection(conn) }
-
-    /// Needs an ES instance with default settings
-    /// TL;DR: At an elevated command prompt: cinst eventstore-oss -y; $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe
-    /// Yields a Connected IEventStoreConfiguration using a loopback host
-    member __.ConnectLoopback(userName, password) : Async<GesConnection> = async {
-        let connSettings = connSettings (SystemData.UserCredentials(userName, password))
-        let localhost = IPEndPoint(IPAddress.Loopback, 1113)
-
-        let conn : IEventStoreConnection = EventStoreConnection.Create(connSettings,localhost)
         do! conn.ConnectAsync() |> Async.AwaitTask // TODO Correct [does not work for plain Task]
         return GesConnection(conn) }
