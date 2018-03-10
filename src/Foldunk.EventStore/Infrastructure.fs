@@ -23,6 +23,19 @@ type Async with
                 elif t.IsCanceled then ec(new System.Threading.Tasks.TaskCanceledException())
                 else sc t.Result)
             |> ignore)
+    [<DebuggerStepThrough>]
+    static member AwaitTaskCorrect(task : System.Threading.Tasks.Task) : Async<unit> =
+        Async.FromContinuations(fun (sc,ec,_) ->
+            task.ContinueWith(fun (task : System.Threading.Tasks.Task) ->
+                if task.IsFaulted then
+                    let e = task.Exception
+                    if e.InnerExceptions.Count = 1 then ec e.InnerExceptions.[0]
+                    else ec e
+                elif task.IsCanceled then
+                    ec(System.Threading.Tasks.TaskCanceledException())
+                else
+                    sc ())
+            |> ignore)
 
 module AsyncSeq =
     /// Same as takeWhileAsync, but returns the final element too

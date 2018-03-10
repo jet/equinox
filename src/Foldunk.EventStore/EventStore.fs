@@ -336,52 +336,71 @@ type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
 // c.f. http://bugsquash.blogspot.com/2012/08/optional-parameters-interop-c-f.html
 type OAttribute = System.Runtime.InteropServices.OptionalAttribute
 type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
-open System.Net
 
-[<RequireQualifiedAccess; NoComparison>]
-type GesLog =
-    | None | Debug | Console
-    | File of string
-    | Custom of EventStore.ClientAPI.ILogger
+type private SerilogAdapter(log : ILogger) =
+    interface EventStore.ClientAPI.ILogger with
+        member __.Debug(format: string, args: obj []) =           log.Debug(format, args)
+        member __.Debug(ex: exn, format: string, args: obj []) =  log.Debug(ex, format, args)
+        member __.Info(format: string, args: obj []) =            log.Information(format, args)
+        member __.Info(ex: exn, format: string, args: obj []) =   log.Information(ex, format, args)
+        member __.Error(format: string, args: obj []) =           log.Error(format, args)
+        member __.Error(ex: exn, format: string, args: obj []) =  log.Error(ex, format, args)
+
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
+type LogTo =
+    | SerilogVerbose of ILogger
+    | SerilogNormal of ILogger
+    | CustomVerbose of EventStore.ClientAPI.ILogger
+    | CustomNormal of EventStore.ClientAPI.ILogger
+    member log.Configure(b : ConnectionSettingsBuilder) =
+        match log with
+        | SerilogVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(SerilogAdapter(logger))
+        | SerilogNormal logger -> b.UseCustomLogger(SerilogAdapter(logger))
+        | CustomVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(logger)
+        | CustomNormal logger -> b.UseCustomLogger(logger)
 
 type GesConnectionBuilder
-    (   operationTimeout: TimeSpan, operationRetryLimit: int, requireMaster: bool, log : GesLog,
-        [<O;D(null)>] ?heartbeatTimeout: TimeSpan, // default 1500 ms
-        [<O;D(null)>] ?logVerbose: bool) = // default no
+    (   operationTimeout: TimeSpan, operationRetryLimit: int,
+        requireMaster: bool,
+        [<O;D(null)>] ?heartbeatTimeout: TimeSpan, // default: 1500 ms
+        [<O;D(null)>] ?log : LogTo) = // default: none
     let connSettings credentials =
         ConnectionSettings.Create()
             .SetDefaultUserCredentials(credentials)
-            .KeepReconnecting() // default: .LimitReconnectionsTo(10)
-            .FailOnNoServerResponse() // default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
+            .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
+            .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
             .SetOperationTimeoutTo(operationTimeout) // ES default: 7s
             .LimitRetriesForOperationTo(operationRetryLimit) // ES default: 10
+            |> fun b -> match heartbeatTimeout with Some v -> b.SetHeartbeatTimeout v | _ -> b // default: 1500 ms
             |> fun b -> if requireMaster then b.PerformOnMasterOnly() else b.PerformOnAnyNode() // default: PerformOnMasterOnly()
-            |> fun b -> match heartbeatTimeout with Some value -> b.SetHeartbeatTimeout value | _ -> b // default: 1500 ms
-            |> fun b -> if logVerbose = Some true then b.EnableVerboseLogging() else b
-            |> fun b ->
-                match log with
-                | GesLog.None -> b
-                | GesLog.Console -> b.UseConsoleLogger()
-                | GesLog.Debug -> b.UseDebugLogger()
-                | GesLog.File name -> b.UseFileLogger(name)
-                | GesLog.Custom logger -> b.UseCustomLogger(logger)
-
-        |> ConnectionSettingsBuilder.op_Implicit // that's how we build, unfortunately
-
-    /// Needs an ES instance with gossip running on a single node.
-    /// TL;DR: At an elevated command prompt: 
-    ///    cinst eventstore-oss -y; &$env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-    /// The connection port hosts the server metadata endpoint, which you can see gossip info by going to http://127.0.0.1:30778/gossip
-    /// Changed the port to be 30778 to correspond to where the closed-source version of ES runs its manager nodes by default
-    /// Yields a Connected IEventStoreConfiguration using a gossip host
-    member __.ConnectWithGossip(gossipHost: string, userName, password) : Async<GesConnection> = async {
-        let connSettings = connSettings (SystemData.UserCredentials(userName, password))
-        let clusterSettings =
-            let gossipSeedEndpoints =
-                [| for a in Dns.GetHostAddresses gossipHost do if a.AddressFamily = Sockets.AddressFamily.InterNetwork then yield IPEndPoint(a, 30778) |]
-            ClusterSettings.Create()
-                .DiscoverClusterViaGossipSeeds().SetGossipSeedEndPoints(gossipSeedEndpoints)
-            |> GossipSeedClusterSettingsBuilder.op_Implicit // that's how we build
-        let conn : IEventStoreConnection = EventStoreConnection.Create(connSettings,clusterSettings)
-        do! conn.ConnectAsync() |> Async.AwaitTask // TODO Correct [does not work for plain Task]
+            |> fun b -> match log with Some log -> log.Configure b | _ -> b
+    let connectWithClusterSettings username password (clusterSettings : ClusterSettings) = async {
+        let connSettings = connSettings (SystemData.UserCredentials(username, password))
+        let conn = EventStoreConnection.Create(ConnectionSettingsBuilder.op_Implicit connSettings, clusterSettings)
+        do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
         return GesConnection(conn) }
+
+    /// Yields an IEventStoreConfiguration configured and Connect()ed to the cluster via Gossip using the standard Gossip
+    ///   port (30778) employed by Manager Nodes on the Commercial version of ES
+    /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-
+    ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+    ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+    /// (the connection port hosts the server metadata endpoint, from which you can see gossip info by going to http://127.0.0.1:30778/gossip)
+    member __.ConnectViaGossipOnManagerPort(gossipHost: string, username, password) : Async<GesConnection> =
+        let ifAddrIsInetAssumeHasManager (a: System.Net.IPAddress) =
+            if a.AddressFamily <> System.Net.Sockets.AddressFamily.InterNetwork then None else
+            System.Net.IPEndPoint(a, 30778) |> Some
+        System.Net.Dns.GetHostAddresses gossipHost |> Seq.choose ifAddrIsInetAssumeHasManager |> Seq.toArray
+        |> ClusterSettings.Create().DiscoverClusterViaGossipSeeds().SetGossipSeedEndPoints
+        |> GossipSeedClusterSettingsBuilder.op_Implicit
+        |> connectWithClusterSettings username password
+
+    /// Yields an IEventStoreConfiguration configured and Connect()ed to the cluster via Gossip using the standard Dns discovery scheme
+    /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-
+    ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+    ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+    /// (the connection port hosts the server metadata endpoint, from which you can see gossip info by going to http://127.0.0.1:30778/gossip)
+    member __.ConnectClusterDns(clusterDns: string, username, password) : Async<GesConnection> =
+        ClusterSettings.Create().DiscoverClusterViaDns().SetClusterDns(clusterDns)
+        |> DnsClusterSettingsBuilder.op_Implicit
+        |> connectWithClusterSettings username password

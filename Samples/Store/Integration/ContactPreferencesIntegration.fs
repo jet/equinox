@@ -40,8 +40,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` id value = Async.RunSynchronously <| async {
-        let! eventStoreConnection = connectToLocalEventStoreNode ()
-        let log, service = createLog (), createServiceGesWithoutCompactionSemantics eventStoreConnection
+        let log = createLog ()
+        let! conn = connectToLocalEventStoreNode log
+        let service = createServiceGesWithoutCompactionSemantics conn
 
         let (Domain.ContactPreferences.Id email) = id
         do! service.Update log email value
@@ -52,8 +53,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` id value = Async.RunSynchronously <| async {
-        let! eventStoreConnection = connectToLocalEventStoreNode ()
-        let log, service = createLog (), createServiceGesWithCompactionSemantics eventStoreConnection
+        let log = createLog ()
+        let! conn = connectToLocalEventStoreNode log
+        let service = createServiceGesWithCompactionSemantics conn
 
         let (Domain.ContactPreferences.Id email) = id
         do! service.Update log email value

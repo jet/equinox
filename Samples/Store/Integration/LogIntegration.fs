@@ -60,10 +60,11 @@ type Tests() =
     // Protip: Debug this test to view standard metrics rendering
     [<AutoData>]
     let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
-        let! conn = connectToLocalEventStoreNode ()
         let buffer = ResizeArray<string>()
         let batchSize = defaultBatchSize
-        let (log,capture), service = createLoggerWithMetricsExtraction buffer.Add, CartIntegration.createServiceGes conn batchSize
+        let (log,capture) = createLoggerWithMetricsExtraction buffer.Add
+        let! conn = connectToLocalEventStoreNode log
+        let service = CartIntegration.createServiceGes conn batchSize
 
         let itemCount, cartId = batchSize / 2 + 1, cartId ()
         do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service itemCount

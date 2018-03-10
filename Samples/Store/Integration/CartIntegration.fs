@@ -45,8 +45,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` context cartId skuId = Async.RunSynchronously <| async {
-        let! conn = connectToLocalEventStoreNode ()
-        let log, service = createLog (), createServiceGesWithoutCompactionSemantics conn defaultBatchSize
+        let log = createLog ()
+        let! conn = connectToLocalEventStoreNode log
+        let service = createServiceGesWithoutCompactionSemantics conn defaultBatchSize
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5
 
@@ -56,7 +57,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction`` context cartId skuId = Async.RunSynchronously <| async {
-        let! conn = connectToLocalEventStoreNode ()
+        let log = createLog ()
+        let! conn = connectToLocalEventStoreNode log
         let log, service = createLog (), createServiceGes conn defaultBatchSize
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5

@@ -5,8 +5,10 @@ open Swensen.Unquote
 open System.Threading
 open System
 
-let cfg = GesConnectionBuilder(operationTimeout = TimeSpan.FromSeconds 1., operationRetryLimit = 3, requireMaster = true, log= GesLog.Debug)
-let connectToLocalEventStoreNode () = cfg.ConnectWithGossip("localhost", "admin", "changeit")
+let connectToLocalEventStoreNode log =
+    let log = LogTo.SerilogVerbose log
+    GesConnectionBuilder( operationTimeout = TimeSpan.FromSeconds 1., operationRetryLimit = 3, requireMaster = true, log = log)
+        .ConnectClusterDns("localhost", "admin", "changeit")
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
@@ -61,7 +63,8 @@ type Tests() =
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode ()
+        let! conn = connectToLocalEventStoreNode log
+
         let batchSize = 3
         let service = Cart.createServiceWithoutOptimization conn batchSize
 
@@ -86,7 +89,7 @@ type Tests() =
     [<AutoData(MaxTest = 2)>]
     let ``Can roundtrip against EventStore, managing sync conflicts by retrying [without any optimizations]`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode ()
+        let! conn = connectToLocalEventStoreNode log1
         // Ensure batching is included at some point in the proceedings
         let batchSize = 3
 
@@ -162,7 +165,7 @@ type Tests() =
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode ()
+        let! conn = connectToLocalEventStoreNode log
         let batchSize = 10
         let service = Cart.createServiceWithCompaction conn batchSize
 
@@ -200,9 +203,9 @@ type Tests() =
 
     [<AutoData>]
     let ``Can correctly read and update against EventStore, with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
-        let! eventStoreConnection = connectToLocalEventStoreNode ()
         let log, capture = createLoggerWithCapture ()
-        let service = ContactPreferences.createService eventStoreConnection
+        let! conn = connectToLocalEventStoreNode log
+        let service = ContactPreferences.createService conn
 
         let (Domain.ContactPreferences.Id email) = id
         // Feed some junk into the stream

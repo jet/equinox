@@ -56,7 +56,9 @@ module SerilogHelpers =
 
 open Foldunk.EventStore
 
-let cfg = GesConnectionBuilder(operationTimeout = TimeSpan.FromSeconds 1., operationRetryLimit = 3, requireMaster = true, log = GesLog.Debug)
-let connectToLocalEventStoreNode () = cfg.ConnectWithGossip("localhost", "admin", "changeit")
+let connectToLocalEventStoreNode log =
+    let log = LogTo.SerilogVerbose log
+    GesConnectionBuilder( operationTimeout = TimeSpan.FromSeconds 1., operationRetryLimit = 3, requireMaster = true, log = log)
+        .ConnectClusterDns("localhost", "admin", "changeit")
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
