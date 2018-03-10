@@ -5,10 +5,14 @@ open Swensen.Unquote
 open System.Threading
 open System
 
+/// To establish a local node to run the tests against:
+/// PS> cinst eventstore-oss -y
+/// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+// This test suite connects over TCP with no Gossip yak shaving in the mix, so starting EventStore.ClusterNode with no arguments
+//  would work too, but other tests require the args so best to use this commandline
 let connectToLocalEventStoreNode log =
-    let log = LogTo.SerilogVerbose log
-    GesConnectionBuilder( operationTimeout = TimeSpan.FromSeconds 1., operationRetryLimit = 3, requireMaster = true, log = log)
-        .ConnectClusterDns("localhost", "admin", "changeit")
+    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 1., reqRetries=3, requireMaster=true, log=Logger.SerilogVerbose log)
+        .Connect(Discovery.Uri(Uri "tcp://localhost:1113"))
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 

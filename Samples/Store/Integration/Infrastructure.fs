@@ -56,9 +56,12 @@ module SerilogHelpers =
 
 open Foldunk.EventStore
 
+/// To establish a local node to run the tests against:
+/// PS> cinst eventstore-oss -y
+/// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+// Connect with Gossip based cluster discovery in force, reconfiguring the external HTTP port to align with the port that the Commercial ES Cluster hosts its manager instances on
 let connectToLocalEventStoreNode log =
-    let log = LogTo.SerilogVerbose log
-    GesConnectionBuilder( operationTimeout = TimeSpan.FromSeconds 1., operationRetryLimit = 3, requireMaster = true, log = log)
-        .ConnectClusterDns("localhost", "admin", "changeit")
+    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 1., reqRetries=3, requireMaster=true, log=Logger.SerilogVerbose log)
+        .ConnectViaGossipAsync("localhost")
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
