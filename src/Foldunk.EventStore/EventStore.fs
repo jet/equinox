@@ -333,10 +333,6 @@ type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
 
         Foldunk.Stream<'event, 'state>(category, streamName, ?initialTokenAndState = initialTokenAndState) :> _
 
-// c.f. http://bugsquash.blogspot.com/2012/08/optional-parameters-interop-c-f.html
-type OAttribute = System.Runtime.InteropServices.OptionalAttribute
-type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
-
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
         member __.Debug(format: string, args: obj []) =           log.Debug(format, args)
@@ -372,36 +368,34 @@ type Discovery =
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Discovery =
-    let mkDnsClusterSettings f =
-        ClusterSettings.Create().DiscoverClusterViaDns() |> f |> DnsClusterSettingsBuilder.op_Implicit
-    let mkSeededClusterSettings f =
-        ClusterSettings.Create().DiscoverClusterViaGossipSeeds() |> f |> GossipSeedClusterSettingsBuilder.op_Implicit
+    let buildDns f =    ClusterSettings.Create().DiscoverClusterViaDns() |> f |> DnsClusterSettingsBuilder.op_Implicit
+    let buildSeeded f = ClusterSettings.Create().DiscoverClusterViaGossipSeeds() |> f |> GossipSeedClusterSettingsBuilder.op_Implicit
+    let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
+        x.SetClusterDns(clusterDns)
+        |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
+    let inline configureSeeded (seedEndpoints : System.Net.IPEndPoint []) (x : GossipSeedClusterSettingsBuilder) =
+        x.SetGossipSeedEndPoints(seedEndpoints)
     // converts a Discovery mode to a ClusterSettings or a Uri as appropriate
     let (|DiscoverViaUri|DiscoverViaGossip|) : Discovery -> Choice<Uri,ClusterSettings> = function
-        | Discovery.Uri uri ->
-            DiscoverViaUri uri
-        | Discovery.GossipSeeded (seedManagerEndpoints) ->
-            DiscoverViaGossip (mkSeededClusterSettings (fun s -> s.SetGossipSeedEndPoints(seedManagerEndpoints)))
-        | Discovery.GossipDns clusterDns ->
-            DiscoverViaGossip (mkDnsClusterSettings (fun s -> s.SetClusterDns(clusterDns)))
-        | Discovery.GossipDnsCustomPort (clusterDns, managerPortOverride) ->
-            DiscoverViaGossip (mkDnsClusterSettings (fun s -> s.SetClusterDns(clusterDns).SetClusterGossipPort(managerPortOverride)))
+        | Discovery.Uri uri ->                          DiscoverViaUri    uri
+        | Discovery.GossipSeeded seedEndpoints ->       DiscoverViaGossip (buildSeeded  (configureSeeded seedEndpoints))
+        | Discovery.GossipDns clusterDns ->             DiscoverViaGossip (buildDns     (configureDns clusterDns None))
+        | Discovery.GossipDnsCustomPort (dns, port) ->  DiscoverViaGossip (buildDns     (configureDns dns (Some port)))
 
 type GesConnector
-    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool,
-        [<O;D(null)>] ?log : Logger,[<O;D(null)>] ?heartbeatTimeout: TimeSpan) = // default: 1500 ms
+    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool, ?log : Logger, ?heartbeatTimeout: TimeSpan) =
     let connSettings =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
         .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
-        |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | _ -> s // default: 1500 ms
         |> fun s -> if requireMaster then s.PerformOnMasterOnly() else s.PerformOnAnyNode() // default: PerformOnMasterOnly()
+        |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
         |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> ConnectionSettingsBuilder.op_Implicit
 
-    /// Yields an IEventStoreConfiguration configured and Connect()ed to the cluster
+    /// Yields an IEventStoreConfiguration configured and Connect()ed to a node (or the cluster) per the requested `discovery` strategy
     member __.Connect (discovery : Discovery) : Async<GesConnection> = async {
         let conn =
             match discovery with
@@ -410,7 +404,7 @@ type GesConnector
         do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
         return GesConnection(conn) }
 
-    /// Yields an IEventStoreConfiguration configured and Connect()ed by selecting using the Gossip Manager Nodes resulting from the supplied dnsQuery
+    /// Yields an IEventStoreConfiguration configured and Connect()ed to the cluster via seeded Gossip with Manager nodes list defined by dnsQuery
     /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-
     ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
     ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0

@@ -5,11 +5,11 @@ open Swensen.Unquote
 open System.Threading
 open System
 
+/// Connect direcly to a locally running EventStore Node (with no Gossip yak shaving in the mix)
 /// To establish a local node to run the tests against:
 /// PS> cinst eventstore-oss -y
 /// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-// This test suite connects over TCP with no Gossip yak shaving in the mix, so starting EventStore.ClusterNode with no arguments
-//  would work too, but other tests require the args so best to use this commandline
+/// (NB for this specific suite only, omitting the arguments will also work as the Gossip-related ports are not relevant, but other tests would fail)
 let connectToLocalEventStoreNode log =
     GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 1., reqRetries=3, requireMaster=true, log=Logger.SerilogVerbose log)
         .Connect(Discovery.Uri(Uri "tcp://localhost:1113"))
@@ -42,7 +42,9 @@ module ContactPreferences =
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-type Tests() =
+type Tests(testOutputHelper) =
+    let testOutput = TestOutputAdapter testOutputHelper
+
     let addAndThenRemoveItems exceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
         service.FlowAsync(log, cartId, fun _ctx execute ->
             for i in 1..count do
@@ -57,6 +59,7 @@ type Tests() =
     let createLoggerWithCapture () =
         let capture = LogCaptureBuffer()
         let subscribeLogListeners observable =
+            testOutput.Subscribe observable |> ignore
             capture.Subscribe observable |> ignore
         createLogger subscribeLogListeners, capture
 

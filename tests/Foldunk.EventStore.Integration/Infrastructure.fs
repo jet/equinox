@@ -17,6 +17,17 @@ type FsCheckGenerators =
 type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
 
+// Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
+// NB VS does not surface these atm, but other test runners / test reports do
+type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
+    let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null);
+    let writeSeriLogEvent logEvent =
+        use writer = new System.IO.StringWriter()
+        formatter.Format(logEvent, writer);
+        writer |> string |> testOutput.WriteLine
+    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
+        source.Subscribe writeSeriLogEvent
+
 [<AutoOpen>]
 module SerilogHelpers =
     open Serilog

@@ -68,8 +68,8 @@
     <None Include="paket.references" />
     <Content Include="App.config" />
     <Compile Include="Infrastructure.fs" />
-    <Compile Include="EventStoreIntegration.fs" />
     <Compile Include="EventStoreTokenTests.fs" />
+    <Compile Include="EventStoreIntegration.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />

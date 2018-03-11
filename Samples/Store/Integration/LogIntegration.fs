@@ -17,7 +17,7 @@ module Interop =
             | Log.Slice (Direction.Backward,m) -> "ReadStreamEventsBackwardAsync", m, None
             | Log.Batch (Direction.Forward,c,m) -> "LoadF", m, Some c
             | Log.Batch (Direction.Backward,c,m) -> "LoadB", m, Some c
-        { action = action; stream = metric.stream; interval = metric.interval; bytes=metric.bytes; count = metric.count; batches=batches }
+        { action = action; stream = metric.stream; interval = metric.interval; bytes = metric.bytes; count = metric.count; batches = batches }
 
 type SerilogMetricsExtractor(emit : string -> unit) =
     let render template =
@@ -31,6 +31,9 @@ type SerilogMetricsExtractor(emit : string -> unit) =
     let emitEvent (logEvent : Serilog.Events.LogEvent) =
         logEvent |> renderFull |> System.Diagnostics.Trace.Write
         logEvent |> renderSummary |> emit
+    let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
+        | (:? Serilog.Events.ScalarValue as x) -> Some x.Value
+        | _ -> None
     let (|EsEvent|_|) (logEvent : Serilog.Events.LogEvent) : (string * Foldunk.EventStore.Log.Event) option =
         logEvent.Properties |> Seq.tryPick (function KeyValue (k, SerilogScalar (:? Foldunk.EventStore.Log.Event as m)) -> Some (k,m) | _ -> None)
     let handleLogEvent = function
