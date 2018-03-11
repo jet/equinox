@@ -36,9 +36,9 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.MemoryStore", "src\
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.MemoryStore.Integration", "tests\Foldunk.MemoryStore.Integration\Foldunk.MemoryStore.Integration.fsproj", "{B2C695C3-ED04-4094-B672-926440B5F335}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.EventSum", "src\Foldunk.EventSum\Foldunk.EventSum.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.Serialization", "src\Foldunk.Serialization\Foldunk.Serialization.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.EventSum.Tests", "tests\Foldunk.EventSum.Tests\Foldunk.EventSum.Tests.fsproj", "{1D9D5E23-683D-497F-BFA2-FBB43BB81205}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.Serialization.Tests", "tests\Foldunk.Serialization.Tests\Foldunk.Serialization.Tests.fsproj", "{1D9D5E23-683D-497F-BFA2-FBB43BB81205}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

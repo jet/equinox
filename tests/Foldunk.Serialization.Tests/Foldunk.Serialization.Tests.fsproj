@@ -80,8 +80,8 @@
     <Reference Include="System.Runtime.Serialization" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Foldunk.EventSum\Foldunk.EventSum.fsproj">
-      <Name>Foldunk.EventSum</Name>
+    <ProjectReference Include="..\..\src\Foldunk.Serialization\Foldunk.Serialization.fsproj">
+      <Name>Foldunk.Serialization</Name>
       <Project>{f5491eb1-d072-4262-8184-2a908e1d6175}</Project>
       <Private>True</Private>
     </ProjectReference>

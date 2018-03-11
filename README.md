@@ -13,14 +13,21 @@ However,the codebase as a whole; particularly the, Samples are intended to achie
 
 Please raise GitHub issues for any questions so others can benefit from the discussion.
 
-Features
+Elements
 --------
 - Foldunk.Handler: a store agnostic Decision flow runner that fulfills key request processing objectives as dictated by the requirements of Jet.com's front-end API layer
-- Foldunk.EventSum: a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
+- `Foldunk.Serialization`:
+	- helpers for simplifying the writing of [json.net](https://github.com/JamesNK/Newtonsoft.Json) `JsonConverter`s
+	- a set of [json.net](https://github.com/JamesNK/Newtonsoft.Json) Converters, mainly specific to F# types
+- `Foldunk.EventStore`: Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
+- sufficient logging and metrics instrumentation capabilties to be used in a Production context
+
+Features
+--------
+- Does not emit any specific logs, but is sufficiently instrumented (using [Serilog](github.com/serilog/serilog) to allow one to adapt it to ones application (we feed log info to NLog and onwards to Splunk atm and feed the metrics embedded therein to prometheus; see relevant tests for examples)
+- _`EventSum` encoding_: a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
 	- independent of any specific serializer
-	- allowes tagging of Discriminated Union cases with `eventType` tags in a versionable manner
-- Foldunk.EventStore: Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
+	- allows tagging of Discriminated Union cases with `eventType` tags in a versionable manner using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`EventSum`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/EventSumTests.fs)
 - _Compaction_: A pattern employed to optimize command processing by employing in-stream 'snapshot' events with the following properties:
 	- no additional roundtrips to the store at either the Load or Sync points in the flow to facilitate snapshotting
 	- support (via `EventSum`) for the maintenance of multiple co-existing snapshot schemas in a given stream
-- sufficient logging to be used in a Production context

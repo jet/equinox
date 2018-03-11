@@ -87,11 +87,6 @@
       <Project>{37b4a45f-039e-4515-8a84-d242dde12d22}</Project>
       <Private>True</Private>
     </ProjectReference>
-    <ProjectReference Include="..\..\src\Foldunk.EventSum\Foldunk.EventSum.fsproj">
-      <Name>Foldunk.EventSum</Name>
-      <Project>{f5491eb1-d072-4262-8184-2a908e1d6175}</Project>
-      <Private>True</Private>
-    </ProjectReference>
     <ProjectReference Include="..\..\src\Foldunk.MemoryStore\Foldunk.MemoryStore.fsproj">
       <Name>Foldunk.MemoryStore</Name>
       <Project>{a7441ff0-94e6-45e4-b02d-f14ed248516d}</Project>
