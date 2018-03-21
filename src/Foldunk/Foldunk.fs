@@ -7,7 +7,8 @@ type Context<'event, 'state>(fold, originState : 'state, capacityBeforeCompactio
     let accumulated = ResizeArray<'event>()
 
     /// The current folded State, based on the Stream's `originState` + any events that have been Accumulated during the the decision flow
-    member __.State = __.Accumulated |> fold originState
+    member __.State =
+        __.Accumulated |> fold originState
     /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
     member __.Execute (decide : 'state -> 'event list) : unit =
         decide __.State |> accumulated.AddRange
@@ -26,7 +27,8 @@ type Context<'event, 'state>(fold, originState : 'state, capacityBeforeCompactio
         accumulated.AddRange newEvents
         return result }
     /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
-    member __.Accumulated = accumulated |> List.ofSeq
+    member __.Accumulated =
+        accumulated |> List.ofSeq
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
     member __.IsCompactionDue =
         capacityBeforeCompaction |> Option.exists (fun max -> accumulated.Count > max)

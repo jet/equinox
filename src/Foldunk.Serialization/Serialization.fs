@@ -249,7 +249,7 @@ type Settings private () =
     /// <summary>
     ///     Creates a default serializer settings used by Json serialization
     /// </summary>
-    /// <param name="useHyphenatedGuids">Use hyphenation when serializing guids. Defaults to true.</param>
+    /// <param name="camelCase">Render idiomatic camelCase for PascalCase items by using `CamelCasePropertyNamesContractResolver`. Defaults to true.</param>
     /// <param name="indent">Use multi-line, indented formatting when serializing json; defaults to false.</param>
     static member CreateDefault
         (   [<Optional;DefaultParameterValue(null)>]?indent : bool,

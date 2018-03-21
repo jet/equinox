@@ -8,7 +8,8 @@ open System
 open TypeShape
 
 [<RequireQualifiedAccess>]
-type Direction = Forward | Backward
+type Direction = Forward | Backward with
+    override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 module Log =
     [<NoEquality; NoComparison>]
