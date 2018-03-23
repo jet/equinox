@@ -8,11 +8,17 @@ nuget FSharp.Control.AsyncSeq
 nuget Newtonsoft.json
 nuget Serilog
 nuget Serilog.Sinks.Observable
+nuget System.Reactive
 nuget TypeShape
 
 # Single group to avoid conflicts
 //group test
+	nuget Argu
+	nuget Destructurama.FSharp
 	nuget FsCheck.xUnit
+	nuget MathNet.Numerics
+	nuget Serilog.Sinks.Console
+	nuget Serilog.Sinks.File
 	nuget Unquote
 	nuget xunit.core redirects: force
 	nuget xunit.runner.visualstudio

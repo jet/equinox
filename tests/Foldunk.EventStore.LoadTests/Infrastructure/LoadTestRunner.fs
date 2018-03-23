@@ -19,7 +19,7 @@ module private LocalLoadTestImpl =
 
     do System.Threading.ThreadPool.SetMinThreads(512,512) |> ignore
 
-    /// asynchronously executes action afeter supplied delay
+    /// asynchronously executes action after supplied delay
     let delay : TimeSpan -> (unit -> unit) -> unit =
         fun waitTime action ->
             Task.Delay(waitTime).ContinueWith(fun (_:Task) -> action ())
@@ -202,7 +202,7 @@ module private LocalLoadTestImpl =
 
     let runSingleLoadTest (pool : SessionPool<'Session>)
                           (eventSink : LoadTestEvent -> unit)
-                          (singleTestRunner : 'Session -> Async<'T>) = async {
+                          (singleTestRunner : 'Session -> Async<'T>) : Async<unit> = async {
 
         let! sessionResult = pool.TryRequestSession()
 

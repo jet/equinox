@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio 15
+VisualStudioVersion = 15.0.27323.2
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk", "src\Foldunk\Foldunk.fsproj", "{54CD058F-5B0A-4564-B732-1F6301E120AC}"
 EndProject
@@ -39,6 +39,8 @@ EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.Serialization", "src\Foldunk.Serialization\Foldunk.Serialization.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.Serialization.Tests", "tests\Foldunk.Serialization.Tests\Foldunk.Serialization.Tests.fsproj", "{1D9D5E23-683D-497F-BFA2-FBB43BB81205}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.EventStore.LoadTests", "tests\Foldunk.EventStore.LoadTests\Foldunk.EventStore.LoadTests.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -90,6 +92,10 @@ Global
 		{1D9D5E23-683D-497F-BFA2-FBB43BB81205}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1D9D5E23-683D-497F-BFA2-FBB43BB81205}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1D9D5E23-683D-497F-BFA2-FBB43BB81205}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

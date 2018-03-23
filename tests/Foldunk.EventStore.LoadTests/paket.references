@@ -1,0 +1,10 @@
+﻿Argu
+Destructurama.FSharp
+EventStore.Client
+MathNet.Numerics
+Newtonsoft.Json
+Serilog
+Serilog.Sinks.Console
+Serilog.Sinks.File
+System.Reactive
+TypeShape

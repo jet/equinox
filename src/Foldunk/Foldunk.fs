@@ -173,6 +173,10 @@ type Stream<'event, 'state>(category : ICategory<'event, 'state>, streamName, ?i
         member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list) =
             category.TrySync streamName log (token, originState) events
 
+// Exception yielded by ES Operation after `count` attempts to complete the operation have taken place
+type OperationRetriesExceededException(count : int, innerException : exn) =
+   inherit exn(sprintf "Retry failed after %i attempts." count, innerException)
+
 /// Helper for defining backoffs within the definition of a retry policy for a store.
 module Retry =
     /// Wraps an async computation in a retry loop, passing the (1-based) count into the computation and,
@@ -184,7 +188,7 @@ module Retry =
                 let! res = f attempt
                 return res
             with ex ->
-                if attempt = maxAttempts then return raise (exn(sprintf "Retry failed after %i attempts." maxAttempts, ex))
+                if attempt = maxAttempts then return raise (OperationRetriesExceededException(maxAttempts, ex))
                 else
                     match backoff attempt with
                     | Some timespan -> do! Async.Sleep (int timespan.TotalMilliseconds)
