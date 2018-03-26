@@ -173,21 +173,29 @@ type Stream<'event, 'state>(category : ICategory<'event, 'state>, streamName, ?i
         member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list) =
             category.TrySync streamName log (token, originState) events
 
+// Exception yielded by ES Operation after `count` attempts to complete the operation have taken place
+type OperationRetriesExceededException(count : int, backoffs : System.TimeSpan, innerException : exn) =
+   inherit exn(sprintf "Retry failed after %i attempts with %O backoffs." count backoffs, innerException)
+   member __.Backoffs = backoffs
+
 /// Helper for defining backoffs within the definition of a retry policy for a store.
 module Retry =
     /// Wraps an async computation in a retry loop, passing the (1-based) count into the computation and,
     ///   (until `attempts` exhausted) on an exception matching the `filter`, waiting for the timespan chosen by `backoff` before retrying
     let withBackoff (maxAttempts : int) (backoff : int -> System.TimeSpan option) (f : int -> Async<'a>) =
         if maxAttempts < 1 then raise (invalidArg "maxAttempts" "Should be >= 1")
-        let rec go attempt = async {
+        let rec go attempt backoffs = async {
             try
                 let! res = f attempt
                 return res
             with ex ->
-                if attempt = maxAttempts then return raise (exn(sprintf "Retry failed after %i attempts." maxAttempts, ex))
+                if attempt = maxAttempts then return raise (OperationRetriesExceededException(maxAttempts, backoffs, ex))
                 else
+                    let mutable updated = backoffs
                     match backoff attempt with
-                    | Some timespan -> do! Async.Sleep (int timespan.TotalMilliseconds)
+                    | Some timespan ->
+                        do! Async.Sleep (int timespan.TotalMilliseconds)
+                        updated <- updated.Add timespan
                     | None -> ()
-                    return! go (attempt + 1) }
-        go 1
+                    return! go (attempt + 1) updated }
+        go 1 System.TimeSpan.Zero
