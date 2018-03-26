@@ -19,7 +19,7 @@ module private LocalLoadTestImpl =
 
     do System.Threading.ThreadPool.SetMinThreads(512,512) |> ignore
 
-    /// asynchronously executes action afeter supplied delay
+    /// asynchronously executes action after supplied delay
     let delay : TimeSpan -> (unit -> unit) -> unit =
         fun waitTime action ->
             Task.Delay(waitTime).ContinueWith(fun (_:Task) -> action ())

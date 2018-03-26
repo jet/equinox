@@ -45,7 +45,7 @@ module private Write =
     let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> = async {
         try
-            let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
+            let! wr = conn.AppendToStreamAsync(streamName, int version, events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
             log.Information(ex, "Ges TrySync WrongExpectedVersionException")
@@ -80,8 +80,8 @@ module private Read =
         : Async<StreamEventsSlice> = async {
         let call =
             match direction with
-            | Direction.Forward ->  conn.ReadStreamEventsForwardAsync(streamName, startPos, batchSize, resolveLinkTos = false)
-            | Direction.Backward -> conn.ReadStreamEventsBackwardAsync(streamName, startPos, batchSize, resolveLinkTos = false)
+            | Direction.Forward ->  conn.ReadStreamEventsForwardAsync(streamName, int startPos, batchSize, resolveLinkTos = false)
+            | Direction.Backward -> conn.ReadStreamEventsBackwardAsync(streamName, int startPos, batchSize, resolveLinkTos = false)
         return! call |> Async.AwaitTaskCorrect }
     let (|ResolvedEventLen|) (x : ResolvedEvent) = match x.Event.Data, x.Event.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
     let private loggedReadSlice conn streamName direction batchSize startPos (log : ILogger) : Async<StreamEventsSlice> = async {
@@ -108,10 +108,10 @@ module private Read =
             | SliceReadStatus.StreamDeleted -> raise <| EventStore.ClientAPI.Exceptions.StreamDeletedException(slice.Stream)
             | SliceReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.NoStream), Array.empty
             | SliceReadStatus.Success ->
-                let version = if batchCount = 0 then Some slice.LastEventNumber else None
+                let version = if batchCount = 0 then Some (int64 slice.LastEventNumber) else None
                 yield version, slice.Events
                 if not slice.IsEndOfStream then
-                    yield! loop (batchCount + 1) slice.NextEventNumber
+                    yield! loop (batchCount + 1) (int64 slice.NextEventNumber)
             | x -> raise <| System.ArgumentOutOfRangeException("SliceReadStatus", x, "Unknown result value") }
         loop 0 startPosition
     let resolvedEventBytes events = events |> Array.sumBy (|ResolvedEventLen|)
@@ -217,7 +217,7 @@ module Token =
         ofCompactionEventNumber compactedEventNumber eventsLength batchSize streamVersion
     /// Use an event just read from the stream to infer headroom
     let ofCompactionResolvedEventAndVersion (compactionEvent: ResolvedEvent) batchSize streamVersion : Storage.StreamToken =
-        ofCompactionEventNumber (Some compactionEvent.Event.EventNumber) 0 batchSize streamVersion
+        ofCompactionEventNumber (Some <| int64 compactionEvent.Event.EventNumber) 0 batchSize streamVersion
     /// Use an event we are about to write to the stream to infer headroom
     let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion (compactionEventDataIndex : int) eventsLength batchSize streamVersion'
         : Storage.StreamToken =
@@ -271,7 +271,7 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
         | EsSyncResult.Conflict -> return GatewaySyncResult.Conflict
         | EsSyncResult.Written wr ->
 
-        let version' = wr.NextExpectedVersion
+        let version' = int64 wr.NextExpectedVersion
         let token =
             match isCompactionEventType with
             | None -> Token.ofNonCompacting version'
@@ -369,8 +369,8 @@ type Discovery =
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Discovery =
-    let buildDns f =    ClusterSettings.Create().DiscoverClusterViaDns().SetMaxDiscoverAttempts(Int32.MaxValue) |> f |> DnsClusterSettingsBuilder.op_Implicit
-    let buildSeeded f = ClusterSettings.Create().DiscoverClusterViaGossipSeeds().SetMaxDiscoverAttempts(Int32.MaxValue) |> f |> GossipSeedClusterSettingsBuilder.op_Implicit
+    let buildDns f =    ClusterSettings.Create().DiscoverClusterViaDns() |> f |> DnsClusterSettingsBuilder.op_Implicit
+    let buildSeeded f = ClusterSettings.Create().DiscoverClusterViaGossipSeeds() |> f |> GossipSeedClusterSettingsBuilder.op_Implicit
     let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
@@ -384,15 +384,16 @@ module private Discovery =
         | Discovery.GossipDnsCustomPort (dns, port) ->  DiscoverViaGossip (buildDns     (configureDns dns (Some port)))
 
 type GesConnector
-    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool, ?log : Logger, ?heartbeatTimeout: TimeSpan) =
+    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool, ?log : Logger, ?heartbeatTimeout: TimeSpan, ?customReconnect) =
     let connSettings =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
-        .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
         .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
+//        .SetMaxDiscoverAttempts(Int32.MaxValue)
         |> fun s -> if requireMaster then s.PerformOnMasterOnly() else s.PerformOnAnyNode() // default: PerformOnMasterOnly()
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
+        |> fun s -> match customReconnect with Some true -> s.LimitReconnectionsTo(0) | _ -> s.KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
         |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> fun s -> s.Build()
 
@@ -486,12 +487,16 @@ module ConnectionMonitor =
     /// b) leading indicators of this via consumers reporting ObjectDisposedExceptions encoutered on transactions
     type private ConnectionWithDisposalDetection(inner : IEventStoreConnection, ?connectionLogger : ILogger) =
         let mutable expired = false
+        let disposed = ref 0
         do inner.Closed.AddHandler(fun _ e ->
-            match connectionLogger with Some log -> log.Warning("Connection closed, {event}", e) | None -> ()
+            match connectionLogger with Some log -> log.Warning("EventStore Connection Death detected via Closed event: {event}", e) | None -> ()
             expired <- true)
 
         /// Used by consumers to signal that expiry has been detected
-        member __.MarkDisposed() = expired <- true
+        member __.MarkDisposed() =
+            let first = 0 = System.Threading.Interlocked.Exchange(disposed,1)
+            if first then expired <- true
+            first
 
         /// Indicates whether the underlying connection should be considered expired
         member __.IsExpired = expired
@@ -555,10 +560,10 @@ module ConnectionMonitor =
                 let! res = execute conn.UnderlyingConnection
                 return res
             with ex when exnIsIndicativeOfConnectionDeath ex ->
-                conn.MarkDisposed()
-                match connectionLogger with
-                | None -> ()
-                | Some log -> log.Warning(ex, "EventStore Connection Death detected via ObjectDisposedException")
+                if conn.MarkDisposed() then
+                    match connectionLogger with
+                    | None -> ()
+                    | Some log -> log.Warning(ex, "EventStore Connection Death detected via ObjectDisposedException")
 
                 // Signal we intercepted the exception, but reraise in order to allow an external retry loop (if any) kick in
                 // See https://stackoverflow.com/questions/41193629/how-to-keep-the-stacktrace-when-rethrowing-an-exception-out-of-catch-context
@@ -596,20 +601,20 @@ module ConnectionMonitor =
             [<CLIEvent>] member __.ErrorOccurred = inner.ConnectionManagement.ErrorOccurred
             [<CLIEvent>] member __.Reconnecting = inner.ConnectionManagement.Reconnecting
 
-            member __.AppendToStreamAsync(stream: string, expectedVersion: int64, events: EventData []): Task<WriteResult> =
+            member __.AppendToStreamAsync(stream: string, expectedVersion: int, events: EventData []): Task<WriteResult> =
                 __.Call(fun c -> c.AppendToStreamAsync(stream,expectedVersion,events))
-            member __.AppendToStreamAsync(stream: string, expectedVersion: int64, userCredentials: UserCredentials, events: EventData []): Task<WriteResult> =
+            member __.AppendToStreamAsync(stream: string, expectedVersion: int, userCredentials: UserCredentials, events: EventData []): Task<WriteResult> =
                 __.Call(fun c -> c.AppendToStreamAsync(stream,expectedVersion,userCredentials,events))
-            member __.AppendToStreamAsync(stream: string, expectedVersion: int64, events: EventData seq, userCredentials: UserCredentials): Task<WriteResult> =
+            member __.AppendToStreamAsync(stream: string, expectedVersion: int, events: EventData seq, userCredentials: UserCredentials): Task<WriteResult> =
                 __.Call(fun c -> c.AppendToStreamAsync(stream,expectedVersion,events,userCredentials))
-            member __.ConditionalAppendToStreamAsync(stream, expectedVersion, events, userCredentials) =
-                __.Call(fun c -> c.ConditionalAppendToStreamAsync(stream, expectedVersion, events, userCredentials))
+            //member __.ConditionalAppendToStreamAsync(stream, expectedVersion, events, userCredentials) =
+            //    __.Call(fun c -> c.ConditionalAppendToStreamAsync(stream, expectedVersion, events, userCredentials))
             member __.ConnectAsync() =
                 __.Call(fun _ -> Task.FromResult(null)) :> _
             member __.ConnectToPersistentSubscription(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck) =
                 __.Get(fun c -> c.ConnectToPersistentSubscription(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck))
-            member __.ConnectToPersistentSubscriptionAsync(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck) =
-                __.Call(fun c -> c.ConnectToPersistentSubscriptionAsync(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck))
+            //member __.ConnectToPersistentSubscriptionAsync(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck) =
+            //    __.Call(fun c -> c.ConnectToPersistentSubscriptionAsync(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck))
             member __.ConnectionName =
                 __.Get(fun c -> c.ConnectionName)
             member __.ContinueTransaction(transactionId, userCredentials) =
@@ -618,9 +623,9 @@ module ConnectionMonitor =
                 __.CallAsync(fun c -> c.CreatePersistentSubscriptionAsync(stream, groupName, settings, credentials))
             member __.DeletePersistentSubscriptionAsync(stream, groupName, userCredentials) =
                 __.CallAsync(fun c -> c.DeletePersistentSubscriptionAsync(stream, groupName, userCredentials))
-            member __.DeleteStreamAsync(stream: string, expectedVersion: int64, userCredentials: UserCredentials): Task<DeleteResult> =
+            member __.DeleteStreamAsync(stream: string, expectedVersion: int, userCredentials: UserCredentials): Task<DeleteResult> =
                 __.Call(fun c -> c.DeleteStreamAsync(stream, expectedVersion, userCredentials))
-            member __.DeleteStreamAsync(stream: string, expectedVersion: int64, hardDelete: bool, userCredentials: UserCredentials): Task<DeleteResult> =
+            member __.DeleteStreamAsync(stream: string, expectedVersion: int, hardDelete: bool, userCredentials: UserCredentials): Task<DeleteResult> =
                 __.Call(fun c -> c.DeleteStreamAsync(stream, expectedVersion, hardDelete, userCredentials))
             member __.GetStreamMetadataAsRawBytesAsync(stream, userCredentials) =
                 __.Call(fun c -> c.GetStreamMetadataAsRawBytesAsync(stream, userCredentials))
@@ -636,28 +641,28 @@ module ConnectionMonitor =
                 __.Call(fun c -> c.ReadStreamEventsBackwardAsync(stream, start, count, resolveLinkTos, userCredentials))
             member __.ReadStreamEventsForwardAsync(stream, start, count, resolveLinkTos, userCredentials) =
                 __.Call(fun c -> c.ReadStreamEventsForwardAsync(stream, start, count, resolveLinkTos, userCredentials))
-            member __.SetStreamMetadataAsync(stream: string, expectedMetastreamVersion: int64, metadata: StreamMetadata, userCredentials: UserCredentials): Task<WriteResult> =
+            member __.SetStreamMetadataAsync(stream: string, expectedMetastreamVersion: int, metadata: StreamMetadata, userCredentials: UserCredentials): Task<WriteResult> =
                 __.Call(fun c -> c.SetStreamMetadataAsync(stream, expectedMetastreamVersion, metadata, userCredentials))
-            member __.SetStreamMetadataAsync(stream: string, expectedMetastreamVersion: int64, metadata: byte [], userCredentials: UserCredentials): Task<WriteResult> =
+            member __.SetStreamMetadataAsync(stream: string, expectedMetastreamVersion: int, metadata: byte [], userCredentials: UserCredentials): Task<WriteResult> =
                 __.Call(fun c -> c.SetStreamMetadataAsync(stream, expectedMetastreamVersion, metadata, userCredentials))
             member __.SetSystemSettingsAsync(settings, userCredentials) =
                 __.CallAsync(fun c -> c.SetSystemSettingsAsync(settings, userCredentials))
-            member __.Settings =
-                __.Get(fun c -> c.Settings)
+            //member __.Settings =
+            //    __.Get(fun c -> c.Settings)
             member __.StartTransactionAsync(stream, expectedVersion, userCredentials) =
                 __.Call(fun c -> c.StartTransactionAsync(stream, expectedVersion, userCredentials))
             member __.SubscribeToAllAsync(resolveLinkTos, eventAppeared, subscriptionDropped, userCredentials) =
                 __.Call(fun c -> c.SubscribeToAllAsync(resolveLinkTos, eventAppeared, subscriptionDropped, userCredentials))
-            member __.SubscribeToAllFrom(lastCheckpoint: Nullable<Position>, resolveLinkTos: bool, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials, readBatchSize: int, subscriptionName: string): EventStoreAllCatchUpSubscription =
-                __.Get(fun c -> c.SubscribeToAllFrom(lastCheckpoint, resolveLinkTos, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials, readBatchSize, subscriptionName))
-            member __.SubscribeToAllFrom(lastCheckpoint: Nullable<Position>, settings: CatchUpSubscriptionSettings, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials): EventStoreAllCatchUpSubscription =
-                __.Get(fun c -> c.SubscribeToAllFrom(lastCheckpoint, settings, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials))
+            member __.SubscribeToAllFrom(lastCheckpoint: Nullable<Position>, resolveLinkTos: bool, eventAppeared: Action<EventStoreCatchUpSubscription,ResolvedEvent>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials, readBatchSize: int): EventStoreAllCatchUpSubscription =
+                __.Get(fun c -> c.SubscribeToAllFrom(lastCheckpoint, resolveLinkTos, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials, readBatchSize))
+            //member __.SubscribeToAllFrom(lastCheckpoint: Nullable<Position>, settings: CatchUpSubscriptionSettings, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials): EventStoreAllCatchUpSubscription =
+            //    __.Get(fun c -> c.SubscribeToAllFrom(lastCheckpoint, settings, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials))
             member __.SubscribeToStreamAsync(stream, resolveLinkTos, eventAppeared, subscriptionDropped, userCredentials) =
                 __.Call(fun c -> c.SubscribeToStreamAsync(stream, resolveLinkTos, eventAppeared, subscriptionDropped, userCredentials))
-            member __.SubscribeToStreamFrom(stream: string, lastCheckpoint: Nullable<int64>, resolveLinkTos: bool, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials, readBatchSize: int, subscriptionName: string): EventStoreStreamCatchUpSubscription =
+            member __.SubscribeToStreamFrom(stream: string, lastCheckpoint: Nullable<int>, resolveLinkTos: bool, eventAppeared: Action<EventStoreCatchUpSubscription,ResolvedEvent>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials, readBatchSize: int): EventStoreStreamCatchUpSubscription =
 
-                __.Get(fun c -> c.SubscribeToStreamFrom(stream, lastCheckpoint, resolveLinkTos, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials, readBatchSize, subscriptionName): EventStoreStreamCatchUpSubscription)
-            member __.SubscribeToStreamFrom(stream: string, lastCheckpoint: Nullable<int64>, settings: CatchUpSubscriptionSettings, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials): EventStoreStreamCatchUpSubscription =
-                __.Get(fun c -> c.SubscribeToStreamFrom(stream, lastCheckpoint, settings, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials))
+                __.Get(fun c -> c.SubscribeToStreamFrom(stream, lastCheckpoint, resolveLinkTos, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials, readBatchSize): EventStoreStreamCatchUpSubscription)
+            //member __.SubscribeToStreamFrom(stream: string, lastCheckpoint: Nullable<int64>, settings: CatchUpSubscriptionSettings, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials): EventStoreStreamCatchUpSubscription =
+            //    __.Get(fun c -> c.SubscribeToStreamFrom(stream, lastCheckpoint, settings, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials))
             member __.UpdatePersistentSubscriptionAsync(stream, groupName, settings, credentials) =
                 __.CallAsync(fun c -> c.UpdatePersistentSubscriptionAsync(stream, groupName, settings, credentials))

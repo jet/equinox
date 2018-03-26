@@ -24,14 +24,15 @@ type Arguments =
     | [<AltCommandLine("-m")>] DurationM of int
     | [<AltCommandLine("-s")>] DurationS of int
     | [<AltCommandLine("-g")>] Host of string
-    | [<AltCommandLine("-R")>] SkipReconnect of bool
+    | [<AltCommandLine("-R")>] CustomReconnect
+    | [<AltCommandLine("-v")>] Verbose
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Host _ -> "specify a DNS query, using Gossip-driven discovery against all A records returned (default: localhost)."
             | Username _ -> "specify a username (default: admin)."
             | Password _ -> "specify a Password (default: changeit)."
             | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 5)."
-            | SkipReconnect _ -> "inhibit auto-reconnect on connection close."
+            | CustomReconnect -> "Use custom reconnect strategy."
             | Timeout _ -> "specify operation timeout in seconds (default: 2)."
             | Retries _ -> "specify operation retries (default: 1)."
             | DurationM _ -> "specify a run duration in minutes (default: 1)."
@@ -40,11 +41,12 @@ type Arguments =
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
             | ErrorCutoff _ -> "specify an error cutoff (default: 1000)."
             | LogFile _ -> "specify a log file to write the result breakdown."
+            | Verbose -> "Include low level logging in screen output."
 
 let run log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
-    let mutable idx = ref -1L
+    let mutable idx = -1L
     let selectClient () =
-        let clientIndex = Interlocked.Increment(idx) |> int
+        let clientIndex = Interlocked.Increment(&idx) |> int
         clients.[clientIndex % clients.Length]
     let selectClient = async { return async { return selectClient() } }
     Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
@@ -52,12 +54,14 @@ let run log testsPerSecond duration errorCutoff reportingIntervals (clients : Cl
 /// To establish a local node to run the tests against:
 /// PS> cinst eventstore-oss -y
 /// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-let connectToEventStoreNode log (dnsQuery, heartbeatTimeout, skipReconnect) (username, password) (operationTimeout, operationRetries) = async {
-    let connector = GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries, requireMaster=false, heartbeatTimeout=heartbeatTimeout, log=Logger.SerilogVerbose log)
-    if skipReconnect then return! connector.ConnectViaGossipAsync dnsQuery else
+let connectToEventStoreNode log (dnsQuery, heartbeatTimeout, customReconnect) (username, password) (operationTimeout, operationRetries) = async {
+    let connector = GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries, requireMaster=false, heartbeatTimeout=heartbeatTimeout, log=Logger.SerilogVerbose log, customReconnect = customReconnect)
+//    let runQuery = connector.Connect(Discovery.GossipDns dnsQuery)
+    let runQuery = connector.ConnectViaGossipAsync(dnsQuery)
+    if not customReconnect then return! runQuery else
 
     let connect = async {
-        let! gesConn = connector.ConnectViaGossipAsync(dnsQuery)
+        let! gesConn =runQuery
         return gesConn.Connection }
     let monitoredConnection = new ConnectionMonitor.EventStoreConnectionCorrect(connect, log)
     return new GesConnection(monitoredConnection) }
@@ -86,10 +90,11 @@ let log =
         .Destructure.FSharpTypes()
         .WriteTo.Console(LogEventLevel.Debug, theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
         .CreateLogger()
-let domainLog =
+let domainLog verbose =
     LoggerConfiguration()
         .Destructure.FSharpTypes()
-        .WriteTo.Console(LogEventLevel.Warning, theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+        .WriteTo.Console((if verbose then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+        .WriteTo.File("f.log", LogEventLevel.Information)
         .CreateLogger()
 let createResultLog fileName =
     LoggerConfiguration()
@@ -116,15 +121,19 @@ let main argv =
         let (timeout, retries) as operationThrottling = args.GetResult(Timeout,2.) |> float |> TimeSpan.FromSeconds,args.GetResult(Retries,1)
         let heartbeatTimeout = args.GetResult(HeartbeatTimeout,2.) |> float |> TimeSpan.FromSeconds
         let report = args.GetResult(LogFile,"log.txt") |> fun n -> FileInfo(n).FullName
-        let skipReconnect = args.GetResult(SkipReconnect,false)
-        let store = connectToEventStoreNode log (host, heartbeatTimeout, skipReconnect) creds operationThrottling |> Async.RunSynchronously
+        let customReconnect = args.Contains(CustomReconnect)
+        let store = connectToEventStoreNode log (host, heartbeatTimeout, customReconnect) creds operationThrottling |> Async.RunSynchronously
 
         let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
-        let runSingleTest clientId = runFavoriteTest domainLog clientId store
+        let verbose = args.Contains(Verbose)
+        let domainLog = domainLog verbose
+        let runSingleTest clientId =
+            if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
+            runFavoriteTest domainLog clientId store
         log.Information(
-            "Running for {duration}, targeting {host} using heartbeat: {heartbeat}, skipReconnect: {skipReconnect}, with {tps} hits/s with a timeout of {timeout} and {retries} retries\n" +
+            "Running for {duration}, targeting {host} using heartbeat: {heartbeat}, customReconnect: {customReconnect}, with {tps} hits/s with a timeout of {timeout} and {retries} retries\n" +
             "max errors: {errorCutOff} reporting intervals: {ri}, report file: {report}",
-            ([| duration; host; heartbeatTimeout; skipReconnect; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
+            ([| duration; host; heartbeatTimeout; customReconnect; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
         let results = run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
         let resultFile = createResultLog report
         for r in results do

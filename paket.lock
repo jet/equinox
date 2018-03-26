@@ -5,7 +5,7 @@ NUGET
       FSharp.Core (>= 4.0.0.1)
     Destructurama.FSharp (1.0.14)
       Serilog (>= 1.4.204)
-    EventStore.Client (4.1)
+    EventStore.Client (3.5.2)
     FsCheck (2.10.8)
       FSharp.Core (>= 4.0.0.1)
     FsCheck.xUnit (2.10.8)

@@ -1,8 +1,8 @@
 source https://api.nuget.org/v3/index.json
 framework: auto-detect
 
-// use int64 indexes so our source can equally compile against `EventStore.Client` and `EventStore.Client.NetCore`
-nuget EventStore.Client >= 4
+# Checking iff <4 is prone ot the problem
+nuget EventStore.Client 3.5.2
 nuget FSharp.Core redirects: force
 nuget FSharp.Control.AsyncSeq
 nuget Newtonsoft.json
