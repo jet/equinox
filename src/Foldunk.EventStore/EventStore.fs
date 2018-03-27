@@ -369,8 +369,10 @@ type Discovery =
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Discovery =
-    let buildDns f =    ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering() |> f |> DnsClusterSettingsBuilder.op_Implicit
-    let buildSeeded f = ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering() |> f |> GossipSeedClusterSettingsBuilder.op_Implicit
+    let buildDns (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
+        ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering() |> f |> fun s -> s.Build()
+    let buildSeeded (f : GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
+        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering() |> f |> fun s -> s.Build()
     let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
@@ -384,15 +386,16 @@ module private Discovery =
         | Discovery.GossipDnsCustomPort (dns, port) ->  DiscoverViaGossip (buildDns     (configureDns dns (Some port)))
 
 type GesConnector
-    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool, ?log : Logger, ?heartbeatTimeout: TimeSpan, ?customReconnect) =
+    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool,
+        ?log : Logger, ?heartbeatTimeout: TimeSpan, ?readRetryPolicy, ?writeRetryPolicy) =
     let connSettings =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
+        .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
         .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
         |> fun s -> if requireMaster then s.PerformOnMasterOnly() else s.PerformOnAnyNode() // default: PerformOnMasterOnly()
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
-        |> fun s -> match customReconnect with Some true -> s.LimitReconnectionsTo(0) | _ -> s.KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
         |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> fun s -> s.Build()
 
@@ -403,7 +406,7 @@ type GesConnector
             | Discovery.DiscoverViaUri uri -> EventStoreConnection.Create(connSettings, uri)
             | Discovery.DiscoverViaGossip clusterSettings -> EventStoreConnection.Create(connSettings, clusterSettings)
         do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
-        return GesConnection(conn) }
+        return GesConnection(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }
 
     /// Yields an IEventStoreConfiguration configured and Connect()ed to the cluster via seeded Gossip with Manager nodes list defined by dnsQuery
     /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-
@@ -416,252 +419,3 @@ type GesConnector
         let validIps = seq { for e in dnsEntries do if e.AddressFamily = System.Net.Sockets.AddressFamily.InterNetwork then yield e }
         let managerEndpoints = let port = defaultArg gossipManagerPort 30778 in [| for a in validIps -> System.Net.IPEndPoint(a, port) |]
         return! Discovery.GossipSeeded managerEndpoints |> this.Connect }
-
-#nowarn "44" // Implementing Obsoleted methods should not moan
-/// EventStore's IEventStoreConnection can go awol if the underlying TCP connection is terminated for any reason
-/// This Simple (not Easy) stack of hacks counterbalances this until I get a full answer resolution into the EventStore Client
-module ConnectionMonitor =
-    /// Asynchronous Lazy<'T> that guarantees `workflow` will be executed at most once
-    type AsyncLazy<'T>(workflow : Async<'T>) =
-        let task = lazy(Async.StartAsTask workflow)
-        member __.IsStarted = task.IsValueCreated
-        member __.ForceAsync() = ignore(task.Force())
-        member __.IsValueCreated =
-            task.IsValueCreated &&
-            let t = task.Value in
-            t.IsCompleted || t.IsFaulted || t.IsCanceled
-
-        member __.AwaitValue() = Async.AwaitTaskCorrect task.Value
-        member __.Value = __.AwaitValue() |> Async.RunSynchronously
-
-    /// Generic async lazy caching implementation that admits expiration/recomputation semantics
-    type CacheCell<'T>(workflow : Async<'T>, isExpired : 'T -> bool) =
-        let mutable currentCell = AsyncLazy workflow
-
-        /// Indicates that cell is populated by a non-expired value
-        member __.IsValueCached =
-            let cell = currentCell
-            cell.IsValueCreated && not (isExpired cell.Value)
-
-        /// Gets or asynchronously recomputes a cached value depending on expiry and availability
-        member __.AwaitValue() = async {
-            let cell = currentCell
-            let! current = cell.AwaitValue()
-            if isExpired current then
-                // avoid unneccessary recomputation in cases where competing threads detect expiry;
-                // the first write attempt wins, and everybody else reads off that value.
-                let _ = System.Threading.Interlocked.CompareExchange(&currentCell, AsyncLazy workflow, cell)
-                return! currentCell.AwaitValue()
-            else
-                return current
-        }
-
-    /// An IEvent proxy which keeps track of handlers and observers so that they can be shifted to a replacement.
-    type private RetargetableEvent<'a> (?initialTarget : IEvent<EventHandler<'a>, 'a>) =
-        let mutable target : IEvent<EventHandler<'a>, 'a> option = initialTarget
-        let handlers = ResizeArray<EventHandler<'a>>()
-
-        /// Redirect any attached handers to a new target
-        /// (the preceding target is considered superseded and aby subscriptions associated with that are removed)
-        member __.Attach(value:IEvent<EventHandler<'a>, 'a>) =
-            match target with None -> () | Some t -> for h in handlers do t.RemoveHandler h
-            target <- Some value
-            for h in handlers do value.AddHandler h
-
-        /// Allow this to be used to exposed as an Event<_,_> can be
-        member this.Publish : IEvent<EventHandler<'a>, 'a> = this :> _
-
-        interface IEvent<EventHandler<'a>, 'a> with
-            // If this needs to be implemented, use www.fssnip.net/2E/title/ObservableSubject
-            member x.Subscribe(_observer:IObserver<'a>) : IDisposable = invalidOp "Not implemented"
-            member x.AddHandler h =
-                handlers.Add h
-                match target with None -> () | Some t -> t.AddHandler h
-            member x.RemoveHandler h =
-                handlers.Remove h |> ignore
-                match target with None -> () | Some t -> t.RemoveHandler h
-
-    /// Decorates a Connection with expiration status info based on the following signals:
-    /// a) Closed event signalling EOL
-    /// b) leading indicators of this via consumers reporting ObjectDisposedExceptions encoutered on transactions
-    type private ConnectionWithDisposalDetection(inner : IEventStoreConnection, ?connectionLogger : ILogger) =
-        let mutable expired = false
-        let disposed = ref 0
-        do inner.Closed.AddHandler(fun _ e ->
-            match connectionLogger with Some log -> log.Warning("EventStore Connection Death detected via Closed event: {event}", e) | None -> ()
-            expired <- true)
-
-        /// Used by consumers to signal that expiry has been detected
-        member __.MarkDisposed() =
-            let first = 0 = System.Threading.Interlocked.Exchange(disposed,1)
-            if first then expired <- true
-            first
-
-        /// Indicates whether the underlying connection should be considered expired
-        member __.IsExpired = expired
-
-        /// The underlying connection in question
-        member __.UnderlyingConnection = inner
-
-    /// Manages event subscriptions across reconnects
-    type private SwappableConnection() =
-        let authenticationFailed = RetargetableEvent<_>()
-        let errorOccurred = RetargetableEvent<_>()
-        let closed = RetargetableEvent<_>()
-        let connected = RetargetableEvent<_>()
-        let disconnected = RetargetableEvent<_>()
-        let reconnecting = RetargetableEvent<_>()
-
-        // Directs the virtual connection to swap to a new underlying connection which supersedes the last Attached one
-        member __.Attach (value : IEventStoreConnection) =
-            authenticationFailed.Attach value.AuthenticationFailed
-            errorOccurred.Attach value.ErrorOccurred
-            closed.Attach value.Closed
-            connected.Attach value.Connected
-            disconnected.Attach value.Disconnected
-            reconnecting.Attach value.Reconnecting
-
-        // segment of interface IEventStoreConnection with
-        [<CLIEvent>] member __.Connected            = connected.Publish
-        [<CLIEvent>] member __.Disconnected         = disconnected.Publish
-        [<CLIEvent>] member __.Reconnecting         = reconnecting.Publish
-        [<CLIEvent>] member __.Closed               = closed.Publish
-        [<CLIEvent>] member __.ErrorOccurred        = errorOccurred.Publish
-        [<CLIEvent>] member __.AuthenticationFailed = authenticationFailed.Publish
-
-    let rec private exnIsIndicativeOfConnectionDeath (ex : exn) =
-        match ex with
-        | null -> false
-        | :? ObjectDisposedException -> true
-        | :? EventStore.ClientAPI.Exceptions.ConnectionClosedException -> true
-        | :? AggregateException as ex -> ex.InnerExceptions |> Seq.exists exnIsIndicativeOfConnectionDeath
-        | ex -> exnIsIndicativeOfConnectionDeath ex.InnerException
-
-    type private ConnectionMonitoringCell(connect : Async<IEventStoreConnection>, ?connectionLogger : ILogger) =
-        let state = SwappableConnection()
-        let activeConn : CacheCell<ConnectionWithDisposalDetection> =
-            let connect = async {
-                match connectionLogger with
-                | None -> ()
-                | Some log -> log.Warning("Connecting to ES")
-                let! conn = connect
-                state.Attach conn
-                match connectionLogger with
-                | None -> ()
-                | Some log -> log.Information("Connected")
-                return ConnectionWithDisposalDetection(conn, ?connectionLogger = connectionLogger) }
-            CacheCell(connect, fun conn -> conn.IsExpired)
-
-        /// Handle execution of an action against a underlying connection that has been validated as being Connected
-        member __.Transact<'T>(execute : IEventStoreConnection -> Async<'T>) : Async<'T> = async {
-            let! conn = activeConn.AwaitValue ()
-            try
-                let! res = execute conn.UnderlyingConnection
-                return res
-            with ex when exnIsIndicativeOfConnectionDeath ex ->
-                if conn.MarkDisposed() then
-                    match connectionLogger with
-                    | None -> ()
-                    | Some log -> log.Warning(ex, "EventStore Connection Death detected via ObjectDisposedException")
-
-                // Signal we intercepted the exception, but reraise in order to allow an external retry loop (if any) kick in
-                // See https://stackoverflow.com/questions/41193629/how-to-keep-the-stacktrace-when-rethrowing-an-exception-out-of-catch-context
-                return raise (exn("Connection died", ex)) }
-
-        /// Handle subscription etc. against the virtual entity
-        member __.ConnectionManagement = state
-
-    open EventStore.ClientAPI.SystemData
-    open System.Threading.Tasks
-    type Task with
-        static member ToGenericWithUnit (t: Task) =
-            let unitFunc = Func<Task, unit>(ignore)
-            t.ContinueWith unitFunc
-
-    type EventStoreConnectionCorrect(connect : Async<IEventStoreConnection>, ?connectionLogger : ILogger) =
-        let inner = ConnectionMonitoringCell(connect, ?connectionLogger = connectionLogger)
-
-        let notImplemented () = NotImplementedException() |> raise
-        member private __.Call<'T>(f : IEventStoreConnection -> Task<'T>) : Task<'T> =
-            inner.Transact<'T>(fun conn -> f conn |> Async.AwaitTaskCorrect) |> Async.StartAsTask
-        member private __.CallAsync(f : IEventStoreConnection -> Task) : Task =
-            inner.Transact<unit>(fun conn -> f conn |> Task.ToGenericWithUnit |> Async.AwaitTaskCorrect) |> Async.StartAsTask :> _
-        member private __.Get<'T>(f : IEventStoreConnection -> 'T) : 'T =
-            inner.Transact<'T>(fun conn -> async { return f conn }) |> Async.RunSynchronously
-
-        interface IEventStoreConnection with
-            member __.Close() = notImplemented ()
-            member __.Dispose() = notImplemented()
-
-            [<CLIEvent>] member __.AuthenticationFailed = inner.ConnectionManagement.AuthenticationFailed
-            [<CLIEvent>] member __.Closed = inner.ConnectionManagement.Closed
-            [<CLIEvent>] member __.Connected = inner.ConnectionManagement.Connected
-            [<CLIEvent>] member __.Disconnected = inner.ConnectionManagement.Disconnected
-            [<CLIEvent>] member __.ErrorOccurred = inner.ConnectionManagement.ErrorOccurred
-            [<CLIEvent>] member __.Reconnecting = inner.ConnectionManagement.Reconnecting
-
-            member __.AppendToStreamAsync(stream: string, expectedVersion: int64, events: EventData []): Task<WriteResult> =
-                __.Call(fun c -> c.AppendToStreamAsync(stream,expectedVersion,events))
-            member __.AppendToStreamAsync(stream: string, expectedVersion: int64, userCredentials: UserCredentials, events: EventData []): Task<WriteResult> =
-                __.Call(fun c -> c.AppendToStreamAsync(stream,expectedVersion,userCredentials,events))
-            member __.AppendToStreamAsync(stream: string, expectedVersion: int64, events: EventData seq, userCredentials: UserCredentials): Task<WriteResult> =
-                __.Call(fun c -> c.AppendToStreamAsync(stream,expectedVersion,events,userCredentials))
-            member __.ConditionalAppendToStreamAsync(stream, expectedVersion, events, userCredentials) =
-                __.Call(fun c -> c.ConditionalAppendToStreamAsync(stream, expectedVersion, events, userCredentials))
-            member __.ConnectAsync() =
-                __.Call(fun _ -> Task.FromResult(null)) :> _
-            member __.ConnectToPersistentSubscription(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck) =
-                __.Get(fun c -> c.ConnectToPersistentSubscription(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck))
-            member __.ConnectToPersistentSubscriptionAsync(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck) =
-                __.Call(fun c -> c.ConnectToPersistentSubscriptionAsync(stream, groupName, eventAppeared, subscriptionDropped, userCredentials, bufferSize, autoAck))
-            member __.ConnectionName =
-                __.Get(fun c -> c.ConnectionName)
-            member __.ContinueTransaction(transactionId, userCredentials) =
-                __.Get(fun c -> c.ContinueTransaction(transactionId, userCredentials))
-            member __.CreatePersistentSubscriptionAsync(stream, groupName, settings, credentials) =
-                __.CallAsync(fun c -> c.CreatePersistentSubscriptionAsync(stream, groupName, settings, credentials))
-            member __.DeletePersistentSubscriptionAsync(stream, groupName, userCredentials) =
-                __.CallAsync(fun c -> c.DeletePersistentSubscriptionAsync(stream, groupName, userCredentials))
-            member __.DeleteStreamAsync(stream: string, expectedVersion: int64, userCredentials: UserCredentials): Task<DeleteResult> =
-                __.Call(fun c -> c.DeleteStreamAsync(stream, expectedVersion, userCredentials))
-            member __.DeleteStreamAsync(stream: string, expectedVersion: int64, hardDelete: bool, userCredentials: UserCredentials): Task<DeleteResult> =
-                __.Call(fun c -> c.DeleteStreamAsync(stream, expectedVersion, hardDelete, userCredentials))
-            member __.GetStreamMetadataAsRawBytesAsync(stream, userCredentials) =
-                __.Call(fun c -> c.GetStreamMetadataAsRawBytesAsync(stream, userCredentials))
-            member __.GetStreamMetadataAsync(stream, userCredentials) =
-                __.Call(fun c -> c.GetStreamMetadataAsync(stream, userCredentials))
-            member __.ReadAllEventsBackwardAsync(position, maxCount, resolveLinkTos, userCredentials) =
-                __.Call(fun c -> c.ReadAllEventsBackwardAsync(position, maxCount, resolveLinkTos, userCredentials))
-            member __.ReadAllEventsForwardAsync(position, maxCount, resolveLinkTos, userCredentials) =
-                __.Call(fun c -> c.ReadAllEventsForwardAsync(position, maxCount, resolveLinkTos, userCredentials))
-            member __.ReadEventAsync(stream, eventNumber, resolveLinkTos, userCredentials) =
-                __.Call(fun c -> c.ReadEventAsync(stream, eventNumber, resolveLinkTos, userCredentials))
-            member __.ReadStreamEventsBackwardAsync(stream, start, count, resolveLinkTos, userCredentials) =
-                __.Call(fun c -> c.ReadStreamEventsBackwardAsync(stream, start, count, resolveLinkTos, userCredentials))
-            member __.ReadStreamEventsForwardAsync(stream, start, count, resolveLinkTos, userCredentials) =
-                __.Call(fun c -> c.ReadStreamEventsForwardAsync(stream, start, count, resolveLinkTos, userCredentials))
-            member __.SetStreamMetadataAsync(stream: string, expectedMetastreamVersion: int64, metadata: StreamMetadata, userCredentials: UserCredentials): Task<WriteResult> =
-                __.Call(fun c -> c.SetStreamMetadataAsync(stream, expectedMetastreamVersion, metadata, userCredentials))
-            member __.SetStreamMetadataAsync(stream: string, expectedMetastreamVersion: int64, metadata: byte [], userCredentials: UserCredentials): Task<WriteResult> =
-                __.Call(fun c -> c.SetStreamMetadataAsync(stream, expectedMetastreamVersion, metadata, userCredentials))
-            member __.SetSystemSettingsAsync(settings, userCredentials) =
-                __.CallAsync(fun c -> c.SetSystemSettingsAsync(settings, userCredentials))
-            member __.Settings =
-                __.Get(fun c -> c.Settings)
-            member __.StartTransactionAsync(stream, expectedVersion, userCredentials) =
-                __.Call(fun c -> c.StartTransactionAsync(stream, expectedVersion, userCredentials))
-            member __.SubscribeToAllAsync(resolveLinkTos, eventAppeared, subscriptionDropped, userCredentials) =
-                __.Call(fun c -> c.SubscribeToAllAsync(resolveLinkTos, eventAppeared, subscriptionDropped, userCredentials))
-            member __.SubscribeToAllFrom(lastCheckpoint: Nullable<Position>, resolveLinkTos: bool, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials, readBatchSize: int, subscriptionName: string): EventStoreAllCatchUpSubscription =
-                __.Get(fun c -> c.SubscribeToAllFrom(lastCheckpoint, resolveLinkTos, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials, readBatchSize, subscriptionName))
-            member __.SubscribeToAllFrom(lastCheckpoint: Nullable<Position>, settings: CatchUpSubscriptionSettings, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials): EventStoreAllCatchUpSubscription =
-                __.Get(fun c -> c.SubscribeToAllFrom(lastCheckpoint, settings, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials))
-            member __.SubscribeToStreamAsync(stream, resolveLinkTos, eventAppeared, subscriptionDropped, userCredentials) =
-                __.Call(fun c -> c.SubscribeToStreamAsync(stream, resolveLinkTos, eventAppeared, subscriptionDropped, userCredentials))
-            member __.SubscribeToStreamFrom(stream: string, lastCheckpoint: Nullable<int64>, resolveLinkTos: bool, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials, readBatchSize: int, subscriptionName: string): EventStoreStreamCatchUpSubscription =
-
-                __.Get(fun c -> c.SubscribeToStreamFrom(stream, lastCheckpoint, resolveLinkTos, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials, readBatchSize, subscriptionName): EventStoreStreamCatchUpSubscription)
-            member __.SubscribeToStreamFrom(stream: string, lastCheckpoint: Nullable<int64>, settings: CatchUpSubscriptionSettings, eventAppeared: Func<EventStoreCatchUpSubscription,ResolvedEvent,Task>, liveProcessingStarted: Action<EventStoreCatchUpSubscription>, subscriptionDropped: Action<EventStoreCatchUpSubscription,SubscriptionDropReason,exn>, userCredentials: UserCredentials): EventStoreStreamCatchUpSubscription =
-                __.Get(fun c -> c.SubscribeToStreamFrom(stream, lastCheckpoint, settings, eventAppeared, liveProcessingStarted, subscriptionDropped, userCredentials))
-            member __.UpdatePersistentSubscriptionAsync(stream, groupName, settings, credentials) =
-                __.CallAsync(fun c -> c.UpdatePersistentSubscriptionAsync(stream, groupName, settings, credentials))

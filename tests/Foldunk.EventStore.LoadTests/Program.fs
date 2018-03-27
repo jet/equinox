@@ -27,7 +27,6 @@ type Arguments =
     | [<AltCommandLine("-h")>] HeartbeatTimeout of float
     | [<AltCommandLine("-o")>] Timeout of float
     | [<AltCommandLine("-r")>] Retries of int
-    | [<AltCommandLine("-c")>] CustomReconnect
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Host _ -> "specify a DNS query, using Gossip-driven discovery against all A records returned (default: localhost)."
@@ -42,7 +41,6 @@ type Arguments =
             | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 1.5)."
             | Timeout _ -> "specify operation timeout in seconds (default: 5)."
             | Retries _ -> "specify operation retries (default: 1)."
-            | CustomReconnect -> "Use custom reconnect strategy."
 
 let run log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
     let mutable idx = -1L
@@ -55,16 +53,9 @@ let run log testsPerSecond duration errorCutoff reportingIntervals (clients : Cl
 /// To establish a local node to run the tests against:
 /// PS> cinst eventstore-oss -y
 /// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-let connectToEventStoreNode log (dnsQuery, heartbeatTimeout, customReconnect) (username, password) (operationTimeout, operationRetries) = async {
-    let connector = GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries, requireMaster=false, heartbeatTimeout=heartbeatTimeout, log=Logger.SerilogVerbose log, customReconnect = customReconnect)
-    let runQuery = connector.ConnectViaGossipAsync dnsQuery
-    if not customReconnect then return! runQuery else
-
-    let connect = async {
-        let! gesConn =runQuery
-        return gesConn.Connection }
-    let monitoredConnection = new ConnectionMonitor.EventStoreConnectionCorrect(connect, log)
-    return new GesConnection(monitoredConnection) }
+let connectToEventStoreNode log (dnsQuery, heartbeatTimeout) (username, password) (operationTimeout, operationRetries) =
+    let connector = GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries, requireMaster=false, heartbeatTimeout=heartbeatTimeout, log=Logger.SerilogVerbose log)
+    connector.ConnectViaGossipAsync dnsQuery
 
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
@@ -121,8 +112,7 @@ let main argv =
         let (timeout, retries) as operationThrottling = args.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds,args.GetResult(Retries,1)
         let heartbeatTimeout = args.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
         let report = args.GetResult(LogFile,"log.txt") |> fun n -> FileInfo(n).FullName
-        let customReconnect = args.Contains(CustomReconnect)
-        let store = connectToEventStoreNode log (host, heartbeatTimeout, customReconnect) creds operationThrottling |> Async.RunSynchronously
+        let store = connectToEventStoreNode log (host, heartbeatTimeout) creds operationThrottling |> Async.RunSynchronously
 
         let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
         let verbose = args.Contains(Verbose)
@@ -131,11 +121,10 @@ let main argv =
             if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
             runFavoriteTest domainLog clientId store
         log.Information(
-            "Running for {duration}, targeting {host} Connection heartbeat: {heartbeat}\n" +
-            "Custom reconnect: {customReconnect}\n" +
-            "Test freq {tps} hits/s; Operation timeout: {timeout} and {retries} retries\n" +
-            "max errors: {errorCutOff} reporting intervals: {ri}, report file: {report}",
-            ([| duration; host; heartbeatTimeout; customReconnect; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
+            "Running for {duration}, targeting {host} Connection with heartbeat: {heartbeat}\n" +
+            "Test freq {tps} hits/s; Operation timeout: {timeout} and {retries} retries; max errors: {errorCutOff}\n" +
+            "Reporting intervals: {ri}, report file: {report}",
+            ([| duration; host; heartbeatTimeout; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
         let results = run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
         let resultFile = createResultLog report
         for r in results do
