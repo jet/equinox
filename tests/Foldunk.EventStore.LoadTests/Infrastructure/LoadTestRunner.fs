@@ -17,7 +17,7 @@ open System.Collections.Concurrent
 
 module private LocalLoadTestImpl =
 
-    do System.Threading.ThreadPool.SetMinThreads(512,512) |> ignore
+    do if not <| System.Threading.ThreadPool.SetMinThreads(768, 768) then exit 1
 
     /// asynchronously executes action after supplied delay
     let delay : TimeSpan -> (unit -> unit) -> unit =

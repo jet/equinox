@@ -20,6 +20,7 @@ type Arguments =
     | [<AltCommandLine("-v")>] Verbose
 
     | [<AltCommandLine("-f")>] TestsPerSecond of int
+    | [<AltCommandLine("-c")>] ConcurrentOperationsLimit of int
     | [<AltCommandLine("-d")>] DurationM of float
     | [<AltCommandLine("-e")>] ErrorCutoff of int64
     | [<AltCommandLine("-i")>] ReportIntervalS of int
@@ -35,6 +36,7 @@ type Arguments =
             | LogFile _ -> "specify a log file to write the result breakdown."
             | Verbose -> "Include low level logging in screen output."
             | TestsPerSecond _ -> "specify a target number of requests per second (default: 1000)."
+            | ConcurrentOperationsLimit _ -> "max concurrent operations in flight (default: 5000)."
             | DurationM _ -> "specify a run duration in minutes (default: 1)."
             | ErrorCutoff _ -> "specify an error cutoff (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
@@ -53,8 +55,8 @@ let run log testsPerSecond duration errorCutoff reportingIntervals (clients : Cl
 /// To establish a local node to run the tests against:
 /// PS> cinst eventstore-oss -y
 /// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-let connectToEventStoreNode log (dnsQuery, heartbeatTimeout) (username, password) (operationTimeout, operationRetries) =
-    let connector = GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries, requireMaster=false, heartbeatTimeout=heartbeatTimeout, log=Logger.SerilogVerbose log)
+let connectToEventStoreNode log (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
+    let connector = GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries, requireMaster=false, heartbeatTimeout=heartbeatTimeout, log=Logger.SerilogVerbose log, concurrentOperationsLimit = col)
     connector.ConnectViaGossipAsync dnsQuery
 
 let defaultBatchSize = 500
@@ -75,8 +77,9 @@ let runFavoriteTest log _clientId store = async {
     // Load test runner does not guarantee no overlapping work on a session so cannot use clientId for now
     let clientId = Guid.NewGuid() |> ClientId
     let sku = Guid.NewGuid() |> SkuId
-    let! _ = service.Read log clientId
-    do! service.Execute log clientId (Favorites.Command.Favorite(DateTimeOffset.Now, [sku])) }
+    do! service.Execute log clientId (Favorites.Command.Favorite(DateTimeOffset.Now, [sku]))
+    let! items = service.Read log clientId
+    if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
 
 let log =
     LoggerConfiguration()
@@ -111,8 +114,9 @@ let main argv =
         let creds = args.GetResult(Username,"admin"), args.GetResult(Password,"changeit")
         let (timeout, retries) as operationThrottling = args.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds,args.GetResult(Retries,1)
         let heartbeatTimeout = args.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
+        let concurrentOperationsLimit = args.GetResult(ConcurrentOperationsLimit,5000)
         let report = args.GetResult(LogFile,"log.txt") |> fun n -> FileInfo(n).FullName
-        let store = connectToEventStoreNode log (host, heartbeatTimeout) creds operationThrottling |> Async.RunSynchronously
+        let store = connectToEventStoreNode log (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
 
         let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
         let verbose = args.Contains(Verbose)
@@ -121,10 +125,10 @@ let main argv =
             if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
             runFavoriteTest domainLog clientId store
         log.Information(
-            "Running for {duration}, targeting {host} Connection with heartbeat: {heartbeat}\n" +
+            "Running for {duration}, targeting {host} with heartbeat: {heartbeat}, max concurrent requests: {concurrency}\n" +
             "Test freq {tps} hits/s; Operation timeout: {timeout} and {retries} retries; max errors: {errorCutOff}\n" +
             "Reporting intervals: {ri}, report file: {report}",
-            ([| duration; host; heartbeatTimeout; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
+            ([| duration; host; heartbeatTimeout; concurrentOperationsLimit; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
         let results = run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
         let resultFile = createResultLog report
         for r in results do
