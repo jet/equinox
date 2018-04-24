@@ -24,9 +24,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` clientId command = Async.RunSynchronously <| async {
-        let log = createLog ()
-        let! conn = connectToLocalEventStoreNode log
-        let service = createServiceGes conn
+        let store = createMemoryStore ()
+        let log, service = createLog (), createServiceMem store
 
         do! service.Execute log clientId command
         let! items = service.Read log clientId
