@@ -11,7 +11,7 @@ open System
 /// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 /// (NB for this specific suite only, omitting the arguments will also work as the Gossip-related ports are not relevant, but other tests would fail)
 let connectToLocalEventStoreNode log =
-    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 1., reqRetries=3, requireMaster=true, log=Logger.SerilogVerbose log)
+    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, requireMaster=true, log=Logger.SerilogVerbose log)
         .Connect(Discovery.Uri(Uri "tcp://localhost:1113"))
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
