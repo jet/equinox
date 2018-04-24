@@ -2,17 +2,23 @@ source https://api.nuget.org/v3/index.json
 framework: auto-detect
 
 // use int64 indexes so our source can equally compile against `EventStore.Client` and `EventStore.Client.NetCore`
-nuget EventStore.Client >= 4
+nuget EventStore.Client >= 4 prerelease // Prerelease as we use 4.1.1 APIs such as KeepDiscovering and SetQueueTimeoutTo
 nuget FSharp.Core redirects: force
 nuget FSharp.Control.AsyncSeq
 nuget Newtonsoft.json
 nuget Serilog
 nuget Serilog.Sinks.Observable
+nuget System.Reactive
 nuget TypeShape
 
 # Single group to avoid conflicts
 //group test
+	nuget Argu
+	nuget Destructurama.FSharp
 	nuget FsCheck.xUnit
+	nuget MathNet.Numerics
+	nuget Serilog.Sinks.Console
+	nuget Serilog.Sinks.File
 	nuget Unquote
 	nuget xunit.core redirects: force
 	nuget xunit.runner.visualstudio

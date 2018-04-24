@@ -10,7 +10,7 @@ open System
 ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0  --ext-http-port=30778
 /// (the normal external port also hosts the server metadata endpoint; with above, can see gossip info by going to http://127.0.0.1:30778/gossip)
 let connectToLocalEventStoreNode log =
-    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 1., reqRetries=3, requireMaster=true, log=Logger.SerilogVerbose log)
+    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, requireMaster=true, log=Logger.SerilogVerbose log)
         .Connect(Discovery.GossipDns "localhost")
         // or equivalent: .ConnectViaGossipAsync("localhost")
 let defaultBatchSize = 500

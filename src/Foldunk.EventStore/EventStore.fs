@@ -369,8 +369,10 @@ type Discovery =
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Discovery =
-    let buildDns f =    ClusterSettings.Create().DiscoverClusterViaDns() |> f |> DnsClusterSettingsBuilder.op_Implicit
-    let buildSeeded f = ClusterSettings.Create().DiscoverClusterViaGossipSeeds() |> f |> GossipSeedClusterSettingsBuilder.op_Implicit
+    let buildDns (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
+        ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering() |> f |> fun s -> s.Build()
+    let buildSeeded (f : GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
+        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering() |> f |> fun s -> s.Build()
     let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
@@ -384,17 +386,20 @@ module private Discovery =
         | Discovery.GossipDnsCustomPort (dns, port) ->  DiscoverViaGossip (buildDns     (configureDns dns (Some port)))
 
 type GesConnector
-    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool, ?log : Logger, ?heartbeatTimeout: TimeSpan) =
+    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool,
+        ?log : Logger, ?heartbeatTimeout: TimeSpan, ?readRetryPolicy, ?writeRetryPolicy, ?concurrentOperationsLimit) =
     let connSettings =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
+        .SetQueueTimeoutTo(reqTimeout) // ES default: Zero/unlimited
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
         .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
+        |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> if requireMaster then s.PerformOnMasterOnly() else s.PerformOnAnyNode() // default: PerformOnMasterOnly()
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
         |> fun s -> match log with Some log -> log.Configure s | None -> s
-        |> ConnectionSettingsBuilder.op_Implicit
+        |> fun s -> s.Build()
 
     /// Yields an IEventStoreConfiguration configured and Connect()ed to a node (or the cluster) per the requested `discovery` strategy
     member __.Connect (discovery : Discovery) : Async<GesConnection> = async {
@@ -403,7 +408,7 @@ type GesConnector
             | Discovery.DiscoverViaUri uri -> EventStoreConnection.Create(connSettings, uri)
             | Discovery.DiscoverViaGossip clusterSettings -> EventStoreConnection.Create(connSettings, clusterSettings)
         do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
-        return GesConnection(conn) }
+        return GesConnection(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }
 
     /// Yields an IEventStoreConfiguration configured and Connect()ed to the cluster via seeded Gossip with Manager nodes list defined by dnsQuery
     /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-
