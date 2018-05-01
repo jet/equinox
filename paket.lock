@@ -35,7 +35,7 @@ NUGET
       System.Reactive.Linq (>= 3.1.1)
     System.Reactive.Windows.Threading (3.1.1)
       System.Reactive.Core (>= 3.1.1)
-    TypeShape (4.0)
+    TypeShape (5.1)
       FSharp.Core (>= 3.1.2)
     Unquote (4.0)
     xunit.abstractions (2.0.1) - redirects: force

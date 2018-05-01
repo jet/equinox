@@ -16,7 +16,7 @@ let settings =
     instance.Converters.Add(Foldunk.Serialization.Converters.UnionConverter())
     instance
 
-let genCodec<'T> = Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<'T> settings
+let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> settings
 
 type EventWithId = { id : CartId }
 type EventWithOption = { age : int option }

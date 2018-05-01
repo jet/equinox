@@ -181,14 +181,14 @@ module private Read =
         log |> logBatchRead direction streamName t events batchSize version
         return version, events }
 
-module EventSumAdapters =
-    let private encodedEventOfResolvedEvent (x : ResolvedEvent) : EventSum.EncodedEvent<byte[]> =
-        { EventType = x.Event.EventType; Payload = x.Event.Data }
-    let private eventDataOfEncodedEvent (x : EventSum.EncodedEvent<byte[]>) =
-        EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Payload, [||])
-    let encodeEvents (codec : EventSum.IEventSumEncoder<'event, byte[]>) (xs : 'event seq) : EventData[] =
+module UnionEncoderAdapters =
+    let private encodedEventOfResolvedEvent (x : ResolvedEvent) : UnionEncoder.EncodedUnion<byte[]> =
+        { CaseName = x.Event.EventType; Payload = x.Event.Data }
+    let private eventDataOfEncodedEvent (x : UnionEncoder.EncodedUnion<byte[]>) =
+        EventData(Guid.NewGuid(), x.CaseName, (*isJson*) true, x.Payload, [||])
+    let encodeEvents (codec : UnionEncoder.IUnionEncoder<'event, byte[]>) (xs : 'event seq) : EventData[] =
         xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
-    let decodeKnownEvents (codec : EventSum.IEventSumEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
+    let decodeKnownEvents (codec : UnionEncoder.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
         xs |> Seq.map encodedEventOfResolvedEvent |> Seq.choose codec.TryDecode
 
 type Token = { streamVersion: int64; compactionEventNumber: int64 option }
@@ -283,7 +283,7 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamVersion compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
 
-type GesCategory<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSumEncoder<'event, byte[]>, ?compactionStrategy) =
+type GesCategory<'event, 'state>(gateway : GesGateway, codec : UnionEncoder.IUnionEncoder<'event, byte[]>, ?compactionStrategy) =
     let loadAlgorithm load streamName initial log =
         let batched = load initial (gateway.LoadBatched streamName log None)
         let compacted predicate = load initial (gateway.LoadBackwardsStoppingAtCompactionEvent streamName log predicate)
@@ -292,13 +292,13 @@ type GesCategory<'event, 'state>(gateway : GesGateway, codec : EventSum.IEventSu
         | None -> batched
     let load (fold: 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
-        return token, fold initial (EventSumAdapters.decodeKnownEvents codec events) }
+        return token, fold initial (UnionEncoderAdapters.decodeKnownEvents codec events) }
     member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
         loadAlgorithm (load fold) streamName initial log
     member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) (streamName : string) token (log : ILogger) : Async<Storage.StreamToken * 'state> =
         (load fold) state (gateway.LoadFromToken streamName log token compactionStrategy)
     member __.TrySync (fold: 'state -> 'event seq -> 'state) streamName (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
-        let encodedEvents : EventData[] = EventSumAdapters.encodeEvents codec (Seq.ofList events)
+        let encodedEvents : EventData[] = UnionEncoderAdapters.encodeEvents codec (Seq.ofList events)
         let! syncRes = gateway.TrySync streamName log token encodedEvents compactionStrategy
         match syncRes with
         | GatewaySyncResult.Conflict ->         return Storage.SyncResult.Conflict  (load fold state (gateway.LoadFromToken streamName log token compactionStrategy))

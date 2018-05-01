@@ -24,10 +24,10 @@ Elements
 
 Features
 --------
-- Does not emit any specific logs, but is sufficiently instrumented (using [Serilog](github.com/serilog/serilog) to allow one to adapt it to ones application (we feed log info to NLog and onwards to Splunk atm and feed the metrics embedded therein to prometheus; see relevant tests for examples)
-- _`EventSum` encoding_: a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
+- Does not emit any specific logs, but is sufficiently instrumented (using [Serilog](github.com/serilog/serilog) to allow one to adapt it to ones hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
+- Uses `UnionEncoder`: a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
 	- independent of any specific serializer
-	- allows tagging of Discriminated Union cases with `eventType` tags in a versionable manner using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`EventSum`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/EventSumTests.fs)
+	- allows tagging of Discriminated Union cases with low-dependency `DataMember(Name=` tags in a versionable manner using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionEncoderTests.fs)
 - _Compaction_: A pattern employed to optimize command processing by employing in-stream 'snapshot' events with the following properties:
-	- no additional roundtrips to the store at either the Load or Sync points in the flow to facilitate snapshotting
-	- support (via `EventSum`) for the maintenance of multiple co-existing snapshot schemas in a given stream
+	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
+	- support (via `UnionEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)

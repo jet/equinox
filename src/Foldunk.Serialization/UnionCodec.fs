@@ -1,12 +1,11 @@
-module Foldunk.EventSumCodec
+module Foldunk.UnionCodec
 
 open Newtonsoft.Json
 open TypeShape
 
 /// Newtonsoft.Json implementation of IEncoder that encodes direct to a UTF-8 Buffer
 type JsonUtf8Encoder(settings : JsonSerializerSettings) =
-    interface EventSum.IEncoder<byte[]> with
-        member __.Empty = null
+    interface UnionEncoder.IEncoder<byte[]> with
         member __.Encode (value : 'T) =
             JsonConvert.SerializeObject(value, settings)
             |> System.Text.Encoding.UTF8.GetBytes
@@ -15,5 +14,5 @@ type JsonUtf8Encoder(settings : JsonSerializerSettings) =
             JsonConvert.DeserializeObject<'T>(x, settings)
 
 /// Generates an event sum encoder using Newtonsoft.Json for individual event types that serializes to a UTF-8 array buffer
-let generateJsonUtf8EventSumEncoder<'Union>(settings) =
-    EventSum.generateSumEventEncoder<'Union, _> (new JsonUtf8Encoder(settings))
+let generateJsonUtf8UnionCodec<'Union>(settings) =
+    UnionEncoder.UnionEncoder<'Union>.Create(new JsonUtf8Encoder(settings))

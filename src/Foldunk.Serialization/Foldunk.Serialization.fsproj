@@ -8,12 +8,12 @@
     <ProjectGuid>f5491eb1-d072-4262-8184-2a908e1d6175</ProjectGuid>
     <OutputType>Library</OutputType>
     <RootNamespace>Foldunk.Serialization</RootNamespace>
-    <AssemblyName>Foldunk.EventSum</AssemblyName>
+    <AssemblyName>Foldunk.Serialization</AssemblyName>
     <UseStandardResourceNames>true</UseStandardResourceNames>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <TargetFSharpCoreVersion>4.4.0.0</TargetFSharpCoreVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <Name>Foldunk.EventSum</Name>
+    <Name>Foldunk.Serialization</Name>
     <TargetFrameworkProfile />
     <WarningLevel>5</WarningLevel>
     <DocumentationFile>bin\$(Configuration)\$(AssemblyName).XML</DocumentationFile>
@@ -27,14 +27,14 @@
     <Optimize>false</Optimize>
     <Tailcalls>false</Tailcalls>
     <OutputPath>bin\$(Configuration)\</OutputPath>
-    <DefineConstants>TRACE;DEBUG;TYPESHAPE_DISABLE_BIGINT</DefineConstants>
+    <DefineConstants>TRACE;DEBUG</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <Tailcalls>true</Tailcalls>
     <OutputPath>bin\$(Configuration)\</OutputPath>
-    <DefineConstants>TRACE;TYPESHAPE_DISABLE_BIGINT</DefineConstants>
+    <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
@@ -55,7 +55,7 @@
   <ItemGroup>
     <None Include="paket.references" />
     <Compile Include="Serialization.fs" />
-    <Compile Include="EventSumCodec.fs" />
+    <Compile Include="UnionCodec.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
@@ -94,12 +94,12 @@
     <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.6.1')">
       <ItemGroup>
         <Reference Include="TypeShape">
-          <HintPath>..\..\packages\TypeShape\lib\net40\TypeShape.dll</HintPath>
+          <HintPath>..\..\packages\TypeShape\lib\net45\TypeShape.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>
         <Reference Include="TypeShape.CSharp">
-          <HintPath>..\..\packages\TypeShape\lib\net40\TypeShape.CSharp.dll</HintPath>
+          <HintPath>..\..\packages\TypeShape\lib\net45\TypeShape.CSharp.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>
