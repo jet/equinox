@@ -113,7 +113,7 @@
     <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.6.1')">
       <ItemGroup>
         <Reference Include="FsCheck.Xunit">
-          <HintPath>..\..\packages\FsCheck.xUnit\lib\net452\FsCheck.Xunit.dll</HintPath>
+          <HintPath>..\..\packages\FsCheck.Xunit\lib\net452\FsCheck.Xunit.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>

@@ -53,14 +53,15 @@ let run log testsPerSecond duration errorCutoff reportingIntervals (clients : Cl
     Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
 
 /// To establish a local node to run the tests against:
-/// PS> cinst eventstore-oss -y
-/// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 let connectToEventStoreNode log (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
-    let connector = GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries, requireMaster=false, heartbeatTimeout=heartbeatTimeout, log=Logger.SerilogVerbose log, concurrentOperationsLimit = col)
-    connector.ConnectViaGossipAsync dnsQuery
+    GesConnector(username, password, requireMaster=false, reqTimeout=operationTimeout, reqRetries=operationRetries,
+            heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col, log=Logger.SerilogVerbose log)
+        .Connect(Discovery.GossipDns dnsQuery)
 
 let defaultBatchSize = 500
-let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
+let createGesGateway connection batchSize = GesGateway(GesConnection(connection), GesBatchingPolicy(maxBatchSize = batchSize))
 
 let serializationSettings = Foldunk.Serialization.Settings.CreateDefault()
 let genCodec<'T> = Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<'T> serializationSettings
@@ -72,8 +73,8 @@ let createServiceGes eventStoreConnection =
     let gateway = createGesGateway eventStoreConnection defaultBatchSize
     Backend.Favorites.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)
 
-let runFavoriteTest log _clientId store = async {
-    let service = createServiceGes store
+let runFavoriteTest log _clientId conn = async {
+    let service = createServiceGes conn
     // Load test runner does not guarantee no overlapping work on a session so cannot use clientId for now
     let clientId = Guid.NewGuid() |> ClientId
     let sku = Guid.NewGuid() |> SkuId
@@ -116,14 +117,14 @@ let main argv =
         let heartbeatTimeout = args.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
         let concurrentOperationsLimit = args.GetResult(ConcurrentOperationsLimit,5000)
         let report = args.GetResult(LogFile,"log.txt") |> fun n -> FileInfo(n).FullName
-        let store = connectToEventStoreNode log (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
+        let conn = connectToEventStoreNode log (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
 
         let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
         let verbose = args.Contains(Verbose)
         let domainLog = domainLog verbose
         let runSingleTest clientId =
             if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
-            runFavoriteTest domainLog clientId store
+            runFavoriteTest domainLog clientId conn
         log.Information(
             "Running for {duration}, targeting {host} with heartbeat: {heartbeat}, max concurrent requests: {concurrency}\n" +
             "Test freq {tps} hits/s; Operation timeout: {timeout} and {retries} retries; max errors: {errorCutOff}\n" +

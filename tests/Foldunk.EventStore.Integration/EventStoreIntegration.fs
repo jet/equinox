@@ -5,16 +5,16 @@ open Swensen.Unquote
 open System.Threading
 open System
 
-/// Connect direcly to a locally running EventStore Node (with no Gossip yak shaving in the mix)
+/// Connect directly to a locally running EventStore Node without using Gossip-driven discovery
 /// To establish a local node to run the tests against:
-/// PS> cinst eventstore-oss -y
-/// PS> & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-/// (NB for this specific suite only, omitting the arguments will also work as the Gossip-related ports are not relevant, but other tests would fail)
+///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+/// (For this specific suite only, omitting the args will also work as the Gossip-related ports are irrelevant, but other tests would fail)
 let connectToLocalEventStoreNode log =
-    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, requireMaster=true, log=Logger.SerilogVerbose log)
+    GesConnector("admin", "changeit", requireMaster=true, reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log)
         .Connect(Discovery.Uri(Uri "tcp://localhost:1113"))
 let defaultBatchSize = 500
-let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
+let createGesGateway connection batchSize = GesGateway(GesConnection(connection), GesBatchingPolicy(maxBatchSize = batchSize))
 
 let serializationSettings = Foldunk.Serialization.Settings.CreateDefault()
 let genCodec<'T> = Foldunk.EventSumCodec.generateJsonUtf8EventSumEncoder<'T> serializationSettings

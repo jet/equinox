@@ -386,8 +386,8 @@ module private Discovery =
         | Discovery.GossipDnsCustomPort (dns, port) ->  DiscoverViaGossip (buildDns     (configureDns dns (Some port)))
 
 type GesConnector
-    (   username, password, reqTimeout: TimeSpan, reqRetries: int, requireMaster: bool,
-        ?log : Logger, ?heartbeatTimeout: TimeSpan, ?readRetryPolicy, ?writeRetryPolicy, ?concurrentOperationsLimit) =
+    (   username, password, requireMaster: bool, reqTimeout: TimeSpan, reqRetries: int,
+        ?log : Logger, ?heartbeatTimeout: TimeSpan, ?concurrentOperationsLimit) =
     let connSettings =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
@@ -395,29 +395,17 @@ type GesConnector
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
         .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
-        |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> if requireMaster then s.PerformOnMasterOnly() else s.PerformOnAnyNode() // default: PerformOnMasterOnly()
+        |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
         |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> fun s -> s.Build()
 
-    /// Yields an IEventStoreConfiguration configured and Connect()ed to a node (or the cluster) per the requested `discovery` strategy
-    member __.Connect (discovery : Discovery) : Async<GesConnection> = async {
+    /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` strategy
+    member __.Connect (discovery : Discovery) : Async<IEventStoreConnection> = async {
         let conn =
             match discovery with
             | Discovery.DiscoverViaUri uri -> EventStoreConnection.Create(connSettings, uri)
             | Discovery.DiscoverViaGossip clusterSettings -> EventStoreConnection.Create(connSettings, clusterSettings)
         do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
-        return GesConnection(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }
-
-    /// Yields an IEventStoreConfiguration configured and Connect()ed to the cluster via seeded Gossip with Manager nodes list defined by dnsQuery
-    /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-
-    ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-    ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0
-    ///   3. To simulate a Commercial cluster with Managers on 30778, add `--ext-http-port=30778`
-    /// (the normal external port also hosts the server metadata endpoint; with above, can see gossip info by going to http://127.0.0.1:30778/gossip)
-    member this.ConnectViaGossipAsync(dnsQuery, ?gossipManagerPort) : Async<GesConnection> = async {
-        let! dnsEntries = System.Net.Dns.GetHostAddressesAsync dnsQuery |> Async.AwaitTaskCorrect
-        let validIps = seq { for e in dnsEntries do if e.AddressFamily = System.Net.Sockets.AddressFamily.InterNetwork then yield e }
-        let managerEndpoints = let port = defaultArg gossipManagerPort 30778 in [| for a in validIps -> System.Net.IPEndPoint(a, port) |]
-        return! Discovery.GossipSeeded managerEndpoints |> this.Connect }
+        return conn }
