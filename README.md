@@ -10,10 +10,16 @@ Features
     - Using a versionable convention-based approach using `Typeshape`'s `UnionContractEncoder` under the covers, providing for serializer-agnostic schema evolution with minimal boilerplate
 - Independent of the stored used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
 - Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
-- Compaction support: Command processing and/or snapshot managemnt can by optimized by employing in-stream 'compaction' events in service of the following ends:
+- (Azure CosmosDb-specific, WIP) Snapshotting support: Command processing can by optimized by employing a snapshot document which maintains a) (optionally) a rendition of the folded state b) (optionally) batches of events to fold into the state in a
 	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- support, (via the `UnionCodec`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
-	- compaction events typically do not get deleted in EventStore
+	- when coupled with ther cache, a typical read is a point read with an etag, costing 1 RU
+	- A snapshot isa Document, but not an Event
+	- snapshot events can safely be deleted; they'll get regenerated in the course of normal processing
+	- A given snapshot will typically only contain a single version of the snapshot
+- (Mainly for EventStore) Compaction support: Command processing can by optimized by employing in-stream 'compaction' events in service of the following ends:
+	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
+	- support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
+	- compaction events typically do not get deleted in EventStore, but pruning can make sense in CosmosDb
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and per Storage system.
 
@@ -38,12 +44,24 @@ Please raise GitHub issues for any questions so others can benefit from the disc
 Building
 --------
 ```
+# run, skipping tests that require a Store instance
+./build.ps1 -s
+
+## PROVISIONING COSMOSDB
+# For CosmosDb, ensure Environment variable EquinoxCosmosCreds initialized and configure CosmosDb Collection stored procedure using tool :-
+
+# TODO @dongdong make it so ;P
+$env:EquinoxCosmosCreds=<PLACE YOUR CREDENTIALS HERE>
+dotnet run /benchmarks/Equinox.Bench eqx prepare Favorites -creds $env:EquinoxCosmosCreds
+
+## PROVISIONING EVENTSTORE
+# For EventStore, run a local instance with config as follows:-
+
 # requires admin privilege
 cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
 # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
 & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-# run, including running the tests that assume you've got a local EventStore started as above
+
+# run, including running the tests that assume you've got a local EventStore and initialized Equinox CosmosDb native store accessible via EquinoxCosmosCreds provisioned via `Equinox.Bench prepare Favorites`
 ./build.ps1
-# run, skipping the tests that require a local EventStore instance
-./build.ps1 -s
 ```
