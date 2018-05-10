@@ -3,12 +3,13 @@
 open Argu
 open Domain
 open Infrastructure
+open Equinox.Cosmos
 open Equinox.EventStore
 open Serilog
-open System
-open System.Threading
 open Serilog.Events
+open System
 open System.IO
+open System.Threading
 
 [<NoEquality; NoComparison>]
 type Arguments =
@@ -89,6 +90,15 @@ let connectToEventStoreNode (log: ILogger) (dnsQuery, heartbeatTimeout, col) (us
             tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
         .Establish("Equinox-loadtests", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
+
+/// Create an Equinox is complicated,
+/// To run the test,
+/// Either replace connection below with a real equinox,
+/// Or create a local Equinox using provisioning script
+/// create Equinox with dbName "test" and collectionName "test" to perform test
+let connectToLocalEquinoxNode (uri, key) (dbName, collName) operationTimeout (maxRetyForThrottling, maxRetryWaitTime) =
+    EqxConnector(requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetyForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
+        .Connect(Discovery.UriAndKey((Uri uri), key, dbName, collName))
 
 let defaultBatchSize = 500
 

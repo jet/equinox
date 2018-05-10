@@ -1,22 +1,22 @@
-﻿module Equinox.EventStore.Integration.EventStoreIntegration
+﻿module Equinox.Cosmos.Integration.EquinoxIntegration
 
-open Equinox.EventStore
 open Equinox.Integration.Infrastructure
-open Serilog
+open Equinox.Cosmos
 open Swensen.Unquote
 open System.Threading
 open System
 
-/// Connect directly to a locally running EventStore Node without using Gossip-driven discovery
-/// To establish a local node to run the tests against:
-///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-/// (For this specific suite only, omitting the args will also work as the Gossip-related ports are irrelevant, but other tests would fail)
-let connectToLocalEventStoreNode log =
-    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
-        .Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"),ConnectionStrategy.ClusterSingle NodePreference.Master)
+/// Standing up an Equinox instance is complicated; to run for test purposes either:
+/// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
+/// - Create a local Equinox with dbName "test" and collectionName "test" using  provisioning script
+let connectToLocalEquinoxNode () =
+    EqxConnector(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
+        .Connect(Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==","test","test"))
 let defaultBatchSize = 500
-let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
+let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
+let (|StreamArgs|) gateway =
+    //let databaseId, collectionId = "test", "test"
+    gateway//, databaseId, collectionId
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
@@ -25,27 +25,38 @@ let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
     let codec = genCodec<Domain.Cart.Events.Event>()
-    let createServiceWithoutOptimization log gateway =
-        Backend.Cart.Service(log, fun _compactionEventTypeOption -> GesStreamBuilder(gateway, codec, fold, initial).Create)
-    let createServiceWithCompaction log gateway =
-        let resolveStream compactionEventType = GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType compactionEventType).Create
+    let createServiceWithoutOptimization connection batchSize log =
+        let gateway = createEqxGateway connection batchSize
+        let resolveStream _ignoreCompactionEventTypeOption (args) =
+            EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
         Backend.Cart.Service(log, resolveStream)
-    let createServiceWithCaching log gateway cache =
+    let createServiceWithCompaction connection batchSize log =
+        let gateway = createEqxGateway connection batchSize
+        let resolveStream compactionEventType (args) =
+            EqxStreamBuilder(gateway, codec, fold, initial, compaction=CompactionStrategy.EventType compactionEventType).Create(args)
+        Backend.Cart.Service(log, resolveStream)
+    let createServiceWithCaching connection batchSize log cache =
+        let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, fun _compactionEventType -> GesStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create)
-    let createServiceWithCompactionAndCaching log gateway cache =
+        let resolveStream _ignorecompactionEventType (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create(args)
+        Backend.Cart.Service(log, resolveStream)
+    let createServiceWithCompactionAndCaching connection batchSize log cache =
+        let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet, sliding20m).Create)
+        let resolveStream cet (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet, sliding20m).Create(args)
+        Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
-    let createServiceWithoutOptimization log connection =
-        let gateway = createGesGateway connection defaultBatchSize
-        Backend.ContactPreferences.Service(log, fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)
-    let createService log connection =
-        let resolveStream batchSize compactionPredicate =
-            GesStreamBuilder(createGesGateway connection batchSize, codec, fold, initial, CompactionStrategy.Predicate compactionPredicate).Create
+    let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
+        let gateway = createGateway defaultBatchSize
+        let resolveStream _windowSize _compactionPredicate (StreamArgs args) =
+            EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
+        Backend.ContactPreferences.Service(log, resolveStream)
+    let createService createGateway log =
+        let resolveStream batchSize compactionPredicate (StreamArgs args) =
+            EqxStreamBuilder(createGateway batchSize, codec, fold, initial, CompactionStrategy.Predicate compactionPredicate).Create(args)
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -59,7 +70,7 @@ type Tests(testOutputHelper) =
                 execute <| Domain.Cart.AddItem (context, skuId, i)
                 if not exceptTheLastOne || i <> count then
                     execute <| Domain.Cart.RemoveItem (context, skuId) )
-    let addAndThenRemoveItemsManyTimes context cartId skuId log service count =
+    let addAndThenRemoveItemsManyTimes context cartId skuId service count =
         addAndThenRemoveItems false context cartId skuId service count
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
         addAndThenRemoveItems true context cartId skuId service count
@@ -68,7 +79,6 @@ type Tests(testOutputHelper) =
         let capture = LogCaptureBuffer()
         let logger =
             Serilog.LoggerConfiguration()
-                .WriteTo.Seq("http://localhost:5341")
                 .WriteTo.Sink(testOutput)
                 .WriteTo.Sink(capture)
                 .CreateLogger()
@@ -79,13 +89,12 @@ type Tests(testOutputHelper) =
     let batchForwardAndAppend = singleBatchForward @ [EsAct.Append]
 
     [<AutoData>]
-    let ``Can roundtrip against EventStore, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Equinox, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode log
+        let! conn = connectToLocalEquinoxNode ()
 
         let batchSize = 3
-        let gateway = createGesGateway conn batchSize
-        let service = Cart.createServiceWithoutOptimization log gateway
+        let service = Cart.createServiceWithoutOptimization conn batchSize log
 
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 6
@@ -106,17 +115,16 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2)>]
-    let ``Can roundtrip against EventStore, managing sync conflicts by retrying [without any optimizations]`` ctx initialState = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Equinox, managing sync conflicts by retrying [without any optimizations]`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode log1
+        let! conn = connectToLocalEquinoxNode ()
         // Ensure batching is included at some point in the proceedings
         let batchSize = 3
 
         let context, cartId, (sku11, sku12, sku21, sku22) = ctx
 
         // establish base stream state
-        let gateway = createGesGateway conn batchSize
-        let service1 = Cart.createServiceWithoutOptimization log1 gateway
+        let service1 = Cart.createServiceWithoutOptimization conn batchSize log1
         let! maybeInitialSku =
             let (streamEmpty, skuId) = initialState
             async {
@@ -126,7 +134,7 @@ type Tests(testOutputHelper) =
                     do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service1 addRemoveCount
                     return Some (skuId, addRemoveCount) }
 
-        let act prepare (service : Backend.Cart.Service) log skuId count =
+        let act prepare (service : Backend.Cart.Service) skuId count =
             service.FlowAsync(cartId, prepare = prepare, flow = fun _ctx execute ->
                 execute <| Domain.Cart.AddItem (context, skuId, count))
 
@@ -142,28 +150,27 @@ type Tests(testOutputHelper) =
                 do! w0
                 do! s1
                 do! w2 }
-            do! act prepare service1 log1 sku11 11
+            do! act prepare service1 sku11 11
             // Wait for other side to load; generate conflict
             let prepare = async { do! w3 }
-            do! act prepare service1 log1 sku12 12
+            do! act prepare service1 sku12 12
             // Signal conflict generated
             do! s4 }
         let log2, capture2 = createLoggerWithCapture ()
-        let gateway = createGesGateway conn batchSize
-        let service2 = Cart.createServiceWithoutOptimization log2 gateway
+        let service2 = Cart.createServiceWithoutOptimization conn batchSize log2
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
                 do! s0
                 do! w1 }
-            do! act prepare service2 log2 sku21 21
+            do! act prepare service2 sku21 21
             // Signal conflict is in place
             do! s2
             // Await our conflict
             let prepare = async {
                 do! s3
                 do! w4 }
-            do! act prepare service2 log2 sku22 22 }
+            do! act prepare service2 sku22 22 }
         // Act: Engineer the conflicts and applications, with logging into capture1 and capture2
         do! Async.Parallel [t1; t2] |> Async.Ignore
 
@@ -184,15 +191,14 @@ type Tests(testOutputHelper) =
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
 
     [<AutoData>]
-    let ``Can roundtrip against EventStore, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Equinox, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode log
+        let! conn = connectToLocalEquinoxNode ()
         let batchSize = 10
-        let gateway = createGesGateway conn batchSize
-        let service = Cart.createServiceWithCompaction log gateway
+        let service = Cart.createServiceWithCompaction conn batchSize log
 
         // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service 5
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service 5
         let! _ = service.Read cartId
 
         // ... should see a single read as we are inside the batch threshold
@@ -200,7 +206,7 @@ type Tests(testOutputHelper) =
 
         // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service 1
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 13 events, we should be able to read them with a single call
@@ -210,24 +216,24 @@ type Tests(testOutputHelper) =
 
         // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service 4
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service 4
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 21 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service.Read cartId
         // ... and trigger a second snapshotting (inducing a single additional read + write)
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service 1
         // and reload the 24 events with a single read
         let! _ = service.Read cartId
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
     }
 
     [<AutoData>]
-    let ``Can correctly read and update against EventStore, with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update against Equinox, with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode log
-        let service = ContactPreferences.createService log conn
+        let! conn = connectToLocalEquinoxNode ()
+        let service = ContactPreferences.createService (createEqxGateway conn) log
 
         let (Domain.ContactPreferences.Id email) = id
         // Feed some junk into the stream
@@ -247,17 +253,16 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData>]
-    let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Equinox, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode log
+        let! conn = connectToLocalEquinoxNode ()
         let batchSize = 10
         let cache = Caching.Cache("cart", sizeMb = 50)
-        let gateway = createGesGateway conn batchSize
-        let createServiceCached () = Cart.createServiceWithCaching log gateway cache
+        let createServiceCached () = Cart.createServiceWithCaching conn batchSize log cache
         let service1, service2 = createServiceCached (), createServiceCached ()
 
         // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 5
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 
         // ... should see a single read as we are writes are cached
@@ -265,7 +270,7 @@ type Tests(testOutputHelper) =
 
         // Add two more - the roundtrip should only incur a single read
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
 
         // While we now have 12 events, we should be able to read them with a single call
@@ -275,18 +280,16 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData>]
-    let ``Can combine compaction with caching against EventStore`` context skuId cartId = Async.RunSynchronously <| async {
+    let ``Can combine compaction with caching against Equinox`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEventStoreNode log
+        let! conn = connectToLocalEquinoxNode ()
         let batchSize = 10
-        let gateway = createGesGateway conn batchSize
-        let service1 = Cart.createServiceWithCompaction log gateway
+        let service1 = Cart.createServiceWithCompaction conn batchSize log
         let cache = Caching.Cache("cart", sizeMb = 50)
-        let gateway = createGesGateway conn batchSize
-        let service2 = Cart.createServiceWithCompactionAndCaching log gateway cache
+        let service2 = Cart.createServiceWithCompactionAndCaching conn batchSize log cache
 
         // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 5
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 
         // ... should see a single read as we are inside the batch threshold
@@ -294,7 +297,7 @@ type Tests(testOutputHelper) =
 
         // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 13 events, we whould be able to read them backwards with a single call
@@ -304,14 +307,14 @@ type Tests(testOutputHelper) =
 
         // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 4
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 4
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 21 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service1.Read cartId
         // ... and trigger a second snapshotting (inducing a single additional read + write)
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
         // and we _could_ reload the 24 events with a single read if reading backwards. However we are using the cache, which last saw it with 10 events, which necessitates two reads
         let! _ = service2.Read cartId
         let suboptimalExtraSlice = [singleSliceForward]

@@ -8,36 +8,11 @@ open Microsoft.Azure.Documents
 open Newtonsoft.Json
 open Serilog
 open System
-open TypeShape
-
-type SN = int64
-
-[<CompilationRepresentationAttribute(CompilationRepresentationFlags.ModuleSuffix)>]
-module SN =
-
-    /// The first sequence number.
-    let [<Literal>] zero : SN = 0L
-
-    /// The last sequence number
-    let [<Literal>] last : SN = -1L
-
-    /// Computes the next sequence number.
-    let inline next (sn : SN) : SN = sn + 1L
-
-    /// Computes the previous sequence number
-    let inline prev (sn: SN): SN = sn - 1L
-
-    /// Compares two sequence numbers.
-    let inline compare (sn1 : SN) (sn2 : SN) : int = Operators.compare sn1 sn2
-
-type StreamId = string
 
 [<AutoOpen>]
 module ArraySegmentExtensions =
 
-    open System.Text
-
-    type Encoding with
+    type System.Text.Encoding with
         member x.GetString(data:ArraySegment<byte>) = x.GetString(data.Array, data.Offset, data.Count)
 
 type ByteArrayConverter() =
@@ -63,6 +38,28 @@ type ByteArrayConverter() =
             serializer.Serialize(writer, null)
         else
             serializer.Serialize(writer, System.Text.Encoding.UTF8.GetString(array))
+
+type SN = int64
+
+[<CompilationRepresentationAttribute(CompilationRepresentationFlags.ModuleSuffix)>]
+module SN =
+
+    /// The first sequence number.
+    let [<Literal>] zero : SN = 0L
+
+    /// The last sequence number
+    let [<Literal>] last : SN = -1L
+
+    /// Computes the next sequence number.
+    let inline next (sn : SN) : SN = sn + 1L
+
+    /// Computes the previous sequence number
+    let inline prev (sn: SN): SN = sn - 1L
+
+    /// Compares two sequence numbers.
+    let inline compare (sn1 : SN) (sn2 : SN) : int = Operators.compare sn1 sn2
+
+type StreamId = string
 
 [<NoEquality; NoComparison>]
 /// Event data.
@@ -407,13 +404,13 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
-    let private encodedEventOfResolvedEvent (x : EquinoxEvent) : UnionEncoder.EncodedUnion<byte[]> =
-        { CaseName = x.et; Payload = x.d }
-    let private eventDataOfEncodedEvent (x : UnionEncoder.EncodedUnion<byte[]>) =
-        EventData.create(x.CaseName, x.Payload, [||])
-    let encodeEvents (codec : UnionEncoder.IUnionEncoder<'event, byte[]>) (xs : 'event seq) : EventData[] =
+    let private encodedEventOfResolvedEvent (x : EquinoxEvent) : UnionCodec.EncodedUnion<byte[]> =
+        { caseName = x.et; payload = x.d }
+    let private eventDataOfEncodedEvent (x : UnionCodec.EncodedUnion<byte[]>) =
+        EventData.create(x.caseName, x.payload, [||])
+    let encodeEvents (codec : UnionCodec.IUnionEncoder<'event, byte[]>) (xs : 'event seq) : EventData[] =
         xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
-    let decodeKnownEvents (codec : UnionEncoder.IUnionEncoder<'event, byte[]>) (xs : EquinoxEvent[]) : 'event seq =
+    let decodeKnownEvents (codec : UnionCodec.IUnionEncoder<'event, byte[]>) (xs : EquinoxEvent[]) : 'event seq =
         xs |> Seq.map encodedEventOfResolvedEvent |> Seq.choose codec.TryDecode
 
 type Token = { streamVersion: int64; compactionEventNumber: int64 option }
@@ -451,8 +448,8 @@ module Token =
         let currentVersion, newVersion = unpackGesStreamVersion current, unpackGesStreamVersion x
         newVersion > currentVersion
 
-type EqxConnection(connection, ?readRetryPolicy, ?writeRetryPolicy) =
-    member __.Connection = connection
+type EqxConnection(connection : IDocumentClient, ?readRetryPolicy, ?writeRetryPolicy) =
+    member __.Connection = connection, Client.UriFactory.CreateDocumentCollectionUri("test","test")
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
 
@@ -511,7 +508,7 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamVersion compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
 
-type EqxCategory<'event, 'state>(gateway : EqxGateway, codec : UnionEncoder.IUnionEncoder<'event, byte[]>, ?compactionStrategy) =
+type EqxCategory<'event, 'state>(gateway : EqxGateway, codec : UnionCodec.IUnionEncoder<'event, byte[]>, ?compactionStrategy) =
     let loadAlgorithm load streamName initial log =
         let batched = load initial (gateway.LoadBatched streamName log None)
         let compacted predicate = load initial (gateway.LoadBackwardsStoppingAtCompactionEvent streamName log predicate)
@@ -651,8 +648,6 @@ type Discovery =
     | UriAndKey of Uri * string * string * string
     //| ConnecionString of string * string * string -> support this later
 
-type EquinoxConnection = IDocumentClient * Uri
-
 type EqxConnector
     (   requestTimeout: TimeSpan, maxRetryAttemptsOnThrottledRequests: int, maxRetryWaitTimeInSeconds: int,
         ?maxConnectionLimit) =
@@ -660,22 +655,24 @@ type EqxConnector
         let cp = Client.ConnectionPolicy.Default
         cp.ConnectionMode <- Client.ConnectionMode.Direct
         cp.ConnectionProtocol <- Client.Protocol.Tcp
-        cp.RetryOptions <-Client.RetryOptions(MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests, MaxRetryWaitTimeInSeconds = maxRetryWaitTimeInSeconds)
+        cp.RetryOptions <-
+            Client.RetryOptions(
+                MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
+                MaxRetryWaitTimeInSeconds = maxRetryWaitTimeInSeconds)
         cp.RequestTimeout <- requestTimeout
-        match maxConnectionLimit with | Some x -> cp.MaxConnectionLimit <- x | None -> cp.MaxConnectionLimit <- 1000
+        cp.MaxConnectionLimit <- defaultArg maxConnectionLimit 1000
         cp
 
-    /// Yields an IEventStoreConfiguration configured and Connect()ed to a node (or the cluster) per the requested `discovery` strategy
-    member __.Connect (discovery  : Discovery) : Async<EquinoxConnection> = async {
+    /// Yields an connection to DocDB configured and Connect()ed to DocDB collection per the requested `discovery` strategy
+    member __.Connect (discovery  : Discovery) : Async<EqxConnection> = async {
         let client (uri: Uri) (key: string) (dbId: string) (collectionName: string) =
-            let collectionUri = Client.UriFactory.CreateDocumentCollectionUri(dbId, collectionName)
             let client = new Client.DocumentClient(uri, key, connPolicy, Nullable(ConsistencyLevel.Session))
-            client, collectionUri
+            client
 
-        let client, uri =
+        let client =
             match discovery with
             | Discovery.UriAndKey (uri, key, dbName, collName) -> client uri key dbName collName
 
-        do! (client.OpenAsync() |> Async.AwaitTaskCorrect)
+        do! client.OpenAsync() |> Async.AwaitTaskCorrect
 
-        return (client :> IDocumentClient, uri) }
+        return EqxConnection(client :> IDocumentClient) }
