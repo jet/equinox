@@ -28,8 +28,9 @@
 
   <ItemGroup>
     <!-- workaround for not being able to make Backend and Domain as inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
-    <ProjectReference Include="..\..\samples\TodoBackend\TodoBackend.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
+    <ProjectReference Include="..\..\samples\TodoBackend\TodoBackend.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Infrastructure\Infrastructure.fsproj" PrivateAssets="all" />
