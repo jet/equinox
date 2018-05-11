@@ -40,7 +40,7 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.Serialization", "sr
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.Serialization.Tests", "tests\Foldunk.Serialization.Tests\Foldunk.Serialization.Tests.fsproj", "{1D9D5E23-683D-497F-BFA2-FBB43BB81205}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.EventStore.LoadTests", "tests\Foldunk.EventStore.LoadTests\Foldunk.EventStore.LoadTests.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.LoadTests", "tests\Foldunk.LoadTests\Foldunk.LoadTests.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
