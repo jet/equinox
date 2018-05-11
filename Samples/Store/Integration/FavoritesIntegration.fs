@@ -20,7 +20,7 @@ let createServiceGes eventStoreConnection =
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger (testOutput.Subscribe >> ignore)
+    let createLog () = createLogger testOutput
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` clientId command = Async.RunSynchronously <| async {

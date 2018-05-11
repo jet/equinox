@@ -13,7 +13,7 @@ let createServiceMem store =
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger (testOutput.Subscribe >> ignore)
+    let createLog () = createLogger testOutput
 
     [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``

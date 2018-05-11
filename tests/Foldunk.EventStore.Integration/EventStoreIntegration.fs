@@ -58,10 +58,12 @@ type Tests(testOutputHelper) =
 
     let createLoggerWithCapture () =
         let capture = LogCaptureBuffer()
-        let subscribeLogListeners observable =
-            testOutput.Subscribe observable |> ignore
-            capture.Subscribe observable |> ignore
-        createLogger subscribeLogListeners, capture
+        let logger =
+            Serilog.LoggerConfiguration()
+                .WriteTo.Sink(testOutput)
+                .WriteTo.Sink(capture)
+                .CreateLogger()
+        logger, capture
 
     let singleSliceForward = EsAct.SliceForward
     let singleBatchForward = [EsAct.SliceForward; EsAct.BatchForward]

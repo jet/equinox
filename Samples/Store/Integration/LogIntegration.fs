@@ -48,14 +48,11 @@ type SerilogMetricsExtractor(emit : string -> unit) =
             logEvent.AddOrUpdateProperty(Serilog.Events.LogEventProperty(name, renderedMetrics))
             emitEvent logEvent
         | logEvent -> emitEvent logEvent
-    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-        source.Subscribe handleLogEvent
+    interface Serilog.Core.ILogEventSink with member __.Emit logEvent = handleLogEvent logEvent
 
 let createLoggerWithMetricsExtraction emit =
     let capture = SerilogMetricsExtractor emit
-    let subscribeLogListeners observable =
-        capture.Subscribe observable |> ignore
-    createLogger subscribeLogListeners, capture
+    createLogger capture, capture
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

@@ -4,9 +4,8 @@ framework: auto-detect
 nuget EventStore.Client >= 4.1.1
 nuget FSharp.Core redirects: force
 nuget FSharp.Control.AsyncSeq
-nuget Newtonsoft.json
+nuget Newtonsoft.Json
 nuget Serilog
-nuget Serilog.Sinks.Observable
 nuget System.Reactive
 nuget TypeShape
 
@@ -14,7 +13,7 @@ nuget TypeShape
 //group test
 	nuget Argu
 	nuget Destructurama.FSharp
-	nuget FsCheck.xUnit
+	nuget FsCheck.Xunit
 	nuget MathNet.Numerics
 	nuget Serilog.Sinks.Console
 	nuget Serilog.Sinks.File

@@ -30,7 +30,7 @@ let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (ser
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger (testOutput.Subscribe >> ignore)
+    let createLog () = createLogger testOutput
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` context cartId skuId = Async.RunSynchronously <| async {

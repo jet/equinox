@@ -21,21 +21,20 @@ type AutoDataAttribute() =
 // NB VS does not surface these atm, but other test runners / test reports do
 type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
     let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null);
-    let writeSeriLogEvent logEvent =
+    let writeSerilogEvent logEvent =
         use writer = new System.IO.StringWriter()
         formatter.Format(logEvent, writer);
         writer |> string |> testOutput.WriteLine
-    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-        source.Subscribe writeSeriLogEvent
+    interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
 
 [<AutoOpen>]
 module SerilogHelpers =
     open Serilog
     open Serilog.Events
 
-    let createLogger hookObservers =
+    let createLogger sink =
         LoggerConfiguration()
-            .WriteTo.Observers(System.Action<_> hookObservers)
+            .WriteTo.Sink(sink)
             .CreateLogger()
 
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
@@ -65,8 +64,10 @@ module SerilogHelpers =
 
     type LogCaptureBuffer() =
         let captured = ResizeArray()
-        member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-            source.Subscribe (fun x -> x.RenderMessage () |> System.Diagnostics.Trace.WriteLine; captured.Add x)
+        let writeSerilogEvent (logEvent: LogEvent) =
+            logEvent.RenderMessage () |> System.Diagnostics.Trace.WriteLine
+            captured.Add logEvent
+        interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
         member __.Clear () = captured.Clear()
         member __.Entries = captured.ToArray()
         member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq

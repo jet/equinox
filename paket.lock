@@ -14,15 +14,13 @@ NUGET
     FSharp.Control.AsyncSeq (2.0.21)
       FSharp.Core (>= 3.1.2)
     FSharp.Core (4.3.4) - redirects: force
-    MathNet.Numerics (4.4)
+    MathNet.Numerics (4.4.1)
     Newtonsoft.Json (11.0.2)
     Serilog (2.6)
     Serilog.Sinks.Console (3.1.1)
       Serilog (>= 2.5)
     Serilog.Sinks.File (4.0)
       Serilog (>= 2.5)
-    Serilog.Sinks.Observable (2.0.2)
-      Serilog (>= 2.0)
     System.Reactive (3.1.1)
       System.Reactive.PlatformServices (>= 3.1.1)
       System.Reactive.Windows.Threading (>= 3.1.1)
@@ -51,4 +49,4 @@ NUGET
 GROUP build
 NUGET
   remote: https://api.nuget.org/v3/index.json
-    FAKE (4.64.12)
+    FAKE (4.64.13)

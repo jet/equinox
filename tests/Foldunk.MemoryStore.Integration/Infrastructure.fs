@@ -18,14 +18,13 @@ type AutoDataAttribute() =
 // NB VS does not surface these atm, but other test runners / test reports do
 type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
     let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null);
-    let writeSeriLogEvent logEvent =
+    let writeSerilogEvent logEvent =
         use writer = new System.IO.StringWriter()
         formatter.Format(logEvent, writer);
         writer |> string |> testOutput.WriteLine
-    member __.Subscribe(source: IObservable<Serilog.Events.LogEvent>) =
-        source.Subscribe writeSeriLogEvent
+    interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
 
-let createLogger hookObservers =
+let createLogger sink =
     LoggerConfiguration()
-        .WriteTo.Observers(Action<_> hookObservers)
+        .WriteTo.Sink(sink)
         .CreateLogger()
