@@ -7,13 +7,13 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>c8992c1c-6dc5-42cd-a3d7-1c5663433fed</ProjectGuid>
     <OutputType>Exe</OutputType>
-    <RootNamespace>Foldunk.EventStore.LoadTests</RootNamespace>
-    <AssemblyName>Foldunk.EventStore.LoadTests</AssemblyName>
+    <RootNamespace>Foldunk.LoadTests</RootNamespace>
+    <AssemblyName>Foldunk.LoadTests</AssemblyName>
     <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <UseStandardResourceNames>true</UseStandardResourceNames>
     <TargetFSharpCoreVersion>4.4.3.0</TargetFSharpCoreVersion>
-    <Name>Foldunk.EventStore.LoadTests</Name>
+    <Name>Foldunk.LoadTests</Name>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>

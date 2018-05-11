@@ -1,4 +1,4 @@
-﻿namespace Foldunk.EventStore.LoadTests.Infrastructure
+﻿namespace Foldunk.LoadTests.Infrastructure
 
 open Serilog
 open System

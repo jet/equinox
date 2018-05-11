@@ -1,6 +1,6 @@
-﻿module Foldunk.EventStore.LoadTests.Program
+﻿module Foldunk.LoadTests.Program
 
-open Foldunk.EventStore.LoadTests.Infrastructure
+open Foldunk.LoadTests.Infrastructure
 
 open Argu
 open Serilog

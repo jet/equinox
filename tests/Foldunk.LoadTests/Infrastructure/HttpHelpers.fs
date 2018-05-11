@@ -1,4 +1,4 @@
-﻿module Foldunk.EventStore.LoadTests.Infrastructure.HttpHelpers
+﻿module Foldunk.LoadTests.Infrastructure.HttpHelpers
 
 open System
 open System.Net

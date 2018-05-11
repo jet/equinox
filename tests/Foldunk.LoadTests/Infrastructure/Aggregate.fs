@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Foldunk.EventStore.LoadTests.Infrastructure.Aggregate
+module Foldunk.LoadTests.Infrastructure.Aggregate
 
 open MathNet.Numerics.Statistics
 open Serilog

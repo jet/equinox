@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Foldunk.EventStore.LoadTests.Infrastructure.Prelude
+module Foldunk.LoadTests.Infrastructure.Prelude
 
 open System
 open System.Diagnostics
