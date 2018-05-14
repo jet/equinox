@@ -1,5 +1,7 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
+open Equinox.Cosmos
+open Equinox.Cosmos.Integration.CosmosIntegration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
@@ -20,6 +22,11 @@ let resolveGesStreamWithRollingSnapshots gateway =
     GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
+
+let resolveEqxStreamWithCompactionEventType gateway  compactionEventType (StreamArgs args) =
+    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.EventType compactionEventType).Create(args)
+let resolveEqxStreamWithoutCompactionSemantics gateway _compactionEventType (StreamArgs args) =
+    EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->
@@ -61,5 +68,17 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with RollingSnapshots`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithRollingSnapshots
+        do! act service args
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against Equinox, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEquinoxNode createEqxGateway resolveEqxStreamWithoutCompactionSemantics
+        do! act service args
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against Equinox, correctly folding the events with compaction`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEquinoxNode createEqxGateway resolveEqxStreamWithCompactionEventType
         do! act service args
     }
