@@ -1,5 +1,7 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
+open Equinox.Cosmos
+open Equinox.Cosmos.Integration.CosmosIntegration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
@@ -16,6 +18,10 @@ let createServiceMem log store =
 let codec = genCodec<Domain.Favorites.Events.Event>()
 let createServiceGes gateway log =
     let resolveStream = GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Create
+    Backend.Favorites.Service(log, resolveStream)
+
+let createServiceEqx gateway log =
+    let resolveStream cet (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.EventType cet).Create(args)
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =
@@ -45,5 +51,14 @@ type Tests(testOutputHelper) =
         let! conn = connectToLocalEventStoreNode log
         let gateway = createGesGateway conn defaultBatchSize
         let service = createServiceGes gateway log
+        do! act service args
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against Equinox, correctly folding the events`` args = Async.RunSynchronously <| async {
+        let log = createLog ()
+        let! conn = connectToLocalEquinoxNode log
+        let gateway = createEqxGateway conn defaultBatchSize
+        let service = createServiceEqx gateway log
         do! act service args
     }
