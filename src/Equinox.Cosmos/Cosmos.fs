@@ -215,7 +215,7 @@ module private Write =
                 // Improve this?
                 if dce.Message.Contains "already"
                 then
-                    log.Information(ex, "Ges TrySync WrongExpectedVersionException")
+                    log.Information(ex, "Eqx TrySync WrongExpectedVersionException")
                     return EqxSyncResult.Conflict dce.RequestCharge
                 else
                     return raise dce
@@ -259,7 +259,7 @@ module private Read =
     open Microsoft.Azure.Documents.Linq
     open System.Linq
 
-    let private getQuery ((client, collectionUri): Connection) streamId (direction: Direction) batchSize sequenceNumber =
+    let private getQuery ((client, collectionUri): Connection) strongConsistency streamId (direction: Direction) batchSize sequenceNumber =
 
         let sequenceNumber =
             match direction, sequenceNumber with
@@ -269,6 +269,7 @@ module private Read =
         let feedOptions = new Client.FeedOptions()
         feedOptions.PartitionKey <- PartitionKey(streamId)
         feedOptions.MaxItemCount <- Nullable(batchSize)
+        //if (strongConsistency) then feedOptions.ConsistencyLevel <- Nullable(ConsistencyLevel.Strong)
         let sql =
             match direction with
             | Direction.Backward ->
@@ -343,7 +344,7 @@ module private Read =
             "Eqx{action:l} stream={stream} count={count}/{batches} version={version} RequestCharge={ru}",
             action, streamName, count, batches, version, ru)
 
-    let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
+    let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads consistencyLevel streamName startPosition
         : Async<int64 * EquinoxEvent[]> = async {
         let mutable ru = 0.0
         let mergeBatches (batches: AsyncSeq<EquinoxEvent[] * float>) = async {
@@ -353,7 +354,7 @@ module private Read =
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.toArrayAsync
             return events, ru }
-        let query = getQuery conn streamName Direction.Forward batchSize startPosition
+        let query = getQuery conn consistencyLevel streamName Direction.Forward batchSize startPosition
         let call q = loggedQueryExecution streamName Direction.Forward batchSize startPosition q
         let retryingLoggingReadSlice q = Log.withLoggedRetries retryPolicy "readAttempt" (call q)
         let direction = Direction.Forward
@@ -368,7 +369,7 @@ module private Read =
     let partitionPayloadFrom firstUsedEventNumber : EquinoxEvent[] -> int * int =
         let acc (tu,tr) ((EquinoxEventLen bytes) as y) = if y.sn < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
         Array.fold acc (0,0)
-    let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName isCompactionEvent
+    let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads consistencyLevel streamName isCompactionEvent
         : Async<int64 * EquinoxEvent[]> = async {
         let mergeFromCompactionPointOrStartFromBackwardsStream (log : ILogger) (batchesBackward : AsyncSeq<EquinoxEvent[] * float>)
             : Async<EquinoxEvent[] * float> = async {
@@ -390,7 +391,7 @@ module private Read =
                 |> AsyncSeq.toArrayAsync
             let eventsForward = Array.Reverse(tempBackward); tempBackward // sic - relatively cheap, in-place reverse of something we own
             return eventsForward, ru }
-        let query = getQuery conn streamName Direction.Backward batchSize SN.last
+        let query = getQuery conn consistencyLevel streamName Direction.Backward batchSize SN.last
         let call q = loggedQueryExecution streamName Direction.Backward batchSize SN.last q
         let retryingLoggingReadSlice q = Log.withLoggedRetries retryPolicy "readAttempt" (call q)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
@@ -443,9 +444,9 @@ module Token =
     /// Use an event we are about to write to the stream to infer headroom
     let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion compactionEventDataIndex eventsLength batchSize streamVersion' : Storage.StreamToken =
         ofCompactionEventNumber (Some (prevStreamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
-    let private unpackGesStreamVersion (x : Storage.StreamToken) = let x : Token = unbox x.value in x.streamVersion
+    let private unpackEqxStreamVersion (x : Storage.StreamToken) = let x : Token = unbox x.value in x.streamVersion
     let supersedes current x =
-        let currentVersion, newVersion = unpackGesStreamVersion current, unpackGesStreamVersion x
+        let currentVersion, newVersion = unpackEqxStreamVersion current, unpackEqxStreamVersion x
         newVersion > currentVersion
 
 type EqxConnection(connection : IDocumentClient, ?readRetryPolicy, ?writeRetryPolicy) =
@@ -465,7 +466,7 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     let isResolvedEventEventType predicate (x:EquinoxEvent) = predicate x.et
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     member __.LoadBatched streamName log isCompactionEventType: Async<Storage.StreamToken * EquinoxEvent[]> = async {
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName 0L
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches false streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, events
         | Some isCompactionEvent ->
@@ -475,14 +476,14 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     member __.LoadBackwardsStoppingAtCompactionEvent streamName log isCompactionEventType: Async<Storage.StreamToken * EquinoxEvent[]> = async {
         let isCompactionEvent = isResolvedEventEventType isCompactionEventType
         let! version, events =
-            Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName isCompactionEvent
+            Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches false streamName isCompactionEvent
         match Array.tryHead events |> Option.filter isCompactionEvent with
         | None -> return Token.ofUncompactedVersion batching.BatchSize version, events
         | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, events }
     member __.LoadFromToken streamName log (token : Storage.StreamToken) isCompactionEventType
         : Async<Storage.StreamToken * EquinoxEvent[]> = async {
         let streamPosition = (unbox token.value).streamVersion
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName streamPosition
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches true streamName streamPosition
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, events
         | Some isCompactionEvent ->
@@ -665,14 +666,21 @@ type EqxConnector
 
     /// Yields an connection to DocDB configured and Connect()ed to DocDB collection per the requested `discovery` strategy
     member __.Connect (discovery  : Discovery) : Async<EqxConnection> = async {
-        let client (uri: Uri) (key: string) (dbId: string) (collectionName: string) =
+        let client (uri: Uri) (key: string) (dbId: string) (collectionName: string) = async {
+            let collectionUri = Client.UriFactory.CreateDocumentCollectionUri(dbId, collectionName)
             let client = new Client.DocumentClient(uri, key, connPolicy, Nullable(ConsistencyLevel.Session))
-            client
+            do!
+              dbId
+              |> Client.UriFactory.CreateDatabaseUri
+              |> client.ReadDatabaseAsync       // check if database exists
+              |> Async.AwaitTaskCorrect
+              |> Async.bind (fun _ -> client.ReadDocumentCollectionAsync(collectionUri) |> Async.AwaitTaskCorrect)   // check if collection exists
+              |> Async.Ignore
+            do! client.OpenAsync() |> Async.AwaitTaskCorrect
+            return client :> IDocumentClient }
 
-        let client =
+        let! client =
             match discovery with
             | Discovery.UriAndKey (uri, key, dbName, collName) -> client uri key dbName collName
 
-        do! client.OpenAsync() |> Async.AwaitTaskCorrect
-
-        return EqxConnection(client :> IDocumentClient) }
+        return EqxConnection(client) }
