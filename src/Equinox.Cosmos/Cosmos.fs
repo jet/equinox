@@ -258,7 +258,7 @@ module private Read =
     open Microsoft.Azure.Documents.Linq
     open System.Linq
 
-    let private getQuery ((client, collectionUri): Connection) strongConsistency streamId (direction: Direction) batchSize sequenceNumber =
+    let private getQuery ((client, collectionUri): Connection) streamId (direction: Direction) batchSize sequenceNumber =
 
         let sequenceNumber =
             match direction, sequenceNumber with
@@ -343,7 +343,7 @@ module private Read =
             "Eqx{action:l} stream={stream} count={count}/{batches} version={version} RequestCharge={ru}",
             action, streamName, count, batches, version, ru)
 
-    let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads consistencyLevel streamName startPosition
+    let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
         : Async<int64 * EquinoxEvent[]> = async {
         let mutable ru = 0.0
         let mergeBatches (batches: AsyncSeq<EquinoxEvent[] * float>) = async {
@@ -353,7 +353,7 @@ module private Read =
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.toArrayAsync
             return events, ru }
-        let query = getQuery conn consistencyLevel streamName Direction.Forward batchSize startPosition
+        let query = getQuery conn streamName Direction.Forward batchSize startPosition
         let call q = loggedQueryExecution streamName Direction.Forward batchSize startPosition q
         let retryingLoggingReadSlice q = Log.withLoggedRetries retryPolicy "readAttempt" (call q)
         let direction = Direction.Forward
@@ -368,7 +368,7 @@ module private Read =
     let partitionPayloadFrom firstUsedEventNumber : EquinoxEvent[] -> int * int =
         let acc (tu,tr) ((EquinoxEventLen bytes) as y) = if y.sn < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
         Array.fold acc (0,0)
-    let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads consistencyLevel streamName isCompactionEvent
+    let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName isCompactionEvent
         : Async<int64 * EquinoxEvent[]> = async {
         let mergeFromCompactionPointOrStartFromBackwardsStream (log : ILogger) (batchesBackward : AsyncSeq<EquinoxEvent[] * float>)
             : Async<EquinoxEvent[] * float> = async {
@@ -390,7 +390,7 @@ module private Read =
                 |> AsyncSeq.toArrayAsync
             let eventsForward = Array.Reverse(tempBackward); tempBackward // sic - relatively cheap, in-place reverse of something we own
             return eventsForward, ru }
-        let query = getQuery conn consistencyLevel streamName Direction.Backward batchSize SN.last
+        let query = getQuery conn streamName Direction.Backward batchSize SN.last
         let call q = loggedQueryExecution streamName Direction.Backward batchSize SN.last q
         let retryingLoggingReadSlice q = Log.withLoggedRetries retryPolicy "readAttempt" (call q)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
@@ -465,7 +465,7 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     let isResolvedEventEventType predicate (x:EquinoxEvent) = predicate x.et
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     member __.LoadBatched streamName log isCompactionEventType: Async<Storage.StreamToken * EquinoxEvent[]> = async {
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches false streamName 0L
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, events
         | Some isCompactionEvent ->
@@ -475,14 +475,14 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     member __.LoadBackwardsStoppingAtCompactionEvent streamName log isCompactionEventType: Async<Storage.StreamToken * EquinoxEvent[]> = async {
         let isCompactionEvent = isResolvedEventEventType isCompactionEventType
         let! version, events =
-            Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches false streamName isCompactionEvent
+            Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName isCompactionEvent
         match Array.tryHead events |> Option.filter isCompactionEvent with
         | None -> return Token.ofUncompactedVersion batching.BatchSize version, events
         | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, events }
     member __.LoadFromToken streamName log (token : Storage.StreamToken) isCompactionEventType
         : Async<Storage.StreamToken * EquinoxEvent[]> = async {
         let streamPosition = (unbox token.value).streamVersion
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches true streamName streamPosition
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName streamPosition
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, events
         | Some isCompactionEvent ->
