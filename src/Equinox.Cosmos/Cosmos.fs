@@ -91,7 +91,7 @@ module EventData =
 type EquinoxEvent = {
     id : string
     s : StreamId
-    k : string
+    k : StreamId
     ts : DateTimeOffset
     sn : SN
     et : string
@@ -168,8 +168,11 @@ module private Write =
                 eventData
                 |> eventDataToEquinoxEvent streamId sequenceNumber
 
+            let requestOptions =
+                Client.RequestOptions(PartitionKey = PartitionKey(streamId))
+
             let! res =
-                client.CreateDocumentAsync (collectionUri, equinoxEvent)
+                client.CreateDocumentAsync (collectionUri, equinoxEvent, requestOptions)
                 |> Async.AwaitTaskCorrect
 
             return (sequenceNumber, res.RequestCharge)
@@ -301,13 +304,12 @@ module private Read =
         | Some last -> last.sn
 
     let private queryExecution (query: IDocumentQuery<'T>) =
-        async {
-            let! res = query.ExecuteNextAsync<'T>() |> Async.AwaitTaskCorrect
-            return res.ToArray(), res.RequestCharge }
+        query.ExecuteNextAsync<'T>() |> Async.AwaitTaskCorrect
 
     let private loggedQueryExecution streamName direction batchSize startPos (query: IDocumentQuery<EquinoxEvent>) (log: ILogger)
         : Async<EquinoxEvent[] * float> = async {
-        let! t, (slice, ru) = queryExecution query |> Stopwatch.Time
+        let! t, res = queryExecution query |> Stopwatch.Time
+        let slice, ru = res.ToArray(), res.RequestCharge
         let bytes, count = slice |> Array.sumBy (|EquinoxEventLen|), slice.Length
         let reqMetric : Log.Measurement ={ stream = streamName; interval = t; bytes = bytes; count = count; ru = Convert.ToInt32(ru) }
         let evt = Log.Slice (direction, reqMetric)
@@ -328,7 +330,7 @@ module private Read =
             let! slice = readSlice query batchLog
             yield slice
             if query.HasMoreResults then
-                yield! loop (batchCount + 1)}
+                yield! loop (batchCount + 1) }
             //| x -> raise <| System.ArgumentOutOfRangeException("SliceReadStatus", x, "Unknown result value") }
         loop 0
 
@@ -647,7 +649,7 @@ type EqxStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     | UriAndKey of Uri * string * string * string
-    //| ConnecionString of string * string * string -> support this later
+    //| ConnectionString of string * string * string
 
 type EqxConnector
     (   requestTimeout: TimeSpan, maxRetryAttemptsOnThrottledRequests: int, maxRetryWaitTimeInSeconds: int,
@@ -681,6 +683,6 @@ type EqxConnector
 
         let! client =
             match discovery with
-            | Discovery.UriAndKey (uri, key, dbName, collName) -> client uri key dbName collName
+            | Discovery.UriAndKey (uri, key, db, coll) -> client uri key db coll
 
         return EqxConnection(client) }

@@ -59,7 +59,7 @@ and [<NoEquality; NoComparison>] EsArguments =
     | [<AltCommandLine("-r")>] Retries of int
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Host _ -> "specify a DNS query, using Gossip-driven discovery against all A records returned (default: localhost)."
+            | Host _ -> "specify a DNS query, using Gossip-driven discovery against all A records returned (default: localhost), if -eqx option has been passed, this should be the connection string for the Cosmos Account"
             | Username _ -> "specify a username (default: admin)."
             | Password _ -> "specify a Password (default: changeit)."
             | ConcurrentOperationsLimit _ -> "max concurrent operations in flight (default: 5000)."
@@ -96,9 +96,9 @@ let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPo
 /// Either replace connection below with a real equinox,
 /// Or create a local Equinox using provisioning script
 /// create Equinox with dbName "test" and collectionName "test" to perform test
-let connectToLocalEquinoxNode (uri, key) (dbName, collName) operationTimeout (maxRetyForThrottling, maxRetryWaitTime) =
-    EqxConnector(requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetyForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
-        .Connect(Discovery.UriAndKey((Uri uri), key, dbName, collName))
+//let connectToLocalEquinoxNode connStr (dbName, collName) operationTimeout (maxRetyForThrottling, maxRetryWaitTime) =
+//    EqxConnector(requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetyForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
+//        .Connect(Discovery.ConnectionString(connStr, dbName, collName))
 
 let defaultBatchSize = 500
 
@@ -122,9 +122,9 @@ let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
     let! items = service.Read clientId
     if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
 
-let createEsLog verboseEs verboseConsole maybeSeqEndpoint =
+let createStoreLog verboseStore verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration()//.Destructure.FSharpTypes()
-    let c = if verboseEs then c.MinimumLevel.Debug() else c
+    let c = if verboseStore then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger() :> ILogger
@@ -172,7 +172,7 @@ let main argv =
                 log, Connection.Mem (Equinox.MemoryStore.VolatileStore())
             | Some (Es esargs) ->
                 let verboseStore = esargs.Contains(VerboseEs)
-                let log = createEsLog verboseStore verboseConsole maybeSeq
+                let log = createStoreLog verboseStore verboseConsole maybeSeq
                 let host = esargs.GetResult(Host,"localhost")
                 let creds = esargs.GetResult(Username,"admin"), esargs.GetResult(Password,"changeit")
                 let (timeout, retries) as operationThrottling = esargs.GetResult(EsArguments.Timeout,5.) |> float |> TimeSpan.FromSeconds,esargs.GetResult(EsArguments.Retries,1)
