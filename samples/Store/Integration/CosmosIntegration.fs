@@ -11,6 +11,6 @@ open System
 /// create Equinox with dbName "test" and collectionName "test" to perform test
 let connectToLocalEquinoxNode() =
     EqxConnector(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
-        .Connect(Discovery.UriAndKey((Uri "https://localhost:8081"), "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==", "test", "test"))
+        .Connect(Discovery.UriAndKey((Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==", "test", "test")))
 let defaultBatchSize = 500
 let createEqxGateway connection batchSize = EqxGateway(EqxConnection(connection), EqxBatchingPolicy(maxBatchSize = batchSize))
