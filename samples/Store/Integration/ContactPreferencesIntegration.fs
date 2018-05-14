@@ -1,5 +1,7 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
+open Equinox.Cosmos
+open Equinox.Cosmos.Integration.CosmosIntegration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
@@ -20,6 +22,13 @@ let resolveStreamGesWithCompactionSemantics gateway =
 let resolveStreamGesWithoutCompactionSemantics gateway _ignoreWindowSize =
     fun _ignoreCompactionPredicate streamName ->
         GesStreamBuilder(gateway, codec, fold, initial).Create(streamName)
+
+let resolveStreamEqxWithCompactionSemantics gateway =
+    fun predicate (StreamArgs args) ->
+        EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.Predicate predicate).Create(args)
+let resolveStreamEqxWithoutCompactionSemantics gateway =
+    fun _ignoreWindowSize _ignoreCompactionPredicate (StreamArgs args) ->
+        EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -59,5 +68,17 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithCompactionSemantics
+        do! act service args
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against Equinox, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrangeWithoutCompaction connectToLocalEquinoxNode createEqxGateway resolveStreamEqxWithoutCompactionSemantics
+        do! act service args
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against Equinox, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEquinoxNode createEqxGateway resolveStreamEqxWithCompactionSemantics
         do! act service args
     }

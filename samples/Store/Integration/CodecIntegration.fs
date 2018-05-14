@@ -3,15 +3,17 @@ module Samples.Store.Integration.CodecIntegration
 
 open Domain
 open Swensen.Unquote
+open TypeShape.UnionContract
 
-let settings =
+let serializationSettings =
     Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect(converters=
         [|  // Don't let json.net treat 't option as the DU it is internally
             Newtonsoft.Json.Converters.FSharp.OptionConverter()
             // Collapse the `fields` of the union into the top level, alongside the `case`
             Newtonsoft.Json.Converters.FSharp.UnionConverter() |])
 
-let genCodec<'T> = Equinox.UnionCodec.generateJsonUtf8UnionCodec<'T> settings
+let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
+    Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 type EventWithId = { id : CartId }
 type EventWithOption = { age : int option }
@@ -23,6 +25,7 @@ type SimpleDu =
     | EventA of EventWithId
     | EventB of EventWithOption
     | EventC of EventWithUnion
+    interface IUnionContract
 
 let render = function
     | EventA { id = id } -> sprintf """{"id":"%s"}""" id.Value
@@ -32,11 +35,11 @@ let render = function
     | EventC { value = S { maybeI = None } } -> sprintf """{"value":{"case":"S"}}"""
     | EventC { value = S { maybeI = Some i } } -> sprintf """{"value":{"case":"S","maybeI":%d}}""" i
 
-let codec = genCodec<SimpleDu>
+let codec = genCodec<SimpleDu>()
 
 [<AutoData(MaxTest=100)>]
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =
     let serialized = codec.Encode x
-    render x =! System.Text.Encoding.UTF8.GetString(serialized.Payload)
+    render x =! System.Text.Encoding.UTF8.GetString(serialized.payload)
     let deserialized = codec.Decode serialized
     deserialized =! x

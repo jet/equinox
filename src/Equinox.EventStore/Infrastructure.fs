@@ -82,6 +82,8 @@ type Async with
                 else
                     sc ())
             |> ignore)
+    static member inline bind (f:'a -> Async<'b>) (a:Async<'a>) : Async<'b> = async.Bind(a, f)
+    static member map (f:'a -> 'b) (a:Async<'a>) : Async<'b> = async.Bind(a, f >> async.Return)
 
 module AsyncSeq =
     /// Same as takeWhileAsync, but returns the final element too

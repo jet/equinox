@@ -1,4 +1,4 @@
-﻿module Equinox.Cosmos.Integration.EquinoxIntegration
+﻿module Equinox.Cosmos.Integration.CosmosIntegration
 
 open Equinox.Integration.Infrastructure
 open Equinox.Cosmos
@@ -9,7 +9,7 @@ open System
 /// Standing up an Equinox instance is complicated; to run for test purposes either:
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
 /// - Create a local Equinox with dbName "test" and collectionName "test" using  provisioning script
-let connectToLocalEquinoxNode () =
+let connectToLocalEquinoxNode (_log: Serilog.ILogger) =
     EqxConnector(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
         .Connect(Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==","test","test"))
 let defaultBatchSize = 500
@@ -91,7 +91,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can roundtrip against Equinox, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEquinoxNode ()
+        let! conn = connectToLocalEquinoxNode log
 
         let batchSize = 3
         let service = Cart.createServiceWithoutOptimization conn batchSize log
@@ -117,7 +117,7 @@ type Tests(testOutputHelper) =
     [<AutoData(MaxTest = 2)>]
     let ``Can roundtrip against Equinox, managing sync conflicts by retrying [without any optimizations]`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = createLoggerWithCapture ()
-        let! conn = connectToLocalEquinoxNode ()
+        let! conn = connectToLocalEquinoxNode log1
         // Ensure batching is included at some point in the proceedings
         let batchSize = 3
 
@@ -193,7 +193,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can roundtrip against Equinox, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEquinoxNode ()
+        let! conn = connectToLocalEquinoxNode log
         let batchSize = 10
         let service = Cart.createServiceWithCompaction conn batchSize log
 
@@ -232,7 +232,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can correctly read and update against Equinox, with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEquinoxNode ()
+        let! conn = connectToLocalEquinoxNode log
         let service = ContactPreferences.createService (createEqxGateway conn) log
 
         let (Domain.ContactPreferences.Id email) = id
@@ -255,7 +255,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can roundtrip against Equinox, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEquinoxNode ()
+        let! conn = connectToLocalEquinoxNode log
         let batchSize = 10
         let cache = Caching.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithCaching conn batchSize log cache
@@ -282,7 +282,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can combine compaction with caching against Equinox`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
-        let! conn = connectToLocalEquinoxNode ()
+        let! conn = connectToLocalEquinoxNode log
         let batchSize = 10
         let service1 = Cart.createServiceWithCompaction conn batchSize log
         let cache = Caching.Cache("cart", sizeMb = 50)

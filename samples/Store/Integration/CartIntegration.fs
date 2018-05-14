@@ -1,5 +1,7 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
+open Equinox.Cosmos
+open Equinox.Cosmos.Integration.CosmosIntegration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
@@ -13,12 +15,17 @@ let createMemoryStore () =
 let createServiceMem log store =
     Backend.Cart.Service(log, fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = genCodec<Domain.Cart.Events.Event>()
+let codec = Equinox.EventStore.Integration.EventStoreIntegration.genCodec<Domain.Cart.Events.Event>()
 
 let resolveGesStreamWithCompactionEventType gateway compactionEventType streamName =
     GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType compactionEventType).Create(streamName)
 let resolveGesStreamWithoutCompactionSemantics gateway _compactionEventType streamName =
     GesStreamBuilder(gateway, codec, fold, initial).Create(streamName)
+
+let resolveEqxStreamWithCompactionEventType gateway  compactionEventType (StreamArgs args) =
+    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.EventType compactionEventType).Create(args)
+let resolveEqxStreamWithoutCompactionSemantics gateway _compactionEventType (StreamArgs args) =
+    EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->
@@ -60,5 +67,17 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithCompactionEventType
+        do! act service args
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against Equinox, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEquinoxNode createEqxGateway resolveEqxStreamWithoutCompactionSemantics
+        do! act service args
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against Equinox, correctly folding the events with compaction`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEquinoxNode createEqxGateway resolveEqxStreamWithCompactionEventType
         do! act service args
     }
