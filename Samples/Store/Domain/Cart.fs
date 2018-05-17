@@ -47,8 +47,7 @@ type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
     | Compact
     | AddItem               of Context * SkuId * quantity: int
-    | ChangeItemQuantity    of Context * SkuId * quantity: int
-    | ChangeWaiveReturns    of Context * SkuId * waived: bool
+    | PatchItem             of Context * SkuId * quantity: int option * waived: bool option
     | RemoveItem            of Context * SkuId
 
 module Commands =
@@ -66,15 +65,21 @@ module Commands =
         | AddItem (Context c, skuId, quantity) ->
             if itemExistsWithSameQuantity skuId quantity then [] else
             [ Events.ItemAdded { context = c; skuId = skuId; quantity = quantity } ]
-        | ChangeItemQuantity (Context c, skuId, quantity) ->
-            if not (itemExistsWithDifferentQuantity skuId quantity) then [] else
-            [ Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity } ]
-        | ChangeWaiveReturns (Context c, skuId, waived) ->
-            if not (itemExistsWithDifferentWaiveStatus skuId waived) then [] else
-            [ Events.ItemWaiveReturnsChanged { context = c; skuId = skuId; waived = waived } ]
-        | RemoveItem (Context c, skuId) ->
+        | RemoveItem (Context c, skuId)
+        | PatchItem (Context c, skuId, Some 0, _) ->
             if not (itemExistsWithSkuId skuId) then [] else
             [ Events.ItemRemoved { context = c; skuId = skuId } ]
+        | PatchItem (_, skuId, _, _) when not (itemExistsWithSkuId skuId) ->
+            []
+        | PatchItem (Context c, skuId, quantity, waived) ->
+            [   match quantity  with
+                | Some quantity when itemExistsWithDifferentQuantity skuId quantity ->
+                    yield Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity }
+                | _ -> ()
+                match waived with
+                | Some waived when itemExistsWithDifferentWaiveStatus skuId waived ->
+                     yield Events.ItemWaiveReturnsChanged { context = c; skuId = skuId; waived = waived }
+                | _ -> () ]
 
 type Handler(stream) =
     let handler = Foldunk.Handler(Folds.fold, maxAttempts = 3)

@@ -21,8 +21,7 @@ let verifyCanProcessInInitialState cmd (originState: State) =
     | Compact
     | AddItem _ ->
         test <@ (not << List.isEmpty) events @>
-    | ChangeItemQuantity _
-    | ChangeWaiveReturns _
+    | PatchItem _
     | RemoveItem _ ->
         test <@ List.isEmpty events @>
 
@@ -31,9 +30,12 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
     let initialEvents = command |> function
         | Compact ->                                [ (* Command is not designed to be idempotent *) ]
         | AddItem _ ->                              []
-        | ChangeItemQuantity (_, skuId, quantity) ->[ mkAddQty skuId (quantity+1)]
-        | ChangeWaiveReturns (_, skuId, value) ->   [ mkAdd skuId; mkChangeWaived skuId (not value) ]
-        | RemoveItem (_, skuId) ->                  [ mkAdd skuId ]
+        | RemoveItem (_, skuId)
+        | PatchItem (_, skuId, Some 0, _) ->        [ mkAdd skuId ]
+        | PatchItem (_, skuId, quantity, None) ->   [ mkAddQty skuId (defaultArg quantity 0+1) ]
+        | PatchItem (_, skuId, quantity, Some waive) ->
+                                                    [ mkAddQty skuId (defaultArg quantity 0+1)
+                                                      mkChangeWaived skuId (not waive)]
     let state = fold originState initialEvents
     let events = interpret command state
     let state' = fold state events
@@ -46,15 +48,21 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
     | AddItem (_, csku, quantity),                  [ ItemAdded e ] ->
         test <@ { ItemAddInfo.context = e.context; skuId = csku; quantity = quantity } = e
                 && quantity = (find csku).quantity @>
-    | ChangeItemQuantity (_, csku, value),          [ ItemQuantityChanged e] ->
-        test <@ { ItemQuantityChangeInfo.context = e.context; skuId = csku; quantity = value } = e
-                && value = (find csku).quantity @>
-    | ChangeWaiveReturns (_, csku, value),          [ ItemWaiveReturnsChanged e] ->
-        test <@ { ItemWaiveReturnsInfo.context = e.context; skuId = csku; waived = value } = e
-               && value = (find csku).returnsWaived @>
-    | RemoveItem (_, csku),                         [ ItemRemoved e ] ->
+    | PatchItem (_, csku, Some 0, _),               [ ItemRemoved e ]
+    | RemoveItem (_, csku),               [ ItemRemoved e ] ->
         test <@ { ItemRemoveInfo.context = e.context; skuId = csku } = e
                 && not (state'.items |> List.exists (fun x -> x.skuId = csku)) @>
+    | PatchItem (_, csku, quantity, waive),    es ->
+        match quantity with
+        | Some value ->
+            test <@ es |> List.exists (function ItemQuantityChanged e -> e = { context = e.context; skuId = csku; quantity = value } | _ -> false)
+                    && value = (find csku).quantity @>
+        | None -> ()
+        match waive with
+        | None -> ()
+        | Some value ->
+            test <@ es |> List.exists (function ItemWaiveReturnsChanged e -> e = { context = e.context; skuId = csku; waived = value } | _ -> false)
+                    && value = (find csku).returnsWaived @>
     | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
 
 /// Processing should allow for any given Command to be retried at will
@@ -63,9 +71,10 @@ let verifyIdempotency (cmd: Command) (originState: State) =
     let establish: Event list = cmd |> function
         | Compact _ ->                              let skuId = SkuId (Guid.NewGuid()) in [ mkAdd skuId; mkRemove skuId]
         | AddItem (_, skuId, qty) ->                [ mkAddQty skuId qty]
-        | ChangeItemQuantity (_, skuId, qty) ->     [ mkAddQty skuId qty]
-        | ChangeWaiveReturns (_, skuId, value) ->   [ mkAdd skuId; mkChangeWaived skuId value ]
-        | RemoveItem _ ->                           []
+        | RemoveItem _
+        | PatchItem (_, _, Some 0, _) ->            []
+        | PatchItem (_, skuId, quantity, waived) -> [ mkAddQty skuId (defaultArg quantity 1)
+                                                      mkChangeWaived skuId (defaultArg waived false) ]
     let state = fold originState establish
     let events = interpret cmd state
     match cmd, not (List.isEmpty events) with
