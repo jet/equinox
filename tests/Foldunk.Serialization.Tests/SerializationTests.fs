@@ -6,6 +6,7 @@ open Swensen.Unquote.Assertions
 open System.IO
 open System.Text.RegularExpressions
 open Xunit
+open Foldunk.Serialization.Converters
 
 let normalizeJsonString (json : string) =
     let str1 = Regex.Replace(json, @"{\s*}", "{}")
@@ -147,3 +148,35 @@ let ``UnionConverter's exception catch doesn't make the model invalid`` () =
 
     test <@ (CaseD "hi") = d @>
     test <@ false = gotError @>
+
+[<Fact>]
+let ``UnionConverter by default throws on unknown cases`` () =
+    let aJson = "{\"case\":\"CaseUnknown\"}"
+    let act () = JsonConvert.DeserializeObject<TestDU>(aJson, settings)
+
+    fun (e : System.InvalidOperationException) -> <@ -1 <> e.Message.IndexOf "No case defined for 'CaseUnknown', and no catchAllCase nominated" @>
+    |> raisesWith <@ act() @>
+
+[<JsonConverter(typeof<Converters.UnionConverter>, "case", "Catchall")>]
+type DuWithCatchAll =
+| Known
+| Catchall
+
+[<Fact>]
+let ``UnionConverter supports a nominated catchall`` () =
+    let aJson = "{\"case\":\"CaseUnknown\"}"
+    let a = JsonConvert.DeserializeObject<DuWithCatchAll>(aJson, settings)
+
+    test <@ Catchall = a @>
+
+[<JsonConverter(typeof<Converters.UnionConverter>, "case", "CatchAllThatCantBeFound")>]
+type DuWithMissingCatchAll =
+| Known
+
+[<Fact>]
+let ``UnionConverter explains if nominated catchAll not found`` () =
+    let aJson = "{\"case\":\"CaseUnknown\"}"
+    let act () = JsonConvert.DeserializeObject<DuWithMissingCatchAll>(aJson, settings)
+
+    fun (e : System.InvalidOperationException) -> <@ -1 <> e.Message.IndexOf "nominated catchAllCase: 'CatchAllThatCantBeFound' not found" @>
+    |> raisesWith <@ act() @> 

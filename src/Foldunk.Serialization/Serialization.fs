@@ -131,7 +131,7 @@ module Converters =
 
     (* Serializes a discriminated union case with a single field that is a record by flattening the
        record fields to the same level as the discriminator *)
-    type UnionConverter(discriminator : string) =
+    type UnionConverter private (discriminator : string, ?catchAllCase) =
         inherit JsonConverter()
 
         // used when deserializing because the JSON media formatter uses error handling
@@ -173,8 +173,8 @@ module Converters =
             JsonSerializer.Create(settings)
         let cloneJsonSerializer = memoize cloneJsonSerializerImpl
 
+        new(discriminator: string, catchAllCase: string) = UnionConverter(discriminator, ?catchAllCase=Option.ofObj catchAllCase)
         new() = UnionConverter("case")
-
         override __.CanConvert (t: Type) = Union.isUnion t
 
         override __.WriteJson(writer: JsonWriter, value: obj, jsonSerializer: JsonSerializer) =
@@ -215,7 +215,15 @@ module Converters =
             let obj = token :?> JObject
 
             let caseName = obj.Item(discriminator) |> string
-            let tag = cases |> Array.findIndex (fun case -> case.Name = caseName)
+            let foundTag = cases |> Array.tryFindIndex (fun case -> case.Name = caseName)
+            let tag =
+                match foundTag, catchAllCase with
+                | Some tag, _ -> tag
+                | None, Some catchAllCaseName ->
+                    match cases |> Array.tryFindIndex (fun case -> case.Name = catchAllCaseName) with
+                    | None -> invalidOp (sprintf "No case defined for '%s', nominated catchAllCase: '%s' not found in type '%s'" caseName catchAllCaseName t.FullName)
+                    | Some tag -> tag
+                | None, None -> invalidOp (sprintf "No case defined for '%s', and no catchAllCase nominated for '%s' on type '%s'" caseName typeof<UnionConverter>.Name t.FullName)
             let case = cases.[tag]
             let fieldInfos = case.GetFields()
 
