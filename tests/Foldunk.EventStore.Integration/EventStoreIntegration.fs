@@ -11,10 +11,10 @@ open System
 ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 /// (For this specific suite only, omitting the args will also work as the Gossip-related ports are irrelevant, but other tests would fail)
 let connectToLocalEventStoreNode log =
-    GesConnector("admin", "changeit", requireMaster=true, reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log)
-        .Connect(Discovery.Uri(Uri "tcp://localhost:1113"))
+    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log)
+        .Establish("Foldunk-integration", Discovery.Uri(Uri "tcp://localhost:1113"),ConnectionStrategy.ClusterSingle NodePreference.Master)
 let defaultBatchSize = 500
-let createGesGateway connection batchSize = GesGateway(GesConnection(connection), GesBatchingPolicy(maxBatchSize = batchSize))
+let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 let serializationSettings = Foldunk.Serialization.Settings.CreateDefault()
 let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
@@ -22,22 +22,22 @@ let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializati
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
     let codec = genCodec<Domain.Cart.Events.Event>
-    let createServiceWithoutOptimization eventStoreConnection batchSize =
-        let gateway = createGesGateway eventStoreConnection batchSize
+    let createServiceWithoutOptimization connection batchSize =
+        let gateway = createGesGateway connection batchSize
         Backend.Cart.Service(fun _ignoreCompactionEventTypeOption -> GesStreamBuilder(gateway, codec, fold, initial).Create)
-    let createServiceWithCompaction eventStoreConnection batchSize =
-        let gateway = createGesGateway eventStoreConnection batchSize
+    let createServiceWithCompaction connection batchSize =
+        let gateway = createGesGateway connection batchSize
         Backend.Cart.Service(fun compactionEventType -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType compactionEventType).Create)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
     let codec = genCodec<Domain.ContactPreferences.Events.Event>
-    let createServiceWithoutOptimization eventStoreConnection =
-        let gateway = createGesGateway eventStoreConnection defaultBatchSize
+    let createServiceWithoutOptimization connection =
+        let gateway = createGesGateway connection defaultBatchSize
         Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)
-    let createService eventStoreConnection =
+    let createService connection =
         let mkStream batchSize compactionPredicate =
-            GesStreamBuilder(createGesGateway eventStoreConnection batchSize, codec, fold, initial, CompactionStrategy.Predicate compactionPredicate).Create
+            GesStreamBuilder(createGesGateway connection batchSize, codec, fold, initial, CompactionStrategy.Predicate compactionPredicate).Create
         Backend.ContactPreferences.Service(mkStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

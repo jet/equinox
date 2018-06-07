@@ -56,12 +56,12 @@ let run log testsPerSecond duration errorCutoff reportingIntervals (clients : Cl
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
 ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 let connectToEventStoreNode log (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
-    GesConnector(username, password, requireMaster=false, reqTimeout=operationTimeout, reqRetries=operationRetries,
+    GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
             heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col, log=Logger.SerilogVerbose log)
-        .Connect(Discovery.GossipDns dnsQuery)
+        .Establish("Foldunk-loadtests", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
 
 let defaultBatchSize = 500
-let createGesGateway connection batchSize = GesGateway(GesConnection(connection), GesBatchingPolicy(maxBatchSize = batchSize))
+let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 let serializationSettings = Foldunk.Serialization.Settings.CreateDefault()
 let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
@@ -69,8 +69,8 @@ let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializati
 let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
 
 let codec = genCodec<Domain.Favorites.Events.Event>
-let createServiceGes eventStoreConnection =
-    let gateway = createGesGateway eventStoreConnection defaultBatchSize
+let createServiceGes connection =
+    let gateway = createGesGateway connection defaultBatchSize
     Backend.Favorites.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)
 
 let runFavoriteTest log _clientId conn = async {

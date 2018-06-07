@@ -17,8 +17,8 @@ let codec = genCodec<Domain.Cart.Events.Event>
 let createServiceGes connection batchSize =
     let gateway = createGesGateway connection batchSize
     Backend.Cart.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)
-let createServiceGesWithoutCompactionSemantics eventStoreConnection batchSize =
-    let gateway = createGesGateway eventStoreConnection batchSize
+let createServiceGesWithoutCompactionSemantics connection batchSize =
+    let gateway = createGesGateway connection batchSize
     Backend.Cart.Service(fun _ignoreCompactionEventType -> GesStreamBuilder(gateway, codec, fold, initial).Create)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
