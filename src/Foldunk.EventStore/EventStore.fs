@@ -21,6 +21,21 @@ module Log =
         | Slice of Direction * Measurement
         | Batch of Direction * slices: int * Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
+    let propEvents name (kvps : System.Collections.Generic.KeyValuePair<string,string> seq) (log : ILogger) =
+        let items = seq { for kv in kvps do yield sprintf "{\"%s\": %s}" kv.Key kv.Value }
+        log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
+    let propEventData name (events : EventData[]) (log : ILogger) =
+        log |> propEvents name (seq {
+            for x in events do
+                if x.IsJson then
+                    yield System.Collections.Generic.KeyValuePair<_,_>(x.Type, System.Text.Encoding.UTF8.GetString x.Data) })
+    let propResolvedEvents name (events : ResolvedEvent[]) (log : ILogger) =
+        log |> propEvents name (seq {
+            for x in events do
+                let e = x.Event
+                if e.IsJson then
+                    yield System.Collections.Generic.KeyValuePair<_,_>(e.EventType, System.Text.Encoding.UTF8.GetString e.Data) })
+
     open Serilog.Events
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
@@ -55,6 +70,7 @@ module private Write =
         events |> Array.sumBy eventDataLen
     let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[]) (log : ILogger)
         : Async<EsSyncResult> = async {
+        let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
         let writeLog = log |> Log.prop "stream" streamName |> Log.prop "expectedVersion" version |> Log.prop "count" count
@@ -89,6 +105,7 @@ module private Read =
         let bytes, count = slice.Events |> Array.sumBy (|ResolvedEventLen|), slice.Events.Length
         let reqMetric : Log.Measurement ={ stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice (direction, reqMetric)
+        let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice.Events
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information(
             // TODO drop sliceLength, totalPayloadSize when consumption no longer requires that literal; ditto stream when literal formatting no longer required
             "Ges{action:l} stream={stream} count={count} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize}",
