@@ -42,7 +42,7 @@
     <WarningLevel>5</WarningLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <OtherFlags>--warnon:1182</OtherFlags>
-    <StartArguments>-f 2000 -o 3 -e 3000</StartArguments>
+    <StartArguments>-f 4000 -o 3 -e 3000</StartArguments>
   </PropertyGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
