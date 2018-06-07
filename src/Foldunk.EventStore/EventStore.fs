@@ -223,9 +223,10 @@ module Token =
         : Storage.StreamToken =
         ofCompactionEventNumber (Some (prevStreamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
 
-type GesConnection(connection, ?readRetryPolicy, ?writeRetryPolicy) =
-    member __.Connection = connection
+type GesConnection(readConnection, ?writeConnection, ?readRetryPolicy, ?writeRetryPolicy) =
+    member __.ReadConnection = readConnection
     member __.ReadRetryPolicy = readRetryPolicy
+    member __.WriteConnection = defaultArg writeConnection readConnection
     member __.WriteRetryPolicy = writeRetryPolicy
 
 type GesBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
@@ -240,7 +241,7 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
     let isResolvedEventEventType predicate (x:ResolvedEvent) = predicate x.Event.EventType
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     member __.LoadBatched streamName log isCompactionEventType: Async<Storage.StreamToken * ResolvedEvent[]> = async {
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName 0L
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, events
         | Some isCompactionEvent ->
@@ -250,14 +251,15 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
     member __.LoadBackwardsStoppingAtCompactionEvent streamName log isCompactionEventType: Async<Storage.StreamToken * ResolvedEvent[]> = async {
         let isCompactionEvent = isResolvedEventEventType isCompactionEventType
         let! version, events =
-            Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName isCompactionEvent
+            Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize batching.MaxBatches streamName isCompactionEvent
         match Array.tryHead events |> Option.filter isCompactionEvent with
         | None -> return Token.ofUncompactedVersion batching.BatchSize version, events
         | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, events }
-    member __.LoadFromToken streamName log (token : Storage.StreamToken) isCompactionEventType
+    member __.LoadFromToken useWriteConn streamName log (token : Storage.StreamToken) isCompactionEventType
         : Async<Storage.StreamToken * ResolvedEvent[]> = async {
         let streamPosition = (unbox token.value).streamVersion + 1L
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Connection batching.BatchSize batching.MaxBatches streamName streamPosition
+        let connToUse = if useWriteConn then conn.WriteConnection else conn.ReadConnection
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy connToUse batching.BatchSize batching.MaxBatches streamName streamPosition
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, events
         | Some isCompactionEvent ->
@@ -266,7 +268,7 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, events }
     member __.TrySync streamName log (token : Storage.StreamToken) (encodedEvents: EventData array) isCompactionEventType : Async<GatewaySyncResult> = async {
         let streamVersion = (unbox token.value).streamVersion
-        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.Connection streamName streamVersion encodedEvents
+        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with
         | EsSyncResult.Conflict -> return GatewaySyncResult.Conflict
         | EsSyncResult.Written wr ->
@@ -296,12 +298,12 @@ type GesCategory<'event, 'state>(gateway : GesGateway, codec : UnionEncoder.IUni
     member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
         loadAlgorithm (load fold) streamName initial log
     member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) (streamName : string) token (log : ILogger) : Async<Storage.StreamToken * 'state> =
-        (load fold) state (gateway.LoadFromToken streamName log token compactionStrategy)
+        (load fold) state (gateway.LoadFromToken false streamName log token compactionStrategy)
     member __.TrySync (fold: 'state -> 'event seq -> 'state) streamName (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
         let encodedEvents : EventData[] = UnionEncoderAdapters.encodeEvents codec (Seq.ofList events)
         let! syncRes = gateway.TrySync streamName log token encodedEvents compactionStrategy
         match syncRes with
-        | GatewaySyncResult.Conflict ->         return Storage.SyncResult.Conflict  (load fold state (gateway.LoadFromToken streamName log token compactionStrategy))
+        | GatewaySyncResult.Conflict ->         return Storage.SyncResult.Conflict  (load fold state (gateway.LoadFromToken true streamName log token compactionStrategy))
         | GatewaySyncResult.Written token' ->   return Storage.SyncResult.Written   (token', fold state (Seq.ofList events)) }
 
 type GesFolder<'event, 'state>(category : GesCategory<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state) =
@@ -385,27 +387,65 @@ module private Discovery =
         | Discovery.GossipDns clusterDns ->             DiscoverViaGossip (buildDns     (configureDns clusterDns None))
         | Discovery.GossipDnsCustomPort (dns, port) ->  DiscoverViaGossip (buildDns     (configureDns dns (Some port)))
 
+[<RequireQualifiedAccess; NoComparison>]
+type NodePreference =
+    /// Track master via gossip, writes direct, reads should immediately reflect writes, resync without backoff (highest load on master, good write perf)
+    | Master
+    /// Take the first connection that comes along, ideally a master, but do not track master changes
+    | PreferMaster
+    /// Prefer slave node, writes normally need forwarding, often can't read writes, resync requires backoff (kindest to master, writes and resyncs expensive)
+    | PreferSlave
+    /// Take random node, writes may need forwarding, sometimes can't read writes, resync requires backoff (balanced load on master, balanced write perf)
+    | Random
+
+// see https://github.com/EventStore/EventStore/issues/1652
+[<RequireQualifiedAccess; NoComparison>]
+type ConnectionStrategy =
+    /// Pair of master and slave connections, writes direct, often can't read writes, resync without backoff (kind to master, writes+resyncs optimal)
+    | ClusterTwinPreferSlaveReads
+    /// Single connection, with resync backoffs appropriate to the NodePreference
+    | ClusterSingle of NodePreference
+
 type GesConnector
-    (   username, password, requireMaster: bool, reqTimeout: TimeSpan, reqRetries: int,
-        ?log : Logger, ?heartbeatTimeout: TimeSpan, ?concurrentOperationsLimit) =
-    let connSettings =
+    (   username, password, reqTimeout: TimeSpan, reqRetries: int,
+        ?log : Logger, ?heartbeatTimeout: TimeSpan, ?concurrentOperationsLimit,
+        ?readRetryPolicy, ?writeRetryPolicy) =
+    let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
         .SetQueueTimeoutTo(reqTimeout) // ES default: Zero/unlimited
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
         .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
-        |> fun s -> if requireMaster then s.PerformOnMasterOnly() else s.PerformOnAnyNode() // default: PerformOnMasterOnly()
+        |> fun s ->
+            match node with
+            | NodePreference.Master -> s.PerformOnMasterOnly()  // explicitly use ES default of requiring master, use default Node preference of Master
+            | NodePreference.PreferMaster -> s.PerformOnAnyNode() // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
+            | NodePreference.PreferSlave -> s.PerformOnAnyNode().PreferSlaveNode() // override default PerformOnMasterOnly(), override Master Node preference
+            | NodePreference.Random -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
         |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
         |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> fun s -> s.Build()
 
-    /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` strategy
-    member __.Connect (discovery : Discovery) : Async<IEventStoreConnection> = async {
+    /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` and `clusterNodePrefence` preference
+    member __.Connect(name : string, discovery : Discovery, ?clusterNodePrefence) : Async<IEventStoreConnection> = async {
+        let connSettings = connSettings (defaultArg clusterNodePrefence NodePreference.Master)
         let conn =
             match discovery with
-            | Discovery.DiscoverViaUri uri -> EventStoreConnection.Create(connSettings, uri)
-            | Discovery.DiscoverViaGossip clusterSettings -> EventStoreConnection.Create(connSettings, clusterSettings)
+            | Discovery.DiscoverViaUri uri -> EventStoreConnection.Create(connSettings, uri, name)
+            | Discovery.DiscoverViaGossip clusterSettings -> EventStoreConnection.Create(connSettings, clusterSettings, name)
         do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
         return conn }
+
+    /// Yields a GesConnection (which may internally be twin connections) configured per the specified stragy
+    member __.Establish(name, discovery : Discovery, strategy : ConnectionStrategy) : Async<GesConnection> = async {
+        match strategy with
+        | ConnectionStrategy.ClusterSingle nodePreference ->
+            let! conn = __.Connect(name, discovery, nodePreference)
+            return GesConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
+        | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
+            let! masterInParallel = Async.StartChild (__.Connect(name + "-master", discovery, NodePreference.Master))
+            let! slave = __.Connect(name + "-slave", discovery, NodePreference.PreferSlave)
+            let! master = masterInParallel
+            return GesConnection(readConnection=slave, writeConnection=master,?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }

@@ -14,8 +14,8 @@ let createServiceMem store =
     Backend.Favorites.Service(fun _cet -> MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = genCodec<Domain.Favorites.Events.Event>
-let createServiceGes eventStoreConnection =
-    let gateway = createGesGateway eventStoreConnection defaultBatchSize
+let createServiceGes connection =
+    let gateway = createGesGateway connection defaultBatchSize
     Backend.Favorites.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)
 
 type Tests(testOutputHelper) =

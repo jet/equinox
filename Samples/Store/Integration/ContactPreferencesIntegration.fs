@@ -14,12 +14,12 @@ let createServiceMem store =
     Backend.ContactPreferences.Service(fun _batchSize _eventTypePredicate -> MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>
-let createServiceGesWithCompactionSemantics eventStoreConnection =
+let createServiceGesWithCompactionSemantics connection =
     let mkStream windowSize predicate =
-        GesStreamBuilder(createGesGateway eventStoreConnection windowSize, codec, fold, initial, CompactionStrategy.Predicate predicate).Create
+        GesStreamBuilder(createGesGateway connection windowSize, codec, fold, initial, CompactionStrategy.Predicate predicate).Create
     Backend.ContactPreferences.Service(mkStream)
-let createServiceGesWithoutCompactionSemantics eventStoreConnection =
-    let gateway = createGesGateway eventStoreConnection defaultBatchSize
+let createServiceGesWithoutCompactionSemantics connection =
+    let gateway = createGesGateway connection defaultBatchSize
     Backend.ContactPreferences.Service(fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)
 
 type Tests(testOutputHelper) =
