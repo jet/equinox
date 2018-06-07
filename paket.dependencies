@@ -17,6 +17,7 @@ nuget TypeShape
 	nuget MathNet.Numerics
 	nuget Serilog.Sinks.Console
 	nuget Serilog.Sinks.File
+	nuget Serilog.Sinks.Seq
 	nuget Unquote
 	nuget xunit.core redirects: force
 	nuget xunit.runner.visualstudio

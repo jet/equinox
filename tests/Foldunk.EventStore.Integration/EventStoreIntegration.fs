@@ -1,6 +1,7 @@
 ﻿module Foldunk.EventStore.Integration.EventStoreIntegration
 
 open Foldunk.EventStore
+open Serilog
 open Swensen.Unquote
 open System.Threading
 open System
@@ -60,6 +61,7 @@ type Tests(testOutputHelper) =
         let capture = LogCaptureBuffer()
         let logger =
             Serilog.LoggerConfiguration()
+                .WriteTo.Seq("http://localhost:5341")
                 .WriteTo.Sink(testOutput)
                 .WriteTo.Sink(capture)
                 .CreateLogger()

@@ -10,6 +10,8 @@ open Domain
 open System.Threading
 open Serilog.Events
 open System.IO
+open System.Net
+open Serilog.Context
 
 type Arguments =
     | [<AltCommandLine("-g")>] Host of string
@@ -17,7 +19,10 @@ type Arguments =
     | [<AltCommandLine("-p")>] Password of string
 
     | [<AltCommandLine("-l")>] LogFile of string
-    | [<AltCommandLine("-v")>] Verbose
+    | [<AltCommandLine("-ve")>] VerboseEs
+    | [<AltCommandLine("-vd")>] VerboseDomain
+    | [<AltCommandLine("-vc")>] VerboseConsole
+    | [<AltCommandLine("-S")>] LocalSeq
 
     | [<AltCommandLine("-f")>] TestsPerSecond of int
     | [<AltCommandLine("-c")>] ConcurrentOperationsLimit of int
@@ -34,7 +39,10 @@ type Arguments =
             | Username _ -> "specify a username (default: admin)."
             | Password _ -> "specify a Password (default: changeit)."
             | LogFile _ -> "specify a log file to write the result breakdown."
-            | Verbose -> "Include low level logging in screen output."
+            | VerboseEs -> "Include low level ES logging."
+            | VerboseDomain -> "Include low level Domain logging."
+            | VerboseConsole -> "Include low level Domain and ES logging in screen output."
+            | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | TestsPerSecond _ -> "specify a target number of requests per second (default: 1000)."
             | ConcurrentOperationsLimit _ -> "max concurrent operations in flight (default: 5000)."
             | DurationM _ -> "specify a run duration in minutes (default: 1)."
@@ -55,9 +63,9 @@ let run log testsPerSecond duration errorCutoff reportingIntervals (clients : Cl
 /// To establish a local node to run the tests against:
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
 ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-let connectToEventStoreNode log (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
+let connectToEventStoreNode (log: ILogger) (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
     GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
-            heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col, log=Logger.SerilogVerbose log)
+            heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col, log=if log.IsEnabled(LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log)
         .Establish("Foldunk-loadtests", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
 
 let defaultBatchSize = 500
@@ -82,16 +90,19 @@ let runFavoriteTest log _clientId conn = async {
     let! items = service.Read log clientId
     if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
 
-let log =
-    LoggerConfiguration()
-        .Destructure.FSharpTypes()
-        .WriteTo.Console(LogEventLevel.Debug, theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
-        .CreateLogger()
-let domainLog verbose =
-    LoggerConfiguration()
-        .Destructure.FSharpTypes()
-        .WriteTo.Console((if verbose then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
-        .CreateLogger()
+let createEsLog verboseEs verboseConsole maybeSeqEndpoint =
+    let c = LoggerConfiguration().Destructure.FSharpTypes()
+    let c = if verboseEs then c.MinimumLevel.Debug() else c
+    let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+    let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
+    c.CreateLogger()
+let domainLog verboseDomain verboseConsole maybeSeqEndpoint =
+    let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
+    let c = if verboseDomain then c.MinimumLevel.Debug() else c
+    let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+    let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
+    c.CreateLogger()
+
 let createResultLog fileName =
     LoggerConfiguration()
         .Destructure.FSharpTypes()
@@ -117,14 +128,18 @@ let main argv =
         let heartbeatTimeout = args.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
         let concurrentOperationsLimit = args.GetResult(ConcurrentOperationsLimit,5000)
         let report = args.GetResult(LogFile,"log.txt") |> fun n -> FileInfo(n).FullName
+        let verboseEs = args.Contains(VerboseEs)
+        let verboseConsole = args.Contains(VerboseConsole)
+        let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
+        let log = createEsLog verboseEs verboseConsole maybeSeq
         let conn = connectToEventStoreNode log (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
 
         let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
-        let verbose = args.Contains(Verbose)
-        let domainLog = domainLog verbose
-        let runSingleTest clientId =
-            if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
-            runFavoriteTest domainLog clientId conn
+        let verboseDomain = args.Contains(VerboseDomain)
+        let domainLog = domainLog verboseDomain verboseConsole maybeSeq
+        let runSingleTest clientId = async {
+            use _ = LogContext.PushProperty("clientId", clientId)
+            return! runFavoriteTest domainLog clientId conn }
         log.Information(
             "Running for {duration}, targeting {host} with heartbeat: {heartbeat}, max concurrent requests: {concurrency}\n" +
             "Test freq {tps} hits/s; Operation timeout: {timeout} and {retries} retries; max errors: {errorCutOff}\n" +
