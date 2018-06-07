@@ -6,5 +6,6 @@ Newtonsoft.Json
 Serilog
 Serilog.Sinks.Console
 Serilog.Sinks.File
+Serilog.Sinks.Seq
 System.Reactive
 TypeShape

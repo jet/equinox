@@ -35,6 +35,7 @@ module SerilogHelpers =
     let createLogger sink =
         LoggerConfiguration()
             .WriteTo.Sink(sink)
+            .WriteTo.Seq("http://localhost:5341")
             .CreateLogger()
 
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function

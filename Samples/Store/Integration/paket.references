@@ -3,6 +3,7 @@ nuget FsCheck.Xunit
 nuget FSharp.Core
 nuget Newtonsoft.Json
 nuget Serilog
+nuget Serilog.Sinks.Seq
 nuget TypeShape
 nuget unquote
 nuget xunit.runner.visualstudio

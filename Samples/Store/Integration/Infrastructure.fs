@@ -34,4 +34,5 @@ module SerilogHelpers =
     let createLogger sink =
         LoggerConfiguration()
             .WriteTo.Sink(sink)
+            .WriteTo.Seq("http://localhost:5341")
             .CreateLogger()
