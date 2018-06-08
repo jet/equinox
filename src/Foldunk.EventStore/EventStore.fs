@@ -426,7 +426,10 @@ type ConnectionStrategy =
 type GesConnector
     (   username, password, reqTimeout: TimeSpan, reqRetries: int,
         ?log : Logger, ?heartbeatTimeout: TimeSpan, ?concurrentOperationsLimit,
-        ?readRetryPolicy, ?writeRetryPolicy) =
+        ?readRetryPolicy, ?writeRetryPolicy,
+        /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
+        /// NB as this will enter server and client logs, it should not contain sensitive information
+        ?tags : (string*string) seq) =
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
@@ -446,23 +449,35 @@ type GesConnector
         |> fun s -> s.Build()
 
     /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` and `clusterNodePrefence` preference
-    member __.Connect(name : string, discovery : Discovery, ?clusterNodePrefence) : Async<IEventStoreConnection> = async {
-        let connSettings = connSettings (defaultArg clusterNodePrefence NodePreference.Master)
+    member __.Connect
+        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+            name,
+            discovery : Discovery, ?clusterNodePreference) : Async<IEventStoreConnection> = async {
+        if name = null then nullArg "name"
+        let clusterNodePreference = defaultArg clusterNodePreference NodePreference.Master
+        let name = String.concat ";" <| seq {
+            yield name
+            yield string clusterNodePreference
+            match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
+        let sanitizedName = name.Replace('\'','_').Replace(':','_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
         let conn =
             match discovery with
-            | Discovery.DiscoverViaUri uri -> EventStoreConnection.Create(connSettings, uri, name)
-            | Discovery.DiscoverViaGossip clusterSettings -> EventStoreConnection.Create(connSettings, clusterSettings, name)
+            | Discovery.DiscoverViaUri uri -> EventStoreConnection.Create(connSettings clusterNodePreference, uri, sanitizedName)
+            | Discovery.DiscoverViaGossip clusterSettings -> EventStoreConnection.Create(connSettings clusterNodePreference, clusterSettings, sanitizedName)
         do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
         return conn }
 
-    /// Yields a GesConnection (which may internally be twin connections) configured per the specified stragy
-    member __.Establish(name, discovery : Discovery, strategy : ConnectionStrategy) : Async<GesConnection> = async {
+    /// Yields a GesConnection (which may internally be twin connections) configured per the specified strategy
+    member __.Establish
+        (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
+            name,
+            discovery : Discovery, strategy : ConnectionStrategy) : Async<GesConnection> = async {
         match strategy with
         | ConnectionStrategy.ClusterSingle nodePreference ->
             let! conn = __.Connect(name, discovery, nodePreference)
             return GesConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
         | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
-            let! masterInParallel = Async.StartChild (__.Connect(name + "-master", discovery, NodePreference.Master))
-            let! slave = __.Connect(name + "-slave", discovery, NodePreference.PreferSlave)
+            let! masterInParallel = Async.StartChild (__.Connect(name + "-TwinW", discovery, NodePreference.Master))
+            let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
             let! master = masterInParallel
             return GesConnection(readConnection=slave, writeConnection=master,?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }

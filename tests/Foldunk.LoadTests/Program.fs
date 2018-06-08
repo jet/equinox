@@ -65,7 +65,9 @@ let run log testsPerSecond duration errorCutoff reportingIntervals (clients : Cl
 ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 let connectToEventStoreNode (log: ILogger) (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
     GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
-            heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col, log=if log.IsEnabled(LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log)
+            heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
+            log=(if log.IsEnabled(LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
+            tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
         .Establish("Foldunk-loadtests", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
 
 let defaultBatchSize = 500
