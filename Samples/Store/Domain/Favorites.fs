@@ -56,13 +56,13 @@ module Commands =
             if doesntHave skuId then [] else
             [ Events.Unfavorited { skuId = skuId } ]
 
-type Handler(stream, ?maxAttempts) =
-    let handler = Foldunk.Handler(Folds.fold, maxAttempts = defaultArg maxAttempts 2)
-    member __.Execute log command : Async<unit> =
-        handler.Decide stream log <| fun ctx ->
+type Handler(log, stream, ?maxAttempts) =
+    let handler = Foldunk.StreamHandler(log, stream, Folds.fold, maxAttempts = defaultArg maxAttempts 2)
+    member __.Execute command : Async<unit> =
+        handler.Decide <| fun ctx ->
             let execute = Commands.interpret >> ctx.Execute
             execute command
             if ctx.IsCompactionDue then
                 execute Command.Compact
-    member __.Read log : Async<Folds.State> =
-        handler.Query stream log id
+    member __.Read : Async<Folds.State> =
+        handler.Query id

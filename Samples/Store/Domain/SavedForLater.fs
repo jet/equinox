@@ -100,8 +100,8 @@ module Commands =
             if Array.isEmpty net then true, []
             else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
 
-    type Stream(ctx, stream, maxSavedItems, maxAttempts) =
-        let handler = Foldunk.Handler(Fold.fold, maxAttempts = maxAttempts)
+    type Stream(log, stream, maxSavedItems, maxAttempts) =
+        let handler = Foldunk.StreamHandler(log, stream, Fold.fold, maxAttempts = maxAttempts)
         let decide (fctx : Foldunk.Context<_,_>) command =
             let run cmd = fctx.Decide (decide maxSavedItems cmd)
             let result = run command
@@ -110,17 +110,17 @@ module Commands =
             result
 
         member __.Remove (resolve : ((SkuId->bool) -> Async<Command>)) : Async<bool> =
-            handler.DecideAsync ctx stream <| fun fctx -> async {
+            handler.DecideAsync <| fun fctx -> async {
                 let contents = seq { for item in fctx.State -> item.skuId } |> set
                 let! cmd = resolve contents.Contains
                 return cmd |> decide fctx }
 
         member __.Execute command : Async<bool> =
-            handler.Decide ctx stream <| fun fctx ->
+            handler.Decide <| fun fctx ->
                 decide fctx command
 
         member __.Read : Async<Events.Item[]> =
-            handler.Query ctx stream id
+            handler.Query id
 
 let streamName (clientId : ClientId) = sprintf "savedforlater-%O" clientId
 
