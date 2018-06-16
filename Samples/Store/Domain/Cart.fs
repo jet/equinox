@@ -81,17 +81,17 @@ module Commands =
                      yield Events.ItemWaiveReturnsChanged { context = c; skuId = skuId; waived = waived }
                 | _ -> () ]
 
-type Handler(stream) =
-    let handler = Foldunk.Handler(Folds.fold, maxAttempts = 3)
-    member __.FlowAsync(log, flow, ?prepare) =
-        handler.DecideAsync stream log <| fun ctx -> async {
+type Handler(log, stream) =
+    let handler = Foldunk.StreamHandler(log, stream, Folds.fold, maxAttempts = 3)
+    member __.FlowAsync(flow, ?prepare) =
+        handler.DecideAsync <| fun ctx -> async {
             let execute = Commands.interpret >> ctx.Execute
             match prepare with None -> () | Some prep -> do! prep
             let result = flow ctx execute
             if ctx.IsCompactionDue then
                 execute Compact
             return result }
-    member __.Execute log command =
-        __.FlowAsync(log, fun _ctx execute -> execute command)
-    member __.Read log : Async<Folds.State> =
-        handler.Query stream log id
+    member __.Execute command =
+        __.FlowAsync(fun _ctx execute -> execute command)
+    member __.Read : Async<Folds.State> =
+        handler.Query id

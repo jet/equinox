@@ -7,10 +7,8 @@ type Service(createStream) =
         sprintf "Favorites-%s" clientId.Value
         |> createStream Domain.Favorites.Events.Compaction.EventType
 
-    member __.Execute (log : Serilog.ILogger) (clientId : ClientId) command =
-        let handler = Favorites.Handler(stream clientId)
-        handler.Execute log command
+    member __.Execute log (clientId : ClientId) command =
+        Favorites.Handler(log, stream clientId).Execute command
 
     member __.Read (log : Serilog.ILogger) (clientId : ClientId) =
-        let handler = Favorites.Handler(stream clientId)
-        handler.Read log
+        Favorites.Handler(log, stream clientId).Read

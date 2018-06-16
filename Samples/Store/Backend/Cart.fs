@@ -8,13 +8,13 @@ type Service(createStream) =
         |> createStream Cart.Events.Compaction.EventType
 
     member __.FlowAsync (log : Serilog.ILogger, cartId : CartId, flow, ?prepare) =
-        let handler = Cart.Handler(stream cartId)
-        handler.FlowAsync(log, flow, ?prepare = prepare)
+        Cart.Handler(log, stream cartId)
+            .FlowAsync(flow, ?prepare = prepare)
 
     member __.Execute (log : Serilog.ILogger) (cartId : CartId) command =
-        let handler = Cart.Handler(stream cartId)
-        handler.Execute log command
+        Cart.Handler(log, stream cartId)
+            .Execute command
 
     member __.Read (log : Serilog.ILogger) (cartId : CartId) =
-        let handler = Cart.Handler(stream cartId)
-        handler.Read log
+        Cart.Handler(log, stream cartId)
+            .Read

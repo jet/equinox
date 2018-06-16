@@ -29,11 +29,11 @@ module Commands =
             if state = preferences then [] else
             [ Events.Updated value ]
 
-type Handler(stream) =
-    let handler = Foldunk.Handler(Folds.fold, maxAttempts = 3)
-    member __.Update log email value : Async<unit> =
-        handler.Decide stream log <| fun ctx ->
+type Handler(log, stream) =
+    let handler = Foldunk.StreamHandler(log, stream, Folds.fold, maxAttempts = 3)
+    member __.Update email value : Async<unit> =
+        handler.Decide <| fun ctx ->
             let execute = Commands.interpret >> ctx.Execute
             execute <| Update { email = email; preferences = value }
-    member __.Read log : Async<Folds.State> =
-        handler.Query stream log id
+    member __.Read : Async<Folds.State> =
+        handler.Query id
