@@ -69,6 +69,7 @@
       <Project>{54cd058f-5b0a-4564-b732-1f6301e120ac}</Project>
       <Private>True</Private>
     </ProjectReference>
+    <Reference Include="System.Runtime.Caching" />
   </ItemGroup>
   <Choose>
     <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.6.1')">

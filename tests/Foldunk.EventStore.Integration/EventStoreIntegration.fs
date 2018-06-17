@@ -1,6 +1,7 @@
 ﻿module Foldunk.EventStore.Integration.EventStoreIntegration
 
 open Foldunk.EventStore
+open Foldunk.EventStore.Caching
 open Serilog
 open Swensen.Unquote
 open System.Threading
@@ -29,6 +30,14 @@ module Cart =
     let createServiceWithCompaction connection batchSize =
         let gateway = createGesGateway connection batchSize
         Backend.Cart.Service(fun compactionEventType -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType compactionEventType).Create)
+    let createServiceWithCaching eventStoreConnection batchSize cache =
+        let gateway = createGesGateway eventStoreConnection batchSize
+        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        Backend.Cart.Service(fun _ignorecompactionEventType -> GesStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create)
+    let createServiceWithCompactionAndCaching eventStoreConnection batchSize cache =
+        let gateway = createGesGateway eventStoreConnection batchSize
+        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        Backend.Cart.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet, sliding20m).Create)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
@@ -233,4 +242,73 @@ type Tests(testOutputHelper) =
         test <@ value = result @>
 
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+        let log, capture = createLoggerWithCapture ()
+        let! conn = connectToLocalEventStoreNode log
+        let batchSize = 10
+        let cache = Caching.Cache("cart", sizeMb = 50)
+        let createServiceCached () = Cart.createServiceWithCaching conn batchSize cache
+        let service1, service2 = createServiceCached (), createServiceCached ()
+
+        // Trigger 10 events, then reload
+        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 5
+        let! _ = service2.Read log cartId
+
+        // ... should see a single read as we are writes are cached
+        test <@ batchForwardAndAppend @ singleBatchForward = capture.ExternalCalls @>
+
+        // Add two more - the roundtrip should only incur a single read
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        test <@ batchForwardAndAppend = capture.ExternalCalls @>
+
+        // While we now have 12 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service2.Read log cartId
+        test <@ singleBatchForward = capture.ExternalCalls @>
+    }
+
+    [<AutoData>]
+    let ``Can combine compaction with caching against EventStore`` context skuId cartId = Async.RunSynchronously <| async {
+        let log, capture = createLoggerWithCapture ()
+        let! conn = connectToLocalEventStoreNode log
+        let batchSize = 10
+        let service1 = Cart.createServiceWithCompaction conn batchSize
+        let cache = Caching.Cache("cart", sizeMb = 50)
+        let service2 = Cart.createServiceWithCompactionAndCaching conn batchSize cache
+
+        // Trigger 10 events, then reload
+        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 5
+        let! _ = service2.Read log cartId
+
+        // ... should see a single read as we are inside the batch threshold
+        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+
+        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
+
+        // While we now have 13 events, we whould be able to read them backwards with a single call
+        capture.Clear()
+        let! _ = service1.Read log cartId
+        test <@ singleBatchBackwards = capture.ExternalCalls @>
+
+        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 4
+        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
+
+        // While we now have 21 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service1.Read log cartId
+        // ... and trigger a second snapshotting (inducing a single additional read + write)
+        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        // and we _could_ reload the 24 events with a single read if reading backwards. However we are using the cache, which last saw it with 10 events, which necessitates two reads
+        let! _ = service2.Read log cartId
+        let suboptimalExtraSlice = [singleSliceForward]
+        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }
