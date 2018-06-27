@@ -1,6 +1,6 @@
 ﻿module Equinox.Cosmos.Integration.CosmosIntegration
 
-open Equinox.Integration.Infrastructure
+open Equinox.Cosmos.Integration.Infrastructure
 open Equinox.Cosmos
 open Swensen.Unquote
 open System.Threading
@@ -9,9 +9,9 @@ open System
 /// Standing up an Equinox instance is complicated; to run for test purposes either:
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
 /// - Create a local Equinox with dbName "test" and collectionName "test" using  provisioning script
-let connectToLocalEquinoxNode (_log: Serilog.ILogger) =
-    EqxConnector(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
-        .Connect(Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==","test","test"))
+let connectToLocalEquinoxNode (log: Serilog.ILogger) =
+    EqxConnector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
+       .Establish("localDocDbSim", Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="))
 let defaultBatchSize = 500
 let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
 let (|StreamArgs|) gateway =
@@ -84,9 +84,9 @@ type Tests(testOutputHelper) =
                 .CreateLogger()
         logger, capture
 
-    let singleSliceForward = EsAct.SliceForward
-    let singleBatchForward = [EsAct.SliceForward; EsAct.BatchForward]
-    let batchForwardAndAppend = singleBatchForward @ [EsAct.Append]
+    let singleSliceForward = EqxAct.SliceForward
+    let singleBatchForward = [EqxAct.SliceForward; EqxAct.BatchForward]
+    let batchForwardAndAppend = singleBatchForward @ [EqxAct.Append]
 
     [<AutoData>]
     let ``Can roundtrip against Equinox, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
@@ -183,12 +183,12 @@ type Tests(testOutputHelper) =
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
        // Intended conflicts pertained
-        let hadConflict= function EsEvent (EsAction EsAct.AppendConflict) -> Some () | _ -> None
+        let hadConflict= function EqxEvent (EqxAction EqxAct.AppendConflict) -> Some () | _ -> None
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
-    let singleBatchBackwards = [EsAct.SliceBackward; EsAct.BatchBackward]
-    let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
+    let singleBatchBackwards = [EqxAct.SliceBackward; EqxAct.BatchBackward]
+    let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
     [<AutoData>]
     let ``Can roundtrip against Equinox, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
