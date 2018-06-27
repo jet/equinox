@@ -14,6 +14,15 @@ module ArraySegmentExtensions =
     type System.Text.Encoding with
         member x.GetString(data:ArraySegment<byte>) = x.GetString(data.Array, data.Offset, data.Count)
 
+[<AutoOpen>]
+module Strings =
+    open System.Text.RegularExpressions
+    /// Obtains a single pattern group, if one exists
+    let (|RegexGroup|_|) (pattern:string) arg =
+        match Regex.Match(arg, pattern, RegexOptions.None, TimeSpan.FromMilliseconds(250.0)) with
+        | m when m.Success && m.Groups.[1].Success -> m.Groups.[1].Value |> Some
+        | _ -> None
+
 type ByteArrayConverter() =
     inherit JsonConverter()
 
@@ -647,12 +656,19 @@ type EqxStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
-    | UriAndKey of Uri * string * string * string
-    //| ConnectionString of string * string * string
+    | UriAndKey of uri:Uri * key:string
+    | ConnectionString of string
 
 type EqxConnector
     (   requestTimeout: TimeSpan, maxRetryAttemptsOnThrottledRequests: int, maxRetryWaitTimeInSeconds: int,
-        ?maxConnectionLimit) =
+        log : ILogger,
+        /// Connection limit (default 1000)
+        ?maxConnectionLimit,
+        ?readRetryPolicy, ?writeRetryPolicy,
+        /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
+        /// NB as this will enter server and client logs, it should not contain sensitive information
+        ?tags : (string*string) seq) =
+
     let connPolicy =
         let cp = Client.ConnectionPolicy.Default
         cp.ConnectionMode <- Client.ConnectionMode.Direct
@@ -666,22 +682,32 @@ type EqxConnector
         cp
 
     /// Yields an connection to DocDB configured and Connect()ed to DocDB collection per the requested `discovery` strategy
-    member __.Connect (discovery  : Discovery) : Async<EqxConnection> = async {
-        let client (uri: Uri) (key: string) (dbId: string) (collectionName: string) = async {
-            let collectionUri = Client.UriFactory.CreateDocumentCollectionUri(dbId, collectionName)
-            let client = new Client.DocumentClient(uri, key, connPolicy, Nullable(ConsistencyLevel.Session))
-            do!
-              dbId
-              |> Client.UriFactory.CreateDatabaseUri
-              |> client.ReadDatabaseAsync       // check if database exists
-              |> Async.AwaitTaskCorrect
-              |> Async.bind (fun _ -> client.ReadDocumentCollectionAsync(collectionUri) |> Async.AwaitTaskCorrect)   // check if collection exists
-              |> Async.Ignore
+    member __.Connect
+        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+            name,
+            discovery  : Discovery) : Async<IDocumentClient> =
+        let connect (uri: Uri, key: string) = async {
+            let name = String.concat ";" <| seq {
+                yield name
+                match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
+            let sanitizedName = name.Replace('\'','_').Replace(':','_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
+            let client = new Client.DocumentClient(uri, key, connPolicy, Nullable ConsistencyLevel.Session)
+            log.Information("Connected to Equinox with clientId={clientId}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
             return client :> IDocumentClient }
 
-        let! client =
-            match discovery with
-            | Discovery.UriAndKey (uri, key, db, coll) -> client uri key db coll
+        match discovery with
+        | Discovery.UriAndKey(uri=uri; key=key) ->
+            connect (uri,key)
+        | Discovery.ConnectionString connStr ->
+            let cred =
+              match connStr,connStr with
+              | Strings.RegexGroup "AccountEndpoint=(.+?);" uri, Strings.RegexGroup "AccountKey=(.+?);" key ->
+                 System.Uri(uri), key
+              | _ -> failwithf "Invalid DocumentDB connection string: %s" connStr
+            connect cred
 
-        return EqxConnection(client) }
+    /// Yields a DocDbConnection configured per the specified strategy
+    member __.Establish(name, discovery : Discovery) : Async<EqxConnection> = async {
+        let! conn = __.Connect(name, discovery)
+        return EqxConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
