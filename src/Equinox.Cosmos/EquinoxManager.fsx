@@ -7,7 +7,7 @@
 #load "Infrastructure.fs"
 
 open System
-open Foldunk.Equinox
+open Equinox.Cosmos
 open Microsoft.Azure.Documents
 open Microsoft.Azure.Documents.Client
 
@@ -18,7 +18,7 @@ let COLLNAME = "test"
 let RU = 5000
 let AUXRU = 400
 
-let client = 
+let client =
     let connPolicy =
       let cp = ConnectionPolicy.Default
       cp.ConnectionMode <- ConnectionMode.Direct
@@ -27,17 +27,16 @@ let client =
       cp
     new DocumentClient(URI, KEY, connPolicy, Nullable ConsistencyLevel.Session)
 
-let dburi = 
+let createDatabase (client:DocumentClient)=
     let dbRequestOptions =
         let o = RequestOptions ()
         o.ConsistencyLevel <- Nullable<ConsistencyLevel>(ConsistencyLevel.ConsistentPrefix)
         o
-    client.CreateDatabaseIfNotExistsAsync(Database(Id=DBNAME), options = dbRequestOptions) 
+    client.CreateDatabaseIfNotExistsAsync(Database(Id=DBNAME), options = dbRequestOptions)
     |> Async.AwaitTaskCorrect
     |> Async.map (fun response -> Client.UriFactory.CreateDatabaseUri (response.Resource.Id))
-    |> Async.RunSynchronously
 
-let collectionUri = 
+let createCollection (client: DocumentClient) (dbUri: Uri) =
     let pkd = PartitionKeyDefinition()
     pkd.Paths.Add("/k")
     let coll = DocumentCollection(Id = COLLNAME, PartitionKey = pkd)
@@ -48,12 +47,11 @@ let collectionUri =
     coll.IndexingPolicy.IncludedPaths.Add(new IncludedPath (Path="/k/?"))
     coll.IndexingPolicy.IncludedPaths.Add(new IncludedPath (Path="/sn/?"))
     coll.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath (Path="/*"))
-    client.CreateDocumentCollectionIfNotExistsAsync(dburi, coll, RequestOptions(OfferThroughput=Nullable RU))
+    client.CreateDocumentCollectionIfNotExistsAsync(dbUri, coll, RequestOptions(OfferThroughput=Nullable RU))
     |> Async.AwaitTaskCorrect
     |> Async.map (fun response -> Client.UriFactory.CreateDocumentCollectionUri (DBNAME, response.Resource.Id))
-    |> Async.RunSynchronously
 
-let batchSproc =
+let createStoreSproc (client: IDocumentClient) (collectionUri: Uri) =
     let f ="""
         function multidocInsert (docs) {
         var response = getContext().getResponse();
@@ -70,11 +68,11 @@ let batchSproc =
         }"""
     let batchSproc = new StoredProcedure(Id = "AtomicMultiDocInsert", Body = f)
 
-    client.CreateStoredProcedureAsync(collectionUri, batchSproc) 
+    client.CreateStoredProcedureAsync(collectionUri, batchSproc)
     |> Async.AwaitTaskCorrect
-    |> Async.RunSynchronously
+    |> Async.map (fun r -> Client.UriFactory.CreateStoredProcedureUri(DBNAME, COLLNAME, r.Resource.Id))
 
-let auxCollectionUri = 
+let createAux (client: DocumentClient) (dbUri: Uri) =
     let auxCollectionName = sprintf "%s-aux" COLLNAME
     let auxColl = DocumentCollection(Id = auxCollectionName)
     auxColl.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath(Path="/ChangefeedPosition/*"))
@@ -82,8 +80,14 @@ let auxCollectionUri =
     auxColl.IndexingPolicy.IncludedPaths.Add(new IncludedPath (Path="/*"))
     auxColl.IndexingPolicy.IndexingMode <- IndexingMode.Lazy
     auxColl.DefaultTimeToLive <- Nullable(365 * 60 * 60 * 24)
-    client.CreateDocumentCollectionIfNotExistsAsync(dburi, auxColl, RequestOptions(OfferThroughput=Nullable AUXRU))
+    client.CreateDocumentCollectionIfNotExistsAsync(dbUri, auxColl, RequestOptions(OfferThroughput=Nullable AUXRU))
     |> Async.AwaitTaskCorrect
     |> Async.map (fun response -> Client.UriFactory.CreateDocumentCollectionUri (DBNAME, response.Resource.Id))
-    |> Async.RunSynchronously
 
+let go = async {
+    let! dbUri = createDatabase client
+    do! (createCollection client dbUri) |> Async.bind (createStoreSproc client) |> Async.Ignore
+    do! createAux client dbUri |> Async.Ignore
+}
+
+go |> Async.RunSynchronously
