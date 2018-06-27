@@ -117,7 +117,8 @@ let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPo
 
 /// Standing up an Equinox instance is complicated; to run for test purposes either:
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
-/// create Equinox with dbName "test" and collectionName "test" to perform test
+/// - Create a local Equinox with dbName "test" and collectionName "test" using script:
+///   /src/Equinox.Cosmos/EquinoxManager.fsx
 let connectToLocalEquinoxNode (log: ILogger) connStr operationTimeout (maxRetyForThrottling, maxRetryWaitTime) =
     EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetyForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
         .Establish("Equinox-loadtests", Discovery.ConnectionString(connStr))
