@@ -679,10 +679,58 @@ type EqxStreamBuilder<'event, 'state>(gateway : EqxGateway, codec, fold, initial
 
         Equinox.Stream.create category streamName
 
+module Initialization =
+    let createDatabase (client:IDocumentClient) dbName = async {
+        let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
+        let! db = client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect
+        return db.Resource.Id }
+
+    let createCollection (client: IDocumentClient) (dbUri: Uri) collName ru = async {
+        let pkd = PartitionKeyDefinition()
+        pkd.Paths.Add("/k")
+        let colld = DocumentCollection(Id = collName, PartitionKey = pkd)
+
+        colld.IndexingPolicy.IndexingMode <- IndexingMode.None
+        colld.IndexingPolicy.Automatic <- false
+        let! coll = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, colld, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect
+        return coll.Resource.Id }
+
+    let createProc (client: IDocumentClient) (collectionUri: Uri) = async {
+        let f ="""function multidocInsert (docs) {
+            var response = getContext().getResponse();
+            var collection = getContext().getCollection();
+            var collectionLink = collection.getSelfLink();
+            if (!docs) throw new Error("docs argument is missing.");
+            for (i=0; i<docs.length; i++) {
+                collection.createDocument(collectionLink, docs[i]);
+            }
+            response.setBody(true);
+        }"""
+        let def = new StoredProcedure(Id = "AtomicMultiDocInsert", Body = f)
+        return! client.CreateStoredProcedureAsync(collectionUri, def) |> Async.AwaitTaskCorrect |> Async.Ignore }
+
+    let initialize (client : IDocumentClient) dbName collName ru = async {
+        let! dbId = createDatabase client dbName
+        let dbUri = Client.UriFactory.CreateDatabaseUri dbId
+        let! collId = createCollection client dbUri collName ru
+        let collUri = Client.UriFactory.CreateDocumentCollectionUri (dbName, collId)
+        //let! _aux = createAux client dbUri collName auxRu
+        return! createProc client collUri
+    }
+
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     | UriAndKey of uri:Uri * key:string
     | ConnectionString of string
+    /// Implements connection string parsing logic curiously missing from the DocDb SDK
+    static member FromConnectionString (connectionString: string) =
+        match connectionString with
+        | _ when String.IsNullOrWhiteSpace connectionString -> nullArg "connectionString"
+        | Regex.Match "^\s*AccountEndpoint\s*=\s*([^;\s]+)\s*;\s*AccountKey\s*=\s*([^;\s]+)\s*;?\s*$" m ->
+            let uri = m.Groups.[1].Value
+            let key = m.Groups.[2].Value
+            UriAndKey (Uri uri, key)
+        | _ -> invalidArg "connectionString" "unrecognized connection string format"
 
 type EqxConnector
     (   requestTimeout: TimeSpan, maxRetryAttemptsOnThrottledRequests: int, maxRetryWaitTimeInSeconds: int,
