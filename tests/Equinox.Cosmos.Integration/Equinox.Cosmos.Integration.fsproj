@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="..\Equinox.EventStore.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
+    <Compile Include="ByteArrayConverterTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
