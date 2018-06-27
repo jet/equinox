@@ -82,7 +82,7 @@ and CosmosArguments =
     | [<AltCommandLine("-rt")>] RetriesWaitTime of int
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | ConnectionString _ -> "specify a connection string for a Cosmos account (default: localhost)."
+            | ConnectionString _ -> "specify a connection string for a Cosmos account (default: connection string for Cosmos Emulator)."
             | DbName _ -> "specify a database name for Cosmos account (default: test)."
             | CollName _ -> "specify a collection name for Cosmos account (default: test)."
             | VerboseStore -> "Include low level Store logging."

@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="EquinoxManager.fsx" />
     <Compile Include="..\Equinox.EventStore\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Cosmos.fs" />
   </ItemGroup>
