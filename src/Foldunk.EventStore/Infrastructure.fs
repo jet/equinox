@@ -5,6 +5,36 @@ open FSharp.Control
 open System
 open System.Diagnostics
 
+#if NET461
+module Seq =
+    let tryLast (source : seq<_>) =
+        use e = source.GetEnumerator()
+        if e.MoveNext() then
+            let mutable res = e.Current
+            while (e.MoveNext()) do res <- e.Current
+            Some res
+        else
+            None
+module Array =
+    let tryHead (array : 'T[]) =
+        if array.Length = 0 then None
+        else Some array.[0]
+    let tryFindBack predicate (array: _[]) =
+        let rec loop i =
+            if i < 0 then None
+            elif predicate array.[i] then Some array.[i]
+            else loop (i - 1)
+        loop (array.Length - 1)
+    let tryFindIndexBack predicate (array: _[]) =
+        let rec loop i =
+            if i < 0 then None
+            elif predicate array.[i] then Some i
+            else loop (i - 1)
+        loop (array.Length - 1)
+module Option =
+    let filter predicate option = match option with None -> None | Some x -> if predicate x then Some x else None
+#endif
+
 type Async with
     /// <summary>
     ///     Gets the result of given task so that in the event of exception

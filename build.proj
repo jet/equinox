@@ -1,0 +1,31 @@
+<Project ToolsVersion="15.0">
+
+  <Import Project="Directory.Build.props" />
+
+  <Target Name="Restore">
+    <Exec Command="dotnet restore" WorkingDirectory="tools" ConsoleToMSBuild="true" />
+  </Target>
+
+  <Target Name="Build" DependsOnTargets="Restore">
+    <Exec Command='dotnet build samples/Store/Domain.Tests -c Release' />
+    <Exec Command='dotnet build samples/Store/Domain.Integration -c Release' />
+    <Exec Command='dotnet build tests/Foldunk.LoadTests -c Release' />
+  </Target>
+
+  <Target Name="Pack" DependsOnTargets="Restore">
+    <RemoveDir Directories="$(NupkgsDir)" />
+    <Exec Command='dotnet pack src/Foldunk -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
+    <Exec Command='dotnet pack src/Foldunk.Serialization -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
+    <Exec Command='dotnet pack src/Foldunk.EventStore -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
+  </Target>
+
+  <Target Name="Test">
+    <Exec Command='dotnet build samples/Store/Domain.Tests -c Release' />
+    <Exec Command='dotnet build samples/Store/Domain.Integration -c Release' />
+    <Exec Command='dotnet build tests/Foldunk.EventStore.Integration -c Release' />
+    <Exec Command='dotnet build tests/Foldunk.MemoryStore.Integration -c Release' />
+  </Target>
+
+  <Target Name="VSTest" DependsOnTargets="Test" />
+
+</Project>

@@ -1,4 +1,5 @@
 ﻿Argu
+EventStore.ClientAPI.NetCore
 Destructurama.FSharp
 EventStore.Client
 Jet.JsonNet.Converters

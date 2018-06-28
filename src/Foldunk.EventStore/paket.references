@@ -1,4 +1,4 @@
-﻿nuget EventStore.Client
+﻿nuget EventStore.ClientAPI.NetCore
 nuget FSharp.Control.AsyncSeq
 nuget FSharp.Core
 nuget System.Runtime.Caching
