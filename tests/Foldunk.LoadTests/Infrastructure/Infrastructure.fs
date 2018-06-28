@@ -19,7 +19,29 @@ let (|InnermostExn|) (exn : exn) =
     if exn = null then nullArg "exn"
     aux exn
 
+// https://gist.github.com/palladin/3761004/cefb9acbe5d03366b53c38c4b7afd7488b99134a
+type internal SuccessException<'T>(value : 'T) =
+    inherit Exception()
+    member self.Value = value
+
 type Async with
+#if NET461
+    static member Choice<'T>(workflows : seq<Async<'T option>>) : Async<'T option> = async {
+        try
+            let! _ =
+                workflows
+                |> Seq.map (fun workflow -> async {
+                                                let! optionValue = workflow
+                                                match optionValue with
+                                                | None -> return None
+                                                | Some v -> return raise <| new SuccessException<'T>(v)
+                                           })
+                |> Async.Parallel
+
+            return None
+        with
+        | :? SuccessException<'T> as ex -> return Some ex.Value }
+#endif
     /// <summary>
     ///     Gets the result of given task so that in the event of exception
     ///     the actual user exception is raised as opposed to being wrapped

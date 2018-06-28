@@ -30,15 +30,6 @@ packages.config
 # The packages folder can be ignored because of Package Restore
 **/packages/*
 
-# Paket dependency manager
-.paket/paket.exe
-# I'm not prepared to pay the compilation time cost of the current paket restore impl
-/.paket/Paket.Restore.targets
-paket-files/
-
-# FAKE - F# Make
-.fake/
-
 # JetBrains Rider
 .idea/
 *.sln.iml

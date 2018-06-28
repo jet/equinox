@@ -113,13 +113,13 @@ let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
     if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
 
 let createEsLog verboseEs verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration().Destructure.FSharpTypes()
+    let c = LoggerConfiguration()//.Destructure.FSharpTypes()
     let c = if verboseEs then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger() :> ILogger
 let domainLog verboseDomain verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
+    let c = LoggerConfiguration()(*.Destructure.FSharpTypes()*).Enrich.FromLogContext()
     let c = if verboseDomain then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)

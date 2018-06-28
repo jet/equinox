@@ -1,6 +1,0 @@
-﻿nuget EventStore.Client
-nuget FSharp.Control.AsyncSeq
-nuget FSharp.Core
-nuget System.Runtime.Caching
-nuget Serilog
-nuget TypeShape

@@ -1,6 +1,0 @@
-﻿nuget FsCheck.Xunit
-nuget FSharp.Core
-nuget Serilog
-nuget TypeShape
-nuget unquote
-nuget xunit.runner.visualstudio

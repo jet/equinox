@@ -1,0 +1,18 @@
+<Project ToolsVersion="15.0">
+
+  <PropertyGroup>
+    <VersionPrefix>0.0.1</VersionPrefix>
+    <!--Required to ref alphas-->
+    <VersionSuffix>alpha</VersionSuffix>
+    <Authors>@jet @bartelink and contributors</Authors>
+    <Company>Jet.com</Company>
+    <Description>Event-sourcing library for F#</Description>
+    <PackageProjectUrl>https://github.com/jet/Foldunk</PackageProjectUrl>
+    <PackageTags>fsharp unionconverter unionecoder eventsourcing eventstore fold</PackageTags>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/jet/Foldunk</RepositoryUrl>
+    <PackageLicenseUrl>https://github.com/jet/Foldunk/blob/master/LICENSE</PackageLicenseUrl>
+    <Copyright>Copyright © 2016-8</Copyright>
+  </PropertyGroup>
+
+</Project>

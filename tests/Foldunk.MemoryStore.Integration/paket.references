@@ -1,6 +1,0 @@
-﻿nuget FsCheck.Xunit
-nuget FSharp.Core
-nuget Serilog
-nuget Serilog.Sinks.Seq
-nuget unquote
-nuget xunit.runner.visualstudio

@@ -25,14 +25,13 @@ Features
 - Uses `UnionEncoder`: a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
 	- independent of any specific serializer
 	- allows tagging of Discriminated Union cases with low-dependency `DataMember(Name=` tags in a versionable manner using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionEncoderTests.fs)
-- _Compaction_ support: A pattern employed to optimize command processing by employing in-stream 'snapshot' events with the following properties:
+- Compaction support: A pattern employed to optimize command processing by employing in-stream 'snapshot' events with the following properties:
 	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
 	- support, when using the EventStore adapter (via `UnionEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
-- Integrated caching via .NET `MemoryCache` - provides for minimal reads by maintaining the folded state in the cache without any explicit code within the Domain Model.
+- Integrated Folded state based caching via .NET `MemoryCache` - provides for minimal reads by maintaining the folded state in the cache without any explicit code within the Domain Model.
 
 Building
 --------
 ```
-dotnet tool install fake-cli -g
-./build
+dotnet msbuild Foldunk.sln "-t:restore;build;pack;test"
 ```

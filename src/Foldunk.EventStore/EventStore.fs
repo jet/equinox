@@ -476,9 +476,9 @@ type Discovery =
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Discovery =
     let buildDns (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
-        ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering() |> f |> fun s -> s.Build()
+        ClusterSettings.Create().DiscoverClusterViaDns().SetMaxDiscoverAttempts(Int32.MaxValue) |> f |> fun s -> s.Build()
     let buildSeeded (f : GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
-        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering() |> f |> fun s -> s.Build()
+        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().SetMaxDiscoverAttempts(Int32.MaxValue) |> f |> fun s -> s.Build()
     let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
@@ -520,7 +520,7 @@ type GesConnector
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
-        .SetQueueTimeoutTo(reqTimeout) // ES default: Zero/unlimited
+        //.SetQueueTimeoutTo(reqTimeout) // ES default: Zero/unlimited
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
         .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
@@ -528,7 +528,7 @@ type GesConnector
             match node with
             | NodePreference.Master -> s.PerformOnMasterOnly()  // explicitly use ES default of requiring master, use default Node preference of Master
             | NodePreference.PreferMaster -> s.PerformOnAnyNode() // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
-            | NodePreference.PreferSlave -> s.PerformOnAnyNode().PreferSlaveNode() // override default PerformOnMasterOnly(), override Master Node preference
+            | NodePreference.PreferSlave -> s.PerformOnAnyNode().PreferRandomNode() // override default PerformOnMasterOnly(), override Master Node preference
             | NodePreference.Random -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
         |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
