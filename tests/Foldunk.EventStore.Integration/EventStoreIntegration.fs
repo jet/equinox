@@ -1,7 +1,6 @@
 ﻿module Foldunk.EventStore.Integration.EventStoreIntegration
 
 open Foldunk.EventStore
-open Foldunk.EventStore.Caching
 open Serilog
 open Swensen.Unquote
 open System.Threading

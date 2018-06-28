@@ -1,18 +1,11 @@
 @echo off
 cls
 
-if not exist .paket\paket.exe (
-    .paket\paket.bootstrapper.exe
-    if errorlevel 1 (
-        exit /b %errorlevel%
-    )
-)
-
-if not exist packages (
+if not ([%1]==[skipRestore=true]) (
     .paket\paket.exe restore
     if errorlevel 1 (
         exit /b %errorlevel%
     )
 )
 
-packages\build\FAKE\tools\FAKE.exe build.fsx %*
+FAKE.exe run build.fsx %*

@@ -1,1 +1,2 @@
-﻿nuget Serilog
+﻿nuget FSharp.Core
+nuget Serilog

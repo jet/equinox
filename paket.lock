@@ -6,14 +6,14 @@ NUGET
     Destructurama.FSharp (1.0.14)
       Serilog (>= 1.4.204)
     EventStore.Client (4.1.1)
-    FsCheck (2.10.10)
+    FsCheck (2.11)
       FSharp.Core (>= 4.0.0.1)
-    FsCheck.Xunit (2.10.10)
-      FsCheck (2.10.10)
+    FsCheck.Xunit (2.11)
+      FsCheck (2.11)
       xunit.extensibility.execution (>= 2.2 < 3.0)
     FSharp.Control.AsyncSeq (2.0.21)
       FSharp.Core (>= 3.1.2)
-    FSharp.Core (4.3.4) - redirects: force
+    FSharp.Core (4.5) - redirects: force
     MathNet.Numerics (4.5.1)
     Newtonsoft.Json (11.0.2)
     Serilog (2.7.1)
@@ -31,6 +31,7 @@ NUGET
       Serilog.Sinks.File (>= 4.0)
       Serilog.Sinks.PeriodicBatching (>= 2.1.1)
     System.Reactive (4.0)
+    System.Runtime.Caching (4.5)
     TypeShape (5.1)
       FSharp.Core (>= 3.1.2)
     Unquote (4.0)
@@ -47,4 +48,4 @@ NUGET
 GROUP build
 NUGET
   remote: https://api.nuget.org/v3/index.json
-    FAKE (5.0)
+    FAKE (5.1)

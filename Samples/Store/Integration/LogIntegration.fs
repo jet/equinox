@@ -2,7 +2,6 @@
 
 open Foldunk.EventStore
 open Swensen.Unquote
-open System
 
 module Interop =
     [<NoEquality; NoComparison>]

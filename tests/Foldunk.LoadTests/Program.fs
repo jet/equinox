@@ -10,7 +10,6 @@ open Domain
 open System.Threading
 open Serilog.Events
 open System.IO
-open System.Net
 open Serilog.Context
 
 type Arguments =
