@@ -7,6 +7,7 @@ nuget FSharp.Control.AsyncSeq
 nuget Newtonsoft.Json
 nuget Serilog
 nuget System.Reactive
+nuget System.Runtime.Caching
 nuget TypeShape
 
 # Single group to avoid conflicts
@@ -25,4 +26,4 @@ nuget TypeShape
 group build
     source https://api.nuget.org/v3/index.json
 
-    nuget FAKE
+    nuget FAKE prerelease

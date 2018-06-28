@@ -1,16 +1,24 @@
-#r "packages/build/FAKE/tools/FakeLib.dll"
-open Fake
+#r "paket:
+nuget Fake.Core.Target
+nuget Fake.IO.FileSystem
+nuget Fake.DotNet.MSBuild //"
+#load "./.fake/build.fsx/intellisense.fsx"
+
+open Fake.Core
+open Fake.DotNet
+open Fake.IO
+open Fake.IO.Globbing.Operators
 
 let buildDir = "./.build/"
 
-Target "Clean" (fun _ ->
-    CleanDir buildDir
+Target.create "Clean" (fun _ ->
+    Shell.cleanDir buildDir
 )
 
-Target "Build" (fun _ ->
+Target.create "Build" (fun _ ->
     !! "*.sln"
-    |> MSBuildRelease buildDir "Build"
-    |> Log "Build-Output: "
+    |> MSBuild.runRelease id buildDir "Build"
+    |> Trace.logItems "Build-Output: "
 )
 
-RunTargetOrDefault "Build"
+Target.runOrDefault "Build"

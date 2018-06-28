@@ -6,7 +6,6 @@ open Swensen.Unquote.Assertions
 open System.IO
 open System.Text.RegularExpressions
 open Xunit
-open Foldunk.Serialization.Converters
 
 let normalizeJsonString (json : string) =
     let str1 = Regex.Replace(json, @"{\s*}", "{}")
