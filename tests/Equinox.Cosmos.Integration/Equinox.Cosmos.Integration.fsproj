@@ -10,7 +10,7 @@
   <ItemGroup>
     <Compile Include="Infrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
-    <Compile Include="ByteArrayConverterTests.fs" />
+    <Compile Include="VerbatimUtf8JsonConverterTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
