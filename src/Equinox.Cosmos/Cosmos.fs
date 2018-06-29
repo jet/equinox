@@ -23,7 +23,7 @@ module Strings =
         | m when m.Success && m.Groups.[1].Success -> m.Groups.[1].Value |> Some
         | _ -> None
 
-type ByteArrayConverter() =
+type VerbatimUtf8JsonConverter() =
     inherit JsonConverter()
 
     override this.ReadJson(reader, _, _, serializer) =
@@ -104,10 +104,10 @@ type EquinoxEvent = {
     sn : SN
     et : string
 
-    [<JsonConverter(typeof<ByteArrayConverter>)>]
+    [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
     d : byte[]
 
-    [<JsonConverter(typeof<ByteArrayConverter>)>]
+    [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
     md : byte[] }
 
 type Connection = IDocumentClient * Uri
