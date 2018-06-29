@@ -6,13 +6,11 @@ open Swensen.Unquote
 
 let settings =
     let instance = Foldunk.Serialization.Settings.CreateDefault()
-    // For whatever reason, EventStore does not hyphenate guids; respect this approach
+    // Remove dashes when serializing strings
     instance.Converters.Add(Foldunk.Serialization.Converters.GuidConverter())
     // Don't let json.net treat 't option as the DU it is internally
-    // ... instead, use the optionality to inhibit the emission of a value
     instance.Converters.Add(Foldunk.Serialization.Converters.OptionConverter())
-    // Alter the rendering to collapse the `fields` of the union into the top level,
-    // alongside the `case`
+    // Collapse the `fields` of the union into the top level, alongside the `case`
     instance.Converters.Add(Foldunk.Serialization.Converters.UnionConverter())
     instance
 
