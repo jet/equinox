@@ -101,7 +101,7 @@ module Commands =
             else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
 
     type Stream(log, stream, maxSavedItems, maxAttempts) =
-        let handler = Foldunk.StreamHandler(log, stream, Fold.fold, maxAttempts = maxAttempts)
+        let handler = Foldunk.Stream.Handler(Fold.fold, log, stream, maxAttempts = maxAttempts)
         let decide (fctx : Foldunk.Context<_,_>) command =
             let run cmd = fctx.Decide (decide maxSavedItems cmd)
             let result = run command

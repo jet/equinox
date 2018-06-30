@@ -49,7 +49,7 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
         test <@ { ItemAddInfo.context = e.context; skuId = csku; quantity = quantity } = e
                 && quantity = (find csku).quantity @>
     | PatchItem (_, csku, Some 0, _),               [ ItemRemoved e ]
-    | RemoveItem (_, csku),               [ ItemRemoved e ] ->
+    | RemoveItem (_, csku),                         [ ItemRemoved e ] ->
         test <@ { ItemRemoveInfo.context = e.context; skuId = csku } = e
                 && not (state'.items |> List.exists (fun x -> x.skuId = csku)) @>
     | PatchItem (_, csku, quantity, waive),    es ->

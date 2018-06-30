@@ -82,9 +82,9 @@ module Commands =
                 | _ -> () ]
 
 type Handler(log, stream) =
-    let handler = Foldunk.StreamHandler(log, stream, Folds.fold, maxAttempts = 3)
+    let inner = Foldunk.Stream.Handler(Folds.fold, log, stream, maxAttempts = 3)
     member __.FlowAsync(flow, ?prepare) =
-        handler.DecideAsync <| fun ctx -> async {
+        inner.DecideAsync <| fun ctx -> async {
             let execute = Commands.interpret >> ctx.Execute
             match prepare with None -> () | Some prep -> do! prep
             let result = flow ctx execute
@@ -94,4 +94,4 @@ type Handler(log, stream) =
     member __.Execute command =
         __.FlowAsync(fun _ctx execute -> execute command)
     member __.Read : Async<Folds.State> =
-        handler.Query id
+        inner.Query id

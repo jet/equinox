@@ -2,10 +2,10 @@
 
 open Domain
 
-type Service(createStream) =
+type Service(resolveStream) =
     let stream (id: CartId) =
         sprintf "Cart-%s" id.Value
-        |> createStream Cart.Events.Compaction.EventType
+        |> resolveStream Cart.Events.Compaction.EventType
 
     member __.FlowAsync (log : Serilog.ILogger, cartId : CartId, flow, ?prepare) =
         Cart.Handler(log, stream cartId)
