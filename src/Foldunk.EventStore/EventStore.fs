@@ -438,7 +438,7 @@ type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
             | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
                 Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
 
-        Foldunk.Stream<'event, 'state>(category, streamName, ?initialTokenAndState = initialTokenAndState) :> _
+        Foldunk.Stream.Stream<'event, 'state>(category, streamName, ?initialTokenAndState = initialTokenAndState) :> _
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
