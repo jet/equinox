@@ -92,4 +92,4 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
 type MemoryStreamBuilder<'event, 'state>(store : VolatileStore, fold, initial) =
     member __.Create streamName : Foldunk.IStream<'event, 'state> =
         let category = MemoryCategory(store, fold, initial)
-        Foldunk.Stream.Stream<'event, 'state>(category, streamName) :> _
+        Foldunk.Stream.create category streamName
