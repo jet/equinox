@@ -63,7 +63,7 @@ module private Write =
             let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
-            log.Information(ex, "Ges TrySync WrongExpectedVersionException")
+            log.Information(ex, "Ges TrySync WrongExpectedVersionException writing {EventTypes}", [| for x in events -> x.Type |])
             return EsSyncResult.Conflict }
     let eventDataBytes events =
         let eventDataLen (x : EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
@@ -414,7 +414,7 @@ type CachingStrategy =
     /// Prefix is used to distinguish multiple folds per stream
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
-type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction, ?caching, ?initialTokenAndState) =
+type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction, ?caching) =
     member __.Create streamName : Foldunk.IStream<'event, 'state> =
         let compactionPredicateOption =
             match compaction with
@@ -438,7 +438,7 @@ type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction
             | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
                 Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
 
-        Foldunk.Stream.Stream<'event, 'state>(category, streamName, ?initialTokenAndState = initialTokenAndState) :> _
+        Foldunk.Stream.create category streamName
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with

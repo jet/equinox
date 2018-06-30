@@ -90,9 +90,9 @@ module private Flow =
                 tokenAndState <- token', streamState'
                 return true }
 
-        member __.TokenAndState = tokenAndState
-        member __.Token = fst __.TokenAndState
-        member __.State = snd __.TokenAndState
+        member __.Memento = tokenAndState
+        member __.Token = fst __.Memento
+        member __.State = snd __.Memento
         member __.CreateContext(): Context<'event, 'state> =
             Context<'event, 'state>(fold, __.State, __.Token.batchCapacityLimit)
         member __.TryOrResync log events =
@@ -142,39 +142,41 @@ module private Flow =
         loop 1
 
     /// Internal implementation providing a handler not associated with a specific log or stream
-    /// Not 'just' making it public; the plan is to have StreamHandler represent the public interface until a real pattern presents
+    /// Not 'just' making it public; the plan is to have Stream.Handler represent the public interface until further significant patterns present
     type HandlerImpl<'event, 'state>(fold, maxAttempts) =
         let execAsync stream log f = async { let! syncState = load fold log stream in return! f syncState }
         let exec stream log f = execAsync stream log <| fun syncState -> async { return f syncState }
         let runFlow stream log decideAsync = execAsync stream log <| fun syncState -> async { return! run syncState maxAttempts log decideAsync }
 
-        /// 0. Invoke the supplied `flow` function 1. attempt to sync the accumulated events to the stream 2. yield the `'result`
-        /// Throws FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
-        member __.Decide(stream : IStream<'event, 'state>) (log : ILogger) (flow: Context<'event, 'state> -> 'result) : Async<'result> =
+        member __.Decide(stream : IStream<'event, 'state>, log : ILogger, flow: Context<'event, 'state> -> 'result) : Async<'result> =
             runFlow stream log <| fun ctx -> async { let result = flow ctx in return result, ctx.Accumulated }
-        /// 0. Invoke the supplied _Async_ `flowAsync` function 1. attempt to sync the accumulated events to the stream 2. yield the `result`
-        /// Throws FlowAttemptsExceededException` to signal failure to synchronize decision into the stream
-        member __.DecideAsync(stream : IStream<'event, 'state>) (log : ILogger) (flowAsync: Context<'event, 'state> -> Async<'result>): Async<'result> =
+        member __.DecideAsync(stream : IStream<'event, 'state>, log : ILogger, flowAsync: Context<'event, 'state> -> Async<'result>): Async<'result> =
             runFlow stream log <| fun ctx -> async { let! result = flowAsync ctx in return result, ctx.Accumulated }
-        /// Project from the folded `State` (without executing a decision flow or syncing new events to the stream as `Decide` does)
-        member __.Query (stream : IStream<'event, 'state>) (log: ILogger) (projection : 'state -> 'result) : Async<'result> =
-            exec stream log <| fun syncState -> projection syncState.State
-        /// Hook for low level integration testing. There are no known cases where this is relevant to any production stream.
-        member __.InternalRawState (stream : IStream<'event, 'state>) (log: ILogger) : Async<Storage.StreamToken * 'state> =
-            exec stream log <| fun syncState -> syncState.TokenAndState
+        member __.Query(stream : IStream<'event, 'state>, log : ILogger) : (SyncState<'event,'state> -> 'result) -> Async<'result> =
+            exec stream log
 
 module Stream =
     /// Represents a specific stream in an IStoreCategory
-    type Stream<'event, 'state>(category : ICategory<'event, 'state>, streamName, ?initialTokenAndState : Storage.StreamToken * 'state) =
-        let mutable knownTokenAndState = initialTokenAndState
+    type private Stream<'event, 'state>(category : ICategory<'event, 'state>, streamName) =
         interface IStream<'event, 'state> with
             member __.Load log =
-                match knownTokenAndState with
-                | Some (token,state) -> async { knownTokenAndState <- None; return token, state }
-                | None -> category.Load streamName log
+                category.Load streamName log
             member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list) =
                 category.TrySync streamName log (token, originState) events
 
+    /// Handles case where some earlier processing has loaded or determined a the state of a stream, allowing us to avoid a read roundtrip
+    type private InitializedStream<'event, 'state>(inner : IStream<'event, 'state>, memento : Storage.StreamToken * 'state) =
+        let mutable preloadedTokenAndState = Some memento
+        interface IStream<'event, 'state> with
+            member __.Load log =
+                match preloadedTokenAndState with
+                | Some value -> async { preloadedTokenAndState <- None; return value }
+                | None -> inner.Load log
+            member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list) =
+                inner.TrySync log (token, originState) events
+
+    let create (category : ICategory<'event, 'state>) streamName : IStream<'event, 'state> = Stream(category, streamName) :> _
+    let ofMemento (memento : Storage.StreamToken * 'state) (x : IStream<_,_>) : IStream<'event, 'state> = InitializedStream(x, memento) :> _
 
     /// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic
     type Handler<'event, 'state>(fold, log, stream : IStream<'event, 'state>, maxAttempts : int) =
@@ -183,19 +185,19 @@ module Stream =
         /// 0. Invoke the supplied `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.
         /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
         member __.Decide (flow : Context<'event, 'state> -> 'result) : Async<'result> =
-            inner.Decide stream log flow
+            inner.Decide(stream, log, flow)
         /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome
         /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
         member __.DecideAsync (flowAsync : Context<'event, 'state> -> Async<'result>) : Async<'result> =
-            inner.DecideAsync stream log flowAsync
+            inner.DecideAsync(stream,log,flowAsync)
+        /// Low Level helper to allow one to obtain the complete state of a stream (including the position) in order to pass it within the application
+        member __.Raw : Async<Storage.StreamToken * 'state> =
+            inner.Query(stream,log) <| fun syncState -> syncState.Memento
         /// Project from the folded `State` without executing a decision flow as `Decide` does
         member __.Query (projection : 'state -> 'view) : Async<'view> =
-            inner.Query stream log projection
-        /// Hook for low level integration testing. There are no known cases where this is relevant to any production stream.
-        member __.InternalRawState : Async<Storage.StreamToken * 'state> =
-            inner.InternalRawState stream log
+            inner.Query(stream,log) <| fun syncState -> projection syncState.State
 
-// Exception yielded by ES Operation after `count` attempts to complete the operation have taken place
+/// Exception yielded by ES Operation after `count` attempts to complete the operation have taken place
 type OperationRetriesExceededException(count : int, innerException : exn) =
    inherit exn(sprintf "Retry failed after %i attempts." count, innerException)
 
