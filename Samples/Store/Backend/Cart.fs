@@ -2,19 +2,16 @@
 
 open Domain
 
-type Service(resolveStream) =
-    let stream (id: CartId) =
-        sprintf "Cart-%s" id.Value
-        |> resolveStream Cart.Events.Compaction.EventType
+type Service(log, resolveStream) =
+    let (|Cart|) (id: CartId) =
+        let stream = sprintf "Cart-%s" id.Value |> resolveStream Cart.Events.Compaction.EventType
+        Cart.Handler(log, stream)
 
-    member __.FlowAsync (log : Serilog.ILogger, cartId : CartId, flow, ?prepare) =
-        Cart.Handler(log, stream cartId)
-            .FlowAsync(flow, ?prepare = prepare)
+    member __.FlowAsync (Cart cart, flow, ?prepare) =
+        cart.FlowAsync(flow, ?prepare = prepare)
 
-    member __.Execute (log : Serilog.ILogger) (cartId : CartId) command =
-        Cart.Handler(log, stream cartId)
-            .Execute command
+    member __.Execute (Cart cart) command =
+        cart.Execute command
 
-    member __.Read (log : Serilog.ILogger) (cartId : CartId) =
-        Cart.Handler(log, stream cartId)
-            .Read
+    member __.Read (Cart cart) =
+        cart.Read

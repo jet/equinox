@@ -3,7 +3,7 @@
 open Foldunk.EventStore
 open Swensen.Unquote
 
-module Interop =
+module FoldunkEsInterop =
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed
@@ -33,11 +33,16 @@ type SerilogMetricsExtractor(emit : string -> unit) =
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? Serilog.Events.ScalarValue as x) -> Some x.Value
         | _ -> None
-    let (|EsEvent|_|) (logEvent : Serilog.Events.LogEvent) : (string * Foldunk.EventStore.Log.Event) option =
-        logEvent.Properties |> Seq.tryPick (function KeyValue (k, SerilogScalar (:? Foldunk.EventStore.Log.Event as m)) -> Some (k,m) | _ -> None)
-    let handleLogEvent = function
-        | EsEvent (name, evt) as logEvent ->
-            let flat = Interop.flatten evt
+    let (|EsMetric|GenericMessage|) (logEvent : Serilog.Events.LogEvent) =
+        logEvent.Properties
+        |> Seq.tryPick (function
+            | KeyValue (k, SerilogScalar (:? Foldunk.EventStore.Log.Event as m)) -> Some <| Choice1Of2 (k,m)
+            | _ -> None)
+        |> Option.defaultValue (Choice2Of2 ())
+    let handleLogEvent logEvent =
+        match logEvent with
+        | EsMetric (name, evt) as logEvent ->
+            let flat = FoldunkEsInterop.flatten evt
             let renderedMetrics = sprintf "%s-Duration=%O" flat.action flat.interval.Elapsed |> Serilog.Events.ScalarValue
             // Serilog provides lots of ways of configuring custom rendering -  solely tweaking the rendering is doable using the configuration syntax
             // (the goal here is to illustrate how a given value can be extracted (as required in some cases) and/or stubbed yet retain the rest of the message)
@@ -46,7 +51,8 @@ type SerilogMetricsExtractor(emit : string -> unit) =
             // 2. let rendered = logEvent.RenderMessage() in rendered.Replace("{esEvt} ","")
             logEvent.AddOrUpdateProperty(Serilog.Events.LogEventProperty(name, renderedMetrics))
             emitEvent logEvent
-        | logEvent -> emitEvent logEvent
+        | GenericMessage () as logEvent ->
+            emitEvent logEvent
     interface Serilog.Core.ILogEventSink with member __.Emit logEvent = handleLogEvent logEvent
 
 let createLoggerWithMetricsExtraction emit =
@@ -56,6 +62,17 @@ let createLoggerWithMetricsExtraction emit =
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type Tests() =
+    let act buffer capture (service : Backend.Cart.Service) itemCount context cartId skuId resultTag = async {
+        do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service itemCount
+        let! state = service.Read cartId
+        test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
+
+        // Even though we've gone over a page, we only need a single read to read the state (plus the one from the execute)
+        let contains (s : string) (x : string) = x.IndexOf s <> -1
+        test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains resultTag)
+                2 = Seq.length reads
+                && not (obj.ReferenceEquals(capture, null)) @> }
+
     // Protip: Debug this test to view standard metrics rendering
     [<AutoData>]
     let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
@@ -63,17 +80,8 @@ type Tests() =
         let batchSize = defaultBatchSize
         let (log,capture) = createLoggerWithMetricsExtraction buffer.Add
         let! conn = connectToLocalEventStoreNode log
-        let service = CartIntegration.createServiceGes conn batchSize
-
+        let gateway = createGesGateway conn batchSize
+        let service = Backend.Cart.Service(log, CartIntegration.resolveGesStreamWithCompactionEventType gateway)
         let itemCount, cartId = batchSize / 2 + 1, cartId ()
-        do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service itemCount
-
-        let! state = service.Read log cartId
-        test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
-
-        // Even though we've gone over a page, we only need a single read to read the state (plus the one from the execute)
-        let contains (s : string) (x : string) = x.IndexOf s <> -1
-        test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains "ReadStreamEventsBackwardAsync-Duration")
-                2 = Seq.length reads
-                && not (obj.ReferenceEquals(capture, null)) @>
+        do! act buffer capture service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
     }
