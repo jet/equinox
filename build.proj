@@ -14,12 +14,12 @@
   </PropertyGroup>
 
   <Target Name="Pack">
-    <Exec Command="dotnet pack cli/$(Name).Cli $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/$(Name) $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/$(Name).Codec $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/$(Name).Cosmos $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/$(Name).EventStore $(Cfg) $(PackOptions)" />
-    <Exec Command="dotnet pack src/$(Name).MemoryStore $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack cli/Equinox.Cli $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.Codec $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.Cosmos $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
   </Target>
 
   <!-- tests hangs on osx -->
