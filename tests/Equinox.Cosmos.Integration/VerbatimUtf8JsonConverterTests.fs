@@ -13,11 +13,14 @@ let inline serialize (x:'t) =
     sw.ToString()
 
 type Embedded = { embed : string }
-type Union = A of Embedded | B of Embedded
+type Union =
+    | A of Embedded
+    | B of Embedded
+    interface TypeShape.UnionContract.IUnionContract
 
 [<Fact>]
 let ``VerbatimUtf8JsonConverter serializes properly`` () =
-    let unionEncoder = Equinox.UnionCodec.generateJsonUtf8UnionCodec<_>(JsonSerializerSettings())
+    let unionEncoder = Equinox.UnionCodec.JsonUtf8.Create<_>(JsonSerializerSettings())
     let encoded = unionEncoder.Encode(A { embed = "\"" })
     let e : Equinox.Cosmos.EquinoxEvent =
         {   id = null
@@ -26,8 +29,8 @@ let ``VerbatimUtf8JsonConverter serializes properly`` () =
             ts = DateTimeOffset.MinValue
             sn = 0L
 
-            et = encoded.CaseName
-            d = encoded.Payload
+            et = encoded.caseName
+            d = encoded.payload
 
             md = null }
     let res = serialize e
