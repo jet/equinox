@@ -18,6 +18,22 @@ module EquinoxEsInterop =
             | Log.Batch (Direction.Forward,c,m) -> "LoadF", m, Some c
             | Log.Batch (Direction.Backward,c,m) -> "LoadB", m, Some c
         { action = action; stream = metric.stream; interval = metric.interval; bytes = metric.bytes; count = metric.count; batches = batches }
+module EquinoxCosmosInterop =
+    open Equinox.Cosmos
+    [<NoEquality; NoComparison>]
+    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option; ru: int } with
+        override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" __.action __.stream __.action __.interval.Elapsed __.ru
+    let flatten (evt : Log.Event) : FlatMetric =
+        let action, metric, batches, ru =
+            match evt with
+            | Log.WriteSuccess m -> "EqxAppendToStreamAsync", m, None, m.ru
+            | Log.WriteConflict m -> "EqxAppendToStreamAsync", m, None, m.ru
+            | Log.Slice (Direction.Forward,m) -> "EqxReadStreamEventsForwardAsync", m, None, m.ru
+            | Log.Slice (Direction.Backward,m) -> "EqxReadStreamEventsBackwardAsync", m, None, m.ru
+            | Log.Batch (Direction.Forward,c,m) -> "EqxLoadF", m, Some c, m.ru
+            | Log.Batch (Direction.Backward,c,m) -> "EqxLoadB", m, Some c, m.ru
+        {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; batches = batches
+            interval = StopwatchInterval(metric.interval.StartTicks,metric.interval.EndTicks); ru = ru }
 
 type SerilogMetricsExtractor(emit : string -> unit) =
     let render template =
@@ -34,12 +50,13 @@ type SerilogMetricsExtractor(emit : string -> unit) =
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? Serilog.Events.ScalarValue as x) -> Some x.Value
         | _ -> None
-    let (|EsMetric|GenericMessage|) (logEvent : Serilog.Events.LogEvent) =
+    let (|EsMetric|CosmosMetric|GenericMessage|) (logEvent : Serilog.Events.LogEvent) =
         logEvent.Properties
         |> Seq.tryPick (function
-            | KeyValue (k, SerilogScalar (:? Equinox.EventStore.Log.Event as m)) -> Some <| Choice1Of2 (k,m)
+            | KeyValue (k, SerilogScalar (:? Equinox.EventStore.Log.Event as m)) -> Some <| Choice1Of3 (k,m)
+            | KeyValue (k, SerilogScalar (:? Equinox.Cosmos.Log.Event as m)) -> Some <| Choice2Of3 (k,m)
             | _ -> None)
-        |> Option.defaultValue (Choice2Of2 ())
+        |> Option.defaultValue (Choice3Of3 ())
     let handleLogEvent logEvent =
         match logEvent with
         | EsMetric (name, evt) as logEvent ->
@@ -50,6 +67,11 @@ type SerilogMetricsExtractor(emit : string -> unit) =
             // Other example approaches:
             // 1. logEvent.RemovePropertyIfExists name
             // 2. let rendered = logEvent.RenderMessage() in rendered.Replace("{esEvt} ","")
+            logEvent.AddOrUpdateProperty(Serilog.Events.LogEventProperty(name, renderedMetrics))
+            emitEvent logEvent
+        | CosmosMetric (name, evt) as logEvent ->
+            let flat = EquinoxCosmosInterop.flatten evt
+            let renderedMetrics = sprintf "%s-Duration=%O" flat.action flat.interval.Elapsed |> Serilog.Events.ScalarValue
             logEvent.AddOrUpdateProperty(Serilog.Events.LogEventProperty(name, renderedMetrics))
             emitEvent logEvent
         | GenericMessage () as logEvent ->
@@ -83,6 +105,18 @@ type Tests() =
         let! conn = connectToLocalEventStoreNode log
         let gateway = createGesGateway conn batchSize
         let service = Backend.Cart.Service(log, CartIntegration.resolveGesStreamWithCompactionEventType gateway)
+        let itemCount, cartId = batchSize / 2 + 1, cartId ()
+        do! act buffer capture service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
+    }
+
+    [<AutoData>]
+    let ``Can roundtrip against Equinox, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
+        let buffer = ResizeArray<string>()
+        let batchSize = defaultBatchSize
+        let (log,capture) = createLoggerWithMetricsExtraction buffer.Add
+        let! conn = connectToLocalEquinoxNode log
+        let gateway = createEqxGateway conn batchSize
+        let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithCompactionEventType gateway)
         let itemCount, cartId = batchSize / 2 + 1, cartId ()
         do! act buffer capture service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
     }
