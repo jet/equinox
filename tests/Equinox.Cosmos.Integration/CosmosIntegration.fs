@@ -14,9 +14,9 @@ let connectToLocalEquinoxNode (log: Serilog.ILogger) =
        .Establish("localDocDbSim", Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="))
 let defaultBatchSize = 500
 let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
-let (|StreamArgs|) gateway =
-    //let databaseId, collectionId = "test", "test"
-    gateway//, databaseId, collectionId
+let (|StreamArgs|) streamName =
+    let databaseId, collectionId = "test", "test"
+    databaseId, collectionId, streamName
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
@@ -27,12 +27,12 @@ module Cart =
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
         let gateway = createEqxGateway connection batchSize
-        let resolveStream _ignoreCompactionEventTypeOption (args) =
+        let resolveStream _ignoreCompactionEventTypeOption (StreamArgs args) =
             EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompaction connection batchSize log =
         let gateway = createEqxGateway connection batchSize
-        let resolveStream compactionEventType (args) =
+        let resolveStream compactionEventType (StreamArgs args) =
             EqxStreamBuilder(gateway, codec, fold, initial, compaction=CompactionStrategy.EventType compactionEventType).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching connection batchSize log cache =

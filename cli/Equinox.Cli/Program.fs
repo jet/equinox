@@ -2,6 +2,7 @@
 
 open Argu
 open Domain
+open Equinox.Cosmos
 open Equinox.EventStore
 open Infrastructure
 open Serilog
@@ -9,6 +10,7 @@ open Serilog.Events
 open System
 open System.IO
 open System.Threading
+
 
 [<NoEquality; NoComparison>]
 type Arguments =
@@ -18,6 +20,7 @@ type Arguments =
     | [<AltCommandLine("-l")>] LogFile of string
     | [<CliPrefix(CliPrefix.None)>] Memory of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None)>] Es of ParseResults<EsArguments>
+    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<CosmosArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | VerboseDomain -> "Include low level Domain logging."
@@ -26,6 +29,7 @@ type Arguments =
             | LogFile _ -> "specify a log file to write the result breakdown (default: Equinox.Cli.log)."
             | Memory _ -> "specify In-Memory Volatile Store baseline test"
             | Es _ -> "specify EventStore actions"
+            | Cosmos _ -> "specify CosmosDb actions"
 and TestArguments =
     | Name of Test
     | Cached
@@ -64,6 +68,33 @@ and [<NoEquality; NoComparison>] EsArguments =
             | ConcurrentOperationsLimit _ -> "max concurrent operations in flight (default: 5000)."
             | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 1.5)."
             | Run _ -> "Run a load test."
+and [<NoEquality; NoComparison>] CosmosArguments =
+    | [<AltCommandLine("-ve")>] VerboseStore
+    | [<AltCommandLine("-o")>] Timeout of float
+    | [<AltCommandLine("-r")>] Retries of int
+    | [<AltCommandLine("-s")>] Connection of string
+    | [<AltCommandLine("-d")>] Database of string
+    | [<AltCommandLine("-c")>] Collection of string
+    | [<AltCommandLine("-rt")>] RetriesWaitTime of int
+
+    | [<CliPrefix(CliPrefix.None)>] Provision of ParseResults<CosmosProvisionArguments>
+    | [<CliPrefix(CliPrefix.None)>] Run of ParseResults<TestArguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | VerboseStore -> "Include low level Store logging."
+            | Timeout _ -> "specify operation timeout in seconds (default: 5)."
+            | Retries _ -> "specify operation retries (default: 1)."
+            | Connection _ -> "specify a connection string for a Cosmos account (defaults: envvar:EQUINOX_COSMOS_CONNECTION, Cosmos Emulator)."
+            | Database _ -> "specify a database name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
+            | Collection _ -> "specify a collection name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_COLLECTION, test)."
+            | RetriesWaitTime _ -> "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
+            | Provision _ -> "Initialize a store collection."
+            | Run _ -> "Run a load test."
+and CosmosProvisionArguments =
+    | [<AltCommandLine("-ru"); Mandatory>] Rus of int
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Rus _ -> "Specify RUs to Allocate for the Application Collection."
 
 let defaultBatchSize = 500
 
@@ -79,10 +110,21 @@ module EventStore =
             .Establish("equinox-cli", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
     let createGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
+module Cosmos =
+    /// Standing up an Equinox instance is necessary to run for test purposes; either:
+    /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
+    /// - Create a local Equinox via benchmarks/Equinox.Bench/bin/Release/net461/Equinox.Bench with args:
+    ///   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+    let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
+        EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
+            .Connect("Equinox-loadtests", discovery)
+    let createGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
+
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type Store =
     | Mem of Equinox.MemoryStore.VolatileStore
     | Es of GesGateway
+    | Cosmos of EqxGateway * databaseId: string * collectionId: string
 
 module Test =
     let run log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
@@ -107,7 +149,9 @@ module Test =
             | Store.Mem store ->
                 Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create
             | Store.Es gateway ->
-                GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create
+                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create(streamName)
+            | Store.Cosmos (gateway, databaseId, connectionId) ->
+                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.RollingSnapshots snapshot).Create(streamName,databaseId, connectionId)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
@@ -200,7 +244,35 @@ let main argv =
             match sargs.TryGetSubCommand() with
             | Some (EsArguments.Run targs) -> runTest log store targs
             | _ -> failwith "run is required"
-        | _ -> failwith "ERROR: please specify memory or es Store"
+        | Cosmos sargs ->
+            let verboseStore = sargs.Contains(VerboseStore)
+            let log = createStoreLog verboseStore verboseConsole maybeSeq
+            let read key = Environment.GetEnvironmentVariable key |> Option.ofObj
+
+            let (Discovery.UriAndKey (connUri,_)) as discovery =
+                sargs.GetResult(Connection, defaultArg (read "EQUINOX_COSMOS_CONNECTION") "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;")
+                |> Discovery.FromConnectionString
+
+            let dbName = sargs.GetResult(Database, defaultArg (read "EQUINOX_COSMOS_DATABASE") "test")
+            let collName = sargs.GetResult(Collection, defaultArg (read "EQUINOX_COSMOS_COLLECTION") "test")
+            let timeout = sargs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
+            let (retries, maxRetryWaitTime) as operationThrottling = sargs.GetResult(Retries, 1), sargs.GetResult(RetriesWaitTime, 5)
+            log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection}\n" +
+                "Request timeout: {timeout} with {retries} retries; throttling MaxRetryWaitTime {maxRetryWaitTime}",
+                connUri, dbName, collName, timeout, retries, maxRetryWaitTime)
+            let conn = Cosmos.connect log discovery timeout operationThrottling |> Async.RunSynchronously
+            match sargs.TryGetSubCommand() with
+            | Some (Provision args) ->
+                let rus = args.GetResult(Rus)
+                log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus}", rus)
+                Equinox.Cosmos.Initialization.initialize conn.Client dbName collName rus |> Async.RunSynchronously
+                0
+            | Some (Run targs) ->
+                let conn = Store.Cosmos (Cosmos.createGateway conn defaultBatchSize, dbName, collName)
+                runTest log conn targs
+            | _ -> failwith "init or run is required"
+        | _ -> failwith "Storage argument is required"
+        | _ -> failwith "ERROR: please specify mem, es or cosmos Store"
     with e ->
         printfn "%s" e.Message
         1
