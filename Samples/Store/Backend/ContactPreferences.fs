@@ -2,17 +2,15 @@
 
 open Domain
 
-type Service(resolveStream) =
+type Service(log, resolveStream) =
     let stream (ContactPreferences.Id email) =
         sprintf "ContactPreferences-%s" email // TODO hash >> base64
         |> resolveStream 1 (fun (_eventType : string) -> true)
-    let go log email =
+    let (|ContactPreferences|) email =
         ContactPreferences.Handler(log, stream (Domain.ContactPreferences.Id email))
 
-    member __.Update log email value =
-        let handler = go log email
+    member __.Update (ContactPreferences handler as email) value =
         handler.Update email value
 
-    member __.Read log email =
-        let handler = go log email
+    member __.Read(ContactPreferences handler) =
         handler.Read

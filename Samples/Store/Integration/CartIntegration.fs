@@ -10,19 +10,18 @@ let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
 
 let createMemoryStore () =
     new VolatileStore ()
-let createServiceMem store =
-    Backend.Cart.Service(fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
+let createServiceMem log store =
+    Backend.Cart.Service(log, fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = genCodec<Domain.Cart.Events.Event>
-let createServiceGes connection batchSize =
-    let gateway = createGesGateway connection batchSize
-    Backend.Cart.Service(fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet).Create)
-let createServiceGesWithoutCompactionSemantics connection batchSize =
-    let gateway = createGesGateway connection batchSize
-    Backend.Cart.Service(fun _ignoreCompactionEventType -> GesStreamBuilder(gateway, codec, fold, initial).Create)
 
-let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log (service: Backend.Cart.Service) count =
-    service.FlowAsync(log, cartId, fun _ctx execute ->
+let resolveGesStreamWithCompactionEventType gateway compactionEventType streamName =
+    GesStreamBuilder(gateway, codec, fold, initial, Foldunk.EventStore.CompactionStrategy.EventType compactionEventType).Create(streamName)
+let resolveGesStreamWithoutCompactionSemantics gateway _compactionEventType streamName =
+    GesStreamBuilder(gateway, codec, fold, initial).Create(streamName)
+
+let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
+    service.FlowAsync(cartId, fun _ctx execute ->
         for i in 1..count do
             execute <| Domain.Cart.AddItem (context, skuId, i)
             if i <> count then
@@ -32,37 +31,34 @@ type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput
 
-    [<AutoData>]
-    let ``Can roundtrip in Memory, correctly folding the events`` context cartId skuId = Async.RunSynchronously <| async {
-        let store = createMemoryStore ()
-        let log, service = createLog (), createServiceMem store
+    let act service (context,cartId,skuId) = async {
+        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service 5
 
-        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5
-
-        let! state = service.Read log cartId
+        let! state = service.Read cartId
         test <@ 5 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
     }
 
     [<AutoData>]
-    let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` context cartId skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
+        let log, store = createLog (), createMemoryStore ()
+        let service = createServiceMem log store
+        do! act service args
+    }
+
+    let arrange connect choose resolveStream = async {
         let log = createLog ()
-        let! conn = connectToLocalEventStoreNode log
-        let service = createServiceGesWithoutCompactionSemantics conn defaultBatchSize
+        let! conn = connect log
+        let gateway = choose conn defaultBatchSize
+        return Backend.Cart.Service(log, resolveStream gateway) }
 
-        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5
-
-        let! state = service.Read log cartId
-        test <@ 5 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
+    [<AutoData>]
+    let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithoutCompactionSemantics
+        do! act service args
     }
 
     [<AutoData>]
-    let ``Can roundtrip against EventStore, correctly folding the events with compaction`` context cartId skuId = Async.RunSynchronously <| async {
-        let log = createLog ()
-        let! conn = connectToLocalEventStoreNode log
-        let log, service = createLog (), createServiceGes conn defaultBatchSize
-
-        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId log service 5
-
-        let! state = service.Read log cartId
-        test <@ 5 = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
+    let ``Can roundtrip against EventStore, correctly folding the events with compaction`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithCompactionEventType
+        do! act service args
     }

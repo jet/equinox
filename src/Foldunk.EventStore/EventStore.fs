@@ -305,7 +305,7 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamVersion compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
 
-type GesCategory<'event, 'state>(gateway : GesGateway, codec : UnionEncoder.IUnionEncoder<'event, byte[]>, ?compactionStrategy) =
+type private Category<'event, 'state>(gateway : GesGateway, codec : UnionEncoder.IUnionEncoder<'event, byte[]>, ?compactionStrategy) =
     let loadAlgorithm load streamName initial log =
         let batched = load initial (gateway.LoadBatched streamName log None)
         let compacted predicate = load initial (gateway.LoadBackwardsStoppingAtCompactionEvent streamName log predicate)
@@ -384,7 +384,7 @@ module Caching =
         let addOrUpdateSlidingExpirationCacheEntry streamName = CacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
-type GesFolder<'event, 'state>(category : GesCategory<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
+type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
     let loadAlgorithm streamName initial log =
         let batched = category.Load fold initial streamName log
         let cached token state = category.LoadFromToken fold state streamName token log
@@ -414,21 +414,21 @@ type CachingStrategy =
     /// Prefix is used to distinguish multiple folds per stream
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
-type GesStreamBuilder<'event, 'state>(gateway, codec, fold, initial, ?compaction, ?caching) =
+type GesStreamBuilder<'event, 'state>(gateway : GesGateway, codec, fold, initial, ?compaction, ?caching) =
     member __.Create streamName : Foldunk.IStream<'event, 'state> =
         let compactionPredicateOption =
             match compaction with
             | None -> None
             | Some (CompactionStrategy.Predicate predicate) -> Some predicate
             | Some (CompactionStrategy.EventType eventType) -> Some (fun x -> x = eventType)
-        let gesCategory = GesCategory<'event, 'state>(gateway, codec, ?compactionStrategy = compactionPredicateOption)
+        let category = Category<'event, 'state>(gateway, codec, ?compactionStrategy = compactionPredicateOption)
 
         let readCacheOption =
             match caching with
             | None -> None
             | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
             | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some(cache, prefix)
-        let folder = GesFolder<'event, 'state>(gesCategory, fold, initial, ?readCache = readCacheOption)
+        let folder = Folder<'event, 'state>(category, fold, initial, ?readCache = readCacheOption)
 
         let category : ICategory<_,_> =
             match caching with

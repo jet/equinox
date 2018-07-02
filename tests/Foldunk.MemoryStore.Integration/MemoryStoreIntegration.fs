@@ -6,8 +6,8 @@ open Foldunk.MemoryStore
 let createMemoryStore () =
     new VolatileStore()
 
-let createServiceMem store =
-    Backend.Cart.Service(fun _eventTypePredicate -> MemoryStreamBuilder(store, Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Create)
+let createServiceMem log store =
+    Backend.Cart.Service(log, fun _eventTypePredicate -> MemoryStreamBuilder(store, Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Create)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -19,18 +19,18 @@ type Tests(testOutputHelper) =
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
-        let log, service = createLog (), createServiceMem store
+        let service = let log = createLog () in createServiceMem log store
         let flow (ctx: Foldunk.Context<_,_>) execute =
             Domain.Cart.AddItem args |> execute
             ctx.State
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
-            service.FlowAsync(log, cartId, flow)
+            service.FlowAsync(cartId, flow)
 
         let actLoadingStateSeparately cartId = async {
-            let! _ = service.FlowAsync(log, cartId, flow)
-            return! service.Read log cartId }
+            let! _ = service.FlowAsync(cartId, flow)
+            return! service.Read cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately
 
