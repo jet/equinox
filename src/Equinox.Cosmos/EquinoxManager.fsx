@@ -30,7 +30,7 @@ let client =
 let createDatabase (client:DocumentClient)=
     let dbRequestOptions =
         let o = RequestOptions ()
-        o.ConsistencyLevel <- Nullable<ConsistencyLevel>(ConsistencyLevel.ConsistentPrefix)
+        o.ConsistencyLevel <- Nullable<ConsistencyLevel>(ConsistencyLevel.Session)
         o
     client.CreateDatabaseIfNotExistsAsync(Database(Id=DBNAME), options = dbRequestOptions)
     |> Async.AwaitTaskCorrect
