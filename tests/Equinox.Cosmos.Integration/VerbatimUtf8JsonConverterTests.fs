@@ -26,6 +26,8 @@ let ``VerbatimUtf8JsonConverter serializes properly`` () =
         {   id = null
             s = null
             k  = null
+            df = null
+            mdf = null
             ts = DateTimeOffset.MinValue
             sn = 0L
 
