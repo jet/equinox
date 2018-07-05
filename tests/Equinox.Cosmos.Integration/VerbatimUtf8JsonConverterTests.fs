@@ -5,8 +5,8 @@ open Swensen.Unquote
 open System
 open Xunit
 
-let serializer = new JsonSerializer()
 let inline serialize (x:'t) =
+    let serializer = new JsonSerializer()
     use sw = new System.IO.StringWriter()
     use w = new JsonTextWriter(sw)
     serializer.Serialize(w,x)
@@ -26,14 +26,12 @@ let ``VerbatimUtf8JsonConverter serializes properly`` () =
         {   id = null
             s = null
             k  = null
-            df = null
-            mdf = null
             ts = DateTimeOffset.MinValue
             sn = 0L
-
+            df = "jsonbytearray"
             et = encoded.caseName
             d = encoded.payload
-
+            mdf = "jsonbytearray"
             md = null }
     let res = serialize e
     test <@ res.Contains """"d":{"embed":"\""}""" @>
