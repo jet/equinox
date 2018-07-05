@@ -5,6 +5,7 @@ open Equinox.Store
 open FSharp.Control
 open Microsoft.Azure.Documents
 open Newtonsoft.Json
+open Newtonsoft.Json.Linq
 open Serilog
 open System
 
@@ -25,10 +26,13 @@ module Strings =
 type VerbatimUtf8JsonConverter() =
     inherit JsonConverter()
 
-    override __.ReadJson(reader, _, _, serializer) =
-        let s = serializer.Deserialize(reader, typeof<string>) :?> string
-        if s = null then Array.empty<byte> |> box
-        else reader.Value :?> string |> System.Text.Encoding.UTF8.GetBytes |> box
+    override __.ReadJson(reader, _, _, _) =
+        let token = JToken.Load(reader)
+        if (token.Type = JTokenType.Object)
+        then
+            token.ToString() |> System.Text.Encoding.UTF8.GetBytes |> box
+        else
+            Array.empty<byte> |> box
 
     override this.CanConvert(objectType) =
         typeof<byte[]>.Equals(objectType)
@@ -94,10 +98,10 @@ type EquinoxEvent = {
     ts : DateTimeOffset
     sn : SN
     et : string
-
+    df : string
     [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
     d : byte[]
-
+    mdf : string
     [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
     md : byte[] }
 
@@ -149,7 +153,9 @@ module private Write =
             id = (sprintf "%s-e-%d" streamId sequenceNumber)
             s = streamId
             k = streamId
+            df = "jsonbytearray"
             d = ed.data
+            mdf = "jsonbytearray"
             md =
                 match ed.metadata with
                 | Some x -> x
@@ -210,6 +216,7 @@ module private Write =
             |> Seq.head
             |> appendSingleEvent coll streamName sequenceNumber
         | _ -> appendEventBatch coll streamName sequenceNumber eventsData
+
     // Add this for User Activity
     let appendEventAtEnd (client : IDocumentClient,collectionUri : Uri,streamId) eventsData : Async<SN * float> =
         async {
@@ -482,6 +489,8 @@ type EqxConnection(client: IDocumentClient, ?readRetryPolicy, ?writeRetryPolicy)
     member __.Client = client
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
+    member __.Close =
+        (client :?> Client.DocumentClient).Dispose()
 
 type EqxBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
     new (maxBatchSize) = EqxBatchingPolicy(fun () -> maxBatchSize)
