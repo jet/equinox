@@ -8,4 +8,4 @@ if not ([%1]==[skipRestore=true]) (
     )
 )
 
-FAKE.exe run build.fsx %*
+packages\FAKE\tools\FAKE.exe build.fsx %*

@@ -3,6 +3,7 @@ framework: auto-detect
 
 nuget EventStore.Client >= 4.1.1
 nuget FSharp.Core redirects: force
+nuget FAKE
 nuget FSharp.Control.AsyncSeq
 nuget Newtonsoft.Json
 nuget Serilog
