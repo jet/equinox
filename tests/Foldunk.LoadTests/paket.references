@@ -1,6 +1,5 @@
 ﻿Argu
-Destructurama.FSharp
-EventStore.Client
+EventStore.ClientAPI.NetCore
 MathNet.Numerics
 Newtonsoft.Json
 Serilog

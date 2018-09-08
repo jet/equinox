@@ -4,6 +4,9 @@ module Samples.Store.Integration.EventStoreIntegration
 open Foldunk.EventStore
 open System
 
+let serializationSettings = Foldunk.Serialization.Settings.CreateDefault()
+let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
+
 /// Connect with Gossip based cluster discovery using the default Commercial edition Manager port config
 /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows

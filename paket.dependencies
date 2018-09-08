@@ -1,7 +1,7 @@
 source https://api.nuget.org/v3/index.json
-framework: auto-detect
+framework: netstandard2.0
 
-nuget EventStore.Client >= 4.1.1
+nuget EventStore.ClientAPI.NetCore >= 4.1.1 prerelease // API compatible, but behind >= 4.1.1 stipulation in master
 nuget FSharp.Core redirects: force
 nuget FSharp.Control.AsyncSeq
 nuget Newtonsoft.Json
