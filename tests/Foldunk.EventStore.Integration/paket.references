@@ -1,4 +1,4 @@
-﻿nuget EventStore.Client
+﻿nuget EventStore.ClientAPI.NetCore
 nuget FsCheck.Xunit
 nuget FSharp.Core
 nuget Newtonsoft.Json
