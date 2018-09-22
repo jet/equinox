@@ -35,6 +35,12 @@ type TestDU =
     | CaseG of TrickyRecordPayload
     | CaseH of a: TestRecordPayload
     | CaseI of a: TestRecordPayload * b: string
+    | CaseJ of a: Nullable<int>
+    | CaseK of a: int * b: Nullable<int>
+    | CaseL of a: Nullable<int> * b: Nullable<int>
+    | CaseM of a: int option
+    | CaseN of a: int * b: int option
+    | CaseO of a: int option * b: int option
 
 // no camel case, because I want to test "Item" as a record property
 let settings = Settings.CreateDefault(camelCase = false)
@@ -85,7 +91,13 @@ let ``UnionConverter produces expected output`` () =
     let i = CaseI ({test = "hi"}, "bye")
     let iJson = JsonConvert.SerializeObject(i, settings)
 
-    test <@ """{"case":"CaseI","a":{"test":"hi"},"b":"bye"}""" = iJson @>
+    test <@ "{\"case\":\"CaseI\",\"a\":{\"test\":\"hi\"},\"b\":\"bye\"}" = iJson @>
+
+let requiredSettingsToHandleOptionalFields =
+    // NB this is me documenting current behavior - ideally optionality wou
+    let s = Settings.CreateDefault(camelCase = false)
+    s.Converters.Add(Converters.OptionConverter())
+    s
 
 [<Fact>]
 let ``UnionConverter deserializes properly`` () =
@@ -134,6 +146,24 @@ let ``UnionConverter deserializes properly`` () =
 
     test <@ CaseI ({test = "hi"}, "bye") = i @>
 
+    test <@ CaseJ (Nullable 1) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseJ","a":1}""", settings) @>
+    test <@ CaseK (1, Nullable 2) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseK", "a":1, "b":2 }""", settings) @>
+    test <@ CaseL (Nullable 1, Nullable 2) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseL", "a": 1, "b": 2 }""", settings) @>
+
+    let deserialzeCustom s = JsonConvert.DeserializeObject<TestDU>(s, requiredSettingsToHandleOptionalFields)
+    test <@ CaseM (Some 1) = deserialzeCustom """{"case":"CaseM","a":1}""" @>
+    test <@ CaseN (1, Some 2) = deserialzeCustom """{"case":"CaseN", "a":1, "b":2 }""" @>
+    test <@ CaseO (Some 1, Some 2) = deserialzeCustom """{"case":"CaseO", "a": 1, "b": 2 }""" @>
+
+[<Fact>]
+let ``UnionConverter handles missing fields`` () =
+    test <@ CaseJ (Nullable<int>()) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseJ"}""", settings) @>
+    test <@ CaseK (1, (Nullable<int>())) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseK","a":1}""", settings) @>
+    test <@ CaseL ((Nullable<int>()), (Nullable<int>())) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseL"}""", settings) @>
+
+    test <@ CaseM None = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseM"}""", settings) @>
+    test <@ CaseN (1, None) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseN","a":1}""", settings) @>
+    test <@ CaseO (None, None) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseO"}""", settings) @>
 
 let (|Q|) (s : string) = Newtonsoft.Json.JsonConvert.SerializeObject s
 
@@ -158,11 +188,29 @@ let render = function
     | CaseI ({test = Q s}, null) -> sprintf """{"case":"CaseI","a":{"test":%s}}""" s
     | CaseI ({test = Q s}, Q b) -> sprintf """{"case":"CaseI","a":{"test":%s},"b":%s}""" s b
 
+    | CaseJ x when not x.HasValue -> """{"case":"CaseJ"}"""
+    | CaseJ x -> sprintf """{"case":"CaseJ","a":%d}""" x.Value
+    | CaseK (a,x) when not x.HasValue -> sprintf """{"case":"CaseK","a":%d}""" a
+    | CaseK (a,x) -> sprintf """{"case":"CaseK","a":%d,"b":%d}""" a x.Value
+    | CaseL (a,b) when not a.HasValue && not b.HasValue -> """{"case":"CaseL"}"""
+    | CaseL (a,b) when not a.HasValue -> sprintf """{"case":"CaseL","b":%d}""" b.Value
+    | CaseL (a,b) when not b.HasValue -> sprintf """{"case":"CaseL","a":%d}""" a.Value
+    | CaseL (a,b) -> sprintf """{"case":"CaseL","a":%d,"b":%d}""" a.Value b.Value
+
+    | CaseM None -> """{"case":"CaseM"}"""
+    | CaseM (Some x) -> sprintf """{"case":"CaseM","a":%d}""" x
+    | CaseN (a,None) -> sprintf """{"case":"CaseN","a":%d}""" a
+    | CaseN (a,x) -> sprintf """{"case":"CaseN","a":%d,"b":%d}""" a x.Value
+    | CaseO (None,None) -> """{"case":"CaseO"}"""
+    | CaseO (None,b) -> sprintf """{"case":"CaseO","b":%d}""" b.Value
+    | CaseO (a,None) -> sprintf """{"case":"CaseO","a":%d}""" a.Value
+    | CaseO (Some a,Some b) -> sprintf """{"case":"CaseO","a":%d,"b":%d}""" a b
+
 [<FsCheck.Xunit.Property(MaxTest=1000)>]
 let ``UnionConverter roundtrip property test`` (x: TestDU) =
-    let serialized = JsonConvert.SerializeObject(x, settings)
+    let serialized = JsonConvert.SerializeObject(x, requiredSettingsToHandleOptionalFields)
     render x =! serialized
-    let deserialized = JsonConvert.DeserializeObject<_>(serialized, settings)
+    let deserialized = JsonConvert.DeserializeObject<_>(serialized, requiredSettingsToHandleOptionalFields)
     deserialized =! x
 
 [<Fact>]
