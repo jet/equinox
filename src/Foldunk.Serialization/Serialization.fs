@@ -233,18 +233,16 @@ module Converters =
             let case = cases.[tag]
             let fieldInfos = case.GetFields()
 
-            // Verifying if this is a option field to implement a "property missing" behaviour
-            // that sets the field to None instead of throwing a NullReferenceException. It shouldn't
-            // interfere with the downstream (de)serialization behaviour in the case the field isn't
-            // missing from the JSON representation. TL;DR -> Little hack to avoid NPE.
-            let isOption (t : Type) =
-                t.IsGenericType && typedefof<option<_>>.Equals (t.GetGenericTypeDefinition())
-
             let simpleFieldValue (fieldInfo: PropertyInfo) =
+                // Verifying if this is a option field to implement a "property missing" behaviour
+                // that sets the field to None instead of throwing a NullReferenceException. It shouldn't
+                // interfere with the downstream (de)serialization behaviour in the case the field isn't
+                // missing from the JSON representation. TL;DR -> Little hack to avoid NPE.
                 match obj.Item(fieldInfo.Name), fieldInfo.PropertyType with
                 | null, t when not t.IsPrimitive -> null // Handle string
-                | null, t when isOption t -> // need to do this check in case we introduce a new tupled field to the DU
-                    null // None :> obj
+                | null, t when t.IsGenericType // None :> obj / Nullable()
+                            && (typedefof<Option<_>> = t.GetGenericTypeDefinition())
+                                || typedefof<Nullable<_>> = t.GetGenericTypeDefinition() -> null
                 | value, t -> value.ToObject(t, jsonSerializer)
 
             let fieldValues =
