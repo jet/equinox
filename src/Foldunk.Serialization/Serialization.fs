@@ -228,7 +228,18 @@ module Converters =
             let fieldInfos = case.GetFields()
 
             let simpleFieldValue (fieldInfo: PropertyInfo) =
-                obj.Item(fieldInfo.Name).ToObject(fieldInfo.PropertyType, jsonSerializer)
+                let value = obj.Item(fieldInfo.Name)
+                // Verifying if this is a option field to implement a "property missing" behaviour
+                // that sets the field to None instead of throwing a NullReferenceException. It shouldn't
+                // interfere with the downstream (de)serialization behaviour in the case the field isn't
+                // missing from the JSON representation. TL;DR -> Little hack to avoid NPE.
+                let isOption = 
+                    let t = fieldInfo.PropertyType
+                    t.IsGenericType && typedefof<option<_>>.Equals (t.GetGenericTypeDefinition())
+                if isOption && value = null then // need to do this check in case we introduce a new tupled field to the DU
+                    null // None :> obj
+                else            
+                    obj.Item(fieldInfo.Name).ToObject(fieldInfo.PropertyType, jsonSerializer)
 
             let fieldValues =
                 if fieldInfos.Length = 1 then
