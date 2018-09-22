@@ -34,6 +34,9 @@ type TestDU =
     | CaseG of TrickyRecordPayload
     | CaseH of a: TestRecordPayload
     | CaseI of a: TestRecordPayload * b: string
+    | CaseJ of a: int option
+    | CaseK of a: int * b: int option
+    | CaseL of a: int option * b: int option
 
 // no camel case, because I want to test "Item" as a record property
 let settings = Settings.CreateDefault(camelCase = false)
@@ -133,6 +136,38 @@ let ``UnionConverter deserializes properly`` () =
 
     test <@ CaseI ({test = "hi"}, "bye") = i @>
 
+    let jJson = """{"case":"CaseJ","a":1}"""
+    let j = JsonConvert.DeserializeObject<TestDU>(jJson, settings)
+
+    test <@ CaseJ (Some 1) = j @>
+
+    let kJson = """{"case":"CaseK", "a":1, "b":2 }"""
+    let k = JsonConvert.DeserializeObject<TestDU>(kJson, settings)
+
+    test <@ CaseK (1, Some 2) = k @>
+
+    let lJson = """{"case":"CaseL", "a": 1, "b": 2 }"""
+    let l = JsonConvert.DeserializeObject<TestDU>(lJson, settings)
+
+    test <@ CaseL (Some 1, Some 2) = l @>
+
+[<Fact>]
+let ``UnionConverter handles missing fields`` () =
+    let jJson = """{"case":"CaseJ"}"""
+    let j = JsonConvert.DeserializeObject<TestDU>(jJson, settings)
+
+    test <@ CaseJ None = j @>
+
+    let kJson = """{"case":"CaseK","a":1}"""
+    let k = JsonConvert.DeserializeObject<TestDU>(kJson, settings)
+
+    test <@ CaseK (1, None) = k @>
+
+    let lJson = """{"case":"CaseL"}"""
+    let l = JsonConvert.DeserializeObject<TestDU>(lJson, settings)
+
+    test <@ CaseL (None, None) = l @>
+
 [<Fact>]
 let ``UnionConverter's exception catch doesn't make the model invalid`` () =
 
@@ -178,4 +213,4 @@ let ``UnionConverter explains if nominated catchAll not found`` () =
     let act () = JsonConvert.DeserializeObject<DuWithMissingCatchAll>(aJson, settings)
 
     fun (e : System.InvalidOperationException) -> <@ -1 <> e.Message.IndexOf "nominated catchAllCase: 'CatchAllThatCantBeFound' not found" @>
-    |> raisesWith <@ act() @> 
+    |> raisesWith <@ act() @>
