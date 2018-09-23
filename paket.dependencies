@@ -26,4 +26,4 @@ nuget TypeShape
 group build
     source https://api.nuget.org/v3/index.json
 
-    nuget FAKE prerelease
+    nuget FAKE
