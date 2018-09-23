@@ -189,20 +189,26 @@ module Converters =
             writer.WritePropertyName(discriminator)
             writer.WriteValue(case.Name)
 
-            if fieldInfos.Length = 1 then
-                let token = JToken.FromObject(fieldValues.[0], jsonSerializer)
-                match token.Type with
-                | JTokenType.Object ->
-                    // flatten the object properties into the same one as the discriminator
-                    token.Children() |> Seq.iter (fun prop -> prop.WriteTo writer)
-                | _ ->
-                    writer.WritePropertyName(fieldInfos.[0].Name)
-                    token.WriteTo writer
-            else
-                Array.zip fieldInfos fieldValues
-                |> Array.iter (fun (fieldInfo, fieldValue) ->
-                    writer.WritePropertyName(fieldInfo.Name)
-                    jsonSerializer.Serialize(writer, fieldValue))
+            match fieldInfos with
+            | [| fi |] ->
+                match fieldValues.[0] with
+                | null -> ()
+                | fv ->
+                    let token = JToken.FromObject(fv, jsonSerializer)
+                    match token.Type with
+                    | JTokenType.Object ->
+                        // flatten the object properties into the same one as the discriminator
+                        for prop in token.Children() do
+                            if prop <> null then
+                                prop.WriteTo writer
+                    | _ ->
+                        writer.WritePropertyName(fi.Name)
+                        token.WriteTo writer
+            | _ ->
+                for fieldInfo, fieldValue in Seq.zip fieldInfos fieldValues do
+                    if fieldValue <> null then
+                        writer.WritePropertyName(fieldInfo.Name)
+                        jsonSerializer.Serialize(writer, fieldValue)
 
             writer.WriteEndObject()
 
@@ -228,7 +234,9 @@ module Converters =
             let fieldInfos = case.GetFields()
 
             let simpleFieldValue (fieldInfo: PropertyInfo) =
-                obj.Item(fieldInfo.Name).ToObject(fieldInfo.PropertyType, jsonSerializer)
+                match obj.Item(fieldInfo.Name), fieldInfo.PropertyType with
+                | null, t when not t.IsPrimitive -> null // Handle string
+                | value, t -> value.ToObject(t, jsonSerializer)
 
             let fieldValues =
                 if fieldInfos.Length = 1 then

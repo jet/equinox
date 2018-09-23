@@ -1,4 +1,5 @@
-﻿nuget FSharp.Core redirects: force
+﻿nuget FsCheck.Xunit
+nuget FSharp.Core redirects: force
 nuget Newtonsoft.json
 nuget Serilog
 nuget TypeShape

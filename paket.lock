@@ -48,4 +48,4 @@ NUGET
 GROUP build
 NUGET
   remote: https://api.nuget.org/v3/index.json
-    FAKE (5.1)
+    FAKE (5.3)
