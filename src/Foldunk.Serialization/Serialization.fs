@@ -72,35 +72,6 @@ type JsonIsomorphism<'T, 'U>(?targetPickler : JsonPickler<'U>) =
         __.UnPickle target
 
 module Converters =
-    /// For Some 1 generates "1", for None generates "null"
-    type OptionConverter() =
-        inherit JsonConverter()
-
-        let getAndCacheUnionCases = FSharpType.GetUnionCases |> memoize
-
-        override x.CanConvert(typ) = typ.IsGenericType && typ.GetGenericTypeDefinition() = typedefof<option<_>>
-
-        override x.WriteJson(writer, value, serializer) =
-            let value =
-                if value = null then null
-                else
-                    let _,fields = FSharpValue.GetUnionFields(value, value.GetType())
-                    fields.[0]
-            serializer.Serialize(writer, value)
-
-        override x.ReadJson(reader, typ, _existingValue, serializer) =
-            let innerType =
-                let innerType = typ.GetGenericArguments().[0]
-                if innerType.IsValueType then typedefof<Nullable<_>>.MakeGenericType([|innerType|])
-                else innerType
-
-            let cases = getAndCacheUnionCases typ
-            if reader.TokenType = JsonToken.Null then FSharpValue.MakeUnion(cases.[0], Array.empty)
-            else
-                let value = serializer.Deserialize(reader, innerType)
-                if value = null then FSharpValue.MakeUnion(cases.[0], Array.empty)
-                else FSharpValue.MakeUnion(cases.[1], [|value|])
-
     type GuidConverter() =
         inherit JsonIsomorphism<Guid, string>()
         override __.Pickle g = g.ToString "N"
@@ -118,9 +89,10 @@ module Converters =
     [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
     module private Union =
         let isUnion = memoize (fun t -> FSharpType.IsUnion(t, true))
+        let getUnionCases = memoize (fun t -> FSharpType.GetUnionCases(t, true))
 
         let createUnion t =
-            let cases = FSharpType.GetUnionCases(t, true)
+            let cases = getUnionCases t
             {
                 cases = cases
                 tagReader = FSharpValue.PreComputeUnionTagReader(t, true)
@@ -129,49 +101,45 @@ module Converters =
             }
         let getUnion = memoize createUnion
 
+        /// Paralells F# behavior wrt how it generates a DU's underlyiong .NET Type
+        let inline isInlinedIntoUnionItem (t : Type) =
+            t = typeof<string> 
+            || t.IsValueType
+            || (t.IsGenericType // None :> obj / Nullable()
+               && (typedefof<Option<_>> = t.GetGenericTypeDefinition()
+                    || typedefof<Nullable<_>> = t.GetGenericTypeDefinition()))
+
+    /// For Some 1 generates "1", for None generates "null"
+    type OptionConverter() =
+        inherit JsonConverter()
+
+        override __.CanConvert(typ) = typ.IsGenericType && typ.GetGenericTypeDefinition() = typedefof<option<_>>
+
+        override __.WriteJson(writer, value, serializer) =
+            let value =
+                if value = null then null
+                else
+                    let _,fields = FSharpValue.GetUnionFields(value, value.GetType())
+                    fields.[0]
+            serializer.Serialize(writer, value)
+
+        override __.ReadJson(reader, typ, _existingValue, serializer) =
+            let innerType =
+                let innerType = typ.GetGenericArguments().[0]
+                if innerType.IsValueType then typedefof<Nullable<_>>.MakeGenericType([|innerType|])
+                else innerType
+
+            let cases = Union.getUnionCases typ
+            if reader.TokenType = JsonToken.Null then FSharpValue.MakeUnion(cases.[0], Array.empty)
+            else
+                let value = serializer.Deserialize(reader, innerType)
+                if value = null then FSharpValue.MakeUnion(cases.[0], Array.empty)
+                else FSharpValue.MakeUnion(cases.[1], [|value|])
+
     (* Serializes a discriminated union case with a single field that is a record by flattening the
        record fields to the same level as the discriminator *)
     type UnionConverter private (discriminator : string, ?catchAllCase) =
         inherit JsonConverter()
-
-        // used when deserializing because the JSON media formatter uses error handling
-        // to invalidate the model state on any error; given that we rely on catching an
-        // exception, that means we would get an invalid model state for a union case containing
-        // a single simple field
-        let cloneJsonSerializerImpl (serializer: JsonSerializer) =
-            let settings =
-                JsonSerializerSettings(
-                    CheckAdditionalContent = serializer.CheckAdditionalContent,
-                    ConstructorHandling = serializer.ConstructorHandling,
-                    Context = serializer.Context,
-                    ContractResolver = serializer.ContractResolver,
-                    Converters = serializer.Converters,
-                    Culture = serializer.Culture,
-                    DateFormatHandling = serializer.DateFormatHandling,
-                    DateFormatString = serializer.DateFormatString,
-                    DateParseHandling = serializer.DateParseHandling,
-                    DateTimeZoneHandling = serializer.DateTimeZoneHandling,
-                    DefaultValueHandling = serializer.DefaultValueHandling,
-                    EqualityComparer = serializer.EqualityComparer,
-                    FloatFormatHandling = serializer.FloatFormatHandling,
-                    FloatParseHandling = serializer.FloatParseHandling,
-                    Formatting = serializer.Formatting,
-                    MaxDepth = serializer.MaxDepth,
-                    MetadataPropertyHandling = serializer.MetadataPropertyHandling,
-                    MissingMemberHandling = serializer.MissingMemberHandling,
-                    NullValueHandling = serializer.NullValueHandling,
-                    ObjectCreationHandling = serializer.ObjectCreationHandling,
-                    PreserveReferencesHandling = serializer.PreserveReferencesHandling,
-                    ReferenceLoopHandling = serializer.ReferenceLoopHandling,
-                    ReferenceResolver = serializer.ReferenceResolver,
-                    SerializationBinder = serializer.SerializationBinder,
-                    StringEscapeHandling = serializer.StringEscapeHandling,
-                    TraceWriter = serializer.TraceWriter,
-                    TypeNameAssemblyFormatHandling = serializer.TypeNameAssemblyFormatHandling,
-                    TypeNameHandling = serializer.TypeNameHandling
-                )
-            JsonSerializer.Create(settings)
-        let cloneJsonSerializer = memoize cloneJsonSerializerImpl
 
         new(discriminator: string, catchAllCase: string) = UnionConverter(discriminator, ?catchAllCase=Option.ofObj catchAllCase)
         new() = UnionConverter("case")
@@ -233,37 +201,25 @@ module Converters =
             let case = cases.[tag]
             let fieldInfos = case.GetFields()
 
-            let simpleFieldValue (fieldInfo: PropertyInfo) =
-                // Verifying if this is a option field to implement a "property missing" behaviour
-                // that sets the field to None instead of throwing a NullReferenceException. It shouldn't
-                // interfere with the downstream (de)serialization behaviour in the case the field isn't
-                // missing from the JSON representation. TL;DR -> Little hack to avoid NPE.
-                match obj.Item(fieldInfo.Name), fieldInfo.PropertyType with
-                | null, t when not t.IsPrimitive -> null // Handle string
-                | null, t when t.IsGenericType // None :> obj / Nullable()
-                            && (typedefof<Option<_>> = t.GetGenericTypeDefinition())
-                                || typedefof<Nullable<_>> = t.GetGenericTypeDefinition() -> null
-                | value, t -> value.ToObject(t, jsonSerializer)
-
             let fieldValues =
-                if fieldInfos.Length = 1 then
+                if fieldInfos.Length = 1 && not (Union.isInlinedIntoUnionItem fieldInfos.[0].PropertyType) then
                     let fieldInfo = fieldInfos.[0]
-                    try
-                        // try a flattened record first, so strip out the discriminator property
-                        let obj' =
-                            obj.Children()
-                            |> Seq.filter (function
-                                | :? JProperty as prop when prop.Name = discriminator -> false
-                                | _ -> true
-                            )
-                            |> Array.ofSeq
-                            |> JObject
-                        // avoid the exception resulting in a model binding failure
-                        let jsonSerializer' = cloneJsonSerializer jsonSerializer
-                        [| obj'.ToObject(fieldInfo.PropertyType, jsonSerializer') |]
-                    with _ ->
-                        [| simpleFieldValue fieldInfo |]
+                    // strip out the discriminator property as we're preparing args for a constructor
+                    let obj' =
+                        obj.Children()
+                        |> Seq.filter (function
+                            | :? JProperty as prop when prop.Name = discriminator -> false
+                            | _ -> true
+                        )
+                        |> Array.ofSeq
+                        |> JObject
+                    [| obj'.ToObject(fieldInfo.PropertyType, jsonSerializer) |]
                 else
+                    let simpleFieldValue (fieldInfo: PropertyInfo) =
+                        let itemValue = obj.[fieldInfo.Name]
+                        let fieldType = fieldInfo.PropertyType
+                        if itemValue = null && Union.isInlinedIntoUnionItem fieldType then null
+                        else itemValue.ToObject(fieldType, jsonSerializer)
                     fieldInfos |> Array.map simpleFieldValue
 
             union.caseConstructor.[tag] fieldValues

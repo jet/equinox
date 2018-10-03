@@ -14,11 +14,13 @@ let normalizeJsonString (json : string) =
     let str3 = Regex.Replace(str2, @"\.0+", "")
     str3
 
+// TODO support [<Struct>]
 type TestRecordPayload =
     {
         test: string
     }
 
+// TODO support [<Struct>]
 type TrickyRecordPayload =
     {
         Item: string
@@ -101,49 +103,52 @@ let requiredSettingsToHandleOptionalFields =
 
 [<Fact>]
 let ``UnionConverter deserializes properly`` () =
+    let aJson = """{"case":"CaseA"}"""
+    let a = JsonConvert.DeserializeObject<TestDU>(aJson, settings)
+    test <@ CaseA {test = null} = a @>
+
     let aJson = """{"case":"CaseA","test":"hi"}"""
     let a = JsonConvert.DeserializeObject<TestDU>(aJson, settings)
+    test <@ CaseA {test = "hi"} = a @>
 
+    let aJson = """{"case":"CaseA","test":"hi","extraField":"hello"}"""
+    let a = JsonConvert.DeserializeObject<TestDU>(aJson, settings)
     test <@ CaseA {test = "hi"} = a @>
 
     let bJson = """{"case":"CaseB"}"""
     let b = JsonConvert.DeserializeObject<TestDU>(bJson, settings)
-
     test <@ CaseB = b @>
 
     let cJson = """{"case":"CaseC","Item":"hi"}"""
     let c = JsonConvert.DeserializeObject<TestDU>(cJson, settings)
-
     test <@ CaseC "hi" = c @>
 
     let dJson = """{"case":"CaseD","a":"hi"}"""
     let d = JsonConvert.DeserializeObject<TestDU>(dJson, settings)
-
     test <@ CaseD "hi" = d @>
 
     let eJson = """{"case":"CaseE","Item1":"hi","Item2":0}"""
     let e = JsonConvert.DeserializeObject<TestDU>(eJson, settings)
-
     test <@ CaseE ("hi", 0) = e @>
+
+    let eJson = """{"case":"CaseE","Item3":"hi","Item4":0}"""
+    let e = JsonConvert.DeserializeObject<TestDU>(eJson, settings)
+    test <@ CaseE (null, 0) = e @>
 
     let fJson = """{"case":"CaseF","a":"hi","b":0}"""
     let f = JsonConvert.DeserializeObject<TestDU>(fJson, settings)
-
     test <@ CaseF ("hi", 0) = f @>
 
     let gJson = """{"case":"CaseG","Item":"hi"}"""
     let g = JsonConvert.DeserializeObject<TestDU>(gJson, settings)
-
     test <@ CaseG {Item = "hi"} = g @>
 
     let hJson = """{"case":"CaseH","test":"hi"}"""
     let h = JsonConvert.DeserializeObject<TestDU>(hJson, settings)
-
     test <@ CaseH {test = "hi"} = h @>
 
     let iJson = """{"case":"CaseI","a":{"test":"hi"},"b":"bye"}"""
     let i = JsonConvert.DeserializeObject<TestDU>(iJson, settings)
-
     test <@ CaseI ({test = "hi"}, "bye") = i @>
 
     test <@ CaseJ (Nullable 1) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseJ","a":1}""", settings) @>
