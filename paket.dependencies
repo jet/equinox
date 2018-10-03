@@ -22,8 +22,3 @@ nuget TypeShape
 	nuget Unquote
 	nuget xunit.core redirects: force
 	nuget xunit.runner.visualstudio
-
-group build
-    source https://api.nuget.org/v3/index.json
-
-    nuget FAKE prerelease
