@@ -44,8 +44,3 @@ NUGET
     xunit.extensibility.execution (2.3.1) - redirects: force
       xunit.extensibility.core (2.3.1)
     xunit.runner.visualstudio (2.3.1)
-
-GROUP build
-NUGET
-  remote: https://api.nuget.org/v3/index.json
-    FAKE (5.3)

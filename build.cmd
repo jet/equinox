@@ -8,4 +8,5 @@ if not ([%1]==[skipRestore=true]) (
     )
 )
 
+REM if not working, you forgot to `dotnet tool install fake-cli -g`
 FAKE.exe run build.fsx %*

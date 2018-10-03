@@ -31,3 +31,8 @@ Features
 - _Compaction_: A pattern employed to optimize command processing by employing in-stream 'snapshot' events with the following properties:
 	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
 	- support (via `UnionEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
+
+Building
+--------
+`dotnet tool install fake-cli -g`
+`./build`
