@@ -70,6 +70,9 @@
   <ItemGroup>
     <None Include="paket.references" />
     <Content Include="App.config" />
+    <Compile Include="..\..\Samples\Store\Domain\Infrastructure.fs">
+      <Link>Infrastructure.fs</Link>
+    </Compile>
     <Compile Include="SerializationTests.fs" />
   </ItemGroup>
   <ItemGroup>

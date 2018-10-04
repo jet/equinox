@@ -1,12 +1,14 @@
 ﻿module Foldunk.Serialization.Tests
 
+open Domain
 open Foldunk.Serialization
+open FsCheck
 open Newtonsoft.Json
 open Swensen.Unquote.Assertions
 open System
 open System.IO
 open System.Text.RegularExpressions
-open Xunit
+open global.Xunit
 
 let normalizeJsonString (json : string) =
     let str1 = Regex.Replace(json, @"{\s*}", "{}")
@@ -43,57 +45,48 @@ type TestDU =
     | CaseM of a: int option
     | CaseN of a: int * b: int option
     | CaseO of a: int option * b: int option
+    | CaseP of CartId
+    | CaseQ of SkuId
+    | CaseR of a: CartId
+    | CaseS of a: SkuId
+    | CaseT of a: SkuId option * b: CartId
 
 // no camel case, because I want to test "Item" as a record property
 let settings = Settings.CreateDefault(camelCase = false)
 
 [<Fact>]
 let ``UnionConverter produces expected output`` () =
+    let serialize (x : obj) = JsonConvert.SerializeObject(box x, settings)
     let a = CaseA {test = "hi"}
-    let aJson = JsonConvert.SerializeObject(a, settings)
-
-    test <@ """{"case":"CaseA","test":"hi"}""" = aJson @>
+    test <@ """{"case":"CaseA","test":"hi"}""" = serialize a @>
 
     let b = CaseB
-    let bJson = JsonConvert.SerializeObject(b, settings)
-
-    test <@ """{"case":"CaseB"}""" = bJson @>
+    test <@ """{"case":"CaseB"}""" = serialize b @>
 
     let c = CaseC "hi"
-    let cJson = JsonConvert.SerializeObject(c, settings)
-
-    test <@ """{"case":"CaseC","Item":"hi"}""" = cJson @>
+    test <@ """{"case":"CaseC","Item":"hi"}""" = serialize c @>
 
     let d = CaseD "hi"
-    let dJson = JsonConvert.SerializeObject(d, settings)
-
-    test <@ """{"case":"CaseD","a":"hi"}""" = dJson @>
+    test <@ """{"case":"CaseD","a":"hi"}""" = serialize d @>
 
     let e = CaseE ("hi", 0)
-    let eJson = JsonConvert.SerializeObject(e, settings)
-
-    test <@ """{"case":"CaseE","Item1":"hi","Item2":0}""" = eJson @>
+    test <@ """{"case":"CaseE","Item1":"hi","Item2":0}""" = serialize e @>
 
     let f = CaseF ("hi", 0)
-    let fJson = JsonConvert.SerializeObject(f, settings)
-
-    test <@ """{"case":"CaseF","a":"hi","b":0}""" = fJson @>
+    test <@ """{"case":"CaseF","a":"hi","b":0}""" = serialize f @>
 
     let g = CaseG {Item = "hi"}
-    let gJson = JsonConvert.SerializeObject(g, settings)
-
-    test <@ """{"case":"CaseG","Item":"hi"}""" = gJson @>
+    test <@ """{"case":"CaseG","Item":"hi"}""" = serialize g @>
 
     // this may not be expected, but I don't itend changing it
     let h = CaseH {test = "hi"}
-    let hJson = JsonConvert.SerializeObject(h, settings)
-
-    test <@ """{"case":"CaseH","test":"hi"}""" = hJson @>
+    test <@ """{"case":"CaseH","test":"hi"}""" = serialize h @>
 
     let i = CaseI ({test = "hi"}, "bye")
-    let iJson = JsonConvert.SerializeObject(i, settings)
+    test <@ """{"case":"CaseI","a":{"test":"hi"},"b":"bye"}""" = serialize i @>
 
-    test <@ "{\"case\":\"CaseI\",\"a\":{\"test\":\"hi\"},\"b\":\"bye\"}" = iJson @>
+    let p = CaseP (CartId.Parse "0000000000000000948d503fcfc20f17")
+    test <@ """{"case":"CaseP","Item":"0000000000000000948d503fcfc20f17"}""" = serialize p @>
 
 let requiredSettingsToHandleOptionalFields =
     // NB this is me documenting current behavior - ideally optionality wou
@@ -103,72 +96,49 @@ let requiredSettingsToHandleOptionalFields =
 
 [<Fact>]
 let ``UnionConverter deserializes properly`` () =
-    let aJson = """{"case":"CaseA"}"""
-    let a = JsonConvert.DeserializeObject<TestDU>(aJson, settings)
-    test <@ CaseA {test = null} = a @>
+    let deserialize json = JsonConvert.DeserializeObject<TestDU>(json, settings)
+    test <@ CaseA {test = null} = deserialize """{"case":"CaseA"}""" @>
+    test <@ CaseA {test = "hi"} = deserialize """{"case":"CaseA","test":"hi"}""" @>
+    test <@ CaseA {test = "hi"} = deserialize """{"case":"CaseA","test":"hi","extraField":"hello"}""" @>
 
-    let aJson = """{"case":"CaseA","test":"hi"}"""
-    let a = JsonConvert.DeserializeObject<TestDU>(aJson, settings)
-    test <@ CaseA {test = "hi"} = a @>
+    test <@ CaseB = deserialize """{"case":"CaseB"}""" @>
 
-    let aJson = """{"case":"CaseA","test":"hi","extraField":"hello"}"""
-    let a = JsonConvert.DeserializeObject<TestDU>(aJson, settings)
-    test <@ CaseA {test = "hi"} = a @>
+    test <@ CaseC "hi" = deserialize """{"case":"CaseC","Item":"hi"}""" @>
 
-    let bJson = """{"case":"CaseB"}"""
-    let b = JsonConvert.DeserializeObject<TestDU>(bJson, settings)
-    test <@ CaseB = b @>
+    test <@ CaseD "hi" = deserialize """{"case":"CaseD","a":"hi"}""" @>
 
-    let cJson = """{"case":"CaseC","Item":"hi"}"""
-    let c = JsonConvert.DeserializeObject<TestDU>(cJson, settings)
-    test <@ CaseC "hi" = c @>
+    test <@ CaseE ("hi", 0) = deserialize """{"case":"CaseE","Item1":"hi","Item2":0}""" @>
+    test <@ CaseE (null, 0) = deserialize """{"case":"CaseE","Item3":"hi","Item4":0}""" @>
 
-    let dJson = """{"case":"CaseD","a":"hi"}"""
-    let d = JsonConvert.DeserializeObject<TestDU>(dJson, settings)
-    test <@ CaseD "hi" = d @>
+    test <@ CaseF ("hi", 0) = deserialize """{"case":"CaseF","a":"hi","b":0}""" @>
 
-    let eJson = """{"case":"CaseE","Item1":"hi","Item2":0}"""
-    let e = JsonConvert.DeserializeObject<TestDU>(eJson, settings)
-    test <@ CaseE ("hi", 0) = e @>
+    test <@ CaseG {Item = "hi"} = deserialize """{"case":"CaseG","Item":"hi"}""" @>
 
-    let eJson = """{"case":"CaseE","Item3":"hi","Item4":0}"""
-    let e = JsonConvert.DeserializeObject<TestDU>(eJson, settings)
-    test <@ CaseE (null, 0) = e @>
+    test <@ CaseH {test = "hi"} = deserialize """{"case":"CaseH","test":"hi"}""" @>
 
-    let fJson = """{"case":"CaseF","a":"hi","b":0}"""
-    let f = JsonConvert.DeserializeObject<TestDU>(fJson, settings)
-    test <@ CaseF ("hi", 0) = f @>
+    test <@ CaseI ({test = "hi"}, "bye") = deserialize """{"case":"CaseI","a":{"test":"hi"},"b":"bye"}""" @>
 
-    let gJson = """{"case":"CaseG","Item":"hi"}"""
-    let g = JsonConvert.DeserializeObject<TestDU>(gJson, settings)
-    test <@ CaseG {Item = "hi"} = g @>
-
-    let hJson = """{"case":"CaseH","test":"hi"}"""
-    let h = JsonConvert.DeserializeObject<TestDU>(hJson, settings)
-    test <@ CaseH {test = "hi"} = h @>
-
-    let iJson = """{"case":"CaseI","a":{"test":"hi"},"b":"bye"}"""
-    let i = JsonConvert.DeserializeObject<TestDU>(iJson, settings)
-    test <@ CaseI ({test = "hi"}, "bye") = i @>
-
-    test <@ CaseJ (Nullable 1) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseJ","a":1}""", settings) @>
-    test <@ CaseK (1, Nullable 2) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseK", "a":1, "b":2 }""", settings) @>
-    test <@ CaseL (Nullable 1, Nullable 2) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseL", "a": 1, "b": 2 }""", settings) @>
+    test <@ CaseJ (Nullable 1) = deserialize """{"case":"CaseJ","a":1}""" @>
+    test <@ CaseK (1, Nullable 2) = deserialize """{"case":"CaseK", "a":1, "b":2 }""" @>
+    test <@ CaseL (Nullable 1, Nullable 2) = deserialize """{"case":"CaseL", "a": 1, "b": 2 }""" @>
 
     let deserialzeCustom s = JsonConvert.DeserializeObject<TestDU>(s, requiredSettingsToHandleOptionalFields)
     test <@ CaseM (Some 1) = deserialzeCustom """{"case":"CaseM","a":1}""" @>
     test <@ CaseN (1, Some 2) = deserialzeCustom """{"case":"CaseN", "a":1, "b":2 }""" @>
     test <@ CaseO (Some 1, Some 2) = deserialzeCustom """{"case":"CaseO", "a": 1, "b": 2 }""" @>
 
+    test <@ CaseP (CartId.Parse "0000000000000000948d503fcfc20f17") = deserialize """{"case":"CaseP","Item":"0000000000000000948d503fcfc20f17"}""" @>
+
 [<Fact>]
 let ``UnionConverter handles missing fields`` () =
-    test <@ CaseJ (Nullable<int>()) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseJ"}""", settings) @>
-    test <@ CaseK (1, (Nullable<int>())) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseK","a":1}""", settings) @>
-    test <@ CaseL ((Nullable<int>()), (Nullable<int>())) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseL"}""", settings) @>
+    let deserialize json = JsonConvert.DeserializeObject<TestDU>(json, settings)
+    test <@ CaseJ (Nullable<int>()) = deserialize """{"case":"CaseJ"}""" @>
+    test <@ CaseK (1, (Nullable<int>())) = deserialize """{"case":"CaseK","a":1}""" @>
+    test <@ CaseL ((Nullable<int>()), (Nullable<int>())) = deserialize """{"case":"CaseL"}""" @>
 
-    test <@ CaseM None = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseM"}""", settings) @>
-    test <@ CaseN (1, None) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseN","a":1}""", settings) @>
-    test <@ CaseO (None, None) = JsonConvert.DeserializeObject<TestDU>("""{"case":"CaseO"}""", settings) @>
+    test <@ CaseM None = deserialize """{"case":"CaseM"}""" @>
+    test <@ CaseN (1, None) = deserialize """{"case":"CaseN","a":1}""" @>
+    test <@ CaseO (None, None) = deserialize """{"case":"CaseO"}""" @>
 
 let (|Q|) (s : string) = Newtonsoft.Json.JsonConvert.SerializeObject s
 
@@ -210,8 +180,21 @@ let render = function
     | CaseO (None,b) -> sprintf """{"case":"CaseO","b":%d}""" b.Value
     | CaseO (a,None) -> sprintf """{"case":"CaseO","a":%d}""" a.Value
     | CaseO (Some a,Some b) -> sprintf """{"case":"CaseO","a":%d,"b":%d}""" a b
+    | CaseP id -> sprintf """{"case":"CaseP","Item":"%s"}""" id.Value
+    | CaseQ id -> sprintf """{"case":"CaseQ","Item":"%s"}""" id.Value
+    | CaseR id -> sprintf """{"case":"CaseR","a":"%s"}""" id.Value
+    | CaseS id -> sprintf """{"case":"CaseS","a":"%s"}""" id.Value
+    | CaseT (None, x) -> sprintf """{"case":"CaseT","b":"%s"}""" x.Value
+    | CaseT (Some x, y) -> sprintf """{"case":"CaseT","a":"%s","b":"%s"}""" x.Value y.Value
 
-[<FsCheck.Xunit.Property(MaxTest=1000)>]
+type FsCheckGenerators =
+    static member CartId = Arb.generate |> Gen.map CartId |> Arb.fromGen
+    static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
+
+type DomainPropertyAttribute() =
+    inherit FsCheck.Xunit.PropertyAttribute(QuietOnSuccess = true, Arbitrary=[| typeof<FsCheckGenerators> |])
+
+[<DomainPropertyAttribute(MaxTest=1000)>]
 let ``UnionConverter roundtrip property test`` (x: TestDU) =
     let serialized = JsonConvert.SerializeObject(x, requiredSettingsToHandleOptionalFields)
     render x =! serialized

@@ -103,11 +103,11 @@ module Converters =
 
         /// Paralells F# behavior wrt how it generates a DU's underlyiong .NET Type
         let inline isInlinedIntoUnionItem (t : Type) =
-            t = typeof<string> 
+            t = typeof<string>
             || t.IsValueType
-            || (t.IsGenericType // None :> obj / Nullable()
+            || (t.IsGenericType
                && (typedefof<Option<_>> = t.GetGenericTypeDefinition()
-                    || typedefof<Nullable<_>> = t.GetGenericTypeDefinition()))
+                    || t.GetGenericTypeDefinition().IsValueType)) // Nullable<T>
 
     /// For Some 1 generates "1", for None generates "null"
     type OptionConverter() =
@@ -135,6 +135,8 @@ module Converters =
                 let value = serializer.Deserialize(reader, innerType)
                 if value = null then FSharpValue.MakeUnion(cases.[0], Array.empty)
                 else FSharpValue.MakeUnion(cases.[1], [|value|])
+
+    let typeHasJsonConverterAttribute = memoize (fun (t : Type) -> t.IsDefined(typeof<JsonConverterAttribute>))
 
     (* Serializes a discriminated union case with a single field that is a record by flattening the
        record fields to the same level as the discriminator *)
@@ -188,7 +190,7 @@ module Converters =
             if token.Type <> JTokenType.Object then raise <| new FormatException(sprintf "Expected object reading JSON, got %O" token.Type)
             let obj = token :?> JObject
 
-            let caseName = obj.Item(discriminator) |> string
+            let caseName = obj.[discriminator] |> string
             let foundTag = cases |> Array.tryFindIndex (fun case -> case.Name = caseName)
             let tag =
                 match foundTag, catchAllCase with
@@ -202,7 +204,9 @@ module Converters =
             let fieldInfos = case.GetFields()
 
             let fieldValues =
-                if fieldInfos.Length = 1 && not (Union.isInlinedIntoUnionItem fieldInfos.[0].PropertyType) then
+                if fieldInfos.Length = 1
+                    && not (Union.isInlinedIntoUnionItem fieldInfos.[0].PropertyType)
+                    && not (typeHasJsonConverterAttribute fieldInfos.[0].PropertyType) then
                     let fieldInfo = fieldInfos.[0]
                     // strip out the discriminator property as we're preparing args for a constructor
                     let obj' =
@@ -217,9 +221,8 @@ module Converters =
                 else
                     let simpleFieldValue (fieldInfo: PropertyInfo) =
                         let itemValue = obj.[fieldInfo.Name]
-                        let fieldType = fieldInfo.PropertyType
-                        if itemValue = null && Union.isInlinedIntoUnionItem fieldType then null
-                        else itemValue.ToObject(fieldType, jsonSerializer)
+                        if itemValue = null then null
+                        else itemValue.ToObject(fieldInfo.PropertyType, jsonSerializer)
                     fieldInfos |> Array.map simpleFieldValue
 
             union.caseConstructor.[tag] fieldValues
