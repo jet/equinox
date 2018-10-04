@@ -246,3 +246,23 @@ let ``UnionConverter explains if nominated catchAll not found`` () =
 
     fun (e : System.InvalidOperationException) -> <@ -1 <> e.Message.IndexOf "nominated catchAllCase: 'CatchAllThatCantBeFound' not found" @>
     |> raisesWith <@ act() @>
+
+[<JsonConverter(typeof<Converters.UnionConverter>, "case", "Catchall")>]
+type DuWithCatchAllWithFields =
+| Known
+| Catchall of Newtonsoft.Json.Linq.JObject
+
+[<Fact>]
+let ``UnionConverter can feed unknown values into a JObject for logging or post processing`` () =
+    let deserialize json = JsonConvert.DeserializeObject<DuWithCatchAllWithFields>(json, settings)
+    let jo =
+        trap <@ match deserialize """{"case":"CaseUnknown","a":"s","b":1,"c":true}""" with
+                | Catchall jo -> jo
+                | x -> failwithf "unexpected %A" x @>
+
+    test <@ string jo.["a"]="s"
+            && jo.["b"].Type=Newtonsoft.Json.Linq.JTokenType.Integer
+            && jo.["c"].Type=Newtonsoft.Json.Linq.JTokenType.Boolean
+            && string jo.["case"]="CaseUnknown" @>
+    let expected  = "{\r\n  \"case\": \"CaseUnknown\",\r\n  \"a\": \"s\",\r\n  \"b\": 1,\r\n  \"c\": true\r\n}"
+    test <@ expected = string jo @>
