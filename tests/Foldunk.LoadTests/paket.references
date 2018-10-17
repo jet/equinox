@@ -1,6 +1,7 @@
 ﻿Argu
 Destructurama.FSharp
 EventStore.Client
+Jet.JsonNet.Converters
 MathNet.Numerics
 Newtonsoft.Json
 Serilog

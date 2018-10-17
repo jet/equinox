@@ -1,7 +1,0 @@
-﻿nuget FSharp.Core redirects: force
-nuget Newtonsoft.json
-nuget Serilog
-nuget TypeShape
-nuget Unquote
-nuget xunit.core
-nuget xunit.runner.visualstudio

@@ -10,7 +10,7 @@
     <RootNamespace>Foldunk.InMemoryStore.Integration</RootNamespace>
     <AssemblyName>Foldunk.MemoryStore.Integration</AssemblyName>
     <UseStandardResourceNames>true</UseStandardResourceNames>
-    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <TargetFSharpCoreVersion>4.4.1.0</TargetFSharpCoreVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Name>Foldunk.InMemoryStore.Integration</Name>

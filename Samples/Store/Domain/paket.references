@@ -1,3 +1,4 @@
 FSharp.Core
+Jet.JsonNet.Converters
 Newtonsoft.Json
 Serilog

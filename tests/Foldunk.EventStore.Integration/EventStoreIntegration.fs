@@ -17,7 +17,7 @@ let connectToLocalEventStoreNode log =
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
-let serializationSettings = Foldunk.Serialization.Settings.CreateDefault()
+let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
 let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
 
 module Cart =

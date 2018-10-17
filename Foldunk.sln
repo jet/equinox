@@ -17,7 +17,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".project", ".project", "{7E
 	ProjectSection(SolutionItems) = preProject
 		build.cmd = build.cmd
 		build.fsx = build.fsx
+		LICENSE = LICENSE
 		README.md = README.md
+		SECURITY.md = SECURITY.md
 	EndProjectSection
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Domain", "Samples\Store\Domain\Domain.fsproj", "{37B4A45F-039E-4515-8A84-D242DDE12D22}"
@@ -37,8 +39,6 @@ EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.MemoryStore.Integration", "tests\Foldunk.MemoryStore.Integration\Foldunk.MemoryStore.Integration.fsproj", "{B2C695C3-ED04-4094-B672-926440B5F335}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.Serialization", "src\Foldunk.Serialization\Foldunk.Serialization.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.Serialization.Tests", "tests\Foldunk.Serialization.Tests\Foldunk.Serialization.Tests.fsproj", "{1D9D5E23-683D-497F-BFA2-FBB43BB81205}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Foldunk.LoadTests", "tests\Foldunk.LoadTests\Foldunk.LoadTests.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
 EndProject
@@ -88,10 +88,6 @@ Global
 		{F5491EB1-D072-4262-8184-2A908E1D6175}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F5491EB1-D072-4262-8184-2A908E1D6175}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F5491EB1-D072-4262-8184-2A908E1D6175}.Release|Any CPU.Build.0 = Release|Any CPU
-		{1D9D5E23-683D-497F-BFA2-FBB43BB81205}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1D9D5E23-683D-497F-BFA2-FBB43BB81205}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1D9D5E23-683D-497F-BFA2-FBB43BB81205}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1D9D5E23-683D-497F-BFA2-FBB43BB81205}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Release|Any CPU.ActiveCfg = Release|Any CPU

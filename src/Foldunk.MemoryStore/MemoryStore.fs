@@ -1,6 +1,6 @@
 ﻿/// Implements an in-memory store. This fulfils two goals:
 /// 1. Acts as A target for integration testing allowing end-to-end processing of a decision flow in an efficient test
-/// 2. Illustrates a minimal implemention of the Foldunk Storage interface interconnects for the purpose of writing Store connectors
+/// 2. Illustrates a minimal implemention of the Storage interface interconnects for the purpose of writing Store connectors
 namespace Foldunk.MemoryStore
 
 open Foldunk

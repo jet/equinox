@@ -5,14 +5,11 @@ open Domain
 open Swensen.Unquote
 
 let settings =
-    let instance = Foldunk.Serialization.Settings.CreateDefault()
-    // Remove dashes when serializing strings
-    instance.Converters.Add(Foldunk.Serialization.Converters.GuidConverter())
-    // Don't let json.net treat 't option as the DU it is internally
-    instance.Converters.Add(Foldunk.Serialization.Converters.OptionConverter())
-    // Collapse the `fields` of the union into the top level, alongside the `case`
-    instance.Converters.Add(Foldunk.Serialization.Converters.UnionConverter())
-    instance
+    Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect(converters=
+        [|  // Don't let json.net treat 't option as the DU it is internally
+            Newtonsoft.Json.Converters.FSharp.OptionConverter()
+            // Collapse the `fields` of the union into the top level, alongside the `case`
+            Newtonsoft.Json.Converters.FSharp.UnionConverter() |])
 
 let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> settings
 
