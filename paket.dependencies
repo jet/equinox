@@ -4,6 +4,7 @@ framework: auto-detect
 nuget EventStore.Client >= 4.1.1
 nuget FSharp.Core redirects: force
 nuget FSharp.Control.AsyncSeq
+nuget Jet.JsonNet.Converters prerelease
 nuget Newtonsoft.Json
 nuget Serilog
 nuget System.Reactive

@@ -92,7 +92,7 @@ let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPo
 
 let defaultBatchSize = 500
 
-let serializationSettings = Foldunk.Serialization.Settings.CreateDefault()
+let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
 let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
 
 let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial

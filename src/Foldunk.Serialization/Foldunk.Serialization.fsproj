@@ -54,7 +54,6 @@
   <Import Project="$(FSharpTargetsPath)" />
   <ItemGroup>
     <None Include="paket.references" />
-    <Compile Include="Serialization.fs" />
     <Compile Include="UnionCodec.fs" />
   </ItemGroup>
   <ItemGroup>

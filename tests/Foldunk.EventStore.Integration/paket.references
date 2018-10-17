@@ -1,6 +1,7 @@
 ﻿nuget EventStore.Client
 nuget FsCheck.Xunit
 nuget FSharp.Core
+nuget Jet.JsonNet.Converters
 nuget Newtonsoft.Json
 nuget Serilog
 nuget Serilog.Sinks.Seq

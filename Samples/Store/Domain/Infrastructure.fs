@@ -1,8 +1,8 @@
 ﻿[<AutoOpen>]
 module Domain.Infrastructure
 
-open Foldunk.Serialization
 open Newtonsoft.Json
+open Newtonsoft.Json.Converters.FSharp
 open System
 open System.Runtime.Serialization
 
