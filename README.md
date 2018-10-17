@@ -1,37 +1,40 @@
-Foldunk
+Equinox
 =======
-This repo contains a low-dependency set of infrastructure, examples and tests illustrating a consistent approach to Event-sourced Decision processing against ordered stream stores in F#.
-
-Intended audience
------------------
-The key consumer of this codebase is the Jet.com production site.
-
-However, the codebase as a whole (particularly the Samples) are intended to achieve a critical secondary goal of sharing/discussing/prototyping usage patterns. As such, it's hoped to also have it be viable for use in the following contexts:
-- a testbed for illustrating and prototyping decision/state processing mechanisms
-- sample codebase for both internal- and external-facing Jet.com training events and talks
-- base infrastructure for third party talks / tutorials
-
-Please raise GitHub issues for any questions so others can benefit from the discussion.
-
-Elements
---------
-- `Foldunk.Handler`: a store-agnostic Decision flow runner that fulfills key request processing objectives as dictated by the requirements of Jet.com's front-end API layer
-- `Foldunk.EventStore`: Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
-- sufficient logging and metrics instrumentation capabilties to be used in a Production context
+A lightweight set of infrastructure, examples and tests providing a consistent approach to Event-sourced Decision processing in F# against multiple ordered stream stores.
 
 Features
 --------
-- Does not emit any specific logs, but is sufficiently instrumented (using [Serilog](github.com/serilog/serilog) to allow one to adapt it to ones hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
-- Uses `UnionEncoder`: a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
-	- independent of any specific serializer
-	- allows tagging of Discriminated Union cases with low-dependency `DataMember(Name=` tags in a versionable manner using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionEncoderTests.fs)
-- Compaction support: A pattern employed to optimize command processing by employing in-stream 'snapshot' events with the following properties:
+- Domain tests can be written directly against the models without any need to involve Equinox.
+- Events are declaratively encoded using `Equinox.UnionCodec`, which is a thin veneer over `Typeshape`'s `UnionEncoder`, providing for serializer agnostic schema evolution with minimal boilerplate
+- Independent of the stored used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
+- Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
+- Compaction support: Command processing can by optimized by employing in-stream 'compaction' events in service of the following ends:
 	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- support, when using the EventStore adapter (via `UnionEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
-- Integrated Folded state based caching via .NET `MemoryCache` - provides for minimal reads by maintaining the folded state in the cache without any explicit code within the Domain Model.
+	- support, (via `UnionEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
+	- compaction events typically do not get deleted in EventStore
+- Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
+- Significant test coverage for core facilities, and per Storage system.
+
+Elements
+--------
+Elements are delivered as multitargeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
+
+- `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic Decision flow runner that manages the optimistic concurrency protocol
+- `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
+	- independent of any specific serializer
+	- allows tagging of Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionEncoderTests.fs)
+- `Equinox.Cosmos` (Nuget: `Equinox.Cosmos`, depends on `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`, ): Production-strength Azure CosmosDb Adapter with integrated transactional snapshotting facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
+- `Equinox.EventStore` (Nuget: `Equinox.EventStore`, depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`): Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
+- `Equinox.MemoryStore` (Nuget: `Equinox.MemoryStore`): In-memory store for integration testing/performance baselining
+- `Samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
+- `Equinox.Bench` (in this repo): Scenario runner that facilitates running representative load tests composed of transactions in `Samples/Store` against each backend store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
+
+CONTRIBUTING
+------------
+Please raise GitHub issues for any questions so others can benefit from the discussion.
 
 Building
 --------
 ```
-dotnet msbuild Foldunk.sln "-t:restore;build;pack;test"
+dotnet msbuild Equinox.sln "-t:restore;build;pack;test"
 ```
