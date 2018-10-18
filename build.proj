@@ -1,31 +1,34 @@
 <Project ToolsVersion="15.0">
 
-  <Import Project="Directory.Build.props" />
+  <PropertyGroup>
 
-  <Target Name="Restore">
-    <Exec Command="dotnet restore" WorkingDirectory="tools" ConsoleToMSBuild="true" />
+    <RepoRootDir>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</RepoRootDir>
+
+    <BuildNumber Condition="'$(BN)' != ''">$([System.String]::Format('{0:0000000}',$([MSBuild]::Add($(BN), 0))))</BuildNumber>
+    <Suffix Condition=" '$(BuildNumber)' != '' AND '$(PR)' != ''">--version-suffix CI$(BuildNumber)-pr$(PR)</Suffix>
+    <Suffix Condition=" '$(BuildNumber)' != '' AND '$(PR)' == ''">--version-suffix CI$(BuildNumber)</Suffix>
+
+  </PropertyGroup>
+
+  <Target Name="Build">
+    <Exec Command="dotnet build benchmarks/Equinox.Bench --configuration Release" WorkingDirectory="$(RepoRootDir)" />
+    <Exec Condition=" '$(SkipLes)' != '' " Command='dotnet build tests/Equinox.EventStore.Integration --configuration Release' WorkingDirectory="$(RepoRootDir)" />
+    <Exec Condition=" '$(SkipLes)' != '' " Command='dotnet build samples/Store/Integration --configuration Release' WorkingDirectory="$(RepoRootDir)" />
   </Target>
 
-  <Target Name="Build" DependsOnTargets="Restore">
-    <Exec Command='dotnet build samples/Store/Domain.Tests -c Release' />
-    <Exec Command='dotnet build samples/Store/Domain.Integration -c Release' />
-    <Exec Command='dotnet build tests/Equinox.LoadTests -c Release' />
+  <Target Name="Pack">
+    <Exec Command="dotnet pack src/Equinox --configuration Release -o $(RepoRootDir)bin $(Suffix)" WorkingDirectory="$(RepoRootDir)"  />
+    <Exec Command="dotnet pack src/Equinox.Codec --configuration Release -o $(RepoRootDir)bin $(Suffix)" WorkingDirectory="$(RepoRootDir)" />
+    <Exec Command="dotnet pack src/Equinox.EventStore --configuration Release -o $(RepoRootDir)bin $(Suffix)" WorkingDirectory="$(RepoRootDir)" />
+    <Exec Command="dotnet pack src/Equinox.MemoryStore --configuration Release -o $(RepoRootDir)bin $(Suffix)" WorkingDirectory="$(RepoRootDir)" />
   </Target>
 
-  <Target Name="Pack" DependsOnTargets="Restore">
-    <RemoveDir Directories="$(NupkgsDir)" />
-    <Exec Command='dotnet pack src/Equinox -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
-    <Exec Command='dotnet pack src/Equinox.Serialization -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
-    <Exec Command='dotnet pack src/Equinox.EventStore -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
+  <Target Name="Test">
+    <Exec Command='dotnet test samples/Store/Domain.Tests --configuration Release' WorkingDirectory="$(RepoRootDir)" />
+    <Exec Command='dotnet test tests/Equinox.MemoryStore.Integration --configuration Release' WorkingDirectory="$(RepoRootDir)" />
+    <Exec Condition=" '$(SkipLes)' == '' " Command='dotnet test tests/Equinox.EventStore.Integration --configuration Release' WorkingDirectory="$(RepoRootDir)" />
+    <Exec Condition=" '$(SkipLes)' == '' " Command='dotnet test samples/Store/Integration --configuration Release' WorkingDirectory="$(RepoRootDir)" />
   </Target>
-
-  <Target Name="Test" DependsOnTargets="Restore">
-    <Exec Command='dotnet build samples/Store/Domain.Tests -c Release' />
-    <Exec Command='dotnet build samples/Store/Domain.Integration -c Release' />
-    <Exec Command='dotnet build tests/Equinox.EventStore.Integration -c Release' />
-    <Exec Command='dotnet build tests/Equinox.MemoryStore.Integration -c Release' />
-  </Target>
-
   <Target Name="VSTest" DependsOnTargets="Test" />
- 
+
 </Project>
