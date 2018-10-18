@@ -36,5 +36,12 @@ Please raise GitHub issues for any questions so others can benefit from the disc
 Building
 --------
 ```
-dotnet msbuild Equinox.sln "-t:restore;build;pack;test"
+# requires admin privilege
+cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+# run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
+& $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+# run, including running the tests that assume you've got a local EventStore started as above
+./build
+# run, skipping the tests that require a local EventStore instance
+./build /p:SkipLes=true
 ```

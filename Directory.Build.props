@@ -6,7 +6,7 @@
     <Company>Jet.com</Company>
     <Description>Composable F# event sourcing componentry</Description>
     <PackageProjectUrl>https://github.com/jet/Foldunk</PackageProjectUrl>
-    <PackageTags>fsharp unionconverter unionencoder eventsourcing eventstore typeshape</PackageTags>
+    <PackageTags>fsharp unionencoder eventsourcing eventstore typeshape</PackageTags>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/jet/Foldunk</RepositoryUrl>
     <PackageLicenseUrl>https://github.com/jet/Foldunk/blob/master/LICENSE</PackageLicenseUrl>
