@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Foldunk.EventStore.Integration.Infrastructure
+module Equinox.EventStore.Integration.Infrastructure
 
 open Domain
 open FsCheck
@@ -43,17 +43,17 @@ module SerilogHelpers =
         | _ -> None
     [<RequireQualifiedAccess>]
     type EsAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward
-    let (|EsAction|) (evt : Foldunk.EventStore.Log.Event) =
+    let (|EsAction|) (evt : Equinox.EventStore.Log.Event) =
         match evt with
-        | Foldunk.EventStore.Log.WriteSuccess _ -> EsAct.Append
-        | Foldunk.EventStore.Log.WriteConflict _ -> EsAct.AppendConflict
-        | Foldunk.EventStore.Log.Slice (Foldunk.EventStore.Direction.Forward,_) -> EsAct.SliceForward
-        | Foldunk.EventStore.Log.Slice (Foldunk.EventStore.Direction.Backward,_) -> EsAct.SliceBackward
-        | Foldunk.EventStore.Log.Batch (Foldunk.EventStore.Direction.Forward,_,_) -> EsAct.BatchForward
-        | Foldunk.EventStore.Log.Batch (Foldunk.EventStore.Direction.Backward,_,_) -> EsAct.BatchBackward
-    let (|EsEvent|_|) (logEvent : LogEvent) : Foldunk.EventStore.Log.Event option =
+        | Equinox.EventStore.Log.WriteSuccess _ -> EsAct.Append
+        | Equinox.EventStore.Log.WriteConflict _ -> EsAct.AppendConflict
+        | Equinox.EventStore.Log.Slice (Equinox.EventStore.Direction.Forward,_) -> EsAct.SliceForward
+        | Equinox.EventStore.Log.Slice (Equinox.EventStore.Direction.Backward,_) -> EsAct.SliceBackward
+        | Equinox.EventStore.Log.Batch (Equinox.EventStore.Direction.Forward,_,_) -> EsAct.BatchForward
+        | Equinox.EventStore.Log.Batch (Equinox.EventStore.Direction.Backward,_,_) -> EsAct.BatchBackward
+    let (|EsEvent|_|) (logEvent : LogEvent) : Equinox.EventStore.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Foldunk.EventStore.Log.Event as e) -> Some e
+            | SerilogScalar (:? Equinox.EventStore.Log.Event as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =

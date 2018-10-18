@@ -1,6 +1,6 @@
-﻿module Foldunk.EventStore.Integration.EventStoreIntegration
+﻿module Equinox.EventStore.Integration.EventStoreIntegration
 
-open Foldunk.EventStore
+open Equinox.EventStore
 open Serilog
 open Swensen.Unquote
 open System.Threading
@@ -13,12 +13,12 @@ open System
 /// (For this specific suite only, omitting the args will also work as the Gossip-related ports are irrelevant, but other tests would fail)
 let connectToLocalEventStoreNode log =
     GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
-        .Establish("Foldunk-integration", Discovery.Uri(Uri "tcp://localhost:1113"),ConnectionStrategy.ClusterSingle NodePreference.Master)
+        .Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"),ConnectionStrategy.ClusterSingle NodePreference.Master)
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
+let genCodec<'T> = Equinox.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
 
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial

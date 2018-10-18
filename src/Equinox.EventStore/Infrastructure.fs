@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Foldunk.EventStore.Infrastructure
+module Equinox.EventStore.Infrastructure
 
 open FSharp.Control
 open System

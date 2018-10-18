@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Foldunk.LoadTests.Infrastructure.Aggregate
+module Equinox.Bench.Infrastructure.Aggregate
 
 open MathNet.Numerics.Statistics
 open Serilog

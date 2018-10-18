@@ -1,7 +1,7 @@
-﻿module Foldunk.EventStore.Tests.EventStoreTokenTests
+﻿module Equinox.EventStore.Tests.EventStoreTokenTests
 
-open Foldunk
-open Foldunk.EventStore
+open Equinox
+open Equinox.EventStore
 open FsCheck.Xunit
 open Swensen.Unquote.Assertions
 open Xunit

@@ -1,9 +1,9 @@
-﻿module Foldunk.LoadTests.Program
+﻿module Equinox.Bench.Program
 
 open Argu
 open Domain
 open Infrastructure
-open Foldunk.EventStore
+open Equinox.EventStore
 open Serilog
 open System
 open System.Threading
@@ -68,7 +68,7 @@ and [<NoEquality; NoComparison>] EsArguments =
             | Retries _ -> "specify operation retries (default: 1)."
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type Connection =
-    | Mem of Foldunk.MemoryStore.VolatileStore
+    | Mem of Equinox.MemoryStore.VolatileStore
     | Es of GesGateway
 
 let run log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
@@ -87,13 +87,13 @@ let connectToEventStoreNode (log: ILogger) (dnsQuery, heartbeatTimeout, col) (us
             heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
             log=(if log.IsEnabled(LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
             tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
-        .Establish("Foldunk-loadtests", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
+        .Establish("Equinox-loadtests", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 let defaultBatchSize = 500
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
+let genCodec<'T> = Equinox.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
 
 let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
 
@@ -102,9 +102,9 @@ let createService conn log =
     let resolveStream cet streamName =
         match conn with
         | Connection.Mem store ->
-            Foldunk.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create(streamName)
+            Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create(streamName)
         | Connection.Es gateway ->
-            GesStreamBuilder(gateway, codec, fold, initial, Foldunk.EventStore.CompactionStrategy.EventType cet).Create(streamName)
+            GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType cet).Create(streamName)
     Backend.Favorites.Service(log, resolveStream)
 let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
     let sku = Guid.NewGuid() |> SkuId
@@ -159,7 +159,7 @@ let main argv =
                     "Reporting intervals: {ri}, report file: {report}",
                     ([| duration; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
                 // TODO implement backoffs
-                log, Connection.Mem (Foldunk.MemoryStore.VolatileStore())
+                log, Connection.Mem (Equinox.MemoryStore.VolatileStore())
             | Some (Es esargs) ->
                 let verboseStore = esargs.Contains(VerboseEs)
                 let log = createEsLog verboseStore verboseConsole maybeSeq

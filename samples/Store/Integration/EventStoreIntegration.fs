@@ -1,11 +1,11 @@
 ﻿[<AutoOpen>]
 module Samples.Store.Integration.EventStoreIntegration
 
-open Foldunk.EventStore
+open Equinox.EventStore
 open System
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
+let genCodec<'T> = Equinox.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
 
 /// Connect with Gossip based cluster discovery using the default Commercial edition Manager port config
 /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-
@@ -14,6 +14,6 @@ let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> serializati
 /// (the normal external port also hosts the server metadata endpoint; with above, can see gossip info by going to http://127.0.0.1:30778/gossip)
 let connectToLocalEventStoreNode log =
     GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
-        .Establish("Foldunk-sample", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
+        .Establish("Equinox-sample", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))

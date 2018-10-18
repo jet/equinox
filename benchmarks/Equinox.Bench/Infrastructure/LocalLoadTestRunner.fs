@@ -1,4 +1,4 @@
-﻿namespace Foldunk.LoadTests.Infrastructure
+﻿namespace Equinox.Bench.Infrastructure
 
 open Serilog
 open System

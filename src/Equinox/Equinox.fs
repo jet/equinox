@@ -1,4 +1,4 @@
-﻿namespace Foldunk
+﻿namespace Equinox
 
 open Serilog
 

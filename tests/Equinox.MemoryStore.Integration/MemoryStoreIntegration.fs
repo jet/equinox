@@ -1,7 +1,7 @@
-﻿module Foldunk.MemoryStore.Integration.MemoryStoreIntegration
+﻿module Equinox.MemoryStore.Integration.MemoryStoreIntegration
 
 open Swensen.Unquote
-open Foldunk.MemoryStore
+open Equinox.MemoryStore
 
 let createMemoryStore () =
     new VolatileStore()
@@ -20,7 +20,7 @@ type Tests(testOutputHelper) =
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
         let service = let log = createLog () in createServiceMem log store
-        let flow (ctx: Foldunk.Context<_,_>) execute =
+        let flow (ctx: Equinox.Context<_,_>) execute =
             Domain.Cart.AddItem args |> execute
             ctx.State
 
