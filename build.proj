@@ -4,9 +4,9 @@
 
     <RepoRootDir>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</RepoRootDir>
 
-    <BuildNumber Condition="'$(BN)' != ''">$([System.String]::Format('{0:0000000}',$([MSBuild]::Add($(BN), 0))))</BuildNumber>
-    <Suffix Condition=" '$(BuildNumber)' != '' AND '$(PR)' != ''">--version-suffix CI$(BuildNumber)-pr$(PR)</Suffix>
-    <Suffix Condition=" '$(BuildNumber)' != '' AND '$(PR)' == ''">--version-suffix CI$(BuildNumber)</Suffix>
+    <BuildNumber Condition="'$(BuildNumber)' != ''">$([System.String]::Format('{0:0000000}',$([MSBuild]::Add($(BuildNumber), 0))))</BuildNumber>
+    <Suffix Condition=" '$(BuildNumber)' != '' AND '$(PullRequestId)' != ''">--version-suffix CI$(BuildNumber)-pr$(PullRequestId)</Suffix>
+    <Suffix Condition=" '$(BuildNumber)' != '' AND '$(PullRequestId)' == ''">--version-suffix CI$(BuildNumber)</Suffix>
 
   </PropertyGroup>
 
