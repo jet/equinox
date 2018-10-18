@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
-open Foldunk.EventStore
-open Foldunk.MemoryStore
+open Equinox.EventStore
+open Equinox.MemoryStore
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -15,7 +15,7 @@ let createServiceMem log store =
 
 let codec = genCodec<Domain.Favorites.Events.Event>
 let createServiceGes gateway log =
-    Backend.Favorites.Service(log, fun cet streamName -> GesStreamBuilder(gateway, codec, fold, initial, Foldunk.EventStore.CompactionStrategy.EventType cet).Create(streamName))
+    Backend.Favorites.Service(log, fun cet streamName -> GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType cet).Create(streamName))
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

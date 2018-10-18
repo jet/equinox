@@ -1,4 +1,4 @@
-module Foldunk.UnionCodec
+module Equinox.UnionCodec
 
 open Newtonsoft.Json
 open System.IO

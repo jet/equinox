@@ -1,9 +1,9 @@
 ﻿/// Implements an in-memory store. This fulfils two goals:
 /// 1. Acts as A target for integration testing allowing end-to-end processing of a decision flow in an efficient test
 /// 2. Illustrates a minimal implemention of the Storage interface interconnects for the purpose of writing Store connectors
-namespace Foldunk.MemoryStore
+namespace Equinox.MemoryStore
 
-open Foldunk
+open Equinox
 open Serilog
 
 /// Equivalent to GetEventStore in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
@@ -90,6 +90,6 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
             | ConcurrentArraySyncResult.Written events -> return Storage.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState fold state events }
 
 type MemoryStreamBuilder<'event, 'state>(store : VolatileStore, fold, initial) =
-    member __.Create streamName : Foldunk.IStream<'event, 'state> =
+    member __.Create streamName : Equinox.IStream<'event, 'state> =
         let category = MemoryCategory(store, fold, initial)
-        Foldunk.Stream.create category streamName
+        Equinox.Stream.create category streamName

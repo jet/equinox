@@ -1,4 +1,4 @@
-﻿module Foldunk.LoadTests.Infrastructure.HttpHelpers
+﻿module Equinox.Bench.Infrastructure.HttpHelpers
 
 open System
 open System.Net

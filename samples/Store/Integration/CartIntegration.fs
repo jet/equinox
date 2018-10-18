@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
-open Foldunk.EventStore
-open Foldunk.MemoryStore
+open Equinox.EventStore
+open Equinox.MemoryStore
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -16,7 +16,7 @@ let createServiceMem log store =
 let codec = genCodec<Domain.Cart.Events.Event>
 
 let resolveGesStreamWithCompactionEventType gateway compactionEventType streamName =
-    GesStreamBuilder(gateway, codec, fold, initial, Foldunk.EventStore.CompactionStrategy.EventType compactionEventType).Create(streamName)
+    GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType compactionEventType).Create(streamName)
 let resolveGesStreamWithoutCompactionSemantics gateway _compactionEventType streamName =
     GesStreamBuilder(gateway, codec, fold, initial).Create(streamName)
 

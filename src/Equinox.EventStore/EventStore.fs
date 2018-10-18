@@ -1,7 +1,7 @@
-﻿namespace Foldunk.EventStore
+﻿namespace Equinox.EventStore
 
 open EventStore.ClientAPI
-open Foldunk
+open Equinox
 open FSharp.Control
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
@@ -415,7 +415,7 @@ type CachingStrategy =
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
 type GesStreamBuilder<'event, 'state>(gateway : GesGateway, codec, fold, initial, ?compaction, ?caching) =
-    member __.Create streamName : Foldunk.IStream<'event, 'state> =
+    member __.Create streamName : Equinox.IStream<'event, 'state> =
         let compactionPredicateOption =
             match compaction with
             | None -> None
@@ -438,7 +438,7 @@ type GesStreamBuilder<'event, 'state>(gateway : GesGateway, codec, fold, initial
             | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
                 Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
 
-        Foldunk.Stream.create category streamName
+        Equinox.Stream.create category streamName
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with

@@ -11,7 +11,7 @@ let settings =
             // Collapse the `fields` of the union into the top level, alongside the `case`
             Newtonsoft.Json.Converters.FSharp.UnionConverter() |])
 
-let genCodec<'T> = Foldunk.UnionCodec.generateJsonUtf8UnionCodec<'T> settings
+let genCodec<'T> = Equinox.UnionCodec.generateJsonUtf8UnionCodec<'T> settings
 
 type EventWithId = { id : CartId }
 type EventWithOption = { age : int option }

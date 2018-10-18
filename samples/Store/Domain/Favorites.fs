@@ -57,7 +57,7 @@ module Commands =
             [ Events.Unfavorited { skuId = skuId } ]
 
 type Handler(log, stream, ?maxAttempts) =
-    let inner = Foldunk.Stream.Handler(Folds.fold, log, stream, maxAttempts = defaultArg maxAttempts 2)
+    let inner = Equinox.Stream.Handler(Folds.fold, log, stream, maxAttempts = defaultArg maxAttempts 2)
     member __.Execute command : Async<unit> =
         inner.Decide <| fun ctx ->
             let execute = Commands.interpret >> ctx.Execute

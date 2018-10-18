@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Foldunk.LoadTests.Infrastructure.Prelude
+module Equinox.Bench.Infrastructure.Prelude
 
 open System
 open System.Diagnostics

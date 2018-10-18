@@ -1,9 +1,9 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
-open Foldunk.EventStore
+open Equinox.EventStore
 open Swensen.Unquote
 
-module FoldunkEsInterop =
+module EquinoxEsInterop =
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed
@@ -36,13 +36,13 @@ type SerilogMetricsExtractor(emit : string -> unit) =
     let (|EsMetric|GenericMessage|) (logEvent : Serilog.Events.LogEvent) =
         logEvent.Properties
         |> Seq.tryPick (function
-            | KeyValue (k, SerilogScalar (:? Foldunk.EventStore.Log.Event as m)) -> Some <| Choice1Of2 (k,m)
+            | KeyValue (k, SerilogScalar (:? Equinox.EventStore.Log.Event as m)) -> Some <| Choice1Of2 (k,m)
             | _ -> None)
         |> Option.defaultValue (Choice2Of2 ())
     let handleLogEvent logEvent =
         match logEvent with
         | EsMetric (name, evt) as logEvent ->
-            let flat = FoldunkEsInterop.flatten evt
+            let flat = EquinoxEsInterop.flatten evt
             let renderedMetrics = sprintf "%s-Duration=%O" flat.action flat.interval.Elapsed |> Serilog.Events.ScalarValue
             // Serilog provides lots of ways of configuring custom rendering -  solely tweaking the rendering is doable using the configuration syntax
             // (the goal here is to illustrate how a given value can be extracted (as required in some cases) and/or stubbed yet retain the rest of the message)
