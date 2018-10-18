@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
@@ -6,24 +6,19 @@
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
- </PropertyGroup>
+  </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Infrastructure.fs" />
-    <Compile Include="Cart.fs" />
-    <Compile Include="ContactPreferences.fs" />
-    <Compile Include="Favorites.fs" />
+    <Compile Include="MemoryStore.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Foldunk.Serialization\Foldunk.Serialization.fsproj" />
-    <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj" />
+    <ProjectReference Include="..\Equinox\Equinox.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
-    <PackageReference Include="Jet.JsonNet.Converters" Version="0.0.3-CI69140" />
   </ItemGroup>
 
 </Project>

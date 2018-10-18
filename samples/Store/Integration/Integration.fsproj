@@ -25,10 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Foldunk.EventStore\Foldunk.EventStore.fsproj" />
-    <ProjectReference Include="..\..\..\src\Foldunk.MemoryStore\Foldunk.MemoryStore.fsproj" />
-    <ProjectReference Include="..\..\..\src\Foldunk\Foldunk.fsproj" />
-    <ProjectReference Include="..\..\..\tests\Foldunk.EventStore.Integration\Foldunk.EventStore.Integration.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
+    <ProjectReference Include="..\..\..\tests\Equinox.EventStore.Integration\Equinox.EventStore.Integration.fsproj" />
     <ProjectReference Include="..\Backend\Backend.fsproj" />
     <ProjectReference Include="..\Domain\Domain.fsproj" />
   </ItemGroup>

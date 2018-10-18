@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.27110.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Foldunk", "src\Foldunk\Foldunk.fsproj", "{54CD058F-5B0A-4564-B732-1F6301E120AC}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox", "src\Equinox\Equinox.fsproj", "{54CD058F-5B0A-4564-B732-1F6301E120AC}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples.Store", "Samples.Store", "{D67D5A5F-2E59-4514-A997-FEBDC467AAF6}"
 EndProject
@@ -26,17 +26,17 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Domain.Tests", "Samples\Sto
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Integration", "Samples\Store\Integration\Integration.fsproj", "{0B2D5815-D6A5-4AAC-9B75-D57B165E2A92}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Foldunk.EventStore", "src\Foldunk.EventStore\Foldunk.EventStore.fsproj", "{92B4ACC9-7F30-4727-A4B6-0B6903D0AA08}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.EventStore", "src\Equinox.EventStore\Equinox.EventStore.fsproj", "{92B4ACC9-7F30-4727-A4B6-0B6903D0AA08}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Foldunk.EventStore.Integration", "tests\Foldunk.EventStore.Integration\Foldunk.EventStore.Integration.fsproj", "{3DB78BA2-3460-41F9-A3E1-5B945D4FCB79}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.EventStore.Integration", "tests\Equinox.EventStore.Integration\Equinox.EventStore.Integration.fsproj", "{3DB78BA2-3460-41F9-A3E1-5B945D4FCB79}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Foldunk.MemoryStore", "src\Foldunk.MemoryStore\Foldunk.MemoryStore.fsproj", "{A7441FF0-94E6-45E4-B02D-F14ED248516D}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.MemoryStore", "src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj", "{A7441FF0-94E6-45E4-B02D-F14ED248516D}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Foldunk.MemoryStore.Integration", "tests\Foldunk.MemoryStore.Integration\Foldunk.MemoryStore.Integration.fsproj", "{B2C695C3-ED04-4094-B672-926440B5F335}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.MemoryStore.Integration", "tests\Equinox.MemoryStore.Integration\Equinox.MemoryStore.Integration.fsproj", "{B2C695C3-ED04-4094-B672-926440B5F335}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Foldunk.Serialization", "src\Foldunk.Serialization\Foldunk.Serialization.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Codec", "src\Equinox.Codec\Equinox.Codec.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Foldunk.LoadTests", "tests\Foldunk.LoadTests\Foldunk.LoadTests.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Bench", "benchmarks\Equinox.Bench\Equinox.Bench.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

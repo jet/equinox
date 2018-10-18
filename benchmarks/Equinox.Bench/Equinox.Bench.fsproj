@@ -27,12 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Foldunk.MemoryStore\Foldunk.MemoryStore.fsproj" />
-    <ProjectReference Include="..\..\src\Foldunk\Foldunk.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
     <ProjectReference Include="..\..\Samples\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\..\Samples\Store\Domain\Domain.fsproj" />
-    <ProjectReference Include="..\..\src\Foldunk.EventStore\Foldunk.EventStore.fsproj" />
-    <ProjectReference Include="..\..\src\Foldunk.Serialization\Foldunk.Serialization.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Codec\Equinox.Codec.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

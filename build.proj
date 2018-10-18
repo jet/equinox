@@ -9,21 +9,21 @@
   <Target Name="Build" DependsOnTargets="Restore">
     <Exec Command='dotnet build samples/Store/Domain.Tests -c Release' />
     <Exec Command='dotnet build samples/Store/Domain.Integration -c Release' />
-    <Exec Command='dotnet build tests/Foldunk.LoadTests -c Release' />
+    <Exec Command='dotnet build tests/Equinox.LoadTests -c Release' />
   </Target>
 
   <Target Name="Pack" DependsOnTargets="Restore">
     <RemoveDir Directories="$(NupkgsDir)" />
-    <Exec Command='dotnet pack src/Foldunk -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
-    <Exec Command='dotnet pack src/Foldunk.Serialization -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
-    <Exec Command='dotnet pack src/Foldunk.EventStore -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
+    <Exec Command='dotnet pack src/Equinox -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
+    <Exec Command='dotnet pack src/Equinox.Serialization -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
+    <Exec Command='dotnet pack src/Equinox.EventStore -c Release -o "$(NupkgsDir)" /p:Version=$(Version)' />
   </Target>
 
   <Target Name="Test" DependsOnTargets="Restore">
     <Exec Command='dotnet build samples/Store/Domain.Tests -c Release' />
     <Exec Command='dotnet build samples/Store/Domain.Integration -c Release' />
-    <Exec Command='dotnet build tests/Foldunk.EventStore.Integration -c Release' />
-    <Exec Command='dotnet build tests/Foldunk.MemoryStore.Integration -c Release' />
+    <Exec Command='dotnet build tests/Equinox.EventStore.Integration -c Release' />
+    <Exec Command='dotnet build tests/Equinox.MemoryStore.Integration -c Release' />
   </Target>
 
   <Target Name="VSTest" DependsOnTargets="Test" />
