@@ -3,29 +3,29 @@
   <PropertyGroup>
     <TargetFrameworks>netcoreapp2.1;net461</TargetFrameworks>
     <IsPackable>false</IsPackable>
+    <OutputType>Library</OutputType>
     <WarningLevel>5</WarningLevel>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Infrastructure.fs" />
-    <Compile Include="EventStoreIntegration.fs" />
-    <Compile Include="EventStoreTokenTests.fs" />
+    <Compile Include="MemoryStoreIntegration.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.10.8" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.3.0" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
     <PackageReference Include="unquote" Version="4.0" />
     <PackageReference Include="xunit" Version="2.3.1" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.3.1" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Samples\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\..\Samples\Store\Domain\Domain.fsproj" />
-    <ProjectReference Include="..\..\src\Foldunk.EventStore\Foldunk.EventStore.fsproj" />
-    <ProjectReference Include="..\..\src\Foldunk\Foldunk.fsproj" />
+    <ProjectReference Include="..\..\Samples\Store\Backend\Backend.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>
 
 </Project>

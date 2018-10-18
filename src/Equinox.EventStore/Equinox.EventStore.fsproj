@@ -6,16 +6,27 @@
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
+    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">NET461</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Foldunk.fs" />
+    <Compile Include="Infrastructure.fs" />
+    <Compile Include="EventStore.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Equinox\Equinox.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
+    <PackageReference Include="EventStore.ClientAPI.NetCore" Version="4.1.1-rc" Condition=" '$(TargetFramework)' == 'netstandard2.0'" />
+    <PackageReference Include="EventStore.Client" Version="4.1.1" Condition=" '$(TargetFramework)' == 'net461'" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.21" />
+    <PackageReference Include="System.Runtime.Caching" Version="4.5.0" />
     <PackageReference Include="Serilog" Version="2.7.1" />
+    <PackageReference Include="TypeShape" Version="5.1.0" />
   </ItemGroup>
 
 </Project>
