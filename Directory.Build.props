@@ -11,6 +11,12 @@
     <RepositoryUrl>https://github.com/jet/Foldunk</RepositoryUrl>
     <PackageLicenseUrl>https://github.com/jet/Foldunk/blob/master/LICENSE</PackageLicenseUrl>
     <Copyright>Copyright © 2016-8</Copyright>
+
+    <!-- SourceLink related properties https://github.com/dotnet/SourceLink#using-sourcelink -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
+
   </PropertyGroup>
 
 </Project>
