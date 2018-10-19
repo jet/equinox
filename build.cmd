@@ -1,3 +1,1 @@
-dotnet build build.proj %*
-dotnet pack build.proj %*
-dotnet test build.proj -v n %*
+dotnet msbuild build.proj /p:skipes=true /nowarn:FS0988 %*
