@@ -1,6 +1,8 @@
 # User-specific files
 
 # Build results
+msbuild.binlog
+msbuild.log
 .build/
 [Bb]in/
 [Oo]bj/

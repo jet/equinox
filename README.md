@@ -41,7 +41,7 @@ cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package
 # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
 & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 # run, including running the tests that assume you've got a local EventStore started as above
-./build
+./build.ps1
 # run, skipping the tests that require a local EventStore instance
-./build /p:SkipLes=true
+./build.ps1 -s
 ```
