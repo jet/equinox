@@ -13,7 +13,7 @@ let createMemoryStore () =
 let createServiceMem log store =
     Backend.Favorites.Service(log, fun _cet -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = genCodec<Domain.Favorites.Events.Event>
+let codec = genCodec<Domain.Favorites.Events.Event>()
 let createServiceGes gateway log =
     Backend.Favorites.Service(log, fun cet streamName -> GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType cet).Create(streamName))
 

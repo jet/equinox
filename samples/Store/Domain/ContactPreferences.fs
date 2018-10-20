@@ -8,7 +8,8 @@ module Events =
     type Value = { email : string; preferences : Preferences }
 
     type Event =
-    | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
+        | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
+        interface TypeShape.UnionContract.IUnionContract
 
 module Folds =
     type State = Events.Preferences

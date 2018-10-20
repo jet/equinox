@@ -199,13 +199,13 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
-    let private encodedEventOfResolvedEvent (x : ResolvedEvent) : UnionEncoder.EncodedUnion<byte[]> =
+    let private encodedEventOfResolvedEvent (x : ResolvedEvent) : UnionContract.EncodedUnion<byte[]> =
         { CaseName = x.Event.EventType; Payload = x.Event.Data }
-    let private eventDataOfEncodedEvent (x : UnionEncoder.EncodedUnion<byte[]>) =
+    let private eventDataOfEncodedEvent (x : UnionContract.EncodedUnion<byte[]>) =
         EventData(Guid.NewGuid(), x.CaseName, (*isJson*) true, x.Payload, [||])
-    let encodeEvents (codec : UnionEncoder.IUnionEncoder<'event, byte[]>) (xs : 'event seq) : EventData[] =
+    let encodeEvents (codec : UnionContract.UnionContractEncoder<'event,byte[]>) (xs : 'event seq) : EventData[] =
         xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
-    let decodeKnownEvents (codec : UnionEncoder.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
+    let decodeKnownEvents (codec : UnionContract.UnionContractEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
         xs |> Seq.map encodedEventOfResolvedEvent |> Seq.choose codec.TryDecode
 
 type Token = { streamVersion: int64; compactionEventNumber: int64 option }
@@ -305,7 +305,7 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamVersion compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
 
-type private Category<'event, 'state>(gateway : GesGateway, codec : UnionEncoder.IUnionEncoder<'event, byte[]>, ?compactionStrategy) =
+type private Category<'event, 'state>(gateway : GesGateway, codec : UnionContract.UnionContractEncoder<'event,byte[]>, ?compactionStrategy) =
     let loadAlgorithm load streamName initial log =
         let batched = load initial (gateway.LoadBatched streamName log None)
         let compacted predicate = load initial (gateway.LoadBackwardsStoppingAtCompactionEvent streamName log predicate)
@@ -411,10 +411,10 @@ type CompactionStrategy =
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     | SlidingWindow of Caching.Cache * window: TimeSpan
-    /// Prefix is used to distinguish multiple folds per stream
+    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
-type GesStreamBuilder<'event, 'state>(gateway : GesGateway, codec, fold, initial, ?compaction, ?caching) =
+type GesStreamBuilder<'event,'state>(gateway : GesGateway, codec, fold, initial, ?compaction, ?caching) =
     member __.Create streamName : Equinox.IStream<'event, 'state> =
         let compactionPredicateOption =
             match compaction with
