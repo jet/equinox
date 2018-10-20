@@ -5,12 +5,12 @@ A lightweight set of infrastructure, examples and tests providing a consistent a
 Features
 --------
 - Domain tests can be written directly against the models without any need to involve Equinox.
-- Events are declaratively encoded using `Equinox.UnionCodec`, which is a thin veneer over `Typeshape`'s `UnionEncoder`, providing for serializer agnostic schema evolution with minimal boilerplate
+- Events are declaratively encoded using `Equinox.UnionCodec`, which is a thin veneer over `Typeshape`'s `UnionContractEncoder`, providing for serializer agnostic schema evolution with minimal boilerplate
 - Independent of the stored used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
 - Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
 - Compaction support: Command processing can by optimized by employing in-stream 'compaction' events in service of the following ends:
 	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- support, (via `UnionEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
+	- support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
 	- compaction events typically do not get deleted in EventStore
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and per Storage system.
@@ -22,7 +22,7 @@ Elements are delivered as multitargeted Nuget packages targeting `net461` (F# 3.
 - `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic Decision flow runner that manages the optimistic concurrency protocol
 - `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
 	- independent of any specific serializer
-	- allows tagging of Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/2bf1b68ab357a42c156b91d762460b59cef50d9c/tests/TypeShape.Tests/UnionEncoderTests.fs)
+	- allows tagging of Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
 - `Equinox.Cosmos` (Nuget: `Equinox.Cosmos`, depends on `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`, ): Production-strength Azure CosmosDb Adapter with integrated transactional snapshotting facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
 - `Equinox.EventStore` (Nuget: `Equinox.EventStore`, depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`): Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
 - `Equinox.MemoryStore` (Nuget: `Equinox.MemoryStore`): In-memory store for integration testing/performance baselining

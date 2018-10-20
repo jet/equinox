@@ -13,7 +13,7 @@ let createMemoryStore () =
 let createServiceMem log store =
     Backend.ContactPreferences.Service(log, fun _batchSize _eventTypePredicate -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = genCodec<Domain.ContactPreferences.Events.Event>
+let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithCompactionSemantics gateway =
     fun predicate streamName ->
         GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.Predicate predicate).Create(streamName)

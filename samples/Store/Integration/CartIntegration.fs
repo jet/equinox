@@ -13,7 +13,7 @@ let createMemoryStore () =
 let createServiceMem log store =
     Backend.Cart.Service(log, fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = genCodec<Domain.Cart.Events.Event>
+let codec = genCodec<Domain.Cart.Events.Event>()
 
 let resolveGesStreamWithCompactionEventType gateway compactionEventType streamName =
     GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType compactionEventType).Create(streamName)

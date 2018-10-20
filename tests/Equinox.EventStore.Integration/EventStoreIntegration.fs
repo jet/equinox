@@ -18,11 +18,12 @@ let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-let genCodec<'T> = Equinox.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
+let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
+    Equinox.UnionCodec.JsonUtf8UnionCodec.Create<'Union>(serializationSettings)
 
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
-    let codec = genCodec<Domain.Cart.Events.Event>
+    let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization log gateway =
         Backend.Cart.Service(log, fun _compactionEventTypeOption -> GesStreamBuilder(gateway, codec, fold, initial).Create)
     let createServiceWithCompaction log gateway =
@@ -37,7 +38,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
-    let codec = genCodec<Domain.ContactPreferences.Events.Event>
+    let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization log connection =
         let gateway = createGesGateway connection defaultBatchSize
         Backend.ContactPreferences.Service(log, fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)
