@@ -178,24 +178,24 @@ module Stream =
     let create (category : ICategory<'event, 'state>) streamName : IStream<'event, 'state> = Stream(category, streamName) :> _
     let ofMemento (memento : Storage.StreamToken * 'state) (x : IStream<_,_>) : IStream<'event, 'state> = InitializedStream(x, memento) :> _
 
-    /// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic
-    type Handler<'event, 'state>(fold, log, stream : IStream<'event, 'state>, maxAttempts : int) =
-        let inner = Flow.HandlerImpl<'event, 'state>(fold, maxAttempts)
+/// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic
+type Handler<'event, 'state>(fold, log, stream : IStream<'event, 'state>, maxAttempts : int) =
+    let inner = Flow.HandlerImpl<'event, 'state>(fold, maxAttempts)
 
-        /// 0. Invoke the supplied `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.
-        /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
-        member __.Decide (flow : Context<'event, 'state> -> 'result) : Async<'result> =
-            inner.Decide(stream, log, flow)
-        /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome
-        /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
-        member __.DecideAsync (flowAsync : Context<'event, 'state> -> Async<'result>) : Async<'result> =
-            inner.DecideAsync(stream,log,flowAsync)
-        /// Low Level helper to allow one to obtain the complete state of a stream (including the position) in order to pass it within the application
-        member __.Raw : Async<Storage.StreamToken * 'state> =
-            inner.Query(stream,log) <| fun syncState -> syncState.Memento
-        /// Project from the folded `State` without executing a decision flow as `Decide` does
-        member __.Query (projection : 'state -> 'view) : Async<'view> =
-            inner.Query(stream,log) <| fun syncState -> projection syncState.State
+    /// 0. Invoke the supplied `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.
+    /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
+    member __.Decide (flow : Context<'event, 'state> -> 'result) : Async<'result> =
+        inner.Decide(stream, log, flow)
+    /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome
+    /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
+    member __.DecideAsync (flowAsync : Context<'event, 'state> -> Async<'result>) : Async<'result> =
+        inner.DecideAsync(stream,log,flowAsync)
+    /// Low Level helper to allow one to obtain the complete state of a stream (including the position) in order to pass it within the application
+    member __.Raw : Async<Storage.StreamToken * 'state> =
+        inner.Query(stream,log) <| fun syncState -> syncState.Memento
+    /// Project from the folded `State` without executing a decision flow as `Decide` does
+    member __.Query (projection : 'state -> 'view) : Async<'view> =
+        inner.Query(stream,log) <| fun syncState -> projection syncState.State
 
 /// Exception yielded by ES Operation after `count` attempts to complete the operation have taken place
 type OperationRetriesExceededException(count : int, innerException : exn) =

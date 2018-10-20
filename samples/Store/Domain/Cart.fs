@@ -82,7 +82,7 @@ module Commands =
                 | _ -> () ]
 
 type Handler(log, stream) =
-    let inner = Equinox.Stream.Handler(Folds.fold, log, stream, maxAttempts = 3)
+    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = 3)
     member __.FlowAsync(flow, ?prepare) =
         inner.DecideAsync <| fun ctx -> async {
             let execute = Commands.interpret >> ctx.Execute
