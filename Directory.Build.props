@@ -4,19 +4,16 @@
     <VersionPrefix>0.0.1</VersionPrefix>
     <Authors>@jet @bartelink @eiriktsarpalis and contributors</Authors>
     <Company>Jet.com</Company>
-    <Description>Composable F# event sourcing componentry</Description>
-    <PackageProjectUrl>https://github.com/jet/Foldunk</PackageProjectUrl>
+    <Description>Composable high performance event sourcing componentry</Description>
+    <PackageProjectUrl>https://github.com/jet/equinox</PackageProjectUrl>
     <PackageTags>fsharp unionencoder eventsourcing eventstore typeshape</PackageTags>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/jet/Foldunk</RepositoryUrl>
-    <PackageLicenseUrl>https://github.com/jet/Foldunk/blob/master/LICENSE</PackageLicenseUrl>
+    <PackageLicenseUrl>https://github.com/jet/equinox/blob/master/LICENSE</PackageLicenseUrl>
     <Copyright>Copyright © 2016-8</Copyright>
 
     <!-- SourceLink related properties https://github.com/dotnet/SourceLink#using-sourcelink -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
-
   </PropertyGroup>
 
 </Project>
