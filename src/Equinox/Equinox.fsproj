@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Infrastructure.fs" />
     <Compile Include="Equinox.fs" />
   </ItemGroup>
 

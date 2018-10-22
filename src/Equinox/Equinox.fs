@@ -95,8 +95,19 @@ module private Flow =
         member __.State = snd __.Memento
         member __.CreateContext(): Context<'event, 'state> =
             Context<'event, 'state>(fold, __.State, __.Token.batchCapacityLimit)
-        member __.TryOrResync log events =
+        member __.TryOrResync attempt (log : ILogger) events =
             let resyncInPreparationForRetry resync = async {
+                // According to https://github.com/EventStore/EventStore/issues/1652, backoffs should not be necessary for EventStore
+                // as the fact we use a Master connection to read Resync data should make it unnecessary
+                // However, empirically, the backoffs are needed in app code and hence need to live here for now
+                // TODO: make each store inject backoffs iff necessary
+                // See https://github.com/jet/equinox/issues/38
+                if attempt <> 1 then
+                    match Backoff.defaultExponentialBoundedRandomized (attempt-2) with
+                    | None -> ()
+                    | Some ms ->
+                        log.Information("Resync backoff for {Ms}", ms)
+                        do! Async.Sleep ms
                 let! streamState' = resync
                 tokenAndState <- streamState'
                 return false }
@@ -132,7 +143,7 @@ module private Flow =
                 do! sync.TryOrThrow log events attempt
                 return outcome
             else
-                let! committed = sync.TryOrResync log events
+                let! committed = sync.TryOrResync attempt log events
                 if not committed then
                     log.Debug "Resyncing and retrying"
                     return! loop (attempt + 1)
