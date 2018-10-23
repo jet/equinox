@@ -5,12 +5,14 @@ A lightweight set of infrastructure, examples and tests providing a consistent a
 Features
 --------
 - Domain tests can be written directly against the models without any need to involve Equinox.
-- Events are declaratively encoded using `Equinox.UnionCodec`, which is a thin veneer over `Typeshape`'s `UnionContractEncoder`, providing for serializer agnostic schema evolution with minimal boilerplate
+- Encoding of events via `Equinox.UnionCodec` provides for pluggable encoding events based on either:
+    - Proving a hardcoed pair of `encode` and `tryDecode` functions
+    - Using a versionable convention-based approach using `Typeshape`'s `UnionContractEncoder` under the covers, providing for serializer-agnostic schema evolution with minimal boilerplate
 - Independent of the stored used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
 - Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
-- Compaction support: Command processing can by optimized by employing in-stream 'compaction' events in service of the following ends:
+- Compaction support: Command processing and/or snapshot managemnt can by optimized by employing in-stream 'compaction' events in service of the following ends:
 	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
+	- support, (via the `UnionCodec`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
 	- compaction events typically do not get deleted in EventStore
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and per Storage system.

@@ -6,7 +6,7 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial= Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
+let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
 
 let createMemoryStore () =
     new VolatileStore()

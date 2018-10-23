@@ -93,8 +93,7 @@ let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPo
 let defaultBatchSize = 500
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Equinox.UnionCodec.JsonUtf8UnionCodec.Create<'Union>(serializationSettings)
+let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
 

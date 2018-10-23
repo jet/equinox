@@ -19,7 +19,7 @@ let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPo
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Equinox.UnionCodec.JsonUtf8UnionCodec.Create<'Union>(serializationSettings)
+    Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
