@@ -31,5 +31,7 @@
     <Exec Condition=" '$(SkipEs)' != 'true' " Command='dotnet test tests/Equinox.EventStore.Integration -c Release --logger:trx' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
     <Exec Condition=" '$(SkipEs)' != 'true' " Command='dotnet test samples/Store/Integration -c Release --logger:trx' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
   </Target>
-
+  
+  <Target Name="VSTest" DependsOnTargets="Test" />
+  
 </Project>
