@@ -11,6 +11,13 @@
     <Compile Include="Infrastructure.fs" />
     <Compile Include="MemoryStoreIntegration.fs" />
   </ItemGroup>
+   
+  <ItemGroup>
+    <!-- Workaround for https://github.com/xunit/xunit/issues/1357 -->
+    <Content Include="xunit.runner.json" Condition=" '$(OS)' != 'Windows_NT' ">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>   
 
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.10.8" />
