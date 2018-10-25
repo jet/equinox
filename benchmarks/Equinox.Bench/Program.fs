@@ -71,6 +71,8 @@ and [<NoEquality; NoComparison>] EsArguments =
             | Timeout _ -> "specify operation timeout in seconds (default: 5)."
             | Retries _ -> "specify operation retries (default: 1)."
 and CosmosArguments =
+    | [<AltCommandLine("-p")>] Prepare
+    | [<AltCommandLine("-fa")>] Favorites
     | [<AltCommandLine("-s")>] ConnectionString of string
     | [<AltCommandLine("-d")>] DbName of string
     | [<AltCommandLine("-c")>] CollName of string
@@ -82,6 +84,8 @@ and CosmosArguments =
     | [<AltCommandLine("-rt")>] RetriesWaitTime of int
     interface IArgParserTemplate with
         member a.Usage = a |> function
+            | Prepare -> "Provision CosmosDB collection for benchmark purpose"
+            | Favorites -> "Run Favorites test"
             | ConnectionString _ -> "specify a connection string for a Cosmos account (default: connection string for Cosmos Emulator)."
             | DbName _ -> "specify a database name for Cosmos account (default: test)."
             | CollName _ -> "specify a collection name for Cosmos account (default: test)."
@@ -182,7 +186,7 @@ let main argv =
         let verboseConsole = args.Contains(VerboseConsole)
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
         let report = args.GetResult(LogFile,"log.txt") |> fun n -> FileInfo(n).FullName
-        let log, conn =
+        let log, conn, runTest =
             match args.TryGetSubCommand() with
             | Some (Mem memArgs) ->
                 let timeout = memArgs.GetResult(MemArguments.Timeout,5.) |> TimeSpan.FromSeconds
@@ -194,7 +198,7 @@ let main argv =
                     "Reporting intervals: {ri}, report file: {report}",
                     ([| duration; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
                 // TODO implement backoffs
-                log, Connection.Mem (Equinox.MemoryStore.VolatileStore())
+                log, Connection.Mem (Equinox.MemoryStore.VolatileStore()), true
             | Some (Es esargs) ->
                 let verboseStore = esargs.Contains(EsArguments.VerboseStore)
                 let log = createStoreLog verboseStore verboseConsole maybeSeq
@@ -209,13 +213,23 @@ let main argv =
                     "Reporting intervals: {ri}, report file: {report}",
                     ([| duration; host; heartbeatTimeout; concurrentOperationsLimit; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
                 let conn = connectToEventStoreNode log (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
-                log, Connection.Es (createGesGateway conn defaultBatchSize)
+                log, Connection.Es (createGesGateway conn defaultBatchSize), true
             | Some (Eqx cosmosArgs) ->
                 let verboseStore = cosmosArgs.Contains(VerboseStore)
+                let prepare = cosmosArgs.Contains(CosmosArguments.Prepare)
+                let runTest = cosmosArgs.Contains(CosmosArguments.Favorites)
                 let log = createStoreLog verboseStore verboseConsole maybeSeq
                 let connStr = cosmosArgs.GetResult(ConnectionString, "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;")
                 let dbName = cosmosArgs.GetResult(DbName, "test")
                 let collName = cosmosArgs.GetResult(CollName, "test")
+                if prepare 
+                then
+                    log.Information(
+                        "Configuring CosmosDb, targeting {host} with dbName: {dbName}, collectionName: {collectionName}, ru: 200000, auxRU: 10000\n",
+                        ([| connStr; dbName; collName; testsPerSecond |] : obj[]))
+                    CosmosManager.configCosmos connStr dbName collName 200000 10000 |> Async.RunSynchronously
+                else 
+                    ()
                 let timeout = cosmosArgs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
                 let (retries, maxRetryWaitTime) as operationThrottling = cosmosArgs.GetResult(Retries, 1) ,cosmosArgs.GetResult(RetriesWaitTime, 5)
                 log.Information(
@@ -224,22 +238,25 @@ let main argv =
                     "Reporting intervals: {ri}, report file: {report}",
                     ([| duration; connStr; dbName; collName; testsPerSecond; timeout; retries; maxRetryWaitTime; errorCutoff; reportingIntervals; report |] : obj[]))
                 let conn = connectToLocalEquinoxNode log connStr timeout operationThrottling |> Async.RunSynchronously
-                log, Connection.Cosmos (createEqxGateway conn defaultBatchSize, dbName, collName)
+                log, Connection.Cosmos (createEqxGateway conn defaultBatchSize, dbName, collName), runTest
             | _ ->
                 failwith "Storage argument is required"
-
-        let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
-        let verbose = args.Contains(VerboseDomain)
-        let domainLog = domainLog verbose verboseConsole maybeSeq
-        let runSingleTest clientId =
-            if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
-            runFavoriteTest (createService conn domainLog) clientId
-        let results = run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
-        let resultFile = createResultLog report
-        for r in results do
-            resultFile.Information("Aggregate: {aggregate}", r)
-        log.Information("Run completed, current allocation: {bytes:n0}",GC.GetTotalMemory(true))
-        0
+        if runTest 
+        then
+            let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
+            let verbose = args.Contains(VerboseDomain)
+            let domainLog = domainLog verbose verboseConsole maybeSeq
+            let runSingleTest clientId =
+                if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
+                runFavoriteTest (createService conn domainLog) clientId
+            let results = run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
+            let resultFile = createResultLog report
+            for r in results do
+                resultFile.Information("Aggregate: {aggregate}", r)
+            log.Information("Run completed, current allocation: {bytes:n0}",GC.GetTotalMemory(true))
+            0
+        else
+            0
     with e ->
         printfn "%s" e.Message
         1
