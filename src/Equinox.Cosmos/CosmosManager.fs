@@ -21,16 +21,12 @@ let configCosmos connStr dbName collName ru auxRu = async {
           cp
         new DocumentClient(uri, key, connPolicy, Nullable ConsistencyLevel.Session)
 
-    let createDatabase (client:DocumentClient) =
-        let dbRequestOptions =
-            let o = RequestOptions ()
-            o.ConsistencyLevel <- Nullable<ConsistencyLevel>(ConsistencyLevel.Session)
-            o
-        client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = dbRequestOptions)
-        |> Async.AwaitTaskCorrect
-        |> Async.map (fun response -> Client.UriFactory.CreateDatabaseUri (response.Resource.Id))
+    let createDatabase (client:DocumentClient) = async {
+        let dbRequestOptions = RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
+        let! db = client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = dbRequestOptions) |> Async.AwaitTaskCorrect
+        return Client.UriFactory.CreateDatabaseUri (db.Resource.Id) }
 
-    let createCollection (client: DocumentClient) (dbUri: Uri) =
+    let createCollection (client: DocumentClient) (dbUri: Uri) = async {
         let pkd = PartitionKeyDefinition()
         pkd.Paths.Add("/k")
         let coll = DocumentCollection(Id = collName, PartitionKey = pkd)
@@ -41,11 +37,10 @@ let configCosmos connStr dbName collName ru auxRu = async {
         coll.IndexingPolicy.IncludedPaths.Add(new IncludedPath (Path="/k/?"))
         coll.IndexingPolicy.IncludedPaths.Add(new IncludedPath (Path="/sn/?"))
         coll.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath (Path="/*"))
-        client.CreateDocumentCollectionIfNotExistsAsync(dbUri, coll, RequestOptions(OfferThroughput=Nullable ru))
-        |> Async.AwaitTaskCorrect
-        |> Async.map (fun response -> Client.UriFactory.CreateDocumentCollectionUri (dbName, response.Resource.Id))
+        let! dc = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, coll, RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect
+        return Client.UriFactory.CreateDocumentCollectionUri (dbName, dc.Resource.Id) }
 
-    let createStoreSproc (client: IDocumentClient) (collectionUri: Uri) =
+    let createStoreSproc (client: IDocumentClient) (collectionUri: Uri) = async {
         let f ="""
             function multidocInsert (docs) {
             var response = getContext().getResponse();
@@ -62,11 +57,10 @@ let configCosmos connStr dbName collName ru auxRu = async {
             }"""
         let batchSproc = new StoredProcedure(Id = "AtomicMultiDocInsert", Body = f)
 
-        client.CreateStoredProcedureAsync(collectionUri, batchSproc)
-        |> Async.AwaitTaskCorrect
-        |> Async.map (fun r -> Client.UriFactory.CreateStoredProcedureUri(dbName, collName, r.Resource.Id))
+        let! sp = client.CreateStoredProcedureAsync(collectionUri, batchSproc) |> Async.AwaitTaskCorrect
+        return Client.UriFactory.CreateStoredProcedureUri(dbName, collName, sp.Resource.Id) }
 
-    let createAux (client: DocumentClient) (dbUri: Uri) =
+    let createAux (client: DocumentClient) (dbUri: Uri) = async {
         let auxCollectionName = sprintf "%s-aux" collName
         let auxColl = DocumentCollection(Id = auxCollectionName)
         auxColl.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath(Path="/ChangefeedPosition/*"))
@@ -74,10 +68,11 @@ let configCosmos connStr dbName collName ru auxRu = async {
         auxColl.IndexingPolicy.IncludedPaths.Add(new IncludedPath (Path="/*"))
         auxColl.IndexingPolicy.IndexingMode <- IndexingMode.Lazy
         auxColl.DefaultTimeToLive <- Nullable(365 * 60 * 60 * 24)
-        client.CreateDocumentCollectionIfNotExistsAsync(dbUri, auxColl, RequestOptions(OfferThroughput=Nullable auxRu))
-        |> Async.AwaitTaskCorrect
-        |> Async.map (fun response -> Client.UriFactory.CreateDocumentCollectionUri (dbName, response.Resource.Id))        
+        let! dc = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, auxColl, RequestOptions(OfferThroughput=Nullable auxRu)) |> Async.AwaitTaskCorrect
+        return Client.UriFactory.CreateDocumentCollectionUri (dbName, dc.Resource.Id) }
     let! dbUri = createDatabase client
-    do! (createCollection client dbUri) |> Async.bind (createStoreSproc client) |> Async.Ignore
-    do! createAux client dbUri |> Async.Ignore
+    let! coll = createCollection client dbUri
+    let! _sp = createStoreSproc client coll
+    let! _aux = createAux client dbUri
+    do ()
 }
