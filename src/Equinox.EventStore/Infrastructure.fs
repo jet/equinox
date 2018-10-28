@@ -15,21 +15,6 @@ module Seq =
             Some res
         else
             None
-    let arrMapFold f acc (array: _[]) =
-        match array.Length with
-        | 0 -> [| |], acc
-        | len ->
-            let f = OptimizedClosures.FSharpFunc<_,_,_>.Adapt(f)
-            let mutable acc = acc
-            let res = Array.zeroCreate len
-            for i = 0 to array.Length-1 do
-                let h',s' = f.Invoke(acc,array.[i])
-                res.[i] <- h'
-                acc <- s'
-            res, acc
-    let mapFold<'T,'State,'Result> (mapping: 'State -> 'T -> 'Result * 'State) state source =
-        let arr,state = source |> Seq.toArray |> arrMapFold mapping state
-        Seq.readonly arr, state
 
 module Array =
     let tryHead (array : 'T[]) =
