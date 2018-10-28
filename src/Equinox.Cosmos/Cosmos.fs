@@ -4,6 +4,7 @@ open Equinox
 open Equinox.Store
 open FSharp.Control
 open Microsoft.Azure.Documents
+open Microsoft.Azure.Documents.Linq
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 open Serilog
@@ -28,67 +29,27 @@ type VerbatimUtf8JsonConverter() =
 
     override __.ReadJson(reader, _, _, _) =
         let token = JToken.Load(reader)
-        if (token.Type = JTokenType.Object)
-        then
-            token.ToString() |> System.Text.Encoding.UTF8.GetBytes |> box
-        else
-            Array.empty<byte> |> box
+        if token.Type = JTokenType.Object then token.ToString() |> System.Text.Encoding.UTF8.GetBytes |> box
+        else Array.empty<byte> |> box
 
-    override this.CanConvert(objectType) =
+    override __.CanConvert(objectType) =
         typeof<byte[]>.Equals(objectType)
 
-    override this.WriteJson(writer, value, serializer) =
+    override __.WriteJson(writer, value, serializer) =
         let array = value :?> byte[]
-        if Array.length array = 0 then serializer.Serialize(writer, null)
+        if array = null || Array.length array = 0 then serializer.Serialize(writer, null)
         else writer.WriteRawValue(System.Text.Encoding.UTF8.GetString(array))
 
-type SN = int64
-
-[<CompilationRepresentationAttribute(CompilationRepresentationFlags.ModuleSuffix)>]
-module SN =
-
-    /// The first sequence number.
-    let [<Literal>] zero : SN = 0L
-
-    /// The last sequence number
-    let [<Literal>] last : SN = -1L
-
-    /// Computes the next sequence number.
-    let inline next (sn : SN) : SN = sn + 1L
-
-    /// Computes the previous sequence number
-    let inline prev (sn: SN): SN = sn - 1L
-
-    /// Compares two sequence numbers.
-    let inline compare (sn1 : SN) (sn2 : SN) : int = Operators.compare sn1 sn2
+/// 0-based Event Index in stream
+type EventIndex = int64
 
 type StreamId = string
 
 [<NoEquality; NoComparison>]
-/// Event data.
-type EventData = {
-    eventType : string
-    data : byte[]
-    metadata : byte[] option }
-    with
-
-    static member create (eventType: string, data: byte[], ?metadata: byte[]) =
-        {
-            eventType = eventType
-            data = data
-            metadata =
-                match metadata with
-                | None -> None
-                | Some md -> md |> Some }
-
-/// Operations on event data.
-[<CompilationRepresentationAttribute(CompilationRepresentationFlags.ModuleSuffix)>]
-[<RequireQualifiedAccess>]
-module EventData =
-
-    let eventType (ed:EventData) = ed.eventType
-    let data (ed:EventData) = ed.data
-    let metadata (ed:EventData) = ed.metadata
+type EventData =
+    {   eventType : string
+        data : byte[]
+        metadata : byte[] }
 
 [<NoEquality; NoComparison>]
 type EquinoxEvent = {
@@ -96,7 +57,7 @@ type EquinoxEvent = {
     s : StreamId
     k : StreamId
     ts : DateTimeOffset
-    sn : SN
+    sn : EventIndex
     et : string
     df : string
     [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
@@ -111,7 +72,7 @@ type Direction = Forward | Backward with
 
 module Log =
     [<NoEquality; NoComparison>]
-    type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int; ru: int }
+    type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int; ru: float }
     [<NoEquality; NoComparison>]
     type Event =
         | WriteSuccess of Measurement
@@ -131,7 +92,7 @@ module Log =
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let event (value : Event) (log : ILogger) =
-        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("eqxEvt", ScalarValue(value)))
+        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
         match retryPolicy with
@@ -144,96 +105,52 @@ module Log =
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EqxSyncResult = Written of SN * float | Conflict of float
+type EqxSyncResult = Written of EventIndex * requestCharge: float | Conflict of requestCharge: float
 
 module private Write =
-    let private eventDataToEquinoxEvent (streamId:StreamId) (sequenceNumber:SN) (ed: EventData) : EquinoxEvent =
-        {
-            et = ed.eventType
-            id = (sprintf "%s-e-%d" streamId sequenceNumber)
+    let private eventDataToEquinoxEvent (streamId:StreamId) (index: EventIndex) (ed: EventData) : EquinoxEvent =
+        {   et = ed.eventType
+            id = sprintf "%s-e-%d" streamId index
             s = streamId
             k = streamId
             df = "jsonbytearray"
             d = ed.data
             mdf = "jsonbytearray"
-            md =
-                match ed.metadata with
-                | Some x -> x
-                | None -> [||]
-            sn = sequenceNumber
-            ts = DateTimeOffset.UtcNow
-        }
-
-    let [<Literal>] private multiDocInsert = "AtomicMultiDocInsert"
-    let [<Literal>] private appendAtEnd = "appendAtEnd"
-
-    let inline private sprocUri (sprocName : string) (collectionUri : Uri) =
-        (collectionUri.ToString()) + "/sprocs/" + sprocName // TODO: do this elegantly
+            md = ed.metadata
+            sn = index
+            ts = DateTimeOffset.UtcNow }
 
     /// Appends the single EventData using the sdk CreateDocumentAsync
-    let private appendSingleEvent (client : IDocumentClient,collectionUri : Uri) streamId sequenceNumber eventData : Async<SN * float> =
-        async {
-            let sequenceNumber = (SN.next sequenceNumber)
+    let private appendSingleEvent (client : IDocumentClient,collectionUri : Uri) streamId version eventData : Async<EventIndex * float> = async {
+        let index = version + 1L
+        let equinoxEvent = eventData |> eventDataToEquinoxEvent streamId index
 
-            let equinoxEvent =
-                eventData
-                |> eventDataToEquinoxEvent streamId sequenceNumber
+        let requestOptions = Client.RequestOptions(PartitionKey = PartitionKey(streamId))
+        let! res = client.CreateDocumentAsync(collectionUri, equinoxEvent, requestOptions) |> Async.AwaitTaskCorrect
 
-            let requestOptions =
-                Client.RequestOptions(PartitionKey = PartitionKey(streamId))
-
-            let! res =
-                client.CreateDocumentAsync(collectionUri, equinoxEvent, requestOptions)
-                |> Async.AwaitTaskCorrect
-
-            return (sequenceNumber, res.RequestCharge)
-        }
+        return index, res.RequestCharge }
 
     /// Appends the given EventData batch using the atomic stored procedure
-    // This requires store procuedure in CosmosDB, is there other ways to do this?
-    let private appendEventBatch (client : IDocumentClient,collectionUri) streamId sequenceNumber eventsData : Async<SN * float> =
-        async {
-            let sequenceNumber = (SN.next sequenceNumber)
-            let res, sn =
-                eventsData
-                |> Seq.mapFold (fun sn ed -> (eventDataToEquinoxEvent streamId sn ed) |> JsonConvert.SerializeObject, SN.next sn) sequenceNumber
+    let private appendEventBatch (client : IDocumentClient,collectionUri) streamId version eventsData : Async<EventIndex * float> = async {
+        let events =
+            eventsData |> Seq.mapi (fun i ed ->
+                let index = version + int64 (i+1)
+                eventDataToEquinoxEvent streamId index ed
+                |> JsonConvert.SerializeObject)
+            |> Seq.toArray
 
-            let requestOptions =
-                Client.RequestOptions(PartitionKey = PartitionKey(streamId))
+        let requestOptions = Client.RequestOptions(PartitionKey = PartitionKey(streamId))
+        let sprocUri = sprintf "%O/sprocs/AtomicMultiDocInsert" collectionUri
+        let! ct = Async.CancellationToken
+        let! res = client.ExecuteStoredProcedureAsync<bool>(sprocUri, requestOptions, ct, box events) |> Async.AwaitTaskCorrect
 
-            let! res =
-                client.ExecuteStoredProcedureAsync<bool>(collectionUri |> sprocUri multiDocInsert, requestOptions, res:> obj)
-                |> Async.AwaitTaskCorrect
-
-            return (sn - 1L), res.RequestCharge
-        }
+        return version + int64 events.Length, res.RequestCharge }
 
     let private append coll streamName sequenceNumber (eventsData: EventData seq) =
         match Seq.length eventsData with
         | l when l = 0 -> invalidArg "eventsData" "must be non-empty"
-        | l when l = 1 ->
-            eventsData
-            |> Seq.head
-            |> appendSingleEvent coll streamName sequenceNumber
+        | l when l = 1 -> eventsData |> Seq.exactlyOne |> appendSingleEvent coll streamName sequenceNumber
         | _ -> appendEventBatch coll streamName sequenceNumber eventsData
-
-    // Add this for User Activity
-    let appendEventAtEnd (client : IDocumentClient,collectionUri : Uri,streamId) eventsData : Async<SN * float> =
-        async {
-            let res, _ =
-                eventsData
-                |> Seq.mapFold (fun sn ed -> (eventDataToEquinoxEvent streamId sn ed) |> JsonConvert.SerializeObject, SN.next sn) 0L
-
-            let requestOptions =
-                Client.RequestOptions(PartitionKey = PartitionKey(streamId))
-
-            let! res =
-                client.ExecuteStoredProcedureAsync<SN>(collectionUri |> sprocUri appendAtEnd, requestOptions, res:> obj)
-                |> Async.AwaitTaskCorrect
-
-
-        return res.Response, res.RequestCharge
-    }
 
     /// Yields `EqxSyncResult.Written` or `EqxSyncResult.Conflict` to signify WrongExpectedVersion
     let private writeEventsAsync (log : ILogger) coll streamName (version : int64) (events : EventData[])
@@ -241,27 +158,12 @@ module private Write =
         try
             let! wr = append coll streamName version events
             return EqxSyncResult.Written wr
-        with ex ->
-            // change this for store procudure
-            match ex with
-            | :? DocumentClientException as dce ->
-                // Improve this?
-                if dce.Message.Contains "already"
-                then
-                    log.Information(ex, "Eqx TrySync WrongExpectedVersionException writing {EventTypes}", [| for x in events -> x.eventType |])
-                    return EqxSyncResult.Conflict dce.RequestCharge
-                else
-                    return raise dce
-            | e -> return raise e }
+        with :? DocumentClientException as ex when ex.Message.Contains "already" -> // TODO improve check, handle SP variant
+            log.Information(ex, "Eqx TrySync WrongExpectedVersionException writing {EventTypes}", [| for x in events -> x.eventType |])
+            return EqxSyncResult.Conflict ex.RequestCharge }
 
     let eventDataBytes events =
-        let eventDataLen (x : EventData) =
-            let data = x.data
-            let metaData =
-                match x.metadata with
-                | None -> [||]
-                | Some x -> x
-            match data, metaData with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
+        let eventDataLen { data = Log.BlobLen bytes; metadata = Log.BlobLen metaBytes } = bytes + metaBytes
         events |> Array.sumBy eventDataLen
 
     let private writeEventsLogged coll streamName (version : int64) (events : EventData[]) (log : ILogger)
@@ -271,17 +173,12 @@ module private Write =
         let log = log |> Log.prop "bytes" bytes
         let writeLog = log |> Log.prop "stream" streamName |> Log.prop "expectedVersion" version |> Log.prop "count" count
         let! t, result = writeEventsAsync writeLog coll streamName version events |> Stopwatch.Time
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = 0}
-        let resultLog, evt, (ru: float) =
-            match result, reqMetric with
-            | EqxSyncResult.Conflict ru, m -> log, Log.WriteConflict { m with ru = Convert.ToInt32(ru) }, ru
-            | EqxSyncResult.Written (x, ru), m ->
-                log |> Log.prop "nextExpectedVersion" x |> Log.prop "ru" ru,
-                Log.WriteSuccess { m with ru = Convert.ToInt32(ru) },
-                ru
-        // TODO drop expectedVersion when consumption no longer requires that literal; ditto stream when literal formatting no longer required
-        (resultLog |> Log.event evt).Information("Eqx{action:l} stream={stream} count={count} expectedVersion={expectedVersion} conflict={conflict}, RequestCharge={ru}",
-            "Write", streamName, events.Length, version, (match evt with Log.WriteConflict _ -> true | _ -> false), ru)
+        let conflict, (ru: float), resultLog =
+            let mkMetric ru : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
+            match result with
+            | EqxSyncResult.Conflict ru -> true, ru, log |> Log.event (Log.WriteConflict (mkMetric ru))
+            | EqxSyncResult.Written (x, ru) -> false, ru, log |> Log.event (Log.WriteSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" x
+        resultLog.Information("Eqx{action:l} count={count} conflict={conflict}, RequestCharge={ru}", "Write", events.Length, conflict, ru)
         return result }
 
     let writeEvents (log : ILogger) retryPolicy coll (streamName : string) (version : int64) (events : EventData[])
@@ -290,65 +187,32 @@ module private Write =
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
 module private Read =
-    open Microsoft.Azure.Documents.Linq
-    open System.Linq
-
-    let private getQuery ((client : IDocumentClient,collectionUri : Uri),strongConsistency) streamId (direction: Direction) batchSize sequenceNumber =
-
-        let sequenceNumber =
-            match direction, sequenceNumber with
-            | Direction.Backward, SN.last -> Int64.MaxValue
-            | _ -> sequenceNumber
-
-        let feedOptions = new Client.FeedOptions()
-        feedOptions.PartitionKey <- PartitionKey(streamId)
-        feedOptions.MaxItemCount <- Nullable(batchSize)
-        // TODODC if (strongConsistency) then feedOptions.ConsistencyLevel <- Nullable(ConsistencyLevel.Strong)
-        let sql =
-            match direction with
-            | Direction.Backward ->
-                let query = """
-                SELECT * FROM c
-                WHERE c.s = @streamId
-                AND c.sn <= @sequenceNumber
-                ORDER BY c.sn DESC"""
-                SqlQuerySpec query
-            | Direction.Forward ->
-                let query = """
-                SELECT * FROM c
-                WHERE c.s = @streamId
-                AND c.sn >= @sequenceNumber
-                ORDER BY c.sn ASC """
-                SqlQuerySpec query
-        sql.Parameters <- SqlParameterCollection
-            [|
-            SqlParameter("@streamId", streamId)
-            SqlParameter("@sequenceNumber", sequenceNumber)
-            |]
-        client.CreateDocumentQuery<EquinoxEvent>(collectionUri, sql, feedOptions).AsDocumentQuery()
+    let private getQuery ((client : IDocumentClient,collectionUri : Uri),strongConsistency) streamId (direction: Direction) batchSize (version: int64) =
+        let querySpec =
+            // TODODC if (strongConsistency) then feedOptions.ConsistencyLevel <- Nullable(ConsistencyLevel.Strong)
+            let filter = if direction = Direction.Backward then "c.sn <= @version ORDER BY c.sn DESC"  else "c.sn >= @version ORDER BY c.sn ASC"
+            let prms = [| SqlParameter("@streamId", streamId); SqlParameter("@version", version) |]
+            SqlQuerySpec("SELECT * FROM c WHERE c.s = @streamId AND " + filter, SqlParameterCollection prms)
+        let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey streamId, MaxItemCount=Nullable batchSize)
+        client.CreateDocumentQuery<EquinoxEvent>(collectionUri, querySpec, feedOptions).AsDocumentQuery()
 
     let (|EquinoxEventLen|) (x : EquinoxEvent) = match x.d, x.md with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
 
-    let private lastSequenceNumber (xs:EquinoxEvent seq) : SN =
+    let private lastSequenceNumber (xs:EquinoxEvent seq) : EventIndex =
         match xs |> Seq.tryLast with
-        | None -> SN.last
+        | None -> -1L
         | Some last -> last.sn
 
-    let private queryExecution (query: IDocumentQuery<'T>) =
-        query.ExecuteNextAsync<'T>() |> Async.AwaitTaskCorrect
-
-    let private loggedQueryExecution streamName direction batchSize startPos (query: IDocumentQuery<EquinoxEvent>) (log: ILogger)
+    let private loggedQueryExecution streamName direction startPos (query: IDocumentQuery<EquinoxEvent>) (log: ILogger)
         : Async<EquinoxEvent[] * float> = async {
-        let! t, res = queryExecution query |> Stopwatch.Time
-        let slice, ru = res.ToArray(), res.RequestCharge
+        let! t, (res : Client.FeedResponse<EquinoxEvent>) = query.ExecuteNextAsync<EquinoxEvent>() |> Async.AwaitTaskCorrect |> Stopwatch.Time
+        let slice, ru = Array.ofSeq res, res.RequestCharge
         let bytes, count = slice |> Array.sumBy (|EquinoxEventLen|), slice.Length
-        let reqMetric : Log.Measurement ={ stream = streamName; interval = t; bytes = bytes; count = count; ru = Convert.ToInt32(ru) }
+        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
         let evt = Log.Slice (direction, reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice
-        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.prop "ru" ru |> Log.event evt).Information(
-            // TODO drop sliceLength, totalPayloadSize when consumption no longer requires that literal; ditto stream when literal formatting no longer required
-            "Eqx{action:l} stream={stream} count={count} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize} RequestCharge={ru}",
-            "Read", streamName, count, (lastSequenceNumber slice), batchSize, bytes, ru)
+        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.prop "ru" ru |> Log.event evt)
+            .Information("Eqx{action:l} count={count} version={sliceVersion} RequestCharge={ru}", "Read", count, lastSequenceNumber slice, ru)
         return slice, ru }
 
     let private readBatches (log : ILogger) (readSlice: IDocumentQuery<EquinoxEvent> -> ILogger -> Async<EquinoxEvent[] * float>) (maxPermittedBatchReads: int option) (query: IDocumentQuery<EquinoxEvent>)
@@ -363,14 +227,13 @@ module private Read =
             yield slice
             if query.HasMoreResults then
                 yield! loop (batchCount + 1) }
-            //| x -> raise <| System.ArgumentOutOfRangeException("SliceReadStatus", x, "Unknown result value") }
         loop 0
 
     let equinoxEventBytes events = events |> Array.sumBy (|EquinoxEventLen|)
 
     let logBatchRead direction streamName t events batchSize version (ru: float) (log : ILogger) =
         let bytes, count = equinoxEventBytes events, events.Length
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = Convert.ToInt32(ru) }
+        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
         let batches = (events.Length - 1)/batchSize + 1
         let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
         let evt = Log.Event.Batch (direction, batches, reqMetric)
@@ -388,15 +251,14 @@ module private Read =
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.toArrayAsync
             return events, ru }
-        let query = getQuery coll streamName Direction.Forward batchSize startPosition
-        let call q = loggedQueryExecution streamName Direction.Forward batchSize startPosition q
+        use query = getQuery coll streamName Direction.Forward batchSize startPosition
+        let call q = loggedQueryExecution streamName Direction.Forward startPosition q
         let retryingLoggingReadSlice q = Log.withLoggedRetries retryPolicy "readAttempt" (call q)
         let direction = Direction.Forward
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
         let batches : AsyncSeq<EquinoxEvent[] * float> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads query
         let! t, (events, ru) = mergeBatches batches |> Stopwatch.Time
-        // TODO use >
-        (query :> IDisposable).Dispose()
+        query.Dispose()
         let version = lastSequenceNumber events
         log |> logBatchRead direction streamName t events batchSize version ru
         return version, events }
@@ -426,29 +288,28 @@ module private Read =
                 |> AsyncSeq.toArrayAsync
             let eventsForward = Array.Reverse(tempBackward); tempBackward // sic - relatively cheap, in-place reverse of something we own
             return eventsForward, ru }
-        let query = getQuery coll streamName Direction.Backward batchSize SN.last
-        let call q = loggedQueryExecution streamName Direction.Backward batchSize SN.last q
+        use query = getQuery coll streamName Direction.Backward batchSize EventIndex.MaxValue
+        let call q = loggedQueryExecution streamName Direction.Backward EventIndex.MaxValue q
         let retryingLoggingReadSlice q = Log.withLoggedRetries retryPolicy "readAttempt" (call q)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let direction = Direction.Backward
         let readlog = log |> Log.prop "direction" direction
         let batchesBackward : AsyncSeq<EquinoxEvent[] * float> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads query
         let! t, (events, ru) = mergeFromCompactionPointOrStartFromBackwardsStream log batchesBackward |> Stopwatch.Time
-        // TODO use ?
-        (query :> IDisposable).Dispose()
+        query.Dispose()
         let version = lastSequenceNumber events
         log |> logBatchRead direction streamName t events batchSize version ru
         return version, events }
 
 module UnionEncoderAdapters =
-    let private encodedEventOfResolvedEvent (x : EquinoxEvent) : UnionCodec.EncodedUnion<byte[]> =
+    let private encodedEventOfStoredEvent (x : EquinoxEvent) : UnionCodec.EncodedUnion<byte[]> =
         { caseName = x.et; payload = x.d }
-    let private eventDataOfEncodedEvent (x : UnionCodec.EncodedUnion<byte[]>) =
-        EventData.create(x.caseName, x.payload, [||])
+    let private eventDataOfEncodedEvent (x : UnionCodec.EncodedUnion<byte[]>) : EventData =
+        { eventType = x.caseName; data = x.payload; metadata = null }
     let encodeEvents (codec : UnionCodec.IUnionEncoder<'event, byte[]>) (xs : 'event seq) : EventData[] =
         xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
     let decodeKnownEvents (codec : UnionCodec.IUnionEncoder<'event, byte[]>) (xs : EquinoxEvent[]) : 'event seq =
-        xs |> Seq.map encodedEventOfResolvedEvent |> Seq.choose codec.TryDecode
+        xs |> Seq.map encodedEventOfStoredEvent |> Seq.choose codec.TryDecode
 
 type Token = { streamVersion: int64; compactionEventNumber: int64 option }
 
@@ -489,8 +350,7 @@ type EqxConnection(client: IDocumentClient, ?readRetryPolicy, ?writeRetryPolicy)
     member __.Client = client
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
-    member __.Close =
-        (client :?> Client.DocumentClient).Dispose()
+    member __.Close = (client :?> Client.DocumentClient).Dispose()
 
 type EqxBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
     new (maxBatchSize) = EqxBatchingPolicy(fun () -> maxBatchSize)
@@ -763,7 +623,7 @@ type EqxConnector
         cp.MaxConnectionLimit <- defaultArg maxConnectionLimit 1000
         cp
 
-    /// Yields an connection to DocDB configured and Connect()ed to DocDB collection per the requested `discovery` strategy
+    /// Yields an IDocumentClient configured and Connect()ed to a given DocDB collection per the requested `discovery` strategy
     member __.Connect
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name,
@@ -772,9 +632,9 @@ type EqxConnector
             let name = String.concat ";" <| seq {
                 yield name
                 match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
-            let sanitizedName = name.Replace('\'','_').Replace(':','_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
+            let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
             let client = new Client.DocumentClient(uri, key, connPolicy, Nullable ConsistencyLevel.Session)
-            log.Information("Connected to Equinox with clientId={clientId}", sanitizedName)
+            log.Information("Connected to Cosmos with clientId={clientId}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
             return client :> IDocumentClient }
 
