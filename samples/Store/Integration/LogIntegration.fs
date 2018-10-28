@@ -24,7 +24,7 @@ module EquinoxEsInterop =
 module EquinoxCosmosInterop =
     open Equinox.Cosmos
     [<NoEquality; NoComparison>]
-    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option; ru: int } with
+    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option; ru: float } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" __.action __.stream __.action __.interval.Elapsed __.ru
     let flatten (evt : Log.Event) : FlatMetric =
         let action, metric, batches, ru =
