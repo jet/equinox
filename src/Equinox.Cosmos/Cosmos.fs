@@ -108,22 +108,10 @@ module Log =
 type EqxSyncResult = Written of EventIndex * requestCharge: float | Conflict of requestCharge: float
 
 module private Write =
-    let private eventDataToEquinoxEvent (streamId:StreamId) (index: EventIndex) (ed: EventData) : EquinoxEvent =
-        {   et = ed.eventType
-            id = sprintf "%s-e-%d" streamId index
-            s = streamId
-            k = streamId
-            df = "jsonbytearray"
-            d = ed.data
-            mdf = "jsonbytearray"
-            md = ed.metadata
-            sn = index
-            ts = DateTimeOffset.UtcNow }
-
     /// Appends the single EventData using the sdk CreateDocumentAsync
     let private appendSingleEvent (client : IDocumentClient,collectionUri : Uri) streamId version eventData : Async<EventIndex * float> = async {
         let index = version + 1L
-        let equinoxEvent = eventData |> eventDataToEquinoxEvent streamId index
+        let equinoxEvent = eventData |> EquinoxEvent.mk streamId index
 
         let requestOptions = Client.RequestOptions(PartitionKey = PartitionKey(streamId))
         let! res = client.CreateDocumentAsync(collectionUri, equinoxEvent, requestOptions) |> Async.AwaitTaskCorrect
@@ -135,7 +123,7 @@ module private Write =
         let events =
             eventsData |> Seq.mapi (fun i ed ->
                 let index = version + int64 (i+1)
-                eventDataToEquinoxEvent streamId index ed
+                EquinoxEvent.mk streamId index ed
                 |> JsonConvert.SerializeObject)
             |> Seq.toArray
 
@@ -420,8 +408,8 @@ type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUni
         match compactionStrategy with
         | Some predicate -> compacted predicate
         | None -> batched
-    let load (fold: 'state -> 'event seq -> 'state) initial f = async {
-        let! token, events = f
+    let load (fold: 'state -> 'event seq -> 'state) initial loadF = async {
+        let! token, events = loadF
         return token, fold initial (UnionEncoderAdapters.decodeKnownEvents codec events) }
     member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (StreamRef streamRef) (log : ILogger) : Async<Storage.StreamToken * 'state> =
         loadAlgorithm (load fold) streamRef initial log
@@ -607,14 +595,19 @@ type EqxConnector
         /// Connection limit (default 1000)
         ?maxConnectionLimit,
         ?readRetryPolicy, ?writeRetryPolicy,
+        /// Connection mode (default: Gateway mode, Https)
+        ?mode, ?defaultConsistencyLevel,
+
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
         ?tags : (string*string) seq) =
 
     let connPolicy =
         let cp = Client.ConnectionPolicy.Default
-        cp.ConnectionMode <- Client.ConnectionMode.Direct
-        cp.ConnectionProtocol <- Client.Protocol.Tcp
+        match mode with
+        | None | Some Gateway -> cp.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
+        | Some DirectHttps -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Https // Https is default when using Direct
+        | Some DirectTcp -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Tcp
         cp.RetryOptions <-
             Client.RetryOptions(
                 MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
@@ -633,7 +626,7 @@ type EqxConnector
                 yield name
                 match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
             let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
-            let client = new Client.DocumentClient(uri, key, connPolicy, Nullable ConsistencyLevel.Session)
+            let client = new Client.DocumentClient(uri, key, connPolicy, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
             log.Information("Connected to Cosmos with clientId={clientId}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
             return client :> IDocumentClient }
