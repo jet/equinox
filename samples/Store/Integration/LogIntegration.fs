@@ -1,9 +1,10 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
-open Equinox.EventStore
+open Equinox.Store
 open Swensen.Unquote
 
 module EquinoxEsInterop =
+    open Equinox.EventStore
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed

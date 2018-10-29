@@ -1,5 +1,6 @@
 ﻿module Equinox.Cosmos.Integration.VerbatimUtf8JsonConverterTests
 
+open Equinox.Cosmos
 open Newtonsoft.Json
 open Swensen.Unquote
 open System
@@ -22,7 +23,7 @@ type Union =
 let ``VerbatimUtf8JsonConverter serializes properly`` () =
     let unionEncoder = Equinox.UnionCodec.JsonUtf8.Create<_>(JsonSerializerSettings())
     let encoded = unionEncoder.Encode(A { embed = "\"" })
-    let e : Equinox.Cosmos.EquinoxEvent =
+    let e : EquinoxEvent =
         {   id = null
             s = null
             k  = null

@@ -13,7 +13,6 @@ open System.Threading
 
 [<NoEquality; NoComparison>]
 type Arguments =
-
     | [<AltCommandLine("-l")>] LogFile of string
     | [<AltCommandLine("-vd")>] VerboseDomain
     | [<AltCommandLine("-vc")>] VerboseConsole
@@ -40,12 +39,10 @@ type Arguments =
             | Es _ -> "specify whether perform loadtest against EventStore"
             | Eqx _ -> "specify whether perform loadtest against CosmosDb"
 and [<NoEquality; NoComparison>] MemArguments =
-    | [<AltCommandLine("-b")>] Backoff of float
     | [<AltCommandLine("-o")>] Timeout of float
     | [<AltCommandLine("-r")>] Retries of int
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Backoff _ -> "specify backoff baseline in seconds (default: 5)."
             | Timeout _ -> "specify operation timeout in seconds (default: 5)."
             | Retries _ -> "specify operation retries (default: 1)."
 and [<NoEquality; NoComparison>] EsArguments =
@@ -70,22 +67,20 @@ and [<NoEquality; NoComparison>] EsArguments =
             | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 1.5)."
             | Timeout _ -> "specify operation timeout in seconds (default: 5)."
             | Retries _ -> "specify operation retries (default: 1)."
-and CosmosArguments =
-    | [<AltCommandLine("-p")>] Prepare
-    | [<AltCommandLine("-fa")>] Favorites
+and [<NoEquality; NoComparison>] CosmosArguments =
     | [<AltCommandLine("-s")>] ConnectionString of string
     | [<AltCommandLine("-d")>] DbName of string
     | [<AltCommandLine("-c")>] CollName of string
 
     | [<AltCommandLine("-ve")>] VerboseStore
-
     | [<AltCommandLine("-o")>] Timeout of float
     | [<AltCommandLine("-r")>] Retries of int
     | [<AltCommandLine("-rt")>] RetriesWaitTime of int
+
+    | [<CliPrefix(CliPrefix.None)>] Init of ParseResults<CosmosInitArguments>
+    | [<CliPrefix(CliPrefix.None)>] Favorites of ParseResults<CosmosTestArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Prepare -> "Provision CosmosDB collection for benchmark purpose"
-            | Favorites -> "Run Favorites test"
             | ConnectionString _ -> "specify a connection string for a Cosmos account (default: connection string for Cosmos Emulator)."
             | DbName _ -> "specify a database name for Cosmos account (default: test)."
             | CollName _ -> "specify a collection name for Cosmos account (default: test)."
@@ -93,6 +88,20 @@ and CosmosArguments =
             | Timeout _ -> "specify request timeout in seconds when connecting to the Azure Cosmos DB service (default: 5)."
             | Retries _ -> "specify max retry attempt when being throttled by Cosmos (default: 1)."
             | RetriesWaitTime _ -> "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
+            | Init _ -> "Initialize a store collection."
+            | Favorites _ -> "Run a favorites test."
+and CosmosInitArguments =
+    | Rus of int
+    | AuxRus of int
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Rus _ -> "Specify RUs for Main collection."
+            | AuxRus _ -> "Specify RUs for Aux collection"
+and CosmosTestArguments =
+    | Test of string option
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Test _ -> "Dummy"
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type Connection =
@@ -123,8 +132,8 @@ let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPo
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
 /// - Create a local Equinox with dbName "test" and collectionName "test" using script:
 ///   /src/Equinox.Cosmos/EquinoxManager.fsx
-let connectToLocalEquinoxNode (log: ILogger) connStr operationTimeout (maxRetyForThrottling, maxRetryWaitTime) =
-    EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetyForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
+let connectToLocalEquinoxNode (log: ILogger) connStr operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
+    EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
         .Establish("Equinox-loadtests", Discovery.ConnectionString(connStr))
 let defaultBatchSize = 500
 let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
@@ -196,7 +205,7 @@ let main argv =
                     "Running for In Memory Volatile Store for {duration}\n" +
                     "Test freq {tps} hits/s; Operation timeout: {timeout} and {retries} retries; max errors: {errorCutOff}\n" +
                     "Reporting intervals: {ri}, report file: {report}",
-                    ([| duration; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
+                    duration, testsPerSecond, timeout, retries, errorCutoff, reportingIntervals, report)
                 // TODO implement backoffs
                 log, Connection.Mem (Equinox.MemoryStore.VolatileStore()), true
             | Some (Es esargs) ->
@@ -211,37 +220,37 @@ let main argv =
                     "Running for EventStore for {duration}, targeting {host} with heartbeat: {heartbeat}, max concurrent requests: {concurrency}\n" +
                     "Test freq {tps} hits/s; Operation timeout: {timeout} and {retries} retries; max errors: {errorCutOff}\n" +
                     "Reporting intervals: {ri}, report file: {report}",
-                    ([| duration; host; heartbeatTimeout; concurrentOperationsLimit; testsPerSecond; timeout; retries; errorCutoff; reportingIntervals; report |] : obj[]))
+                    duration, host, heartbeatTimeout, concurrentOperationsLimit, testsPerSecond, timeout, retries, errorCutoff, reportingIntervals, report)
                 let conn = connectToEventStoreNode log (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
                 log, Connection.Es (createGesGateway conn defaultBatchSize), true
             | Some (Eqx cosmosArgs) ->
                 let verboseStore = cosmosArgs.Contains(VerboseStore)
-                let prepare = cosmosArgs.Contains(CosmosArguments.Prepare)
-                let runTest = cosmosArgs.Contains(CosmosArguments.Favorites)
                 let log = createStoreLog verboseStore verboseConsole maybeSeq
                 let connStr = cosmosArgs.GetResult(ConnectionString, "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;")
                 let dbName = cosmosArgs.GetResult(DbName, "test")
                 let collName = cosmosArgs.GetResult(CollName, "test")
-                if prepare 
-                then
-                    log.Information(
-                        "Configuring CosmosDb, targeting {host} with dbName: {dbName}, collectionName: {collectionName}, ru: 200000, auxRU: 10000\n",
-                        ([| connStr; dbName; collName; testsPerSecond |] : obj[]))
-                    CosmosManager.configCosmos connStr dbName collName 200000 10000 |> Async.RunSynchronously
-                else 
-                    ()
                 let timeout = cosmosArgs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
                 let (retries, maxRetryWaitTime) as operationThrottling = cosmosArgs.GetResult(Retries, 1) ,cosmosArgs.GetResult(RetriesWaitTime, 5)
-                log.Information(
-                    "Running for CosmosDb for {duration}, targeting {host} with dbName: {dbName}, collectionName: {collectionName}\n" +
-                    "Test freq {tps} hits/s; Request timeout: {timeout} and {retries} retries and {maxRetryWaitTime} maxRetryWaitTime for throttling; max errors: {errorCutOff}\n" +
-                    "Reporting intervals: {ri}, report file: {report}",
-                    ([| duration; connStr; dbName; collName; testsPerSecond; timeout; retries; maxRetryWaitTime; errorCutoff; reportingIntervals; report |] : obj[]))
                 let conn = connectToLocalEquinoxNode log connStr timeout operationThrottling |> Async.RunSynchronously
-                log, Connection.Cosmos (createEqxGateway conn defaultBatchSize, dbName, collName), runTest
+                match cosmosArgs.TryGetSubCommand() with
+                | Some (Init args) ->
+                    let rus, auxRus = args.GetResult(Rus, 200000), args.GetResult(AuxRus, 10000)
+                    log.Information(
+                        "Configuring CosmosDb, targeting {host} with dbName: {dbName}, collectionName: {collectionName}, rus: {rus}, auxRus: {auxRus}",
+                        connStr, dbName, collName, testsPerSecond, rus, auxRus)
+                    CosmosManager.configCosmos conn.Client dbName collName rus auxRus |> Async.RunSynchronously
+                    log, Connection.Cosmos (createEqxGateway conn defaultBatchSize, dbName, collName), true
+                | Some (Favorites args) ->
+                    log.Information(
+                        "Running for CosmosDb for {duration}, targeting {host} with dbName: {dbName}, collectionName: {collectionName}\n" +
+                        "Test freq {tps} hits/s; Request timeout: {timeout} and {retries} retries and {maxRetryWaitTime} maxRetryWaitTime for throttling; max errors: {errorCutOff}\n" +
+                        "Reporting intervals: {ri}, report file: {report}",
+                        duration, connStr, dbName, collName, testsPerSecond, timeout, retries, maxRetryWaitTime, errorCutoff, reportingIntervals, report)
+                    log, Connection.Cosmos (createEqxGateway conn defaultBatchSize, dbName, collName), true
+                | _ -> failwith "init or favorites is required"
             | _ ->
                 failwith "Storage argument is required"
-        if runTest 
+        if runTest
         then
             let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
             let verbose = args.Contains(VerboseDomain)

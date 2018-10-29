@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.EventStore.Infrastructure
+module Equinox.Store.Infrastructure
 
 open FSharp.Control
 open System
