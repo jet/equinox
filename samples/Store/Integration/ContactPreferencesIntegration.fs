@@ -71,14 +71,14 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    [<AutoData>]
-    let ``Can roundtrip against Equinox, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeWithoutCompaction connectToLocalEquinoxNode createEqxGateway resolveStreamEqxWithoutCompactionSemantics
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrangeWithoutCompaction connectToSpecifiedCosmosOrSimulator createEqxGateway resolveStreamEqxWithoutCompactionSemantics
         do! act service args
     }
 
-    [<AutoData>]
-    let ``Can roundtrip against Equinox, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEquinoxNode createEqxGateway resolveStreamEqxWithCompactionSemantics
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxGateway resolveStreamEqxWithCompactionSemantics
         do! act service args
     }
