@@ -54,10 +54,10 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    [<AutoData>]
-    let ``Can roundtrip against Equinox, correctly folding the events`` args = Async.RunSynchronously <| async {
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let! conn = connectToLocalEquinoxNode log
+        let! conn = connectToSpecifiedCosmosOrSimulator log
         let gateway = createEqxGateway conn defaultBatchSize
         let service = createServiceEqx gateway log
         do! act service args
