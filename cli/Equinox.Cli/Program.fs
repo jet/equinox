@@ -117,7 +117,7 @@ module Cosmos =
     ///   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
     let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
-            .Connect("Equinox-loadtests", discovery)
+            .Establish("Equinox-loadtests", discovery)
     let createGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -271,7 +271,6 @@ let main argv =
                 let conn = Store.Cosmos (Cosmos.createGateway conn defaultBatchSize, dbName, collName)
                 runTest log conn targs
             | _ -> failwith "init or run is required"
-        | _ -> failwith "Storage argument is required"
         | _ -> failwith "ERROR: please specify mem, es or cosmos Store"
     with e ->
         printfn "%s" e.Message
