@@ -112,12 +112,12 @@ type Tests() =
         do! act buffer service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
     }
 
-    [<AutoData>]
-    let ``Can roundtrip against Equinox, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
         let buffer = ResizeArray<string>()
         let batchSize = defaultBatchSize
         let (log,capture) = createLoggerWithMetricsExtraction buffer.Add
-        let! conn = connectToLocalEquinoxNode log
+        let! conn = connectToCosmos log
         let gateway = createEqxGateway conn batchSize
         let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithCompactionEventType gateway)
         let itemCount, cartId = batchSize / 2 + 1, cartId ()

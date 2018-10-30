@@ -2,6 +2,7 @@ param(
 	[string] $verbosity="m",
 	[Alias("s")][switch][bool] $skipStores=$false,
 	[Alias("se")][switch][bool] $skipEs=$skipStores,
+	[Alias("sc")][switch][bool] $skipCosmos=$skipStores,
 	[string] $additionalMsBuildArgs="-t:Build"
 )
 
@@ -13,7 +14,10 @@ function warn ($msg) { Write-Host "$msg" -BackgroundColor DarkGreen }
 $env:EQUINOX_INTEGRATION_SKIP_EVENTSTORE=[string]$skipEs
 if ($skipEs) { warn "Skipping EventStore tests" }
 
-warn "RUNNING: dotnet msbuild $args"
+$env:EQUINOX_INTEGRATION_SKIP_COSMOS=[string]$skipCosmos
+if ($skipCosmos) { warn "Skipping Cosmos tests" }
+
+Write-Host "dotnet msbuild $args"
 . dotnet msbuild build.proj @args
 
 if( $LASTEXITCODE -ne 0) {
