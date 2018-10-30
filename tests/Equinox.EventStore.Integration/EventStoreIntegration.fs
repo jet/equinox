@@ -78,7 +78,7 @@ type Tests(testOutputHelper) =
     let singleBatchForward = [EsAct.SliceForward; EsAct.BatchForward]
     let batchForwardAndAppend = singleBatchForward @ [EsAct.Append]
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
@@ -105,7 +105,7 @@ type Tests(testOutputHelper) =
         test <@ List.replicate (expectedBatches-1) singleSliceForward @ singleBatchForward = capture.ExternalCalls @>
     }
 
-    [<AutoData(MaxTest = 2)>]
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, managing sync conflicts by retrying [without any optimizations]`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log1
@@ -183,7 +183,7 @@ type Tests(testOutputHelper) =
     let singleBatchBackwards = [EsAct.SliceBackward; EsAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
@@ -223,7 +223,7 @@ type Tests(testOutputHelper) =
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
     }
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against EventStore, with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
@@ -246,7 +246,7 @@ type Tests(testOutputHelper) =
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
     }
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
@@ -274,7 +274,7 @@ type Tests(testOutputHelper) =
         test <@ singleBatchForward = capture.ExternalCalls @>
     }
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can combine compaction with caching against EventStore`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log

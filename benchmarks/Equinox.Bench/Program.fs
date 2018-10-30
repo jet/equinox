@@ -132,9 +132,9 @@ let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPo
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
 /// - Create a local Equinox with dbName "test" and collectionName "test" using script:
 ///   /src/Equinox.Cosmos/EquinoxManager.fsx
-let connectToLocalEquinoxNode (log: ILogger) connStr operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
+let connectToCosmos (log: ILogger) connStr operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
     EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
-        .Establish("Equinox-loadtests", Discovery.ConnectionString(connStr))
+        .Establish("Equinox-loadtests", Equinox.Cosmos.Discovery.FromConnectionString(connStr))
 let defaultBatchSize = 500
 let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
 
@@ -231,7 +231,7 @@ let main argv =
                 let collName = cosmosArgs.GetResult(CollName, "test")
                 let timeout = cosmosArgs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
                 let (retries, maxRetryWaitTime) as operationThrottling = cosmosArgs.GetResult(Retries, 1) ,cosmosArgs.GetResult(RetriesWaitTime, 5)
-                let conn = connectToLocalEquinoxNode log connStr timeout operationThrottling |> Async.RunSynchronously
+                let conn = connectToCosmos log connStr timeout operationThrottling |> Async.RunSynchronously
                 match cosmosArgs.TryGetSubCommand() with
                 | Some (Init args) ->
                     let rus, auxRus = args.GetResult(Rus, 200000), args.GetResult(AuxRus, 10000)

@@ -130,3 +130,15 @@ type Stopwatch =
         let tr = StopwatchInterval(startTicks, endTicks)
         return tr, result
     }
+
+[<RequireQualifiedAccess>]
+module Regex =
+    open System.Text.RegularExpressions
+
+    let DefaultTimeout = TimeSpan.FromMilliseconds 250.
+    let private mkRegex p = Regex(p, RegexOptions.None, DefaultTimeout)
+
+    /// Active pattern for branching on successful regex matches
+    let (|Match|_|) (pattern : string) (input : string) =
+        let m = (mkRegex pattern).Match input
+        if m.Success then Some m else None

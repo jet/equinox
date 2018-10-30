@@ -18,18 +18,14 @@
     <Exec Command="dotnet pack src/$(Name).Cosmos $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/$(Name).EventStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/$(Name).MemoryStore $(Cfg) $(PackOptions)" />
-    <!-- If we're not going to test them, we should at least build them -->
-    <Exec Condition=" '$(SkipEs)' == 'true' " Command="dotnet build tests/$(Name).Cosmos.Integration $(Cfg)" />
-    <Exec Condition=" '$(SkipEs)' == 'true' " Command="dotnet build tests/$(Name).EventStore.Integration $(Cfg)" />
-    <Exec Condition=" '$(SkipEs)' == 'true' " Command="dotnet build samples/Store/Integration $(Cfg)" />
   </Target>
 
   <Target Name="Test">
-    <Exec Command="dotnet test tests/$(Name).MemoryStore.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
-    <Exec Condition=" '$(SkipEs)' != 'true' " Command="dotnet test tests/$(Name).Cosmos.Integration $(Cfg) $(TestOptions)" />
-    <Exec Condition=" '$(SkipEs)' != 'true' " Command="dotnet test tests/$(Name).EventStore.Integration $(Cfg) $(TestOptions)" />
-    <Exec Condition=" '$(SkipEs)' != 'true' " Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test tests/$(Name).MemoryStore.Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test tests/$(Name).Cosmos.Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test tests/$(Name).EventStore.Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
   </Target>
 
 </Project>
