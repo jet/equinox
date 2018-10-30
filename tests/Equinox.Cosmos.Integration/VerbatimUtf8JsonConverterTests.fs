@@ -23,16 +23,13 @@ type Union =
 let ``VerbatimUtf8JsonConverter serializes properly`` () =
     let unionEncoder = Equinox.UnionCodec.JsonUtf8.Create<_>(JsonSerializerSettings())
     let encoded = unionEncoder.Encode(A { embed = "\"" })
-    let e : EquinoxEvent =
+    let e : Store.Event =
         {   id = null
             s = null
-            k  = null
             ts = DateTimeOffset.MinValue
-            sn = 0L
-            df = "jsonbytearray"
+            i = Nullable 0L
             et = encoded.caseName
             d = encoded.payload
-            mdf = "jsonbytearray"
             md = null }
     let res = serialize e
     test <@ res.Contains """"d":{"embed":"\""}""" @>
