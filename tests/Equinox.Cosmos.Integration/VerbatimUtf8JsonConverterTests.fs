@@ -25,6 +25,7 @@ let ``VerbatimUtf8JsonConverter serializes properly`` () =
     let encoded = unionEncoder.Encode(A { embed = "\"" })
     let e : Store.Event =
         {   id = null
+            k = null
             s = null
             ts = DateTimeOffset.MinValue
             i = Nullable 0L
