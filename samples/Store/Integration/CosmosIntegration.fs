@@ -10,7 +10,7 @@ open System
 ///   /src/Equinox.Cosmos/EquinoxManager.fsx
 let connectToCosmos log =
     EqxConnector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
-        .Establish("equinoxStoreSampleIntegration", Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="))
+        .Connect("equinoxStoreSampleIntegration", Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="))
 let defaultBatchSize = 500
 let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
 // Typically, one will split different categories of stream into Cosmos collections - hard coding this is thus an oversimplification
