@@ -25,12 +25,12 @@ let ``VerbatimUtf8JsonConverter serializes properly`` () =
     let encoded = unionEncoder.Encode(A { embed = "\"" })
     let e : Store.Event =
         {   id = null
-            k = null
+            p = null
             s = null
-            ts = DateTimeOffset.MinValue
             i = Nullable 0L
-            et = encoded.caseName
+            c = DateTimeOffset.MinValue
+            t = encoded.caseName
             d = encoded.payload
-            md = null }
+            m = null }
     let res = serialize e
     test <@ res.Contains """"d":{"embed":"\""}""" @>
