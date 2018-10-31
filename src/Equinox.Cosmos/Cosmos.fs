@@ -12,48 +12,74 @@ open System
 
 module Store =
     type [<RequireQualifiedAccess; NoComparison>] Position =
-        | Simple of collectionUri: Uri * streamName: string * version: int64 option
-        | Complex of collectionUri: Uri * partitionKey: string * streamName: string * version: int64 option
+        | Complex of collectionUri: Uri * customPartitionKey: string option * streamName: string * index: int64 option
+        | Simple of collectionUri: Uri * streamName: string * index: int64 option
         member __.CollectionUri : Uri = __ |> function
             | Simple (collectionUri,_,_) | Complex (collectionUri,_,_,_) -> collectionUri
-        member __.PartitionKey : PartitionKey = __ |> function
-            | Simple (_,streamName,_) -> streamName |> PartitionKey
-            | Complex (_,partitionKey,_,_) -> partitionKey |> PartitionKey
+        member __.PartitionKey : string = __ |> function
+            | Simple (_,streamName,_) -> streamName
+            | Complex (_,customPartitionKey,streamName,_) -> defaultArg customPartitionKey streamName
         member __.StreamName : string = __ |> function
             | Simple (_,streamName,_) | Complex (_,_,streamName,_) -> streamName
-        member __.StreamVersion : int64 = __ |> function
-            | Simple (_,_,version) | Complex (_,_,_,version) -> defaultArg version -1L
+        member __.Index : int64 = __ |> function
+            | Simple (_,_,index) | Complex (_,_,_,index) -> defaultArg index -1L
+        member __.IndexRel (offset: int) : int64 = __ |> function
+            | Simple (_,_,Some index) | Complex (_,_,_,Some index) -> (index+int64 offset)
+            | _ -> failwithf "Cannot IndexRel %A" __
         member __.GenerateId offset : obj = __ |> function
-            | Simple _ -> __.IncrementVersion offset |> box
-            | Complex _ -> sprintf "%s-%d" __.StreamName (__.IncrementVersion offset) |> box
-        member __.WithVersion (streamVersion: int64) : Position = __ |> function
+            | Simple _ -> __.IndexRel offset |> box
+            | Complex _ -> sprintf "%s-%d" __.StreamName (__.IndexRel offset) |> box
+        member __.WithIndex (index: int64) : Position = __ |> function
             | Simple (collectionUri,streamName,_) ->
-                Simple (collectionUri,streamName,Some streamVersion)
+                Simple (collectionUri,streamName,Some index)
             | Complex (collectionUri,partitionKey,streamName,_) ->
-                Complex(collectionUri,partitionKey,streamName,Some streamVersion)
-        member __.IncrementVersion (offset: int) : int64 = __ |> function
-            | Simple (_,_,Some version) | Complex (_,_,_,Some version) -> (version+int64 offset)
-            | _ -> failwithf "Cannot IncrementVersion %A" __
+                Complex(collectionUri,partitionKey,streamName,Some index)
 
     type EventData = { eventType: string; data: byte[]; metadata: byte[] }
-    type [<NoEquality; NoComparison>] Event =
-        {   id: obj // Unique key within partition (where many streams in same partition e.g. "{Category}-{guid}-{index}", otherwise "{index}"
-            s: string // "{Category}-{guid}" bit when >1 stream in same partition
-            i: Nullable<int64> // {index} where >1 stream in same partition
+    type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>] Event =
+        {   (* DocDb-mandated essential elements *)
+
+            // DocDb-mandated Partition Key, must be maintained within the document
+            // Not actually required if running in single partition mode, but for simplicity, we always write it
+            // Some users generate a custom Partition Key to colocate multiple streams to enable colocating and querying across multiple streams
+            k: string // Complex: "{customPartitionKey}" or (default:) "{streamName}"; Simple: "{streamName}"
+
+            // DocDb-mandated unique key; needs to be unique within a partition
+            // Could use {index} as an int64/number here, if not for the fact that we allow the app to provide a custom `k` to enable streams to colocate
+            id: obj // Complex: "{streamName}-{index:020d}"; Simple: {index} (int64, written as number)
+
+            (* Indexing/routing properties - separated from `id` to enable indexing/routing used within Equinox.Cosmos *)
+
+            /// Stream name
+            [<JsonProperty(Required=Required.DisallowNull)>]
+            s: string // Complex: "{streamName}"; Simple: omitted
+
+            /// Index of event within Stream
+            i: Nullable<int64> // Complex: {index}; Simple: omitted
+
+            (* Event payload elements *)
+
+            /// Creation date (as opposed to sytem-defined _lastUpdated which is rewritten by triggers adnd/or replication)
             ts: DateTimeOffset // ISO 8601
+
+            /// The Event Type, used to drive deserialization
             et: string // required
+
+            /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
             [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
             d: byte[] // required
-            [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
+
+            /// Optional metadata (null, or same as d)
+            [<JsonConverter(typeof<VerbatimUtf8JsonConverter>); JsonProperty(Required=Required.DisallowNull)>]
             md: byte[] } // optional
         static member Create (pos: Position) offset (ed: EventData) : Event =
-            let id,sid,index = pos |> function
+            let id,s,i = pos |> function
                 | Position.Simple (_,_streamName,_version) -> pos.GenerateId offset, null, Nullable ()
-                | Position.Complex (_,_,_streamName,_version) -> pos.GenerateId offset, pos.StreamName, Nullable (pos.IncrementVersion offset)
-            {   id = id; s = sid; i = index
+                | Position.Complex (_,_,_streamName,_version) -> pos.GenerateId offset, pos.StreamName, Nullable (pos.IndexRel offset)
+            {   k = pos.PartitionKey; id = id; s = s; i = i
                 ts = DateTimeOffset.UtcNow
                 et = ed.eventType; d = ed.data; md = ed.metadata }
-        member __.StreamVersion =  if __.i.HasValue then __.i.Value else unbox<int64> __.id
+        member __.Index =  if __.i.HasValue then __.i.Value else unbox<int64> __.id
     and VerbatimUtf8JsonConverter() =
         inherit JsonConverter()
 
@@ -112,35 +138,21 @@ module Log =
 type EqxSyncResult = Written of Store.Position * requestCharge: float | Conflict of requestCharge: float
 
 module private Write =
-    /// Appends the single EventData using the sdk CreateDocumentAsync
-    let private appendSingleEvent (client: IDocumentClient) (pos: Store.Position) eventData
-        : Async<Store.Position * float> = async {
-        let evnt = Store.Event.Create pos 1 eventData
-        let! res = client.CreateDocumentAsync(pos.CollectionUri, evnt, Client.RequestOptions(PartitionKey=pos.PartitionKey)) |> Async.AwaitTaskCorrect
-        return pos.WithVersion(pos.IncrementVersion 1), res.RequestCharge }
-
-    /// Appends the given EventData batch using the atomic stored procedure
-    let private appendEventBatch (client: IDocumentClient) (pos: Store.Position) eventsData
-        : Async<Store.Position * float> = async {
+    let append (client: IDocumentClient) (pos: Store.Position) (eventsData: Store.EventData seq): Async<Store.Position * float> = async {
         let sprocUri = sprintf "%O/sprocs/AtomicMultiDocInsert" pos.CollectionUri
-        let requestOptions = Client.RequestOptions(PartitionKey = pos.PartitionKey)
-        let events = eventsData |> Seq.mapi (fun i ed -> Store.Event.Create pos (i+1) ed |> JsonConvert.SerializeObject) |> Seq.toArray
+        let opts = Client.RequestOptions(PartitionKey=PartitionKey pos.PartitionKey)
         let! ct = Async.CancellationToken
-        let! res = client.ExecuteStoredProcedureAsync<bool>(sprocUri, requestOptions, ct, box events) |> Async.AwaitTaskCorrect
-        return pos.WithVersion(pos.IncrementVersion events.Length), res.RequestCharge }
+        let events = eventsData |> Seq.mapi (fun i ed -> Store.Event.Create pos (i+1) ed |> JsonConvert.SerializeObject) |> Seq.toArray
+        if events.Length = 0 then invalidArg "eventsData" "must be non-empty"
+        let! res = client.ExecuteStoredProcedureAsync<bool>(sprocUri, opts, ct, box events) |> Async.AwaitTaskCorrect
+        return pos.WithIndex(pos.IndexRel events.Length), res.RequestCharge }
 
-    let private append client pk (eventsData: Store.EventData seq) =
-        match Seq.length eventsData with
-        | l when l = 0 -> invalidArg "eventsData" "must be non-empty"
-        | l when l = 1 -> eventsData |> Seq.exactlyOne |> appendSingleEvent client pk
-        | _ -> appendEventBatch client pk eventsData
-
-    /// Yields `EqxSyncResult.Written` or `EqxSyncResult.Conflict` to signify WrongExpectedVersion
+    /// Yields `EqxSyncResult.Written`, or `EqxSyncResult.Conflict` to signify WrongExpectedVersion
     let private writeEventsAsync (log : ILogger) client pk (events : Store.EventData[]): Async<EqxSyncResult> = async {
         try
             let! wr = append client pk events
             return EqxSyncResult.Written wr
-        with :? DocumentClientException as ex when ex.Message.Contains "already" -> // TODO improve check, handle SP variant
+        with :? DocumentClientException as ex when ex.Message.Contains "already" -> // TODO this does not work for the SP
             log.Information(ex, "Eqx TrySync WrongExpectedVersionException writing {EventTypes}", [| for x in events -> x.eventType |])
             return EqxSyncResult.Conflict ex.RequestCharge }
 
@@ -152,14 +164,14 @@ module private Write =
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = bytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
-        let writeLog = log |> Log.prop "stream" pos.StreamName |> Log.prop "expectedVersion" pos.StreamVersion |> Log.prop "count" count
+        let writeLog = log |> Log.prop "stream" pos.StreamName |> Log.prop "expectedVersion" pos.Index |> Log.prop "count" count
         let! t, result = writeEventsAsync writeLog client pos events |> Stopwatch.Time
         let conflict, (ru: float), resultLog =
             let mkMetric ru : Log.Measurement = { stream = pos.StreamName; interval = t; bytes = bytes; count = count; ru = ru }
             match result with
             | EqxSyncResult.Conflict ru -> true, ru, log |> Log.event (Log.WriteConflict (mkMetric ru))
             | EqxSyncResult.Written (x, ru) -> false, ru, log |> Log.event (Log.WriteSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" x
-        resultLog.Information("Eqx{action:l} count={count} conflict={conflict}, RequestCharge={ru}", "Write", events.Length, conflict, ru)
+        resultLog.Information("Eqx{action:l} count={count} conflict={conflict}, rus={ru}", "Write", events.Length, conflict, ru)
         return result }
 
     let writeEvents (log : ILogger) retryPolicy client pk (events : Store.EventData[]): Async<EqxSyncResult> =
@@ -168,7 +180,7 @@ module private Write =
 
 module private Read =
     let mkSingletonQuery query arg value = SqlQuerySpec(query, SqlParameterCollection (Seq.singleton (SqlParameter(arg, value))))
-    let mkIndexQuery query (index:int64) = mkSingletonQuery query "@index" index
+    let mkIdQuery query transform (index:int64) = mkSingletonQuery query "@id" (transform index)
     let private getQuery (client : IDocumentClient) (pos:Store.Position) (direction: Direction) batchSize =
         let collectionUri,querySpec =
             match pos with
@@ -177,25 +189,22 @@ module private Read =
                 else collectionUri, SqlQuerySpec("SELECT * FROM c ORDER BY c.id DESC")
             | Store.Position.Simple (collectionUri, _, Some index) ->
                 let filter =
-                    if direction = Direction.Forward then "c.id >= @index ORDER BY c.id ASC"
-                    else "c.id < @index ORDER BY c.id DESC"
-                collectionUri, mkIndexQuery("SELECT * FROM c WHERE " + filter) index
+                    if direction = Direction.Forward then "c.id >= @id ORDER BY c.id ASC"
+                    else "c.id < @id ORDER BY c.id DESC"
+                collectionUri, mkIdQuery("SELECT * FROM c WHERE " + filter) id index
             | Store.Position.Complex (collectionUri, _partitionKey, streamName, None) ->
                 if direction = Direction.Forward then invalidOp "Cannot read forward from None"
-                else collectionUri, mkSingletonQuery "SELECT * FROM c WHERE c.s = @streamId ORDER BY c.id DESC" "@streamId" streamName
+                else collectionUri, mkIdQuery "SELECT * FROM c WHERE STARTSWITH(c.id, @id) ORDER BY c.id DESC" (fun _index -> streamName) -1L
             | Store.Position.Complex (collectionUri, _partitionKey, streamName, Some index) ->
-                let filter = if direction = Direction.Forward then "c.i >= @index ORDER BY c.id ASC" else "c.i <= @index ORDER BY c.id DESC"
-                let prms = [| SqlParameter("@streamId", streamName); SqlParameter("@index", index) |]
-                collectionUri, SqlQuerySpec("SELECT * FROM c WHERE c.s = @streamId AND " + filter, SqlParameterCollection prms)
-        let feedOptions = new Client.FeedOptions(PartitionKey=pos.PartitionKey, MaxItemCount=Nullable batchSize)
+                let filter =
+                    if direction = Direction.Forward then "c.id >= @id ORDER BY c.id ASC"
+                    else "c.id <= @id ORDER BY c.id DESC"
+                let mkComplexIndex streamName index = sprintf "%s-%020d" streamName index
+                collectionUri, mkIdQuery ("SELECT * FROM c WHERE " + filter) (mkComplexIndex streamName) index
+        let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey pos.PartitionKey, MaxItemCount=Nullable batchSize)
         client.CreateDocumentQuery<Store.Event>(collectionUri, querySpec, feedOptions).AsDocumentQuery()
 
     let (|EventLen|) (x : Store.Event) = match x.d, x.md with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
-
-    let private lastStreamVersion (xs:Store.Event seq) : int64 =
-        match xs |> Seq.tryLast with
-        | None -> -1L
-        | Some last -> last.StreamVersion
 
     let private loggedQueryExecution (pos:Store.Position) direction (query: IDocumentQuery<Store.Event>) (log: ILogger): Async<Store.Event[] * float> = async {
         let! t, (res : Client.FeedResponse<Store.Event>) = query.ExecuteNextAsync<Store.Event>() |> Async.AwaitTaskCorrect |> Stopwatch.Time
@@ -204,8 +213,9 @@ module private Read =
         let reqMetric : Log.Measurement = { stream = pos.StreamName; interval = t; bytes = bytes; count = count; ru = ru }
         let evt = Log.Slice (direction, reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice
-        (log |> Log.prop "startPos" pos.StreamVersion |> Log.prop "bytes" bytes |> Log.prop "ru" ru |> Log.event evt)
-            .Information("Eqx{action:l} count={count} version={sliceVersion} RequestCharge={ru}", "Read", count, lastStreamVersion slice, ru)
+        let index = match slice |> Array.tryHead with Some head -> Nullable head.Index | None -> Nullable ()
+        (log |> Log.prop "startIndex" pos.Index |> Log.prop "bytes" bytes |> Log.event evt)
+            .Information("Eqx{action:l} count={count} index={index} rus={ru}", "Read", count, index, ru)
         return slice, ru }
 
     let private readBatches (log : ILogger) (readSlice: IDocumentQuery<Store.Event> -> ILogger -> Async<Store.Event[] * float>)
@@ -233,8 +243,13 @@ module private Read =
         let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
         let evt = Log.Event.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            "Eqx{action:l} stream={stream} count={count}/{batches} version={version} RequestCharge={ru}",
+            "Eqx{action:l} stream={stream} count={count}/{batches} index={index} rus={ru}",
             action, streamName, count, batches, version, ru)
+
+    let private lastEventIndex (xs:Store.Event seq) : int64 =
+        match xs |> Seq.tryLast with
+        | None -> -1L
+        | Some last -> last.Index
 
     let loadForwardsFrom (log : ILogger) retryPolicy client batchSize maxPermittedBatchReads (pos,_strongConsistency): Async<Store.Position * Store.Event[]> = async {
         let mutable ru = 0.0
@@ -253,12 +268,12 @@ module private Read =
         let batches : AsyncSeq<Store.Event[] * float> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads query
         let! t, (events, ru) = mergeBatches batches |> Stopwatch.Time
         query.Dispose()
-        let version = lastStreamVersion events
+        let version = lastEventIndex events
         log |> logBatchRead direction pos.StreamName t events batchSize version ru
-        return pos.WithVersion version, events }
+        return pos.WithIndex version, events }
 
     let partitionPayloadFrom firstUsedEventNumber : Store.Event[] -> int * int =
-        let acc (tu,tr) ((EventLen bytes) as y) = if y.StreamVersion < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
+        let acc (tu,tr) ((EventLen bytes) as y) = if y.Index < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
         Array.fold acc (0,0)
     let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy client batchSize maxPermittedBatchReads isCompactionEvent (pos : Store.Position)
         : Async<Store.Position * Store.Event[]> = async {
@@ -274,10 +289,10 @@ module private Read =
                     if not (isCompactionEvent x) then true // continue the search
                     else
                         match !lastBatch with
-                        | None -> log.Information("EqxStop stream={stream} at={eventNumber}", pos.StreamName, x.StreamVersion)
+                        | None -> log.Information("EqxStop stream={stream} at={eventNumber}", pos.StreamName, x.Index)
                         | Some batch ->
-                            let used, residual = batch |> partitionPayloadFrom x.StreamVersion
-                            log.Information("EqxStop stream={stream} at={eventNumber} used={used} residual={residual}", pos.StreamName, x.StreamVersion, used, residual)
+                            let used, residual = batch |> partitionPayloadFrom x.Index
+                            log.Information("EqxStop stream={stream} at={eventNumber} used={used} residual={residual}", pos.StreamName, x.Index, used, residual)
                         false)
                 |> AsyncSeq.toArrayAsync
             let eventsForward = Array.Reverse(tempBackward); tempBackward // sic - relatively cheap, in-place reverse of something we own
@@ -291,9 +306,9 @@ module private Read =
         let batchesBackward : AsyncSeq<Store.Event[] * float> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads query
         let! t, (events, ru) = mergeFromCompactionPointOrStartFromBackwardsStream log batchesBackward |> Stopwatch.Time
         query.Dispose()
-        let version = lastStreamVersion events
+        let version = lastEventIndex events
         log |> logBatchRead direction pos.StreamName t events batchSize version ru
-        return pos.WithVersion version, events }
+        return pos.WithIndex version, events }
 
 module UnionEncoderAdapters =
     let private encodedEventOfStoredEvent (x : Store.Event) : UnionCodec.EncodedUnion<byte[]> =
@@ -320,7 +335,7 @@ module Token =
         | Some (compactionEventNumber : int64) -> (batchSize - unstoredEventsPending) - int (streamVersion - compactionEventNumber + 1L) |> max 0
         | None -> (batchSize - unstoredEventsPending) - (int streamVersion + 1) - 1 |> max 0
     let (*private*) ofCompactionEventNumber compactedEventNumberOption unstoredEventsPending batchSize (pos : Store.Position) : Storage.StreamToken =
-        let batchCapacityLimit = batchCapacityLimit compactedEventNumberOption unstoredEventsPending batchSize pos.StreamVersion
+        let batchCapacityLimit = batchCapacityLimit compactedEventNumberOption unstoredEventsPending batchSize pos.Index
         create compactedEventNumberOption (Some batchCapacityLimit) pos
     /// Assume we have not seen any compaction events; use the batchSize and version to infer headroom
     let ofUncompactedVersion batchSize pos : Storage.StreamToken =
@@ -331,11 +346,11 @@ module Token =
         ofCompactionEventNumber compactedEventNumber eventsLength batchSize pos
     /// Use an event just read from the stream to infer headroom
     let ofCompactionResolvedEventAndVersion (compactionEvent: Store.Event) batchSize pos : Storage.StreamToken =
-        ofCompactionEventNumber (Some compactionEvent.StreamVersion) 0 batchSize pos
+        ofCompactionEventNumber (Some compactionEvent.Index) 0 batchSize pos
     /// Use an event we are about to write to the stream to infer headroom
     let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion compactionEventDataIndex eventsLength batchSize streamVersion' : Storage.StreamToken =
         ofCompactionEventNumber (Some (prevStreamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
-    let private unpackEqxStreamVersion (x : Storage.StreamToken) = let x : Token = unbox x.value in x.pos.StreamVersion
+    let private unpackEqxStreamVersion (x : Storage.StreamToken) = let x : Token = unbox x.value in x.pos.Index
     let supersedes current x =
         let currentVersion, newVersion = unpackEqxStreamVersion current, unpackEqxStreamVersion x
         newVersion > currentVersion
@@ -396,7 +411,7 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
                 match encodedEvents |> Array.tryFindIndexBack (isEventDataEventType isCompactionEvent) with
                 | None -> Token.ofPreviousTokenAndEventsLength token encodedEvents.Length batching.BatchSize version'
                 | Some compactionEventIndex ->
-                    Token.ofPreviousStreamVersionAndCompactionEventDataIndex pos.StreamVersion compactionEventIndex encodedEvents.Length batching.BatchSize version'
+                    Token.ofPreviousStreamVersionAndCompactionEventDataIndex pos.Index compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
 
 type private Collection(gateway : EqxGateway, databaseId, collectionId) =
@@ -560,6 +575,48 @@ type ConnectionMode =
     // More efficient than Gatewat, but suboptimal
     | DirectHttps
 
+module Initialization =
+    let createDatabase (client:IDocumentClient) dbName = async {
+        let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
+        let! db = client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect
+        return db.Resource.Id }
+
+    let createCollection (client: IDocumentClient) (dbUri: Uri) collName ru = async {
+        let pkd = PartitionKeyDefinition()
+        pkd.Paths.Add("/k")
+        let colld = DocumentCollection(Id = collName, PartitionKey = pkd)
+
+        colld.IndexingPolicy.IndexingMode <- IndexingMode.None
+        colld.IndexingPolicy.Automatic <- false
+        let! coll = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, colld, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect
+        return coll.Resource.Id }
+
+    let createProc (client: IDocumentClient) (collectionUri: Uri) = async {
+        let f ="""function multidocInsert (docs) {
+            var response = getContext().getResponse();
+            var collection = getContext().getCollection();
+            var collectionLink = collection.getSelfLink();
+
+            if (!docs) throw new Error("docs argument is missing.");
+
+            for (i=0; i<docs.length; i++) {
+                collection.createDocument(collectionLink, docs[i]);
+            }
+
+            response.setBody(true);
+        }"""
+        let def = new StoredProcedure(Id = "AtomicMultiDocInsert", Body = f)
+        return! client.CreateStoredProcedureAsync(collectionUri, def) |> Async.AwaitTaskCorrect |> Async.Ignore }
+
+    let initialize (client : IDocumentClient) dbName collName ru = async {
+        let! dbId = createDatabase client dbName
+        let dbUri = Client.UriFactory.CreateDatabaseUri dbId
+        let! collId = createCollection client dbUri collName ru
+        let collUri = Client.UriFactory.CreateDocumentCollectionUri (dbName, collId)
+        //let! _aux = createAux client dbUri collName auxRu
+        return! createProc client collUri
+    }
+
 type EqxConnector
     (   requestTimeout: TimeSpan, maxRetryAttemptsOnThrottledRequests: int, maxRetryWaitTimeInSeconds: int,
         log : ILogger,
@@ -593,7 +650,7 @@ type EqxConnector
         cp
 
     /// Yields an IDocumentClient configured and Connect()ed to a given DocDB collection per the requested `discovery` strategy
-    member __.Connect
+    let connect
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name,
             discovery  : Discovery) : Async<IDocumentClient> =
@@ -603,13 +660,13 @@ type EqxConnector
                 match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
             let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
             let client = new Client.DocumentClient(uri, key, connPolicy, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
-            log.Information("Connecting to Cosmos with clientId={clientId}", sanitizedName)
+            log.Information("Connecting to Cosmos with Connection Name {connectionName}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
             return client :> IDocumentClient }
 
         match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
 
     /// Yields a DocDbConnection configured per the specified strategy
-    member __.Establish(name, discovery : Discovery) : Async<EqxConnection> = async {
-        let! conn = __.Connect(name, discovery)
+    member __.Connect(name, discovery : Discovery) : Async<EqxConnection> = async {
+        let! conn = connect(name, discovery)
         return EqxConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
