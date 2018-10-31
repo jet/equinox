@@ -13,7 +13,6 @@
   <ItemGroup>
     <Compile Include="..\Equinox.EventStore\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Cosmos.fs" />
-    <Compile Include="CosmosManager.fs" />
   </ItemGroup>
 
   <ItemGroup>

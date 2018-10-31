@@ -12,7 +12,7 @@ open System
 ///   /src/Equinox.Cosmos/EquinoxManager.fsx
 let connectToCosmos (log: Serilog.ILogger) name discovery =
     EqxConnector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
-       .Establish(name, discovery)
+       .Connect(name, discovery)
 let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) =
     match Environment.GetEnvironmentVariable "EQUINOX_COSMOS_CONNECTION" |> Option.ofObj with
     | None ->
