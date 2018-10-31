@@ -42,7 +42,7 @@ module Store =
             // DocDb-mandated Partition Key, must be maintained within the document
             // Not actually required if running in single partition mode, but for simplicity, we always write it
             // Some users generate a custom Partition Key to colocate multiple streams to enable colocating and querying across multiple streams
-            k: string // Complex: "{customPartitionKey}" or (default:) "{streamName}"; Simple: "{streamName}"
+            p: string // Complex: "{customPartitionKey}" or (default:) "{streamName}"; Simple: "{streamName}"
 
             // DocDb-mandated unique key; needs to be unique within a partition
             // Could use {index} as an int64/number here, if not for the fact that we allow the app to provide a custom `k` to enable streams to colocate
@@ -60,10 +60,10 @@ module Store =
             (* Event payload elements *)
 
             /// Creation date (as opposed to sytem-defined _lastUpdated which is rewritten by triggers adnd/or replication)
-            ts: DateTimeOffset // ISO 8601
+            c: DateTimeOffset // ISO 8601
 
             /// The Event Type, used to drive deserialization
-            et: string // required
+            t: string // required
 
             /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
             [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
@@ -71,14 +71,14 @@ module Store =
 
             /// Optional metadata (null, or same as d)
             [<JsonConverter(typeof<VerbatimUtf8JsonConverter>); JsonProperty(Required=Required.DisallowNull)>]
-            md: byte[] } // optional
+            m: byte[] } // optional
         static member Create (pos: Position) offset (ed: EventData) : Event =
             let id,s,i = pos |> function
                 | Position.Simple (_,_streamName,_version) -> pos.GenerateId offset, null, Nullable ()
                 | Position.Complex (_,_,_streamName,_version) -> pos.GenerateId offset, pos.StreamName, Nullable (pos.IndexRel offset)
-            {   k = pos.PartitionKey; id = id; s = s; i = i
-                ts = DateTimeOffset.UtcNow
-                et = ed.eventType; d = ed.data; md = ed.metadata }
+            {   p = pos.PartitionKey; id = id; s = s; i = i
+                c = DateTimeOffset.UtcNow
+                t = ed.eventType; d = ed.data; m = ed.metadata }
         member __.Index =  if __.i.HasValue then __.i.Value else unbox<int64> __.id
     and VerbatimUtf8JsonConverter() =
         inherit JsonConverter()
@@ -116,7 +116,7 @@ module Log =
     let propEventData name (events : Store.EventData[]) (log : ILogger) =
         log |> propEvents name (seq { for x in events -> Collections.Generic.KeyValuePair<_,_>(x.eventType, System.Text.Encoding.UTF8.GetString x.data)})
     let propResolvedEvents name (events : Store.Event[]) (log : ILogger) =
-        log |> propEvents name (seq { for x in events -> Collections.Generic.KeyValuePair<_,_>(x.et, System.Text.Encoding.UTF8.GetString x.d)})
+        log |> propEvents name (seq { for x in events -> Collections.Generic.KeyValuePair<_,_>(x.t, System.Text.Encoding.UTF8.GetString x.d)})
 
     open Serilog.Events
     /// Attach a property to the log context to hold the metrics
@@ -204,7 +204,7 @@ module private Read =
         let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey pos.PartitionKey, MaxItemCount=Nullable batchSize)
         client.CreateDocumentQuery<Store.Event>(collectionUri, querySpec, feedOptions).AsDocumentQuery()
 
-    let (|EventLen|) (x : Store.Event) = match x.d, x.md with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
+    let (|EventLen|) (x : Store.Event) = match x.d, x.m with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
 
     let private loggedQueryExecution (pos:Store.Position) direction (query: IDocumentQuery<Store.Event>) (log: ILogger): Async<Store.Event[] * float> = async {
         let! t, (res : Client.FeedResponse<Store.Event>) = query.ExecuteNextAsync<Store.Event>() |> Async.AwaitTaskCorrect |> Stopwatch.Time
@@ -312,7 +312,7 @@ module private Read =
 
 module UnionEncoderAdapters =
     let private encodedEventOfStoredEvent (x : Store.Event) : UnionCodec.EncodedUnion<byte[]> =
-        { caseName = x.et; payload = x.d }
+        { caseName = x.t; payload = x.d }
     let private eventDataOfEncodedEvent (x : UnionCodec.EncodedUnion<byte[]>) : Store.EventData =
         { eventType = x.caseName; data = x.payload; metadata = null }
     let encodeEvents (codec : UnionCodec.IUnionEncoder<'event, byte[]>) (xs : 'event seq) : Store.EventData[] =
@@ -370,7 +370,7 @@ type EqxBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
 type GatewaySyncResult = Written of Storage.StreamToken | Conflict
 
 type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
-    let isResolvedEventEventType predicate (x:Store.Event) = predicate x.et
+    let isResolvedEventEventType predicate (x:Store.Event) = predicate x.t
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     let (|Pos|) (token: Storage.StreamToken) : Store.Position = (unbox<Token> token.value).pos
     member __.LoadBatched log isCompactionEventType (pos : Store.Position): Async<Storage.StreamToken * Store.Event[]> = async {
