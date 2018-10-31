@@ -115,7 +115,7 @@ module Cosmos =
     ///   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
     let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
-            .Establish("Equinox-loadtests", discovery)
+            .Connect("Equinox-loadtests", discovery)
     let createGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
