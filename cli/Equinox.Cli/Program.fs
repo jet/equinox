@@ -1,4 +1,4 @@
-﻿module Equinox.Bench.Program
+﻿module Equinox.Cli.Program
 
 open Argu
 open Domain

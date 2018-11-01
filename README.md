@@ -35,7 +35,7 @@ Elements are delivered as multitargeted Nuget packages targeting `net461` (F# 3.
 - `Equinox.EventStore` (Nuget: `Equinox.EventStore`, depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`): Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
 - `Equinox.MemoryStore` (Nuget: `Equinox.MemoryStore`): In-memory store for integration testing/performance baselining
 - `Samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
-- `Equinox.Bench` (in this repo): Scenario runner that facilitates running representative load tests composed of transactions in `Samples/Store` against each backend store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
+- `Equinox.Cli` (in this repo): General purpose tool incorporating a scenario runner that facilitates running representative load tests composed of transactions in `Samples/Store` against each backend store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
 
 CONTRIBUTING
 ------------
@@ -48,21 +48,21 @@ BUILDING
 
 Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and collection prepared (see #PROVISIONING):
 
-`./build.ps1`
+	./build.ps1
 
 ## build, skipping tests that require a Store instance
 
-`./build.ps1 -se`
+	./build.ps1 -se
 
 ## build, skipping all tests
 
-`./build -a "/t:build"`
+ 	./build -a "/t:build"
 
-## run EventStore benchmark (when provisioned)
+## Run EventStore benchmark (when provisioned)
 
 ```
-& .\benchmarks\Equinox.Bench\bin\Release\net461\Equinox.Bench.exe es run
-& dotnet .\benchmarks\Equinox.Bench\bin\Release\netcoreapp2.1\Equinox.Bench.dll es run
+& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
+& dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll es run
 ```
 
 PROVISIONING

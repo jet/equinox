@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.Bench.Infrastructure.Aggregate
+module Equinox.Cli.Infrastructure.Aggregate
 
 open MathNet.Numerics.Statistics
 open Serilog

@@ -1,4 +1,4 @@
-﻿module Equinox.Bench.Infrastructure.HttpHelpers
+﻿module Equinox.Cli.Infrastructure.HttpHelpers
 
 open System
 open System.Net

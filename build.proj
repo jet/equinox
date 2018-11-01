@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <Target Name="Build">
-    <Exec Command="dotnet build benchmarks/$(Name).Bench $(Cfg)" />
+    <Exec Command="dotnet pack cli/$(Name).Cli $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/$(Name) $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/$(Name).Codec $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/$(Name).EventStore $(Cfg) $(PackOptions)" />
