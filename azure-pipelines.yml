@@ -5,6 +5,7 @@ jobs:
     vmImage: 'vs2017-win2016'
   steps:
   - powershell: |
+      $env:skipEs = "true"
       $buildId = $env:BUILD_BUILDNUMBER.PadLeft(7, '0');
       $versionSuffixPR = "ci-$buildId-pr$($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER)";
       $branchName = "$env:BUILD_SOURCEBRANCHNAME".Replace("_","");
@@ -14,7 +15,7 @@ jobs:
       $versionSuffix = if ($isTag) { "" } else { if ($isPR) { $versionSuffixPR } else { $versionSuffixBRANCH } };
       Write-Host "##vso[task.setvariable variable=VersionSuffix]$versionSuffix";
     displayName: compute VersionSuffix
-  - script: dotnet msbuild build.proj /p:SkipEs=true
+  - script: dotnet msbuild build.proj
     displayName: Test + Build
     env:
       VersionSuffix: '$(VersionSuffix)'
