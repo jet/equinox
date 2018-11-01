@@ -1,37 +1,29 @@
-<Project ToolsVersion="15.0">
-  
+<Project ToolsVersion="15.0" DefaultTargets="Test;Build">
+
   <Import Project="Directory.Build.props" />
-  
+
+  <PropertyGroup>
+    <Name>Equinox</Name>
+    <Cfg>--configuration Release</Cfg>
+
+    <ThisDirAbsolute>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</ThisDirAbsolute>
+    <PackOptions>-o $(ThisDirAbsolute)bin --version-suffix "$(VersionSuffix)"</PackOptions>
+    <TestOptions>--logger:trx</TestOptions>
+  </PropertyGroup>
+
   <Target Name="Build">
-    <Exec Command='dotnet build benchmarks/Equinox.Bench --configuration Release' />
-    <Exec Command='dotnet build src/Equinox -c Release --version-suffix "$(VersionSuffix)" ' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    <Exec Command='dotnet build src/Equinox.Codec -c Release --version-suffix "$(VersionSuffix)" ' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    <Exec Command='dotnet build src/Equinox.EventStore -c Release --version-suffix "$(VersionSuffix)" ' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    <Exec Command='dotnet build src/Equinox.MemoryStore -c Release --version-suffix "$(VersionSuffix)" ' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    
-    <!-- If we're not going to test them, we should at least build them -->
-    <Exec Condition=" '$(SkipEs)' == 'true' " Command='dotnet build tests/Equinox.EventStore.Integration -c Release' IgnoreStandardErrorWarningFormat="true" />
-    <Exec Condition=" '$(SkipEs)' == 'true' " Command='dotnet build samples/Store/Integration -c Release' IgnoreStandardErrorWarningFormat="true" />
+    <Exec Command="dotnet pack cli/$(Name).Cli $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/$(Name) $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/$(Name).Codec $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/$(Name).EventStore $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/$(Name).MemoryStore $(Cfg) $(PackOptions)" />
   </Target>
 
-  <Target Name="Pack">
-    <Exec Command='dotnet pack src/Equinox -c Release --version-suffix "$(VersionSuffix)" ' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    <Exec Command='dotnet pack src/Equinox.Codec -c Release --version-suffix "$(VersionSuffix)" ' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />    
-    <Exec Command='dotnet pack src/Equinox.EventStore -c Release --version-suffix "$(VersionSuffix)" ' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    <Exec Command='dotnet pack src/Equinox.MemoryStore -c Release --version-suffix "$(VersionSuffix)" ' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    
-    <!-- If we're not going to test them, we should at least build them -->
-    <Exec Condition=" '$(SkipEs)' == 'true' " Command='dotnet build tests/Equinox.EventStore.Integration -c Release' IgnoreStandardErrorWarningFormat="true" />
-    <Exec Condition=" '$(SkipEs)' == 'true' " Command='dotnet build samples/Store/Integration -c Release' IgnoreStandardErrorWarningFormat="true" />
-  </Target>  
-  
   <Target Name="Test">
-    <Exec Command='dotnet test tests/Equinox.MemoryStore.Integration -c Release --logger:trx' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    <Exec Command='dotnet test samples/Store/Domain.Tests -c Release --logger:trx' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    <Exec Condition=" '$(SkipEs)' == 'false' " Command='dotnet test tests/Equinox.EventStore.Integration -c Release --logger:trx' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
-    <Exec Condition=" '$(SkipEs)' == 'false' " Command='dotnet test samples/Store/Integration -c Release --logger:trx' WorkingDirectory="$(RepoRootDir)" IgnoreStandardErrorWarningFormat="true" />
+    <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test tests/$(Name).MemoryStore.Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test tests/$(Name).EventStore.Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
   </Target>
-  
-  <Target Name="VSTest" DependsOnTargets="Test" />
-  
+
 </Project>
