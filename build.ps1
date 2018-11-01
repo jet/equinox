@@ -23,7 +23,7 @@ if ($skipCosmos) {
 } else {
     warn "Provisioning cosmos..."
     $collection=[guid]::NewGuid()
-    cli/Equinox.Cli/bin/Release/net461/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+    dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
 }
 $env:EQUINOX_INTEGRATION_SKIP_COSMOS=[string]$skipCosmos
 
@@ -37,5 +37,5 @@ if( $LASTEXITCODE -ne 0) {
 
 if (-not $skipCosmos -and -not $skipDeprovisionCosmos) {
     warn "Deprovisioning Cosmos"
-    cli/Equinox.Cli/bin/Release/net461/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 0
+    dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 0
 }
