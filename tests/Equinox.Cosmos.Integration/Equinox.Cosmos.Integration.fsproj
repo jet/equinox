@@ -8,7 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Infrastructure.fs" />
+    <Compile Include="CosmosFixtures.fs" />
+    <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
     <Compile Include="VerbatimUtf8JsonConverterTests.fs" />
   </ItemGroup>

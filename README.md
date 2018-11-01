@@ -28,7 +28,7 @@ Elements
 Elements are delivered as multitargeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
 - `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic Decision flow runner that manages the optimistic concurrency protocol
-- `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
+- `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): [a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/):
 	- independent of any specific serializer
 	- allows tagging of Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
 - `Equinox.Cosmos` (Nuget: `Equinox.Cosmos`, depends on `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`, ): Production-strength Azure CosmosDb Adapter with integrated transactional snapshotting facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
@@ -41,27 +41,67 @@ CONTRIBUTING
 ------------
 Please raise GitHub issues for any questions so others can benefit from the discussion.
 
-Building
+BUILDING
 --------
+
+## build and run
+
+Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and collection prepared (see #PROVISIONING):
+
+`./build.ps1`
+
+## build, skipping tests that require a Store instance
+
+`./build.ps1 -sc -se`
+
+## build, skipping all tests
+
+`./build -a "/t:build"`
+
+## run CosmosDb benchmark (when provisioned)
+
+```& .\benchmarks\Equinox.Bench\bin\Release\net461\Equinox.Bench.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
+& dotnet .\benchmarks\Equinox.Bench\bin\Release\netcoreapp2.1\Equinox.Bench.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
 ```
-# run, skipping tests that require a Store instance
-./build.ps1 -s
 
-## PROVISIONING COSMOSDB
-# For CosmosDb, ensure Environment variable EquinoxCosmosCreds initialized and configure CosmosDb Collection stored procedure using tool :-
+## run EventStore benchmark (when provisioned)
 
-# TODO @dongdong make it so ;P
-$env:EquinoxCosmosCreds=<PLACE YOUR CREDENTIALS HERE>
-dotnet run /benchmarks/Equinox.Bench eqx prepare Favorites -creds $env:EquinoxCosmosCreds
+```
+& .\benchmarks\Equinox.Bench\bin\Release\net461\Equinox.Bench.exe es run
+& dotnet .\benchmarks\Equinox.Bench\bin\Release\netcoreapp2.1\Equinox.Bench.dll es run
+```
 
-## PROVISIONING EVENTSTORE
-# For EventStore, run a local instance with config as follows:-
+PROVISIONING
+------------
 
+## COSMOSDB (when not using -sc)
+
+```
+$env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
+$env:EQUINOX_COSMOS_DATABASE=test
+$env:EQUINOX_COSMOS_COLLECTION=$env:USERNAME
+
+benchmarks/Equinox.Bench/bin/Release/net461/Equinox.Bench cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+```
+
+## DEPROVISIONING COSMOSDB
+
+(same command as for provisioningwith `-ru 0`)
+
+## PROVISIONING EVENTSTORE (when not using -se)
+
+For EventStore, run a local instance with config as follows:-
+
+```
 # requires admin privilege
 cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
 # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
 & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+```
 
-# run, including running the tests that assume you've got a local EventStore and initialized Equinox CosmosDb native store accessible via EquinoxCosmosCreds provisioned via `Equinox.Bench prepare Favorites`
-./build.ps1
+## DEPROVISIONING EVENTSTORE DATA
+
+```
+# requires admin privilege
+del C:\ProgramData\chocolatey\lib\eventstore-oss\tools\data
 ```

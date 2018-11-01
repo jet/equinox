@@ -18,20 +18,15 @@ type Arguments =
     | [<AltCommandLine("-vc")>] VerboseConsole
     | [<AltCommandLine("-S")>] LocalSeq
     | [<AltCommandLine("-l")>] LogFile of string
-    | [<CliPrefix(CliPrefix.None)>] Target of Target
+    | [<CliPrefix(CliPrefix.None)>] Memory of ParseResults<TestArguments>
+    | [<CliPrefix(CliPrefix.None)>] Es of ParseResults<EsArguments>
+    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<CosmosArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | VerboseDomain -> "Include low level Domain logging."
             | VerboseConsole -> "Include low level Domain and Store logging in screen output."
             | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | LogFile _ -> "specify a log file to write the result breakdown."
-            | Target _ -> "Specify store to operate on."
-and [<RequireSubcommand; NoEquality; NoComparison>] Target =
-    | [<CliPrefix(CliPrefix.None)>] Memory of ParseResults<TestArguments>
-    | [<CliPrefix(CliPrefix.None)>] Es of ParseResults<EsArguments>
-    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<CosmosArguments>
-    interface IArgParserTemplate with
-        member a.Usage = a |> function
             | Memory _ -> "specify In-Memory Volatile Store baseline test"
             | Es _ -> "specify EventStore actions"
             | Cosmos _ -> "specify CosmosDb actions"
@@ -80,21 +75,21 @@ and [<NoEquality; NoComparison>] CosmosArguments =
     | [<AltCommandLine("-c")>] Collection of string
     | [<AltCommandLine("-rt")>] RetriesWaitTime of int
 
-    | [<CliPrefix(CliPrefix.None)>] Init of ParseResults<CosmosInitArguments>
+    | [<CliPrefix(CliPrefix.None)>] Provision of ParseResults<CosmosProvisionArguments>
     | [<CliPrefix(CliPrefix.None)>] Run of ParseResults<TestArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | VerboseStore -> "Include low level Store logging."
             | Timeout _ -> "specify operation timeout in seconds (default: 5)."
             | Retries _ -> "specify operation retries (default: 1)."
-            | Connection _ -> "specify a connection string for a Cosmos account (default: connection string for Cosmos Emulator)."
-            | Database _ -> "specify a database name for Cosmos account (default: test)."
-            | Collection _ -> "specify a collection name for Cosmos account (default: test)."
+            | Connection _ -> "specify a connection string for a Cosmos account (defaults: envvar:EQUINOX_COSMOS_CONNECTION, Cosmos Emulator)."
+            | Database _ -> "specify a database name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
+            | Collection _ -> "specify a collection name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_COLLECTION, test)."
             | RetriesWaitTime _ -> "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
-            | Init _ -> "Initialize a store collection."
+            | Provision _ -> "Initialize a store collection."
             | Run _ -> "Run a load test."
-and CosmosInitArguments =
-    | [<Mandatory>] Rus of int
+and CosmosProvisionArguments =
+    | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ -> "Specify RUs to Allocate for the Application Collection."
@@ -114,13 +109,13 @@ module EventStore =
     let createGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 module Cosmos =
-    /// Standing up an Equinox instance is complicated; to run for test purposes either:
+    /// Standing up an Equinox instance is necessary to run for test purposes; either:
     /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
-    /// - Create a local Equinox with dbName "test" and collectionName "test" using script:
-    ///   /src/Equinox.Cosmos/EquinoxManager.fsx
-    let connect (log: ILogger) connStr operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
+    /// - Create a local Equinox via benchmarks/Equinox.Bench/bin/Release/net461/Equinox.Bench with args:
+    ///   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+    let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
-            .Connect("Equinox-loadtests", Equinox.Cosmos.Discovery.FromConnectionString(connStr))
+            .Connect("Equinox-loadtests", discovery)
     let createGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -212,14 +207,14 @@ let main argv =
             log.Information("Run completed, current allocation: {bytes:n0}",GC.GetTotalMemory(true))
             0
 
-        match args.GetResult Target with
-        | Target.Memory targs ->
+        match args.GetSubCommand() with
+        | Memory targs ->
             let log = Log.Logger
             log.Information( "Using In Memory Volatile Store")
             // TODO implement backoffs
             let conn = Store.Mem (Equinox.MemoryStore.VolatileStore())
             runTest log conn targs
-        | Target.Es sargs ->
+        | Es sargs ->
             let verboseStore = sargs.Contains(EsArguments.VerboseStore)
             let log = createStoreLog verboseStore verboseConsole maybeSeq
             let host = sargs.GetResult(Host,"localhost")
@@ -237,21 +232,26 @@ let main argv =
             match sargs.TryGetSubCommand() with
             | Some (EsArguments.Run targs) -> runTest log store targs
             | _ -> failwith "run is required"
-        | Target.Cosmos sargs ->
+        | Cosmos sargs ->
             let verboseStore = sargs.Contains(VerboseStore)
             let log = createStoreLog verboseStore verboseConsole maybeSeq
-            let connStr = sargs.GetResult(Connection, "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;")
-            let dbName = sargs.GetResult(Database, "test")
-            let collName = sargs.GetResult(Collection, "test")
+            let read key = Environment.GetEnvironmentVariable key |> Option.ofObj
+
+            let (Discovery.UriAndKey (connUri,_)) as discovery =
+                sargs.GetResult(Connection, defaultArg (read "EQUINOX_COSMOS_CONNECTION") "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;")
+                |> Discovery.FromConnectionString
+
+            let dbName = sargs.GetResult(Database, defaultArg (read "EQUINOX_COSMOS_DATABASE") "test")
+            let collName = sargs.GetResult(Collection, defaultArg (read "EQUINOX_COSMOS_COLLECTION") "test")
             let timeout = sargs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
             let (retries, maxRetryWaitTime) as operationThrottling = sargs.GetResult(Retries, 1), sargs.GetResult(RetriesWaitTime, 5)
             log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection}\n" +
                 "Request timeout: {timeout} with {retries} retries; throttling MaxRetryWaitTime {maxRetryWaitTime}",
-                connStr, dbName, collName, timeout, retries, maxRetryWaitTime)
-            let conn = Cosmos.connect log connStr timeout operationThrottling |> Async.RunSynchronously
+                connUri, dbName, collName, timeout, retries, maxRetryWaitTime)
+            let conn = Cosmos.connect log discovery timeout operationThrottling |> Async.RunSynchronously
             match sargs.TryGetSubCommand() with
-            | Some (Init args) ->
-                let rus = args.GetResult(Rus, 200000)
+            | Some (Provision args) ->
+                let rus = args.GetResult(Rus)
                 log.Information("Configuring CosmosDbwith rus: {rus}", rus)
                 Equinox.Cosmos.Initialization.initialize conn.Client dbName collName rus |> Async.RunSynchronously
                 0

@@ -1,6 +1,7 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
 open Equinox.Store
+open Equinox.Cosmos.Integration
 open Swensen.Unquote
 
 module EquinoxEsInterop =
@@ -114,7 +115,7 @@ type Tests() =
         let buffer = ResizeArray<string>()
         let batchSize = defaultBatchSize
         let (log,capture) = createLoggerWithMetricsExtraction buffer.Add
-        let! conn = connectToCosmos log
+        let! conn = connectToSpecifiedCosmosOrSimulator log
         let gateway = createEqxGateway conn batchSize
         let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithCompactionEventType gateway)
         let itemCount, cartId = batchSize / 2 + 1, cartId ()
