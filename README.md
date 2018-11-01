@@ -153,8 +153,14 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 ## run CosmosDb benchmark (when provisioned)
 
-```& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
-& dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
+```
+$env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
+$env:EQUINOX_COSMOS_DATABASE="test"
+$env:EQUINOX_COSMOS_COLLECTION=$env:USERNAME
+
+& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION run
+& dotnet run cli\Equinox.Cli -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION run
+>>>>>>> More CLI parsing polish
 ```
 
 # PROVISIONING
@@ -180,13 +186,11 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 ## COSMOSDB (when not using -sc)
 
 ```
-$env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
-$env:EQUINOX_COSMOS_DATABASE=test
-$env:EQUINOX_COSMOS_COLLECTION=$env:USERNAME
-
-cli/Equinox.Cli/bin/Release/net461/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
 ```
 
 ## DEPROVISIONING COSMOSDB
+
+Provisioning allocates RUs in DocDB which add up quickly. When finished running any test, it's critical to drop the RU allocations back down again via some mechanism. One such mechanism is to use the provisioning command to drop the allocations back down again.
 
 (same command as for provisioningwith `-ru 0`)
