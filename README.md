@@ -151,6 +151,12 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
     & dotnet run -c Release -f netcoreapp2.1 -p cli/Equinox.Cli -- run -t saveforlater -f 200 web
 
+## run CosmosDb benchmark (when provisioned)
+
+```& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
+& dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
+```
+
 # PROVISIONING
 
 ## Provisioning EventStore (when not using -s or -se)
@@ -170,3 +176,17 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 
 	# requires admin privilege
 	rm $env:ProgramData\chocolatey\lib\eventstore-oss\tools\data
+
+## COSMOSDB (when not using -sc)
+
+```
+$env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
+$env:EQUINOX_COSMOS_DATABASE=test
+$env:EQUINOX_COSMOS_COLLECTION=$env:USERNAME
+
+cli/Equinox.Cli/bin/Release/net461/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+```
+
+## DEPROVISIONING COSMOSDB
+
+(same command as for provisioningwith `-ru 0`)
