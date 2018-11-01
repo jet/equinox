@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
 open Equinox.Cosmos
-open Equinox.Cosmos.Integration.CosmosIntegration
+open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
@@ -22,7 +22,7 @@ let resolveGesStreamWithRollingSnapshots gateway =
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
 
-let resolveEqxStreamWithCompactionEventType gateway  compactionEventType (StreamArgs args) =
+let resolveEqxStreamWithCompactionEventType gateway compactionEventType (StreamArgs args) =
     EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.EventType compactionEventType).Create(args)
 let resolveEqxStreamWithoutCompactionSemantics gateway _compactionEventType (StreamArgs args) =
     EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
