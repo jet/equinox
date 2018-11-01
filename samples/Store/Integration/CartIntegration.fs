@@ -51,13 +51,13 @@ type Tests(testOutputHelper) =
         let gateway = choose conn defaultBatchSize
         return Backend.Cart.Service(log, resolveStream gateway) }
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithoutCompactionSemantics
         do! act service args
     }
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithCompactionEventType
         do! act service args

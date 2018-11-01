@@ -14,6 +14,12 @@ Features
     - no additional roundtrips to the store needed at either the Load or Sync points in the flow
     - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
     - compaction events typically do not get deleted (consistent with how EventStore works)
+- (Azure CosmosDb-specific, WIP) Snapshotting support: Command processing can by optimized by employing a snapshot document which maintains a) (optionally) a rendition of the folded state b) (optionally) batches of events to fold into the state in a
+	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
+	- when coupled with ther cache, a typical read is a point read with an etag, costing 1 RU
+	- A snapshot isa Document, but not an Event
+	- snapshot events can safely be deleted; they'll get regenerated in the course of normal processing
+	- A given snapshot will typically only contain a single version of the snapshot
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and per Storage system.
 
@@ -35,15 +41,47 @@ CONTRIBUTING
 ------------
 Please raise GitHub issues for any questions so others can benefit from the discussion.
 
-Building
+BUILDING
 --------
+
+## build and run
+
+Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and collection prepared (see #PROVISIONING):
+
+`./build.ps1`
+
+## build, skipping tests that require a Store instance
+
+`./build.ps1 -se`
+
+## build, skipping all tests
+
+`./build -a "/t:build"`
+
+## run EventStore benchmark (when provisioned)
+
+```
+& .\benchmarks\Equinox.Bench\bin\Release\net461\Equinox.Bench.exe es run
+& dotnet .\benchmarks\Equinox.Bench\bin\Release\netcoreapp2.1\Equinox.Bench.dll es run
+```
+
+PROVISIONING
+------------
+
+## PROVISIONING EVENTSTORE (when not using -se)
+
+For EventStore, run a local instance with config as follows:-
+
 ```
 # requires admin privilege
 cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
 # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
 & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-# run, including running the tests that assume you've got a local EventStore started as above
-./build.ps1
-# run, skipping the tests that require a local EventStore instance
-./build.ps1 -s
+```
+
+## DEPROVISIONING (AKA NUKING) EVENTSTORE DATA
+
+```
+# requires admin privilege
+del C:\ProgramData\chocolatey\lib\eventstore-oss\tools\data
 ```

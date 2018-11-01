@@ -1,5 +1,6 @@
 <Project ToolsVersion="15.0">
   <PropertyGroup>
+    <VersionPrefix>0.0.1</VersionPrefix>
     <Authors>@jet @bartelink @eiriktsarpalis and contributors</Authors>
     <Company>Jet.com</Company>
     <Description>Composable high performance event sourcing componentry</Description>

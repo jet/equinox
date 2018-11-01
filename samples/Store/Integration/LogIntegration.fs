@@ -75,7 +75,7 @@ type Tests() =
                 && not (obj.ReferenceEquals(capture, null)) @> }
 
     // Protip: Debug this test to view standard metrics rendering
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
         let buffer = ResizeArray<string>()
         let batchSize = defaultBatchSize

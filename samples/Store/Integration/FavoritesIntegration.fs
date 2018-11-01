@@ -38,7 +38,7 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
         let! conn = connectToLocalEventStoreNode log
