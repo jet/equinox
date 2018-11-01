@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
 open Equinox.Cosmos
-open Equinox.Cosmos.Integration.CosmosIntegration
+open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote

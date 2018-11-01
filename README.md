@@ -83,6 +83,12 @@ Run, including running the tests that assume you've got a local EventStore and p
 	& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
 	& dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- es run
 
+## run CosmosDb benchmark (when provisioned)
+
+```& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
+& dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
+```
+
 # PROVISIONING
 
 ## Provisioning EventStore (when not using -s or -se)
@@ -100,3 +106,17 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 
 	# requires admin privilege
 	rm $env:ProgramData\chocolatey\lib\eventstore-oss\tools\data
+
+## COSMOSDB (when not using -sc)
+
+```
+$env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
+$env:EQUINOX_COSMOS_DATABASE=test
+$env:EQUINOX_COSMOS_COLLECTION=$env:USERNAME
+
+cli/Equinox.Cli/bin/Release/net461/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+```
+
+## DEPROVISIONING COSMOSDB
+
+(same command as for provisioningwith `-ru 0`)

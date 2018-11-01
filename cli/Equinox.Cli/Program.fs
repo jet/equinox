@@ -113,7 +113,7 @@ module EventStore =
 module Cosmos =
     /// Standing up an Equinox instance is necessary to run for test purposes; either:
     /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
-    /// - Create a local Equinox via benchmarks/Equinox.Bench/bin/Release/net461/Equinox.Bench with args:
+    /// - Create a local Equinox via cli/Equinox.Cli/bin/Release/net461/Equinox.Cli with args:
     ///   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
     let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
