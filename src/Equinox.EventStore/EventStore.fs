@@ -2,6 +2,7 @@
 
 open EventStore.ClientAPI
 open Equinox
+open Equinox.Store
 open FSharp.Control
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System

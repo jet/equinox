@@ -6,14 +6,14 @@ Features
 --------
 - Domain tests can be written directly against the models without any need to involve Equinox.
 - Encoding of events via `Equinox.UnionCodec` provides for pluggable encoding events based on either:
-    - Proving a hardcoed pair of `encode` and `tryDecode` functions
-    - Using a versionable convention-based approach using `Typeshape`'s `UnionContractEncoder` under the covers, providing for serializer-agnostic schema evolution with minimal boilerplate
+    - Providing an explicitly coded pair of `encode` and `tryDecode` functions
+    - Using a [versionable convention-based approach (using `Typeshape`'s `UnionContractEncoder` under the covers)](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/), providing for serializer-agnostic schema evolution with minimal boilerplate
 - Independent of the stored used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
 - Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
-- Compaction support: Command processing and/or snapshot managemnt can by optimized by employing in-stream 'compaction' events in service of the following ends:
-	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- support, (via the `UnionCodec`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
-	- compaction events typically do not get deleted in EventStore
+- EventStore-optimized Compaction support: Command processing can by optimized by employing in-stream 'compaction' events in service of the following ends:
+    - no additional roundtrips to the store needed at either the Load or Sync points in the flow
+    - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
+    - compaction events typically do not get deleted (consistent with how EventStore works)
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and per Storage system.
 
@@ -22,7 +22,7 @@ Elements
 Elements are delivered as multitargeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
 - `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic Decision flow runner that manages the optimistic concurrency protocol
-- `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities:
+- `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): [a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/):
 	- independent of any specific serializer
 	- allows tagging of Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
 - `Equinox.Cosmos` (Nuget: `Equinox.Cosmos`, depends on `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`, ): Production-strength Azure CosmosDb Adapter with integrated transactional snapshotting facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
