@@ -58,12 +58,6 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 `./build -a "/t:build"`
 
-## run CosmosDb benchmark (when provisioned)
-
-```& .\benchmarks\Equinox.Bench\bin\Release\net461\Equinox.Bench.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
-& dotnet .\benchmarks\Equinox.Bench\bin\Release\netcoreapp2.1\Equinox.Bench.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
-```
-
 ## run EventStore benchmark (when provisioned)
 
 ```
@@ -71,22 +65,19 @@ Run, including running the tests that assume you've got a local EventStore and p
 & dotnet .\benchmarks\Equinox.Bench\bin\Release\netcoreapp2.1\Equinox.Bench.dll es run
 ```
 
-PROVISIONING
-------------
-
-## COSMOSDB (when not using -sc)
+## run CosmosDb benchmark (when provisioned)
 
 ```
 $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
 $env:EQUINOX_COSMOS_DATABASE=test
 $env:EQUINOX_COSMOS_COLLECTION=$env:USERNAME
 
-benchmarks/Equinox.Bench/bin/Release/net461/Equinox.Bench cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+& .\benchmarks\Equinox.Bench\bin\Release\net461\Equinox.Bench.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
+& dotnet .\benchmarks\Equinox.Bench\bin\Release\netcoreapp2.1\Equinox.Bench.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION run
 ```
 
-## DEPROVISIONING COSMOSDB
-
-(same command as for provisioningwith `-ru 0`)
+PROVISIONING
+------------
 
 ## PROVISIONING EVENTSTORE (when not using -se)
 
@@ -99,9 +90,21 @@ cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package
 & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 ```
 
-## DEPROVISIONING EVENTSTORE DATA
+## DEPROVISIONING (AKA NUKING) EVENTSTORE DATA
 
 ```
 # requires admin privilege
 del C:\ProgramData\chocolatey\lib\eventstore-oss\tools\data
 ```
+
+## COSMOSDB (when not using -sc)
+
+```
+benchmarks/Equinox.Bench/bin/Release/net461/Equinox.Bench cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+```
+
+## DEPROVISIONING COSMOSDB
+
+Privisioning allocates RUs in DocDB whichadd up quickly. When finished running any test, it's critical to drop the RU allocations back down again via some mechanism. One such mechanism is to use the provisioning command to drop the allocations back down again.
+
+(same command as for provisioningwith `-ru 0`)

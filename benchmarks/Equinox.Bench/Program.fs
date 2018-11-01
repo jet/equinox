@@ -26,7 +26,7 @@ type Arguments =
             | VerboseDomain -> "Include low level Domain logging."
             | VerboseConsole -> "Include low level Domain and Store logging in screen output."
             | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
-            | LogFile _ -> "specify a log file to write the result breakdown."
+            | LogFile _ -> "specify a log file to write the result breakdown (default: Equinox.Cli.log)."
             | Memory _ -> "specify In-Memory Volatile Store baseline test"
             | Es _ -> "specify EventStore actions"
             | Cosmos _ -> "specify CosmosDb actions"
@@ -172,12 +172,13 @@ let createResultLog fileName =
 
 [<EntryPoint>]
 let main argv =
-    let parser = ArgumentParser.Create<Arguments>(programName = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName)
+    let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
+    let parser = ArgumentParser.Create<Arguments>(programName = programName)
     try
         let args = parser.ParseCommandLine argv
         let verboseConsole = args.Contains(VerboseConsole)
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
-        let report = args.GetResult(LogFile,"log.txt") |> fun n -> FileInfo(n).FullName
+        let report = args.GetResult(LogFile,programName+".log") |> fun n -> FileInfo(n).FullName
         let runTest (log: ILogger) conn (targs: ParseResults<TestArguments>) =
             let verbose = args.Contains(VerboseDomain)
             let domainLog = domainLog verbose verboseConsole maybeSeq
@@ -252,7 +253,7 @@ let main argv =
             match sargs.TryGetSubCommand() with
             | Some (Provision args) ->
                 let rus = args.GetResult(Rus)
-                log.Information("Configuring CosmosDbwith rus: {rus}", rus)
+                log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus}", rus)
                 Equinox.Cosmos.Initialization.initialize conn.Client dbName collName rus |> Async.RunSynchronously
                 0
             | Some (Run targs) ->
