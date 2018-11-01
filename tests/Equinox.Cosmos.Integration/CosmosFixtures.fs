@@ -6,8 +6,7 @@ open System
 
 /// Standing up an Equinox instance is necessary to run for test purposes; either:
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
-/// - Create a local Equinox via cli/Equinox.Cli/bin/Release/net461/Equinox.Cli with args:
-///   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+/// - Create a local Equinox via dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
 let private connectToCosmos (log: Serilog.ILogger) name discovery =
     EqxConnector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
        .Connect(name, discovery)
