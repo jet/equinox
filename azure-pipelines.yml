@@ -1,0 +1,63 @@
+name: $(Rev:r)
+jobs:
+- job: Windows
+  pool:
+    vmImage: 'vs2017-win2016'
+  steps:
+  - powershell: |
+      $buildId = $env:BUILD_BUILDNUMBER.PadLeft(7, '0');
+      $versionSuffixPR = "ci-$buildId-pr$($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER)";
+      $branchName = "$env:BUILD_SOURCEBRANCHNAME".Replace("_","");
+      $versionSuffixBRANCH = "$branchName-$buildId";
+      $isTag = "$env:BUILD_SOURCEBRANCH".StartsWith('refs/tags/');
+      $isPR = "$env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER" -ne ""
+      $versionSuffix = if ($isTag) { "" } else { if ($isPR) { $versionSuffixPR } else { $versionSuffixBRANCH } };
+      Write-Host "##vso[task.setvariable variable=VersionSuffix]$versionSuffix";
+    displayName: compute VersionSuffix
+  - script: dotnet msbuild build.proj
+    displayName: Test + Build
+    env:
+      VersionSuffix: '$(VersionSuffix)'
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: 'VSTest'
+      testResultsFiles: 'tests/**/*.trx'
+    condition: succeededOrFailed()
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathtoPublish: 'bin'
+      artifactName: 'nupkgs'
+  - task: NuGetCommand@2
+    inputs:
+      command: push
+      nuGetFeedType: external
+      publishFeedCredentials: 'Jet-MyGet'
+      versioningScheme: byEnvVar
+      versionEnvVar: Version
+      packagesToPush: 'bin/*.nupkg;bin/*.symbols.nupkg'
+- job: Linux
+  pool:
+    vmImage: 'ubuntu-16.04'
+  steps:
+  - script: echo "##vso[task.setvariable variable=FrameworkPathOverride]$(dirname $(which mono))/../lib/mono/4.5/"
+    displayName: Workaround .NET reference assemblies on linux
+  - script: dotnet msbuild build.proj
+    displayName: Test + Build
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: 'VSTest'
+      testResultsFiles: 'tests/**/*.trx'
+    condition: succeededOrFailed()
+- job: MacOS
+  pool:
+    vmImage: 'macOS-10.13'
+  steps:
+  - script: echo "##vso[task.setvariable variable=FrameworkPathOverride]$(dirname $(which mono))/../lib/mono/4.5/"
+    displayName: Workaround .NET reference assemblies on linux
+  - script: dotnet msbuild build.proj
+    displayName: Test + Build
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: 'VSTest'
+      testResultsFiles: 'tests/**/*.trx'
+    condition: succeededOrFailed()
