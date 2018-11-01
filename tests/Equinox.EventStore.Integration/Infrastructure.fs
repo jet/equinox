@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.EventStore.Integration.Infrastructure
+module Equinox.Integration.Infrastructure
 
 open Domain
 open FsCheck

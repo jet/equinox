@@ -1,6 +1,7 @@
 ﻿module Equinox.EventStore.Integration.EventStoreIntegration
 
 open Equinox.EventStore
+open Equinox.Integration.Infrastructure
 open Serilog
 open Swensen.Unquote
 open System.Threading

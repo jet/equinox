@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.EventStore.Infrastructure
+module Equinox.Store.Infrastructure
 
 open FSharp.Control
 open System
@@ -15,6 +15,7 @@ module Seq =
             Some res
         else
             None
+
 module Array =
     let tryHead (array : 'T[]) =
         if array.Length = 0 then None
@@ -31,6 +32,7 @@ module Array =
             elif predicate array.[i] then Some i
             else loop (i - 1)
         loop (array.Length - 1)
+
 module Option =
     let filter predicate option = match option with None -> None | Some x -> if predicate x then Some x else None
 #endif
@@ -127,3 +129,15 @@ type Stopwatch =
         let tr = StopwatchInterval(startTicks, endTicks)
         return tr, result
     }
+
+[<RequireQualifiedAccess>]
+module Regex =
+    open System.Text.RegularExpressions
+
+    let DefaultTimeout = TimeSpan.FromMilliseconds 250.
+    let private mkRegex p = Regex(p, RegexOptions.None, DefaultTimeout)
+
+    /// Active pattern for branching on successful regex matches
+    let (|Match|_|) (pattern : string) (input : string) =
+        let m = (mkRegex pattern).Match input
+        if m.Success then Some m else None
