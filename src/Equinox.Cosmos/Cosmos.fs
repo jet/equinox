@@ -139,7 +139,7 @@ type EqxSyncResult = Written of Store.Position * requestCharge: float | Conflict
 
 module private Write =
     let append (client: IDocumentClient) (pos: Store.Position) (eventsData: Store.EventData seq): Async<Store.Position * float> = async {
-        let sprocUri = sprintf "%O/sprocs/AtomicMultiDocInsert" pos.CollectionUri
+        let sprocUri = sprintf "%O/sprocs/multidocInsert" pos.CollectionUri
         let opts = Client.RequestOptions(PartitionKey=PartitionKey pos.PartitionKey)
         let! ct = Async.CancellationToken
         let events = eventsData |> Seq.mapi (fun i ed -> Store.Event.Create pos (i+1) ed |> JsonConvert.SerializeObject) |> Seq.toArray
