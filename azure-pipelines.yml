@@ -5,7 +5,7 @@ jobs:
     vmImage: 'vs2017-win2016'
   steps:
   - powershell: |
-      $env:skipEs = "true"
+      $env:EQUINOX_INTEGRATION_SKIP_EVENTSTORE = "true"
       $buildId = $env:BUILD_BUILDNUMBER.PadLeft(7, '0');
       $versionSuffixPR = "ci-$buildId-pr$($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER)";
       $branchName = "$env:BUILD_SOURCEBRANCHNAME".Replace("_","");
