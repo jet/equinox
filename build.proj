@@ -22,7 +22,7 @@
   <Target Name="Test">
     <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test tests/$(Name).MemoryStore.Integration $(Cfg) $(TestOptions)" />
-    <Exec Command="dotnet test tests/$(Name).EventStore.Integration $(Cfg) $(TestOptions)" />
+    <Exec Condition=" '$(SkipEs)' != 'true' Command="dotnet test tests/$(Name).EventStore.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
   </Target>
 
