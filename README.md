@@ -1,14 +1,14 @@
 Equinox
 =======
-A lightweight set of infrastructure, examples and tests providing a consistent approach to Event-sourced Decision processing in F# against multiple ordered stream stores.
+Equinox is a lightweight set of infrastructure, examples and tests providing a consistent approach to Event-sourced Decision processing in F# against multiple ordered stream stores. Equinox currently supports [Event Store](https://eventstore.org/) and [Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db/) data stores.
 
 Features
 --------
-- Domain tests can be written directly against the models without any need to involve Equinox.
+- Equinox is designed to be non-invasive to application code; Domain tests can be written directly against the models without any need to use Equinox assemblies as part of writing those tests.
 - Encoding of events via `Equinox.UnionCodec` provides for pluggable encoding events based on either:
     - Providing an explicitly coded pair of `encode` and `tryDecode` functions
     - Using a [versionable convention-based approach (using `Typeshape`'s `UnionContractEncoder` under the covers)](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/), providing for serializer-agnostic schema evolution with minimal boilerplate
-- Independent of the stored used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
+- Independent of the store used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
 - Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
 - EventStore-optimized Compaction support: Command processing can by optimized by employing in-stream 'compaction' events in service of the following ends:
     - no additional roundtrips to the store needed at either the Load or Sync points in the flow
