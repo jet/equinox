@@ -83,6 +83,9 @@ Run, including running the tests that assume you've got a local EventStore and p
 ## build, skip EventStore tests
 
 	./build -se
+## build, skip EventStore tests, skip auto-provisioning + de-provisioning Cosmos
+
+	./build -se -scp
 
 # SAMPLES
 
@@ -153,15 +156,16 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 ## run CosmosDb benchmark (when provisioned)
 
-```
-$env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
-$env:EQUINOX_COSMOS_DATABASE="test"
-$env:EQUINOX_COSMOS_COLLECTION=$env:USERNAME
+    $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
+    $env:EQUINOX_COSMOS_DATABASE="equinox-test"
+    $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
 
-& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.dll cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION run
-& dotnet run cli\Equinox.Cli -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION run
->>>>>>> More CLI parsing polish
-```
+    cli/Equinox.cli/bin/Release/net461/Equinox.Cli `
+      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
+      run
+    dotnet .\benchmarks\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll `
+      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
+      run
 
 # PROVISIONING
 
@@ -191,6 +195,7 @@ dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUI
 
 ## DEPROVISIONING COSMOSDB
 
-Provisioning allocates RUs in DocDB which add up quickly. When finished running any test, it's critical to drop the RU allocations back down again via some mechanism. One such mechanism is to use the provisioning command to drop the allocations back down again.
+The above provisioning step provisions RUs in DocDB for the collection, which add up quickly. *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism*. 
 
-(same command as for provisioningwith `-ru 0`)
+* Kill the collection and/or database
+* Use the portal to change the allocation
