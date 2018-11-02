@@ -111,13 +111,13 @@ module EventStore =
     let createGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 module Cosmos =
-    /// Standing up an Equinox instance is necessary to run for test purposes; either:
-    /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
-    /// - Create a local Equinox via cli/Equinox.Cli/bin/Release/net461/Equinox.Cli with args:
-    ///   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+    /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
+    /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
+    /// 2) Set the 3x environment variables and create a local Equinox using cli/Equinox.cli/bin/Release/net461/Equinox.Cli `
+    ///     cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 1000
     let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
-            .Connect("Equinox-loadtests", discovery)
+            .Connect("equinox-cli", discovery)
     let createGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -253,8 +253,8 @@ let main argv =
                 sargs.GetResult(Connection, defaultArg (read "EQUINOX_COSMOS_CONNECTION") "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;")
                 |> Discovery.FromConnectionString
 
-            let dbName = sargs.GetResult(Database, defaultArg (read "EQUINOX_COSMOS_DATABASE") "test")
-            let collName = sargs.GetResult(Collection, defaultArg (read "EQUINOX_COSMOS_COLLECTION") "test")
+            let dbName = sargs.GetResult(Database, defaultArg (read "EQUINOX_COSMOS_DATABASE") "equinox-test")
+            let collName = sargs.GetResult(Collection, defaultArg (read "EQUINOX_COSMOS_COLLECTION") "equinox-test")
             let timeout = sargs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
             let (retries, maxRetryWaitTime) as operationThrottling = sargs.GetResult(Retries, 1), sargs.GetResult(RetriesWaitTime, 5)
             log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection}\n" +

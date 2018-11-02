@@ -14,7 +14,6 @@ module Store =
     [<NoComparison>]
     type Position =
         {   collectionUri: Uri; streamName: string; index: int64 option }
-        member __.PartitionKey : PartitionKey = __.streamName |> PartitionKey
         member __.Index : int64 = defaultArg __.index -1L
         member __.IndexRel (offset: int) : int64 = __.index |> function
             | Some index -> index+int64 offset
@@ -28,11 +27,14 @@ module Store =
 
             // DocDb-mandated Partition Key, must be maintained within the document
             // Not actually required if running in single partition mode, but for simplicity, we always write it
-            p: string // {streamName}
+            p: string // "{streamName}"
 
-            // DocDb-mandated unique key; needs to be unique within any partition it is maintained
-            // Also defines the ordering of the items
-            id: int64 // {index}
+            // DocDb-mandated unique row key; needs to be unique within any partition it is maintained; must be a string
+            // At the present time, one can't perform an ORDER BY on this field, hence we also have i, which is identical
+            id: string // "{index}"
+
+            // Same as `id`; necessitated by fact that it's not presently possible to do an ORDER BY on the row key
+            i: int64 // {index}
 
             (* Event payload elements *)
 
@@ -46,13 +48,19 @@ module Store =
             [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
             d: byte[] // required
 
-            /// Optional metadata (null, or same as d)
-            [<JsonConverter(typeof<VerbatimUtf8JsonConverter>); JsonProperty(Required=Required.DisallowNull)>]
+            /// Optional metadata (null, or same as d, not written if missing)
+            [<JsonConverter(typeof<VerbatimUtf8JsonConverter>); JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
             m: byte[] } // optional
+        /// Unless running in single partion mode (which would restrict us to 10GB per collection)
+        /// we need to nominate a partition key that will be in every document
+        static member PartitionKeyField = "p"
+        /// As one cannot sort by the implicit `id` field, we have an indexed `i` field which we use for sort and range query purporses
+        static member IndexedFields = [Event.PartitionKeyField; "i"]
         static member Create (pos: Position) offset (ed: EventData) : Event =
-            {   p = pos.streamName; id = pos.IndexRel offset
+            {   p = pos.streamName; id = string (pos.IndexRel offset); i = pos.IndexRel offset
                 c = DateTimeOffset.UtcNow
                 t = ed.eventType; d = ed.data; m = ed.metadata }
+    /// Manages injecting prepared json into the data being submitted to DocDb as-is, on the basis we can trust it to be valid json as DocDb will need it to be
     and VerbatimUtf8JsonConverter() =
         inherit JsonConverter()
 
@@ -111,9 +119,10 @@ module Log =
 type EqxSyncResult = Written of Store.Position * requestCharge: float | Conflict of requestCharge: float
 
 module private Write =
+    let [<Literal>] sprocName = "AtomicMultiDocInsert"
     let append (client: IDocumentClient) (pos: Store.Position) (eventsData: Store.EventData seq): Async<Store.Position * float> = async {
-        let sprocUri = sprintf "%O/sprocs/multidocInsert" pos.collectionUri
-        let opts = Client.RequestOptions(PartitionKey=pos.PartitionKey)
+        let sprocUri = sprintf "%O/sprocs/%s" pos.collectionUri sprocName
+        let opts = Client.RequestOptions(PartitionKey=PartitionKey(pos.streamName))
         let! ct = Async.CancellationToken
         let events = eventsData |> Seq.mapi (fun i ed -> Store.Event.Create pos (i+1) ed |> JsonConvert.SerializeObject) |> Seq.toArray
         if events.Length = 0 then invalidArg "eventsData" "must be non-empty"
@@ -155,14 +164,11 @@ module private Read =
     let private getQuery (client : IDocumentClient) (pos:Store.Position) (direction: Direction) batchSize =
         let querySpec =
             match pos.index with
-            | None ->
-                if direction = Direction.Forward then invalidOp "Cannot read forward from None"
-                else SqlQuerySpec "SELECT * FROM c ORDER BY c.id DESC"
+            | None -> SqlQuerySpec(if direction = Direction.Forward then "SELECT * FROM c ORDER BY c.i ASC" else "SELECT * FROM c ORDER BY c.i DESC")
             | Some index ->
-                SqlQuerySpec( "SELECT * FROM c WHERE " +
-                    (if direction = Direction.Forward then "c.id >= @id ORDER BY c.id ASC" else "c.id < @id ORDER BY c.id DESC"),
-                    SqlParameterCollection (Seq.singleton (SqlParameter("@id", index))))
-        let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey pos.PartitionKey, MaxItemCount=Nullable batchSize)
+                let f = if direction = Direction.Forward then "c.i >= @id ORDER BY c.i ASC" else "c.i < @id ORDER BY c.i DESC"
+                SqlQuerySpec( "SELECT * FROM c WHERE " + f, SqlParameterCollection (Seq.singleton (SqlParameter("@id", index))))
+        let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey(pos.streamName), MaxItemCount=Nullable batchSize)
         client.CreateDocumentQuery<Store.Event>(pos.collectionUri, querySpec, feedOptions).AsDocumentQuery()
 
     let (|EventLen|) (x : Store.Event) = match x.d, x.m with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
@@ -174,7 +180,7 @@ module private Read =
         let reqMetric : Log.Measurement = { stream = pos.streamName; interval = t; bytes = bytes; count = count; ru = ru }
         let evt = Log.Slice (direction, reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice
-        let index = match slice |> Array.tryHead with Some head -> Nullable head.id | None -> Nullable ()
+        let index = match slice |> Array.tryHead with Some head -> head.id | None -> null
         (log |> Log.prop "startIndex" pos.Index |> Log.prop "bytes" bytes |> Log.event evt)
             .Information("Eqx{action:l} count={count} index={index} rus={ru}", "Read", count, index, ru)
         return slice, ru }
@@ -210,7 +216,7 @@ module private Read =
     let private lastEventIndex (xs:Store.Event seq) : int64 =
         match xs |> Seq.tryLast with
         | None -> -1L
-        | Some last -> last.id
+        | Some last -> int64 last.id
 
     let loadForwardsFrom (log : ILogger) retryPolicy client batchSize maxPermittedBatchReads (pos,_strongConsistency): Async<Store.Position * Store.Event[]> = async {
         let mutable ru = 0.0
@@ -307,7 +313,7 @@ module Token =
         ofCompactionEventNumber compactedEventNumber eventsLength batchSize pos
     /// Use an event just read from the stream to infer headroom
     let ofCompactionResolvedEventAndVersion (compactionEvent: Store.Event) batchSize pos : Storage.StreamToken =
-        ofCompactionEventNumber (Some compactionEvent.id) 0 batchSize pos
+        ofCompactionEventNumber (Some (int64 compactionEvent.id)) 0 batchSize pos
     /// Use an event we are about to write to the stream to infer headroom
     let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion compactionEventDataIndex eventsLength batchSize streamVersion' : Storage.StreamToken =
         ofCompactionEventNumber (Some (prevStreamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
@@ -523,26 +529,31 @@ module Initialization =
 
     let createCollection (client: IDocumentClient) (dbUri: Uri) collName ru = async {
         let pkd = PartitionKeyDefinition()
-        pkd.Paths.Add("/k")
+        pkd.Paths.Add(sprintf "/%s" Store.Event.PartitionKeyField)
         let colld = DocumentCollection(Id = collName, PartitionKey = pkd)
 
-        colld.IndexingPolicy.IndexingMode <- IndexingMode.None
-        colld.IndexingPolicy.Automatic <- false
+        colld.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
+        colld.IndexingPolicy.Automatic <- true
+        // Can either do a blacklist or a whitelist
+        // Given how long and variable the blacklist would be, we whitelist instead
+        colld.IndexingPolicy.ExcludedPaths <- System.Collections.ObjectModel.Collection [|ExcludedPath(Path="/*")|]
+        // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
+        colld.IndexingPolicy.IncludedPaths <- System.Collections.ObjectModel.Collection [| for k in Store.Event.IndexedFields -> IncludedPath(Path=sprintf "/%s/?" k) |]
         let! coll = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, colld, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect
         return coll.Resource.Id }
 
     let createProc (client: IDocumentClient) (collectionUri: Uri) = async {
-        let f ="""function multidocInsert (docs) {
+        let f ="""function multidocInsert(docs) {
             var response = getContext().getResponse();
             var collection = getContext().getCollection();
             var collectionLink = collection.getSelfLink();
             if (!docs) throw new Error("docs argument is missing.");
-            for (i=0; i<docs.length; i++) {
+            for (var i=0; i<docs.length; i++) {
                 collection.createDocument(collectionLink, docs[i]);
             }
             response.setBody(true);
         }"""
-        let def = new StoredProcedure(Id = "AtomicMultiDocInsert", Body = f)
+        let def = new StoredProcedure(Id = Write.sprocName, Body = f)
         return! client.CreateStoredProcedureAsync(collectionUri, def) |> Async.AwaitTaskCorrect |> Async.Ignore }
 
     let initialize (client : IDocumentClient) dbName collName ru = async {
