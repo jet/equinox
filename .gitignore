@@ -1,25 +1,24 @@
 # User-specific files
 
+# Cli logs
+Equinox.Cli.log
+
+# Test results
+*.trx
+
 # Build results
-msbuild.binlog
-msbuild.log
+msbuild.*
 .build/
 [Bb]in/
 [Oo]bj/
 
-# Visual Studio 2015 cache/options directory
+# Visual Studio 2015+ cache/options directory
 .vs/
 
 # ReSharper is a .NET coding add-in
 _ReSharper*/
 *.[Rr]e[Ss]harper
 *.DotSettings.user
-
-# TeamCity is a build add-in
-_TeamCity*
-
-# DotCover is a Code Coverage Tool
-*.dotCover
 
 # NCrunch
 _NCrunch_*

@@ -22,6 +22,7 @@ module Events =
         | ItemRemoved               of ItemRemoveInfo
         | ItemQuantityChanged       of ItemQuantityChangeInfo
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
+        interface TypeShape.UnionContract.IUnionContract
 
 module Folds =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }

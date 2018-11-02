@@ -5,7 +5,7 @@ open Equinox.EventStore
 open System
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-let genCodec<'T> = Equinox.UnionCodec.generateJsonUtf8UnionCodec<'T> serializationSettings
+let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 /// Connect with Gossip based cluster discovery using the default Commercial edition Manager port config
 /// Such a config can be simulated on a single node with zero config via the EventStore OSS package:-

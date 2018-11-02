@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>netcoreapp2.1;net461</TargetFrameworks>
@@ -10,10 +10,10 @@
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <StartArguments>-S -d 1 2 es -f 2</StartArguments>
+    <StartArguments>-S -d 1 es run -f 2</StartArguments>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <StartArguments>-e 3000 -d 10 -i 10 -i 60 -i 300 -f 4000 es -o 3</StartArguments>
+    <StartArguments>es -o 3 run -f 4000 -e 3000 -d 10 -i 10 -i 60 -i 300 </StartArguments>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,7 +28,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
     <ProjectReference Include="..\..\Samples\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\..\Samples\Store\Domain\Domain.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
@@ -42,7 +41,7 @@
     <!--Handle TypeShape-restriction; would otherwise use 3.1.2.5-->
     <PackageReference Include="FSharp.Core" Version="4.0.0.1" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />
-    <PackageReference Include="MathNet.Numerics" Version="4.5.1" />
+    <PackageReference Include="MathNet.Numerics" Version="4.6.0" />
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />

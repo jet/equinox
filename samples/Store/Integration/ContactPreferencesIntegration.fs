@@ -6,14 +6,14 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial= Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
+let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
 
 let createMemoryStore () =
     new VolatileStore()
 let createServiceMem log store =
     Backend.ContactPreferences.Service(log, fun _batchSize _eventTypePredicate -> MemoryStreamBuilder(store, fold, initial).Create)
 
-let codec = genCodec<Domain.ContactPreferences.Events.Event>
+let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithCompactionSemantics gateway =
     fun predicate streamName ->
         GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.Predicate predicate).Create(streamName)
@@ -44,7 +44,7 @@ type Tests(testOutputHelper) =
         let gateway = choose conn defaultBatchSize
         return Backend.ContactPreferences.Service(log, fun _ -> resolveStream gateway defaultBatchSize) }
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
         let! service = arrangeWithoutCompaction connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutCompactionSemantics
         do! act service args
@@ -56,7 +56,7 @@ type Tests(testOutputHelper) =
         let gateway windowSize = choose conn windowSize
         return Backend.ContactPreferences.Service(log, fun windowSize -> resolveStream (gateway windowSize)) }
 
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithCompactionSemantics
         do! act service args

@@ -9,7 +9,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples.Store", "Samples.St
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".project", ".project", "{7E3A7020-AE75-4513-B81A-57FD3E0D0D84}"
 	ProjectSection(SolutionItems) = preProject
-		build.cmd = build.cmd
 		build.proj = build.proj
 		build.ps1 = build.ps1
 		Directory.Build.props = Directory.Build.props
@@ -37,7 +36,7 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.MemoryStore.Integra
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Codec", "src\Equinox.Codec\Equinox.Codec.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Bench", "benchmarks\Equinox.Bench\Equinox.Bench.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cli", "cli\Equinox.Cli\Equinox.Cli.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

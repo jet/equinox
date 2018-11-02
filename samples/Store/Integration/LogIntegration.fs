@@ -1,9 +1,10 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
-open Equinox.EventStore
+open Equinox.Store
 open Swensen.Unquote
 
 module EquinoxEsInterop =
+    open Equinox.EventStore
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed
@@ -74,7 +75,7 @@ type Tests() =
                 && not (obj.ReferenceEquals(capture, null)) @> }
 
     // Protip: Debug this test to view standard metrics rendering
-    [<AutoData>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
         let buffer = ResizeArray<string>()
         let batchSize = defaultBatchSize

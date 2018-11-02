@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <Target Name="Build">
+    <Exec Command="dotnet pack cli/$(Name).Cli $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/$(Name) $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/$(Name).Codec $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/$(Name).EventStore $(Cfg) $(PackOptions)" />
@@ -22,7 +23,7 @@
     <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test tests/$(Name).MemoryStore.Integration $(Cfg) $(TestOptions)" />
     <Exec Condition=" '$(SkipEs)' != 'true' " Command="dotnet test tests/$(Name).EventStore.Integration $(Cfg) $(TestOptions)" />
-	<Exec Condition=" '$(SkipCosmos)' != 'true' " Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
+	  <Exec Condition=" '$(SkipCosmos)' != 'true' " Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
   </Target>
 
 </Project>

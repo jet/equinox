@@ -13,6 +13,7 @@ module Events =
           Compacted                             of Compaction.Compacted
         | Favorited                             of Favorited
         | Unfavorited                           of Unfavorited
+        interface TypeShape.UnionContract.IUnionContract
 
 module Folds =
     type State = Events.Favorited []

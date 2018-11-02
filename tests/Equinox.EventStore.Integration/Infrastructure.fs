@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.EventStore.Integration.Infrastructure
+module Equinox.Integration.Infrastructure
 
 open Domain
 open FsCheck
@@ -16,6 +16,14 @@ type FsCheckGenerators =
 
 type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
+
+    member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
+
+    override __.Skip =
+        match Option.ofObj __.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
+        | Some value when value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase) ->
+            sprintf "Skipped as requested via %s" __.SkipIfRequestedViaEnvironmentVariable
+        | _ -> null
 
 // Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
 // NB VS does not surface these atm, but other test runners / test reports do
