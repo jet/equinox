@@ -1,6 +1,15 @@
 Equinox
 =======
-Equinox is a lightweight set of infrastructure, examples and tests providing a consistent approach to Event-sourced Decision processing in F# against multiple ordered stream stores. Equinox currently supports [Event Store](https://eventstore.org/) and [Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db/) data stores.
+Equinox provides a consistent approach to Event-sourced Decision processing against ordered stream stores.
+
+The current supported (and dynamically swappable at runtime) backends are:
+- [EventStore](https://eventstore.org/) - this codebase itself has been in production since 2017 (commit history reflects usage), with elements dating back to 2016.
+- [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db/) (See [cosmos branch](https://github.com/jet/equinox/tree/cosmos) - will converge with `master` when the time is right).
+- (For integration test purposes only) Volatile in-memory store.
+
+The patterns have their roots in the [DDD-CQRS_ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due.
+
+The implementations are distilled from work on production Jet.com systems dating back to 2014, but are informed by many previous systems, [samples](https://github.com/thinkbeforecoding/FsUno.Prod) and [forks of samples](https://github.com/bartelink/FunDomain).
 
 Features
 --------
@@ -16,7 +25,7 @@ Features
     - compaction events typically do not get deleted (consistent with how EventStore works)
 - (Azure CosmosDb-specific, WIP) Snapshotting support: Command processing can by optimized by employing a snapshot document which maintains a) (optionally) a rendition of the folded state b) (optionally) batches of events to fold into the state in a
 	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- when coupled with ther cache, a typical read is a point read with an etag, costing 1 RU
+	- when coupled with the cache, a typical read is a point read with an etag, costing 1 RU
 	- A snapshot isa Document, but not an Event
 	- snapshot events can safely be deleted; they'll get regenerated in the course of normal processing
 	- A given snapshot will typically only contain a single version of the snapshot
@@ -25,7 +34,7 @@ Features
 
 Elements
 --------
-Elements are delivered as multitargeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
+Elements are delivered as multi-targeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
 - `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic Decision flow runner that manages the optimistic concurrency protocol
 - `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): [a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/):
@@ -41,22 +50,35 @@ CONTRIBUTING
 ------------
 Please raise GitHub issues for any questions so others can benefit from the discussion.
 
+The aim in the medium term (and the hope from the inception of this work) is to run Equinox as a proper Open Source project at the point where there is enough time for maintainers to do that properly.
+
+We are getting very close to that point and are extremely excited by that. But we're not there yet; this is intentionally a soft launch.
+
+For now, the core focus of work here will be on converging the `cosmos` branch, which will bring changes, clarifications, simplifications and features, which all need to be integrated into the production systems built on it, before we can consider broader based additive changes and/or significantly increasing the API surface area.
+
+For these reasons, the barrier for contributions will unfortunately be extremely high in the short term:
+- bugfixes with good test coverage are always welcome - PRs yield MyGet-hosted NuGets and in general we'll seek to move them to NuGet prerelease and then NuGet release packages with relatively short timelines.
+- minor improvements / tweaks, subject to discussing in a GitHub issue first to see if it fits, but no promises at this time, even if the ideas are fantastic and necessary :sob:
+- tests, examples and scenarios are always welcome; Equinox is intended to address a very broad base of usage patterns; Please note that the emphasis will always be (in order) 1) providing advice on how to achieve your aims without changing Equinox 2) how to open up an appropriate extension point in Equinox 3) (when all else fails), add to the complexity of the system by adding API surface area or logic.
+- we will likely punt on non-IO perf improvements until such point as Cosmos support is converged into `master`
+- Naming is hard; there is definitely room for improvement. There likely will be a set of controlled deprecations, switching to names, and then removing the old ones. However, PRs other than for discussion purposes probably don't make sense right now.
+
 BUILDING
 --------
 
 ## build and run
 
-Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and collection prepared (see #PROVISIONING):
+Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and collection prepared (see Provisioning):
 
 	./build.ps1
 
 ## build, skipping tests that require a Store instance
 
-	./build.ps1 -se
+	./build -s
 
 ## build, skipping all tests
 
- 	./build -a "/t:build"
+	./build -s -a "/t:build"
 
 ## Run EventStore benchmark (when provisioned)
 
@@ -64,7 +86,6 @@ Run, including running the tests that assume you've got a local EventStore and p
 & .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
 & dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll es run
 ```
-
 PROVISIONING
 ------------
 
