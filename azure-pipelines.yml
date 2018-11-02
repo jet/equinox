@@ -14,7 +14,7 @@ jobs:
       $versionSuffix = if ($isTag) { "" } else { if ($isPR) { $versionSuffixPR } else { $versionSuffixBRANCH } };
       Write-Host "##vso[task.setvariable variable=VersionSuffix]$versionSuffix";
     displayName: compute VersionSuffix
-  - script: dotnet msbuild build.proj /p:SkipES=true
+  - script: dotnet msbuild build.proj /p:SkipES=true /p:SkipCosmos=true
     displayName: Test + Build
     env:
       VersionSuffix: '$(VersionSuffix)'
