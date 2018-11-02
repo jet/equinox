@@ -24,8 +24,7 @@ let ``VerbatimUtf8JsonConverter serializes properly`` () =
     let unionEncoder = Equinox.UnionCodec.JsonUtf8.Create<_>(JsonSerializerSettings())
     let encoded = unionEncoder.Encode(A { embed = "\"" })
     let e : Store.Event =
-        {   id = 0L
-            p = "streamName"
+        {   p = "streamName"; id = string 0; i = 0L
             c = DateTimeOffset.MinValue
             t = encoded.caseName
             d = encoded.payload

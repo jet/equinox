@@ -3,8 +3,11 @@ param(
 	[Alias("s")][switch][bool] $skipStores=$false,
 	[Alias("se")][switch][bool] $skipEs=$skipStores,
 	[Alias("sc")][switch][bool] $skipCosmos=$skipStores,
-	[Alias("scp")][switch][bool] $skipProvisionCosmos=$false,
-	[Alias("scd")][switch][bool] $skipDeprovisionCosmos=$false,
+	[Alias("cs")][string] $cosmosServer=$env:EQUINOX_COSMOS_CONNECTION,
+	[Alias("cd")][string] $cosmosDatabase=$env:EQUINOX_COSMOS_DATABASE,
+	[Alias("cc")][string] $cosmosCollection=$env:EQUINOX_COSMOS_COLLECTION,
+	[Alias("scp")][switch][bool] $skipProvisionCosmos=$skipCosmos -or -not $cosmosServer -or -not $cosmosDatabase -or -not $cosmosCollection,
+	[Alias("scd")][switch][bool] $skipDeprovisionCosmos=$skipProvisionCosmos,
 	[string] $additionalMsBuildArgs
 )
 
@@ -16,18 +19,23 @@ function warn ($msg) { Write-Host "$msg" -BackgroundColor DarkGreen }
 $env:EQUINOX_INTEGRATION_SKIP_EVENTSTORE=[string]$skipEs
 if ($skipEs) { warn "Skipping EventStore tests" }
 
+function cliCosmos($arghs) {
+	Write-Host "dotnet run cli/Equinox.Cli cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosCollection $arghs"
+	dotnet run cli/Equinox.Cli cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosCollection @arghs
+}
+
 if ($skipCosmos) {
-    warn "Skipping Cosmos tests" as requested
-} elseif ($skipProvisionCosmos -or -not $env:EQUINOX_COSMOS_CONNECTION -or -not $env:EQUINOX_COSMOS_COLLECTION) {
-    warn "Skipping Provisioning Cosmos"
+	warn "Skipping Cosmos tests as requested"
+} elseif ($skipProvisionCosmos) {
+	warn "Skipping Provisioning Cosmos"
 } else {
     warn "Provisioning cosmos..."
-    $collection=[guid]::NewGuid()
-    dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+    dotnet run cli/Equinox.Cli cosmos $cosmosServer -d $cosmosDatabase -c $cosmosCollection provision -ru 10000
+	$deprovisionCosmos=$true
 }
 $env:EQUINOX_INTEGRATION_SKIP_COSMOS=[string]$skipCosmos
 
-Write-Host "dotnet msbuild $args"
+warn "RUNNING: dotnet msbuild $args"
 . dotnet msbuild build.proj @args
 
 if( $LASTEXITCODE -ne 0) {
@@ -35,7 +43,7 @@ if( $LASTEXITCODE -ne 0) {
 	exit $LASTEXITCODE
 }
 
-if (-not $skipCosmos -and -not $skipDeprovisionCosmos) {
-    warn "Deprovisioning Cosmos"
-    dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 0
+if (-not $skipDeprovisionCosmos) {
+	warn "Deprovisioning Cosmos"
+	throw "Deprovisioning step not implemented yet - please deallocate your resources using the Azure Portal"
 }
