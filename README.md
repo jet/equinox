@@ -1,19 +1,19 @@
-Equinox
-=======
+# Equinox
+
 Equinox provides a consistent approach to Event-sourced Decision processing against ordered stream stores.
 
-The current supported (and dynamically swappable at runtime) backends are:
+The patterns have their roots in the [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due.
+
+Current supported backends are:
 - [EventStore](https://eventstore.org/) - this codebase itself has been in production since 2017 (commit history reflects usage), with elements dating back to 2016.
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db/) (See [cosmos branch](https://github.com/jet/equinox/tree/cosmos) - will converge with `master` when the time is right).
 - (For integration test purposes only) Volatile in-memory store.
 
-The patterns have their roots in the [DDD-CQRS_ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due.
+While the implementations are distilled from code from `Jet.com` systems dating all the way back to 2014, the abstractions in the API design are informed significantly by work, discussions and documentation and countless hours invested with no expectation of any reward from many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain) and the outstanding continuous work of the :raised_hands: [EventStore](https://github.com/eventstore) founders, team and community over the years.
 
-The implementations are distilled from work on production Jet.com systems dating back to 2014, but are informed by many previous systems, [samples](https://github.com/thinkbeforecoding/FsUno.Prod) and [forks of samples](https://github.com/bartelink/FunDomain).
+# Features
 
-Features
---------
-- Equinox is designed to be non-invasive to application code; Domain tests can be written directly against the models without any need to use Equinox assemblies as part of writing those tests.
+- Designed to be non-invasive to application code; Domain tests can be written directly against the models without any need to use Equinox assemblies or constructs as part of writing those tests.
 - Encoding of events via `Equinox.UnionCodec` provides for pluggable encoding events based on either:
     - Providing an explicitly coded pair of `encode` and `tryDecode` functions
     - Using a [versionable convention-based approach (using `Typeshape`'s `UnionContractEncoder` under the covers)](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/), providing for serializer-agnostic schema evolution with minimal boilerplate
@@ -32,9 +32,9 @@ Features
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and per Storage system.
 
-Elements
---------
-Elements are delivered as multi-targeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
+# Elements
+
+The Equinox components within this repository are delivered as a series of multi-targeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
 - `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic Decision flow runner that manages the optimistic concurrency protocol
 - `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): [a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/):
@@ -46,8 +46,8 @@ Elements are delivered as multi-targeted Nuget packages targeting `net461` (F# 3
 - `Samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
 - `Equinox.Cli` (in this repo): General purpose tool incorporating a scenario runner that facilitates running representative load tests composed of transactions in `Samples/Store` against each backend store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
 
-CONTRIBUTING
-------------
+# CONTRIBUTING
+
 Please raise GitHub issues for any questions so others can benefit from the discussion.
 
 The aim in the medium term (and the hope from the inception of this work) is to run Equinox as a proper Open Source project at the point where there is enough time for maintainers to do that properly.
@@ -63,12 +63,11 @@ For these reasons, the barrier for contributions will unfortunately be extremely
 - we will likely punt on non-IO perf improvements until such point as Cosmos support is converged into `master`
 - Naming is hard; there is definitely room for improvement. There likely will be a set of controlled deprecations, switching to names, and then removing the old ones. However, PRs other than for discussion purposes probably don't make sense right now.
 
-BUILDING
---------
+# BUILDING
 
 ## build and run
 
-Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and collection prepared (see Provisioning):
+Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and collection prepared (see PROVISIONING):
 
 	./build.ps1
 
@@ -80,18 +79,21 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 	./build -s -a "/t:build"
 
-## Run EventStore benchmark (when provisioned)
+## Run EventStore benchmarks (when provisioned)
+
+Add `--help` to the CLI commandline to discover a plethora of runner options ;)
+
 
 ```
 & .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
 & dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll es run
 ```
-PROVISIONING
-------------
 
-## PROVISIONING EVENTSTORE (when not using -se)
+# PROVISIONING
 
-For EventStore, run a local instance with config as follows:-
+## Provisioning EventStore (when not using -s or -se)
+
+For EventStore, the tests assume a running local instance configured as follows to replicate as much as possible the external appearance of a Production EventStore Commercial cluster :-
 
 ```
 # requires admin privilege
@@ -100,9 +102,11 @@ cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package
 & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 ```
 
-## DEPROVISIONING (AKA NUKING) EVENTSTORE DATA
+## Deprovisioning (aka nuking) EventStore data resulting from tests to reset baseline
+
+While EventStore rarely shows any negative effects from repeated load test runs, it can be useful for various reasons to drop all the data generated by the load tests by casting it to the winds:-
 
 ```
 # requires admin privilege
-del C:\ProgramData\chocolatey\lib\eventstore-oss\tools\data
+rm $env:ProgramData\chocolatey\lib\eventstore-oss\tools\data
 ```
