@@ -74,7 +74,7 @@ module EventStore =
                 heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
                 log=(if log.IsEnabled(LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
-            .Establish("Equinox-loadtests", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
+            .Establish("equinox-cli", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
     let createGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -189,7 +189,7 @@ let main argv =
             match sargs.TryGetSubCommand() with
             | Some (EsArguments.Run targs) -> runTest log store targs
             | _ -> failwith "run is required"
-        | _ -> failwith "Storage argument is required"
+        | _ -> failwith "ERROR: please specify mem or es Store"
     with e ->
         printfn "%s" e.Message
         1
