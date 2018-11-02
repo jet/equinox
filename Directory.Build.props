@@ -9,9 +9,6 @@
     <PackageLicenseUrl>https://github.com/jet/equinox/blob/master/LICENSE</PackageLicenseUrl>
     <Copyright>Copyright © 2016-8</Copyright>
 
-    <RepoRootDir>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</RepoRootDir>
-    <NupkgsDir>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)/bin/nupkg"))</NupkgsDir>
-
     <!-- SourceLink related properties https://github.com/dotnet/SourceLink#using-sourcelink -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
