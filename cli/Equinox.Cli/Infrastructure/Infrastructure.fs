@@ -74,7 +74,6 @@ type Async with
             |> ignore)
 
     static member map (f:'a -> 'b) (a:Async<'a>) : Async<'b> = async.Bind(a, f >> async.Return)
-    static member inline bind (f:'a -> Async<'b>) (a:Async<'a>) : Async<'b> = async.Bind(a, f)
     static member choose a b = async {
         let! result = Async.Choice [|Async.map Some a ; Async.map Some b |]
         return Option.get result
