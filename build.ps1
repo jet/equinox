@@ -1,6 +1,7 @@
 param(
 	[string] $verbosity="m",
-	[Alias("se")][switch][bool] $skipEs=$false,
+	[Alias("s")][switch][bool] $skipStores=$false,
+	[Alias("se")][switch][bool] $skipEs=$skipStores,
 	[string] $additionalMsBuildArgs
 )
 
@@ -10,10 +11,10 @@ function warn ($msg) { Write-Host "$msg" -BackgroundColor DarkGreen }
 
 # Yes, this leaves the value set on exit, but I want to keep the script legible
 if ($skipEs) { warn "Skipping EventStore tests" }
-
 $env:EQUINOX_INTEGRATION_SKIP_EVENTSTORE=[string]$skipEs
 
-Write-Host "dotnet msbuild $args"
+
+warn "RUNNING: dotnet msbuild $args"
 . dotnet msbuild build.proj @args
 
 if( $LASTEXITCODE -ne 0) {
