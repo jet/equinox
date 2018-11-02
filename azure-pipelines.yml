@@ -14,7 +14,7 @@ jobs:
       $versionSuffix = if ($isTag) { "" } else { if ($isPR) { $versionSuffixPR } else { $versionSuffixBRANCH } };
       Write-Host "##vso[task.setvariable variable=VersionSuffix]$versionSuffix";
     displayName: compute VersionSuffix
-  - script: dotnet msbuild build.proj /p:SkipES=true /p:SkipCosmos=true
+  - script: dotnet msbuild build.proj /p:SkipIntegration=true
     displayName: Test + Build
     env:
       VersionSuffix: '$(VersionSuffix)'
@@ -41,7 +41,7 @@ jobs:
   steps:
   - script: echo "##vso[task.setvariable variable=FrameworkPathOverride]$(dirname $(which mono))/../lib/mono/4.5/"
     displayName: Workaround .NET reference assemblies on linux
-  - script: dotnet msbuild build.proj
+  - script: dotnet msbuild build.proj /p:SkipIntegration=true
     displayName: Test + Build
   - task: PublishTestResults@2
     inputs:
@@ -54,7 +54,7 @@ jobs:
   steps:
   - script: echo "##vso[task.setvariable variable=FrameworkPathOverride]$(dirname $(which mono))/../lib/mono/4.5/"
     displayName: Workaround .NET reference assemblies on linux
-  - script: dotnet msbuild build.proj
+  - script: dotnet msbuild build.proj /p:SkipIntegration=true
     displayName: Test + Build
   - task: PublishTestResults@2
     inputs:
