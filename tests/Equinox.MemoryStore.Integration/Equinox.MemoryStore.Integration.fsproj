@@ -11,6 +11,13 @@
     <Compile Include="Infrastructure.fs" />
     <Compile Include="MemoryStoreIntegration.fs" />
   </ItemGroup>
+   
+  <ItemGroup>
+    <!-- Workaround for https://github.com/xunit/xunit/issues/1357 -->
+    <Content Include="xunit.runner.json" Condition=" '$(OS)' != 'Windows_NT' ">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>   
 
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.12.1" />
@@ -25,8 +32,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Samples\Store\Domain\Domain.fsproj" />
-    <ProjectReference Include="..\..\Samples\Store\Backend\Backend.fsproj" />
+    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
+    <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>

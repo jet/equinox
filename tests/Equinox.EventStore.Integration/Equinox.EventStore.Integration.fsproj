@@ -25,8 +25,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Samples\Store\Backend\Backend.fsproj" />
-    <ProjectReference Include="..\..\Samples\Store\Domain\Domain.fsproj" />
+    <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
+    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
     <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />

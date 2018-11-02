@@ -43,8 +43,8 @@ The Equinox components within this repository are delivered as a series of multi
 - `Equinox.Cosmos` (Nuget: `Equinox.Cosmos`, depends on `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`, ): Production-strength Azure CosmosDb Adapter with integrated transactional snapshotting facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
 - `Equinox.EventStore` (Nuget: `Equinox.EventStore`, depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`): Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
 - `Equinox.MemoryStore` (Nuget: `Equinox.MemoryStore`): In-memory store for integration testing/performance baselining
-- `Samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
-- `Equinox.Cli` (in this repo): General purpose tool incorporating a scenario runner that facilitates running representative load tests composed of transactions in `Samples/Store` against each backend store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
+- `samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
+- `Equinox.Cli` (in this repo): General purpose tool incorporating a scenario runner that facilitates running representative load tests composed of transactions in `samples/Store` against each backend store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
 
 # CONTRIBUTING
 
