@@ -13,6 +13,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
+    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.12.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
@@ -22,13 +29,6 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
-    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
     <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />
   </ItemGroup>
 

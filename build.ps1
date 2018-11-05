@@ -10,9 +10,8 @@ $args=@("/v:$verbosity","/fl","/bl",$additionalMsBuildArgs)
 function warn ($msg) { Write-Host "$msg" -BackgroundColor DarkGreen }
 
 # Yes, this leaves the value set on exit, but I want to keep the script legible
-if ($skipEs) { warn "Skipping EventStore tests" }
 $env:EQUINOX_INTEGRATION_SKIP_EVENTSTORE=[string]$skipEs
-
+if ($skipEs) { warn "Skipping EventStore tests" }
 
 warn "RUNNING: dotnet msbuild $args"
 . dotnet msbuild build.proj @args

@@ -4,6 +4,17 @@ jobs:
   pool:
     vmImage: 'vs2017-win2016'
   steps:
+  - script: dotnet test build.proj
+    displayName: dotnet test build.proj
+    env:
+      EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
+      EQUINOX_INTEGRATION_SKIP_COSMOS: true
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: 'VSTest'
+      testResultsFiles: 'tests/**/*.trx'
+    condition: succeededOrFailed()
+
   - powershell: |
       $buildId = $env:BUILD_BUILDNUMBER.PadLeft(7, '0');
       $versionSuffixPR = "ci-$buildId-pr$($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER)";
@@ -14,15 +25,10 @@ jobs:
       $versionSuffix = if ($isTag) { "" } else { if ($isPR) { $versionSuffixPR } else { $versionSuffixBRANCH } };
       Write-Host "##vso[task.setvariable variable=VersionSuffix]$versionSuffix";
     displayName: compute VersionSuffix
-  - script: dotnet msbuild build.proj /p:SkipIntegration=true
-    displayName: Test + Build
+  - script: dotnet pack build.proj
+    displayName: dotnet pack build.proj
     env:
       VersionSuffix: '$(VersionSuffix)'
-  - task: PublishTestResults@2
-    inputs:
-      testResultsFormat: 'VSTest'
-      testResultsFiles: 'tests/**/*.trx'
-    condition: succeededOrFailed()
   - task: PublishBuildArtifacts@1
     inputs:
       pathtoPublish: 'bin'
@@ -35,29 +41,41 @@ jobs:
       versioningScheme: byEnvVar
       versionEnvVar: Version
       packagesToPush: 'bin/*.nupkg;bin/*.symbols.nupkg'
+
 - job: Linux
   pool:
     vmImage: 'ubuntu-16.04'
   steps:
   - script: echo "##vso[task.setvariable variable=FrameworkPathOverride]$(dirname $(which mono))/../lib/mono/4.5/"
     displayName: Workaround .NET reference assemblies on linux
-  - script: dotnet msbuild build.proj /p:SkipIntegration=true
-    displayName: Test + Build
+  - script: dotnet test build.proj
+    displayName: dotnet test build.proj
+    env:
+      EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
+      EQUINOX_INTEGRATION_SKIP_COSMOS: true
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
       testResultsFiles: 'tests/**/*.trx'
     condition: succeededOrFailed()
+  - script: dotnet pack build.proj
+    displayName: dotnet pack build.proj
+
 - job: MacOS
   pool:
     vmImage: 'macOS-10.13'
   steps:
   - script: echo "##vso[task.setvariable variable=FrameworkPathOverride]$(dirname $(which mono))/../lib/mono/4.5/"
     displayName: Workaround .NET reference assemblies on linux
-  - script: dotnet msbuild build.proj /p:SkipIntegration=true
-    displayName: Test + Build
+  - script: dotnet test build.proj
+    displayName: dotnet test build.proj
+    env:
+      EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
+      EQUINOX_INTEGRATION_SKIP_COSMOS: true
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
       testResultsFiles: 'tests/**/*.trx'
     condition: succeededOrFailed()
+  - script: dotnet pack build.proj
+    displayName: dotnet pack build.proj

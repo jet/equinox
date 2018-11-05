@@ -12,12 +12,9 @@
     <Compile Include="ContactPreferencesTests.fs" />
     <Compile Include="FavoritesTests.fs" />
   </ItemGroup>
-  
+
   <ItemGroup>
-    <!-- Workaround for https://github.com/xunit/xunit/issues/1357 -->
-    <Content Include="xunit.runner.json" Condition=" '$(OS)' != 'Windows_NT' ">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <ProjectReference Include="..\Domain\Domain.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,10 +26,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
     <PackageReference Include="unquote" Version="4.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Domain\Domain.fsproj" />
   </ItemGroup>
 
 </Project>

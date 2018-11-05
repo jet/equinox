@@ -1,0 +1,6 @@
+<Project ToolsVersion="15.0">
+  <!--Workaround for https://github.com/Microsoft/vstest/issues/1129 from https://dasmulli.blog/2018/01/20/make-dotnet-test-work-on-solution-files/-->
+  <Target Name="VSTest">
+    <MSBuild Projects="@(ProjectReference)" Targets="VSTestIfTestProject"/>
+  </Target>
+</Project>

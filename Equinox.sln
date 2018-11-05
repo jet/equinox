@@ -9,14 +9,17 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples.Store", "Samples.St
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".project", ".project", "{7E3A7020-AE75-4513-B81A-57FD3E0D0D84}"
 	ProjectSection(SolutionItems) = preProject
+		after.Equinox.sln.targets = after.Equinox.sln.targets
 		azure-pipelines.yml = azure-pipelines.yml
 		build.proj = build.proj
 		build.ps1 = build.ps1
 		Directory.Build.props = Directory.Build.props
+		Directory.Build.targets = Directory.Build.targets
 		global.json = global.json
 		LICENSE = LICENSE
 		README.md = README.md
 		SECURITY.md = SECURITY.md
+		tests\xunit.runner.json = tests\xunit.runner.json
 	EndProjectSection
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Domain", "samples\Store\Domain\Domain.fsproj", "{37B4A45F-039E-4515-8A84-D242DDE12D22}"
