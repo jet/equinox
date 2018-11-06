@@ -15,6 +15,8 @@ let mkRemove skuId              = ItemRemoved { empty<ItemRemoveInfo> with skuId
 let mkChangeWaived skuId value  = ItemWaiveReturnsChanged { empty<ItemWaiveReturnsInfo> with skuId = skuId; waived = value }
 
 /// As a basic sanity check, verify the basic properties we'd expect per command if we were to run it on an empty stream
+// Note validating basics like this is not normally that useful a property; in this instance (I think) it takes some
+//   cases/logic out of the main property and is hence worth doing for this aggregate
 let verifyCanProcessInInitialState cmd (originState: State) =
     let events = interpret cmd originState
     match cmd with
