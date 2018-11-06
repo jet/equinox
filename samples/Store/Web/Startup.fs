@@ -11,7 +11,7 @@ open System
 type Store() =
     member __.GetStream() = failwith "TODO"
 
-type Startup private () =
+type Startup(configuration: IConfiguration) =
     let configureMvc (s : IServiceCollection) =
         s.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1) |> ignore
     let configureApp (services : IServiceCollection) =
@@ -20,12 +20,6 @@ type Startup private () =
         services.AddSingleton<Store>() |> ignore
 
         regF <| fun sp -> Backend.Favorites.Service(sp.GetService<ILogger>(), sp.GetService<Store>().GetStream())
-
-    new (configuration: IConfiguration) = // as this =
-        Startup() // then
-        //this.Configuration <- configuration
-
-
 
     //member val Configuration : IConfiguration = null with get, set
 
