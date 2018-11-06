@@ -1,8 +1,8 @@
 ﻿namespace Web.Controllers
 
-open Microsoft.AspNetCore.Mvc
 open Domain
-open Web
+open Microsoft.AspNetCore.Mvc
+open System
 
 [<Route("api/[controller]")>]
 [<ApiController>]
@@ -15,19 +15,13 @@ type FavoritesController(service : Backend.Favorites.Service) =
         return ActionResult<_> res
     }
 
-    //[<HttpGet("{id}")>]
-    //member this.Get(id:int) =
-    //    let value = "value"
-    //    ActionResult<string>(value)
+    [<HttpPost("{clientId}")>]
+    member __.Favorite(clientId : ClientId, [<FromBody>]skuIds : SkuId[], ct) = ctask ct {
+        let effectiveDate = DateTimeOffset.UtcNow
+        return! service.Execute clientId <| Favorites.Command.Favorite(effectiveDate, List.ofArray skuIds)
+    }
 
-    //[<HttpPost>]
-    //member this.Post([<FromBody>] value:string) =
-    //    ()
-
-    //[<HttpPut("{id}")>]
-    //member this.Put(id:int, [<FromBody>] value:string ) =
-    //    ()
-
-    //[<HttpDelete("{id}")>]
-    //member this.Delete(id:int) =
-    //    ()
+    [<HttpDelete("{clientId}/{skuId}")>]
+    member __.Unfavorite(clientId : ClientId, skuId : SkuId, ct) = ctask ct {
+        return! service.Execute clientId <| Favorites.Command.Unfavorite skuId
+    }
