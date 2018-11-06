@@ -8,6 +8,9 @@
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
+
+    <!-- workaround for not being able to make Backend and Domain as inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,8 +27,9 @@
     <ProjectReference Include="..\..\src\Equinox.Codec\Equinox.Codec.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
-    <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
-    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
+    <!-- workaround for not being able to make Backend and Domain as inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
+    <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
   </ItemGroup>
 
@@ -41,18 +45,12 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
     <PackageReference Include="System.Reactive" Version="4.0.0" />
-    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
   </ItemGroup>
 
   <!-- workaround for not being able to make Backend and Domain as inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
-  <PropertyGroup>
-    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeNonPackagedDlls</TargetsForTfmSpecificBuildOutput>
-  </PropertyGroup>
-  <Target Name="IncludeNonPackagedDlls">
+  <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>
-      <BuildOutputInPackage Include="$(MSBuildProjectDirectory)/$(OutputPath)Backend.dll" />
-      <BuildOutputInPackage Include="$(MSBuildProjectDirectory)/$(OutputPath)Domain.dll" />
-      <BuildOutputInPackage Include="$(MSBuildProjectDirectory)/$(OutputPath)Equinox.MemoryStore.dll" />
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
     </ItemGroup>
   </Target>
 
