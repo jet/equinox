@@ -46,7 +46,7 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cosmos", "src\Equin
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cosmos.Integration", "tests\Equinox.Cosmos.Integration\Equinox.Cosmos.Integration.fsproj", "{DE0FEBF0-72DC-4D4A-BBA7-788D875D6B4B}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Web", "samples\Store\WebApplication1\Web.fsproj", "{1B0D4568-96FD-4083-8520-CD537C0B2FF0}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Web", "samples\Store\Web\Web.fsproj", "{1B0D4568-96FD-4083-8520-CD537C0B2FF0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
