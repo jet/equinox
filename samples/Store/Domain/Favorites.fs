@@ -37,9 +37,9 @@ module Folds =
         let s = InternalState state
         for e in events do evolve s e
         s.AsState()
+    let compact = Events.Compaction.EventType, fun state -> Events.Compacted { net = state }
 
 type Command =
-    | Compact
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
     | Unfavorite    of skuId : SkuId
 
@@ -47,8 +47,6 @@ module Commands =
     let interpret command (state : Folds.State) =
         let doesntHave skuId = state |> Array.exists (fun x -> x.skuId = skuId) |> not
         match command with
-        | Compact ->
-            [ Events.Compacted { net = state } ]
         | Favorite (date = date; skuIds = skuIds) ->
             [ for skuId in Seq.distinct skuIds do
                 if doesntHave skuId then
@@ -61,9 +59,6 @@ type Handler(log, stream, ?maxAttempts) =
     let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = defaultArg maxAttempts 2)
     member __.Execute command : Async<unit> =
         inner.Decide <| fun ctx ->
-            let execute = Commands.interpret >> ctx.Execute
-            execute command
-            if ctx.IsCompactionDue then
-                execute Command.Compact
+            ctx.Execute (Commands.interpret command)
     member __.Read : Async<Folds.State> =
         inner.Query id

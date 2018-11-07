@@ -27,7 +27,6 @@ module Events =
 module Folds =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }
     type State =                    { items: ItemInfo list }
-    [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
     module State =
         let toSnapshot (s: State) : Events.Compaction.State =
             { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
@@ -43,10 +42,9 @@ module Folds =
         | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
     let fold state = Seq.fold evolve state
-
+    let compact = Events.Compaction.EventType, fun state -> Events.Compacted (State.toSnapshot state)
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
-    | Compact
     | AddItem               of Context * SkuId * quantity: int
     | PatchItem             of Context * SkuId * quantity: int option * waived: bool option
     | RemoveItem            of Context * SkuId
@@ -61,8 +59,6 @@ module Commands =
         let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
         let (|Context|) (context : Context)                 = toEventContext context
         match command with
-        | Compact ->
-            [ Events.Compacted (Folds.State.toSnapshot state)]
         | AddItem (Context c, skuId, quantity) ->
             if itemExistsWithSameQuantity skuId quantity then [] else
             [ Events.ItemAdded { context = c; skuId = skuId; quantity = quantity } ]
@@ -88,10 +84,7 @@ type Handler(log, stream) =
         inner.DecideAsync <| fun ctx -> async {
             let execute = Commands.interpret >> ctx.Execute
             match prepare with None -> () | Some prep -> do! prep
-            let result = flow ctx execute
-            if ctx.IsCompactionDue then
-                execute Compact
-            return result }
+            return flow ctx execute }
     member __.Execute command =
         __.FlowAsync(fun _ctx execute -> execute command)
     member __.Read : Async<Folds.State> =

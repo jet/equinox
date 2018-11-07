@@ -13,22 +13,18 @@ let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferen
 let createMemoryStore () =
     new VolatileStore()
 let createServiceMem log store =
-    Backend.ContactPreferences.Service(log, fun _batchSize _eventTypePredicate -> MemoryStreamBuilder(store, fold, initial).Create)
+    Backend.ContactPreferences.Service(log, MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithCompactionSemantics gateway =
-    fun predicate streamName ->
-        GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.Predicate predicate).Create(streamName)
-let resolveStreamGesWithoutCompactionSemantics gateway _ignoreWindowSize =
-    fun _ignoreCompactionPredicate streamName ->
-        GesStreamBuilder(gateway, codec, fold, initial).Create(streamName)
+    GesStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create
+let resolveStreamGesWithoutCompactionSemantics gateway =
+    GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create
 
-let resolveStreamEqxWithCompactionSemantics gateway =
-    fun predicate (StreamArgs args) ->
-        EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.Predicate predicate).Create(args)
-let resolveStreamEqxWithoutCompactionSemantics gateway =
-    fun _ignoreWindowSize _ignoreCompactionPredicate (StreamArgs args) ->
-        EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
+let resolveStreamEqxWithCompactionSemantics gateway (StreamArgs args) =
+    EqxStreamBuilder(gateway 1, codec, fold, initial, Equinox.Cosmos.AccessStrategy.EventsAreState).Create(args)
+let resolveStreamEqxWithoutCompactionSemantics gateway (StreamArgs args) =
+    EqxStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(args)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -47,23 +43,17 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeWithoutCompaction connect choose resolveStream = async {
-        let log = createLog ()
-        let! conn = connect log
-        let gateway = choose conn defaultBatchSize
-        return Backend.ContactPreferences.Service(log, fun _ -> resolveStream gateway defaultBatchSize) }
-
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeWithoutCompaction connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutCompactionSemantics
-        do! act service args
-    }
-
     let arrange connect choose resolveStream = async {
         let log = createLog ()
         let! conn = connect log
-        let gateway windowSize = choose conn windowSize
-        return Backend.ContactPreferences.Service(log, fun windowSize -> resolveStream (gateway windowSize)) }
+        let gateway = choose conn
+        return Backend.ContactPreferences.Service(log, resolveStream gateway) }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutCompactionSemantics
+        do! act service args
+    }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
@@ -73,7 +63,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeWithoutCompaction connectToSpecifiedCosmosOrSimulator createEqxGateway resolveStreamEqxWithoutCompactionSemantics
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxGateway resolveStreamEqxWithoutCompactionSemantics
         do! act service args
     }
 

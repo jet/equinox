@@ -19,18 +19,22 @@ While the implementations are distilled from code from [`Jet.com` systems dating
     - Using a [versionable convention-based approach (using `Typeshape`'s `UnionContractEncoder` under the covers)](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/), providing for serializer-agnostic schema evolution with minimal boilerplate
 - Independent of the store used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
 - Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
-- EventStore-optimized Compaction support: Command processing can by optimized by employing in-stream 'compaction' events in service of the following ends:
-    - no additional roundtrips to the store needed at either the Load or Sync points in the flow
-    - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
-    - compaction events typically do not get deleted (consistent with how EventStore works)
-- (Azure CosmosDb-specific, WIP) Snapshotting support: Command processing can by optimized by employing a snapshot document which maintains a) (optionally) a rendition of the folded state b) (optionally) batches of events to fold into the state in a
-	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- when coupled with the cache, a typical read is a point read with an etag, costing 1 RU
-	- A snapshot isa Document, but not an Event
-	- snapshot events can safely be deleted; they'll get regenerated in the course of normal processing
-	- A given snapshot will typically only contain a single version of the snapshot
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and per Storage system.
+- **`Equinox.EventStore` Transactionally-consistent Rolling Snapshots**: Command processing can be optimized by employing in-stream 'compaction' events in service of the following ends:
+    - no additional roundtrips to the store needed at either the Load or Sync points in the flow
+    - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing compaction schemas in a given stream (A snapshot isa Event) 
+    - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
+    - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
+- **Azure CosmosDb Indexed mode**: Using `Equinox.Cosmos`, command processing can be optimized through an index document in the same partition as the event documents that maintains:
+  a) compacted rendition(s) of the folded state
+  b) (optionally) events since those snapshots have last been updated
+  
+  This yields many of the benefits of rolling snapshots while reducing latency, RU provisioning requirement, and Request Charges:-
+	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
+	- when coupled with the cache, a typical read is a point read with an etag, costing 1 RU
+	- The index isa DocDb Document, but _not_ an Event
+	- The index can safely be deleted at any time; it'll get regenerated in the course of normal processing
 
 # Elements
 
@@ -100,7 +104,7 @@ $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
 cli/Equinox.cli/bin/Release/net461/Equinox.Cli `
   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
   run
-dotnet .\benchmarks\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll `
+dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll `
   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
   run
 ```

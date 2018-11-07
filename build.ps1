@@ -8,7 +8,7 @@ param(
 	[Alias("cc")][string] $cosmosCollection=$env:EQUINOX_COSMOS_COLLECTION,
 	[Alias("scp")][switch][bool] $skipProvisionCosmos=$skipCosmos -or -not $cosmosServer -or -not $cosmosDatabase -or -not $cosmosCollection,
 	[Alias("scd")][switch][bool] $skipDeprovisionCosmos=$skipProvisionCosmos,
-	[string] $additionalMsBuildArgs
+	[string] $additionalMsBuildArgs="-t:Build"
 )
 
 $args=@("/v:$verbosity","/fl","/bl",$additionalMsBuildArgs)
@@ -20,8 +20,8 @@ $env:EQUINOX_INTEGRATION_SKIP_EVENTSTORE=[string]$skipEs
 if ($skipEs) { warn "Skipping EventStore tests" }
 
 function cliCosmos($arghs) {
-	Write-Host "dotnet run cli/Equinox.Cli cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosCollection $arghs"
-	dotnet run cli/Equinox.Cli cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosCollection @arghs
+	Write-Host "dotnet run cli/Equinox.Cli cosmos -s <REDACTED> -d $cosmosDatabase -c $cosmosCollection $arghs"
+	dotnet run -p cli/Equinox.Cli -f netcoreapp2.1 cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosCollection @arghs
 }
 
 if ($skipCosmos) {
@@ -30,7 +30,7 @@ if ($skipCosmos) {
 	warn "Skipping Provisioning Cosmos"
 } else {
     warn "Provisioning cosmos..."
-    dotnet run cli/Equinox.Cli cosmos $cosmosServer -d $cosmosDatabase -c $cosmosCollection provision -ru 10000
+    cliCosmos @("provision", "-ru", "1000")
 	$deprovisionCosmos=$true
 }
 $env:EQUINOX_INTEGRATION_SKIP_COSMOS=[string]$skipCosmos

@@ -19,7 +19,7 @@ type EventWithOption = { age : int option }
 
 type EventWithUnion = { value : Union }
  // Using converter to collapse the `fields` of the union into the top level, alongside the `case`
- and [<Newtonsoft.Json.Converters.FSharp.UnionConverter>] Union =
+ and [<Newtonsoft.Json.JsonConverter(typeof<Newtonsoft.Json.Converters.FSharp.UnionConverter>)>] Union =
     | I of Int
     | S of MaybeInt
  and Int = { i : int }

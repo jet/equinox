@@ -132,19 +132,19 @@ module Test =
             clients.[clientIndex % clients.Length]
         let selectClient = async { return async { return selectClient() } }
         Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
-    let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
+    let fold, initial, compact = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.compact
     let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
     let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
     let codec = genCodec<Domain.Favorites.Events.Event>()
     let createFavoritesService store log =
-        let resolveStream cet streamName =
+        let resolveStream streamName =
             match store with
             | Store.Mem store ->
                 Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create(streamName)
             | Store.Es gateway ->
-                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType cet).Create(streamName)
+                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact).Create(streamName)
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.EventType cet).Create(streamName,databaseId, connectionId)
+                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact).Create(streamName,databaseId, connectionId)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
