@@ -152,13 +152,13 @@ module Test =
         if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
 
 let createStoreLog verboseStore verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration()//.Destructure.FSharpTypes()
+    let c = LoggerConfiguration().Destructure.FSharpTypes()
     let c = if verboseStore then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger() :> ILogger
 let domainLog verboseDomain verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration()(*.Destructure.FSharpTypes()*).Enrich.FromLogContext()
+    let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verboseDomain then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
@@ -260,7 +260,7 @@ let main argv =
                 let conn = Store.Cosmos (Cosmos.createGateway conn defaultBatchSize, dbName, collName)
                 runTest log conn targs
             | _ -> failwith "init or run is required"
-        | _ -> failwith "ERROR: please specify mem, es or cosmos Store"
+        | _ -> failwith "ERROR: please specify memory, es or cosmos Store"
     with e ->
         printfn "%s" e.Message
         1
