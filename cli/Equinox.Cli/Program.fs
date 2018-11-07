@@ -11,7 +11,6 @@ open System
 open System.IO
 open System.Threading
 
-
 [<NoEquality; NoComparison>]
 type Arguments =
     | [<AltCommandLine("-vd")>] VerboseDomain
@@ -210,7 +209,8 @@ let main argv =
 
         match args.GetSubCommand() with
         | Memory targs ->
-            let log = Log.Logger
+            let verboseStore = false
+            let log = createStoreLog verboseStore verboseConsole maybeSeq
             log.Information( "Using In-memory Volatile Store")
             // TODO implement backoffs
             let conn = Store.Mem (Equinox.MemoryStore.VolatileStore())

@@ -78,13 +78,13 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
             | Some events -> return MemoryStreamStreamState.ofEventArray fold initial events }
         member __.TrySync streamName (log : ILogger) (token, state) (events : 'event list, _state': 'state) = async {
             let trySyncValue currentValue =
-                if Array.length currentValue <> unbox token + 1 then ConcurrentDictionarySyncResult.Conflict (unbox token)
+                if Array.length currentValue <> unbox token.value + 1 then ConcurrentDictionarySyncResult.Conflict (unbox token.value)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue events)
             match store.TrySync streamName (log : ILogger) trySyncValue events with
             | ConcurrentArraySyncResult.Conflict conflictingEvents ->
                 let resync = async {
                     let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
-                    let successorEvents = conflictingEvents |> Seq.skip (unbox token + 1) |> List.ofSeq
+                    let successorEvents = conflictingEvents |> Seq.skip (unbox token.value + 1) |> List.ofSeq
                     return version, fold state (Seq.ofList successorEvents) }
                 return Storage.SyncResult.Conflict resync
             | ConcurrentArraySyncResult.Written events -> return Storage.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState fold state events }

@@ -13,7 +13,7 @@
     <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <StartArguments>-S -d 1 es run -f 2</StartArguments>
+    <StartArguments>-S memory -d 1 -f 2</StartArguments>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <StartArguments>es -o 3 run -f 4000 -e 3000 -d 10 -i 10 -i 60 -i 300 </StartArguments>
