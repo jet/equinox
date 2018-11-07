@@ -151,7 +151,7 @@ module Test =
             | Store.Es gateway ->
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create(streamName)
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.RollingSnapshots snapshot).Create(streamName,databaseId, connectionId)
+                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots snapshot).Create(streamName,databaseId, connectionId)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
