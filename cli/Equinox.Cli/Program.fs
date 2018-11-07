@@ -11,7 +11,6 @@ open System
 open System.IO
 open System.Threading
 
-
 [<NoEquality; NoComparison>]
 type Arguments =
     | [<AltCommandLine("-vd")>] VerboseDomain
