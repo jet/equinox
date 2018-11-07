@@ -11,27 +11,27 @@ let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
-    let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
+    let fold, initial, compact = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
         let gateway = createEqxGateway connection batchSize
-        let resolveStream _ignoreCompactionEventTypeOption (StreamArgs args) =
+        let resolveStream (StreamArgs args) =
             EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompaction connection batchSize log =
         let gateway = createEqxGateway connection batchSize
-        let resolveStream compactionEventType (StreamArgs args) =
-            EqxStreamBuilder(gateway, codec, fold, initial, compaction=CompactionStrategy.EventType compactionEventType).Create(args)
+        let resolveStream (StreamArgs args) =
+            EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream _ignorecompactionEventType (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create(args)
+        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompactionAndCaching connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream cet (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet, sliding20m).Create(args)
+        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact, sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
@@ -39,12 +39,10 @@ module ContactPreferences =
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolveStream _windowSize _compactionPredicate (StreamArgs args) =
-            EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
+        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService createGateway log =
-        let resolveStream batchSize compactionPredicate (StreamArgs args) =
-            EqxStreamBuilder(createGateway batchSize, codec, fold, initial, CompactionStrategy.Predicate compactionPredicate).Create(args)
+        let resolveStream (StreamArgs args) = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create(args)
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

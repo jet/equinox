@@ -22,9 +22,9 @@ let resolveGesStreamWithCompactionEventType gateway streamName =
 let resolveGesStreamWithoutCompactionSemantics gateway streamName =
     GesStreamBuilder(gateway, codec, fold, initial).Create(streamName)
 
-let resolveEqxStreamWithCompactionEventType gateway compactionEventType (StreamArgs args) =
-    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.EventType compactionEventType).Create(args)
-let resolveEqxStreamWithoutCompactionSemantics gateway _compactionEventType (StreamArgs args) =
+let resolveEqxStreamWithCompactionEventType gateway (StreamArgs args) =
+    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact).Create(args)
+let resolveEqxStreamWithoutCompactionSemantics gateway (StreamArgs args) =
     EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =

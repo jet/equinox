@@ -21,12 +21,10 @@ let resolveStreamGesWithCompactionSemantics gateway streamName =
 let resolveStreamGesWithoutCompactionSemantics gateway streamName =
     GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(streamName)
 
-let resolveStreamEqxWithCompactionSemantics gateway =
-    fun predicate (StreamArgs args) ->
-        EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.Predicate predicate).Create(args)
-let resolveStreamEqxWithoutCompactionSemantics gateway =
-    fun _ignoreWindowSize _ignoreCompactionPredicate (StreamArgs args) ->
-        EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
+let resolveStreamEqxWithCompactionSemantics gateway (StreamArgs args) =
+    EqxStreamBuilder(gateway 1, codec, fold, initial, Equinox.Cosmos.AccessStrategy.EventsAreState).Create(args)
+let resolveStreamEqxWithoutCompactionSemantics gateway (StreamArgs args) =
+    EqxStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(args)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -65,7 +63,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeWithoutCompaction connectToSpecifiedCosmosOrSimulator createEqxGateway resolveStreamEqxWithoutCompactionSemantics
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxGateway resolveStreamEqxWithoutCompactionSemantics
         do! act service args
     }
 
