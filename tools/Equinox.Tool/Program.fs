@@ -11,7 +11,6 @@ open System
 open System.Net.Http
 open System.Threading
 
-
 [<NoEquality; NoComparison>]
 type Arguments =
     | [<AltCommandLine("-v")>] Verbose
