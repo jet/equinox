@@ -183,12 +183,12 @@ module private Write =
         let log = log |> Log.prop "bytes" bytes
         let writeLog = log |> Log.prop "stream" pos.streamName |> Log.prop "expectedVersion" pos.Index |> Log.prop "count" count
         let! t, result = writeEventsAsync writeLog client pos events |> Stopwatch.Time
-        let conflict, (ru: float), resultLog =
+        let (ru: float), resultLog =
             let mkMetric ru : Log.Measurement = { stream = pos.streamName; interval = t; bytes = bytes; count = count; ru = ru }
             match result with
-            | EqxSyncResult.Conflict ru -> true, ru, log |> Log.event (Log.WriteConflict (mkMetric ru))
-            | EqxSyncResult.Written (x, ru) -> false, ru, log |> Log.event (Log.WriteSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" x
-        resultLog.Information("Eqx{action:l} count={count} conflict={conflict}, rus={ru}", "Write", events.Length, conflict, ru)
+            | EqxSyncResult.Conflict ru -> ru, log |> Log.event (Log.WriteConflict (mkMetric ru)) |> Log.prop "conflict" true
+            | EqxSyncResult.Written (x, ru) -> ru, log |> Log.event (Log.WriteSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" x
+        resultLog.Information("Eqx {action:l} {count} {ms}ms rc={ru}", "Write", events.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return result }
 
     let writeEvents (log : ILogger) retryPolicy client pk (events : Store.EventData[]): Async<EqxSyncResult> =
@@ -217,7 +217,7 @@ module private Read =
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice
         let index = match slice |> Array.tryHead with Some head -> head.id | None -> null
         (log |> Log.prop "startIndex" pos.Index |> Log.prop "bytes" bytes |> Log.event evt)
-            .Information("Eqx{action:l} count={count} index={index} rus={ru}", "Read", count, index, ru)
+            .Information("Eqx {action:l} {count} {ms}ms i={index} rc={ru}", "Read", count, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
         return slice, ru }
 
     let private readBatches (log : ILogger) (readSlice: IDocumentQuery<Store.Event> -> ILogger -> Async<Store.Event[] * float>)
@@ -245,8 +245,8 @@ module private Read =
         let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
         let evt = Log.Event.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            "Eqx{action:l} stream={stream} count={count}/{batches} index={index} rus={ru}",
-            action, streamName, count, batches, version, ru)
+            "Eqx {action:l} stream={stream} {count}/{batches} {ms}ms i={index} rc={ru}",
+            action, streamName, count, batches, (let e = interval.Elapsed in e.TotalMilliseconds), version, ru)
 
     let private lastEventIndex (xs:Store.Event seq) : int64 =
         match xs |> Seq.tryLast with
