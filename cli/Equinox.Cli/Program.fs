@@ -270,7 +270,7 @@ let main argv =
                 let conn = Store.Cosmos (Cosmos.createGateway conn defaultBatchSize, dbName, collName)
                 runTest log conn targs
             | _ -> failwith "init or run is required"
-        | _ -> failwith "ERROR: please specify mem, es or cosmos Store"
+        | _ -> failwith "ERROR: please specify memory, es or cosmos Store"
     with e ->
         printfn "%s" e.Message
         1
