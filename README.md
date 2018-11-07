@@ -28,6 +28,15 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
     - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing compaction schemas in a given stream (A snapshot isa Event) 
     - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
     - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
+- **Azure CosmosDb Indexed mode**: Using `Equinox.Cosmos`, command processing can be optimized through an index document in the same partition as the event documents that maintains:
+  a) compacted rendition(s) of the folded state
+  b) (optionally) events since those snapshots have last been updated
+  
+  This yields many of the benefits of rolling snapshots while reducing latency, RU provisioning requirement, and Request Charges:-
+	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
+	- when coupled with the cache, a typical read is a point read with an etag, costing 1 RU
+	- The index isa DocDb Document, but _not_ an Event
+	- The index can safely be deleted at any time; it'll get regenerated in the course of normal processing
 
 # Elements
 
