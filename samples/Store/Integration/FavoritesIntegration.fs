@@ -22,7 +22,7 @@ let createServiceGes gateway log =
     Backend.Favorites.Service(log, resolveStream)
 
 let createServiceEqx gateway log =
-    let resolveStream cet (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.CompactionStrategy.EventType cet).Create(args)
+    let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact).Create(args)
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =

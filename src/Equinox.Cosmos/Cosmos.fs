@@ -77,6 +77,41 @@ module Store =
             if array = null || Array.length array = 0 then serializer.Serialize(writer, null)
             else writer.WriteRawValue(System.Text.Encoding.UTF8.GetString(array))
 
+    [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
+    type IndexEvent =
+        {   p: string // "{streamName}"
+            id: string // "{-1}"
+
+            w: int64 // 100: window size
+            /// last index/i value
+            m: int64 // {index}
+
+            (* "x": [
+                { "i":0,
+                  "c":"ISO 8601"
+                  "e":[
+                    [{"t":"added","d":"..."},{"t":"compacted/1","d":"..."}],
+                    [{"t":"removed","d":"..."}],
+                  ]
+                }
+              ] *)
+            x: JObject[][] }
+
+    (* Pseudocode:
+    function sync(p, expectedVersion, windowSize, events) {
+        if (i == 0) then {
+            coll.insert(p,0,{ p:p, id:-1, w:windowSize, m:flatLen(events)})
+        } else {
+            const i = doc.find(p=p && id=-1)
+            if(i.m <> expectedVersion) then emit from expectedVersion else
+            i.x.append(events)
+            for (var (i, c, e: [ {e1}, ...]) in events) {
+                coll.insert({p:p, id:i, i:i, c:c, e:e1)
+            }
+            // trim i.x to w total items in i.[e]
+            coll.update(p,id,i)
+        }
+    } *)
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward with
     override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -289,7 +324,6 @@ module UnionEncoderAdapters =
 
 type [<NoComparison>]Token = { pos: Store.Position; compactionEventNumber: int64 option }
 
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Token =
     let private create compactionEventNumber batchCapacityLimit pos : Storage.StreamToken =
         { value = box { pos = pos; compactionEventNumber = compactionEventNumber }; batchCapacityLimit = batchCapacityLimit }
@@ -385,26 +419,49 @@ type private Collection(gateway : EqxGateway, databaseId, collectionId) =
     member __.Gateway = gateway
     member __.CollectionUri = Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId)
 
-type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUnionEncoder<'event, byte[]>, ?compactionStrategy) =
+[<NoComparison; NoEquality; RequireQualifiedAccess>]
+type AccessStrategy<'event,'state> =
+    | EventsAreState
+    | RollingSnapshots of eventType: string * compact: ('state -> 'event)
+
+type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) =
+ /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
+    member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
+
+type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUnionEncoder<'event, byte[]>, ?access : AccessStrategy<'event,'state>) =
     let (|Pos|) streamName : Store.Position = { collectionUri = coll.CollectionUri; streamName = streamName; index = None }
+    let compactionPredicate =
+        match access with
+        | None -> None
+        | Some AccessStrategy.EventsAreState -> Some (fun _ -> true)
+        | Some (AccessStrategy.RollingSnapshots (et,_)) -> Some ((=) et)
     let loadAlgorithm load (Pos pos) initial log =
         let batched = load initial (coll.Gateway.LoadBatched log None pos)
         let compacted predicate = load initial (coll.Gateway.LoadBackwardsStoppingAtCompactionEvent log predicate pos)
-        match compactionStrategy with
-        | Some predicate -> compacted predicate
+        match access with
         | None -> batched
+        | Some AccessStrategy.EventsAreState -> compacted (fun _ -> true)
+        | Some (AccessStrategy.RollingSnapshots (et,_)) -> compacted ((=) et)
     let load (fold: 'state -> 'event seq -> 'state) initial loadF = async {
         let! token, events = loadF
         return token, fold initial (UnionEncoderAdapters.decodeKnownEvents codec events) }
     member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) streamName (log : ILogger) : Async<Storage.StreamToken * 'state> =
         loadAlgorithm (load fold) streamName initial log
     member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) token (log : ILogger) : Async<Storage.StreamToken * 'state> =
-        (load fold) state (coll.Gateway.LoadFromToken log token compactionStrategy false)
-    member __.TrySync (fold: 'state -> 'event seq -> 'state) (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
+        (load fold) state (coll.Gateway.LoadFromToken log token compactionPredicate false)
+    member __.TrySync (fold: 'state -> 'event seq -> 'state) (log : ILogger)
+            (token : Storage.StreamToken, state : 'state)
+            (events : 'event list, state' : 'state) : Async<Storage.SyncResult<'state>> = async {
+        let events =
+            match access with
+            | None | Some AccessStrategy.EventsAreState -> events
+            | Some (AccessStrategy.RollingSnapshots (_,f)) ->
+                let cc = CompactionContext(List.length events, token.batchCapacityLimit.Value)
+                if cc.IsCompactionDue then events @ [f state'] else events
         let encodedEvents : Store.EventData[] = UnionEncoderAdapters.encodeEvents codec (Seq.ofList events)
-        let! syncRes = coll.Gateway.TrySync log token encodedEvents compactionStrategy
+        let! syncRes = coll.Gateway.TrySync log token encodedEvents compactionPredicate
         match syncRes with
-        | GatewaySyncResult.Conflict ->         return Storage.SyncResult.Conflict  (load fold state (coll.Gateway.LoadFromToken log token compactionStrategy true))
+        | GatewaySyncResult.Conflict ->         return Storage.SyncResult.Conflict  (load fold state (coll.Gateway.LoadFromToken log token compactionPredicate true))
         | GatewaySyncResult.Written token' ->   return Storage.SyncResult.Written   (token', fold state (Seq.ofList events)) }
 
 module Caching =
@@ -449,8 +506,8 @@ module Caching =
         interface ICategory<'event, 'state> with
             member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
                 interceptAsync (inner.Load streamName log) streamName
-            member __.TrySync streamName (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync streamName log (token, state) events
+            member __.TrySync streamName (log : ILogger) (token, state) (events : 'event list, state' : 'state) : Async<Storage.SyncResult<'state>> = async {
+                let! syncRes = inner.TrySync streamName log (token, state) (events,state')
                 match syncRes with
                 | Storage.SyncResult.Conflict resync ->             return Storage.SyncResult.Conflict (interceptAsync resync streamName)
                 | Storage.SyncResult.Written (token', state') ->    return Storage.SyncResult.Written (token', state') }
@@ -478,16 +535,11 @@ type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: '
     interface ICategory<'event, 'state> with
         member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
             loadAlgorithm streamName initial log
-        member __.TrySync _streamName(* TODO remove from main interface *) (log : ILogger) (token, state) (events : 'event list) : Async<Storage.SyncResult<'state>> = async {
-            let! syncRes = category.TrySync fold log (token, state) events
+        member __.TrySync _streamName(* TODO remove from main interface *) (log : ILogger) (token, state) (events : 'event list, state': 'state) : Async<Storage.SyncResult<'state>> = async {
+            let! syncRes = category.TrySync fold log (token, state) (events,state')
             match syncRes with
             | Storage.SyncResult.Conflict resync ->         return Storage.SyncResult.Conflict resync
             | Storage.SyncResult.Written (token',state') -> return Storage.SyncResult.Written (token',state') }
-
-[<NoComparison; NoEquality; RequireQualifiedAccess>]
-type CompactionStrategy =
-    | EventType of string
-    | Predicate of (string -> bool)
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
@@ -497,12 +549,7 @@ type CachingStrategy =
 
 type EqxStreamBuilder<'event, 'state>(gateway : EqxGateway, codec, fold, initial, ?compaction, ?caching) =
     member __.Create (databaseId, collectionId, streamName) : Equinox.IStream<'event, 'state> =
-        let compactionPredicateOption =
-            match compaction with
-            | None -> None
-            | Some (CompactionStrategy.Predicate predicate) -> Some predicate
-            | Some (CompactionStrategy.EventType eventType) -> Some (fun x -> x = eventType)
-        let category = Category<'event, 'state>(Collection(gateway, databaseId, collectionId), codec, ?compactionStrategy = compactionPredicateOption)
+        let category = Category<'event, 'state>(Collection(gateway, databaseId, collectionId), codec, ?access = compaction)
 
         let readCacheOption =
             match caching with
