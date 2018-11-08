@@ -153,37 +153,32 @@ module Test =
 
 [<AutoOpen>]
 module SerilogHelpers =
+    let (|CosmosReadRu|CosmosWriteRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
+        match evt with
+        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_, { ru = ru })
+        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_, { ru = ru }) -> CosmosReadRu ru
+        | Equinox.Cosmos.Log.WriteSuccess {ru = ru }
+        | Equinox.Cosmos.Log.WriteConflict {ru = ru }  -> CosmosWriteRu ru
+        // slices are rolled up into batches so be sure not to double-count
+        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Forward,{ ru = ru })
+        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Backward,{ ru = ru }) -> CosmosSliceRu ru
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
-    [<RequireQualifiedAccess>]
-    type EqxAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward
-    let (|EqxReadRu|EqxWriteRu|EqxSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
-        match evt with
-        // slices are rolled up into batches so might as well only emit the batch metric
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_, { ru = ru })
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_, { ru = ru }) -> EqxReadRu ru
-        | Equinox.Cosmos.Log.WriteSuccess {ru = ru }
-        | Equinox.Cosmos.Log.WriteConflict {ru = ru }  -> EqxWriteRu ru
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Forward,{ ru = ru })
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Backward,{ ru = ru }) -> EqxSliceRu ru
-    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
-        logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e
-            | _ -> None)
-
-type RuCounterSink() =
-    static let mutable readX10 = 0L
-    static let mutable writeX10 = 0L
-    let processr = function
-        | EqxEvent (EqxReadRu ru) -> Interlocked.Add(&readX10, int64 (ru*10.)) |> ignore
-        | EqxEvent (EqxWriteRu ru) -> Interlocked.Add(&writeX10, int64 (ru*10.)) |> ignore
-        | _ -> ()
-    interface Serilog.Core.ILogEventSink with
-        member __.Emit logEvent =
-            processr logEvent
-    static member Read = readX10 / 10L
-    static member Write = writeX10 / 10L
+    let (|CosmosMetric|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
+        match logEvent.Properties.TryGetValue("cosmosEvt") with
+        | true, SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e
+        | _ -> None
+    type RuCounterSink() =
+        static let mutable readX10 = 0L
+        static let mutable writeX10 = 0L
+        static member Read = readX10 / 10L
+        static member Write = writeX10 / 10L
+        interface Serilog.Core.ILogEventSink with
+            member __.Emit logEvent = logEvent |> function
+                | CosmosMetric (CosmosReadRu ru) -> Interlocked.Add(&readX10, int64 (ru*10.)) |> ignore
+                | CosmosMetric (CosmosWriteRu ru) -> Interlocked.Add(&writeX10, int64 (ru*10.)) |> ignore
+                | _ -> ()
 
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes()
@@ -192,7 +187,7 @@ let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger() :> ILogger
-let domainLog verbose verboseConsole maybeSeqEndpoint =
+let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verbose then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Sink(RuCounterSink())
@@ -216,7 +211,7 @@ let main argv =
         let report = args.GetResult(LogFile,programName+".log") |> fun n -> FileInfo(n).FullName
         let runTest (log: ILogger) conn (targs: ParseResults<TestArguments>) =
             let verbose = args.Contains(VerboseDomain)
-            let domainLog = domainLog verbose verboseConsole maybeSeq
+            let domainLog = createDomainLog verbose verboseConsole maybeSeq
             let service = Test.createFavoritesService conn domainLog
 
             let errorCutoff = targs.GetResult(ErrorCutoff,10000L)
