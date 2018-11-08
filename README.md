@@ -60,7 +60,7 @@ We are getting very close to that point and are extremely excited by that. But w
 
 For now, the core focus of work here will be on converging the `cosmos` branch, which will bring changes, clarifications, simplifications and features, which all need to be integrated into the production systems built on it, before we can consider broader based additive changes and/or significantly increasing the API surface area.
 
-For these reasons, the barrier for contributions will unfortunately be extremely high in the short term:
+For these reasons, the barrier for contributions will unfortunately be inordinately high in the short term:
 - bugfixes with good test coverage are always welcome - PRs yield MyGet-hosted NuGets and in general we'll seek to move them to NuGet prerelease and then NuGet release packages with relatively short timelines.
 - minor improvements / tweaks, subject to discussing in a GitHub issue first to see if it fits, but no promises at this time, even if the ideas are fantastic and necessary :sob:
 - tests, examples and scenarios are always welcome; Equinox is intended to address a very broad base of usage patterns; Please note that the emphasis will always be (in order) 1) providing advice on how to achieve your aims without changing Equinox 2) how to open up an appropriate extension point in Equinox 3) (when all else fails), add to the complexity of the system by adding API surface area or logic.
@@ -89,10 +89,8 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 ## Run EventStore benchmark (when provisioned)
 
-```
-& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
-& dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll es run
-```
+    & .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
+    & dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- es run
 
 ## run CosmosDb benchmark (when provisioned)
 
@@ -104,7 +102,7 @@ $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
 cli/Equinox.cli/bin/Release/net461/Equinox.Cli `
   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
   run
-dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll `
+dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- `
   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
   run
 ```
@@ -134,7 +132,7 @@ del C:\ProgramData\chocolatey\lib\eventstore-oss\tools\data
 ## COSMOSDB (when not using -sc)
 
 ```
-dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
 ```
 
 ## DEPROVISIONING COSMOSDB
