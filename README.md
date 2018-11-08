@@ -104,7 +104,7 @@ $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
 cli/Equinox.cli/bin/Release/net461/Equinox.Cli `
   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
   run
-dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll `
+dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- `
   cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
   run
 ```
@@ -130,7 +130,7 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 ## COSMOSDB (when not using -sc)
 
 ```
-dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
+dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
 ```
 
 ## DEPROVISIONING COSMOSDB
