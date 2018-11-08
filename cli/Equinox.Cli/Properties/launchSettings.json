@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Equinox.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "cosmos run -f 1"
+    }
+  }
+}

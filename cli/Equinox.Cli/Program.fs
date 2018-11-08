@@ -42,7 +42,7 @@ and TestArguments =
             | DurationM _ -> "specify a run duration in minutes (default: 1)."
             | ErrorCutoff _ -> "specify an error cutoff (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
-and Test = | Favorites
+and Test = | Favorites | FavoritesCached
 and [<NoEquality; NoComparison>] EsArguments =
     | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
@@ -135,7 +135,7 @@ module Test =
     let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
     let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
     let codec = genCodec<Domain.Favorites.Events.Event>()
-    let createFavoritesService store log =
+    let createFavoritesService store cache log =
         let resolveStream streamName =
             match store with
             | Store.Mem store ->
@@ -143,7 +143,8 @@ module Test =
             | Store.Es gateway ->
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact).Create(streamName)
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact).Create(databaseId, connectionId, streamName)
+                let cache = cache |> Option.map (fun c -> Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
+                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact, ?caching = cache).Create(databaseId, connectionId, streamName)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
@@ -212,7 +213,11 @@ let main argv =
         let runTest (log: ILogger) conn (targs: ParseResults<TestArguments>) =
             let verbose = args.Contains(VerboseDomain)
             let domainLog = createDomainLog verbose verboseConsole maybeSeq
-            let service = Test.createFavoritesService conn domainLog
+            let cache =
+                match targs.TryGetResult Name with
+                | Some FavoritesCached -> Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50) |> Some
+                | _ -> None
+            let service = Test.createFavoritesService conn cache domainLog
 
             let errorCutoff = targs.GetResult(ErrorCutoff,10000L)
             let testsPerSecond = targs.GetResult(TestsPerSecond,1000)
@@ -235,7 +240,7 @@ let main argv =
             let resultFile = createResultLog report
             for r in results do
                 resultFile.Information("Aggregate: {aggregate}", r)
-            log.Information("Run completed, current allocation: {bytes:n0}",GC.GetTotalMemory(true))
+            log.Information("Run completed; Current memory allocation: {bytes:n0}", GC.GetTotalMemory(true))
             0
 
         match args.GetSubCommand() with
