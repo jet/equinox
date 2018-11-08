@@ -169,12 +169,10 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
     $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
 
-    cli/Equinox.cli/bin/Release/net461/Equinox.Cli `
+    cli/Equinox.cli/bin/Release/net461/Equinox.Cli run `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
-      run
-    dotnet .\benchmarks\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll `
+    dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- run `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
-      run
 
 # PROVISIONING
 
@@ -198,9 +196,8 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 
 ## COSMOSDB (when not using -sc)
 
-```
-dotnet run cli/Equinox.Cli cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
-```
+	dotnet run cli/Equinox.Cli init -ru 10000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+
 
 ## DEPROVISIONING COSMOSDB
 
