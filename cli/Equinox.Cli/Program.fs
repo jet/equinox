@@ -44,7 +44,7 @@ and TestArguments =
             | DurationM _ -> "specify a run duration in minutes (default: 1)."
             | ErrorCutoff _ -> "specify an error cutoff (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
-and Test = | Favorites | FavoritesCached
+and Test = | Favorites | FavoritesCached | FavoritesIndexed
 and [<NoEquality; NoComparison>] EsArguments =
     | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
@@ -133,7 +133,7 @@ module Test =
             clients.[clientIndex % clients.Length]
         let selectClient = async { return async { return selectClient() } }
         Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
-    let fold, initial, compact = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.compact
+    let fold, initial, compact, index = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.compact, Domain.Favorites.Folds.index
     let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
     let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
     let codec = genCodec<Domain.Favorites.Events.Event>()
@@ -150,8 +150,16 @@ module Test =
             | Store.Es gateway ->
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact, ?caching = esCache).Create(streamName)
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                let cache = cache |> Option.map (fun c -> Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
-                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact, ?caching = cache).Create(databaseId, connectionId, streamName)
+                 match targs.TryGetResult Name with
+                 | Some FavoritesIndexed ->
+                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.IndexedSearch index).Create(databaseId, connectionId, streamName)
+                 | _ ->
+                    let cache =
+                        match targs.TryGetResult Name with
+                        | Some FavoritesCached -> Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50) |> Some
+                        | _ -> None
+                    let cache = cache |> Option.map (fun c -> Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
+                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact, ?caching = cache).Create(databaseId, connectionId, streamName)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
@@ -163,6 +171,7 @@ module Test =
 module SerilogHelpers =
     let (|CosmosReadRu|CosmosWriteRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
+        | Equinox.Cosmos.Log.Index { ru = ru }
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_, { ru = ru })
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_, { ru = ru }) -> CosmosReadRu ru
         | Equinox.Cosmos.Log.WriteSuccess {ru = ru }
@@ -220,11 +229,7 @@ let main argv =
         let runTest (log: ILogger) conn (targs: ParseResults<TestArguments>) =
             let verbose = args.Contains(VerboseDomain)
             let domainLog = createDomainLog verbose verboseConsole maybeSeq
-            let cache =
-                match targs.TryGetResult Name with
-                | Some FavoritesCached -> Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50) |> Some
-                | _ -> None
-            let service = Test.createFavoritesService conn cache domainLog
+            let service = Test.createFavoritesService conn targs domainLog
 
             let errorCutoff = targs.GetResult(ErrorCutoff,10000L)
             let testsPerSecond = targs.GetResult(TestsPerSecond,1000)

@@ -43,7 +43,7 @@ module Folds =
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
     let fold state = Seq.fold evolve state
     let compact = Events.Compaction.EventType, fun state -> Events.Compacted (State.toSnapshot state)
-
+    let index = (fun et -> et = Events.Compaction.EventType), fun state -> seq [ yield Events.Compacted (State.toSnapshot state) ]
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
     | AddItem               of Context * SkuId * quantity: int
