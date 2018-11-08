@@ -11,7 +11,7 @@ let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
-    let fold, initial, compact = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact
+    let fold, initial, compact, index = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact, Domain.Cart.Folds.index
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
         let gateway = createEqxGateway connection batchSize
@@ -27,6 +27,11 @@ module Cart =
         let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create(args)
+        Backend.Cart.Service(log, resolveStream)
+    let createServiceWithCachingIndexed connection batchSize log cache =
+        let gateway = createEqxGateway connection batchSize
+        let _sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // TODO
+        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompactionAndCaching connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
@@ -216,7 +221,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update against Cosmos, with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update against Cosmos with EventsAreState Access Strategy`` id value = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createService (createEqxGateway conn) log
@@ -263,6 +268,36 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! _ = service2.Read cartId
         test <@ singleBatchForward = capture.ExternalCalls @>
+    }
+
+    let singleIndexed = [EqxAct.Indexed]
+    let indexedReadAndAppend = singleIndexed @ [EqxAct.Append]
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly using the index to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+        let log, capture = createLoggerWithCapture ()
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        let batchSize = 10
+        let cache = Caching.Cache("cart", sizeMb = 50)
+        let createServiceCached () = Cart.createServiceWithCachingIndexed conn batchSize log cache
+        let service1, service2 = createServiceCached (), createServiceCached ()
+
+        // Trigger 10 events, then reload
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
+        let! _ = service2.Read cartId
+
+        // ... should see a single read as we are writes are cached
+        test <@ indexedReadAndAppend @ singleIndexed = capture.ExternalCalls @>
+
+        // Add two more - the roundtrip should only incur a single read
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
+        test <@ indexedReadAndAppend = capture.ExternalCalls @>
+
+        // While we now have 12 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service2.Read cartId
+        test <@ singleIndexed = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]

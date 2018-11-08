@@ -36,6 +36,7 @@ module EquinoxCosmosInterop =
             | Log.Slice (Direction.Backward,m) -> "EqxReadStreamEventsBackwardAsync", m, None, m.ru
             | Log.Batch (Direction.Forward,c,m) -> "EqxLoadF", m, Some c, m.ru
             | Log.Batch (Direction.Backward,c,m) -> "EqxLoadB", m, Some c, m.ru
+            | Log.Index m -> "EqxLoadI", m, None, m.ru
         {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; batches = batches
             interval = StopwatchInterval(metric.interval.StartTicks,metric.interval.EndTicks); ru = ru }
 
