@@ -8,19 +8,23 @@ open TypeShape.UnionContract
 let serializationSettings =
     Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect(converters=
         [|  // Don't let json.net treat 't option as the DU it is internally
-            Newtonsoft.Json.Converters.FSharp.OptionConverter()
-            // Collapse the `fields` of the union into the top level, alongside the `case`
-            Newtonsoft.Json.Converters.FSharp.UnionConverter() |])
+            Newtonsoft.Json.Converters.FSharp.OptionConverter() |])
 
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 type EventWithId = { id : CartId }
+
 type EventWithOption = { age : int option }
-type Union = I of Int | S of MaybeInt
+
+type EventWithUnion = { value : Union }
+ // Using converter to collapse the `fields` of the union into the top level, alongside the `case`
+ and [<Newtonsoft.Json.JsonConverter(typeof<Newtonsoft.Json.Converters.FSharp.UnionConverter>)>] Union =
+    | I of Int
+    | S of MaybeInt
  and Int = { i : int }
  and MaybeInt = { maybeI : int option }
-type EventWithUnion = { value : Union }
+
 type SimpleDu =
     | EventA of EventWithId
     | EventB of EventWithOption

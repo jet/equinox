@@ -15,11 +15,11 @@ let createServiceMem log store =
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithCompactionSemantics gateway =
-    fun predicate streamName ->
-        GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.Predicate predicate).Create(streamName)
-let resolveStreamGesWithoutCompactionSemantics gateway _ignoreWindowSize =
-    fun _ignoreCompactionPredicate streamName ->
-        GesStreamBuilder(gateway, codec, fold, initial).Create(streamName)
+    fun windowSize predicate streamName ->
+        GesStreamBuilder(gateway windowSize, codec, fold, initial, CompactionStrategy.Predicate predicate).Create(streamName)
+let resolveStreamGesWithoutCompactionSemantics gateway =
+    fun _windowSize _ignoreCompactionPredicate streamName ->
+        GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(streamName)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -38,23 +38,17 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeWithoutCompaction connect choose resolveStream = async {
-        let log = createLog ()
-        let! conn = connect log
-        let gateway = choose conn defaultBatchSize
-        return Backend.ContactPreferences.Service(log, fun _ -> resolveStream gateway defaultBatchSize) }
-
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeWithoutCompaction connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutCompactionSemantics
-        do! act service args
-    }
-
     let arrange connect choose resolveStream = async {
         let log = createLog ()
         let! conn = connect log
-        let gateway windowSize = choose conn windowSize
-        return Backend.ContactPreferences.Service(log, fun windowSize -> resolveStream (gateway windowSize)) }
+        let gateway = choose conn
+        return Backend.ContactPreferences.Service(log, resolveStream gateway) }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutCompactionSemantics
+        do! act service args
+    }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {

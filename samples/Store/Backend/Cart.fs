@@ -4,14 +4,14 @@ open Domain
 
 type Service(log, resolveStream) =
     let (|Cart|) (id: CartId) =
-        let stream = sprintf "Cart-%s" id.Value |> resolveStream Cart.Events.Compaction.EventType
-        Cart.Handler(log, stream)
+        let streamName = sprintf "Cart-%s" id.Value
+        Cart.Handler(log, resolveStream Cart.Events.Compaction.EventType streamName)
 
-    member __.FlowAsync (Cart cart, flow, ?prepare) =
-        cart.FlowAsync(flow, ?prepare = prepare)
+    member __.FlowAsync (Cart handler, flow, ?prepare) =
+        handler.FlowAsync(flow, ?prepare = prepare)
 
-    member __.Execute (Cart cart) command =
-        cart.Execute command
+    member __.Execute (Cart handler) command =
+        handler.Execute command
 
-    member __.Read (Cart cart) =
-        cart.Read
+    member __.Read (Cart handler) =
+        handler.Read

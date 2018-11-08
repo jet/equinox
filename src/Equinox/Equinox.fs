@@ -195,17 +195,17 @@ type Handler<'event, 'state>(fold, log, stream : IStream<'event, 'state>, maxAtt
 
     /// 0. Invoke the supplied `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.
     /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
-    member __.Decide (flow : Context<'event, 'state> -> 'result) : Async<'result> =
-        inner.Decide(stream, log, flow)
+    member __.Decide(flow : Context<'event, 'state> -> 'result) : Async<'result> =
+        inner.Decide(stream,log,flow)
     /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome
     /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
-    member __.DecideAsync (flowAsync : Context<'event, 'state> -> Async<'result>) : Async<'result> =
+    member __.DecideAsync(flowAsync : Context<'event, 'state> -> Async<'result>) : Async<'result> =
         inner.DecideAsync(stream,log,flowAsync)
     /// Low Level helper to allow one to obtain the complete state of a stream (including the position) in order to pass it within the application
-    member __.Raw : Async<Storage.StreamToken * 'state> =
+    member __.Raw: Async<Storage.StreamToken * 'state> =
         inner.Query(stream,log) <| fun syncState -> syncState.Memento
     /// Project from the folded `State` without executing a decision flow as `Decide` does
-    member __.Query (projection : 'state -> 'view) : Async<'view> =
+    member __.Query(projection : 'state -> 'view) : Async<'view> =
         inner.Query(stream,log) <| fun syncState -> projection syncState.State
 
 /// Exception yielded by ES Operation after `count` attempts to complete the operation have taken place

@@ -2,7 +2,7 @@ param(
 	[string] $verbosity="m",
 	[Alias("s")][switch][bool] $skipStores=$false,
 	[Alias("se")][switch][bool] $skipEs=$skipStores,
-	[string] $additionalMsBuildArgs
+	[string] $additionalMsBuildArgs="-t:Build"
 )
 
 $args=@("/v:$verbosity","/fl","/bl",$additionalMsBuildArgs)

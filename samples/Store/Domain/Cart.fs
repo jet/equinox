@@ -27,7 +27,6 @@ module Events =
 module Folds =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }
     type State =                    { items: ItemInfo list }
-    [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
     module State =
         let toSnapshot (s: State) : Events.Compaction.State =
             { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }

@@ -7,8 +7,8 @@ type Service(log, resolveStream) =
         let streamName = sprintf "Favorites-%s" clientId.Value
         Favorites.Handler(log, resolveStream Domain.Favorites.Events.Compaction.EventType streamName)
 
-    member __.Execute (Favorites favorites) command =
-        favorites.Execute command
+    member __.Execute (Favorites handler) command =
+        handler.Execute command
 
-    member __.Read(Favorites favorites) =
-        favorites.Read
+    member __.Read(Favorites handler) =
+        handler.Read

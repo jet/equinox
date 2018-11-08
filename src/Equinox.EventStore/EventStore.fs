@@ -210,7 +210,6 @@ module UnionEncoderAdapters =
 
 type Token = { streamVersion: int64; compactionEventNumber: int64 option }
 
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Token =
     let private create compactionEventNumber batchCapacityLimit streamVersion : Storage.StreamToken =
         { value = box { streamVersion = streamVersion; compactionEventNumber = compactionEventNumber }; batchCapacityLimit = batchCapacityLimit }
@@ -473,7 +472,6 @@ type Discovery =
     // Standard Gossip-based discovery based on Dns query (with manager port overriding default 30778)
     | GossipDnsCustomPort of clusterDns : string * managerPortOverride : int
 
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Discovery =
     let buildDns (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaDns().SetMaxDiscoverAttempts(Int32.MaxValue) |> f |> fun s -> s.Build()

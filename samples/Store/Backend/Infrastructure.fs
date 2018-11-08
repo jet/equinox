@@ -13,7 +13,6 @@ type Backoff = int -> int option
 
 /// Operations on back off strategies represented as functions (int -> int option)g
 /// which take an attempt number and produce an interval.
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Backoff =
 
   let private checkOverflow x =

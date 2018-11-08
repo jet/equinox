@@ -1,12 +1,10 @@
 ﻿module Samples.Store.Domain.Tests.CartTests
 
-open Domain
 open Domain.Cart
 open Domain.Cart.Events
 open Domain.Cart.Folds
 open Domain.Cart.Commands
 open Swensen.Unquote
-open System
 open TypeShape.Empty
 
 let mkAddQty skuId qty          = ItemAdded { empty<ItemAddInfo> with skuId = skuId; quantity = qty }
@@ -15,6 +13,8 @@ let mkRemove skuId              = ItemRemoved { empty<ItemRemoveInfo> with skuId
 let mkChangeWaived skuId value  = ItemWaiveReturnsChanged { empty<ItemWaiveReturnsInfo> with skuId = skuId; waived = value }
 
 /// As a basic sanity check, verify the basic properties we'd expect per command if we were to run it on an empty stream
+// Note validating basics like this is not normally that useful a property; in this instance (I think) it takes some
+//   cases/logic out of the main property and is hence worth doing for this aggregate
 let verifyCanProcessInInitialState cmd (originState: State) =
     let events = interpret cmd originState
     match cmd with
@@ -69,7 +69,7 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
 let verifyIdempotency (cmd: Command) (originState: State) =
     // Put the aggregate into the state where the command should not trigger an event
     let establish: Event list = cmd |> function
-        | Compact _ ->                              let skuId = SkuId (Guid.NewGuid()) in [ mkAdd skuId; mkRemove skuId]
+        | Compact _ ->                              let skuId = Domain.Infrastructure.SkuId (System.Guid.NewGuid()) in [ mkAdd skuId; mkRemove skuId]
         | AddItem (_, skuId, qty) ->                [ mkAddQty skuId qty]
         | RemoveItem _
         | PatchItem (_, _, Some 0, _) ->            []

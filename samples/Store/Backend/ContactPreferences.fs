@@ -1,13 +1,9 @@
 ﻿module Backend.ContactPreferences
 
-open Domain
-
 type Service(log, resolveStream) =
-    let stream (ContactPreferences.Id email) =
-        sprintf "ContactPreferences-%s" email // TODO hash >> base64
-        |> resolveStream 1 (fun (_eventType : string) -> true)
     let (|ContactPreferences|) email =
-        ContactPreferences.Handler(log, stream (Domain.ContactPreferences.Id email))
+        let streamName = sprintf "ContactPreferences-%s" email // TODO hash >> base64
+        Domain.ContactPreferences.Handler(log, resolveStream 1 (fun (_eventType : string) -> true) streamName)
 
     member __.Update (ContactPreferences handler as email) value =
         handler.Update email value

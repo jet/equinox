@@ -19,18 +19,13 @@ While the implementations are distilled from code from [`Jet.com` systems dating
     - Using a [versionable convention-based approach (using `Typeshape`'s `UnionContractEncoder` under the covers)](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/), providing for serializer-agnostic schema evolution with minimal boilerplate
 - Independent of the store used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / request charges costs by maintaining the folded state without any explicit code within the Domain Model
 - Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to  Splunk atm and feed metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
-- EventStore-optimized Compaction support: Command processing can by optimized by employing in-stream 'compaction' events in service of the following ends:
-    - no additional roundtrips to the store needed at either the Load or Sync points in the flow
-    - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing snapshot schemas in a given stream (A snapshot isa Event)
-    - compaction events typically do not get deleted (consistent with how EventStore works)
-- (Azure CosmosDb-specific, WIP) Snapshotting support: Command processing can by optimized by employing a snapshot document which maintains a) (optionally) a rendition of the folded state b) (optionally) batches of events to fold into the state in a
-	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- when coupled with the cache, a typical read is a point read with an etag, costing 1 RU
-	- A snapshot isa Document, but not an Event
-	- snapshot events can safely be deleted; they'll get regenerated in the course of normal processing
-	- A given snapshot will typically only contain a single version of the snapshot
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and per Storage system.
+- **`Equinox.EventStore` Transactionally-consistent Rolling Snapshots**: Command processing can be optimized by employing in-stream 'compaction' events in service of the following ends:
+    - no additional roundtrips to the store needed at either the Load or Sync points in the flow
+    - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing compaction schemas in a given stream (A snapshot isa Event) 
+    - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
+    - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
 
 # Elements
 
@@ -56,7 +51,7 @@ We are getting very close to that point and are extremely excited by that. But w
 
 For now, the core focus of work here will be on converging the `cosmos` branch, which will bring changes, clarifications, simplifications and features, which all need to be integrated into the production systems built on it, before we can consider broader based additive changes and/or significantly increasing the API surface area.
 
-For these reasons, the barrier for contributions will unfortunately be extremely high in the short term:
+For these reasons, the barrier for contributions will unfortunately be inordinately high in the short term:
 - bugfixes with good test coverage are always welcome - PRs yield MyGet-hosted NuGets and in general we'll seek to move them to NuGet prerelease and then NuGet release packages with relatively short timelines.
 - minor improvements / tweaks, subject to discussing in a GitHub issue first to see if it fits, but no promises at this time, even if the ideas are fantastic and necessary :sob:
 - tests, examples and scenarios are always welcome; Equinox is intended to address a very broad base of usage patterns; Please note that the emphasis will always be (in order) 1) providing advice on how to achieve your aims without changing Equinox 2) how to open up an appropriate extension point in Equinox 3) (when all else fails), add to the complexity of the system by adding API surface area or logic.
@@ -77,17 +72,16 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 ## build, skipping all tests
 
-	./build -s -a "/t:build"
+	dotnet pack build.proj
 
-## Run EventStore benchmarks (when provisioned)
+## build, skip EventStore tests, skip auto-provisioning + de-provisioning Cosmos
 
-Add `--help` to the CLI commandline to discover a plethora of runner options ;)
+	./build -se -scp
 
+## Run EventStore benchmark (when provisioned)
 
-```
-& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
-& dotnet .\cli\Equinox.Cli\bin\Release\netcoreapp2.1\Equinox.Cli.dll es run
-```
+	& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
+	& dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- es run
 
 # PROVISIONING
 
@@ -95,18 +89,14 @@ Add `--help` to the CLI commandline to discover a plethora of runner options ;)
 
 For EventStore, the tests assume a running local instance configured as follows to replicate as much as possible the external appearance of a Production EventStore Commercial cluster :-
 
-```
-# requires admin privilege
-cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-# run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
-& $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-```
+	# requires admin privilege
+	cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+	# run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
+	& $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 
 ## Deprovisioning (aka nuking) EventStore data resulting from tests to reset baseline
 
 While EventStore rarely shows any negative effects from repeated load test runs, it can be useful for various reasons to drop all the data generated by the load tests by casting it to the winds:-
 
-```
-# requires admin privilege
-rm $env:ProgramData\chocolatey\lib\eventstore-oss\tools\data
-```
+	# requires admin privilege
+	rm $env:ProgramData\chocolatey\lib\eventstore-oss\tools\data

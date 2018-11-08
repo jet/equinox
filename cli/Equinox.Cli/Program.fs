@@ -41,7 +41,7 @@ and TestArguments =
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
 and Test = | Favorites
 and [<NoEquality; NoComparison>] EsArguments =
-    | [<AltCommandLine("-ve")>] VerboseStore
+    | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
     | [<AltCommandLine("-r")>] Retries of int
     | [<AltCommandLine("-g")>] Host of string
@@ -108,15 +108,15 @@ module Test =
         let! items = service.Read clientId
         if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
 
-let createStoreLog verboseStore verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration()//.Destructure.FSharpTypes()
-    let c = if verboseStore then c.MinimumLevel.Debug() else c
+let createStoreLog verbose verboseConsole maybeSeqEndpoint =
+    let c = LoggerConfiguration().Destructure.FSharpTypes()
+    let c = if verbose then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger() :> ILogger
-let domainLog verboseDomain verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration()(*.Destructure.FSharpTypes()*).Enrich.FromLogContext()
-    let c = if verboseDomain then c.MinimumLevel.Debug() else c
+let domainLog verbose verboseConsole maybeSeqEndpoint =
+    let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
+    let c = if verbose then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
@@ -166,7 +166,8 @@ let main argv =
 
         match args.GetSubCommand() with
         | Memory targs ->
-            let log = Log.Logger
+            let verboseStore = false
+            let log = createStoreLog verboseStore verboseConsole maybeSeq
             log.Information( "Using In-memory Volatile Store")
             // TODO implement backoffs
             let conn = Store.Mem (Equinox.MemoryStore.VolatileStore())
@@ -189,7 +190,7 @@ let main argv =
             match sargs.TryGetSubCommand() with
             | Some (EsArguments.Run targs) -> runTest log store targs
             | _ -> failwith "run is required"
-        | _ -> failwith "ERROR: please specify mem or es Store"
+        | _ -> failwith "ERROR: please specify memory or es Store"
     with e ->
         printfn "%s" e.Message
         1
