@@ -44,7 +44,7 @@ and TestArguments =
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
 and Test = | Favorites
 and [<NoEquality; NoComparison>] EsArguments =
-    | [<AltCommandLine("-ve")>] VerboseStore
+    | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
     | [<AltCommandLine("-r")>] Retries of int
     | [<AltCommandLine("-g")>] Host of string
@@ -66,7 +66,7 @@ and [<NoEquality; NoComparison>] EsArguments =
             | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 1.5)."
             | Run _ -> "Run a load test."
 and [<NoEquality; NoComparison>] CosmosArguments =
-    | [<AltCommandLine("-ve")>] VerboseStore
+    | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
     | [<AltCommandLine("-r")>] Retries of int
     | [<AltCommandLine("-s")>] Connection of string
@@ -143,7 +143,7 @@ module Test =
             | Store.Es gateway ->
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact).Create(streamName)
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact).Create(streamName,databaseId, connectionId)
+                EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact).Create(databaseId, connectionId, streamName)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
