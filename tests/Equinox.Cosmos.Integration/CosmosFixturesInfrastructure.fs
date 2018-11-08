@@ -49,7 +49,7 @@ module SerilogHelpers =
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
     [<RequireQualifiedAccess>]
-    type EqxAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward
+    type EqxAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Indexed
     let (|EqxAction|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
         | Equinox.Cosmos.Log.WriteSuccess _ -> EqxAct.Append
@@ -58,6 +58,7 @@ module SerilogHelpers =
         | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Backward,_) -> EqxAct.SliceBackward
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_,_) -> EqxAct.BatchForward
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_,_) -> EqxAct.BatchBackward
+        | Equinox.Cosmos.Log.Index _ -> EqxAct.Indexed
     let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
             | SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e
