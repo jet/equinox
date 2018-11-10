@@ -100,57 +100,24 @@ module Commands =
             if Array.isEmpty net then true, []
             else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
 
-    type Stream(log, stream, maxSavedItems, maxAttempts) =
-        let handler = Equinox.Stream.Handler(Fold.fold, log, stream, maxAttempts = maxAttempts)
-        let decide (fctx : Equinox.Context<_,_>) command =
-            let run cmd = fctx.Decide (decide maxSavedItems cmd)
-            let result = run command
-            if fctx.IsCompactionDue then
-                run Compact |> ignore
-            result
+type Handler(log, stream, maxSavedItems, maxAttempts) =
+    let inner = Equinox.Handler(Fold.fold, log, stream, maxAttempts = maxAttempts)
+    let decide (ctx : Equinox.Context<_,_>) command =
+        let run cmd = ctx.Decide (Commands.decide maxSavedItems cmd)
+        let result = run command
+        if ctx.IsCompactionDue then
+            run Commands.Compact |> ignore
+        result
 
-        member __.Remove (resolve : ((SkuId->bool) -> Async<Command>)) : Async<bool> =
-            handler.DecideAsync <| fun fctx -> async {
-                let contents = seq { for item in fctx.State -> item.skuId } |> set
-                let! cmd = resolve contents.Contains
-                return cmd |> decide fctx }
+    member __.Remove (resolve : ((SkuId->bool) -> Async<Commands.Command>)) : Async<bool> =
+        inner.DecideAsync <| fun ctx -> async {
+            let contents = seq { for item in ctx.State -> item.skuId } |> set
+            let! cmd = resolve contents.Contains
+            return cmd |> decide ctx }
 
-        member __.Execute command : Async<bool> =
-            handler.Decide <| fun fctx ->
-                decide fctx command
+    member __.Execute command : Async<bool> =
+        inner.Decide <| fun fctx ->
+            decide fctx command
 
-        member __.Read : Async<Events.Item[]> =
-            handler.Query id
-
-let streamName (clientId : ClientId) = sprintf "savedforlater-%O" clientId
-
-type Service(resolveStreamWithCompactionEventType, maxSaveItems : int, maxAttempts) =
-    do if maxSaveItems < 0 then invalidArg "maxSaveItems" "must be non-negative value."
-
-    let compactionEventType = Events.Compaction.EventType
-    let go ctx (clientId : ClientId) =
-        let stream = streamName clientId |> resolveStreamWithCompactionEventType compactionEventType Fold.fold Fold.initial
-        Commands.Stream(ctx, stream, maxSaveItems, maxAttempts = maxAttempts)
-
-    member __.MaxAllowedItems = maxSaveItems
-
-    member __.List(ctx, clientId) : Async<Events.Item []> =
-        let stream = go ctx clientId
-        stream.Read
-
-    member __.Save(ctx, clientId, skus : seq<SkuId>) : Async<bool> =
-        let stream = go ctx clientId
-        Commands.Add(DateTimeOffset.Now, Seq.toArray skus) |> stream.Execute
-
-    member __.Remove(ctx, clientId, resolve : (SkuId -> bool) -> Async<SkuId[]>) : Async<bool> =
-        let stream = go ctx clientId
-        let resolve hasSku = async {
-            let! skus = resolve hasSku
-            return Commands.Remove skus }
-        stream.Remove resolve
-
-    member __.Merge(ctx, sourceClientId, targetClientId) : Async<bool> = async {
-        let sourceStream = go ctx sourceClientId
-        let! state = sourceStream.Read
-        let targetStream = go ctx targetClientId
-        return! Commands.Merge state |> targetStream.Execute }
+    member __.Read : Async<Events.Item[]> =
+        inner.Query id

@@ -12,6 +12,7 @@
     <Compile Include="Cart.fs" />
     <Compile Include="ContactPreferences.fs" />
     <Compile Include="Favorites.fs" />
+    <Compile Include="SavedForLater.fs" />
     <Compile Include="Infrastructure.fs" />
   </ItemGroup>
 

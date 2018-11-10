@@ -11,6 +11,7 @@
     <Compile Include="CartTests.fs" />
     <Compile Include="ContactPreferencesTests.fs" />
     <Compile Include="FavoritesTests.fs" />
+    <Compile Include="SavedForLaterTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

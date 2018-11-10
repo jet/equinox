@@ -3,15 +3,15 @@
 open Domain
 
 type Service(log, resolveStream) =
-    let (|Cart|) (id: CartId) =
+    let (|Stream|) (id: CartId) =
         let streamName = sprintf "Cart-%s" id.Value
         Cart.Handler(log, resolveStream Cart.Events.Compaction.EventType streamName)
 
-    member __.FlowAsync (Cart handler, flow, ?prepare) =
-        handler.FlowAsync(flow, ?prepare = prepare)
+    member __.FlowAsync (Stream stream, flow, ?prepare) =
+        stream.FlowAsync(flow, ?prepare = prepare)
 
-    member __.Execute (Cart handler) command =
-        handler.Execute command
+    member __.Execute (Stream stream) command =
+        stream.Execute command
 
-    member __.Read (Cart handler) =
-        handler.Read
+    member __.Read (Stream stream) =
+        stream.Read
