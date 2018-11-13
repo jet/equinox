@@ -812,7 +812,7 @@ module Initialization =
                 if (-1 == expectedVersion) {
                     collection.createDocument(collectionLink, index, { disableAutomaticIdGeneration : true}, callback);
                 } else {
-                    collection.replaceDocument(collection.getAltLink() + "/docs/" + index.id, index, { etag : etag }, callback);
+                    collection.replaceDocument(collection.getAltLink() + "/docs/" + index.id, index, callback);
                 }
                 // can also contain { conflicts: [{t, d}] } representing conflicting events since expectedVersion
                 // null/missing signifies events have been written, with no conflict
