@@ -292,7 +292,8 @@ type Tests(testOutputHelper) =
         let! _ = service2.Read cartId
 
         // ... should see a single read (with a) we are writes are cached
-        test <@ primeIndex @ [EqxAct.Append; EqxAct.IndexedCached] = capture.ExternalCalls @>
+        let! _ = service2.Read cartId
+        test <@ primeIndex @ [EqxAct.Append; EqxAct.IndexedCached; EqxAct.IndexedCached] = capture.ExternalCalls @>
 
         // Add two more - the roundtrip should only incur a single read
         capture.Clear()
