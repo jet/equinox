@@ -1,12 +1,10 @@
-
-function write (partitionkey, events, expectedVersion, pendingEvents, projections) {
+function write2 (partitionkey, events, expectedVersion, pendingEvents, projections) {
 
     if (events === undefined || events==null) events = [];
     if (expectedVersion === undefined) expectedVersion = -2;
     if (pendingEvents === undefined) pendingEvents = null;
     if (projections === undefined || projections==null) projections = {};
     
-    var response = getContext().getResponse();
     var collection = getContext().getCollection();
     var collectionLink = collection.getSelfLink();
   
@@ -15,11 +13,11 @@ function write (partitionkey, events, expectedVersion, pendingEvents, projection
     // Recursively queries for a document by id w/ support for continuation tokens.
     // Calls tryUpdate(document) as soon as the query returns a document.
     function tryQueryAndUpdate(continuation) {
-      var query = {query: "select * from root r where r.id = @id and r.p = @p", parameters: [{name: "@id", value: "-1"},{name: "@p", value: partitionkey}]};
+      var query = {query: "select * from root r where r.id = @id and r.k = @k", parameters: [{name: "@id", value: "-1"},{name: "@p", value: partitionkey}]};
       var requestOptions = {continuation: continuation};
   
       var isAccepted = collection.queryDocuments(collectionLink, query, requestOptions, function (err, documents, responseOptions) {
-        if (err) throw err;
+        if (err) throw new Error("Error" + err.message);
   
         if (documents.length > 0) {
           // If the document is found, update it.
@@ -46,10 +44,13 @@ function write (partitionkey, events, expectedVersion, pendingEvents, projection
     function insertEvents()
     {
       for (i=0; i<events.length; i++) {
-        try {
-            collection.createDocument(collectionLink, events[i]);
-        } catch (err) {
-            throw new Error ("Create doc " + JSON.stringify(events[i]) + " failed");
+        var isAccepted = collection.createDocument(collectionLink, events[i], function (err, documentCreated) {
+            if (err) throw new Error ("Create doc " + JSON.stringify(events[i]) + " failed");
+        });
+
+        // If we hit execution bounds - throw an exception.
+        if (!isAccepted) {
+            throw new Error("Unable to create document.");
         }
       }
     }
@@ -127,22 +128,27 @@ function write (partitionkey, events, expectedVersion, pendingEvents, projection
       if (!isCreate)
       {
           var isAccepted = collection.replaceDocument(doc._self, doc, requestOptions, function (err, updatedDocument, responseOptions) {
-            if (err) throw err;
+            if (err) throw new Error("Error" + err.message);
+            console.log("etag of replaced document is: %s", updatedDocument._etag);
+            getContext().getResponse().setBody(updatedDocument._etag);
           });
   
           // If we hit execution bounds - throw an exception.
           if (!isAccepted) {
-            throw new Error("The stored procedure timed out.");
+            throw new Error("Unable to replace snapshot document.");
           }
       }
       else {
-        try {
-            collection.createDocument(collectionLink, doc); 
-        } catch (err) {
-            throw new Error ("Create doc " + JSON.stringify(docs) + " failed");
-        }
+          var isAccepted = collection.createDocument(collectionLink, doc, function (err, documentCreated) {
+              if (err) throw new Error ("Create doc " + JSON.stringify(doc) + " failed");
+              console.log("etag of created document is: %s", documentCreated._etag);
+              getContext().getResponse().setBody(documentCreated._etag);
+          });
+          
+          // If we hit execution bounds - throw an exception.
+          if (!isAccepted) {
+            throw new Error("Unable to create snapshot document.");
+          }
       }
     }
-  
-    response.setBody(true);
   }
