@@ -32,6 +32,7 @@ type Arguments =
 and TestArguments =
     | Name of Test
     | Cached
+    | Indexed
     | [<AltCommandLine("-f")>] TestsPerSecond of int
     | [<AltCommandLine("-d")>] DurationM of float
     | [<AltCommandLine("-e")>] ErrorCutoff of int64
@@ -40,11 +41,12 @@ and TestArguments =
         member a.Usage = a |> function
             | Name _ -> "Specify which test to run. (default: Favorites)"
             | Cached -> "Whether to employ a Cache"
+            | Indexed -> "Whether to employ an Index for Cosmos"
             | TestsPerSecond _ -> "specify a target number of requests per second (default: 1000)."
             | DurationM _ -> "specify a run duration in minutes (default: 1)."
             | ErrorCutoff _ -> "specify an error cutoff (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
-and Test = | Favorites | FavoritesCached | FavoritesIndexed
+and Test = Favorites
 and [<NoEquality; NoComparison>] EsArguments =
     | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
@@ -150,16 +152,17 @@ module Test =
             | Store.Es gateway ->
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create(streamName)
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                 match targs.TryGetResult Name with
-                 | Some FavoritesIndexed ->
-                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.IndexedSearch index).Create(databaseId, connectionId, streamName)
-                 | _ ->
-                    let cache =
-                        match targs.TryGetResult Name with
-                        | Some FavoritesCached -> Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50) |> Some
-                        | _ -> None
-                    let cache = cache |> Option.map (fun c -> Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
-                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots snapshot, ?caching = cache).Create(databaseId, connectionId, streamName)
+                let cache =
+                    if targs.Contains Cached then
+                        let c = Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50)
+                        Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
+                    else None
+                if targs.Contains Indexed then
+                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.IndexedSearch index, ?caching = cache)
+                        .Create(databaseId, connectionId, streamName)
+                else
+                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots snapshot, ?caching = cache)
+                        .Create(databaseId, connectionId, streamName)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
@@ -172,6 +175,8 @@ module SerilogHelpers =
     let (|CosmosReadRu|CosmosWriteRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
         | Equinox.Cosmos.Log.Index { ru = ru }
+        | Equinox.Cosmos.Log.IndexNotFound { ru = ru }
+        | Equinox.Cosmos.Log.IndexCached { ru = ru }
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_, { ru = ru })
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_, { ru = ru }) -> CosmosReadRu ru
         | Equinox.Cosmos.Log.WriteSuccess {ru = ru }
@@ -242,9 +247,9 @@ let main argv =
             let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
 
             let test = targs.GetResult(Name,Favorites)
-            log.Information( "Running {test} with caching: {cached}"+
+            log.Information( "Running {test} with caching: {caching}, indexing: {indexed}. "+
                 "Duration for {duration} with test freq {tps} hits/s; max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
-                test, targs.Contains Cached, duration, testsPerSecond, errorCutoff, reportingIntervals, report)
+                test, targs.Contains Cached, targs.Contains Indexed, duration, testsPerSecond, errorCutoff, reportingIntervals, report)
             let runSingleTest clientId =
                 if not verbose then Test.runFavoriteTest service clientId
                 else async {
@@ -297,7 +302,7 @@ let main argv =
             let collName = sargs.GetResult(Collection, defaultArg (read "EQUINOX_COSMOS_COLLECTION") "equinox-test")
             let timeout = sargs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
             let (retries, maxRetryWaitTime) as operationThrottling = sargs.GetResult(Retries, 1), sargs.GetResult(RetriesWaitTime, 5)
-            log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection}\n" +
+            log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection}. " +
                 "Request timeout: {timeout} with {retries} retries; throttling MaxRetryWaitTime {maxRetryWaitTime}",
                 connUri, dbName, collName, timeout, retries, maxRetryWaitTime)
             let conn = Cosmos.connect log discovery timeout operationThrottling |> Async.RunSynchronously
