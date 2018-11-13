@@ -4,6 +4,7 @@ open Equinox.Cosmos.Integration.Infrastructure
 open Equinox.Cosmos
 open Swensen.Unquote
 open System.Threading
+open Serilog
 open System
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
@@ -28,10 +29,14 @@ module Cart =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
+    let createServiceIndexed connection batchSize log =
+        let gateway = createEqxGateway connection batchSize
+        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index).Create(args)
+        Backend.Cart.Service(log, resolveStream)
     let createServiceWithCachingIndexed connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
-        let _sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // TODO
-        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index).Create(args)
+        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index, caching=sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompactionAndCaching connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
@@ -70,6 +75,7 @@ type Tests(testOutputHelper) =
         let capture = LogCaptureBuffer()
         let logger =
             Serilog.LoggerConfiguration()
+                .WriteTo.Seq("http://localhost:5341")
                 .WriteTo.Sink(testOutput)
                 .WriteTo.Sink(capture)
                 .CreateLogger()
@@ -270,11 +276,10 @@ type Tests(testOutputHelper) =
         test <@ singleBatchForward = capture.ExternalCalls @>
     }
 
-    let singleIndexed = [EqxAct.Indexed]
-    let indexedReadAndAppend = singleIndexed @ [EqxAct.Append]
+    let primeIndex = [EqxAct.IndexedNotFound; EqxAct.SliceBackward; EqxAct.BatchBackward]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly using the index to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly using the index and cache to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
@@ -286,18 +291,44 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 
-        // ... should see a single read as we are writes are cached
-        test <@ indexedReadAndAppend @ singleIndexed = capture.ExternalCalls @>
+        // ... should see a single read (with a) we are writes are cached
+        test <@ primeIndex @ [EqxAct.Append; EqxAct.IndexedCached] = capture.ExternalCalls @>
 
         // Add two more - the roundtrip should only incur a single read
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
-        test <@ indexedReadAndAppend = capture.ExternalCalls @>
+        test <@ [EqxAct.IndexedCached; EqxAct.Append] = capture.ExternalCalls @>
 
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service2.Read cartId
-        test <@ singleIndexed = capture.ExternalCalls @>
+        test <@ [EqxAct.IndexedCached] = capture.ExternalCalls @>
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly using the index to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+        let log, capture = createLoggerWithCapture ()
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        let batchSize = 10
+        let createServiceIndexed () = Cart.createServiceIndexed conn batchSize log
+        let service1, service2 = createServiceIndexed (), createServiceIndexed ()
+
+        // Trigger 10 events, then reload
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
+        let! _ = service2.Read cartId
+
+        // ... should see a single read as we are writes are cached
+        test <@ primeIndex @ [EqxAct.Append; EqxAct.Indexed] = capture.ExternalCalls @>
+
+        // Add two more - the roundtrip should only incur a single read
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
+        test <@ [EqxAct.Indexed; EqxAct.Append] = capture.ExternalCalls @>
+
+        // While we now have 12 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service2.Read cartId
+        test <@ [EqxAct.Indexed] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
