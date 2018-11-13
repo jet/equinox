@@ -36,26 +36,34 @@ module DocDbExtensions =
         aux exn
 
     /// DocumentDB Error HttpStatusCode extractor
-    let (|DocDbStatusCode|_|) (e : exn) =
+    let (|DocDbException|_|) (e : exn) =
         match e with
-        | AggregateException (:? DocumentClientException as dce) -> match dce.StatusCode with v when v.HasValue -> Some v.Value | _ -> None
+        | AggregateException (:? DocumentClientException as dce) -> Some dce
+        | _ -> None
+    /// Map Nullable to Option
+    let (|HasValue|_|) (x:Nullable<_>) = if x.HasValue then Some x.Value else None
+    /// DocumentDB Error HttpStatusCode extractor
+    let (|DocDbStatusCode|_|) (e : DocumentClientException) =
+        match e.StatusCode with
+        | HasValue x -> Some x
         | _ -> None
 
+    type ReadResult<'T> = Found of 'T | NotFound | PreconditionFailed
     type DocDbCollection(client : IDocumentClient, collectionUri) =
-        member __.TryReadDocument(documentId : string, ?options : Client.RequestOptions) = async {
+        member __.TryReadDocument(documentId : string, ?options : Client.RequestOptions): Async<float * ReadResult<'T>> = async {
             let! ct = Async.CancellationToken
             let options = defaultArg options null
             let docLink = sprintf "%O/docs/%s" collectionUri documentId
             try let! document = async { return! client.ReadDocumentAsync<'T>(docLink, options = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
-                return Some document
-            with DocDbStatusCode System.Net.HttpStatusCode.NotFound ->
-                // TODO // dont drop RUs
-                return None }
+                return document.RequestCharge, Found document.Document
+            with
+            | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.NotFound as e) -> return e.RequestCharge, NotFound
+            | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, PreconditionFailed }
 
 module Store =
     [<NoComparison>]
     type Position =
-        {   collectionUri: Uri; streamName: string; index: int64 option }
+        {   collectionUri: Uri; streamName: string; index: int64 option; etag: string option }
         member __.Index : int64 = defaultArg __.index -1L
         member __.IndexRel (offset: int) : int64 = __.index |> function
             | Some index -> index+int64 offset
@@ -206,6 +214,10 @@ module Log =
         | Slice of Direction * Measurement
         /// Individual read request for the Index
         | Index of Measurement
+        /// Individual read request for the Index, not found
+        | IndexNotFound of Measurement
+        /// Index read with Single RU Request Charge due to correct use of etag in cache
+        | IndexCached of Measurement
         /// Summarizes a set of Slices read together
         | Batch of Direction * slices: int * Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
@@ -216,6 +228,8 @@ module Log =
         log |> propEvents name (seq { for x in events -> Collections.Generic.KeyValuePair<_,_>(x.eventType, System.Text.Encoding.UTF8.GetString x.data)})
     let propResolvedEvents name (events : Store.Event[]) (log : ILogger) =
         log |> propEvents name (seq { for x in events -> Collections.Generic.KeyValuePair<_,_>(x.t, System.Text.Encoding.UTF8.GetString x.d)})
+    let propIEventDatas name (events : Store.IEventData[]) (log : ILogger) =
+        log |> propEvents name (seq { for x in events -> Collections.Generic.KeyValuePair<_,_>(x.EventType, System.Text.Encoding.UTF8.GetString x.DataUtf8)})
     let propProjectionEvents name (events : Store.IndexProjection[]) (log : ILogger) =
         log |> propEvents name (seq { for x in events -> Collections.Generic.KeyValuePair<_,_>(x.t, System.Text.Encoding.UTF8.GetString x.d)})
 
@@ -236,31 +250,34 @@ module Log =
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EqxSyncResult = Written of Store.Position * requestCharge: float | Conflict of requestCharge: float
+type EqxSyncResult =
+    | Written of Store.Position
+    | ConflictUnknown of Store.Position
+    | Conflict of Store.Position * events: Store.IEventData[]
 
 module private Write =
+    [<CLIMutable; NoEquality; NoComparison; JsonObject(ItemRequired=Required.AllowNull)>]
+    type WriteResponse = { etag: string; conflicts: Store.IndexProjection[] }
     let [<Literal>] sprocName = "AtomicMultiDocInsert"
-    let append (client: IDocumentClient) (pos: Store.Position) (eventsData: Store.EventData seq,maybeIndexEvents): Async<Store.Position * float> = async {
+
+    let private writeEventsAsync (client: IDocumentClient) (pos: Store.Position) (events: Store.EventData seq,maybeIndexEvents): Async<float*EqxSyncResult> = async {
         let sprocUri = sprintf "%O/sprocs/%s" pos.collectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey(pos.streamName))
         let! ct = Async.CancellationToken
-        let events = eventsData |> Seq.mapi (fun i ed -> Store.Event.Create pos (i+1) ed |> JsonConvert.SerializeObject) |> Seq.toArray
+        let events = events |> Seq.mapi (fun i ed -> Store.Event.Create pos (i+1) ed |> JsonConvert.SerializeObject) |> Seq.toArray
         if events.Length = 0 then invalidArg "eventsData" "must be non-empty"
         let index : Store.IndexEvent =
             match maybeIndexEvents with
             | None | Some [||] -> Unchecked.defaultof<_>
             | Some eds -> Store.IndexEvent.Create pos (events.Length) eds
-        let! res = client.ExecuteStoredProcedureAsync<bool>(sprocUri, opts, ct, box events, box pos.Index, box index) |> Async.AwaitTaskCorrect
-        return { pos with index = Some (pos.IndexRel events.Length) }, res.RequestCharge }
-
-    /// Yields `EqxSyncResult.Written`, or `EqxSyncResult.Conflict` to signify WrongExpectedVersion
-    let private writeEventsAsync (log : ILogger) client pk (events : Store.EventData[],maybeIndexEvents): Async<EqxSyncResult> = async {
         try
-            let! wr = append client pk (events,maybeIndexEvents)
-            return EqxSyncResult.Written wr
-        with :? DocumentClientException as ex when ex.Message.Contains "already" -> // TODO this does not work for the SP
-            log.Information(ex, "Eqx TrySync WrongExpectedVersionException writing {EventTypes}", [| for x in events -> x.eventType |])
-            return EqxSyncResult.Conflict ex.RequestCharge }
+            let! (res : Client.StoredProcedureResponse<WriteResponse>) = client.ExecuteStoredProcedureAsync(sprocUri, opts, ct, box events, box pos.Index, box pos.etag, box index) |> Async.AwaitTaskCorrect
+            match res.RequestCharge, (match res.Response.etag with null -> None | x -> Some x), res.Response.conflicts with
+            | rc,e,null -> return rc, EqxSyncResult.Written { pos with index = Some (pos.IndexRel events.Length); etag=e }
+            | rc,e,[||] -> return rc, EqxSyncResult.ConflictUnknown { pos with etag=e }
+            | rc,e, xs  -> return rc, EqxSyncResult.Conflict ({ pos with index = Some (pos.IndexRel xs.Length); etag=e }, Array.map (fun x -> x :> _) xs)
+        with DocDbException ex when ex.Message.Contains "already" -> // TODO this does not work for the SP
+            return ex.RequestCharge, EqxSyncResult.ConflictUnknown { pos with etag=None } }
 
     let bytes events =
         let eventDataLen ({ data = Log.BlobLen bytes; metadata = Log.BlobLen metaBytes } : Store.EventData) = bytes + metaBytes
@@ -271,12 +288,20 @@ module private Write =
         let bytes, count = bytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
         let writeLog = log |> Log.prop "stream" pos.streamName |> Log.prop "expectedVersion" pos.Index |> Log.prop "count" count
-        let! t, result = writeEventsAsync writeLog client pos (events,maybeIndexEvents) |> Stopwatch.Time
-        let (ru: float), resultLog =
+        let! t, (ru,result) = writeEventsAsync client pos (events,maybeIndexEvents) |> Stopwatch.Time
+        let resultLog =
             let mkMetric ru : Log.Measurement = { stream = pos.streamName; interval = t; bytes = bytes; count = count; ru = ru }
+            let logConflict () = writeLog.Information("Eqx TrySync WrongExpectedVersion writing {EventTypes}", [| for x in events -> x.eventType |])
             match result with
-            | EqxSyncResult.Conflict ru -> ru, log |> Log.event (Log.WriteConflict (mkMetric ru)) |> Log.prop "conflict" true
-            | EqxSyncResult.Written (x, ru) -> ru, log |> Log.event (Log.WriteSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" x
+            | EqxSyncResult.Written pos ->
+                log |> Log.event (Log.WriteSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" pos
+            | EqxSyncResult.ConflictUnknown pos ->
+                logConflict ()
+                log |> Log.event (Log.WriteConflict (mkMetric ru)) |> Log.prop "nextExpectedVersion" pos |> Log.prop "conflict" true
+            | EqxSyncResult.Conflict (pos, xs) ->
+                logConflict ()
+                let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.prop "nextExpectedVersion" pos |> Log.propIEventDatas "conflictJson" xs
+                log |> Log.event (Log.WriteConflict (mkMetric ru)) |> Log.prop "conflict" true
         resultLog.Information("Eqx {action:l} {count} {ms}ms rc={ru}", "Write", events.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return result }
 
@@ -285,35 +310,37 @@ module private Write =
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
 module private Read =
-    let private getIndex (client : IDocumentClient) (pos:Store.Position) (log: ILogger) = async {
-        // TODO cancellation token, use cache if available
-        let! t, (res : Client.DocumentResponse<Store.IndexEvent> option) =
-            let coll = DocDbCollection(client, pos.collectionUri)
-            let ac = pos.index |> Option.map (fun i -> Client.AccessCondition(Type=Client.AccessConditionType.IfNoneMatch,Condition=string i))
-            let ro = Client.RequestOptions(PartitionKey=PartitionKey(pos.streamName), AccessCondition = match ac with Some ac -> ac | None -> null)
-            coll.TryReadDocument(Store.IndexEvent.IdConstant, ro)
-            |> Stopwatch.Time
-
-        match res with
-        | None -> return None, 0.
-        | Some res ->
-
-        let doc, ru = res.Document, res.RequestCharge
-        let (|EventLen|) (x : Store.IndexProjection) = match x.d, x.m with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
-        let bytes, count = doc.c |> Array.sumBy (|EventLen|), doc.c.Length
-        let evt = Log.Index { stream = pos.streamName; interval = t; bytes = bytes; count = count; ru = ru }
-        let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propProjectionEvents "Json" doc.c
-        (log |> Log.prop "index" pos.Index |> Log.prop "bytes" bytes |> Log.event evt)
-            .Information("Eqx {action:l} {ms}ms rc={ru}", "Index", (let e = t.Elapsed in e.TotalMilliseconds), ru)
-        return Some doc, ru }
-
-    type [<RequireQualifiedAccess; NoComparison>] IndexResult = NotFound | Found of Store.Position * Store.IndexProjection[]
-    let loadIndex (log : ILogger) retryPolicy client (pos : Store.Position): Async<IndexResult> = async {
+    let private getIndex (client : IDocumentClient) (pos:Store.Position) =
+        let coll = DocDbCollection(client, pos.collectionUri)
+        let ac = match pos.etag with None -> null | Some etag-> Client.AccessCondition(Type=Client.AccessConditionType.IfNoneMatch, Condition=etag)
+        let ro = Client.RequestOptions(PartitionKey=PartitionKey(pos.streamName), AccessCondition = ac)
+        coll.TryReadDocument(Store.IndexEvent.IdConstant, ro)
+    let private loggedGetIndex (getIndex : Store.Position -> Async<_>) (pos:Store.Position)  (log: ILogger) = async {
         let log = log |> Log.prop "stream" pos.streamName
-        let! res, _rc = Log.withLoggedRetries retryPolicy "readAttempt" (getIndex client pos) log
+        let! t, (ru, res : ReadResult<Store.IndexEvent>) = getIndex pos |> Stopwatch.Time
+        let log count bytes (f : Log.Measurement -> _) = log |> Log.event (f { stream = pos.streamName; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
-        | None -> return IndexResult.NotFound
-        | Some index -> return IndexResult.Found ({ pos with index = Some index.m }, index.c) }
+        | ReadResult.PreconditionFailed ->
+            (log 0 0 Log.IndexCached).Information("Eqx {action:l} {ms}ms rc={ru}", "IndexCached", (let e = t.Elapsed in e.TotalMilliseconds), ru)
+        | ReadResult.NotFound ->
+            (log 0 0 Log.IndexNotFound).Information("Eqx {action:l} {ms}ms rc={ru}", "IndexNotFound", (let e = t.Elapsed in e.TotalMilliseconds), ru)
+        | ReadResult.Found doc ->
+            let log =
+                let (|EventLen|) (x : Store.IndexProjection) = match x.d, x.m with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
+                let bytes, count = doc.c |> Array.sumBy (|EventLen|), doc.c.Length
+                log bytes count Log.Index
+            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propProjectionEvents "Json" doc.c
+            log.Information("Eqx {action:l} {ms}ms rc={ru}", "Index", (let e = t.Elapsed in e.TotalMilliseconds), ru)
+        return ru, res }
+    type [<RequireQualifiedAccess; NoComparison>] IndexResult = Unchanged | NotFound | Found of Store.Position * Store.IndexProjection[]
+    /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.UnChanged
+    let loadIndex (log : ILogger) retryPolicy client (pos : Store.Position): Async<IndexResult> = async {
+        let getIndex = getIndex client
+        let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGetIndex getIndex pos) log
+        match res with
+        | ReadResult.PreconditionFailed -> return IndexResult.Unchanged
+        | ReadResult.NotFound -> return IndexResult.NotFound
+        | ReadResult.Found index -> return IndexResult.Found ({ pos with index = Some index.m }, index.c) }
 
     let private getQuery (client : IDocumentClient) (pos:Store.Position) (direction: Direction) batchSize =
         let querySpec =
@@ -323,15 +350,16 @@ module private Read =
                 let f = if direction = Direction.Forward then "c.i >= @id ORDER BY c.i ASC" else "c.i < @id ORDER BY c.i DESC"
                 SqlQuerySpec( "SELECT * FROM c WHERE " + f, SqlParameterCollection (Seq.singleton (SqlParameter("@id", index))))
         let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey(pos.streamName), MaxItemCount=Nullable batchSize)
-        // TODO cancellation token
         client.CreateDocumentQuery<Store.Event>(pos.collectionUri, querySpec, feedOptions).AsDocumentQuery()
 
     let (|EventLen|) (x : Store.Event) = match x.d, x.m with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
+    let bytes events = events |> Array.sumBy (|EventLen|)
 
     let private loggedQueryExecution (pos:Store.Position) direction (query: IDocumentQuery<Store.Event>) (log: ILogger): Async<Store.Event[] * float> = async {
-        let! t, (res : Client.FeedResponse<Store.Event>) = query.ExecuteNextAsync<Store.Event>() |> Async.AwaitTaskCorrect |> Stopwatch.Time
+        let! ct = Async.CancellationToken
+        let! t, (res : Client.FeedResponse<Store.Event>) = query.ExecuteNextAsync<Store.Event>(ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let slice, ru = Array.ofSeq res, res.RequestCharge
-        let bytes, count = slice |> Array.sumBy (|EventLen|), slice.Length
+        let bytes, count = bytes slice, slice.Length
         let reqMetric : Log.Measurement = { stream = pos.streamName; interval = t; bytes = bytes; count = count; ru = ru }
         let evt = Log.Slice (direction, reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice
@@ -356,8 +384,6 @@ module private Read =
                 yield! loop (batchCount + 1) }
         loop 0
 
-    let bytes events = events |> Array.sumBy (|EventLen|)
-
     let logBatchRead direction streamName interval events batchSize version (ru: float) (log : ILogger) =
         let bytes, count = bytes events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
@@ -373,7 +399,7 @@ module private Read =
         | None -> -1L
         | Some last -> int64 last.id
 
-    let loadForwardsFrom (log : ILogger) retryPolicy client batchSize maxPermittedBatchReads (pos,_strongConsistency): Async<Store.Position * Store.Event[]> = async {
+    let loadForwardsFrom (log : ILogger) retryPolicy client batchSize maxPermittedBatchReads (pos): Async<Store.Position * Store.Event[]> = async {
         let mutable ru = 0.0
         let mergeBatches (batches: AsyncSeq<Store.Event[] * float>) = async {
             let! (events : Store.Event[]) =
@@ -469,6 +495,9 @@ module Token =
     let ofPreviousTokenAndEventsLength (previousToken : Storage.StreamToken) eventsLength batchSize pos : Storage.StreamToken =
         let compactedEventNumber = (unbox previousToken.value).compactionEventNumber
         ofCompactionEventNumber compactedEventNumber eventsLength batchSize pos
+    let ofPreviousTokenWithUpdatedPosition (previousToken : Storage.StreamToken) batchSize pos : Storage.StreamToken =
+        let compactedEventNumber = (unbox previousToken.value).compactionEventNumber
+        ofCompactionEventNumber compactedEventNumber 0 batchSize pos
     /// Use an event just read from the stream to infer headroom
     let ofCompactionResolvedEventAndVersion (compactionEvent: Store.Event) batchSize pos : Storage.StreamToken =
         ofCompactionEventNumber (Some (int64 compactionEvent.id)) 0 batchSize pos
@@ -492,14 +521,28 @@ type EqxBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
     member __.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
-type GatewaySyncResult = Written of Storage.StreamToken | Conflict
+type GatewaySyncResult = Written of Storage.StreamToken | ConflictUnknown of Storage.StreamToken | Conflict of Storage.StreamToken * Store.IEventData[]
+
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
+type LoadFromTokenResult = Unchanged | Found of Storage.StreamToken * Store.IEventData[]
 
 type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     let isResolvedEventEventType predicate (x:Store.Event) = predicate x.t
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
+    //let isResolvedEventDataEventType predicate (x:Store.Event) = predicate x.t
+    //let tryIsEventDataEventType predicateOption = predicateOption |> Option.map isResolvedEventDataEventType
     let (|Pos|) (token: Storage.StreamToken) : Store.Position = (unbox<Token> token.value).pos
+    let (|IEventDataArray|) events = [| for e in events -> e :> Store.IEventData |]
+    member private __.InterpretIndexOrFallback log isCompactionEventType pos res: Async<Storage.StreamToken * Store.IEventData[]> = async {
+        match res with
+        | Read.IndexResult.Found (pos, projectionsAndEvents) when projectionsAndEvents |> Array.exists (fun x -> isCompactionEventType x.t) ->
+            return Token.ofNonCompacting pos, projectionsAndEvents |> Seq.cast<Store.IEventData> |> Array.ofSeq
+        | Read.IndexResult.Unchanged  -> return invalidOp "Not handled"
+        | _ ->
+            let! streamToken, events = __.LoadBackwardsStoppingAtCompactionEvent log isCompactionEventType pos
+            return streamToken, events |> Seq.cast<Store.IEventData> |> Array.ofSeq }
     member __.LoadBatched log isCompactionEventType (pos : Store.Position): Async<Storage.StreamToken * Store.Event[]> = async {
-        let! pos, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Client batching.BatchSize batching.MaxBatches (pos,false)
+        let! pos, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Client batching.BatchSize batching.MaxBatches pos
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting pos, events
         | Some isCompactionEvent ->
@@ -515,36 +558,44 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
         | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize pos, events }
     member __.IndexedOrBatched log isCompactionEventType pos: Async<Storage.StreamToken * Store.IEventData[]> = async {
         let! res = Read.loadIndex log None(* TODO conn.ReadRetryPolicy*) conn.Client pos
-        match res with
-        | Read.IndexResult.Found (pos, projectionsAndEvents) when projectionsAndEvents |> Array.exists (fun x -> isCompactionEventType x.t) ->
-            return Token.ofNonCompacting pos, projectionsAndEvents |> Seq.cast<Store.IEventData> |> Array.ofSeq
-        | _ ->
-            let! streamToken, events = __.LoadBackwardsStoppingAtCompactionEvent log isCompactionEventType pos
-            return streamToken, events |> Seq.cast<Store.IEventData> |> Array.ofSeq }
-    member __.LoadFromToken log (Pos pos as token) isCompactionEventType synchronized: Async<Storage.StreamToken * Store.Event[]> = async {
-        let! pos, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Client batching.BatchSize batching.MaxBatches (pos,synchronized)
-        match tryIsResolvedEventEventType isCompactionEventType with
-        | None -> return Token.ofNonCompacting pos, events
-        | Some isCompactionEvent ->
-            match events |> Array.tryFindBack isCompactionEvent with
-            | None -> return Token.ofPreviousTokenAndEventsLength token events.Length batching.BatchSize pos, events
-            | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize pos, events }
+        return! __.InterpretIndexOrFallback log isCompactionEventType pos res }
+    member __.LoadFromToken log (Pos pos as token) isCompactionEventType tryIndex: Async<LoadFromTokenResult> = async {
+        let ok r = LoadFromTokenResult.Found r
+        if not tryIndex then
+            let! pos, ((IEventDataArray xs) as events) = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Client batching.BatchSize batching.MaxBatches pos
+            let ok t = ok (t,xs)
+            match tryIsResolvedEventEventType isCompactionEventType with
+            | None -> return ok (Token.ofNonCompacting pos)
+            | Some isCompactionEvent ->
+                match events |> Array.tryFindBack isCompactionEvent with
+                | None -> return ok (Token.ofPreviousTokenAndEventsLength token events.Length batching.BatchSize pos)
+                | Some resolvedEvent -> return ok (Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize pos)
+        else
+            let! res = Read.loadIndex log None(* TODO conn.ReadRetryPolicy*) conn.Client pos
+            match res with
+            | Read.IndexResult.Unchanged  ->
+                return LoadFromTokenResult.Unchanged
+            | _ ->
+                let! loaded = __.InterpretIndexOrFallback log isCompactionEventType.Value pos res
+                return ok loaded }
     member __.TrySync log (Pos pos as token) (encodedEvents: Store.EventData[],maybeIndexEvents) isCompactionEventType: Async<GatewaySyncResult> = async {
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.Client pos (encodedEvents,maybeIndexEvents)
         match wr with
-        | EqxSyncResult.Conflict _ -> return GatewaySyncResult.Conflict
-        | EqxSyncResult.Written (wr, _) ->
+        | EqxSyncResult.Conflict (pos',events) ->
+            return GatewaySyncResult.Conflict (Token.ofPreviousTokenAndEventsLength token events.Length batching.BatchSize pos',events)
+        | EqxSyncResult.ConflictUnknown pos' ->
+            return GatewaySyncResult.ConflictUnknown (Token.ofPreviousTokenWithUpdatedPosition token batching.BatchSize pos')
+        | EqxSyncResult.Written pos' ->
 
-        let version' = wr
         let token =
             match isCompactionEventType with
-            | None -> Token.ofNonCompacting version'
+            | None -> Token.ofNonCompacting pos'
             | Some isCompactionEvent ->
                 let isEventDataEventType predicate (x:Store.EventData) = predicate x.eventType
                 match encodedEvents |> Array.tryFindIndexBack (isEventDataEventType isCompactionEvent) with
-                | None -> Token.ofPreviousTokenAndEventsLength token encodedEvents.Length batching.BatchSize version'
+                | None -> Token.ofPreviousTokenAndEventsLength token encodedEvents.Length batching.BatchSize pos'
                 | Some compactionEventIndex ->
-                    Token.ofPreviousStreamVersionAndCompactionEventDataIndex pos.Index compactionEventIndex encodedEvents.Length batching.BatchSize version'
+                    Token.ofPreviousStreamVersionAndCompactionEventDataIndex pos.Index compactionEventIndex encodedEvents.Length batching.BatchSize pos'
         return GatewaySyncResult.Written token }
 
 type private Collection(gateway : EqxGateway, databaseId, collectionId) =
@@ -568,25 +619,22 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUnionEncoder<'event, byte[]>, ?access : AccessStrategy<'event,'state>) =
-    let (|Pos|) streamName : Store.Position = { collectionUri = coll.CollectionUri; streamName = streamName; index = None }
+    let (|Pos|) streamName : Store.Position = { collectionUri = coll.CollectionUri; streamName = streamName; index = None; etag = None }
     let compactionPredicate =
         match access with
-        | Some (AccessStrategy.IndexedSearch _)
         | None -> None
+        | Some (AccessStrategy.IndexedSearch (predicate,_)) -> Some predicate
         | Some AccessStrategy.EventsAreState -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (et,_)) -> Some ((=) et)
-    //let searchPredicate =
-    //    match access with
-    //    | None -> None
-    //    | Some AccessStrategy.EventsAreState -> Some (SearchStrategy.Predicate (fun _ -> true))
-    //    | Some (AccessStrategy.IndexedSearch (ep,_)) -> Some (SearchStrategy.Predicate ep)
     let load (fold: 'state -> 'event seq -> 'state) initial loadF = async {
         let! token, events = loadF
         return token, fold initial (UnionEncoderAdapters.decodeKnownEvents codec events) }
+    let foldI (fold: 'state -> 'event seq -> 'state) initial token events =
+        token, fold initial (UnionEncoderAdapters.decodeKnownEventsI codec events)
     let loadI (fold: 'state -> 'event seq -> 'state) initial loadF = async {
         let! token, events = loadF
-        return token, fold initial (UnionEncoderAdapters.decodeKnownEventsI codec events) }
-    let loadAlgorithm fold (Pos pos) initial log =
+        return foldI fold initial token events }
+    let loadAlgorithm fold (pos : Store.Position) initial log =
         let batched = load fold initial (coll.Gateway.LoadBatched log None pos)
         let compacted predicate = load fold initial (coll.Gateway.LoadBackwardsStoppingAtCompactionEvent log predicate pos)
         let indexed predicate = loadI fold initial (coll.Gateway.IndexedOrBatched log predicate pos)
@@ -595,11 +643,16 @@ type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUni
         | None -> batched
         | Some AccessStrategy.EventsAreState -> compacted (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (et,_)) -> compacted ((=) et)
-    member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) streamName (log : ILogger) : Async<Storage.StreamToken * 'state> =
-        loadAlgorithm fold streamName initial log
-    member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) token (log : ILogger) : Async<Storage.StreamToken * 'state> =
-        (load fold) state (coll.Gateway.LoadFromToken log token compactionPredicate false)
-    member __.TrySync (fold: 'state -> 'event seq -> 'state) (log : ILogger)
+    member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (Pos pos) (log : ILogger) : Async<Storage.StreamToken * 'state> =
+        loadAlgorithm fold pos initial log
+    member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (initial: 'state) (state: 'state) token (log : ILogger)
+        : Async<Storage.StreamToken * 'state> = async {
+        let indexed = match access with Some (AccessStrategy.IndexedSearch _) -> true | _ -> false
+        let! res = coll.Gateway.LoadFromToken log token compactionPredicate indexed
+        match res with
+        | LoadFromTokenResult.Unchanged -> return token, state
+        | LoadFromTokenResult.Found (token,events ) -> return foldI fold initial token events }
+    member __.TrySync (fold: 'state -> 'event seq -> 'state) initial (log : ILogger)
             (token : Storage.StreamToken, state : 'state)
             (events : 'event list, state' : 'state) : Async<Storage.SyncResult<'state>> = async {
         let events, index =
@@ -615,8 +668,9 @@ type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUni
         let maybeIndexEvents : Store.EventData[] option = index |> Option.map (UnionEncoderAdapters.encodeEvents codec)
         let! syncRes = coll.Gateway.TrySync log token (encodedEvents,maybeIndexEvents) compactionPredicate
         match syncRes with
-        | GatewaySyncResult.Conflict ->         return Storage.SyncResult.Conflict  (load fold state (coll.Gateway.LoadFromToken log token compactionPredicate true))
-        | GatewaySyncResult.Written token' ->   return Storage.SyncResult.Written   (token', fold state (Seq.ofList events)) }
+        | GatewaySyncResult.Conflict (token',events) -> return Storage.SyncResult.Conflict  (async { return foldI fold initial token' events })
+        | GatewaySyncResult.ConflictUnknown token' -> return Storage.SyncResult.Conflict (__.LoadFromToken fold initial state token' log)
+        | GatewaySyncResult.Written token' -> return Storage.SyncResult.Written (token', fold state (Seq.ofList events)) }
 
 module Caching =
     open System.Runtime.Caching
@@ -664,7 +718,7 @@ module Caching =
                 let! syncRes = inner.TrySync streamName log (token, state) (events,state')
                 match syncRes with
                 | Storage.SyncResult.Conflict resync ->             return Storage.SyncResult.Conflict (interceptAsync resync streamName)
-                | Storage.SyncResult.Written (token', state') ->    return Storage.SyncResult.Written (token', state') }
+                | Storage.SyncResult.Written (token', state') ->    return Storage.SyncResult.Written (intercept streamName (token', state')) }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache: Cache)
@@ -679,7 +733,7 @@ module Caching =
 type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
     let loadAlgorithm streamName initial log =
         let batched = category.Load fold initial streamName log
-        let cached token state = category.LoadFromToken fold state token log
+        let cached token state = category.LoadFromToken fold initial state token log
         match readCache with
         | None -> batched
         | Some (cache : Caching.Cache, prefix : string) ->
@@ -690,7 +744,7 @@ type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: '
         member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
             loadAlgorithm streamName initial log
         member __.TrySync _streamName(* TODO remove from main interface *) (log : ILogger) (token, state) (events : 'event list, state': 'state) : Async<Storage.SyncResult<'state>> = async {
-            let! syncRes = category.TrySync fold log (token, state) (events,state')
+            let! syncRes = category.TrySync fold initial log (token, state) (events,state')
             match syncRes with
             | Storage.SyncResult.Conflict resync ->         return Storage.SyncResult.Conflict resync
             | Storage.SyncResult.Written (token',state') -> return Storage.SyncResult.Written (token',state') }
@@ -701,9 +755,9 @@ type CachingStrategy =
     /// Prefix is used to distinguish multiple folds per stream
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
-type EqxStreamBuilder<'event, 'state>(gateway : EqxGateway, codec, fold, initial, ?compaction, ?caching) =
+type EqxStreamBuilder<'event, 'state>(gateway : EqxGateway, codec, fold, initial, ?access, ?caching) =
     member __.Create (databaseId, collectionId, streamName) : Equinox.IStream<'event, 'state> =
-        let category = Category<'event, 'state>(Collection(gateway, databaseId, collectionId), codec, ?access = compaction)
+        let category = Category<'event, 'state>(Collection(gateway, databaseId, collectionId), codec, ?access = access)
 
         let readCacheOption =
             match caching with
@@ -744,25 +798,31 @@ module Initialization =
         return coll.Resource.Id }
 
     let createProc (client: IDocumentClient) (collectionUri: Uri) = async {
-        let f = """function multidocInsert(docs,expectedVersion,index) {
+        let f = """function multidocInsert(docs, expectedVersion, etag, index) {
             var response = getContext().getResponse();
             var collection = getContext().getCollection();
             var collectionLink = collection.getSelfLink();
             if (!docs) throw new Error("docs argument is missing.");
-            for (var i=0; i<docs.length; i++) {
-                collection.createDocument(collectionLink, docs[i]);
-            }
-            if(index != null) {
+            if(index) {
+                var assignedEtag = null;
                 function callback(err, doc, options) {
                     if (err) throw err;
+                    assignedEtag = doc._etag
                 }
                 if (-1 == expectedVersion) {
                     collection.createDocument(collectionLink, index, { disableAutomaticIdGeneration : true}, callback);
                 } else {
-                    collection.replaceDocument(collection.getAltLink() + "/docs/" + index.id, index, callback);
+                    collection.replaceDocument(collection.getAltLink() + "/docs/" + index.id, index, { etag : etag }, callback);
                 }
+                // can also contain { conflicts: [{t, d}] } representing conflicting events since expectedVersion
+                // null/missing signifies events have been written, with no conflict
+                response.setBody({ etag: assignedEtag, conflicts: null });
+            } else {
+                response.setBody({ etag: null, conflicts: null });
             }
-            response.setBody(true);
+            for (var i=0; i<docs.length; i++) {
+                collection.createDocument(collectionLink, docs[i]);
+            }
         }"""
         let def = new StoredProcedure(Id = Write.sprocName, Body = f)
         return! client.CreateStoredProcedureAsync(collectionUri, def) |> Async.AwaitTaskCorrect |> Async.Ignore }
@@ -840,7 +900,7 @@ type EqxConnector
                 match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
             let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
             let client = new Client.DocumentClient(uri, key, connPolicy, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
-            log.Information("Eqx connecting to Cosmos with Connection Name {connectionName}", sanitizedName)
+            log.ForContext("Uri", uri).Information("Eqx connecting to Cosmos with Connection Name {connectionName}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
             return client :> IDocumentClient }
 
