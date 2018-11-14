@@ -13,18 +13,6 @@ open System
 
 [<AutoOpen>]
 module DocDbExtensions =
-    type Client.RequestOptions with
-        /// Simplified ETag precondition builder
-        member options.ETag
-            with get () =
-                match options.AccessCondition with
-                | null -> null
-                | ac -> ac.Condition
-
-            and set etag =
-                if String.IsNullOrEmpty etag then () else
-                options.AccessCondition <- Client.AccessCondition(Type = Client.AccessConditionType.IfMatch, Condition = etag)
-
     /// Extracts the innermost exception from a nested hierarchy of Aggregate Exceptions
     let (|AggregateException|) (exn : exn) =
         let rec aux (e : exn) =
@@ -34,31 +22,35 @@ module DocDbExtensions =
             | _ -> e
 
         aux exn
-
     /// DocumentDB Error HttpStatusCode extractor
     let (|DocDbException|_|) (e : exn) =
         match e with
         | AggregateException (:? DocumentClientException as dce) -> Some dce
         | _ -> None
     /// Map Nullable to Option
-    let (|HasValue|_|) (x:Nullable<_>) = if x.HasValue then Some x.Value else None
+    let (|HasValue|Null|) (x:Nullable<_>) =
+        if x.HasValue then HasValue x.Value
+        else Null
     /// DocumentDB Error HttpStatusCode extractor
     let (|DocDbStatusCode|_|) (e : DocumentClientException) =
         match e.StatusCode with
         | HasValue x -> Some x
-        | _ -> None
+        | Null -> None
 
-    type ReadResult<'T> = Found of 'T | NotFound | PreconditionFailed
+    type ReadResult<'T> = Found of 'T | NotFound | NotModified
     type DocDbCollection(client : IDocumentClient, collectionUri) =
         member __.TryReadDocument(documentId : string, ?options : Client.RequestOptions): Async<float * ReadResult<'T>> = async {
             let! ct = Async.CancellationToken
             let options = defaultArg options null
             let docLink = sprintf "%O/docs/%s" collectionUri documentId
             try let! document = async { return! client.ReadDocumentAsync<'T>(docLink, options = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
-                return document.RequestCharge, Found document.Document
+                if document.StatusCode = System.Net.HttpStatusCode.NotModified then return document.RequestCharge, NotModified
+                // NB `.Document` will NRE if a IfNoneModified precondition triggers a NotModified result
+                else return document.RequestCharge, Found document.Document
             with
             | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.NotFound as e) -> return e.RequestCharge, NotFound
-            | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, PreconditionFailed }
+            // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
+            | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, NotModified }
 
 module Store =
     [<NoComparison>]
@@ -144,6 +136,10 @@ module Store =
         {   p: string // "{streamName}"
             id: string // "{-1}"
 
+            /// When we read, we need to capture the value so we can retain it for caching purposes; when we write, there's no point sending it as it would not be honored
+            [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore,Required=Required.Default)>]
+            _etag: string
+
             //w: int64 // 100: window size
             /// last index/i value
             m: int64 // {index}
@@ -167,7 +163,7 @@ module Store =
             }
         static member IdConstant = "-1"
         static member Create (pos: Position) eventCount (eds: EventData[]) : IndexEvent =
-            {   p = pos.streamName; id = IndexEvent.IdConstant; m = pos.IndexRel eventCount
+            {   p = pos.streamName; id = IndexEvent.IdConstant; m = pos.IndexRel eventCount; _etag = null
                 c = [| for ed in eds -> { t = ed.eventType; d = ed.data; m = ed.metadata } |] }
     and IndexProjection =
         {   /// The Event Type, used to drive deserialization
@@ -217,7 +213,7 @@ module Log =
         /// Individual read request for the Index, not found
         | IndexNotFound of Measurement
         /// Index read with Single RU Request Charge due to correct use of etag in cache
-        | IndexCached of Measurement
+        | IndexNotModified of Measurement
         /// Summarizes a set of Slices read together
         | Batch of Direction * slices: int * Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
@@ -320,27 +316,27 @@ module private Read =
         let! t, (ru, res : ReadResult<Store.IndexEvent>) = getIndex pos |> Stopwatch.Time
         let log count bytes (f : Log.Measurement -> _) = log |> Log.event (f { stream = pos.streamName; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
-        | ReadResult.PreconditionFailed ->
-            (log 0 0 Log.IndexCached).Information("Eqx {action:l} {ms}ms rc={ru}", "IndexCached", (let e = t.Elapsed in e.TotalMilliseconds), ru)
+        | ReadResult.NotModified ->
+            (log 0 0 Log.IndexNotModified).Information("Eqx {action:l} {res} {ms}ms rc={ru}", "Index", 302, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.NotFound ->
-            (log 0 0 Log.IndexNotFound).Information("Eqx {action:l} {ms}ms rc={ru}", "IndexNotFound", (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.IndexNotFound).Information("Eqx {action:l} {res} {ms}ms rc={ru}", "Index", 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.Found doc ->
             let log =
                 let (|EventLen|) (x : Store.IndexProjection) = match x.d, x.m with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
                 let bytes, count = doc.c |> Array.sumBy (|EventLen|), doc.c.Length
                 log bytes count Log.Index
-            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propProjectionEvents "Json" doc.c
-            log.Information("Eqx {action:l} {ms}ms rc={ru}", "Index", (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propProjectionEvents "Json" doc.c |> Log.prop "etag" doc._etag
+            log.Information("Eqx {action:l} {res} {ms}ms rc={ru}", "Index", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
-    type [<RequireQualifiedAccess; NoComparison>] IndexResult = Unchanged | NotFound | Found of Store.Position * Store.IndexProjection[]
+    type [<RequireQualifiedAccess; NoComparison>] IndexResult = NotModified | NotFound | Found of Store.Position * Store.IndexProjection[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.UnChanged
     let loadIndex (log : ILogger) retryPolicy client (pos : Store.Position): Async<IndexResult> = async {
         let getIndex = getIndex client
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGetIndex getIndex pos) log
         match res with
-        | ReadResult.PreconditionFailed -> return IndexResult.Unchanged
+        | ReadResult.NotModified -> return IndexResult.NotModified
         | ReadResult.NotFound -> return IndexResult.NotFound
-        | ReadResult.Found index -> return IndexResult.Found ({ pos with index = Some index.m }, index.c) }
+        | ReadResult.Found index -> return IndexResult.Found ({ pos with index = Some index.m; etag=if index._etag=null then None else Some index._etag }, index.c) }
 
     let private getQuery (client : IDocumentClient) (pos:Store.Position) (direction: Direction) batchSize =
         let querySpec =
@@ -505,9 +501,11 @@ module Token =
     let ofPreviousStreamVersionAndCompactionEventDataIndex prevStreamVersion compactionEventDataIndex eventsLength batchSize streamVersion' : Storage.StreamToken =
         ofCompactionEventNumber (Some (prevStreamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
     let private unpackEqxStreamVersion (x : Storage.StreamToken) = let x : Token = unbox x.value in x.pos.Index
+    let private unpackEqxETag (x : Storage.StreamToken) = let x : Token = unbox x.value in x.pos.etag
     let supersedes current x =
         let currentVersion, newVersion = unpackEqxStreamVersion current, unpackEqxStreamVersion x
-        newVersion > currentVersion
+        let currentETag, newETag = unpackEqxETag current, unpackEqxETag x
+        newVersion > currentVersion || currentETag <> newETag
 
 type EqxConnection(client: IDocumentClient, ?readRetryPolicy (*: (int -> Async<'T>) -> Async<'T>*), ?writeRetryPolicy) =
     member __.Client = client
@@ -535,9 +533,9 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     let (|IEventDataArray|) events = [| for e in events -> e :> Store.IEventData |]
     member private __.InterpretIndexOrFallback log isCompactionEventType pos res: Async<Storage.StreamToken * Store.IEventData[]> = async {
         match res with
+        | Read.IndexResult.NotModified  -> return invalidOp "Not handled"
         | Read.IndexResult.Found (pos, projectionsAndEvents) when projectionsAndEvents |> Array.exists (fun x -> isCompactionEventType x.t) ->
             return Token.ofNonCompacting pos, projectionsAndEvents |> Seq.cast<Store.IEventData> |> Array.ofSeq
-        | Read.IndexResult.Unchanged  -> return invalidOp "Not handled"
         | _ ->
             let! streamToken, events = __.LoadBackwardsStoppingAtCompactionEvent log isCompactionEventType pos
             return streamToken, events |> Seq.cast<Store.IEventData> |> Array.ofSeq }
@@ -573,7 +571,7 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
         else
             let! res = Read.loadIndex log None(* TODO conn.ReadRetryPolicy*) conn.Client pos
             match res with
-            | Read.IndexResult.Unchanged  ->
+            | Read.IndexResult.NotModified  ->
                 return LoadFromTokenResult.Unchanged
             | _ ->
                 let! loaded = __.InterpretIndexOrFallback log isCompactionEventType.Value pos res
@@ -803,21 +801,19 @@ module Initialization =
             var collection = getContext().getCollection();
             var collectionLink = collection.getSelfLink();
             if (!docs) throw new Error("docs argument is missing.");
-            if(index) {
-                var assignedEtag = null;
+            if (index) {
                 function callback(err, doc, options) {
                     if (err) throw err;
-                    assignedEtag = doc._etag
                 }
                 if (-1 == expectedVersion) {
                     collection.createDocument(collectionLink, index, { disableAutomaticIdGeneration : true}, callback);
                 } else {
                     collection.replaceDocument(collection.getAltLink() + "/docs/" + index.id, index, callback);
                 }
+                response.setBody({ etag: null, conflicts: null });
+            } else {
                 // can also contain { conflicts: [{t, d}] } representing conflicting events since expectedVersion
                 // null/missing signifies events have been written, with no conflict
-                response.setBody({ etag: assignedEtag, conflicts: null });
-            } else {
                 response.setBody({ etag: null, conflicts: null });
             }
             for (var i=0; i<docs.length; i++) {
