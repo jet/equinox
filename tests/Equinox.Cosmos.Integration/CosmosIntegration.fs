@@ -278,7 +278,7 @@ type Tests(testOutputHelper) =
 
     let primeIndex = [EqxAct.IndexedNotFound; EqxAct.SliceBackward; EqxAct.BatchBackward]
     // When the test gets re-run to simplify, the stream will typically already have values
-    let primeIndexRerun = [EqxAct.Indexed]
+    let primeIndexRerun = [EqxAct.IndexedCached]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly using the index and cache to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
@@ -293,9 +293,9 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 
-        // ... should see a single Indexed read given writes are cached
-        test <@ primeIndex @ [EqxAct.Append; EqxAct.Indexed] = capture.ExternalCalls
-                || primeIndexRerun @ [EqxAct.Append; EqxAct.Indexed] = capture.ExternalCalls@>
+        // ... should see a single Cached Indexed read given writes are cached and writer emits etag
+        test <@ primeIndex @ [EqxAct.Append; EqxAct.IndexedCached] = capture.ExternalCalls
+                || primeIndexRerun @ [EqxAct.Append; EqxAct.IndexedCached] = capture.ExternalCalls@>
 
         // Add two more - the roundtrip should only incur a single read, which should be cached by virtue of being a second one in successono
         capture.Clear()
@@ -306,8 +306,8 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! _ = service2.Read cartId
         let! _ = service2.Read cartId
-        // First read is a re-read, second is cached
-        test <@ [EqxAct.Indexed;EqxAct.IndexedCached] = capture.ExternalCalls @>
+        // First is cached because writer emits etag, second remains cached
+        test <@ [EqxAct.IndexedCached; EqxAct.IndexedCached] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
