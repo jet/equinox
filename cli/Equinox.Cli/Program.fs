@@ -309,7 +309,7 @@ let main argv =
             match sargs.TryGetSubCommand() with
             | Some (Provision args) ->
                 let rus = args.GetResult(Rus)
-                log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus}", rus)
+                log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus:n0}", rus)
                 Equinox.Cosmos.Initialization.initialize conn.Client dbName collName rus |> Async.RunSynchronously
                 0
             | Some (Run targs) ->
@@ -317,7 +317,7 @@ let main argv =
                 let res = runTest log conn targs
                 let read, write = RuCounterSink.Read, RuCounterSink.Write
                 let total = read+write
-                log.Information("Total RUs consumed: {totalRus} (R:{readRus}, W:{writeRus})", total, read, write)
+                log.Information("Total Request Charges sustained in test: {totalRus:n0} (R:{readRus:n0}, W:{writeRus:n0})", total, read, write)
                 res
             | _ -> failwith "init or run is required"
         | _ -> failwith "ERROR: please specify memory, es or cosmos Store"
