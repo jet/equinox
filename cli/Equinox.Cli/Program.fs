@@ -145,6 +145,11 @@ module Test =
                 let c = Caching.Cache("Cli", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
+        let eqxCache =
+            if targs.Contains Cached then
+                let c = Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50)
+                Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
+            else None
         let resolveStream =
             match store with
             | Store.Mem store ->
@@ -152,11 +157,6 @@ module Test =
             | Store.Es gateway ->
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create(streamName)
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                let cache =
-                    if targs.Contains Cached then
-                        let c = Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50)
-                        Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
-                    else None
                 if targs.Contains Indexed then
                     EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.IndexedSearch index, ?caching = cache)
                         .Create(databaseId, connectionId, streamName)
@@ -247,7 +247,7 @@ let main argv =
             let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
 
             let test = targs.GetResult(Name,Favorites)
-            log.Information( "Running {test} with caching: {caching}, indexing: {indexed}. "+
+            log.Information( "Running {test} with caching: {cached}, indexing: {indexed}. "+
                 "Duration for {duration} with test freq {tps} hits/s; max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
                 test, targs.Contains Cached, targs.Contains Indexed, duration, testsPerSecond, errorCutoff, reportingIntervals, report)
             let runSingleTest clientId =

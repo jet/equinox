@@ -251,13 +251,15 @@ type EqxSyncResult =
     | ConflictUnknown of Store.Position
     | Conflict of Store.Position * events: Store.IEventData[]
 
+// NB don't nest in a private module, or serialization will fail miserably ;)
+[<CLIMutable; NoEquality; NoComparison; JsonObject(ItemRequired=Required.AllowNull)>]
+type WriteResponse = { etag: string; conflicts: Store.IndexProjection[] }
+
 module private Write =
-    [<CLIMutable; NoEquality; NoComparison; JsonObject(ItemRequired=Required.AllowNull)>]
-    type WriteResponse = { etag: string; conflicts: Store.IndexProjection[] }
-    let [<Literal>] sprocName = "AtomicMultiDocInsert"
+    let [<Literal>] sprocName = "EquinoxIndexedWrite"
 
     let private writeEventsAsync (client: IDocumentClient) (pos: Store.Position) (events: Store.EventData seq,maybeIndexEvents): Async<float*EqxSyncResult> = async {
-        let sprocUri = sprintf "%O/sprocs/%s" pos.collectionUri sprocName
+        let sprocLink = sprintf "%O/sprocs/%s" pos.collectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey(pos.streamName))
         let! ct = Async.CancellationToken
         let events = events |> Seq.mapi (fun i ed -> Store.Event.Create pos (i+1) ed |> JsonConvert.SerializeObject) |> Seq.toArray
@@ -267,7 +269,7 @@ module private Write =
             | None | Some [||] -> Unchecked.defaultof<_>
             | Some eds -> Store.IndexEvent.Create pos (events.Length) eds
         try
-            let! (res : Client.StoredProcedureResponse<WriteResponse>) = client.ExecuteStoredProcedureAsync(sprocUri, opts, ct, box events, box pos.Index, box pos.etag, box index) |> Async.AwaitTaskCorrect
+            let! (res : Client.StoredProcedureResponse<WriteResponse>) = client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box events, box pos.Index, box pos.etag, box index) |> Async.AwaitTaskCorrect
             match res.RequestCharge, (match res.Response.etag with null -> None | x -> Some x), res.Response.conflicts with
             | rc,e,null -> return rc, EqxSyncResult.Written { pos with index = Some (pos.IndexRel events.Length); etag=e }
             | rc,e,[||] -> return rc, EqxSyncResult.ConflictUnknown { pos with etag=e }
@@ -361,7 +363,7 @@ module private Read =
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice
         let index = match slice |> Array.tryHead with Some head -> head.id | None -> null
         (log |> Log.prop "startIndex" pos.Index |> Log.prop "bytes" bytes |> Log.event evt)
-            .Information("Eqx {action:l} {count} {ms}ms i={index} rc={ru}", "Read", count, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
+            .Information("Eqx {action:l} {count} {direction} {ms}ms i={index} rc={ru}", "Query", count, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
         return slice, ru }
 
     let private readBatches (log : ILogger) (readSlice: IDocumentQuery<Store.Event> -> ILogger -> Async<Store.Event[] * float>)
@@ -796,7 +798,7 @@ module Initialization =
         return coll.Resource.Id }
 
     let createProc (client: IDocumentClient) (collectionUri: Uri) = async {
-        let f = """function multidocInsert(docs, expectedVersion, etag, index) {
+        let f = """function indexedWrite(docs, expectedVersion, etag, index) {
             var response = getContext().getResponse();
             var collection = getContext().getCollection();
             var collectionLink = collection.getSelfLink();
@@ -804,14 +806,15 @@ module Initialization =
             if (index) {
                 function callback(err, doc, options) {
                     if (err) throw err;
+                    response.setBody({ etag: doc._etag, conflicts: null });
                 }
                 if (-1 == expectedVersion) {
                     collection.createDocument(collectionLink, index, { disableAutomaticIdGeneration : true}, callback);
                 } else {
                     collection.replaceDocument(collection.getAltLink() + "/docs/" + index.id, index, callback);
                 }
-                response.setBody({ etag: null, conflicts: null });
             } else {
+                // call always expects a parseable json response with `etag` and `conflicts`
                 // can also contain { conflicts: [{t, d}] } representing conflicting events since expectedVersion
                 // null/missing signifies events have been written, with no conflict
                 response.setBody({ etag: null, conflicts: null });
