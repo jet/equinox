@@ -60,7 +60,7 @@ module SerilogHelpers =
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_,_) -> EqxAct.BatchBackward
         | Equinox.Cosmos.Log.Index _ -> EqxAct.Indexed
         | Equinox.Cosmos.Log.IndexNotFound _ -> EqxAct.IndexedNotFound
-        | Equinox.Cosmos.Log.IndexCached _ -> EqxAct.IndexedCached
+        | Equinox.Cosmos.Log.IndexNotModified _ -> EqxAct.IndexedCached
     let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
             | SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e

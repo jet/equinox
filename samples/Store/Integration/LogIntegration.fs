@@ -37,8 +37,8 @@ module EquinoxCosmosInterop =
             | Log.Batch (Direction.Forward,c,m) -> "EqxLoadF", m, Some c, m.ru
             | Log.Batch (Direction.Backward,c,m) -> "EqxLoadB", m, Some c, m.ru
             | Log.Index m -> "EqxLoadI", m, None, m.ru
-            | Log.IndexNotFound m -> "EqxLoadIN", m, None, m.ru
-            | Log.IndexCached m -> "EqxLoadIC", m, None, m.ru
+            | Log.IndexNotFound m -> "EqxLoadI404", m, None, m.ru
+            | Log.IndexNotModified m -> "EqxLoadI302", m, None, m.ru
         {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; batches = batches
             interval = StopwatchInterval(metric.interval.StartTicks,metric.interval.EndTicks); ru = ru }
 
