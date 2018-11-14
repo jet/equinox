@@ -10,9 +10,8 @@ open Newtonsoft.Json.Linq
 open Serilog
 open System
 
-
 [<AutoOpen>]
-module DocDbExtensions =
+module private DocDbExtensions =
     /// Extracts the innermost exception from a nested hierarchy of Aggregate Exceptions
     let (|AggregateException|) (exn : exn) =
         let rec aux (e : exn) =
@@ -53,6 +52,8 @@ module DocDbExtensions =
             | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, NotModified }
 
 module Store =
+    open System.IO
+    open System.IO.Compression
     [<NoComparison>]
     type Position =
         {   collectionUri: Uri; streamName: string; index: int64 option; etag: string option }
@@ -165,21 +166,54 @@ module Store =
         static member Create (pos: Position) eventCount (eds: EventData[]) : IndexEvent =
             {   p = pos.streamName; id = IndexEvent.IdConstant; m = pos.IndexRel eventCount; _etag = null
                 c = [| for ed in eds -> { t = ed.eventType; d = ed.data; m = ed.metadata } |] }
-    and IndexProjection =
+    and [<CLIMutable>] IndexProjection =
         {   /// The Event Type, used to drive deserialization
             t: string // required
 
             /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
-            [<JsonConverter(typeof<VerbatimUtf8JsonConverter>)>]
+            [<JsonConverter(typeof<Base64ZipUtf8JsonConverter>)>]
             d: byte[] // required
 
             /// Optional metadata (null, or same as d, not written if missing)
-            [<JsonConverter(typeof<VerbatimUtf8JsonConverter>); JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+            [<JsonConverter(typeof<Base64ZipUtf8JsonConverter>); JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
             m: byte[] } // optional
         interface IEventData with
             member __.EventType = __.t
             member __.DataUtf8 = __.d
             member __.MetaUtf8 = __.m
+
+    /// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
+    /// Only applied to snapshots in the Index
+    and Base64ZipUtf8JsonConverter() =
+        inherit JsonConverter()
+        let pickle (input : byte[]) : string =
+            if input = null then null else
+
+            use output = new MemoryStream()
+            use compressor = new DeflateStream(output, CompressionLevel.Optimal)
+            compressor.Write(input,0,input.Length)
+            compressor.Close()
+            Convert.ToBase64String(output.ToArray())
+        let unpickle str : byte[] =
+            if str = null then null else
+
+            let compressedBytes = Convert.FromBase64String str
+            use input = new MemoryStream(compressedBytes)
+            use decompressor = new DeflateStream(input, CompressionMode.Decompress)
+            use output = new MemoryStream()
+            decompressor.CopyTo(output)
+            decompressor.Close()
+            output.ToArray()
+
+        override __.CanConvert(objectType) =
+            typeof<byte[]>.Equals(objectType)
+        override __.ReadJson(reader, _, _, serializer) =
+            //(   if reader.TokenType = JsonToken.Null then null else
+            serializer.Deserialize(reader, typedefof<string>) :?> string |> unpickle |> box
+        override __.WriteJson(writer, value, serializer) =
+            let pickled = value |> unbox |> pickle
+            serializer.Serialize(writer, pickled)
+
     (* Pseudocode:
     function sync(p, expectedVersion, windowSize, events) {
         if (i == 0) then {
