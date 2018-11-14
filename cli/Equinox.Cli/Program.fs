@@ -176,7 +176,7 @@ module SerilogHelpers =
         match evt with
         | Equinox.Cosmos.Log.Index { ru = ru }
         | Equinox.Cosmos.Log.IndexNotFound { ru = ru }
-        | Equinox.Cosmos.Log.IndexCached { ru = ru }
+        | Equinox.Cosmos.Log.IndexNotModified { ru = ru }
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_, { ru = ru })
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_, { ru = ru }) -> CosmosReadRu ru
         | Equinox.Cosmos.Log.WriteSuccess {ru = ru }
