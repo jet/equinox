@@ -277,6 +277,8 @@ type Tests(testOutputHelper) =
     }
 
     let primeIndex = [EqxAct.IndexedNotFound; EqxAct.SliceBackward; EqxAct.BatchBackward]
+    // When the test gets re-run to simplify, the stream will typically already have values
+    let primeIndexRerun = [EqxAct.Indexed]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly using the index and cache to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
@@ -291,11 +293,11 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 
-        // ... should see a single read (with a) we are writes are cached
-        let! _ = service2.Read cartId
-        test <@ primeIndex @ [EqxAct.Append; EqxAct.IndexedCached; EqxAct.IndexedCached] = capture.ExternalCalls @>
+        // ... should see a single Indexed read given writes are cached
+        test <@ primeIndex @ [EqxAct.Append; EqxAct.Indexed] = capture.ExternalCalls
+                || primeIndexRerun @ [EqxAct.Append; EqxAct.Indexed] = capture.ExternalCalls@>
 
-        // Add two more - the roundtrip should only incur a single read
+        // Add two more - the roundtrip should only incur a single read, which should be cached by virtue of being a second one in successono
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
         test <@ [EqxAct.IndexedCached; EqxAct.Append] = capture.ExternalCalls @>
@@ -303,7 +305,9 @@ type Tests(testOutputHelper) =
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service2.Read cartId
-        test <@ [EqxAct.IndexedCached] = capture.ExternalCalls @>
+        let! _ = service2.Read cartId
+        // First read is a re-read, second is cached
+        test <@ [EqxAct.Indexed;EqxAct.IndexedCached] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
