@@ -246,8 +246,11 @@ let main argv =
                 "Duration for {duration} with test freq {tps} hits/s; max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
                 test, targs.Contains Cached, targs.Contains Indexed, duration, testsPerSecond, errorCutoff, reportingIntervals, report)
             let runSingleTest clientId =
-                if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
-                Test.runFavoriteTest service clientId
+                if not verbose then Test.runFavoriteTest service clientId
+                else async {
+                    domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
+                    try return! Test.runFavoriteTest service clientId
+                    with e -> domainLog.Warning(e, "Threw"); e.Reraise () }
             let results = Test.run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
             let resultFile = createResultLog report
             for r in results do
@@ -301,7 +304,7 @@ let main argv =
             match sargs.TryGetSubCommand() with
             | Some (Provision args) ->
                 let rus = args.GetResult(Rus)
-                log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus}", rus)
+                log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus:n0}", rus)
                 Equinox.Cosmos.Initialization.initialize conn.Client dbName collName rus |> Async.RunSynchronously
                 0
             | Some (Run targs) ->
@@ -309,7 +312,7 @@ let main argv =
                 let res = runTest log conn targs
                 let read, write = RuCounterSink.Read, RuCounterSink.Write
                 let total = read+write
-                log.Information("Total RUs consumed: {totalRus} (R:{readRus}, W:{writeRus})", total, read, write)
+                log.Information("Total Request Charges sustained in test: {totalRus:n0} (R:{readRus:n0}, W:{writeRus:n0})", total, read, write)
                 res
             | _ -> failwith "init or run is required"
         | _ -> failwith "ERROR: please specify memory, es or cosmos Store"
