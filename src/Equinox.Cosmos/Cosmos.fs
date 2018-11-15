@@ -345,7 +345,7 @@ module private Write =
                         tryQueryAndUpdate(responseOptions.continuation);
                     } else {
                         // Else the snapshot does not exist; create snapshot
-                        var doc = {p:batch.p, id:"-1", m:-1, c:[]};
+                        var doc = {p:batch.p, id:"-1", i:-1, _etag: "", e:[], c:[]};
                         tryUpdate(doc, true);
                     }
                 });
@@ -379,19 +379,22 @@ module private Write =
                 // Step 1: Insert new events to DB
                 var i;
                 for (i=0; i<batch.e.length; i++) {
-                    batch.e[i].i = doc.m+i+1;
+                    batch.e[i].i = doc.i+i+1;
                     batch.e[i].id = batch.e[i].i.toString();
                     batch.e[i].p = batch.p;
                 }
                 insertEvents(batch.e);
 
                 // Step 2: Update snapshot document's latest
-                doc.m = doc.m + batch.e.length;
+                doc.i = doc.i + batch.e.length;
 
-                // Step 3: Update snapshot document's projections
+                // Step 3: Update snapshot document's events
+                Array.prototype.push.apply(doc.e, batch.e);
+
+                // Step 4: Update snapshot document's projections
                 doc.c = batch.c;
 
-                // Step 4: Replace existing snapshot document or create the first snapshot document for this partition key
+                // Step 5: Replace existing snapshot document or create the first snapshot document for this partition key
                 function callback(err, docReturned, options) {
                     if (err) throw err;
                     response.setBody({ etag: docReturned._etag, i: docReturned.m, conflicts: null });
