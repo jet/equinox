@@ -496,9 +496,9 @@ module private Read =
     let private genBatchesQuery (client : IDocumentClient) (pos:Store.Position) (direction: Direction) batchSize =
         let querySpec =
             match pos.index with
-            | None -> SqlQuerySpec("SELECT * FROM c WHERE c.i >= 0 ORDER BY c.i " + if direction = Direction.Forward then "ASC" else "DESC")
+            | None -> SqlQuerySpec("SELECT * FROM c ORDER BY c.i " + if direction = Direction.Forward then "ASC" else "DESC")
             | Some index ->
-                let f = if direction = Direction.Forward then "c.i >= @id ORDER BY c.i ASC" else "c.i < @id AND c.i >= 0 ORDER BY c.i DESC"
+                let f = if direction = Direction.Forward then "c.i >= @id ORDER BY c.i ASC" else "c.i < @id ORDER BY c.i DESC"
                 SqlQuerySpec( "SELECT * FROM c WHERE " + f, SqlParameterCollection [SqlParameter("@id", index)])
         let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey(pos.streamName), MaxItemCount=Nullable batchSize)
         client.CreateDocumentQuery<Store.Batch>(pos.collectionUri, querySpec, feedOptions).AsDocumentQuery()
