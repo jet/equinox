@@ -314,31 +314,109 @@ type WriteResponse = { etag: string; i: int64; conflicts: Store.Projection[] }
 
 module private Write =
     let [<Literal>] sprocName = "EquinoxIndexedWrite"
-    let [<Literal>] sprocBody = """function indexedWrite(docs, expectedVersion, etag, index) {
-    var response = getContext().getResponse();
-    var collection = getContext().getCollection();
-    var collectionLink = collection.getSelfLink();
-    if (!docs) throw new Error("docs argument is missing.");
-    if (index) {
-        function callback(err, doc, options) {
-            if (err) throw err;
-            response.setBody({ etag: doc._etag, conflicts: null });
+    let [<Literal>] sprocBody = """
+    function indexedWrite(batch) {
+        var response = getContext().getResponse();
+        var collection = getContext().getCollection();
+        var collectionLink = collection.getSelfLink();
+
+        if (batch === undefined || batch==null) {
+            response.setBody({ etag: null, i: -2, conflicts: null });
         }
-        if (-1 == expectedVersion) {
-            collection.createDocument(collectionLink, index, { disableAutomaticIdGeneration : true}, callback);
-        } else {
-            collection.replaceDocument(collection.getAltLink() + "/docs/" + index.id, index, callback);
+        else {
+            tryQueryAndUpdate();
+
+            // Recursively queries for a document by id w/ support for continuation tokens.
+            // Calls tryUpdate(document) as soon as the query returns a document.
+            function tryQueryAndUpdate(continuation) {
+                var query = {query: "select * from root r where r.id = @id and r.p = @p", parameters: [{name: "@id", value: "-1"},{name: "@p", value: batch.p}]};
+                var requestOptions = {continuation: continuation};
+
+                var isAccepted = collection.queryDocuments(collectionLink, query, requestOptions, function (err, documents, responseOptions) {
+                    if (err) throw new Error("Error" + err.message);
+
+                    if (documents.length > 0) {
+                        // If the document is found, update it.
+                        // There is no need to check for a continuation token since we are querying for a single document.
+                        tryUpdate(documents[0], false);
+                    } else if (responseOptions.continuation) {
+                        // Else if the query came back empty, but with a continuation token; repeat the query w/ the token.
+                        // It is highly unlikely for this to happen when performing a query by id; but is included to serve as an example for larger queries.
+                        tryQueryAndUpdate(responseOptions.continuation);
+                    } else {
+                        // Else the snapshot does not exist; create snapshot
+                        var doc = {p:batch.p, id:"-1", m:-1, c:[]};
+                        tryUpdate(doc, true);
+                    }
+                });
+
+                // If we hit execution bounds - throw an exception.
+                // This is highly unlikely given that this is a query by id; but is included to serve as an example for larger queries.
+                if (!isAccepted) {
+                    throw new Error("The stored procedure timed out.");
+                }
+            }
+
+            function insertEvents(events) {
+                for (i=0; i<events.length; i++) {
+                    var isAccepted = collection.createDocument(collectionLink, events[i], function (err, documentCreated) {
+                        if (err) throw new Error ("Create doc " + JSON.stringify(events[i]) + " failed");
+                    });
+
+                    // If we hit execution bounds - throw an exception.
+                    if (!isAccepted) {
+                        throw new Error("Unable to create document.");
+                    }
+                }
+            }
+
+            // The kernel function
+            function tryUpdate(doc, isCreate) {
+
+                // DocumentDB supports optimistic concurrency control via HTTP ETag.
+                var requestOptions = {etag: doc._etag};
+
+                // Step 1: Insert new events to DB
+                var i;
+                for (i=0; i<batch.e.length; i++) {
+                    batch.e[i].i = doc.m+i+1;
+                    batch.e[i].id = batch.e[i].i.toString();
+                    batch.e[i].p = batch.p;
+                }
+                insertEvents(batch.e);
+
+                // Step 2: Update snapshot document's latest
+                doc.m = doc.m + batch.e.length;
+
+                // Step 3: Update snapshot document's projections
+                doc.c = batch.c;
+
+                // Step 4: Replace existing snapshot document or create the first snapshot document for this partition key
+                function callback(err, docReturned, options) {
+                    if (err) throw err;
+                    response.setBody({ etag: docReturned._etag, i: docReturned.m, conflicts: null });
+                }
+
+                if (!isCreate) {
+                    var isAccepted = collection.replaceDocument(doc._self, doc, requestOptions, callback);
+
+                    // If we hit execution bounds - throw an exception.
+                    if (!isAccepted) {
+                        throw new Error("Unable to replace snapshot document.");
+                    }
+                }
+                else {
+                    var isAccepted = collection.createDocument(collectionLink, doc, callback);
+
+                    // If we hit execution bounds - throw an exception.
+                    if (!isAccepted) {
+                        throw new Error("Unable to create snapshot document.");
+                    }
+                }
+            }
         }
-    } else {
-        // call always expects a parseable json response with `etag` and `conflicts`
-        // can also contain { conflicts: [{t, d}] } representing conflicting events since expectedVersion
-        // null/missing signifies events have been written, with no conflict
-        response.setBody({ etag: null, conflicts: null });
     }
-    for (var i=0; i<docs.length; i++) {
-        collection.createDocument(collectionLink, docs[i]);
-    }
-}"""
+    """
 
     let private run (client: IDocumentClient) (pos: Store.Position) (batch: Store.WipBatch): Async<float*EqxSyncResult> = async {
         let sprocLink = sprintf "%O/sprocs/%s" pos.collectionUri sprocName
