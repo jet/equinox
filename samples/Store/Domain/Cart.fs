@@ -31,7 +31,7 @@ module Folds =
         let toSnapshot (s: State) : Events.Compaction.State =
             { items = [| for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } |] }
         let ofCompacted (s: Events.Compaction.State) : State =
-            { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
+            { items = if s.items = null then [] else [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
     let initial = { items = [] }
     let evolve (state : State) event =
         let updateItems f = { state with items = f state.items }

@@ -41,6 +41,7 @@ module Json =
             use output = new MemoryStream()
             use compressor = new DeflateStream(output, CompressionLevel.Optimal)
             compressor.Write(input,0,input.Length)
+            compressor.Close()
             Convert.ToBase64String(output.ToArray())
         let unpickle str : byte[] =
             if str = null then null else
@@ -152,9 +153,10 @@ module Store =
             [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
             m: byte[] } // optional
 
-    /// The Special 'Pending' Batch Format
+    /// The Special 'Pending' Batch Format, with the following differences vs a 'normal' (frozen/completed) Batch
     /// a) `id` = `-1`
     /// b) contains projections (`c`)
+    /// c) contains page size limit `l`
     /// NB this Type does double duty as
     /// a) transport for when we read it
     /// b) a way of encoding a batch that the stored procedure will write in to the actual document
@@ -168,7 +170,7 @@ module Store =
             /// When we read, we need to capture the value so we can retain it for caching purposes
             /// NB this is not relevant to fill in when we pass it to the writing stored procedure
             /// as it will do it's own 1. read 2. merge 3. write merged version contingent on the _etag not having changed
-            [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore,Required=Required.Default)>]
+            [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
             _etag: string
 
             /// base 'i' value for the Events held herein
@@ -177,18 +179,21 @@ module Store =
             /// Events
             e: BatchEvent[]
 
+            /// Desired Limit on number of items merged into a single page's `e` array, honored by SP
+            l: int
+
             /// Projections
             c: Projection[] }
-        /// TOCONSIDER maybe this should be a high nember to reflect fact it is the freshest ?
-        static member IdConstant = "-1"
+        /// TOCONSIDER arguably this should be a high nember to reflect fact it is the freshest ?
+        static member WellKnownDocumentId = "-1"
     /// Projection based on the state at a given point in time `i`
     and [<CLIMutable>]
         Projection =
         {   /// Base: Max index rolled into this projection
             i: int64
 
-            /// Indicates whether this is actually an event being retained to support a lagging projection
-            x: bool
+            ///// Indicates whether this is actually an event being retained to support a lagging projection
+            //x: bool
 
             /// The Event Type of this compaction/snapshot, used to drive deserialization
             t: string // required
@@ -239,7 +244,7 @@ module Store =
         static member Projections (xs: Projection[]) = seq {
             for x in xs -> { new IOrderedEvent with
                 member __.Index = x.i
-                member __.IsProjection = not x.x
+                member __.IsProjection = true
                 member __.EventType = x.t
                 member __.Data = x.d
                 member __.Meta = x.m } }
@@ -249,12 +254,12 @@ module Store =
             // where Index is equal, projections get delivered after the events so the fold semantics can be 'idempotent'
             |> Seq.sortBy (fun x -> x.Index, x.IsProjection)
 
-    let mkBatch (pos: Position) (events: IEvent[]) (projections: Projection[]) : WipBatch =
-        {   p = pos.streamName; id = WipBatch.IdConstant
-            i = pos.Index; _etag = null
+    let mkBatch (pos: Position) (eventCountLimit, events: IEvent[]) (projections: Projection[]) : WipBatch =
+        {   p = pos.streamName; id = WipBatch.WellKnownDocumentId; l = eventCountLimit
+            i = pos.Index + 1L; _etag = null
             e = [| for e in events -> { c = DateTimeOffset.UtcNow; t = e.EventType; d = e.Data; m = e.Meta } |]
             c = projections }
-    let mkProjection baseIndex canDiscard (e: IEvent) = { i = baseIndex; x = canDiscard; t = e.EventType; d = e.Data; m = e.Meta }
+    let mkProjection baseIndex (*canDiscard*) (e: IEvent) = { i = baseIndex; (*x = canDiscard; *)t = e.EventType; d = e.Data; m = e.Meta }
 
 open Store
 
@@ -310,118 +315,103 @@ type EqxSyncResult =
 
 // NB don't nest in a private module, or serialization will fail miserably ;)
 [<CLIMutable; NoEquality; NoComparison; JsonObject(ItemRequired=Required.AllowNull)>]
-type WriteResponse = { etag: string; i: int64; conflicts: Store.Projection[] }
+type WriteResponse = { etag: string; nextI: int64; conflicts: Store.Projection[] }
 
 module private Write =
-    let [<Literal>] sprocName = "EquinoxIndexedWrite"
+    let [<Literal>] sprocName = "EquinoxPagedWrite15"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
-    function indexedWrite(batch) {
-        var response = getContext().getResponse();
-        var collection = getContext().getCollection();
-        var collectionLink = collection.getSelfLink();
 
-        if (batch === undefined || batch==null) {
-            response.setBody({ etag: null, i: -2, conflicts: null });
-        }
-        else {
-            tryQueryAndUpdate();
+// Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
+// 1 Verify no current WIP batch, the incoming `req` becomes the WIP batch (the caller is entrusted to provide a valid and complete set of inputs, or it's GIGO)
+// 2 Current WIP batch has space to accommodate the incoming projections (req.c) and events (req.e) - merge them in, replacing any superseded projections
+// 3. Current WIP batch would become too large - remove WIP state from active document by replacing the well known id with a correct one; proceed as per 1
+function pagedWrite(req) {
+    var collection = getContext().getCollection();
+    var collectionLink = collection.getSelfLink();
 
-            // Recursively queries for a document by id w/ support for continuation tokens.
-            // Calls tryUpdate(document) as soon as the query returns a document.
-            function tryQueryAndUpdate(continuation) {
-                var query = {query: "select * from root r where r.id = @id and r.p = @p", parameters: [{name: "@id", value: "-1"},{name: "@p", value: batch.p}]};
-                var requestOptions = {continuation: continuation};
+    if (!req) throw new Error("Missing req argument");
 
-                var isAccepted = collection.queryDocuments(collectionLink, query, requestOptions, function (err, documents, responseOptions) {
-                    if (err) throw new Error("Error" + err.message);
+    runQueryToDetermineWhetherToCreateOrUpdate(null);
 
-                    if (documents.length > 0) {
-                        // If the document is found, update it.
-                        // There is no need to check for a continuation token since we are querying for a single document.
-                        tryUpdate(documents[0], false);
-                    } else if (responseOptions.continuation) {
-                        // Else if the query came back empty, but with a continuation token; repeat the query w/ the token.
-                        // It is highly unlikely for this to happen when performing a query by id; but is included to serve as an example for larger queries.
-                        tryQueryAndUpdate(responseOptions.continuation);
-                    } else {
-                        // Else the snapshot does not exist; create snapshot
-                        var doc = {p:batch.p, id:"-1", i:-1, e:[], c:[]};
-                        tryUpdate(doc, true);
-                    }
-                });
+    // Recursively queries for a document by id w/ support for continuation tokens.
+    // Passes control to executeUpsert(document) as soon as the query returns a document, or reports a timeout.
+    function runQueryToDetermineWhetherToCreateOrUpdate(continuation) {
+        var query = { query: "select * from root r where r.id = @id and r.p = @p", parameters: [{name: "@id", value: req.id}, {name: "@p", value: req.p}]};
+        var requestOptions = { continuation: continuation };
 
-                // If we hit execution bounds - throw an exception.
-                // This is highly unlikely given that this is a query by id; but is included to serve as an example for larger queries.
-                if (!isAccepted) {
-                    throw new Error("The stored procedure timed out.");
-                }
+        var isAccepted = collection.queryDocuments(collectionLink, query, requestOptions, function (err, documents, responseOptions) {
+            if (err) throw new Error("Error" + err.message);
+
+            if (documents.length > 0) {
+                // If the [single] document is found, update it. (There is no need to check for a continuation token since we are querying for a single document.)
+                executeUpsert(documents[0]);
+            } else if (responseOptions.continuation) {
+                // Nothing returned, retry with supplied token (highly unlikely for this to happen when performing a query by id, but completeness)
+                runQueryToDetermineWhetherToCreateOrUpdate(responseOptions.continuation);
+            } else {
+                // Well known document missing; it's on us to generate the page now
+                executeUpsert(null);
             }
+        });
 
-            function insertEvents(events) {
-                for (i=0; i<events.length; i++) {
-                    var isAccepted = collection.createDocument(collectionLink, events[i], function (err, documentCreated) {
-                        if (err) throw new Error ("Create doc " + JSON.stringify(events[i]) + " failed");
-                    });
-
-                    // If we hit execution bounds - throw an exception.
-                    if (!isAccepted) {
-                        throw new Error("Unable to create document.");
-                    }
-                }
-            }
-
-            // The kernel function
-            function tryUpdate(doc, isCreate) {
-
-                // DocumentDB supports optimistic concurrency control via HTTP ETag.
-                var requestOptions = {etag: doc._etag};
-
-                // Step 1: Update snapshot document's events
-                Array.prototype.push.apply(doc.e, batch.e);
-
-                // Step 2: Update snapshot document's projections
-                doc.c = batch.c;
-
-                // Step 3: If events accumulated to a threshold, emit them
-                if (doc.e.length>=10)
-                {
-                    var i;
-                    for (i=0; i<doc.e.length; i++) {
-                        doc.e[i].i = doc.i+i+1;
-                        doc.e[i].id = doc.e[i].i.toString();
-                        doc.e[i].p = batch.p;
-                    }
-                    insertEvents(doc.e);
-                    doc.i = doc.i + doc.e.length;
-                    doc.e = [];
-                }
-
-                // Step 4: Replace existing snapshot document or create the first snapshot document for this partition key
-                function callback(err, docReturned, options) {
-                    if (err) throw err;
-                    response.setBody({ etag: docReturned._etag, i: docReturned.i, conflicts: null });
-                }
-
-                if (!isCreate) {
-                    var isAccepted = collection.replaceDocument(doc._self, doc, requestOptions, callback);
-
-                    // If we hit execution bounds - throw an exception.
-                    if (!isAccepted) {
-                        throw new Error("Unable to replace snapshot document.");
-                    }
-                }
-                else {
-                    var isAccepted = collection.createDocument(collectionLink, doc, callback);
-
-                    // If we hit execution bounds - throw an exception.
-                    if (!isAccepted) {
-                        throw new Error("Unable to create snapshot document.");
-                    }
-                }
-            }
+        // If we hit execution bounds - bail out (highly unlikely given that this is a query by id)
+        if (!isAccepted) {
+            throw new Error("The stored procedure timed out.");
         }
     }
-    """
+
+    function executeUpsert(current) {
+        // Verify we dont have a conflicting write
+        //if (current != null && req.i != current.i+current.e.length) {
+        //    throw new Error("TODO: gather and emit conflicting events");
+        //}
+
+        // If we have hit a sensible limit for a slice, swap to a new one
+        if (current != null && req.l <= current.e.length+req.e.length) {
+            // remove the well-known `id` value identifying the batch as being WIP
+            current.id = current.i.toString();
+            // ... As it's no longer a WIP batch, we definitely don't want projections taking up space
+            delete current.c
+            // ... And the `l` is of no value
+            delete current.l
+
+            // TODO Carry forward:
+            // - `c` items not present in `batch`,
+            // - their associated `c` items with `x:true`
+            // - any required `e` items from the page being superseded (as `c` items with `x:true`])
+
+            // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
+            const requestOptions = { etag: current._etag };
+            const isAccepted = collection.replaceDocument(current._self, current, requestOptions);
+            if (!isAccepted) throw new Error("Unable to remove WIP markings from WIP batch.");
+            // The incoming batch now needs to become a new document, trigger that action in the final step
+            current = null;
+        } else if (current) {
+            // Append the new events into the current batch
+            Array.prototype.push.apply(current.e, req.e);
+            // Replace all the projections
+            current.c = req.c;
+            // TODO: should remove only projections being superseded
+        }
+
+        // Create or replace the WIP batch as necessary
+        function callback(err, docReturned, options) {
+            if (err) throw err;
+            getContext().getResponse().setBody({ etag: docReturned._etag, nextI: docReturned.i+docReturned.e.length, conflicts: null });
+        }
+
+        if (current) {
+            // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
+            const requestOptions = { etag: current._etag };
+            const isAccepted = collection.replaceDocument(current._self, current, requestOptions, callback);
+            if (!isAccepted) throw new Error("Unable to replace WIP batch.");
+        } else {
+            const isAccepted = collection.createDocument(collectionLink, req, callback);
+            if (!isAccepted) throw new Error("Unable to create WIP batch.");
+        }
+    }
+}
+"""
 
     let private run (client: IDocumentClient) (pos: Store.Position) (batch: Store.WipBatch): Async<float*EqxSyncResult> = async {
         let sprocLink = sprintf "%O/sprocs/%s" pos.collectionUri sprocName
@@ -429,9 +419,9 @@ module private Write =
         let! ct = Async.CancellationToken
         let! (res : Client.StoredProcedureResponse<WriteResponse>) = client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box batch) |> Async.AwaitTaskCorrect
         match res.RequestCharge, (match res.Response.etag with null -> None | x -> Some x), res.Response.conflicts with
-        | rc,e,null -> return rc, EqxSyncResult.Written { pos with index = Some res.Response.i; etag=e }
-        | rc,e,[||] -> return rc, EqxSyncResult.ConflictUnknown { pos with index = Some res.Response.i; etag=e }
-        | rc,e, xs  -> return rc, EqxSyncResult.Conflict ({ pos with index = Some res.Response.i; etag=e }, Store.Enum.Projections xs |> Array.ofSeq) }
+        | rc,e,null -> return rc, EqxSyncResult.Written { pos with index = Some res.Response.nextI; etag=e }
+        | rc,e,[||] -> return rc, EqxSyncResult.ConflictUnknown { pos with index = Some res.Response.nextI; etag=e }
+        | rc,e, xs  -> return rc, EqxSyncResult.Conflict ({ pos with index = Some res.Response.nextI; etag=e }, Store.Enum.Projections xs |> Array.ofSeq) }
 
     let private logged client (pos : Store.Position) (batch: Store.WipBatch) (log : ILogger): Async<EqxSyncResult> = async {
         let verbose = log.IsEnabled Events.LogEventLevel.Debug
@@ -465,7 +455,7 @@ module private Read =
         let coll = DocDbCollection(client, pos.collectionUri)
         let ac = match pos.etag with None -> null | Some etag-> Client.AccessCondition(Type=Client.AccessConditionType.IfNoneMatch, Condition=etag)
         let ro = Client.RequestOptions(PartitionKey=PartitionKey(pos.streamName), AccessCondition = ac)
-        coll.TryReadDocument(Store.WipBatch.IdConstant, ro)
+        coll.TryReadDocument(Store.WipBatch.WellKnownDocumentId, ro)
     let private loggedGetIndex (getIndex : Store.Position -> Async<_>) (pos:Store.Position)  (log: ILogger) = async {
         let log = log |> Log.prop "stream" pos.streamName
         let! t, (ru, res : ReadResult<Store.WipBatch>) = getIndex pos |> Stopwatch.Time
@@ -565,7 +555,7 @@ module private Read =
         let slices : AsyncSeq<Store.IOrderedEvent[] * float> = runBatchesQuery log retryingLoggingReadSlice maxPermittedBatchReads query
         let! t, (events, ru) = mergeBatches slices |> Stopwatch.Time
         query.Dispose()
-        let version = if events.Length = 0 then -1L else events.[events.Length].Index // No Array.tryLast in older FSharp.Core
+        let version = if events.Length = 0 then -1L else events.[events.Length-1].Index // No Array.tryLast in older FSharp.Core
         log |> logBatchRead direction batchSize pos.streamName t (responses,events) version ru
         return { pos with index = Some version }, events }
 
@@ -608,7 +598,7 @@ module private Read =
         let batchesBackward : AsyncSeq<Store.IOrderedEvent[] * float> = runBatchesQuery readlog retryingLoggingReadSlice maxPermittedBatchReads query
         let! t, (events, ru) = mergeFromCompactionPointOrStartFromBackwardsStream log batchesBackward |> Stopwatch.Time
         query.Dispose()
-        let version = if events.Length = 0 then -1L else events.[events.Length].Index // No Array.tryLast in older FSharp.Core // the merge put them in order so this is correct
+        let version = if events.Length = 0 then -1L else events.[events.Length-1].Index // No Array.tryLast in older FSharp.Core // the merge put them in order so this is correct
         log |> logBatchRead direction batchSize pos.streamName t (responseCount,events) version ru
         return { pos with index = Some version } , events }
 
@@ -668,10 +658,11 @@ type EqxConnection(client: IDocumentClient, ?readRetryPolicy (*: (int -> Async<'
     member __.WriteRetryPolicy = writeRetryPolicy
     member __.Close = (client :?> Client.DocumentClient).Dispose()
 
-type EqxBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
+type EqxBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit, ?maxEventsPerSlice) =
     new (maxBatchSize) = EqxBatchingPolicy(fun () -> maxBatchSize)
     member __.BatchSize = getMaxBatchSize()
     member __.MaxBatches = batchCountLimit
+    member __.MaxEventsPerSlice = defaultArg maxEventsPerSlice 100
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of Storage.StreamToken | ConflictUnknown of Storage.StreamToken | Conflict of Storage.StreamToken * Store.IOrderedEvent[]
@@ -731,8 +722,8 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
                 return ok loaded }
     member __.TrySync log (Pos pos as token) (encodedEvents: IEvent[],projections: IEvent seq) maybeRollingSnapshotPredicate
         : Async<GatewaySyncResult> = async {
-        let projections = [| for x in projections -> Store.mkProjection (pos.Index + int64 encodedEvents.Length) false x |]
-        let batch : Store.WipBatch = Store.mkBatch pos (encodedEvents) projections
+        let projections = [| for x in projections -> Store.mkProjection (pos.Index + int64 encodedEvents.Length) x |]
+        let batch : Store.WipBatch = Store.mkBatch pos (batching.MaxEventsPerSlice,encodedEvents) projections
         let! wr = Write.batch log conn.WriteRetryPolicy conn.Client pos batch
         match wr with
         | EqxSyncResult.Conflict (pos',events) ->
@@ -949,17 +940,18 @@ module Initialization =
         let! coll = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, colld, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect
         return coll.Resource.Id }
 
-    let createProc (client: IDocumentClient) (collectionUri: Uri) = async {
+    let createProc (log: ILogger) (client: IDocumentClient) (collectionUri: Uri) = async {
         let def = new StoredProcedure(Id = Write.sprocName, Body = Write.sprocBody)
+        log.Information("Creating stored procedure {sprocId}", def.Id)
         return! client.CreateStoredProcedureAsync(collectionUri, def) |> Async.AwaitTaskCorrect |> Async.Ignore }
 
-    let initialize (client : IDocumentClient) dbName collName ru = async {
+    let initialize log (client : IDocumentClient) dbName collName ru = async {
         let! dbId = createDatabase client dbName
         let dbUri = Client.UriFactory.CreateDatabaseUri dbId
         let! collId = createCollection client dbUri collName ru
         let collUri = Client.UriFactory.CreateDocumentCollectionUri (dbName, collId)
         //let! _aux = createAux client dbUri collName auxRu
-        return! createProc client collUri
+        return! createProc log client collUri
     }
 
 [<RequireQualifiedAccess; NoComparison>]

@@ -20,7 +20,7 @@ let ``VerbatimUtf8JsonConverter encodes correctly`` () =
     let encoded = mkUnionEncoder().Encode(A { embed = "\"" })
     let e : Store.Batch =
         {   p = "streamName"; id = string 0; i = 0L
-            e= [| { c = DateTimeOffset.MinValue; t = encoded.caseName; d = encoded.payload; m = null } |] }
+            e = [| { c = DateTimeOffset.MinValue; t = encoded.caseName; d = encoded.payload; m = null } |] }
     let res = JsonConvert.SerializeObject(e)
     test <@ res.Contains """"d":{"embed":"\""}""" @>
 
@@ -31,7 +31,7 @@ type Base64ZipUtf8JsonConverterTests() =
     let ``serializes, achieving compression`` () =
         let encoded = unionEncoder.Encode(A { embed = String('x',5000) })
         let e : Store.Projection =
-            {   i = 42L; x = false
+            {   i = 42L
                 t = encoded.caseName
                 d = encoded.payload
                 m = null }
@@ -48,7 +48,7 @@ type Base64ZipUtf8JsonConverterTests() =
 
         let encoded = unionEncoder.Encode value
         let e : Store.Projection =
-            {   i = 42L; x = false
+            {   i = 42L
                 t = encoded.caseName
                 d = encoded.payload
                 m = null }

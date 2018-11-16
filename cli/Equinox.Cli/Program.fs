@@ -308,14 +308,14 @@ let main argv =
             | Some (Provision args) ->
                 let rus = args.GetResult(Rus)
                 log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus:n0}", rus)
-                Equinox.Cosmos.Initialization.initialize conn.Client dbName collName rus |> Async.RunSynchronously
+                Equinox.Cosmos.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
                 0
             | Some (Run targs) ->
                 let conn = Store.Cosmos (Cosmos.createGateway conn defaultBatchSize, dbName, collName)
                 let res = runTest log conn targs
                 let read, write = RuCounterSink.Read, RuCounterSink.Write
                 let total = read+write
-                log.Information("Total Request Charges sustained in test: {totalRus:n0} (R:{readRus:n0}, W:{writeRus:n0})", total, read, write)
+                log.Information("Total Request Charges sustained in test: {totalRus:n0} (R: {readRus:n0}, W: {writeRus:n0})", total, read, write)
                 res
             | _ -> failwith "init or run is required"
         | _ -> failwith "ERROR: please specify memory, es or cosmos Store"
