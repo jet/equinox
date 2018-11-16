@@ -345,7 +345,7 @@ module private Write =
                         tryQueryAndUpdate(responseOptions.continuation);
                     } else {
                         // Else the snapshot does not exist; create snapshot
-                        var doc = {p:batch.p, id:"-1", i:-1, _etag: "", e:[], c:[]};
+                        var doc = {p:batch.p, id:"-1", i:-1, e:[], c:[]};
                         tryUpdate(doc, true);
                     }
                 });
@@ -376,28 +376,30 @@ module private Write =
                 // DocumentDB supports optimistic concurrency control via HTTP ETag.
                 var requestOptions = {etag: doc._etag};
 
-                // Step 1: Insert new events to DB
-                var i;
-                for (i=0; i<batch.e.length; i++) {
-                    batch.e[i].i = doc.i+i+1;
-                    batch.e[i].id = batch.e[i].i.toString();
-                    batch.e[i].p = batch.p;
-                }
-                insertEvents(batch.e);
-
-                // Step 2: Update snapshot document's latest
-                doc.i = doc.i + batch.e.length;
-
-                // Step 3: Update snapshot document's events
+                // Step 1: Update snapshot document's events
                 Array.prototype.push.apply(doc.e, batch.e);
 
-                // Step 4: Update snapshot document's projections
+                // Step 2: Update snapshot document's projections
                 doc.c = batch.c;
 
-                // Step 5: Replace existing snapshot document or create the first snapshot document for this partition key
+                // Step 3: If events accumulated to a threshold, emit them
+                if (doc.e.length>=10)
+                {
+                    var i;
+                    for (i=0; i<doc.e.length; i++) {
+                        doc.e[i].i = doc.i+i+1;
+                        doc.e[i].id = doc.e[i].i.toString();
+                        doc.e[i].p = batch.p;
+                    }
+                    insertEvents(doc.e);
+                    doc.i = doc.i + doc.e.length;
+                    doc.e = [];
+                }
+
+                // Step 4: Replace existing snapshot document or create the first snapshot document for this partition key
                 function callback(err, docReturned, options) {
                     if (err) throw err;
-                    response.setBody({ etag: docReturned._etag, i: docReturned.m, conflicts: null });
+                    response.setBody({ etag: docReturned._etag, i: docReturned.i, conflicts: null });
                 }
 
                 if (!isCreate) {
