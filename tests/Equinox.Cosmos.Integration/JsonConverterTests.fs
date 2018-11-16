@@ -1,4 +1,4 @@
-﻿module Equinox.Cosmos.Integration.VerbatimUtf8JsonConverterTests
+﻿module Equinox.Cosmos.Integration.JsonConverterTests
 
 open Equinox.Cosmos
 open FsCheck.Xunit
@@ -15,16 +15,19 @@ type Union =
 
 let mkUnionEncoder () = Equinox.UnionCodec.JsonUtf8.Create<Union>(JsonSerializerSettings())
 
-[<Fact>]
-let ``VerbatimUtf8JsonConverter encodes correctly`` () =
-    let encoded = mkUnionEncoder().Encode(A { embed = "\"" })
-    let e : Store.Batch =
-        {   p = "streamName"; id = string 0; i = 0L
-            e = [| { c = DateTimeOffset.MinValue; t = encoded.caseName; d = encoded.payload; m = null } |] }
-    let res = JsonConvert.SerializeObject(e)
-    test <@ res.Contains """"d":{"embed":"\""}""" @>
+type VerbatimUtf8Tests() =
+    let unionEncoder = mkUnionEncoder ()
 
-type Base64ZipUtf8JsonConverterTests() =
+    [<Fact>]
+    let ``encodes correctly`` () =
+        let encoded = mkUnionEncoder().Encode(A { embed = "\"" })
+        let e : Store.Batch =
+            {   p = "streamName"; id = string 0; i = 0L
+                e = [| { c = DateTimeOffset.MinValue; t = encoded.caseName; d = encoded.payload; m = null } |] }
+        let res = JsonConvert.SerializeObject(e)
+        test <@ res.Contains """"d":{"embed":"\""}""" @>
+
+type Base64ZipUtf8Tests() =
     let unionEncoder = mkUnionEncoder ()
 
     [<Fact>]

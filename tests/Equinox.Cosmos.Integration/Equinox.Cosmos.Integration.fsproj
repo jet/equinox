@@ -9,9 +9,10 @@
 
   <ItemGroup>
     <Compile Include="CosmosFixtures.fs" />
+    <Compile Include="CosmosTokenTests.fs" />
     <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
-    <Compile Include="VerbatimUtf8JsonConverterTests.fs" />
+    <Compile Include="JsonConverterTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -338,7 +338,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can combine compaction with caching against Cosmos`` context skuId cartId = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
+ll failing        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let service1 = Cart.createServiceWithCompaction conn batchSize log
