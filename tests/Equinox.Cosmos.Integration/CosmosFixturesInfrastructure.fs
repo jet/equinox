@@ -54,10 +54,10 @@ module SerilogHelpers =
         match evt with
         | Equinox.Cosmos.Log.WriteSuccess _ -> EqxAct.Append
         | Equinox.Cosmos.Log.WriteConflict _ -> EqxAct.AppendConflict
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Store.Direction.Forward,_) -> EqxAct.SliceForward
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Store.Direction.Backward,_) -> EqxAct.SliceBackward
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Store.Direction.Forward,_,_) -> EqxAct.BatchForward
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Store.Direction.Backward,_,_) -> EqxAct.BatchBackward
+        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Forward,_) -> EqxAct.SliceForward
+        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Backward,_) -> EqxAct.SliceBackward
+        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_,_) -> EqxAct.BatchForward
+        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_,_) -> EqxAct.BatchBackward
         | Equinox.Cosmos.Log.Index _ -> EqxAct.Indexed
         | Equinox.Cosmos.Log.IndexNotFound _ -> EqxAct.IndexedNotFound
         | Equinox.Cosmos.Log.IndexNotModified _ -> EqxAct.IndexedCached

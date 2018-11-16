@@ -172,11 +172,13 @@ module SerilogHelpers =
         | Equinox.Cosmos.Log.Index { ru = ru }
         | Equinox.Cosmos.Log.IndexNotFound { ru = ru }
         | Equinox.Cosmos.Log.IndexNotModified { ru = ru }
-        | Equinox.Cosmos.Log.Batch (_,_, { ru = ru }) -> CosmosReadRu ru
+        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_, { ru = ru })
+        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_, { ru = ru }) -> CosmosReadRu ru
         | Equinox.Cosmos.Log.WriteSuccess {ru = ru }
         | Equinox.Cosmos.Log.WriteConflict {ru = ru }  -> CosmosWriteRu ru
         // slices are rolled up into batches so be sure not to double-count
-        | Equinox.Cosmos.Log.Slice (_,{ ru = ru }) -> CosmosSliceRu ru
+        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Forward,{ ru = ru })
+        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Backward,{ ru = ru }) -> CosmosSliceRu ru
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None

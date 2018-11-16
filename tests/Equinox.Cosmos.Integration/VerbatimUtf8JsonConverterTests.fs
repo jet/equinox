@@ -18,9 +18,12 @@ let mkUnionEncoder () = Equinox.UnionCodec.JsonUtf8.Create<Union>(JsonSerializer
 [<Fact>]
 let ``VerbatimUtf8JsonConverter encodes correctly`` () =
     let encoded = mkUnionEncoder().Encode(A { embed = "\"" })
-    let e : Store.Batch =
+    let e : Store.Event =
         {   p = "streamName"; id = string 0; i = 0L
-            e= [| { c = DateTimeOffset.MinValue; t = encoded.caseName; d = encoded.payload; m = null } |] }
+            c = DateTimeOffset.MinValue
+            t = encoded.caseName
+            d = encoded.payload
+            m = null }
     let res = JsonConvert.SerializeObject(e)
     test <@ res.Contains """"d":{"embed":"\""}""" @>
 
@@ -30,9 +33,8 @@ type Base64ZipUtf8JsonConverterTests() =
     [<Fact>]
     let ``serializes, achieving compression`` () =
         let encoded = unionEncoder.Encode(A { embed = String('x',5000) })
-        let e : Store.Projection =
-            {   i = 42L; x = false
-                t = encoded.caseName
+        let e : Store.IndexProjection =
+            {   t = encoded.caseName
                 d = encoded.payload
                 m = null }
         let res = JsonConvert.SerializeObject e
@@ -47,14 +49,13 @@ type Base64ZipUtf8JsonConverterTests() =
         if hasNulls then () else
 
         let encoded = unionEncoder.Encode value
-        let e : Store.Projection =
-            {   i = 42L; x = false
-                t = encoded.caseName
+        let e : Store.IndexProjection =
+            {   t = encoded.caseName
                 d = encoded.payload
                 m = null }
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
-        let des = JsonConvert.DeserializeObject<Store.Projection>(ser)
+        let des = JsonConvert.DeserializeObject<Store.IndexProjection>(ser)
         let d : Equinox.UnionCodec.EncodedUnion<_> = { caseName = des.t; payload=des.d }
         let decoded = unionEncoder.Decode d
         test <@ value = decoded @>
