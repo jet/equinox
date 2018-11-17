@@ -2,6 +2,7 @@
 
 open Equinox.Cosmos.Integration.Infrastructure
 open Equinox.Cosmos
+open Equinox.Cosmos.Prelude
 open Swensen.Unquote
 open System.Threading
 open Serilog
@@ -250,6 +251,31 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Low level api test append`` id value = Async.RunSynchronously <| async {
+        let log, capture = createLoggerWithCapture ()
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        
+        let service = ContactPreferences.createService (createEqxGateway conn) log
+
+        let (Domain.ContactPreferences.Id email) = id
+        // Feed some junk into the stream
+        for i in 0..11 do
+            let quickSurveysValue = i % 2 = 0
+            do! service.Update email { value with quickSurveys = quickSurveysValue }
+        
+        // real test starts here, not sure how to get rid of the above sentences
+        let streamId = sprintf "test-%s" email
+        let sn = 0L
+        let event:Store.BatchEvent = { c = DateTimeOffset.UtcNow; t = "test_event"; d = System.Text.Encoding.UTF8.GetBytes("{\"d\":\"d\"}"); m = System.Text.Encoding.UTF8.GetBytes("{\"m\":\"m\"}") }
+        let events = [|event|]
+        let! res = LowLevelAPI.append conn streamId sn events
+        let r = match res with
+                | Ok sn -> sn
+                | _ -> -1L
+        test <@ r = sn + int64 events.Length @>
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
@@ -338,7 +364,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can combine compaction with caching against Cosmos`` context skuId cartId = Async.RunSynchronously <| async {
-ll failing        let log, capture = createLoggerWithCapture ()
+        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let service1 = Cart.createServiceWithCompaction conn batchSize log

@@ -7,6 +7,7 @@ open Microsoft.Azure.Documents
 open Newtonsoft.Json
 open Serilog
 open System
+//open Faults
 
 [<AutoOpen>]
 module Json =
@@ -1038,3 +1039,90 @@ type EqxConnector
     member __.Connect(name, discovery : Discovery) : Async<EqxConnection> = async {
         let! conn = connect(name, discovery)
         return EqxConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
+
+/// Stream Id.
+type StreamId = string
+/// Sequence number of an event within an individual stream.
+type SN = int64
+
+/// Errors in attempts to append events to a stream.s
+type AppendError =
+    /// The expected sequence number of the stream was invalid.
+    | InvalidExpectedSequenceNumber
+    /// DocumentClientException errors returned by the DocumentDbClient may contain information needed for recovery (e.g., retry interval)
+    | DocumentDbError of DocumentClientException
+    /// A catch-all error.
+    | Error of exn
+
+module LowLevelAPI = 
+      
+    /// Returns an async sequence of events in the stream starting at the specified sequence number,
+    /// reading in batches of the specified size.
+    /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
+    /// sequence number in the stream.
+    let getAll (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        //return  AsyncSeq<Store.BatchEvent[]>
+        ()
+    }
+
+    /// Returns an async array of events in the stream starting at the specified sequence number,
+    /// number of events to read is specified by batchSize
+    /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
+    /// sequence number in the stream.
+    let get (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        //return  AsyncSeq<Store.BatchEvent[]>
+        ()
+    }
+
+    /// Catches and handles errors for single or batch append asyncs
+    let internal catchAppend (append:Async<SN>) : Async<Result<SN, AppendError>> =
+        append
+        |> Async.Catch
+        |> Async.map (Result.mapError (function
+           | :? DocumentClientException as ex ->
+             // TODO: determine concurrency error
+             if (ex.StatusCode.HasValue && ex.StatusCode.Value.CompareTo(Net.HttpStatusCode.Conflict) = 0) then
+               AppendError.InvalidExpectedSequenceNumber
+             else AppendError.DocumentDbError ex
+           | ex ->      
+             AppendError.Error ex))
+
+    /// Appends a batch of events to a stream at the specified expected sequence number.
+    /// If the specified expected sequence number does not match the stream, the events are not appended
+    /// and a failure is returned.
+    let append (conn:EqxConnection) (sid:StreamId) (sn:SN) (eds:Store.BatchEvent[]) =
+        async {      
+            // to do: code to append
+            return sn + int64 eds.Length
+        }
+        //|> Faults.retryCatchWithSourceDelay (shouldRetryExn event) rp
+        |> catchAppend
+
+    let appendAtEnd (conn:EqxConnection) (sid:StreamId) (eds:Store.BatchEvent[]) = async {
+        //return Async<Result<SN, AppendError>> (Result is Microsoft.FSharp.Core.Result)
+        ()
+    }
+
+    /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
+    /// reading in batches of the specified size.
+    /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
+    /// sequence number in the stream.
+    let getAllBackwards (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        //return  AsyncSeq<Store.BatchEvent[]>
+        ()
+    }
+
+    /// Returns an async array of events in the stream backwards starting from the specified sequence number,
+    /// number of events to read is specified by batchSize
+    /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
+    /// sequence number in the stream.
+    let getBackwards (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        //return  AsyncSeq<Store.BatchEvent[]>
+        ()
+    }
+
+    /// Returns last sequence number of the stream using query, returns 0 if stream doesn't exist.
+    let getLastSn (conn:EqxConnection) (sid:StreamId) = async {
+        //return Async<SN option>
+        ()
+    }
