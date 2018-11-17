@@ -322,7 +322,7 @@ type EqxSyncResult =
 type WriteResponse = { etag: string; self: string; nextI: int64; conflicts: Store.BatchEvent[] }
 
 module private Write =
-    let [<Literal>] sprocName = "EquinoxPagedWrite23"  // NB need to renumber for any breaking change
+    let [<Literal>] sprocName = "EquinoxPagedWrite30"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
@@ -335,7 +335,21 @@ function pagedWrite(req) {
     const collectionLink = collection.getSelfLink();
     const response = getContext().getResponse();
 
-    runQueryToDetermineWhetherToCreateOrUpdate(null);
+    // If we have been passed a link to the previous WIP document (and its etag)
+    const reqSelf = req._self;
+    if (reqSelf && req._etag) {
+        // TODO make this request not return any data if the etag does not match `req._etag`
+        var isAccepted = collection.readDocument(reqSelf, function(err, doc) {
+            if (!err && doc._etag === req._etag) {
+                executeUpsert(doc);
+            } else {
+                runQueryToDetermineWhetherToCreateOrUpdate(null);
+            }
+        });
+        if (!isAccepted) throw new Error("readDocument not Accepted");
+    } else {
+        runQueryToDetermineWhetherToCreateOrUpdate(null);
+    }
 
     // Recursively queries for a document by id w/ support for continuation tokens.
     // Passes control to executeUpsert(document) as soon as the query returns a document, or reports a timeout.
@@ -348,16 +362,17 @@ function pagedWrite(req) {
         var isAccepted = collection.queryDocuments(collectionLink, query, reqOptions, function(err, docs, resOptions) {
             if (err) throw err;
 
-            if (docs.length > 0)
+            if (docs.length > 0) {
                 // If the [single] document is found, update it. (There is no need to check for a continuation token since we are querying for a single document.)
                 executeUpsert(docs[0]);
-            else if (resOptions.continuation)
+            } else if (resOptions.continuation) {
                 // Nothing returned, retry with supplied token (highly unlikely for this to happen when performing a query by id, but completeness)
                 runQueryToDetermineWhetherToCreateOrUpdate(resOptions.continuation);
             // Well known document missing; it's on us to generate the page now
-            else executeUpsert(null);
+            } else {
+                executeUpsert(null);
+            }
         });
-
         // If we hit execution bounds - bail out (highly unlikely given that this is a query by id)
         if (!isAccepted) throw new Error("The stored procedure timed out.");
     }
