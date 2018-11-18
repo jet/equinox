@@ -1070,74 +1070,89 @@ type EqxConnector
         let! conn = connect(name, discovery)
         return EqxConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
-/// Stream Id.
-type StreamId = string
-/// Sequence number of an event within an individual stream.
-type SN = int64
+module Events =
+    /// Stream Id.
+    type StreamId = string
+    /// Sequence number of an event within an individual stream.
+    type SN = int64
 
-/// Errors in attempts to append events to a stream.s
-type AppendError =
-    /// The expected sequence number of the stream was invalid.
-    | InvalidExpectedSequenceNumber
-    /// DocumentClientException errors returned by the DocumentDbClient may contain information needed for recovery (e.g., retry interval)
-    | DocumentDbError of DocumentClientException
-    /// A catch-all error.
-    | Error of exn
-
-module LowLevelAPI =
+    type EventData = string * byte[]
+    type Category(conn, databaseId, collectionId, batchSize, ?accessStrategy, ?log) =
+        let nullCodec = UnionCodec.JsonUtf8.Create(id,fun (et,d) -> Some (et,d))
+        let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
+        let gateway = EqxGateway(conn, batching)
+        let collection = Collection(gateway, databaseId, collectionId)
+        let inner = Category<EventData, EventData[]>(collection, nullCodec, ?access = accessStrategy)
+        let fold (state: EventData[]) (events: EventData seq) = Seq.append state events |> Array.ofSeq
+        let logger : ILogger = defaultArg log (Log.ForContext(Serilog.Core.Constants.SourceContextPropertyName,collectionId))
+        let mkStream sid = Store.Stream.Create(collection.CollectionUri, sid)
+        let mkPos sn = Position.FromIndexOnly sn
+        let mkToken sid sn = Token.ofNonCompacting (mkStream sid, mkPos sn)
+        let wrapEvents (events : #Store.IEvent seq) = [| for x in events -> x.EventType, x.Data |]
+        let getInternal sid sn batchSize limit = async {
+            let stream, pos = mkStream sid, mkPos sn
+            // TOCONSIDER stop passing in batchSize and use the other two directly
+            let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
+            let gateway = EqxGateway(conn, batching)
+            // TOCONSIDER if we ever want perf, caller needs to get the token
+            let! (_token, data: Store.IOrderedEvent[]) = gateway.LoadBatched logger None (stream,pos)
+            match limit with
+            | Some limit ->
+                // TODO implement limiting internally
+                return Seq.truncate limit data
+            | None -> return Seq.ofArray data
+        }
+        member __.GetAll sid sn batchSize : Async<EventData[]> = async {
+            let! (data: Store.IOrderedEvent seq) = getInternal sid sn batchSize None
+            return  wrapEvents <| Seq.cast<IEvent> data
+        }
+        member __.Get sid sn batchSize : Async<EventData[]> = async {
+            let! (data: Store.IOrderedEvent seq) = getInternal sid sn batchSize (Some batchSize)
+            return wrapEvents data
+        }
+        member __.Append (sid:StreamId) (sn:SN option) (eds:Store.IEvent[]) = async {
+            let token = match sn with Some sn -> mkToken sid sn | None -> invalidOp "TODO make stored proc handle -1 being passed in and add a Position.FromIgnoreConflicts"
+            let! res = gateway.TrySync logger token (eds,Seq.empty) None
+            match res with
+            // TOCONSIDER we should not be unpacking the token so callers can gain perf and stop assuming/worrying about sequences
+            | GatewaySyncResult.Written (Token.Unpack token) -> return Choice1Of3 token.pos.index
+            | GatewaySyncResult.Conflict (Token.Unpack token,events) -> return Choice3Of3 (token.pos.index, wrapEvents events)
+            | GatewaySyncResult.ConflictUnknown (Token.Unpack token) -> return Choice2Of3 token.pos.index
+        }
 
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
-        //return  AsyncSeq<Store.BatchEvent[]>
-        ()
+    let getAll (category: Category) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        return! category.GetAll sid sn batchSize
     }
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
-        //return  AsyncSeq<Store.BatchEvent[]>
-        ()
+    let get (category: Category) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        return! category.Get sid sn batchSize
     }
-
-    /// Catches and handles errors for single or batch append asyncs
-    let internal catchAppend (append:Async<SN>) : Async<Result<SN, AppendError>> =
-        append
-        |> Async.Catch
-        |> Async.map (Result.mapError (function
-           | :? DocumentClientException as ex ->
-             // TODO: determine concurrency error
-             if (ex.StatusCode.HasValue && ex.StatusCode.Value.CompareTo(Net.HttpStatusCode.Conflict) = 0) then
-               AppendError.InvalidExpectedSequenceNumber
-             else AppendError.DocumentDbError ex
-           | ex ->
-             AppendError.Error ex))
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (conn:EqxConnection) (sid:StreamId) (sn:SN) (eds:Store.BatchEvent[]) =
-        async {
-            // to do: code to append
-            return sn + int64 eds.Length
-        }
+    let append (category:Category) (sid:StreamId) (sn:SN) (eds:Store.IEvent[]) =
+        category.Append sid (Some sn) eds
+        // TODO: there is one in the sample/Store
         //|> Faults.retryCatchWithSourceDelay (shouldRetryExn event) rp
-        |> catchAppend
 
-    let appendAtEnd (conn:EqxConnection) (sid:StreamId) (eds:Store.BatchEvent[]) = async {
-        //return Async<Result<SN, AppendError>> (Result is Microsoft.FSharp.Core.Result)
-        ()
-    }
+    let appendAtEnd (category:Category) (sid:StreamId) (eds:Store.IEvent[]) =
+        category.Append sid None eds
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
     let getAllBackwards (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        // TOCONSIDER this API should expose the predicate form
         //return  AsyncSeq<Store.BatchEvent[]>
         ()
     }
@@ -1147,12 +1162,14 @@ module LowLevelAPI =
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
     let getBackwards (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        // QUESTION: Can someone explain the use case here ?
         //return  AsyncSeq<Store.BatchEvent[]>
         ()
     }
 
     /// Returns last sequence number of the stream using query, returns 0 if stream doesn't exist.
     let getLastSn (conn:EqxConnection) (sid:StreamId) = async {
+        // QUESTION: What's the use case here ? - does appendAtEnd not cover it ?
         //return Async<SN option>
         ()
     }

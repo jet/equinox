@@ -263,14 +263,20 @@ type Tests(testOutputHelper) =
             do! service.Update email { value with quickSurveys = quickSurveysValue }
 
         // real test starts here, not sure how to get rid of the above sentences
-        let streamId = sprintf "test-%s" email
         let sn = 0L
-        let event:Store.BatchEvent = { c = DateTimeOffset.UtcNow; t = "test_event"; d = System.Text.Encoding.UTF8.GetBytes("{\"d\":\"d\"}"); m = System.Text.Encoding.UTF8.GetBytes("{\"m\":\"m\"}") }
+        let event =
+            { new Store.IEvent with
+                member __.EventType = "test_event"
+                member __.Data = System.Text.Encoding.UTF8.GetBytes("{\"d\":\"d\"}")
+                member __.Meta = System.Text.Encoding.UTF8.GetBytes("{\"m\":\"m\"}") }
         let events = [|event|]
-        let! res = LowLevelAPI.append conn streamId sn events
-        let r = match res with
-                | Ok sn -> sn
-                | _ -> -1L
+        let (StreamArgs (dbId,collId,sid)) = sprintf "test-%s" email
+        let category = Events.Category(conn,dbId,collId,defaultBatchSize)
+        let! res = Events.append category sid sn events
+        let r =
+            match res with
+            | Choice1Of3 sn -> sn
+            | _ -> -1L
         test <@ r = sn + int64 events.Length @>
     }
 

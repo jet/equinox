@@ -1,5 +1,11 @@
 namespace Equinox.Cosmos
 
+// NB this is a copy of the one in Backend - there is also one in Equinox/Infrastrcture.fs which this will be merged into
+
+open System
+
+/// Given a value, creates a function with one ignored argument which returns the value.
+
 /// A backoff strategy.
 /// Accepts the attempt number and returns an interval in milliseconds to wait.
 /// If None then backoff should stop.
@@ -7,9 +13,9 @@ type Backoff = int -> int option
 
 /// Operations on back off strategies represented as functions (int -> int option)
 /// which take an attempt number and produce an interval.
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Backoff =
 
+  let inline konst x _ = x
   let private checkOverflow x =
     if x = System.Int32.MinValue then 2000000000
     else x
@@ -97,5 +103,3 @@ module Backoff =
   /// DefaultRandomizationFactor = 0.5
   /// DefaultMultiplier = 1.5
   let DefaultExponentialBoundedRandomized = DefaultExponentialBoundedRandomizedOf DefaultInitialIntervalMs
-
-  // ------------------------------------------------------------------------------------------------------------------------
