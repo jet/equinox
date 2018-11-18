@@ -11,7 +11,7 @@ let unpack (Token.Unpack token : Storage.StreamToken) =
 
 let (|TokenFromIndex|) index : Token =
     {   stream = { collectionUri = null; name = null }
-        pos = { index = index; self = None; etag = None }
+        pos = { index = index; etag = None }
         rollingSnapshotEventIndex = Some 0L
         batchCapacityLimit = None }
 let (|StreamPos|) (TokenFromIndex token) = token.stream, token.pos

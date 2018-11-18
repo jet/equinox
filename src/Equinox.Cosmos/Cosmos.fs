@@ -109,12 +109,12 @@ module Store =
     type [<NoComparison>] Stream = { collectionUri: Uri; name: string } with
         static member Create(collectionUri, name) = { collectionUri = collectionUri; name = name }
     /// Position and Etag to which an operation is relative
-    type [<NoComparison>] Position = { index: int64; etag: string option; self: string option } with
+    type [<NoComparison>] Position = { index: int64; etag: string option } with
         /// Create Position from [Wip]Batch record context facilating 1 RU reads
-        static member FromDocument(i: int64, self: string, etag: string) = { index = i; self = Option.ofObj self; etag = Option.ofObj etag }
+        static member FromDocument(i: int64, etag: string) = { index = i; etag = Option.ofObj etag }
         /// NB very inefficient compared to FromDocument
-        static member FromIndexOnly(i: int64) = { index = i; etag = None; self = None }
-        /// If we know the stream is empty, we won't have a self or an etag (and Writer Stored Procedure special cases this)
+        static member FromIndexOnly(i: int64) = { index = i; etag = None }
+        /// If we know the stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
         static member FromEmptyStream() = Position.FromIndexOnly(0L)
 
     [<RequireQualifiedAccess>]
@@ -177,11 +177,9 @@ module Store =
 
             /// When we read, we need to capture the value so we can retain it for caching purposes
             /// NB this is not relevant to fill in when we pass it to the writing stored procedure
-            /// as it will do it's own 1. read 2. merge 3. write merged version contingent on the _etag not having changed
+            /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
             [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
             _etag: string
-            [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
-            _self: string
 
             /// base 'i' value for the Events held herein
             i: int64 // {index}
@@ -268,7 +266,7 @@ module Store =
 
     let mkBatch (stream: Stream, pos: Position) (eventCountLimit, events: IEvent[]) (projections: Projection[]) : WipBatch =
         {   p = stream.name; id = WipBatch.WellKnownDocumentId; l = eventCountLimit
-            i = pos.index; _etag = null; _self=Option.toObj pos.self
+            i = pos.index; _etag = null
             e = [| for e in events -> { c = DateTimeOffset.UtcNow; t = e.EventType; d = e.Data; m = e.Meta } |]
             c = projections }
     let mkProjection baseIndex (*canDiscard*) (e: IEvent) = { i = baseIndex; (*x = canDiscard; *)t = e.EventType; d = e.Data; m = e.Meta }
@@ -328,10 +326,10 @@ type EqxSyncResult =
 
 // NB don't nest in a private module, or serialization will fail miserably ;)
 [<CLIMutable; NoEquality; NoComparison; JsonObject(ItemRequired=Required.AllowNull)>]
-type WriteResponse = { etag: string; self: string; nextI: int64; conflicts: Store.BatchEvent[] }
+type WriteResponse = { etag: string; nextI: int64; conflicts: Store.BatchEvent[] }
 
 module private Write =
-    let [<Literal>] sprocName = "EquinoxPagedWrite31"  // NB need to renumber for any breaking change
+    let [<Literal>] sprocName = "EquinoxPagedWrite32"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
@@ -344,47 +342,13 @@ function pagedWrite(req) {
     const collectionLink = collection.getSelfLink();
     const response = getContext().getResponse();
 
-    // If we have been passed a link to the previous WIP document (and its etag), we can cheaply confirm it is still the WIP batch
-    const reqSelf = req._self;
-    if (reqSelf && req._etag) {
-        // TODO make this request not return any data if the etag does not match `req._etag`
-        var isAccepted = collection.readDocument(reqSelf, function(err, doc) {
-            if (!err && doc._etag === req._etag) {
-                executeUpsert(doc);
-            } else {
-                runQueryToDetermineWhetherToCreateOrUpdate(null);
-            }
-        });
-        if (!isAccepted) throw new Error("readDocument not Accepted");
-    } else {
-        runQueryToDetermineWhetherToCreateOrUpdate(null);
-    }
-
-    // Recursively queries for a document by id w/ support for continuation tokens.
-    // Passes control to executeUpsert(document) as soon as the query returns a document, or reports a timeout.
-    function runQueryToDetermineWhetherToCreateOrUpdate(continuation) {
-        var query = {
-            query: "select * from root r where r.id = @id and r.p = @p",
-            parameters: [{ name: "@id", value: req.id }, { name: "@p", value: req.p }]
-        };
-        var reqOptions = { continuation: continuation };
-        var isAccepted = collection.queryDocuments(collectionLink, query, reqOptions, function(err, docs, resOptions) {
-            if (err) throw err;
-
-            if (docs.length > 0) {
-                // If the [single] document is found, update it. (There is no need to check for a continuation token since we are querying for a single document.)
-                executeUpsert(docs[0]);
-            } else if (resOptions.continuation) {
-                // Nothing returned, retry with supplied token (highly unlikely for this to happen when performing a query by id, but completeness)
-                runQueryToDetermineWhetherToCreateOrUpdate(resOptions.continuation);
-            // Well known document missing; it's on us to generate the page now
-            } else {
-                executeUpsert(null);
-            }
-        });
-        // If we hit execution bounds - bail out (highly unlikely given that this is a query by id)
-        if (!isAccepted) throw new Error("The stored procedure timed out.");
-    }
+    // Locate the WIP (-1) batch (which may not exist)
+    var wipDocId = collection.getAltLink() + "/docs/" + req.id;
+    var isAccepted = collection.readDocument(wipDocId, {}, function (err, doc, options) {
+        if (err) throw err;
+        executeUpsert(doc);
+    });
+    if (!isAccepted) throw new Error("readDocument not Accepted");
 
     function executeUpsert(current) {
         // Verify we dont have a conflicting write
@@ -396,7 +360,7 @@ function pagedWrite(req) {
             // yielding [] triggers the client to go loading the events itself
             const conflicts = req.i < current.i ? [] : current.e.slice(req.i - current.i);
             const nextI = current.i + current.e.length;
-            response.setBody({ etag: current._etag, self: current._self, nextI: nextI, conflicts: conflicts });
+            response.setBody({ etag: current._etag, nextI: nextI, conflicts: conflicts });
             return;
         }
 
@@ -431,7 +395,7 @@ function pagedWrite(req) {
         // Create or replace the WIP batch as necessary
         function callback(err, doc, options) {
             if (err) throw err;
-            response.setBody({ etag: doc._etag, self: doc._self, nextI: doc.i + doc.e.length, conflicts: null });
+            response.setBody({ etag: doc._etag, nextI: doc.i + doc.e.length, conflicts: null });
         }
 
         if (current) {
@@ -452,7 +416,7 @@ function pagedWrite(req) {
         let! ct = Async.CancellationToken
         let! (res : Client.StoredProcedureResponse<WriteResponse>) = client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box batch) |> Async.AwaitTaskCorrect
 
-        let newPos = { pos with index = res.Response.nextI; etag = Option.ofObj res.Response.etag; self = Option.ofObj res.Response.self }
+        let newPos = { pos with index = res.Response.nextI; etag = Option.ofObj res.Response.etag }
         match res.RequestCharge, res.Response.conflicts with
         | rc,null -> return rc, EqxSyncResult.Written newPos
         | rc,[||] -> return rc, EqxSyncResult.ConflictUnknown newPos
@@ -518,7 +482,7 @@ module private Read =
         | ReadResult.NotModified -> return IndexResult.NotModified
         | ReadResult.NotFound -> return IndexResult.NotFound
         | ReadResult.Found doc ->
-            let pos' = Position.FromDocument(doc.i + int64 doc.e.Length, doc._self, doc._etag)
+            let pos' = Position.FromDocument(doc.i + int64 doc.e.Length, doc._etag)
             return IndexResult.Found (pos', Store.Enum.EventsAndProjections doc |> Array.ofSeq) }
 
     open Microsoft.Azure.Documents.Linq
@@ -548,9 +512,9 @@ module private Read =
         (log |> Log.prop "startIndex" (match startPos with Some { index = i } -> Nullable i | _ -> Nullable()) |> Log.prop "bytes" bytes |> Log.event evt)
             .Information("Eqx {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
                 "Query", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
-        // TODO we should be able to trap the etag and self from the -1 document with some tweaking
-        let todoSelf, todoEtag = null, null
-        let pos = match index with HasValue i -> Store.Position.FromDocument(i,todoSelf,todoEtag) |> Some | Null -> None
+        // TODO we should be able to trap the etag from the -1 document with some tweaking
+        let todoEtag = null
+        let pos = match index with HasValue i -> Store.Position.FromDocument(i,todoEtag) |> Some | Null -> None
         return events, pos, ru }
 
     let private runBatchesQuery (log : ILogger) (readSlice: IDocumentQuery<Store.Batch> -> ILogger -> Async<Store.IOrderedEvent[] * Store.Position option * float>)
