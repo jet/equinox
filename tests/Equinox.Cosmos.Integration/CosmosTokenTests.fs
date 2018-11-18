@@ -6,11 +6,15 @@ open FsCheck.Xunit
 open Swensen.Unquote.Assertions
 open Xunit
 
-let unpack (token : Storage.StreamToken) =
-    let { pos = pos; rollingSnapshotEventIndex = compactionEventNumber } : Cosmos.Token = unbox token.value
-    defaultArg pos.index 0L, compactionEventNumber, token.batchCapacityLimit
+let unpack (Token.Unpack token : Storage.StreamToken) =
+    token.pos.index, token.rollingSnapshotEventIndex, token.batchCapacityLimit
 
-let (|Pos|) index : Store.Position = { collectionUri = null; streamName = null; index = Some index; self = None; etag = None }
+let (|TokenFromIndex|) index : Token =
+    {   stream = { collectionUri = null; name = null }
+        pos = { index = index; self = None; etag = None }
+        rollingSnapshotEventIndex = Some 0L
+        batchCapacityLimit = None }
+let (|StreamPos|) (TokenFromIndex token) = token.stream, token.pos
 [<Theory
     ; InlineData( 0, 3, (*2*)3)
     ; InlineData( 0, 2, (*1*)2)
@@ -18,8 +22,8 @@ let (|Pos|) index : Store.Position = { collectionUri = null; streamName = null; 
     ; InlineData( 2, 2, 0)
     ; InlineData( 3, 2, 0)
     ; InlineData( 4, 2, 0)>]
-let ``ofUncompactedVersion - batchCapacityLimit`` (Pos pos) batchSize expectedCapacity =
-    let _, _, batchCapacityLimit = Token.ofUncompactedVersion batchSize pos |> unpack
+let ``ofUncompactedVersion - batchCapacityLimit`` (StreamPos streamPos) batchSize expectedCapacity =
+    let _, _, batchCapacityLimit = Token.ofUncompactedVersion batchSize streamPos |> unpack
     test <@ Some expectedCapacity = batchCapacityLimit @>
 
 [<Theory
@@ -35,27 +39,28 @@ let ``ofUncompactedVersion - batchCapacityLimit`` (Pos pos) batchSize expectedCa
     ; InlineData(   1,  3, 1, 3, 0)
     ; InlineData(   2,  3, 1, 3, 0)
     ; InlineData(   3,  3, 1, 3, 1)>]
-let ``ofPreviousTokenAndEventsLength - batchCapacityLimit`` (previousCompactionEventNumber : System.Nullable<int64>) (Pos pos) eventsLength batchSize expectedCapacity =
+let ``ofPreviousTokenAndEventsLength - batchCapacityLimit`` (previousCompactionEventNumber : System.Nullable<int64>) (StreamPos pos) eventsLength batchSize expectedCapacity =
     let previousToken =
-        if not previousCompactionEventNumber.HasValue then Token.ofRollingSnapshotEventIndex None 0 -84 ((|Pos|) -42L)
-        else Token.ofRollingSnapshotEventIndex (Some previousCompactionEventNumber.Value) 0 -84 ((|Pos|) -42L)
+        if not previousCompactionEventNumber.HasValue then Token.ofRollingSnapshotEventIndex None 0 -84 ((|StreamPos|) -42L)
+        else Token.ofRollingSnapshotEventIndex (Some previousCompactionEventNumber.Value) 0 -84 ((|StreamPos|) -42L)
     let _, _, batchCapacityLimit = unpack <| Token.ofPreviousTokenAndEventsLength previousToken eventsLength batchSize pos
     test <@ Some expectedCapacity = batchCapacityLimit @>
 
-[<Property>]
-let ``Properties of tokens based on various generation mechanisms `` (Pos streamVersion) (previousCompactionEventNumber : int64 option) eventsLength batchSize =
+[<Property(MaxTest=1000)>]
+let ``Properties of tokens based on various generation mechanisms `` (StreamPos (stream,pos)) (previousCompactionEventNumber : int64 option) eventsLength batchSize =
     let ovStreamVersion, ovCompactionEventNumber, ovBatchCapacityLimit =
-        unpack <| Token.ofNonCompacting streamVersion
+        unpack <| Token.ofNonCompacting (stream,pos)
     let uvStreamVersion, uvCompactionEventNumber, uvBatchCapacityLimit =
-        unpack <| Token.ofUncompactedVersion batchSize streamVersion
-    let previousToken = Token.ofRollingSnapshotEventIndex previousCompactionEventNumber 0 -84 ((|Pos|) -42L)
+        unpack <| Token.ofUncompactedVersion batchSize (stream,pos)
+    let (StreamPos sp0, StreamPos sp) = 0L, pos.index
+    let previousToken = Token.ofRollingSnapshotEventIndex previousCompactionEventNumber 0 -84 sp0
     let peStreamVersion, peCompactionEventNumber, peBatchCapacityLimit =
-        unpack <| Token.ofPreviousTokenAndEventsLength previousToken eventsLength batchSize streamVersion
+        unpack <| Token.ofPreviousTokenAndEventsLength previousToken eventsLength batchSize sp
 
     // StreamVersion
-    test <@ defaultArg streamVersion.index 0L = ovStreamVersion @>
-    test <@ defaultArg streamVersion.index 0L = uvStreamVersion @>
-    test <@ defaultArg streamVersion.index 0L = peStreamVersion @>
+    test <@ pos.index = ovStreamVersion @>
+    test <@ pos.index = uvStreamVersion @>
+    test <@ pos.index = peStreamVersion @>
 
     // CompactionEventNumber
     test <@ None = ovCompactionEventNumber @>
@@ -64,14 +69,13 @@ let ``Properties of tokens based on various generation mechanisms `` (Pos stream
 
     // BatchCapacityLimit
     test <@ None = ovBatchCapacityLimit @>
-    // TODO REWRITE THESE !
     let rawUncompactedBatchCapacityLimit batchSize (pos : Store.Position) =
-        batchSize - int (defaultArg pos.index 0L) - 1 - 2
-    let rawCompactedBatchCapacityLimit compactionEventNumber batchSize (streamVersion : Store.Position) =
-        batchSize - int ((defaultArg streamVersion.index 0L) - 1L - compactionEventNumber) - 1
-    test <@ Some (rawUncompactedBatchCapacityLimit batchSize streamVersion |> max 0) = uvBatchCapacityLimit @>
+        batchSize - int pos.index - 1 - 2 |> max 0
+    let rawCompactedBatchCapacityLimit compactionEventNumber batchSize (pos : Store.Position) =
+        batchSize - int (pos.index - compactionEventNumber - 1L) |> max 0
+    test <@ Some (rawUncompactedBatchCapacityLimit batchSize pos |> max 0) = uvBatchCapacityLimit @>
     let rawExpectedFromPreviousCompactionEventNumber =
         match previousCompactionEventNumber with
-        | None -> rawUncompactedBatchCapacityLimit batchSize streamVersion
-        | Some pci -> rawCompactedBatchCapacityLimit pci batchSize streamVersion
+        | None -> rawUncompactedBatchCapacityLimit batchSize pos
+        | Some pci -> rawCompactedBatchCapacityLimit pci batchSize pos
     test <@ Some (max 0 (rawExpectedFromPreviousCompactionEventNumber - eventsLength)) = peBatchCapacityLimit @>

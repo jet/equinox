@@ -2,7 +2,6 @@
 
 open Equinox.Cosmos.Integration.Infrastructure
 open Equinox.Cosmos
-open Equinox.Cosmos.Prelude
 open Swensen.Unquote
 open System.Threading
 open Serilog
@@ -181,7 +180,7 @@ type Tests(testOutputHelper) =
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
        // Intended conflicts pertained
-        let hadConflict= function EqxEvent (EqxAction EqxAct.AppendConflict) -> Some () | _ -> None
+        let hadConflict= function EqxEvent (EqxAction EqxAct.Conflict) -> Some () | _ -> None
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
@@ -254,7 +253,7 @@ type Tests(testOutputHelper) =
     let ``Low level api test append`` id value = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        
+
         let service = ContactPreferences.createService (createEqxGateway conn) log
 
         let (Domain.ContactPreferences.Id email) = id
@@ -262,7 +261,7 @@ type Tests(testOutputHelper) =
         for i in 0..11 do
             let quickSurveysValue = i % 2 = 0
             do! service.Update email { value with quickSurveys = quickSurveysValue }
-        
+
         // real test starts here, not sure how to get rid of the above sentences
         let streamId = sprintf "test-%s" email
         let sn = 0L

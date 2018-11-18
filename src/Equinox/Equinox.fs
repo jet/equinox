@@ -70,7 +70,7 @@ type ICategory<'event, 'state> =
         -> Async<Storage.SyncResult<'state>>
 
 // Exception yielded by Handler.Decide after `count` attempts have yielded conflicts at the point of syncing with the Store
-exception FlowAttemptsExceededException of count: int
+exception ResyncsExhaustedException of count: int
 
 /// Internal implementation of the Store agnostic load + run/render. See Handler for App-facing APIs.
 module private Flow =
@@ -110,7 +110,7 @@ module private Flow =
                 return false }
             tryOr log eventsAndState resyncInPreparationForRetry
         member __.TryOrThrow log eventsAndState attempt =
-            let throw _ = async { return raise <| FlowAttemptsExceededException attempt }
+            let throw _ = async { return raise <| ResyncsExhaustedException attempt }
             tryOr log eventsAndState throw |> Async.Ignore
 
     /// Obtain a representation of the current state and metadata from the underlying storage stream
@@ -191,11 +191,11 @@ type Handler<'event, 'state>(fold, log, stream : IStream<'event, 'state>, maxAtt
     let inner = Flow.HandlerImpl<'event, 'state>(fold, maxAttempts)
 
     /// 0. Invoke the supplied `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome.
-    /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
+    /// Tries up to `maxAttempts` times in the case of a conflict, throwing ResyncsExhaustedException` to signal failure.
     member __.Decide(flow : Context<'event, 'state> -> 'result) : Async<'result> =
         inner.Decide(stream,log,flow)
     /// 0. Invoke the supplied _Async_ `decide` function 1. attempt to sync the accumulated events to the stream 2. (contigent on success of 1) yield the outcome
-    /// Tries up to `maxAttempts` times in the case of a conflict, throwing FlowAttemptsExceededException` to signal failure.
+    /// Tries up to `maxAttempts` times in the case of a conflict, throwing ResyncsExhaustedException` to signal failure.
     member __.DecideAsync(flowAsync : Context<'event, 'state> -> Async<'result>) : Async<'result> =
         inner.DecideAsync(stream,log,flowAsync)
     /// Low Level helper to allow one to obtain the complete state of a stream (including the position) in order to pass it within the application

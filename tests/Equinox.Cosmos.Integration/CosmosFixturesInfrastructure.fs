@@ -49,11 +49,12 @@ module SerilogHelpers =
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
     [<RequireQualifiedAccess>]
-    type EqxAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Indexed | IndexedNotFound | IndexedCached
+    type EqxAct = Append | Resync | Conflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Indexed | IndexedNotFound | IndexedCached
     let (|EqxAction|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
         | Equinox.Cosmos.Log.WriteSuccess _ -> EqxAct.Append
-        | Equinox.Cosmos.Log.WriteConflict _ -> EqxAct.AppendConflict
+        | Equinox.Cosmos.Log.WriteResync _ -> EqxAct.Resync
+        | Equinox.Cosmos.Log.WriteConflict _ -> EqxAct.Conflict
         | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Store.Direction.Forward,_) -> EqxAct.SliceForward
         | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Store.Direction.Backward,_) -> EqxAct.SliceBackward
         | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Store.Direction.Forward,_,_) -> EqxAct.BatchForward
