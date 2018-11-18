@@ -29,7 +29,8 @@ module EquinoxCosmosInterop =
         let action, metric, batches, ru =
             match evt with
             | Log.WriteSuccess m -> "EqxAppendToStreamAsync", m, None, m.ru
-            | Log.WriteConflict m -> "EqxAppendToStreamAsync", m, None, m.ru
+            | Log.WriteConflict m -> "EqxAppendToStreamConflictAsync", m, None, m.ru
+            | Log.WriteResync m -> "EqxAppendToStreamResyncAsync", m, None, m.ru
             | Log.Slice (Direction.Forward,m) -> "EqxReadStreamEventsForwardAsync", m, None, m.ru
             | Log.Slice (Direction.Backward,m) -> "EqxReadStreamEventsBackwardAsync", m, None, m.ru
             | Log.Batch (Direction.Forward,c,m) -> "EqxLoadF", m, Some c, m.ru

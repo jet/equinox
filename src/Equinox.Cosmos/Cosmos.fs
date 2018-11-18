@@ -273,6 +273,7 @@ module Log =
     [<NoEquality; NoComparison>]
     type Event =
         | WriteSuccess of Measurement
+        | WriteResync of Measurement
         | WriteConflict of Measurement
         /// Individual read request in a Batch
         | Slice of Store.Direction * Measurement
@@ -470,7 +471,7 @@ function pagedWrite(req) {
             | EqxSyncResult.Conflict (pos, xs) ->
                 logConflict ()
                 let log = if verbose then log |> Log.prop "nextExpectedVersion" pos |> Log.propData "conflicts" xs else log
-                log |> Log.event (Log.WriteConflict (mkMetric ru)) |> Log.prop "conflict" true
+                log |> Log.event (Log.WriteResync(mkMetric ru)) |> Log.prop "conflict" true
         resultLog.Information("Eqx {action:l} {count}+{pcount} {ms}ms rc={ru}", "Write", batch.e.Length, batch.c.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return result }
 
@@ -1070,8 +1071,8 @@ type AppendError =
     /// A catch-all error.
     | Error of exn
 
-module LowLevelAPI = 
-      
+module LowLevelAPI =
+
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
@@ -1100,14 +1101,14 @@ module LowLevelAPI =
              if (ex.StatusCode.HasValue && ex.StatusCode.Value.CompareTo(Net.HttpStatusCode.Conflict) = 0) then
                AppendError.InvalidExpectedSequenceNumber
              else AppendError.DocumentDbError ex
-           | ex ->      
+           | ex ->
              AppendError.Error ex))
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (conn:EqxConnection) (sid:StreamId) (sn:SN) (eds:Store.BatchEvent[]) =
-        async {      
+        async {
             // to do: code to append
             return sn + int64 eds.Length
         }

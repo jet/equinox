@@ -10,7 +10,7 @@ let unpack (token : Storage.StreamToken) =
     let { pos = pos; rollingSnapshotEventIndex = compactionEventNumber } : Cosmos.Token = unbox token.value
     defaultArg pos.index 0L, compactionEventNumber, token.batchCapacityLimit
 
-let (|Pos|) index : Store.Position = { collectionUri = null; streamName = null; index = Some index; etag = None }
+let (|Pos|) index : Store.Position = { collectionUri = null; streamName = null; index = Some index; self = None; etag = None }
 [<Theory
     ; InlineData( 0, 3, (*2*)3)
     ; InlineData( 0, 2, (*1*)2)
