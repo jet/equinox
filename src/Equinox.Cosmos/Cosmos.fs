@@ -329,7 +329,7 @@ type EqxSyncResult =
 type WriteResponse = { etag: string; nextI: int64; conflicts: Store.BatchEvent[] }
 
 module private Write =
-    let [<Literal>] sprocName = "EquinoxPagedWrite32"  // NB need to renumber for any breaking change
+    let [<Literal>] sprocName = "EquinoxPagedWrite34"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
@@ -345,7 +345,6 @@ function pagedWrite(req) {
     // Locate the WIP (-1) batch (which may not exist)
     var wipDocId = collection.getAltLink() + "/docs/" + req.id;
     var isAccepted = collection.readDocument(wipDocId, {}, function (err, doc, options) {
-        if (err) throw err;
         executeUpsert(doc);
     });
     if (!isAccepted) throw new Error("readDocument not Accepted");
@@ -672,7 +671,7 @@ type EqxBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit, ?maxEven
     new (maxBatchSize) = EqxBatchingPolicy(fun () -> maxBatchSize)
     member __.BatchSize = getMaxBatchSize()
     member __.MaxBatches = batchCountLimit
-    member __.MaxEventsPerSlice = defaultArg maxEventsPerSlice 1
+    member __.MaxEventsPerSlice = defaultArg maxEventsPerSlice 10
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of Storage.StreamToken | ConflictUnknown of Storage.StreamToken | Conflict of Storage.StreamToken * Store.IOrderedEvent[]
