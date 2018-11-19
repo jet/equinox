@@ -32,7 +32,7 @@ type Tests(testOutputHelper) =
     let (|TestStream|) (name:Guid) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
-    let (|TestDbCollStream|) (TestStream sid) = let (StoreCollection (dbId,collId,sid)) = sid in dbId,collId,sid
+    let (|TestDbCollStream|) (TestStream streamName) = let (StoreCollection (dbId,collId,streamName)) = streamName in dbId,collId,streamName
     let mkContextWithSliceLimit conn dbId collId maxEventsPerSlice = Events.Context(conn,dbId,collId,defaultBatchSize,log,?maxEventsPerSlice=maxEventsPerSlice)
     let mkContext conn dbId collId = mkContextWithSliceLimit conn dbId collId None
 
@@ -41,20 +41,20 @@ type Tests(testOutputHelper) =
         test <@ float rus > Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let append (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
+    let append (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContext conn dbId collId
 
         let event = EventData.Create("test_event")
-        let sn = 0L
-        let! res = Events.append ctx sid sn [|event|]
+        let index = 0L
+        let! res = Events.append ctx streamName index [|event|]
         test <@ Events.AppendResult.Ok 1L = res @>
 
         verifyRequestChargesBelow 10
         // Clear the counters
         capture.Clear()
 
-        let! res = Events.append ctx sid 1L (Array.replicate 5 event)
+        let! res = Events.append ctx streamName 1L (Array.replicate 5 event)
         test <@ Events.AppendResult.Ok 6L = res @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
         verifyRequestChargesBelow 10
@@ -70,12 +70,12 @@ type Tests(testOutputHelper) =
         let sx,sy = stringOfUtf8 x, stringOfUtf8 y
         test <@ ignore i; blobEquals x y || "" = xmlDiff sx sy @>
 
-    let add6EventsIn2Batches ctx sid = async {
-        let sn = 0L
+    let add6EventsIn2Batches ctx streamName = async {
+        let index = 0L
         let event = EventData.Create("test_event")
-        let! res = Events.append ctx sid sn [|event|]
+        let! res = Events.append ctx streamName index [|event|]
         test <@ Events.AppendResult.Ok 1L = res @>
-        let! res = Events.append ctx sid 1L (Array.replicate 5 event)
+        let! res = Events.append ctx streamName 1L (Array.replicate 5 event)
         test <@ Events.AppendResult.Ok 6L = res @>
         // Only start counting RUs from here
         capture.Clear()
@@ -95,15 +95,15 @@ type Tests(testOutputHelper) =
     let verifyCorrectEvents = verifyCorrectEventsEx Store.Direction.Forward
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let get (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
+    let get (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContext conn dbId collId
 
         // We're going to ignore the first, to prove we can
-        let! expected = add6EventsIn2Batches ctx sid
+        let! expected = add6EventsIn2Batches ctx streamName
         let expected = Array.skip 1 expected
 
-        let! res = Events.get ctx sid 1L 1
+        let! res = Events.get ctx streamName 1L 1
 
         verifyCorrectEvents 1L expected res
 
@@ -112,16 +112,16 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let getBackwards (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
+    let getBackwards (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContext conn dbId collId
 
-        let! expected = add6EventsIn2Batches ctx sid
+        let! expected = add6EventsIn2Batches ctx streamName
 
         // We want to skip reading the last
         let expected = Array.take 5 expected
 
-        let! res = Events.getBackwards ctx sid 4L 2
+        let! res = Events.getBackwards ctx streamName 4L 2
 
         verifyCorrectEventsBackward 4L expected res
 
@@ -132,14 +132,14 @@ type Tests(testOutputHelper) =
     // TODO AsyncSeq version
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``get (in 2 batches)`` (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
+    let ``get (in 2 batches)`` (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContextWithSliceLimit conn dbId collId (Some 1)
 
-        let! expected = add6EventsIn2Batches ctx sid
+        let! expected = add6EventsIn2Batches ctx streamName
         let expected = Array.skip 1 expected
 
-        let! res = Events.get ctx sid 1L 1
+        let! res = Events.get ctx streamName 1L 1
 
         verifyCorrectEvents 1L expected res
 
@@ -149,13 +149,13 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let getAll (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
+    let getAll (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContext conn dbId collId
 
-        let! expected = add6EventsIn2Batches ctx sid
+        let! expected = add6EventsIn2Batches ctx streamName
 
-        let! res = Events.get ctx sid 1L 2 // Events.getAll >> AsyncSeq.concatSeq |> AsyncSeq.toArrayAsync
+        let! res = Events.get ctx streamName 1L 2 // Events.getAll >> AsyncSeq.concatSeq |> AsyncSeq.toArrayAsync
         let expected = Array.skip 1 expected
 
         verifyCorrectEvents 1L expected res

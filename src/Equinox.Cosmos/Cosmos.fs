@@ -1051,19 +1051,12 @@ type EqxConnector
         return EqxConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
 module Events =
-
-    /// Stream Id.
-    type StreamId = string
-
-    /// Sequence number of an event within an individual stream.
-    type SN = int64
-
     /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
     [<RequireQualifiedAccess; NoComparison>]
     type AppendResult =
-        | Ok of sn: SN
-        | Conflict of sn: SN * conflictingEvents: IOrderedEvent[]
-        | ConflictUnknown of sn: SN
+        | Ok of index: int64
+        | Conflict of index: int64 * conflictingEvents: IOrderedEvent[]
+        | ConflictUnknown of index: int64
 
     type Context(conn, databaseId, collectionId, batchSize, ?log, ?maxEventsPerSlice) =
         let getDefaultMaxBatchSize () = batchSize
@@ -1071,15 +1064,15 @@ module Events =
         let gateway = EqxGateway(conn, batching)
         let collection = Collection(gateway, databaseId, collectionId)
         let logger : ILogger = defaultArg log (Log.ForContext(Serilog.Core.Constants.SourceContextPropertyName,collectionId))
-        let mkStream sid = Store.Stream.Create(collection.CollectionUri, sid)
-        let mkPos sn = Position.FromIndexOnly sn
-        let mkToken sid sn = Token.ofNonCompacting (mkStream sid, mkPos sn)
-        let getInternal sid sn batchSize direction = async {
-            let stream = mkStream sid
+        let mkStream streamName = Store.Stream.Create(collection.CollectionUri, streamName)
+        let mkPos index = Position.FromIndexOnly index
+        let mkToken streamName pos = Token.ofNonCompacting (mkStream streamName, mkPos pos)
+        let getInternal streamName index batchSize direction = async {
+            let stream = mkStream streamName
             let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
             let! data =
                 match direction with
-                | Direction.Backward -> gateway.LoadBackward logger (Some batching) (stream,mkPos sn)
+                | Direction.Backward -> gateway.LoadBackward logger (Some batching) (stream,mkPos index)
                 | Direction.Forward -> async {
                     let pos = mkPos 0L
                     // TOCONSIDER provide a way to send out the token
@@ -1087,20 +1080,20 @@ module Events =
                     return data }
             // TODO fix algorithm so we can pass a skipcount
             match direction with
-            | Direction.Backward -> return data |> Seq.skipWhile (fun e -> e.Index > sn) |> Array.ofSeq
-            | Direction.Forward -> return data |> Seq.skipWhile (fun e -> e.Index < sn) |> Array.ofSeq
+            | Direction.Backward -> return data |> Seq.skipWhile (fun e -> e.Index > index) |> Array.ofSeq
+            | Direction.Forward -> return data |> Seq.skipWhile (fun e -> e.Index < index) |> Array.ofSeq
         }
 
-        member __.GetAll(sid, sn, batchSize) : AsyncSeq<Store.IOrderedEvent[]> = asyncSeq {
-            let! res = getInternal sid sn batchSize Direction.Forward
+        member __.GetAll(streamName, index, batchSize) : AsyncSeq<Store.IOrderedEvent[]> = asyncSeq {
+            let! res = getInternal streamName index batchSize Direction.Forward
             // TODO add laziness
             return AsyncSeq.ofSeq res
         }
-        member __.Get(sid, sn, batchSize, ?direction) : Async<Store.IOrderedEvent[]> =
-            getInternal sid sn batchSize (defaultArg direction Direction.Forward)
-        member __.Append(sid:StreamId, eds:Store.IEvent[], ?sn:SN) = async {
-            let token = match sn with Some sn -> mkToken sid sn | None -> invalidOp "TODO make stored proc handle -1 being passed in and add a Position.FromIgnoreConflicts"
-            let! res = gateway.TrySync logger token (eds,Seq.empty) None
+        member __.Get(streamName, index, batchSize, ?direction) : Async<Store.IOrderedEvent[]> =
+            getInternal streamName index batchSize (defaultArg direction Direction.Forward)
+        member __.Append(streamName: string, events:Store.IEvent[], ?index:int64) = async {
+            let token = match index with Some sn -> mkToken streamName sn | None -> invalidOp "TODO make stored proc handle -1 being passed in and add a Position.FromIgnoreConflicts"
+            let! res = gateway.TrySync logger token (events,Seq.empty) None
             match res with
             // TOCONSIDER we should not be unpacking the token so callers can gain perf and stop assuming/worrying about sequences
             | GatewaySyncResult.Written (Token.Unpack token) -> return AppendResult.Ok token.pos.index
@@ -1112,30 +1105,30 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) : AsyncSeq<Store.IOrderedEvent[]> =
-        ctx.GetAll(sid, sn, batchSize)
+    let getAll (ctx:Context) (streamName: string) (index: int64) (batchSize:int) : AsyncSeq<Store.IOrderedEvent[]> =
+        ctx.GetAll(streamName, index, batchSize)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) =
-        ctx.Get(sid, sn, batchSize)
+    let get (ctx:Context) (streamName: string) (index: int64) (batchSize:int) =
+        ctx.Get(streamName, index, batchSize)
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx:Context) (sid:StreamId) (sn:SN) (eds:Store.IEvent[]) =
-        ctx.Append(sid, eds, sn)
+    let append (ctx:Context) (streamName: string) (index: int64) (eds:Store.IEvent[]) =
+        ctx.Append(streamName, eds, index)
 
-    let appendAtEnd (ctx:Context) (sid:StreamId) (eds:Store.IEvent[]) =
-        ctx.Append(sid, eds)
+    let appendAtEnd (ctx:Context) (streamName: string) (eds:Store.IEvent[]) =
+        ctx.Append(streamName, eds)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+    let getAllBackwards (conn:EqxConnection) (streamName: string) (index: int64) (batchSize:int) = async {
         // TOCONSIDER this API should expose the predicate form
         //return  AsyncSeq<Store.BatchEvent[]>
         ()
@@ -1145,12 +1138,11 @@ module Events =
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) =
-        ctx.Get(sid, sn, batchSize, direction=Direction.Backward)
+    let getBackwards (ctx:Context) (streamName: string) (index: int64) (batchSize:int) =
+        ctx.Get(streamName, index, batchSize, direction=Direction.Backward)
 
-    /// Returns last sequence number of the stream using query, returns 0 if stream doesn't exist.
-    let getLastSn (conn:EqxConnection) (sid:StreamId) = async {
-        // QUESTION: What's the use case here ? - does appendAtEnd not cover it ?
+    /// Returns the next index to which envents will be appended; returns 0 if stream doesn't exist.
+    let getNextIndex (ctx:Context) (streamName: string) = async {
         //return Async<SN option>
         ()
     }
