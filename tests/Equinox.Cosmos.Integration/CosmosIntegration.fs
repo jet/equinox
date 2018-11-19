@@ -180,7 +180,7 @@ type Tests(testOutputHelper) =
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
        // Intended conflicts pertained
-        let hadConflict= function EqxEvent (EqxAction EqxAct.Conflict) -> Some () | _ -> None
+        let hadConflict = function EqxEvent (EqxAction EqxAct.Conflict) | EqxEvent (EqxAction EqxAct.Resync) -> Some () | _ -> None
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 

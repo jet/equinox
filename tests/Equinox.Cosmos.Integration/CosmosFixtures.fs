@@ -26,4 +26,4 @@ let (|StreamArgs|) streamName =
     databaseId, collectionId, streamName
 
 let defaultBatchSize = 500
-let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
+let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(getMaxBatchSize = (fun () -> batchSize), maxEventsPerSlice=10))
