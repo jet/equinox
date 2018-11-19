@@ -682,8 +682,9 @@ type LoadFromTokenResult = Unchanged | Found of Storage.StreamToken * Store.IOrd
 type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     let (|EventTypePredicate|) predicate (x:Store.IOrderedEvent) = predicate x.EventType
     let (|IEventDataArray|) events = [| for e in events -> e :> Store.IOrderedEvent |]
-    member __.LoadBatched log maybeRollingSnapshotPredicate (stream: Store.Stream, pos: Store.Position)
+    member __.LoadBatched log batchingOverride maybeRollingSnapshotPredicate (stream: Store.Stream, pos: Store.Position)
         : Async<Storage.StreamToken * Store.IOrderedEvent[]> = async {
+        let batching = defaultArg batchingOverride batching
         let! pos, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Client batching.BatchSize batching.MaxBatches (stream,pos)
         match maybeRollingSnapshotPredicate with
         | None -> return Token.ofNonCompacting (stream,pos), events
@@ -784,12 +785,12 @@ type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUni
         return response fold initial token events }
     member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) streamName (log : ILogger) : Async<Storage.StreamToken * 'state> =
         let stream = Store.Stream.Create(coll.CollectionUri, streamName)
-        let batched = load fold initial (coll.Gateway.LoadBatched log None (stream,Position.FromIndexOnly 0L))
+        let batched = load fold initial (coll.Gateway.LoadBatched log None None (stream,Position.FromIndexOnly 0L))
         let compacted predicate = load fold initial (coll.Gateway.LoadBackwardsStoppingAtCompactionEvent log predicate stream)
         let indexed predicate = load fold initial (coll.Gateway.IndexedOrBatched log predicate (stream,None))
         match access with
-        | Some (AccessStrategy.IndexedSearch (predicate,_)) -> indexed predicate
         | None -> batched
+        | Some (AccessStrategy.IndexedSearch (predicate,_)) -> indexed predicate
         | Some AccessStrategy.EventsAreState -> compacted (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (et,_)) -> compacted ((=) et)
     member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (initial: 'state) (state: 'state) token (log : ILogger)
@@ -1034,20 +1035,23 @@ type EqxConnector
         return EqxConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
 module Events =
+
     /// Stream Id.
     type StreamId = string
+
     /// Sequence number of an event within an individual stream.
     type SN = int64
 
-    /// Outcome of appending events, specifying the new and/or conflicting write Index Position
+    /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
     [<RequireQualifiedAccess; NoComparison>]
     type AppendResult =
         | Ok of sn: SN
         | Conflict of sn: SN * conflictingEvents: IOrderedEvent[]
         | ConflictUnknown of sn: SN
 
-    type Context(conn, databaseId, collectionId, batchSize, ?log) =
-        let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
+    type Context(conn, databaseId, collectionId, batchSize, ?log, ?maxEventsPerSlice) =
+        let getDefaultMaxBatchSize () = batchSize
+        let batching = new EqxBatchingPolicy(getDefaultMaxBatchSize, ?maxEventsPerSlice=maxEventsPerSlice)
         let gateway = EqxGateway(conn, batching)
         let collection = Collection(gateway, databaseId, collectionId)
         let logger : ILogger = defaultArg log (Log.ForContext(Serilog.Core.Constants.SourceContextPropertyName,collectionId))
@@ -1056,11 +1060,9 @@ module Events =
         let mkToken sid sn = Token.ofNonCompacting (mkStream sid, mkPos sn)
         let getInternal sid sn batchSize = async {
             let stream, pos = mkStream sid, mkPos 0L
-            // TOCONSIDER stop passing in batchSize and use the other two directly
             let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
-            let gateway = EqxGateway(conn, batching)
-            // TOCONSIDER if we ever want perf, caller needs to get the token
-            let! (_token, data: Store.IOrderedEvent[]) = gateway.LoadBatched logger None (stream,pos)
+            // TOCONSIDER provide a way to send out the token
+            let! (_token, data: Store.IOrderedEvent[]) = gateway.LoadBatched logger (Some batching) None (stream,pos)
             match sn with
             | 0L -> return data
             // TODO fix algorithm so we can pass it instead of 0L
