@@ -82,20 +82,25 @@ type Tests(testOutputHelper) =
         return Array.replicate 6 event
     }
 
-    let verifyCorrectEvents baseIndex (expected: Store.IEvent []) (res: Store.IOrderedEvent[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: Store.IEvent []) (res: Store.IOrderedEvent[]) =
         test <@ expected.Length = res.Length @>
-        test <@ [for i in baseIndex..baseIndex + int64 expected.Length - 1L -> i] = [ for r in res -> r.Index ] @>
+        match direction with
+        | Store.Direction.Forward -> test <@ [for i in 0..expected.Length - 1 -> baseIndex + int64 i] = [ for r in res -> r.Index ] @>
+        | Store.Direction.Backward -> test <@ [for i in 0..expected.Length-1 -> baseIndex - int64 i] = [ for r in res -> r.Index ] @>
+
         test <@ [for e in expected -> e.EventType] = [ for r in res -> r.EventType ] @>
         for i,x,y in Seq.mapi2 (fun i x y -> i,x,y) [for e in expected -> e.Data] [ for r in res -> r.Data ] do
             verifyUtf8JsonEquals i x y
+    let verifyCorrectEventsBackward = verifyCorrectEventsEx Store.Direction.Backward
+    let verifyCorrectEvents = verifyCorrectEventsEx Store.Direction.Forward
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let get (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContext conn dbId collId
 
-        let! expected = add6EventsIn2Batches ctx sid
         // We're going to ignore the first, to prove we can
+        let! expected = add6EventsIn2Batches ctx sid
         let expected = Array.skip 1 expected
 
         let! res = Events.get ctx sid 1L 1
@@ -107,12 +112,31 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``get -- 2 batches`` (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
+    let getBackwards (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        let ctx = mkContext conn dbId collId
+
+        let! expected = add6EventsIn2Batches ctx sid
+
+        // We want to skip reading the last
+        let expected = Array.take 5 expected
+
+        let! res = Events.getBackwards ctx sid 4L 2
+
+        verifyCorrectEventsBackward 4L expected res
+
+        test <@ [EqxAct.SliceBackward; EqxAct.BatchBackward] = capture.ExternalCalls @>
+        verifyRequestChargesBelow 3
+    }
+
+    // TODO AsyncSeq version
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``get (in 2 batches)`` (TestDbCollStream (dbId,collId,sid)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContextWithSliceLimit conn dbId collId (Some 1)
 
         let! expected = add6EventsIn2Batches ctx sid
-        // We're going to ignore the first, to prove we can
         let expected = Array.skip 1 expected
 
         let! res = Events.get ctx sid 1L 1

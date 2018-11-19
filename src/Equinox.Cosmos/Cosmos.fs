@@ -541,8 +541,8 @@ module private Read =
             "Eqx {action:l} {stream} v{nextI} {count}/{responses} {ms}ms rc={ru}",
             action, streamName, nextI, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
-    let loadForwardsFrom (log : ILogger) retryPolicy client batchSize maxPermittedBatchReads (stream: Store.Stream, pos: Store.Position)
-        : Async<Store.Position * Store.IOrderedEvent[]> = async {
+    let loadFrom (log : ILogger) retryPolicy client direction batchSize maxPermittedBatchReads (stream: Store.Stream, pos: Store.Position)
+        : Async<StopwatchInterval * int * Store.IOrderedEvent[] * float> = async {
         let mutable ru = 0.0
         let mutable responses = 0
         let mergeBatches (batches: AsyncSeq<Store.IOrderedEvent[] * Store.Position option * float>) = async {
@@ -552,7 +552,6 @@ module private Read =
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.toArrayAsync
             return events, ru }
-        let direction = Direction.Forward
         use query = genBatchesQuery client (stream,Some pos) direction batchSize
         let pullSlice = handleSlice (stream,Some pos) direction
         let retryingLoggingReadSlice query = Log.withLoggedRetries retryPolicy "readAttempt" (pullSlice query)
@@ -560,9 +559,22 @@ module private Read =
         let slices : AsyncSeq<Store.IOrderedEvent[] * Store.Position option * float> = runBatchesQuery log retryingLoggingReadSlice maxPermittedBatchReads query
         let! t, (events, ru) = mergeBatches slices |> Stopwatch.Time
         query.Dispose()
+        return t, responses, events, ru }
+
+    let loadForwardsFrom (log : ILogger) retryPolicy client batchSize maxPermittedBatchReads (stream: Store.Stream, pos: Store.Position)
+        : Async<Store.Position * Store.IOrderedEvent[]> = async {
+        let direction = Direction.Forward
+        let! t, responses, events, ru = loadFrom log retryPolicy client direction batchSize maxPermittedBatchReads (stream,pos)
         let nextI = if events.Length = 0 then 0L else events.[events.Length-1].Index+1L // No Array.tryLast in older FSharp.Core
-        log |> logBatchRead direction batchSize stream.name t (responses,events) nextI ru
+        log |> logBatchRead direction batchSize stream.name t (responses,events) (Some nextI) ru
         return { pos with index = nextI }, events }
+
+    let loadBackwardsFrom (log : ILogger) retryPolicy client batchSize maxPermittedBatchReads (stream: Store.Stream, pos: Store.Position)
+        : Async<Store.IOrderedEvent[]> = async {
+        let direction = Direction.Backward
+        let! t, responses, events, ru = loadFrom log retryPolicy client direction batchSize maxPermittedBatchReads (stream,pos)
+        log |> logBatchRead direction batchSize stream.name t (responses,events) None ru
+        return events }
 
     let calculateUsedVersusDroppedPayload firstUsedEventIndex (xs: Store.IOrderedEvent[]) : int * int =
         let mutable used, dropped = 0, 0
@@ -682,7 +694,7 @@ type LoadFromTokenResult = Unchanged | Found of Storage.StreamToken * Store.IOrd
 type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     let (|EventTypePredicate|) predicate (x:Store.IOrderedEvent) = predicate x.EventType
     let (|IEventDataArray|) events = [| for e in events -> e :> Store.IOrderedEvent |]
-    member __.LoadBatched log batchingOverride maybeRollingSnapshotPredicate (stream: Store.Stream, pos: Store.Position)
+    member __.LoadForward log batchingOverride maybeRollingSnapshotPredicate (stream: Store.Stream, pos: Store.Position)
         : Async<Storage.StreamToken * Store.IOrderedEvent[]> = async {
         let batching = defaultArg batchingOverride batching
         let! pos, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.Client batching.BatchSize batching.MaxBatches (stream,pos)
@@ -692,6 +704,10 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
             match events |> Array.tryFindBack isCompactionEvent with
             | None -> return Token.ofUncompactedVersion batching.BatchSize (stream,pos), events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize (stream,pos), events }
+    member __.LoadBackward log batchingOverride (stream: Store.Stream, pos: Store.Position)
+        : Async<Store.IOrderedEvent[]> = async {
+        let batching = defaultArg batchingOverride batching
+        return! Read.loadBackwardsFrom log conn.ReadRetryPolicy conn.Client batching.BatchSize batching.MaxBatches (stream,pos) }
     member __.LoadBackwardsStoppingAtCompactionEvent log (EventTypePredicate isCompactionEvent) stream
         : Async<Storage.StreamToken * Store.IOrderedEvent[]> = async {
         let! pos, events = Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.Client batching.BatchSize batching.MaxBatches isCompactionEvent stream
@@ -785,11 +801,11 @@ type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUni
         return response fold initial token events }
     member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) streamName (log : ILogger) : Async<Storage.StreamToken * 'state> =
         let stream = Store.Stream.Create(coll.CollectionUri, streamName)
-        let batched = load fold initial (coll.Gateway.LoadBatched log None None (stream,Position.FromIndexOnly 0L))
+        let forward = load fold initial (coll.Gateway.LoadForward log None None (stream,Position.FromIndexOnly 0L))
         let compacted predicate = load fold initial (coll.Gateway.LoadBackwardsStoppingAtCompactionEvent log predicate stream)
         let indexed predicate = load fold initial (coll.Gateway.IndexedOrBatched log predicate (stream,None))
         match access with
-        | None -> batched
+        | None -> forward
         | Some (AccessStrategy.IndexedSearch (predicate,_)) -> indexed predicate
         | Some AccessStrategy.EventsAreState -> compacted (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (et,_)) -> compacted ((=) et)
@@ -1058,25 +1074,31 @@ module Events =
         let mkStream sid = Store.Stream.Create(collection.CollectionUri, sid)
         let mkPos sn = Position.FromIndexOnly sn
         let mkToken sid sn = Token.ofNonCompacting (mkStream sid, mkPos sn)
-        let getInternal sid sn batchSize = async {
-            let stream, pos = mkStream sid, mkPos 0L
+        let getInternal sid sn batchSize direction = async {
+            let stream = mkStream sid
             let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
-            // TOCONSIDER provide a way to send out the token
-            let! (_token, data: Store.IOrderedEvent[]) = gateway.LoadBatched logger (Some batching) None (stream,pos)
-            match sn with
-            | 0L -> return data
-            // TODO fix algorithm so we can pass it instead of 0L
-            | x -> return data |> Seq.skipWhile (fun e -> e.Index < x) |> Array.ofSeq
+            let! data =
+                match direction with
+                | Direction.Backward -> gateway.LoadBackward logger (Some batching) (stream,mkPos sn)
+                | Direction.Forward -> async {
+                    let pos = mkPos 0L
+                    // TOCONSIDER provide a way to send out the token
+                    let! (_token, data: Store.IOrderedEvent[]) = gateway.LoadForward logger (Some batching) None (stream,pos)
+                    return data }
+            // TODO fix algorithm so we can pass a skipcount
+            match direction with
+            | Direction.Backward -> return data |> Seq.skipWhile (fun e -> e.Index > sn) |> Array.ofSeq
+            | Direction.Forward -> return data |> Seq.skipWhile (fun e -> e.Index < sn) |> Array.ofSeq
         }
 
-        member __.GetAll sid sn batchSize : AsyncSeq<Store.IOrderedEvent[]> = asyncSeq {
-            let! res = getInternal sid sn batchSize
+        member __.GetAll(sid, sn, batchSize) : AsyncSeq<Store.IOrderedEvent[]> = asyncSeq {
+            let! res = getInternal sid sn batchSize Direction.Forward
             // TODO add laziness
             return AsyncSeq.ofSeq res
         }
-        member __.Get sid sn batchSize : Async<Store.IOrderedEvent[]> =
-            getInternal sid sn batchSize
-        member __.Append (sid:StreamId) (sn:SN option) (eds:Store.IEvent[]) = async {
+        member __.Get(sid, sn, batchSize, ?direction) : Async<Store.IOrderedEvent[]> =
+            getInternal sid sn batchSize (defaultArg direction Direction.Forward)
+        member __.Append(sid:StreamId, eds:Store.IEvent[], ?sn:SN) = async {
             let token = match sn with Some sn -> mkToken sid sn | None -> invalidOp "TODO make stored proc handle -1 being passed in and add a Position.FromIgnoreConflicts"
             let! res = gateway.TrySync logger token (eds,Seq.empty) None
             match res with
@@ -1091,25 +1113,23 @@ module Events =
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
     let getAll (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) : AsyncSeq<Store.IOrderedEvent[]> =
-        ctx.GetAll sid sn batchSize
+        ctx.GetAll(sid, sn, batchSize)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
     let get (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) =
-        ctx.Get sid sn batchSize
+        ctx.Get(sid, sn, batchSize)
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (ctx:Context) (sid:StreamId) (sn:SN) (eds:Store.IEvent[]) =
-        ctx.Append sid (Some sn) eds
-        // TODO: there is one in the sample/Store
-        //|> Faults.retryCatchWithSourceDelay (shouldRetryExn event) rp
+        ctx.Append(sid, eds, sn)
 
     let appendAtEnd (ctx:Context) (sid:StreamId) (eds:Store.IEvent[]) =
-        ctx.Append sid None eds
+        ctx.Append(sid, eds)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
@@ -1125,11 +1145,8 @@ module Events =
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (conn:EqxConnection) (sid:StreamId) (sn:SN) (batchSize:int) = async {
-        // QUESTION: Can someone explain the use case here ?
-        //return  AsyncSeq<Store.BatchEvent[]>
-        ()
-    }
+    let getBackwards (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) =
+        ctx.Get(sid, sn, batchSize, direction=Direction.Backward)
 
     /// Returns last sequence number of the stream using query, returns 0 if stream doesn't exist.
     let getLastSn (conn:EqxConnection) (sid:StreamId) = async {
