@@ -281,6 +281,96 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Low level api test get`` id value = Async.RunSynchronously <| async {
+        let log, capture = createLoggerWithCapture ()
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+
+        let service = ContactPreferences.createService (createEqxGateway conn) log
+
+        let (Domain.ContactPreferences.Id email) = id
+        // Feed some junk into the stream
+        for i in 0..11 do
+            let quickSurveysValue = i % 2 = 0
+            do! service.Update email { value with quickSurveys = quickSurveysValue }
+
+        // real test starts here, not sure how to get rid of the above sentences
+        let sn = 0L
+        let event =
+            { new Store.IEvent with
+                member __.EventType = "test_event"
+                member __.Data = System.Text.Encoding.UTF8.GetBytes("{\"d\":\"d\"}")
+                member __.Meta = System.Text.Encoding.UTF8.GetBytes("{\"m\":\"m\"}") }
+        let events = [|event|]
+        let (StreamArgs (dbId,collId,sid)) = sprintf "test-%s" email
+        let category = Events.Category(conn,dbId,collId,defaultBatchSize)
+        let! res = Events.append category sid sn events
+        let r =
+            match res with
+            | Choice1Of3 sn -> sn
+            | _ -> -1L
+
+        if r = -1L then
+            test <@ 1 = 0 @>
+        else
+            let! res = Events.get category sid sn events.Length
+            if res.Length<>events.Length then
+                test <@ 1 = 0 @>
+            else
+                let compareArrays = Array.compareWith (fun elem1 elem2 ->
+                    if elem1 > elem2 then 1
+                    elif elem1 < elem2 then -1
+                    else 0) 
+                let wrapEvents (events : #Store.IEvent seq) = [| for x in events -> x.EventType, x.Data |]
+                let events = wrapEvents events
+                test <@ compareArrays res events = 0 @>
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Low level api test getAll`` id value = Async.RunSynchronously <| async {
+        let log, capture = createLoggerWithCapture ()
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+
+        let service = ContactPreferences.createService (createEqxGateway conn) log
+
+        let (Domain.ContactPreferences.Id email) = id
+        // Feed some junk into the stream
+        for i in 0..11 do
+            let quickSurveysValue = i % 2 = 0
+            do! service.Update email { value with quickSurveys = quickSurveysValue }
+
+        // real test starts here, not sure how to get rid of the above sentences
+        let sn = 0L
+        let event =
+            { new Store.IEvent with
+                member __.EventType = "test_event"
+                member __.Data = System.Text.Encoding.UTF8.GetBytes("{\"d\":\"d\"}")
+                member __.Meta = System.Text.Encoding.UTF8.GetBytes("{\"m\":\"m\"}") }
+        let events = [|event|]
+        let (StreamArgs (dbId,collId,sid)) = sprintf "test-%s" email
+        let category = Events.Category(conn,dbId,collId,defaultBatchSize)
+        let! res = Events.append category sid sn events
+        let r =
+            match res with
+            | Choice1Of3 sn -> sn
+            | _ -> -1L
+
+        if r = -1L then
+            test <@ 1 = 0 @>
+        else
+            let! res = Events.getAll category sid sn events.Length
+            if res.Length<>events.Length then
+                test <@ 1 = 0 @>
+            else
+                let compareArrays = Array.compareWith (fun elem1 elem2 ->
+                    if elem1 > elem2 then 1
+                    elif elem1 < elem2 then -1
+                    else 0) 
+                let wrapEvents (events : #Store.IEvent seq) = [| for x in events -> x.EventType, x.Data |]
+                let events = wrapEvents events
+                test <@ compareArrays res events = 0 @>
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
