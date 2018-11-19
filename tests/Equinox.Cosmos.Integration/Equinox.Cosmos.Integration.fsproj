@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.10.8" />
+    <PackageReference Include="JsonDiffPatch.Net" Version="2.1.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.3.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
     <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />
