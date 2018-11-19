@@ -320,9 +320,13 @@ type Tests(testOutputHelper) =
                     if elem1 > elem2 then 1
                     elif elem1 < elem2 then -1
                     else 0) 
+                let compareTupleArrays = Array.compareWith (fun elem1 elem2 ->
+                    if fst elem1 > fst elem2 then 1
+                    elif fst elem1 < fst elem2 then -1
+                    else compareArrays (snd elem1) (snd elem2))                 
                 let wrapEvents (events : #Store.IEvent seq) = [| for x in events -> x.EventType, x.Data |]
                 let events = wrapEvents events
-                test <@ compareArrays res events = 0 @>
+                test <@ compareTupleArrays res events = 0 @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -365,9 +369,13 @@ type Tests(testOutputHelper) =
                     if elem1 > elem2 then 1
                     elif elem1 < elem2 then -1
                     else 0) 
+                let compareTupleArrays = Array.compareWith (fun elem1 elem2 ->
+                    if fst elem1 > fst elem2 then 1
+                    elif fst elem1 < fst elem2 then -1
+                    else compareArrays (snd elem1) (snd elem2))    
                 let wrapEvents (events : #Store.IEvent seq) = [| for x in events -> x.EventType, x.Data |]
                 let events = wrapEvents events
-                test <@ compareArrays res events = 0 @>
+                test <@ compareTupleArrays res events = 0 @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
