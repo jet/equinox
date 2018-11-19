@@ -3,7 +3,9 @@ module Equinox.Cosmos.Integration.Infrastructure
 
 open Domain
 open FsCheck
+open Serilog
 open System
+open Serilog.Core
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
@@ -84,3 +86,23 @@ module SerilogHelpers =
         member __.Entries = captured.ToArray()
         member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
         member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
+
+type TestsWithLogCapture(testOutputHelper) =
+    let log, capture = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
+
+    /// NB the returned Logger must be Dispose()'d to guarantee all log output has been flushed upon completion of a test
+    static member CreateLoggerWithCapture testOutputHelper : Logger* LogCaptureBuffer =
+        let testOutput = TestOutputAdapter testOutputHelper
+        let capture = LogCaptureBuffer()
+        let logger =
+            Serilog.LoggerConfiguration()
+                .WriteTo.Seq("http://localhost:5341")
+                .WriteTo.Sink(testOutput)
+                .WriteTo.Sink(capture)
+                .CreateLogger()
+        logger, capture
+
+    member __.Capture = capture
+    member __.Log = log
+
+    interface IDisposable with member __.Dispose() = log.Dispose()

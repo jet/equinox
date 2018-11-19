@@ -1039,19 +1039,21 @@ module Events =
     /// Sequence number of an event within an individual stream.
     type SN = int64
 
-    type EventData = string * byte[]
-    type Category(conn, databaseId, collectionId, batchSize, ?accessStrategy, ?log) =
-        let nullCodec = UnionCodec.JsonUtf8.Create(id,fun (et,d) -> Some (et,d))
+    /// Outcome of appending events, specifying the new and/or conflicting write Index Position
+    [<RequireQualifiedAccess; NoComparison>]
+    type AppendResult =
+        | Ok of sn: SN
+        | Conflict of sn: SN * conflictingEvents: IOrderedEvent[]
+        | ConflictUnknown of sn: SN
+
+    type Context(conn, databaseId, collectionId, batchSize, ?log) =
         let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
         let gateway = EqxGateway(conn, batching)
         let collection = Collection(gateway, databaseId, collectionId)
-        let inner = Category<EventData, EventData[]>(collection, nullCodec, ?access = accessStrategy)
-        let fold (state: EventData[]) (events: EventData seq) = Seq.append state events |> Array.ofSeq
         let logger : ILogger = defaultArg log (Log.ForContext(Serilog.Core.Constants.SourceContextPropertyName,collectionId))
         let mkStream sid = Store.Stream.Create(collection.CollectionUri, sid)
         let mkPos sn = Position.FromIndexOnly sn
         let mkToken sid sn = Token.ofNonCompacting (mkStream sid, mkPos sn)
-        let wrapEvents (events : #Store.IEvent seq) = [| for x in events -> x.EventType, x.Data |]
         let getInternal sid sn batchSize limit = async {
             let stream, pos = mkStream sid, mkPos sn
             // TOCONSIDER stop passing in batchSize and use the other two directly
@@ -1060,55 +1062,52 @@ module Events =
             // TOCONSIDER if we ever want perf, caller needs to get the token
             let! (_token, data: Store.IOrderedEvent[]) = gateway.LoadBatched logger None (stream,pos)
             match limit with
+            | None -> return data
             | Some limit ->
                 // TODO implement limiting internally
-                return Seq.truncate limit data
-            | None -> return Seq.ofArray data
+                return Seq.truncate limit data |> Array.ofSeq
         }
-        member __.GetAll sid sn batchSize : Async<EventData[]> = async {
-            let! (data: Store.IOrderedEvent seq) = getInternal sid sn batchSize None
-            return  wrapEvents <| Seq.cast<IEvent> data
-        }
-        member __.Get sid sn batchSize : Async<EventData[]> = async {
-            let! (data: Store.IOrderedEvent seq) = getInternal sid sn batchSize (Some batchSize)
-            return wrapEvents data
-        }
+
+        member __.GetAll sid sn batchSize : Async<Store.IOrderedEvent[]> =
+            getInternal sid sn batchSize None
+        member __.Get sid sn batchSize : Async<Store.IOrderedEvent[]> =
+            getInternal sid sn batchSize (Some batchSize)
         member __.Append (sid:StreamId) (sn:SN option) (eds:Store.IEvent[]) = async {
             let token = match sn with Some sn -> mkToken sid sn | None -> invalidOp "TODO make stored proc handle -1 being passed in and add a Position.FromIgnoreConflicts"
             let! res = gateway.TrySync logger token (eds,Seq.empty) None
             match res with
             // TOCONSIDER we should not be unpacking the token so callers can gain perf and stop assuming/worrying about sequences
-            | GatewaySyncResult.Written (Token.Unpack token) -> return Choice1Of3 token.pos.index
-            | GatewaySyncResult.Conflict (Token.Unpack token,events) -> return Choice3Of3 (token.pos.index, wrapEvents events)
-            | GatewaySyncResult.ConflictUnknown (Token.Unpack token) -> return Choice2Of3 token.pos.index
+            | GatewaySyncResult.Written (Token.Unpack token) -> return AppendResult.Ok token.pos.index
+            | GatewaySyncResult.Conflict (Token.Unpack token,events) -> return AppendResult.Conflict (token.pos.index, events)
+            | GatewaySyncResult.ConflictUnknown (Token.Unpack token) -> return AppendResult.ConflictUnknown token.pos.index
         }
 
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (category: Category) (sid:StreamId) (sn:SN) (batchSize:int) = async {
-        return! category.GetAll sid sn batchSize
+    let getAll (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        return! ctx.GetAll sid sn batchSize
     }
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (category: Category) (sid:StreamId) (sn:SN) (batchSize:int) = async {
-        return! category.Get sid sn batchSize
+    let get (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) = async {
+        return! ctx.Get sid sn batchSize
     }
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (category:Category) (sid:StreamId) (sn:SN) (eds:Store.IEvent[]) =
-        category.Append sid (Some sn) eds
+    let append (ctx:Context) (sid:StreamId) (sn:SN) (eds:Store.IEvent[]) =
+        ctx.Append sid (Some sn) eds
         // TODO: there is one in the sample/Store
         //|> Faults.retryCatchWithSourceDelay (shouldRetryExn event) rp
 
-    let appendAtEnd (category:Category) (sid:StreamId) (eds:Store.IEvent[]) =
-        category.Append sid None eds
+    let appendAtEnd (ctx:Context) (sid:StreamId) (eds:Store.IEvent[]) =
+        ctx.Append sid None eds
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.

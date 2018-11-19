@@ -4,7 +4,6 @@ open Equinox.Cosmos.Integration.Infrastructure
 open Equinox.Cosmos
 open Swensen.Unquote
 open System.Threading
-open Serilog
 open System
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
@@ -16,32 +15,32 @@ module Cart =
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
         let gateway = createEqxGateway connection batchSize
-        let resolveStream (StreamArgs args) =
+        let resolveStream (StoreCollection args) =
             EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompaction connection batchSize log =
         let gateway = createEqxGateway connection batchSize
-        let resolveStream (StreamArgs args) =
+        let resolveStream (StoreCollection args) =
             EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceIndexed connection batchSize log =
         let gateway = createEqxGateway connection batchSize
-        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCachingIndexed connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index, caching=sliding20m).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index, caching=sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompactionAndCaching connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact, sliding20m).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact, sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
@@ -49,16 +48,17 @@ module ContactPreferences =
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService createGateway log =
-        let resolveStream (StreamArgs args) = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create(args)
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type Tests(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
+    inherit TestsWithLogCapture(testOutputHelper)
+    let log,capture = base.Log, base.Capture
 
     let addAndThenRemoveItems exceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
         service.FlowAsync(cartId, fun _ctx execute ->
@@ -71,23 +71,12 @@ type Tests(testOutputHelper) =
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
         addAndThenRemoveItems true context cartId skuId service count
 
-    let createLoggerWithCapture () =
-        let capture = LogCaptureBuffer()
-        let logger =
-            Serilog.LoggerConfiguration()
-                .WriteTo.Seq("http://localhost:5341")
-                .WriteTo.Sink(testOutput)
-                .WriteTo.Sink(capture)
-                .CreateLogger()
-        logger, capture
-
     let singleSliceForward = EqxAct.SliceForward
     let singleBatchForward = [EqxAct.SliceForward; EqxAct.BatchForward]
     let batchForwardAndAppend = singleBatchForward @ [EqxAct.Append]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
 
         let batchSize = 3
@@ -113,7 +102,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, managing sync conflicts by retrying [without any optimizations]`` ctx initialState = Async.RunSynchronously <| async {
-        let log1, capture1 = createLoggerWithCapture ()
+        let log1, capture1 = log, capture
         let! conn = connectToSpecifiedCosmosOrSimulator log1
         // Ensure batching is included at some point in the proceedings
         let batchSize = 3
@@ -153,7 +142,8 @@ type Tests(testOutputHelper) =
             do! act prepare service1 sku12 12
             // Signal conflict generated
             do! s4 }
-        let log2, capture2 = createLoggerWithCapture ()
+        let log2, capture2 = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
+        use _flush = log2
         let service2 = Cart.createServiceWithoutOptimization conn batchSize log2
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
@@ -189,7 +179,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let service = Cart.createServiceWithCompaction conn batchSize log
@@ -228,7 +217,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with EventsAreState Access Strategy`` id value = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createService (createEqxGateway conn) log
 
@@ -250,137 +238,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Low level api test append`` id value = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-
-        let service = ContactPreferences.createService (createEqxGateway conn) log
-
-        let (Domain.ContactPreferences.Id email) = id
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update email { value with quickSurveys = quickSurveysValue }
-
-        // real test starts here, not sure how to get rid of the above sentences
-        let sn = 0L
-        let event =
-            { new Store.IEvent with
-                member __.EventType = "test_event"
-                member __.Data = System.Text.Encoding.UTF8.GetBytes("{\"d\":\"d\"}")
-                member __.Meta = System.Text.Encoding.UTF8.GetBytes("{\"m\":\"m\"}") }
-        let events = [|event|]
-        let (StreamArgs (dbId,collId,sid)) = sprintf "test-%s" email
-        let category = Events.Category(conn,dbId,collId,defaultBatchSize)
-        let! res = Events.append category sid sn events
-        let r =
-            match res with
-            | Choice1Of3 sn -> sn
-            | _ -> -1L
-        test <@ r = sn + int64 events.Length @>
-    }
-
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Low level api test get`` id value = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-
-        let service = ContactPreferences.createService (createEqxGateway conn) log
-
-        let (Domain.ContactPreferences.Id email) = id
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update email { value with quickSurveys = quickSurveysValue }
-
-        // real test starts here, not sure how to get rid of the above sentences
-        let sn = 0L
-        let event =
-            { new Store.IEvent with
-                member __.EventType = "test_event"
-                member __.Data = System.Text.Encoding.UTF8.GetBytes("{\"d\":\"d\"}")
-                member __.Meta = System.Text.Encoding.UTF8.GetBytes("{\"m\":\"m\"}") }
-        let events = [|event|]
-        let (StreamArgs (dbId,collId,sid)) = sprintf "test-%s" email
-        let category = Events.Category(conn,dbId,collId,defaultBatchSize)
-        let! res = Events.append category sid sn events
-        let r =
-            match res with
-            | Choice1Of3 sn -> sn
-            | _ -> -1L
-
-        if r = -1L then
-            test <@ 1 = 0 @>
-        else
-            let! res = Events.get category sid sn events.Length
-            if res.Length<>events.Length then
-                test <@ 1 = 0 @>
-            else
-                let compareArrays = Array.compareWith (fun elem1 elem2 ->
-                    if elem1 > elem2 then 1
-                    elif elem1 < elem2 then -1
-                    else 0) 
-                let compareTupleArrays = Array.compareWith (fun elem1 elem2 ->
-                    if fst elem1 > fst elem2 then 1
-                    elif fst elem1 < fst elem2 then -1
-                    else compareArrays (snd elem1) (snd elem2))                 
-                let wrapEvents (events : #Store.IEvent seq) = [| for x in events -> x.EventType, x.Data |]
-                let events = wrapEvents events
-                test <@ compareTupleArrays res events = 0 @>
-    }
-
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Low level api test getAll`` id value = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-
-        let service = ContactPreferences.createService (createEqxGateway conn) log
-
-        let (Domain.ContactPreferences.Id email) = id
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update email { value with quickSurveys = quickSurveysValue }
-
-        // real test starts here, not sure how to get rid of the above sentences
-        let sn = 0L
-        let event =
-            { new Store.IEvent with
-                member __.EventType = "test_event"
-                member __.Data = System.Text.Encoding.UTF8.GetBytes("{\"d\":\"d\"}")
-                member __.Meta = System.Text.Encoding.UTF8.GetBytes("{\"m\":\"m\"}") }
-        let events = [|event|]
-        let (StreamArgs (dbId,collId,sid)) = sprintf "test-%s" email
-        let category = Events.Category(conn,dbId,collId,defaultBatchSize)
-        let! res = Events.append category sid sn events
-        let r =
-            match res with
-            | Choice1Of3 sn -> sn
-            | _ -> -1L
-
-        if r = -1L then
-            test <@ 1 = 0 @>
-        else
-            let! res = Events.getAll category sid sn events.Length
-            if res.Length<>events.Length then
-                test <@ 1 = 0 @>
-            else
-                let compareArrays = Array.compareWith (fun elem1 elem2 ->
-                    if elem1 > elem2 then 1
-                    elif elem1 < elem2 then -1
-                    else 0) 
-                let compareTupleArrays = Array.compareWith (fun elem1 elem2 ->
-                    if fst elem1 > fst elem2 then 1
-                    elif fst elem1 < fst elem2 then -1
-                    else compareArrays (snd elem1) (snd elem2))    
-                let wrapEvents (events : #Store.IEvent seq) = [| for x in events -> x.EventType, x.Data |]
-                let events = wrapEvents events
-                test <@ compareTupleArrays res events = 0 @>
-    }
-
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let cache = Caching.Cache("cart", sizeMb = 50)
@@ -411,7 +269,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly using the index and cache to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let cache = Caching.Cache("cart", sizeMb = 50)
@@ -441,7 +298,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly using the index to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let createServiceIndexed () = Cart.createServiceIndexed conn batchSize log
@@ -467,7 +323,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can combine compaction with caching against Cosmos`` context skuId cartId = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let service1 = Cart.createServiceWithCompaction conn batchSize log

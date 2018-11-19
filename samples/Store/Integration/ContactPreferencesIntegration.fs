@@ -21,9 +21,9 @@ let resolveStreamGesWithCompactionSemantics gateway streamName =
 let resolveStreamGesWithoutCompactionSemantics gateway streamName =
     GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(streamName)
 
-let resolveStreamEqxWithCompactionSemantics gateway (StreamArgs args) =
+let resolveStreamEqxWithCompactionSemantics gateway (StoreCollection args) =
     EqxStreamBuilder(gateway 1, codec, fold, initial, Equinox.Cosmos.AccessStrategy.EventsAreState).Create(args)
-let resolveStreamEqxWithoutCompactionSemantics gateway (StreamArgs args) =
+let resolveStreamEqxWithoutCompactionSemantics gateway (StoreCollection args) =
     EqxStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(args)
 
 type Tests(testOutputHelper) =
