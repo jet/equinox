@@ -1054,24 +1054,26 @@ module Events =
         let mkStream sid = Store.Stream.Create(collection.CollectionUri, sid)
         let mkPos sn = Position.FromIndexOnly sn
         let mkToken sid sn = Token.ofNonCompacting (mkStream sid, mkPos sn)
-        let getInternal sid sn batchSize limit = async {
-            let stream, pos = mkStream sid, mkPos sn
+        let getInternal sid sn batchSize = async {
+            let stream, pos = mkStream sid, mkPos 0L
             // TOCONSIDER stop passing in batchSize and use the other two directly
             let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
             let gateway = EqxGateway(conn, batching)
             // TOCONSIDER if we ever want perf, caller needs to get the token
             let! (_token, data: Store.IOrderedEvent[]) = gateway.LoadBatched logger None (stream,pos)
-            match limit with
-            | None -> return data
-            | Some limit ->
-                // TODO implement limiting internally
-                return Seq.truncate limit data |> Array.ofSeq
+            match sn with
+            | 0L -> return data
+            // TODO fix algorithm so we can pass it instead of 0L
+            | x -> return data |> Seq.skipWhile (fun e -> e.Index < x) |> Array.ofSeq
         }
 
-        member __.GetAll sid sn batchSize : Async<Store.IOrderedEvent[]> =
-            getInternal sid sn batchSize None
+        member __.GetAll sid sn batchSize : AsyncSeq<Store.IOrderedEvent[]> = asyncSeq {
+            let! res = getInternal sid sn batchSize
+            // TODO add laziness
+            return AsyncSeq.ofSeq res
+        }
         member __.Get sid sn batchSize : Async<Store.IOrderedEvent[]> =
-            getInternal sid sn batchSize (Some batchSize)
+            getInternal sid sn batchSize
         member __.Append (sid:StreamId) (sn:SN option) (eds:Store.IEvent[]) = async {
             let token = match sn with Some sn -> mkToken sid sn | None -> invalidOp "TODO make stored proc handle -1 being passed in and add a Position.FromIgnoreConflicts"
             let! res = gateway.TrySync logger token (eds,Seq.empty) None
@@ -1086,17 +1088,15 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) = async {
-        return! ctx.GetAll sid sn batchSize
-    }
+    let getAll (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) : AsyncSeq<Store.IOrderedEvent[]> =
+        ctx.GetAll sid sn batchSize
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) = async {
-        return! ctx.Get sid sn batchSize
-    }
+    let get (ctx:Context) (sid:StreamId) (sn:SN) (batchSize:int) =
+        ctx.Get sid sn batchSize
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended

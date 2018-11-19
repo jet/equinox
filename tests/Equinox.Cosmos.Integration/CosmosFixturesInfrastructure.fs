@@ -64,6 +64,25 @@ module SerilogHelpers =
         | Equinox.Cosmos.Log.Index _ -> EqxAct.Indexed
         | Equinox.Cosmos.Log.IndexNotFound _ -> EqxAct.IndexedNotFound
         | Equinox.Cosmos.Log.IndexNotModified _ -> EqxAct.IndexedCached
+    let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Log.Measurement) = ru
+    let (|CosmosReadRu|CosmosWriteRu|CosmosResyncRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
+        match evt with
+        | Equinox.Cosmos.Log.Index (Stats s)
+        | Equinox.Cosmos.Log.IndexNotFound (Stats s)
+        | Equinox.Cosmos.Log.IndexNotModified (Stats s)
+        | Equinox.Cosmos.Log.Batch (_,_, (Stats s)) -> CosmosReadRu s
+        | Equinox.Cosmos.Log.WriteSuccess (Stats s)
+        | Equinox.Cosmos.Log.WriteConflict (Stats s) -> CosmosWriteRu s
+        | Equinox.Cosmos.Log.WriteResync (Stats s) -> CosmosResyncRu s
+        // slices are rolled up into batches so be sure not to double-count
+        | Equinox.Cosmos.Log.Slice (_,{ ru = ru }) -> CosmosSliceRu ru
+    /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
+    let (|CosmosRequestCharge|EquinoxChargeRollup|) c =
+        match c with
+        | CosmosSliceRu _ ->
+            EquinoxChargeRollup
+        | CosmosReadRu rc | CosmosWriteRu rc | CosmosResyncRu rc as e ->
+            CosmosRequestCharge (e,rc)
     let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
             | SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e
@@ -86,6 +105,7 @@ module SerilogHelpers =
         member __.Entries = captured.ToArray()
         member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
         member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
+        member __.RequestCharges = __.ChooseCalls (function EqxEvent (CosmosRequestCharge e) -> Some e | _ -> None)
 
 type TestsWithLogCapture(testOutputHelper) =
     let log, capture = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
