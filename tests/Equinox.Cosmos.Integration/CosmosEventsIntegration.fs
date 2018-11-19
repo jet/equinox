@@ -57,8 +57,10 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 1L (Array.replicate 5 event)
         test <@ Events.AppendResult.Ok 6L = res @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesBelow 10
+        verifyRequestChargesBelow 11
     }
+
+    // TODO apppendAtAnd test
 
     let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
     let stringOfUtf8 (x: byte[]) = Encoding.UTF8.GetString(x)
@@ -93,6 +95,39 @@ type Tests(testOutputHelper) =
             verifyUtf8JsonEquals i x y
     let verifyCorrectEventsBackward = verifyCorrectEventsEx Store.Direction.Backward
     let verifyCorrectEvents = verifyCorrectEventsEx Store.Direction.Forward
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``append - fails on non-matching`` (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        let ctx = mkContext conn dbId collId
+
+        // Attempt to write, skipping Index 0
+        let event = EventData.Create("test_event")
+        let! res = Events.append ctx streamName 1L [|event|]
+        test <@ [EqxAct.Resync] = capture.ExternalCalls @>
+        // The response aligns with a normal conflict in that it passes the entire set of conflicting events ()
+        test <@ Events.AppendResult.Conflict (0L,[||]) = res @>
+        verifyRequestChargesBelow 5
+        capture.Clear()
+
+        // Now write at the correct position
+        let expected = [|event|]
+        let! res = Events.append ctx streamName 0L expected
+        test <@ Events.AppendResult.Ok 1L = res @>
+        test <@ [EqxAct.Append] = capture.ExternalCalls @>
+        verifyRequestChargesBelow 10
+        capture.Clear()
+
+        // Try overwriting it (a competing consumer would see the same)
+        let! res = Events.append ctx streamName 0L  [|event; event|]
+        // This time we get passed the conflicting events
+        match res with
+        | Events.AppendResult.Conflict (1L, e) -> verifyCorrectEvents 0L expected e
+        | x -> x |> failwithf "Unexpected %A"
+        test <@ [EqxAct.Resync] = capture.ExternalCalls @>
+        verifyRequestChargesBelow 4
+        capture.Clear()
+    }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let get (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
@@ -131,6 +166,8 @@ type Tests(testOutputHelper) =
 
     // TODO AsyncSeq version
 
+    // TODO 2 batches test
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get (in 2 batches)`` (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
@@ -164,3 +201,7 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.SliceForward; EqxAct.BatchForward] = capture.ExternalCalls @>
         verifyRequestChargesBelow 3
     }
+
+    // TODO getNextIndex test
+
+    // TODO mine other integration tests

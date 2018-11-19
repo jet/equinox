@@ -329,7 +329,7 @@ type EqxSyncResult =
 type WriteResponse = { etag: string; nextI: int64; conflicts: Store.BatchEvent[] }
 
 module private Write =
-    let [<Literal>] sprocName = "EquinoxPagedWrite34"  // NB need to renumber for any breaking change
+    let [<Literal>] sprocName = "EquinoxPagedWrite35"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
@@ -352,59 +352,58 @@ function pagedWrite(req) {
     function executeUpsert(current) {
         // Verify we dont have a conflicting write
         if (current == null && req.i != 0) {
-            // If there is no WIP page, the writer has nopossible reason for writing at an index other than zero
-            throw new Error("Cannot write with non-zero start index.");
+            // If there is no WIP page, the writer has no possible reason for writing at an index other than zero
+            response.setBody({ etag: null, nextI: 0, conflicts: [] });
         } else if (current != null && req.i != current.i + current.e.length) {
             // Where possible, we extract conflicting events from e and/or c in order to avoid another read cycle
             // yielding [] triggers the client to go loading the events itself
             const conflicts = req.i < current.i ? [] : current.e.slice(req.i - current.i);
             const nextI = current.i + current.e.length;
             response.setBody({ etag: current._etag, nextI: nextI, conflicts: conflicts });
-            return;
-        }
-
-        // If we have hit a sensible limit for a slice, swap to a new one
-        if (current != null && current.e.length + req.e.length > req.l) {
-            // remove the well-known `id` value identifying the batch as being WIP
-            current.id = current.i.toString();
-            // ... As it's no longer a WIP batch, we definitely don't want projections taking up space
-            delete current.c;
-            // ... And the `l` is of no value
-            delete current.l;
-
-            // TODO Carry forward:
-            // - `c` items not present in `batch`,
-            // - their associated `c` items with `x:true`
-            // - any required `e` items from the page being superseded (as `c` items with `x:true`])
-
-            // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
-            const reqOptions = { etag: current._etag };
-            const isAccepted = collection.replaceDocument(current._self, current, reqOptions);
-            if (!isAccepted) throw new Error("Unable to remove WIP markings from WIP batch.");
-            // The incoming batch now needs to become a new document, trigger that action in the final step
-            current = null;
-        } else if (current) {
-            // Append the new events into the current batch
-            Array.prototype.push.apply(current.e, req.e);
-            // Replace all the projections
-            current.c = req.c;
-            // TODO: should remove only projections being superseded
-        }
-
-        // Create or replace the WIP batch as necessary
-        function callback(err, doc, options) {
-            if (err) throw err;
-            response.setBody({ etag: doc._etag, nextI: doc.i + doc.e.length, conflicts: null });
-        }
-
-        if (current) {
-            // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
-            const reqOptions = { etag: current._etag };
-            const isAccepted = collection.replaceDocument(current._self, current, reqOptions, callback);
-            if (!isAccepted) throw new Error("Unable to replace WIP batch.");
         } else {
-            const isAccepted = collection.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
-            if (!isAccepted) throw new Error("Unable to create WIP batch.");
+            // If we have hit a sensible limit for a slice, swap to a new one
+            if (current != null && current.e.length + req.e.length > req.l) {
+                // remove the well-known `id` value identifying the batch as being WIP
+                current.id = current.i.toString();
+                // ... As it's no longer a WIP batch, we definitely don't want projections taking up space
+                delete current.c;
+                // ... And the `l` is of no value
+                delete current.l;
+
+                // TODO Carry forward:
+                // - `c` items not present in `batch`,
+                // - their associated `c` items with `x:true`
+                // - any required `e` items from the page being superseded (as `c` items with `x:true`])
+
+                // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
+                const reqOptions = { etag: current._etag };
+                const isAccepted = collection.replaceDocument(current._self, current, reqOptions);
+                if (!isAccepted) throw new Error("Unable to remove WIP markings from WIP batch.");
+                // The incoming batch now needs to become a new document, trigger that action in the final step
+                current = null;
+            } else if (current) {
+                // Append the new events into the current batch
+                Array.prototype.push.apply(current.e, req.e);
+                // Replace all the projections
+                current.c = req.c;
+                // TODO: should remove only projections being superseded
+            }
+
+            // Create or replace the WIP batch as necessary
+            function callback(err, doc, options) {
+                if (err) throw err;
+                response.setBody({ etag: doc._etag, nextI: doc.i + doc.e.length, conflicts: null });
+            }
+
+            if (current) {
+                // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
+                const reqOptions = { etag: current._etag };
+                const isAccepted = collection.replaceDocument(current._self, current, reqOptions, callback);
+                if (!isAccepted) throw new Error("Unable to replace WIP batch.");
+            } else {
+                const isAccepted = collection.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
+                if (!isAccepted) throw new Error("Unable to create WIP batch.");
+            }
         }
     }
 }"""
@@ -418,6 +417,7 @@ function pagedWrite(req) {
         let newPos = { pos with index = res.Response.nextI; etag = Option.ofObj res.Response.etag }
         match res.RequestCharge, res.Response.conflicts with
         | rc,null -> return rc, EqxSyncResult.Written newPos
+        | rc,[||] when newPos.index = 0L -> return rc, EqxSyncResult.Conflict (newPos, Array.empty)
         | rc,[||] -> return rc, EqxSyncResult.ConflictUnknown newPos
         | rc, xs  -> return rc, EqxSyncResult.Conflict (newPos, Store.Enum.Events (pos.index, xs) |> Array.ofSeq) }
 
