@@ -115,7 +115,9 @@ module Store =
         /// NB very inefficient compared to FromDocument
         static member FromIndexOnly(i: int64) = { index = i; etag = None }
         /// If we know the stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
-        static member FromEmptyStream() = Position.FromIndexOnly(0L)
+        static member FromEmptyStream() = Position.FromIndexOnly 0L
+        /// Just Do It mode
+        static member FromAppendAtEnd = Position.FromIndexOnly -1L
 
     [<RequireQualifiedAccess>]
     type Direction = Forward | Backward with
@@ -161,13 +163,14 @@ module Store =
             [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
             m: byte[] } // optional
 
-    /// The Special 'Pending' Batch Format, with the following differences vs a 'normal' (frozen/completed) Batch
-    /// a) `id` = `-1`
-    /// b) contains projections (`c`)
-    /// c) contains page size limit `l`
+    /// The Special 'Pending' Batch Format
     /// NB this Type does double duty as
     /// a) transport for when we read it
     /// b) a way of encoding a batch that the stored procedure will write in to the actual document
+    /// The stored representation has the following differences vs a 'normal' (frozen/completed) Batch
+    /// a) `id` = `-1`
+    /// b) contains projections (`c`)
+    /// c) `i` is temporarily -1 and filled in by the server when this is used as the write batch request format
     type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         WipBatch =
         {   /// Partition key, as per Batch
@@ -182,17 +185,14 @@ module Store =
             _etag: string
 
             /// base 'i' value for the Events held herein
-            i: int64 // {index}
+            i: int64
 
             /// Events
             e: BatchEvent[]
 
-            /// Desired Limit on number of items merged into a single page's `e` array, honored by SP
-            l: int
-
             /// Projections
             c: Projection[] }
-        /// TOCONSIDER arguably this should be a high nember to reflect fact it is the freshest ?
+        /// arguably this should be a high nember to reflect fact it is the freshest ?
         static member WellKnownDocumentId = "-1"
     /// Projection based on the state at a given point in time `i`
     and [<CLIMutable>]
@@ -264,13 +264,6 @@ module Store =
             // where Index is equal, projections get delivered after the events so the fold semantics can be 'idempotent'
             |> Seq.sortBy (fun x -> x.Index, x.IsProjection)
 
-    let mkBatch (stream: Stream, pos: Position) (eventCountLimit, events: IEvent[]) (projections: Projection[]) : WipBatch =
-        {   p = stream.name; id = WipBatch.WellKnownDocumentId; l = eventCountLimit
-            i = pos.index; _etag = null
-            e = [| for e in events -> { c = DateTimeOffset.UtcNow; t = e.EventType; d = e.Data; m = e.Meta } |]
-            c = projections }
-    let mkProjection baseIndex (*canDiscard*) (e: IEvent) = { i = baseIndex; (*x = canDiscard; *)t = e.EventType; d = e.Data; m = e.Meta }
-
 open Store
 
 module Log =
@@ -296,8 +289,8 @@ module Log =
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (System.Text.Encoding.UTF8.GetString e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let propEvents = propData "events"
-    let propEventsBatch (x : Batch) log = log |> propData "events" (Store.Enum.Events x)
-    let propEventsWipBatch (x : WipBatch) log = log |> propData "events" (Store.Enum.Events x)
+    let propEventsBatch (x : Store.Batch) log = log |> propData "events" (Store.Enum.Events x)
+    let propEventsWipBatch (x : Store.WipBatch) log = log |> propData "events" (Store.Enum.Events x)
     let propDataProjections = Store.Enum.Projections >> propData "projections"
 
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
@@ -329,110 +322,119 @@ type EqxSyncResult =
 type WriteResponse = { etag: string; nextI: int64; conflicts: Store.BatchEvent[] }
 
 module private Write =
-    let [<Literal>] sprocName = "EquinoxPagedWrite35"  // NB need to renumber for any breaking change
+    let mkBatch (stream: Store.Stream) (events: Store.IEvent[]) projections : Store.WipBatch =
+        {   p = stream.name; id = Store.WipBatch.WellKnownDocumentId; i = -1L(*Server-managed*); _etag = null
+            e = [| for e in events -> { c = DateTimeOffset.UtcNow; t = e.EventType; d = e.Data; m = e.Meta } |]
+            c = Array.ofSeq projections }
+    let mkProjections baseIndex (projectionEvents: Store.IEvent seq) : Store.Projection seq =
+        projectionEvents |> Seq.mapi (fun i x -> { i = baseIndex + int64 i; t = x.EventType; d = x.Data; m = x.Meta } : Store.Projection)
+    let [<Literal>] sprocName = "EquinoxPagedWrite47"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
 // 1 Verify no current WIP batch, the incoming `req` becomes the WIP batch (the caller is entrusted to provide a valid and complete set of inputs, or it's GIGO)
 // 2 Current WIP batch has space to accommodate the incoming projections (req.c) and events (req.e) - merge them in, replacing any superseded projections
 // 3. Current WIP batch would become too large - remove WIP state from active document by replacing the well known id with a correct one; proceed as per 1
-function pagedWrite(req) {
+function pagedWrite(req, expectedVersion, maxEvents) {
     if (!req) throw new Error("Missing req argument");
     const collection = getContext().getCollection();
     const collectionLink = collection.getSelfLink();
     const response = getContext().getResponse();
 
     // Locate the WIP (-1) batch (which may not exist)
-    var wipDocId = collection.getAltLink() + "/docs/" + req.id;
-    var isAccepted = collection.readDocument(wipDocId, {}, function (err, doc, options) {
-        executeUpsert(doc);
+    const wipDocId = collection.getAltLink() + "/docs/" + req.id;
+    const isAccepted = collection.readDocument(wipDocId, {}, function (err, current, options) {
+        // Verify we dont have a conflicting write
+        if (expectedVersion === -1) {
+            executeUpsert(current);
+        } else if (current == null && expectedVersion !== 0) {
+            // If there is no WIP page, the writer has no possible reason for writing at an index other than zero
+            response.setBody({ etag: null, nextI: 0, conflicts: [] });
+        } else if (current != null && expectedVersion !== current.i + current.e.length) {
+            // Where possible, we extract conflicting events from e and/or c in order to avoid another read cycle
+            // yielding [] triggers the client to go loading the events itself
+            const conflicts = expectedVersion < current.i ? [] : current.e.slice(expectedVersion - current.i);
+            const nextI = current.i + current.e.length;
+            response.setBody({ etag: current._etag, nextI: nextI, conflicts: conflicts });
+        } else {
+            executeUpsert(current);
+        }
     });
     if (!isAccepted) throw new Error("readDocument not Accepted");
 
     function executeUpsert(current) {
-        // Verify we dont have a conflicting write
-        if (current == null && req.i != 0) {
-            // If there is no WIP page, the writer has no possible reason for writing at an index other than zero
-            response.setBody({ etag: null, nextI: 0, conflicts: [] });
-        } else if (current != null && req.i != current.i + current.e.length) {
-            // Where possible, we extract conflicting events from e and/or c in order to avoid another read cycle
-            // yielding [] triggers the client to go loading the events itself
-            const conflicts = req.i < current.i ? [] : current.e.slice(req.i - current.i);
-            const nextI = current.i + current.e.length;
-            response.setBody({ etag: current._etag, nextI: nextI, conflicts: conflicts });
+        function callback(err, doc, options) {
+            if (err) throw err;
+            response.setBody({ etag: doc._etag, nextI: doc.i + doc.e.length, conflicts: null });
+        }
+        // If we have hit a sensible limit for a slice, swap to a new one
+        if (current != null && current.e.length + req.e.length > maxEvents) {
+            // remove the well-known `id` value identifying the batch as being WIP
+            current.id = current.i.toString();
+            // ... As it's no longer a WIP batch, we definitely don't want projections taking up space
+            delete current.c;
+
+            // TODO Carry forward:
+            // - `c` items not present in `batch`,
+            // - their associated `c` items with `x:true`
+            // - any required `e` items from the page being superseded (as `c` items with `x:true`])
+
+            // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
+            const reqOptions = { etag: current._etag };
+            const wipUpdateAccepted = collection.replaceDocument(current._self, current, reqOptions);
+            if (!wipUpdateAccepted) throw new Error("Unable to remove WIP markings from WIP batch.");
+
+            req.i = current.i + current.e.length
+            const isAccepted = collection.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
+            if (!isAccepted) throw new Error("Unable to create WIP batch.");
+        } else if (current) {
+            // Append the new events into the current batch
+            Array.prototype.push.apply(current.e, req.e);
+            // Replace all the projections
+            current.c = req.c;
+            // TODO: should remove only projections being superseded
+
+            // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
+            const reqOptions = { etag: current._etag };
+            const isAccepted = collection.replaceDocument(current._self, current, reqOptions, callback);
+            if (!isAccepted) throw new Error("Unable to replace WIP batch.");
         } else {
-            // If we have hit a sensible limit for a slice, swap to a new one
-            if (current != null && current.e.length + req.e.length > req.l) {
-                // remove the well-known `id` value identifying the batch as being WIP
-                current.id = current.i.toString();
-                // ... As it's no longer a WIP batch, we definitely don't want projections taking up space
-                delete current.c;
-                // ... And the `l` is of no value
-                delete current.l;
-
-                // TODO Carry forward:
-                // - `c` items not present in `batch`,
-                // - their associated `c` items with `x:true`
-                // - any required `e` items from the page being superseded (as `c` items with `x:true`])
-
-                // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
-                const reqOptions = { etag: current._etag };
-                const isAccepted = collection.replaceDocument(current._self, current, reqOptions);
-                if (!isAccepted) throw new Error("Unable to remove WIP markings from WIP batch.");
-                // The incoming batch now needs to become a new document, trigger that action in the final step
-                current = null;
-            } else if (current) {
-                // Append the new events into the current batch
-                Array.prototype.push.apply(current.e, req.e);
-                // Replace all the projections
-                current.c = req.c;
-                // TODO: should remove only projections being superseded
-            }
-
-            // Create or replace the WIP batch as necessary
-            function callback(err, doc, options) {
-                if (err) throw err;
-                response.setBody({ etag: doc._etag, nextI: doc.i + doc.e.length, conflicts: null });
-            }
-
-            if (current) {
-                // as we've mutated the document in ways that can trigger loss, out write needs to be contingent on no competing updates having taken place
-                const reqOptions = { etag: current._etag };
-                const isAccepted = collection.replaceDocument(current._self, current, reqOptions, callback);
-                if (!isAccepted) throw new Error("Unable to replace WIP batch.");
-            } else {
-                const isAccepted = collection.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
-                if (!isAccepted) throw new Error("Unable to create WIP batch.");
-            }
+            req.i = 0
+            const isAccepted = collection.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
+            if (!isAccepted) throw new Error("Unable to create WIP batch.");
         }
     }
 }"""
 
-    let private run (client: IDocumentClient) (stream: Store.Stream, pos: Store.Position) (batch: Store.WipBatch): Async<float*EqxSyncResult> = async {
+    let private run (client: IDocumentClient) (stream: Store.Stream) (expectedVersion: int64 option, req: WipBatch, maxEvents: int)
+        : Async<float*EqxSyncResult> = async {
         let sprocLink = sprintf "%O/sprocs/%s" stream.collectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey(stream.name))
         let! ct = Async.CancellationToken
-        let! (res : Client.StoredProcedureResponse<WriteResponse>) = client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box batch) |> Async.AwaitTaskCorrect
+        let ev = match expectedVersion with Some ev -> Position.FromIndexOnly ev | None -> Position.FromAppendAtEnd
+        let! (res : Client.StoredProcedureResponse<WriteResponse>) =
+            client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ev.index, box maxEvents) |> Async.AwaitTaskCorrect
 
-        let newPos = { pos with index = res.Response.nextI; etag = Option.ofObj res.Response.etag }
-        match res.RequestCharge, res.Response.conflicts with
-        | rc,null -> return rc, EqxSyncResult.Written newPos
-        | rc,[||] when newPos.index = 0L -> return rc, EqxSyncResult.Conflict (newPos, Array.empty)
-        | rc,[||] -> return rc, EqxSyncResult.ConflictUnknown newPos
-        | rc, xs  -> return rc, EqxSyncResult.Conflict (newPos, Store.Enum.Events (pos.index, xs) |> Array.ofSeq) }
+        let newPos = { index = res.Response.nextI; etag = Option.ofObj res.Response.etag }
+        return res.RequestCharge, res.Response.conflicts |> function
+            | null -> EqxSyncResult.Written newPos
+            | [||] when newPos.index = 0L -> EqxSyncResult.Conflict (newPos, Array.empty)
+            | [||] -> EqxSyncResult.ConflictUnknown newPos
+            | xs  -> EqxSyncResult.Conflict (newPos, Store.Enum.Events (ev.index, xs) |> Array.ofSeq) }
 
-    let private logged client (stream: Store.Stream, pos: Store.Position) (batch: Store.WipBatch) (log : ILogger): Async<EqxSyncResult> = async {
+    let private logged client (stream: Store.Stream) (expectedVersion, req: WipBatch, maxEvents) (log : ILogger)
+        : Async<EqxSyncResult> = async {
         let verbose = log.IsEnabled Events.LogEventLevel.Debug
-        let log = if verbose then log |> Log.propEvents (Store.Enum.Events batch) |> Log.propDataProjections batch.c else log
-        let (Log.BatchLen bytes), count = Store.Enum.Events batch, batch.e.Length
+        let log = if verbose then log |> Log.propEvents (Store.Enum.Events req) |> Log.propDataProjections req.c else log
+        let (Log.BatchLen bytes), count = Store.Enum.Events req, req.e.Length
         let log = log |> Log.prop "bytes" bytes
         let writeLog =
-            log |> Log.prop "stream" stream.name |> Log.prop "expectedVersion" pos.index
-                |> Log.prop "count" batch.e.Length |> Log.prop "pcount" batch.c.Length
-        let! t, (ru,result) = run client (stream,pos) batch |> Stopwatch.Time
+            log |> Log.prop "stream" stream.name |> Log.prop "expectedVersion" expectedVersion
+                |> Log.prop "count" req.e.Length |> Log.prop "pcount" req.c.Length
+        let! t, (ru,result) = run client stream (expectedVersion, req, maxEvents) |> Stopwatch.Time
         let resultLog =
             let mkMetric ru : Log.Measurement = { stream = stream.name; interval = t; bytes = bytes; count = count; ru = ru }
-            let logConflict () = writeLog.Information("Eqx TrySync WrongExpectedVersion writing {eventTypes}", [| for x in batch.e -> x.t |])
+            let logConflict () = writeLog.Information("Eqx TrySync Conflict writing {eventTypes}", [| for x in req.e -> x.t |])
             match result with
             | EqxSyncResult.Written pos ->
                 log |> Log.event (Log.WriteSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" pos
@@ -443,12 +445,14 @@ function pagedWrite(req) {
                 logConflict ()
                 let log = if verbose then log |> Log.prop "nextExpectedVersion" pos |> Log.propData "conflicts" xs else log
                 log |> Log.event (Log.WriteResync(mkMetric ru)) |> Log.prop "conflict" true
-        resultLog.Information("Eqx {action:l} {count}+{pcount} {ms}ms rc={ru}", "Write", batch.e.Length, batch.c.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+        resultLog.Information("Eqx {action:l} {count}+{pcount} {ms}ms rc={ru}", "Write", req.e.Length, req.c.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return result }
 
-    let batch (log : ILogger) retryPolicy client pk (batch): Async<EqxSyncResult> =
+    let batch (log : ILogger) retryPolicy client pk batch: Async<EqxSyncResult> =
         let call = logged client pk batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
+
+open Store
 
 module private Read =
     let private getIndex (client: IDocumentClient) (stream: Store.Stream, maybePos: Store.Position option) =
@@ -539,7 +543,7 @@ module private Read =
         let evt = Log.Event.Batch (direction, responsesCount, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.prop "batchSize" batchSize |> Log.event evt).Information(
             "Eqx {action:l} {stream} v{nextI} {count}/{responses} {ms}ms rc={ru}",
-            action, streamName, nextI, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
+            action, streamName, Option.toNullable nextI, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
     let loadFrom (log : ILogger) retryPolicy client direction batchSize maxPermittedBatchReads (stream: Store.Stream, pos: Store.Position)
         : Async<StopwatchInterval * int * Store.IOrderedEvent[] * float> = async {
@@ -621,7 +625,7 @@ module private Read =
         let! t, (events, pos, ru) = mergeFromCompactionPointOrStartFromBackwardsStream log batchesBackward |> Stopwatch.Time
         query.Dispose()
         let version = if events.Length = 0 then 0L else events.[events.Length-1].Index+1L // No Array.tryLast in older FSharp.Core // the merge put them in order so this is correct
-        log |> logBatchRead direction batchSize stream.name t (responseCount,events) version ru
+        log |> logBatchRead direction batchSize stream.name t (responseCount,events) (Some version) ru
         return pos, events }
 
 module UnionEncoderAdapters =
@@ -745,11 +749,8 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
             | _ ->
                 let! loaded = __.InterpretIndexOrFallback log maybeRollingSnapshotOrProjectionPredicate.Value token.stream res
                 return ok loaded }
-    member __.TrySync log (Token.Unpack token as streamToken) (encodedEvents: IEvent[],projections: IEvent seq) maybeRollingSnapshotPredicate
-        : Async<GatewaySyncResult> = async {
-        let projections = [| for x in projections -> Store.mkProjection (token.pos.index + int64 encodedEvents.Length) x |]
-        let batch : Store.WipBatch = Store.mkBatch (token.stream,token.pos) (batching.MaxEventsPerSlice,encodedEvents) projections
-        let! wr = Write.batch log conn.WriteRetryPolicy conn.Client (token.stream,token.pos) batch
+    member __.TrySync log (Token.Unpack token as streamToken) maybeRollingSnapshotPredicate (expectedVersion,batch: WipBatch): Async<GatewaySyncResult> = async {
+        let! wr = Write.batch log conn.WriteRetryPolicy conn.Client token.stream (expectedVersion,batch,batching.MaxEventsPerSlice)
         match wr with
         | EqxSyncResult.Conflict (pos',events) ->
             return GatewaySyncResult.Conflict (Token.ofPreviousTokenAndEventsLength streamToken events.Length batching.BatchSize (token.stream,pos'),events)
@@ -817,7 +818,7 @@ type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUni
         | LoadFromTokenResult.Unchanged -> return token, state
         | LoadFromTokenResult.Found (token,events ) -> return response fold initial token events }
     member __.TrySync (fold: 'state -> 'event seq -> 'state) initial (log : ILogger)
-            (Token.Unpack token as streamToken, state : 'state)
+            (Token.Unpack token as streamToken, expectedVersion : int64 option, state : 'state)
             (events : 'event list, state' : 'state) : Async<Storage.SyncResult<'state>> = async {
         let eventsIncludingSnapshots, projections =
             match access with
@@ -829,7 +830,11 @@ type private Category<'event, 'state>(coll : Collection, codec : UnionCodec.IUni
             | Some (AccessStrategy.IndexedSearch (_,index)) ->
                 Seq.ofList events, index state'
         let encode = UnionEncoderAdapters.encodeEvent codec
-        let! syncRes = coll.Gateway.TrySync log streamToken (Seq.map encode eventsIncludingSnapshots |> Array.ofSeq,Seq.map encode projections) compactionPredicate
+        let encodedEvents, projections = Seq.map encode events |> Array.ofSeq, Seq.map encode projections
+        let baseIndex = token.pos.index + int64 events.Length
+        let projections = Write.mkProjections baseIndex projections
+        let batch = Write.mkBatch token.stream encodedEvents projections
+        let! syncRes = coll.Gateway.TrySync log streamToken compactionPredicate (expectedVersion,batch)
         match syncRes with
         | GatewaySyncResult.Conflict (token',events) -> return Storage.SyncResult.Conflict (async { return response fold initial token' events })
         | GatewaySyncResult.ConflictUnknown token' -> return Storage.SyncResult.Conflict (__.LoadFromToken fold initial state token' log)
@@ -906,8 +911,8 @@ type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: '
     interface ICategory<'event, 'state> with
         member __.Load streamName (log : ILogger) : Async<Storage.StreamToken * 'state> =
             loadAlgorithm streamName initial log
-        member __.TrySync (log : ILogger) (token, state) (events : 'event list, state': 'state) : Async<Storage.SyncResult<'state>> = async {
-            let! syncRes = category.TrySync fold initial log (token, state) (events,state')
+        member __.TrySync (log : ILogger) (Token.Unpack token as t, state) (events : 'event list, state': 'state) : Async<Storage.SyncResult<'state>> = async {
+            let! syncRes = category.TrySync fold initial log (t, Some token.pos.index, state) (events,state')
             match syncRes with
             | Storage.SyncResult.Conflict resync ->         return Storage.SyncResult.Conflict resync
             | Storage.SyncResult.Written (token',state') -> return Storage.SyncResult.Written (token',state') }
@@ -1064,42 +1069,38 @@ module Events =
         let gateway = EqxGateway(conn, batching)
         let collection = Collection(gateway, databaseId, collectionId)
         let logger : ILogger = defaultArg log (Log.ForContext(Serilog.Core.Constants.SourceContextPropertyName,collectionId))
-        let mkStream streamName = Store.Stream.Create(collection.CollectionUri, streamName)
-        let mkPos index = Position.FromIndexOnly index
-        let mkToken streamName pos = Token.ofNonCompacting (mkStream streamName, mkPos pos)
-        let getInternal streamName index batchSize direction = async {
-            let stream = mkStream streamName
+        let (|Stream|) streamName = Store.Stream.Create(collection.CollectionUri, streamName)
+        let (|Position|) = Position.FromIndexOnly
+        let (|ExpectedPosition|) = function Some ei -> Position.FromIndexOnly ei | None -> Position.FromAppendAtEnd
+        let getInternal (Stream stream) (Position pos) batchSize direction = async {
             let batching = new EqxBatchingPolicy(maxBatchSize=batchSize)
             let! data =
                 match direction with
-                | Direction.Backward -> gateway.LoadBackward logger (Some batching) (stream,mkPos index)
+                | Direction.Backward -> gateway.LoadBackward logger (Some batching) (stream,pos)
                 | Direction.Forward -> async {
-                    let pos = mkPos 0L
+                    let pos = Position.FromIndexOnly 0L
                     // TOCONSIDER provide a way to send out the token
                     let! (_token, data: Store.IOrderedEvent[]) = gateway.LoadForward logger (Some batching) None (stream,pos)
                     return data }
             // TODO fix algorithm so we can pass a skipcount
             match direction with
-            | Direction.Backward -> return data |> Seq.skipWhile (fun e -> e.Index > index) |> Array.ofSeq
-            | Direction.Forward -> return data |> Seq.skipWhile (fun e -> e.Index < index) |> Array.ofSeq
-        }
-
+            | Direction.Backward -> return data |> Seq.skipWhile (fun e -> e.Index > pos.index) |> Array.ofSeq
+            | Direction.Forward -> return data |> Seq.skipWhile (fun e -> e.Index < pos.index) |> Array.ofSeq }
         member __.GetAll(streamName, index, batchSize) : AsyncSeq<Store.IOrderedEvent[]> = asyncSeq {
             let! res = getInternal streamName index batchSize Direction.Forward
             // TODO add laziness
-            return AsyncSeq.ofSeq res
-        }
+            return AsyncSeq.ofSeq res }
         member __.Get(streamName, index, batchSize, ?direction) : Async<Store.IOrderedEvent[]> =
             getInternal streamName index batchSize (defaultArg direction Direction.Forward)
-        member __.Append(streamName: string, events:Store.IEvent[], ?index:int64) = async {
-            let token = match index with Some sn -> mkToken streamName sn | None -> invalidOp "TODO make stored proc handle -1 being passed in and add a Position.FromIgnoreConflicts"
-            let! res = gateway.TrySync logger token (events,Seq.empty) None
+        member __.Append(Stream stream, events:Store.IEvent[], (ExpectedPosition pos as maybeEv)) = async {
+            let token = Token.ofNonCompacting (stream,pos)
+            let batch = Write.mkBatch stream events Seq.empty
+            let! res = gateway.TrySync logger token None (maybeEv,batch)
             match res with
             // TOCONSIDER we should not be unpacking the token so callers can gain perf and stop assuming/worrying about sequences
             | GatewaySyncResult.Written (Token.Unpack token) -> return AppendResult.Ok token.pos.index
             | GatewaySyncResult.Conflict (Token.Unpack token,events) -> return AppendResult.Conflict (token.pos.index, events)
-            | GatewaySyncResult.ConflictUnknown (Token.Unpack token) -> return AppendResult.ConflictUnknown token.pos.index
-        }
+            | GatewaySyncResult.ConflictUnknown (Token.Unpack token) -> return AppendResult.ConflictUnknown token.pos.index }
 
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
@@ -1119,20 +1120,17 @@ module Events =
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (ctx:Context) (streamName: string) (index: int64) (eds:Store.IEvent[]) =
-        ctx.Append(streamName, eds, index)
+        ctx.Append(streamName, eds, Some index)
 
     let appendAtEnd (ctx:Context) (streamName: string) (eds:Store.IEvent[]) =
-        ctx.Append(streamName, eds)
+        ctx.Append(streamName, eds, None)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (conn:EqxConnection) (streamName: string) (index: int64) (batchSize:int) = async {
-        // TOCONSIDER this API should expose the predicate form
-        //return  AsyncSeq<Store.BatchEvent[]>
-        ()
-    }
+    let getAllBackwards (conn:EqxConnection) (streamName: string) (index: int64) (batchSize:int): AsyncSeq<Store.IOrderedEvent> =
+        failwith "TODO"
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
@@ -1141,8 +1139,6 @@ module Events =
     let getBackwards (ctx:Context) (streamName: string) (index: int64) (batchSize:int) =
         ctx.Get(streamName, index, batchSize, direction=Direction.Backward)
 
-    /// Returns the next index to which envents will be appended; returns 0 if stream doesn't exist.
-    let getNextIndex (ctx:Context) (streamName: string) = async {
-        //return Async<SN option>
-        ()
-    }
+    /// Returns the next index to which events will be appended (0 if stream doesn't exist)
+    let getNextIndex (ctx:Context) (streamName: string) : Async<int> =
+        failwith "TODO"

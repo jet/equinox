@@ -49,18 +49,17 @@ type Tests(testOutputHelper) =
         let index = 0L
         let! res = Events.append ctx streamName index [|event|]
         test <@ Events.AppendResult.Ok 1L = res @>
-
+        test <@ [EqxAct.Append] = capture.ExternalCalls @>
         verifyRequestChargesBelow 10
         // Clear the counters
         capture.Clear()
 
         let! res = Events.append ctx streamName 1L (Array.replicate 5 event)
         test <@ Events.AppendResult.Ok 6L = res @>
+        test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
         verifyRequestChargesBelow 11
     }
-
-    // TODO apppendAtAnd test
 
     let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
     let stringOfUtf8 (x: byte[]) = Encoding.UTF8.GetString(x)
@@ -97,6 +96,28 @@ type Tests(testOutputHelper) =
     let verifyCorrectEvents = verifyCorrectEventsEx Store.Direction.Forward
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let appendAtEnd (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        let ctx = mkContextWithSliceLimit conn dbId collId (Some 1)
+
+        let event = EventData.Create("test_event")
+        let mutable pos = 0L
+        for size in [4; 5; 9] do
+            let! res = Events.appendAtEnd ctx streamName (Array.replicate size event)
+            test <@ [EqxAct.Append] = capture.ExternalCalls @>
+            pos <- pos + int64 size
+            Events.AppendResult.Ok pos =! res
+            verifyRequestChargesBelow 15
+            capture.Clear()
+
+        let! res = Events.append ctx streamName pos (Array.replicate 42 event)
+        pos <- pos + 42L
+        test <@ [EqxAct.Append] = capture.ExternalCalls @>
+        Events.AppendResult.Ok pos =! res
+        verifyRequestChargesBelow 20
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append - fails on non-matching`` (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContext conn dbId collId
@@ -119,7 +140,7 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
-        let! res = Events.append ctx streamName 0L  [|event; event|]
+        let! res = Events.append ctx streamName 0L [|event; event|]
         // This time we get passed the conflicting events
         match res with
         | Events.AppendResult.Conflict (1L, e) -> verifyCorrectEvents 0L expected e
