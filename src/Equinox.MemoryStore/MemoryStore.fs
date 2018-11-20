@@ -57,37 +57,40 @@ type VolatileStore() =
         with WrongVersionException(_, _, conflictingValue) ->
             ConcurrentArraySyncResult.Conflict (unbox conflictingValue)
 
+type Token = { streamVersion: int; streamName: string }
+
 /// Internal implementation detail of MemoryStreamStore
-module private MemoryStreamStreamState =
-    let private streamTokenOfIndex (streamVersion : int) : Storage.StreamToken =
-        { value = box streamVersion; batchCapacityLimit = None }
+module private Token =
+    let private streamTokenOfIndex streamName (streamVersion : int) : Storage.StreamToken =
+        { value = box { streamName = streamName; streamVersion = streamVersion; } }
+    let (|Unpack|) (token: Storage.StreamToken) : Token = unbox<Token> token.value
     /// Represent a stream known to be empty
-    let ofEmpty initial = streamTokenOfIndex -1, initial
-    let tokenOfArray (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex
+    let ofEmpty streamName initial = streamTokenOfIndex streamName -1, initial
+    let tokenOfArray streamName (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex streamName
     /// Represent a known array of events (without a known folded State)
-    let ofEventArray fold initial (events: 'event array) = tokenOfArray events, fold initial (Seq.ofArray events)
+    let ofEventArray streamName fold initial (events: 'event array) = tokenOfArray streamName events, fold initial (Seq.ofArray events)
     /// Represent a known array of Events together with the associated state
-    let ofEventArrayAndKnownState fold (state: 'state) (events: 'event array) = tokenOfArray events, fold state events
+    let ofEventArrayAndKnownState streamName fold (state: 'state) (events: 'event array) = tokenOfArray streamName events, fold state events
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
     interface ICategory<'event, 'state> with
         member __.Load streamName (log : ILogger) = async {
             match store.TryLoad<'event> streamName log with
-            | None -> return MemoryStreamStreamState.ofEmpty initial
-            | Some events -> return MemoryStreamStreamState.ofEventArray fold initial events }
-        member __.TrySync streamName (log : ILogger) (token, state) (events : 'event list) = async {
+            | None -> return Token.ofEmpty streamName initial
+            | Some events -> return Token.ofEventArray streamName fold initial events }
+        member __.TrySync (log : ILogger) (Token.Unpack token, state) (events : 'event list, _state': 'state) = async {
             let trySyncValue currentValue =
-                if Array.length currentValue <> unbox token.value + 1 then ConcurrentDictionarySyncResult.Conflict (unbox token.value)
+                if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue events)
-            match store.TrySync streamName (log : ILogger) trySyncValue events with
+            match store.TrySync token.streamName (log : ILogger) trySyncValue events with
             | ConcurrentArraySyncResult.Conflict conflictingEvents ->
                 let resync = async {
-                    let version = MemoryStreamStreamState.tokenOfArray conflictingEvents
-                    let successorEvents = conflictingEvents |> Seq.skip (unbox token.value + 1) |> List.ofSeq
+                    let version = Token.tokenOfArray token.streamName conflictingEvents
+                    let successorEvents = conflictingEvents |> Seq.skip (token.streamVersion + 1) |> List.ofSeq
                     return version, fold state (Seq.ofList successorEvents) }
                 return Storage.SyncResult.Conflict resync
-            | ConcurrentArraySyncResult.Written events -> return Storage.SyncResult.Written <| MemoryStreamStreamState.ofEventArrayAndKnownState fold state events }
+            | ConcurrentArraySyncResult.Written events -> return Storage.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
 type MemoryStreamBuilder<'event, 'state>(store : VolatileStore, fold, initial) =
     member __.Create streamName : Equinox.IStream<'event, 'state> =

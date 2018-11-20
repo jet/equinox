@@ -11,15 +11,13 @@ let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferen
 let createMemoryStore () =
     new VolatileStore()
 let createServiceMem log store =
-    Backend.ContactPreferences.Service(log, fun _batchSize _eventTypePredicate -> MemoryStreamBuilder(store, fold, initial).Create)
+    Backend.ContactPreferences.Service(log, MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
-let resolveStreamGesWithCompactionSemantics gateway =
-    fun windowSize predicate streamName ->
-        GesStreamBuilder(gateway windowSize, codec, fold, initial, CompactionStrategy.Predicate predicate).Create(streamName)
-let resolveStreamGesWithoutCompactionSemantics gateway =
-    fun _windowSize _ignoreCompactionPredicate streamName ->
-        GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(streamName)
+let resolveStreamGesWithCompactionSemantics gateway streamName =
+    GesStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create(streamName)
+let resolveStreamGesWithoutCompactionSemantics gateway streamName =
+    GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(streamName)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

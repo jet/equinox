@@ -24,6 +24,12 @@ type internal SuccessException<'T>(value : 'T) =
     inherit Exception()
     member self.Value = value
 
+type Exception with
+    // https://github.com/fsharp/fslang-suggestions/issues/660
+    member this.Reraise () =
+        (System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture this).Throw ()
+        Unchecked.defaultof<_>
+
 type Async with
 #if NET461
     static member Choice<'T>(workflows : seq<Async<'T option>>) : Async<'T option> = async {

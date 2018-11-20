@@ -23,29 +23,28 @@ let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
-    let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
+    let fold, initial, compact = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization log gateway =
-        Backend.Cart.Service(log, fun _compactionEventTypeOption -> GesStreamBuilder(gateway, codec, fold, initial).Create)
+        Backend.Cart.Service(log, GesStreamBuilder(gateway, codec, fold, initial).Create)
     let createServiceWithCompaction log gateway =
-        let resolveStream compactionEventType = GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType compactionEventType).Create
+        let resolveStream streamName = GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact).Create(streamName)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, fun _compactionEventType -> GesStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create)
+        Backend.Cart.Service(log, GesStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create)
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, fun cet -> GesStreamBuilder(gateway, codec, fold, initial, CompactionStrategy.EventType cet, sliding20m).Create)
+        Backend.Cart.Service(log, GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact, sliding20m).Create)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization log connection =
         let gateway = createGesGateway connection defaultBatchSize
-        Backend.ContactPreferences.Service(log, fun _ignoreWindowSize _ignoreCompactionPredicate -> GesStreamBuilder(gateway, codec, fold, initial).Create)
+        Backend.ContactPreferences.Service(log, GesStreamBuilder(gateway, codec, fold, initial).Create)
     let createService log connection =
-        let resolveStream batchSize compactionPredicate =
-            GesStreamBuilder(createGesGateway connection batchSize, codec, fold, initial, CompactionStrategy.Predicate compactionPredicate).Create
+        let resolveStream streamName = GesStreamBuilder(createGesGateway connection 1, codec, fold, initial, AccessStrategy.EventsAreState).Create(streamName)
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -224,7 +223,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can correctly read and update against EventStore, with window size of 1 using tautological Compaction predicate`` id value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update against EventStore, with EventsAreState Access Strategy`` id value = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
         let service = ContactPreferences.createService log conn

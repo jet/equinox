@@ -77,8 +77,8 @@ type TestResultAggregate with
         | Some l ->
             let inline sec(t:TimeSpan) = t.TotalSeconds
             let stdDev = match l.stddev with None -> Double.NaN | Some d -> sec d
-            sb.Appendf "Latency  : max=%.4gs p99=%.4gs p95=%.4gs p50=%.4gs min=%.4gs avg=%.4gs stddev=%.4gs"
-                                (sec l.max) (sec l.p99) (sec l.p95) (sec l.p50) (sec l.min) (sec l.avg) stdDev
+            sb.AppendFormat( "Latency  : max={0:n3}s p99={1:n3}s p95={2:n3}s p50={3:n3}s min={4:n3}s avg={5:n3}s stddev={6:n3}s",
+                             sec l.max, sec l.p99, sec l.p95, sec l.p50, sec l.min, sec l.avg, stdDev) |> ignore
 
         sb.ToString()
 

@@ -103,11 +103,7 @@ module Commands =
 type Handler(log, stream, maxSavedItems, maxAttempts) =
     let inner = Equinox.Handler(Fold.fold, log, stream, maxAttempts = maxAttempts)
     let decide (ctx : Equinox.Context<_,_>) command =
-        let run cmd = ctx.Decide (Commands.decide maxSavedItems cmd)
-        let result = run command
-        if ctx.IsCompactionDue then
-            run Commands.Compact |> ignore
-        result
+        ctx.Decide (Commands.decide maxSavedItems command)
 
     member __.Remove (resolve : ((SkuId->bool) -> Async<Commands.Command>)) : Async<bool> =
         inner.DecideAsync <| fun ctx -> async {

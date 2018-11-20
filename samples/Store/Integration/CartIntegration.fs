@@ -6,18 +6,18 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
+let fold, initial, compact = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact
 
 let createMemoryStore () =
     new VolatileStore ()
 let createServiceMem log store =
-    Backend.Cart.Service(log, fun _compactionEventType -> MemoryStreamBuilder(store, fold, initial).Create)
+    Backend.Cart.Service(log, MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = Equinox.EventStore.Integration.EventStoreIntegration.genCodec<Domain.Cart.Events.Event>()
 
-let resolveGesStreamWithCompactionEventType gateway compactionEventType streamName =
-    GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType compactionEventType).Create(streamName)
-let resolveGesStreamWithoutCompactionSemantics gateway _compactionEventType streamName =
+let resolveGesStreamWithCompactionEventType gateway streamName =
+    GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact).Create(streamName)
+let resolveGesStreamWithoutCompactionSemantics gateway streamName =
     GesStreamBuilder(gateway, codec, fold, initial).Create(streamName)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =

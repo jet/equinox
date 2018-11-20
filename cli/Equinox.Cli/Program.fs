@@ -28,6 +28,7 @@ type Arguments =
             | Es _ -> "specify EventStore actions"
 and TestArguments =
     | Name of Test
+    | Cached
     | [<AltCommandLine("-f")>] TestsPerSecond of int
     | [<AltCommandLine("-d")>] DurationM of float
     | [<AltCommandLine("-e")>] ErrorCutoff of int64
@@ -35,11 +36,12 @@ and TestArguments =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Name _ -> "Specify which test to run. (default: Favorites)"
+            | Cached -> "Whether to employ a Cache"
             | TestsPerSecond _ -> "specify a target number of requests per second (default: 1000)."
             | DurationM _ -> "specify a run duration in minutes (default: 1)."
             | ErrorCutoff _ -> "specify an error cutoff (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
-and Test = | Favorites
+and Test = Favorites
 and [<NoEquality; NoComparison>] EsArguments =
     | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
@@ -90,17 +92,22 @@ module Test =
             clients.[clientIndex % clients.Length]
         let selectClient = async { return async { return selectClient() } }
         Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
-    let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
+    let fold, initial, compact = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.compact
     let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
     let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
     let codec = genCodec<Domain.Favorites.Events.Event>()
-    let createFavoritesService store log =
-        let resolveStream cet streamName =
+    let createFavoritesService store (targs: ParseResults<TestArguments>) log =
+        let esCache =
+            if targs.Contains Cached then
+                let c = Caching.Cache("Cli", sizeMb = 50)
+                CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
+            else None
+        let resolveStream streamName =
             match store with
             | Store.Mem store ->
                 Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create(streamName)
             | Store.Es gateway ->
-                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.CompactionStrategy.EventType cet).Create(streamName)
+                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact, ?caching = esCache).Create(streamName)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
@@ -114,7 +121,7 @@ let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger() :> ILogger
-let domainLog verbose verboseConsole maybeSeqEndpoint =
+let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verbose then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
@@ -137,8 +144,8 @@ let main argv =
         let report = args.GetResult(LogFile,programName+".log") |> fun n -> FileInfo(n).FullName
         let runTest (log: ILogger) conn (targs: ParseResults<TestArguments>) =
             let verbose = args.Contains(VerboseDomain)
-            let domainLog = domainLog verbose verboseConsole maybeSeq
-            let service = Test.createFavoritesService conn domainLog
+            let domainLog = createDomainLog verbose verboseConsole maybeSeq
+            let service = Test.createFavoritesService conn targs domainLog
 
             let errorCutoff = targs.GetResult(ErrorCutoff,10000L)
             let testsPerSecond = targs.GetResult(TestsPerSecond,1000)
@@ -151,17 +158,20 @@ let main argv =
             let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
 
             let test = targs.GetResult(Name,Favorites)
-            log.Information( "Running {test} for {duration} with test freq {tps} hits/s; max errors: {errorCutOff}\n" +
-                "Reporting intervals: {ri}, report file: {report}",
-                test, duration, testsPerSecond, errorCutoff, reportingIntervals, report)
+            log.Information( "Running {test} with caching: {cached}"+
+                "Duration for {duration} with test freq {tps} hits/s; max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
+                test, targs.Contains Cached, duration, testsPerSecond, errorCutoff, reportingIntervals, report)
             let runSingleTest clientId =
-                if verbose then domainLog.Information("Using session {sessionId}", ([|clientId|] : obj []))
-                Test.runFavoriteTest service clientId
+                if not verbose then Test.runFavoriteTest service clientId
+                else async {
+                    domainLog.Information("Executing for client {sessionId}", ([|clientId|] : obj []))
+                    try return! Test.runFavoriteTest service clientId
+                    with e -> domainLog.Warning(e, "Test threw an exception"); e.Reraise () }
             let results = Test.run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
             let resultFile = createResultLog report
             for r in results do
                 resultFile.Information("Aggregate: {aggregate}", r)
-            log.Information("Run completed, current allocation: {bytes:n0}",GC.GetTotalMemory(true))
+            log.Information("Run completed; Current memory allocation: {bytes:n2}MB", (GC.GetTotalMemory(true) |> float) / 1024./1024.)
             0
 
         match args.GetSubCommand() with
@@ -182,7 +192,7 @@ let main argv =
                 sargs.GetResult(EsArguments.Retries,1)
             let heartbeatTimeout = sargs.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
             let concurrentOperationsLimit = sargs.GetResult(ConcurrentOperationsLimit,5000)
-            log.Information("Using EventStore targeting {host} with heartbeat: {heartbeat}, max concurrent requests: {concurrency}\n" +
+            log.Information("Using EventStore targeting {host} with heartbeat: {heartbeat}, max concurrent requests: {concurrency}. " +
                 "Operation timeout: {timeout} with {retries} retries",
                 host, heartbeatTimeout, concurrentOperationsLimit, timeout, retries)
             let conn = EventStore.connect log (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously

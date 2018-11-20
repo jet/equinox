@@ -35,6 +35,9 @@ module Array =
 
 module Option =
     let filter predicate option = match option with None -> None | Some x -> if predicate x then Some x else None
+    let toNullable option = match option with Some x -> Nullable x | None -> Nullable ()
+    let ofObj obj = match obj with null -> None | x -> Some x
+    let toObj option = match option with None -> null | Some x -> x
 #endif
 
 type Async with
@@ -103,6 +106,7 @@ type StopwatchInterval (startTicks : int64, endTicks : int64) =
     member __.StartTicks = startTicks
     member __.EndTicks = endTicks
     member __.Elapsed = TimeSpan.FromStopwatchTicks(endTicks - startTicks)
+    override __.ToString () = let e = __.Elapsed in sprintf "%g ms" e.TotalMilliseconds
 
 type Stopwatch =
     /// <summary>

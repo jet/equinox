@@ -144,7 +144,7 @@ module Specification =
             | Commands.Remove skus, Choice1Of2 randomSkus ->            mkAppend <| Array.append skus randomSkus
             | Commands.Remove (TakeHalf skus), Choice2Of2 randomSkus -> mkAppend <| Array.append skus randomSkus
             | Commands.Add (d,_skus), Choice1Of2 randomSkus ->          mkAppendDated d randomSkus
-            | Commands.Add (d,TakeHalf skus), Choice2Of2 moreSkus ->    mkAppendDated d skus @ mkAppendDated (DateTimeOffset.Now.AddDays -1.) moreSkus
+            | Commands.Add (d,TakeHalf skus), Choice2Of2 moreSkus ->    mkAppendDated d skus @ mkAppendDated (let n = DateTimeOffset.Now in n.AddDays -1.) moreSkus
             | Commands.Merge items, Choice1Of2 randomSkus ->            mkAppend randomSkus @ mkMerged items
             | Commands.Merge (TakeHalf items), Choice2Of2 randomSkus -> mkAppend randomSkus @ mkMerged items
         let state = fold originState initialEvents

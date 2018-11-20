@@ -74,9 +74,9 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 	dotnet pack build.proj
 
-## build, skip EventStore tests, skip auto-provisioning + de-provisioning Cosmos
+## build, skip EventStore tests
 
-	./build -se -scp
+	./build -se
 
 ## Run EventStore benchmark (when provisioned)
 

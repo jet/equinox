@@ -5,7 +5,7 @@ open Domain
 type Service(log, resolveStream) =
     let (|Stream|) (id: CartId) =
         let streamName = sprintf "Cart-%s" id.Value
-        Cart.Handler(log, resolveStream Cart.Events.Compaction.EventType streamName)
+        Cart.Handler(log, resolveStream streamName)
 
     member __.FlowAsync (Stream stream, flow, ?prepare) =
         stream.FlowAsync(flow, ?prepare = prepare)

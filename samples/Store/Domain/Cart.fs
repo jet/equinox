@@ -13,7 +13,7 @@ module Events =
     module Compaction =
         let [<Literal>] EventType = "compact/1"
         type StateItemInfo =        { skuId: SkuId; quantity: int; returnsWaived: bool }
-        type State =                { items: StateItemInfo list }
+        type State =                { items: StateItemInfo[] }
 
     type Event =
         | [<System.Runtime.Serialization.DataMember(Name = Compaction.EventType)>]
@@ -29,7 +29,7 @@ module Folds =
     type State =                    { items: ItemInfo list }
     module State =
         let toSnapshot (s: State) : Events.Compaction.State =
-            { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
+            { items = [| for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } |] }
         let ofCompacted (s: Events.Compaction.State) : State =
             { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
     let initial = { items = [] }
@@ -42,10 +42,10 @@ module Folds =
         | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
     let fold state = Seq.fold evolve state
+    let compact = Events.Compaction.EventType, fun state -> Events.Compacted (State.toSnapshot state)
 
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
-    | Compact
     | AddItem               of Context * SkuId * quantity: int
     | PatchItem             of Context * SkuId * quantity: int option * waived: bool option
     | RemoveItem            of Context * SkuId
@@ -60,8 +60,6 @@ module Commands =
         let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
         let (|Context|) (context : Context)                 = toEventContext context
         match command with
-        | Compact ->
-            [ Events.Compacted (Folds.State.toSnapshot state)]
         | AddItem (Context c, skuId, quantity) ->
             if itemExistsWithSameQuantity skuId quantity then [] else
             [ Events.ItemAdded { context = c; skuId = skuId; quantity = quantity } ]
@@ -87,10 +85,7 @@ type Handler(log, stream) =
         inner.DecideAsync <| fun ctx -> async {
             let execute = Commands.interpret >> ctx.Execute
             match prepare with None -> () | Some prep -> do! prep
-            let result = flow ctx execute
-            if ctx.IsCompactionDue then
-                execute Compact
-            return result }
+            return flow ctx execute }
     member __.Execute command =
         __.FlowAsync(fun _ctx execute -> execute command)
     member __.Read : Async<Folds.State> =
