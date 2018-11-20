@@ -1,7 +1,8 @@
 ﻿module Equinox.Cosmos.Integration.CosmosIntegration
 
+open Equinox
 open Equinox.Cosmos.Integration.Infrastructure
-open Equinox.Cosmos
+open Equinox.Cosmos.Builder
 open Swensen.Unquote
 open System.Threading
 open System
@@ -21,7 +22,7 @@ module Cart =
     let createServiceWithCompaction connection batchSize log =
         let gateway = createEqxGateway connection batchSize
         let resolveStream (StoreCollection args) =
-            EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact).Create(args)
+            EqxStreamBuilder(gateway, codec, fold, initial, Cosmos.AccessStrategy.RollingSnapshots compact).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
@@ -30,17 +31,17 @@ module Cart =
         Backend.Cart.Service(log, resolveStream)
     let createServiceIndexed connection batchSize log =
         let gateway = createEqxGateway connection batchSize
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, Cosmos.AccessStrategy.IndexedSearch index).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCachingIndexed connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.IndexedSearch index, caching=sliding20m).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, Cosmos.AccessStrategy.IndexedSearch index, caching=sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompactionAndCaching connection batchSize log cache =
         let gateway = createEqxGateway connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact, sliding20m).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, Cosmos.AccessStrategy.RollingSnapshots compact, sliding20m).Create(args)
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
@@ -51,7 +52,7 @@ module ContactPreferences =
         let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService createGateway log =
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create(args)
+        let resolveStream (StoreCollection args) = EqxStreamBuilder(createGateway 1, codec, fold, initial, Cosmos.AccessStrategy.EventsAreState).Create(args)
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

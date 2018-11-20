@@ -1,7 +1,7 @@
 ﻿[<AutoOpen>]
 module Equinox.Cosmos.Integration.CosmosFixtures
 
-open Equinox.Cosmos
+open Equinox.Cosmos.Builder
 open System
 
 module Option =
@@ -31,4 +31,4 @@ let (|StoreCollection|) streamName =
     databaseId, collectionId, streamName
 
 let defaultBatchSize = 500
-let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(getMaxBatchSize = (fun () -> batchSize), maxEventsPerSlice=10))
+let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(defaultMaxSlices=batchSize, maxEventsPerSlice=10))

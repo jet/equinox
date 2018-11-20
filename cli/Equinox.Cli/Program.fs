@@ -2,7 +2,7 @@
 
 open Argu
 open Domain
-open Equinox.Cosmos
+open Equinox.Cosmos.Builder
 open Equinox.EventStore
 open Infrastructure
 open Serilog
@@ -121,7 +121,7 @@ module Cosmos =
     let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
             .Connect("equinox-cli", discovery)
-    let createGateway connection (batchSize,pageSize) = EqxGateway(connection, EqxBatchingPolicy(getMaxBatchSize = (fun () -> batchSize), maxEventsPerSlice = pageSize))
+    let createGateway connection (maxBatches,maxEvents) = EqxGateway(connection, EqxBatchingPolicy(defaultMaxSlices=maxBatches, maxEventsPerSlice = maxEvents))
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type Store =
@@ -149,8 +149,8 @@ module Test =
             else None
         let eqxCache =
             if targs.Contains Cached then
-                let c = Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50)
-                Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
+                let c = Equinox.Cosmos.Builder.Caching.Cache("Cli", sizeMb = 50)
+                Equinox.Cosmos.Builder.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
         let resolveStream streamName =
             match store with
@@ -160,10 +160,10 @@ module Test =
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact, ?caching = esCache).Create(streamName)
             | Store.Cosmos (gateway, databaseId, connectionId) ->
                 if targs.Contains Indexed then
-                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.IndexedSearch index, ?caching = cache)
+                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.IndexedSearch index, ?caching = eqxCache)
                         .Create(databaseId, connectionId, streamName)
                 else
-                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact, ?caching = cache)
+                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact, ?caching = eqxCache)
                         .Create(databaseId, connectionId, streamName)
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
@@ -320,7 +320,7 @@ let main argv =
             | Some (Provision args) ->
                 let rus = args.GetResult(Rus)
                 log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus:n0}", rus)
-                Equinox.Cosmos.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
+                Equinox.Cosmos.Sync.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
                 0
             | Some (Run targs) ->
                 let conn = Store.Cosmos (Cosmos.createGateway conn (defaultBatchSize,pageSize), dbName, collName)

@@ -50,32 +50,33 @@ module SerilogHelpers =
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
+    open Equinox.Cosmos
     [<RequireQualifiedAccess>]
     type EqxAct = Append | Resync | Conflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Indexed | IndexedNotFound | IndexedCached
     let (|EqxAction|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
-        | Equinox.Cosmos.Log.WriteSuccess _ -> EqxAct.Append
-        | Equinox.Cosmos.Log.WriteResync _ -> EqxAct.Resync
-        | Equinox.Cosmos.Log.WriteConflict _ -> EqxAct.Conflict
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Store.Direction.Forward,_) -> EqxAct.SliceForward
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Store.Direction.Backward,_) -> EqxAct.SliceBackward
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Store.Direction.Forward,_,_) -> EqxAct.BatchForward
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Store.Direction.Backward,_,_) -> EqxAct.BatchBackward
-        | Equinox.Cosmos.Log.Index _ -> EqxAct.Indexed
-        | Equinox.Cosmos.Log.IndexNotFound _ -> EqxAct.IndexedNotFound
-        | Equinox.Cosmos.Log.IndexNotModified _ -> EqxAct.IndexedCached
+        | Log.WriteSuccess _ -> EqxAct.Append
+        | Log.WriteResync _ -> EqxAct.Resync
+        | Log.WriteConflict _ -> EqxAct.Conflict
+        | Log.Slice (Direction.Forward,_) -> EqxAct.SliceForward
+        | Log.Slice (Direction.Backward,_) -> EqxAct.SliceBackward
+        | Log.Batch (Direction.Forward,_,_) -> EqxAct.BatchForward
+        | Log.Batch (Direction.Backward,_,_) -> EqxAct.BatchBackward
+        | Log.Index _ -> EqxAct.Indexed
+        | Log.IndexNotFound _ -> EqxAct.IndexedNotFound
+        | Log.IndexNotModified _ -> EqxAct.IndexedCached
     let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Log.Measurement) = ru
     let (|CosmosReadRu|CosmosWriteRu|CosmosResyncRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
-        | Equinox.Cosmos.Log.Index (Stats s)
-        | Equinox.Cosmos.Log.IndexNotFound (Stats s)
-        | Equinox.Cosmos.Log.IndexNotModified (Stats s)
-        | Equinox.Cosmos.Log.Batch (_,_, (Stats s)) -> CosmosReadRu s
-        | Equinox.Cosmos.Log.WriteSuccess (Stats s)
-        | Equinox.Cosmos.Log.WriteConflict (Stats s) -> CosmosWriteRu s
-        | Equinox.Cosmos.Log.WriteResync (Stats s) -> CosmosResyncRu s
+        | Log.Index (Stats s)
+        | Log.IndexNotFound (Stats s)
+        | Log.IndexNotModified (Stats s)
+        | Log.Batch (_,_, (Stats s)) -> CosmosReadRu s
+        | Log.WriteSuccess (Stats s)
+        | Log.WriteConflict (Stats s) -> CosmosWriteRu s
+        | Log.WriteResync (Stats s) -> CosmosResyncRu s
         // slices are rolled up into batches so be sure not to double-count
-        | Equinox.Cosmos.Log.Slice (_,{ ru = ru }) -> CosmosSliceRu ru
+        | Log.Slice (_,{ ru = ru }) -> CosmosSliceRu ru
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|CosmosRequestCharge|EquinoxChargeRollup|) c =
         match c with

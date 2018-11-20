@@ -12,7 +12,7 @@
     <Compile Include="CosmosTokenTests.fs" />
     <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
-    <Compile Include="CosmosEventsIntegration.fs" />
+    <Compile Include="CosmosCoreIntegration.fs" />
     <Compile Include="JsonConverterTests.fs" />
   </ItemGroup>
 
