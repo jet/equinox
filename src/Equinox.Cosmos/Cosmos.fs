@@ -78,17 +78,15 @@ type IOrderedEvent =
 /// Position and Etag to which an operation is relative
 type [<NoComparison>] Position = { index: int64; etag: string option } with
     /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
-    static member internal FromKnownEmpty = Position.FromExpectedVersion 0L
-    /// NB Only for use when writing
-    static member internal FromExpectedVersion(i: int64) = { index = i; etag = None }
-    /// Just Do It mode
-    static member internal FromAppendAtEnd = Position.FromExpectedVersion -1L // sic - needs to yield -1
+    static member internal FromKnownEmpty = Position.FromI 0L
     /// NB very inefficient compared to FromDocument or using one already returned to you
-    static member internal FromKnownIndex(i: int64) = { index = i + 1L; etag = None }
+    static member internal FromI(i: int64) = { index = i; etag = None }
+    /// Just Do It mode
+    static member internal FromAppendAtEnd = Position.FromI -1L // sic - needs to yield -1
     /// NB very inefficient compared to FromDocument or using one already returned to you
     static member internal FromMaxIndex(xs: IOrderedEvent[]) =
         if Array.isEmpty xs then Position.FromKnownEmpty
-        else seq { for x in xs -> x.Index } |> Seq.max |> Position.FromKnownIndex
+        else Position.FromI (1L + Seq.max (seq { for x in xs -> x.Index }))
 
 /// Reference to Storage Partition
 type [<NoComparison>] Stream = { collectionUri: System.Uri; name: string } with
@@ -363,7 +361,7 @@ module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
     type SyncResponse = { etag: string; nextI: int64; conflicts: BatchEvent[] }
-    let [<Literal>] sprocName = "EquinoxSync-SingleEvents-019"  // NB need to renumber for any breaking change
+    let [<Literal>] sprocName = "EquinoxSync-SingleEvents-020"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
@@ -378,14 +376,14 @@ function sync(req, expectedVersion) {
 
     // Locate the WIP (-1) batch (which may not exist)
     const wipDocId = collection.getAltLink() + "/docs/" + req.id;
-    const isAccepted = collection.readDocument(wipDocId, {}, function (err, current, options) {
+    const isAccepted = collection.readDocument(wipDocId, {}, function (err, current) {
         // Verify we dont have a conflicting write
         if (expectedVersion === -1) {
             executeUpsert(current);
-        } else if (current===null && expectedVersion !== 0) {
+        } else if (!current && expectedVersion !== 0) {
             // If there is no WIP page, the writer has no possible reason for writing at an index other than zero
             response.setBody({ etag: null, nextI: 0, conflicts: [] });
-        } else if (current!==null && expectedVersion !== current._i + current.e.length) {
+        } else if (current && expectedVersion !== current._i + current.e.length) {
             // Where possible, we extract conflicting events from e and/or c in order to avoid another read cycle
             // yielding [] triggers the client to go loading the events itself
             const conflicts = expectedVersion < current._i ? [] : current.e.slice(expectedVersion - current._i);
@@ -398,7 +396,7 @@ function sync(req, expectedVersion) {
     if (!isAccepted) throw new Error("readDocument not Accepted");
 
     function executeUpsert(current) {
-        function callback(err, doc, options) {
+        function callback(err, doc) {
             if (err) throw err;
             response.setBody({ etag: doc._etag, nextI: doc._i + doc.e.length, conflicts: null });
         }
@@ -467,7 +465,7 @@ function sync(req, expectedVersion) {
         let sprocLink = sprintf "%O/sprocs/%s" stream.collectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey(stream.name))
         let! ct = Async.CancellationToken
-        let ev = match expectedVersion with Some ev -> Position.FromExpectedVersion ev | None -> Position.FromAppendAtEnd
+        let ev = match expectedVersion with Some ev -> Position.FromI ev | None -> Position.FromAppendAtEnd
         let! (res : Client.StoredProcedureResponse<SyncResponse>) =
             client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ev.index) |> Async.AwaitTaskCorrect
 
@@ -602,10 +600,11 @@ module private Read =
         let events = batches |> Seq.collect Enum.Event |> Array.ofSeq
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = stream.name; interval = t; bytes = bytes; count = count; ru = ru }
-        let evt = Log.Slice (direction, reqMetric)
+        // TODO investigate whether there is a way to avoid the potential cost (or whether there is significance to it) of these null responses
+        let log = if batches.Length = 0 && count = 0 && ru = 0. then log else let evt = Log.Slice (direction, reqMetric) in log |> Log.event evt
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
         let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
-        (log |> Log.prop "startIndex" (match startPos with Some { index = i } -> Nullable i | _ -> Nullable()) |> Log.prop "bytes" bytes |> Log.event evt)
+        (log |> Log.prop "startIndex" (match startPos with Some { index = i } -> Nullable i | _ -> Nullable()) |> Log.prop "bytes" bytes)
             .Information("Eqx {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
                 "Query", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
         let maybePosition = batches |> Array.tryPick (fun x -> x.TryToPosition())
@@ -631,8 +630,9 @@ module private Read =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
-        let evt = Log.Event.Batch (direction, responsesCount, reqMetric)
-        (log |> Log.prop "bytes" bytes |> Log.prop "batchSize" batchSize |> Log.event evt).Information(
+        // TODO investigate whether there is a way to avoid the potential cost (or whether there is significance to it) of these null responses
+        let log = if count = 0 && ru = 0. then log else let evt = Log.Event.Batch (direction, responsesCount, reqMetric) in log |> Log.event evt
+        (log |> Log.prop "bytes" bytes |> Log.prop "batchSize" batchSize).Information(
             "Eqx {action:l} {stream} v{nextI} {count}/{responses} {ms}ms rc={ru}",
             action, streamName, nextI, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
@@ -1250,16 +1250,16 @@ module Events =
         return xs }
     let (|MinPosition|) = function
         | 0L -> None
-        | i -> Some (Position.FromKnownIndex i)
+        | i -> Some (Position.FromI i)
     let (|MaxPosition|) = function
         | int64.MaxValue -> None
-        | i -> Some (Position.FromKnownIndex i)
+        | i -> Some (Position.FromI (i + 1L))
 
     /// Returns an aFromLastIndexs in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<IOrderedEvent[]> =
+    let getAll (ctx: EqxContext) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<IOrderedEvent[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize,?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
@@ -1273,7 +1273,7 @@ module Events =
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (ctx: EqxContext) (streamName: string) (index: int64) (events: IEvent[]): Async<AppendResult<int64>> =
-        ctx.Sync(ctx.CreateStream streamName, Position.FromExpectedVersion index, events) |> stripSyncResult
+        ctx.Sync(ctx.CreateStream streamName, Position.FromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as

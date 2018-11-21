@@ -185,6 +185,7 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let service = Cart.createServiceWithCompaction conn batchSize log
+        capture.Clear()
 
         // Trigger 10 events, then reload
         do! addAndThenRemoveItemsManyTimes context cartId skuId service 5

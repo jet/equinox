@@ -39,12 +39,12 @@ type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
 
 [<AutoOpen>]
 module SerilogHelpers =
-    open Serilog
     open Serilog.Events
 
     let createLogger sink =
         LoggerConfiguration()
             .WriteTo.Sink(sink)
+            .WriteTo.Seq("http://localhost:5341")
             .CreateLogger()
 
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
