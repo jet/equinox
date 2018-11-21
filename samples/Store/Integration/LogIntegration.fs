@@ -85,43 +85,45 @@ type SerilogMetricsExtractor(emit : string -> unit) =
 
 let createLoggerWithMetricsExtraction emit =
     let capture = SerilogMetricsExtractor emit
-    createLogger capture, capture
+    createLogger capture
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
+open System.Collections.Concurrent
+
 type Tests() =
-    let act buffer capture (service : Backend.Cart.Service) itemCount context cartId skuId resultTag = async {
+    let act buffer (service : Backend.Cart.Service) itemCount context cartId skuId resultTag = async {
         do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service itemCount
         let! state = service.Read cartId
         test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
-
         // Even though we've gone over a page, we only need a single read to read the state (plus the one from the execute)
         let contains (s : string) (x : string) = x.IndexOf s <> -1
+        // One read before the command is run, plus batchSize + 1
         test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains resultTag)
-                2 = Seq.length reads
-                && not (obj.ReferenceEquals(capture, null)) @> }
+                3 = Seq.length reads @> }
 
     // Protip: Debug this test to view standard metrics rendering
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
-        let buffer = ResizeArray<string>()
         let batchSize = defaultBatchSize
-        let (log,capture) = createLoggerWithMetricsExtraction buffer.Add
+        let buffer = ConcurrentQueue<string>()
+        let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToLocalEventStoreNode log
         let gateway = createGesGateway conn batchSize
         let service = Backend.Cart.Service(log, CartIntegration.resolveGesStreamWithCompactionEventType gateway)
         let itemCount, cartId = batchSize / 2 + 1, cartId ()
-        do! act buffer capture service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
+        do! act buffer service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
-        let buffer = ResizeArray<string>()
+    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` context skuId = Async.RunSynchronously <| async {
         let batchSize = defaultBatchSize
-        let (log,capture) = createLoggerWithMetricsExtraction buffer.Add
+        let buffer = ConcurrentQueue<string>()
+        let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let gateway = createEqxGateway conn batchSize
         let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithCompactionEventType gateway)
-        let itemCount, cartId = batchSize / 2 + 1, cartId ()
-        do! act buffer capture service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
+        let itemCount, _cartId = batchSize / 2 + 1, () // cartId ()
+        let cartId = Domain.Infrastructure.CartId(System.Guid.NewGuid())
+        do! act buffer service itemCount context cartId skuId "EqxReadStreamEventsBackwardAsync-Duration"
     }

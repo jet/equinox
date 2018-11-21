@@ -21,9 +21,12 @@ type VerbatimUtf8Tests() =
     [<Fact>]
     let ``encodes correctly`` () =
         let encoded = mkUnionEncoder().Encode(A { embed = "\"" })
-        let e : Store.Batch =
-            {   p = "streamName"; id = string 0; i = 0L
-                e = [| { c = DateTimeOffset.MinValue; t = encoded.caseName; d = encoded.payload; m = null } |] }
+        let e : Store.Event =
+            {   p = "streamName"; id = string 0; i = 0L; _etag=null
+                c = DateTimeOffset.MinValue
+                t = encoded.caseName
+                d = encoded.payload
+                m = null }
         let res = JsonConvert.SerializeObject(e)
         test <@ res.Contains """"d":{"embed":"\""}""" @>
 

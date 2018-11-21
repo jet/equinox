@@ -76,7 +76,7 @@ type Tests(testOutputHelper) =
     let singleBatchForward = [EqxAct.SliceForward; EqxAct.BatchForward]
     let batchForwardAndAppend = singleBatchForward @ [EqxAct.Append]
 
-    [<AutoData(Skip="Pending rework to cover event arrays", SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without any optimizations]`` context cartId skuId = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
 
@@ -101,14 +101,15 @@ type Tests(testOutputHelper) =
         test <@ List.replicate (expectedBatches-1) singleSliceForward @ singleBatchForward = capture.ExternalCalls @>
     }
 
-    [<AutoData(Skip="Pending rework to cover event arrays", MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, managing sync conflicts by retrying [without any optimizations]`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         let! conn = connectToSpecifiedCosmosOrSimulator log1
         // Ensure batching is included at some point in the proceedings
         let batchSize = 3
 
-        let context, cartId, (sku11, sku12, sku21, sku22) = ctx
+        let context, (sku11, sku12, sku21, sku22) = ctx
+        let cartId = Domain.Infrastructure.CartId(System.Guid.NewGuid())
 
         // establish base stream state
         let service1 = Cart.createServiceWithoutOptimization conn batchSize log1
@@ -178,8 +179,9 @@ type Tests(testOutputHelper) =
     let singleBatchBackwards = [EqxAct.SliceBackward; EqxAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
-    [<AutoData(Skip="Pending rework to cover event arrays", SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly compacting to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly compacting to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
+        let cartId = Domain.Infrastructure.CartId(System.Guid.NewGuid())
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let service = Cart.createServiceWithCompaction conn batchSize log
@@ -216,12 +218,13 @@ type Tests(testOutputHelper) =
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
     }
 
-    [<AutoData(Skip="Pending rework to cover event arrays", SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update against Cosmos with EventsAreState Access Strategy`` id value = Async.RunSynchronously <| async {
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can correctly read and update against Cosmos with EventsAreState Access Strategy`` value = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createService (createEqxGateway conn) log
 
-        let (Domain.ContactPreferences.Id email) = id
+        let email = let g = System.Guid.NewGuid() in g.ToString "N"
+        //let (Domain.ContactPreferences.Id email) = id ()
         // Feed some junk into the stream
         for i in 0..11 do
             let quickSurveysValue = i % 2 = 0
@@ -322,8 +325,9 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Indexed] = capture.ExternalCalls @>
     }
 
-    [<AutoData(Skip="Pending rework to cover event arrays", SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can combine compaction with caching against Cosmos`` context skuId cartId = Async.RunSynchronously <| async {
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can combine compaction with caching against Cosmos`` context skuId = Async.RunSynchronously <| async {
+        let cartId = Domain.Infrastructure.CartId(System.Guid.NewGuid())
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let service1 = Cart.createServiceWithCompaction conn batchSize log

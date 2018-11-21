@@ -77,7 +77,6 @@ and [<NoEquality; NoComparison>] CosmosArguments =
     | [<AltCommandLine("-d")>] Database of string
     | [<AltCommandLine("-c")>] Collection of string
     | [<AltCommandLine("-rt")>] RetriesWaitTime of int
-    | [<AltCommandLine("-a")>] PageSize of int
 
     | [<CliPrefix(CliPrefix.None)>] Provision of ParseResults<CosmosProvisionArguments>
     | [<CliPrefix(CliPrefix.None)>] Run of ParseResults<TestArguments>
@@ -90,7 +89,6 @@ and [<NoEquality; NoComparison>] CosmosArguments =
             | Database _ -> "specify a database name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
             | Collection _ -> "specify a collection name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_COLLECTION, test)."
             | RetriesWaitTime _ -> "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
-            | PageSize _ -> "Specify maximum number of events to record on a page before switching to a new one (default: 1)"
             | Provision _ -> "Initialize a store collection."
             | Run _ -> "Run a load test."
 and CosmosProvisionArguments =
@@ -121,7 +119,7 @@ module Cosmos =
     let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
             .Connect("equinox-cli", discovery)
-    let createGateway connection (maxBatches,maxEvents) = EqxGateway(connection, EqxBatchingPolicy(defaultMaxSlices=maxBatches, maxEventsPerSlice = maxEvents))
+    let createGateway connection maxItems = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=maxItems))
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type Store =
@@ -311,19 +309,18 @@ let main argv =
             let collName = sargs.GetResult(Collection, defaultArg (read "EQUINOX_COSMOS_COLLECTION") "equinox-test")
             let timeout = sargs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
             let (retries, maxRetryWaitTime) as operationThrottling = sargs.GetResult(Retries, 1), sargs.GetResult(RetriesWaitTime, 5)
-            let pageSize = sargs.GetResult(PageSize,1)
-            log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection} with page size: {pageSize}. " +
+            log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection}. " +
                 "Request timeout: {timeout} with {retries} retries; throttling MaxRetryWaitTime {maxRetryWaitTime}",
-                connUri, dbName, collName, pageSize, timeout, retries, maxRetryWaitTime)
+                connUri, dbName, collName, timeout, retries, maxRetryWaitTime)
             let conn = Cosmos.connect log discovery timeout operationThrottling |> Async.RunSynchronously
             match sargs.TryGetSubCommand() with
             | Some (Provision args) ->
                 let rus = args.GetResult(Rus)
-                log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus:n0}", rus)
+                log.Information("Configuring CosmosDb Collection with Throughput Provision: {rus:n0} RU/s", rus)
                 Equinox.Cosmos.Sync.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
                 0
             | Some (Run targs) ->
-                let conn = Store.Cosmos (Cosmos.createGateway conn (defaultBatchSize,pageSize), dbName, collName)
+                let conn = Store.Cosmos (Cosmos.createGateway conn defaultBatchSize, dbName, collName)
                 let res = runTest log conn targs
                 let stats =
                   [ "Read", RuCounterSink.Read
