@@ -200,13 +200,13 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let get (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContextWithItemLimit conn (Some 3)
 
         // We're going to ignore the first, to prove we can
         let! expected = add6EventsIn2Batches ctx streamName
-        let expected = Array.skip 1 expected
+        let expected = Array.tail expected
 
-        let! res = Events.get ctx streamName 1L 3
+        let! res = Events.get ctx streamName 1L 10
 
         verifyCorrectEvents 1L expected res
 
@@ -217,14 +217,14 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getBackwards (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContextWithItemLimit conn (Some 2)
 
         let! expected = add6EventsIn2Batches ctx streamName
 
         // We want to skip reading the last
         let expected = Array.take 5 expected
 
-        let! res = Events.getBackwards ctx streamName 4L 2
+        let! res = Events.getBackwards ctx streamName 4L 5
 
         verifyCorrectEventsBackward 4L expected res
 
@@ -239,10 +239,10 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get (in 2 batches)`` (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit conn (Some 2)
 
         let! expected = add6EventsIn2Batches ctx streamName
-        let expected = Array.skip 1 expected
+        let expected = Array.tail expected |> Array.take 3
 
         let! res = Events.get ctx streamName 1L 3
 
@@ -256,17 +256,17 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getAll (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContextWithItemLimit conn (Some 2)
 
         let! expected = add6EventsIn2Batches ctx streamName
 
-        let! res = Events.get ctx streamName 1L 2 // Events.getAll >> AsyncSeq.concatSeq |> AsyncSeq.toArrayAsync
-        let expected = Array.skip 1 expected
+        let! res = Events.get ctx streamName 1L 4 // Events.getAll >> AsyncSeq.concatSeq |> AsyncSeq.toArrayAsync
+        let expected = expected |> Array.tail |> Array.take 4
 
         verifyCorrectEvents 1L expected res
 
         // TODO [implement and] prove laziness
-        test <@ List.replicate 3 EqxAct.SliceForward @ [EqxAct.BatchForward] = capture.ExternalCalls @>
+        test <@ List.replicate 2 EqxAct.SliceForward @ [EqxAct.BatchForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 10 // observed 8.99 // was 3
     }
 

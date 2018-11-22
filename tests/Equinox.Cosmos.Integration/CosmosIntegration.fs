@@ -187,7 +187,7 @@ type Tests(testOutputHelper) =
         let! result = service.Read email
         test <@ value = result @>
 
-        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+        test <@ [EqxAct.Indexed; EqxAct.Append; EqxAct.Indexed] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]

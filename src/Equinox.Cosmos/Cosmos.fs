@@ -1064,9 +1064,9 @@ type EqxContext
     let maxCountPredicate count =
         let acc = ref (max count 0)
         fun _ ->
-            if !acc = 0 then false else
+            if !acc = 0 then true else
             decr acc
-            true
+            false
     let yieldPositionAndData res = async {
         let! (Token.Unpack (_,pos')), data = res
         return pos', data }
