@@ -66,7 +66,7 @@ type ICategory<'event, 'state> =
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
     abstract TrySync : log: ILogger
         -> token: Storage.StreamToken * originState: 'state
-        -> events: 'event list * state: 'state
+        -> events: 'event list * state': 'state
         -> Async<Storage.SyncResult<'state>>
 
 // Exception yielded by Handler.Decide after `count` attempts have yielded conflicts at the point of syncing with the Store

@@ -16,15 +16,15 @@ let createServiceMem log store =
     Backend.ContactPreferences.Service(log, MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
-let resolveStreamGesWithCompactionSemantics gateway streamName =
-    GesStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create(streamName)
-let resolveStreamGesWithoutCompactionSemantics gateway streamName =
-    GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(streamName)
+let resolveStreamGesWithCompactionSemantics gateway =
+    GesStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create
+let resolveStreamGesWithoutCompactionSemantics gateway =
+    GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create
 
-let resolveStreamEqxWithCompactionSemantics gateway (StoreCollection args) =
-    EqxStreamBuilder(gateway 1, codec, fold, initial, Equinox.Cosmos.AccessStrategy.EventsAreState).Create(args)
-let resolveStreamEqxWithoutCompactionSemantics gateway (StoreCollection args) =
-    EqxStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(args)
+let resolveStreamEqxWithCompactionSemantics gateway =
+    EqxStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType Domain.ContactPreferences.Events.eventTypeNames).Create
+let resolveStreamEqxWithoutCompactionSemantics gateway =
+    EqxStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -63,12 +63,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxGateway resolveStreamEqxWithoutCompactionSemantics
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveStreamEqxWithoutCompactionSemantics
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxGateway resolveStreamEqxWithCompactionSemantics
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveStreamEqxWithCompactionSemantics
         do! act service args
     }

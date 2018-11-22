@@ -135,7 +135,7 @@ module Test =
             clients.[clientIndex % clients.Length]
         let selectClient = async { return async { return selectClient() } }
         Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
-    let fold, initial, compact, index = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.compact, Domain.Favorites.Folds.index
+    let fold, initial, compact = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.compact
     let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
     let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
     let codec = genCodec<Domain.Favorites.Events.Event>()
@@ -150,19 +150,16 @@ module Test =
                 let c = Equinox.Cosmos.Builder.Caching.Cache("Cli", sizeMb = 50)
                 Equinox.Cosmos.Builder.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
-        let resolveStream streamName =
+        let resolveStream =
             match store with
             | Store.Mem store ->
-                Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create(streamName)
+                Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create
             | Store.Es gateway ->
-                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact, ?caching = esCache).Create(streamName)
+                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact, ?caching = esCache).Create
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                if targs.Contains Indexed then
-                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.IndexedSearch index, ?caching = eqxCache)
-                        .Create(databaseId, connectionId, streamName)
-                else
-                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact, ?caching = eqxCache)
-                        .Create(databaseId, connectionId, streamName)
+                let store = EqxStore(gateway, EqxCollections(databaseId, connectionId))
+                if targs.Contains Indexed then EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection compact, ?caching = eqxCache).Create
+                else EqxStreamBuilder(store, codec, fold, initial, ?access=None, ?caching = eqxCache).Create
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId

@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <Compile Include="CosmosFixtures.fs" />
-    <Compile Include="CosmosTokenTests.fs" />
     <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
     <Compile Include="CosmosCoreIntegration.fs" />

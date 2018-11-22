@@ -96,9 +96,10 @@ type Tests() =
         do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service itemCount
         let! state = service.Read cartId
         test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
-        // Even though we've gone over a page, we only need a single read to read the state (plus the one from the execute)
+        // Because we're using Access Strategies that enable us to read our state in a single roundtrip...
+        // (even though we've gone over a page), we only need a single read to read the state (plus the one from the execute)
         let contains (s : string) (x : string) = x.Contains s
-        test <@ let reads = buffer |> Seq.filter (fun s -> s |> contains resultTag)
+        test <@ let reads = buffer |> Seq.filter (contains resultTag)
                 2 = Seq.length reads @> }
 
     // Protip: Debug this test to view standard metrics rendering
@@ -109,7 +110,7 @@ type Tests() =
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToLocalEventStoreNode log
         let gateway = createGesGateway conn batchSize
-        let service = Backend.Cart.Service(log, CartIntegration.resolveGesStreamWithCompactionEventType gateway)
+        let service = Backend.Cart.Service(log, CartIntegration.resolveGesStreamWithRollingSnapshots gateway)
         let itemCount = batchSize / 2 + 1
         let cartId = Domain.Infrastructure.CartId(System.Guid.NewGuid())
         do! act buffer service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
@@ -121,9 +122,9 @@ type Tests() =
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createEqxGateway conn batchSize
-        let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithCompactionEventType gateway)
+        let gateway = createEqxStore conn batchSize
+        let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithProjection gateway)
         let itemCount = batchSize / 2 + 1
         let cartId = Domain.Infrastructure.CartId(System.Guid.NewGuid())
-        do! act buffer service itemCount context cartId skuId "EqxReadStreamEventsBackwardAsync-Duration"
+        do! act buffer service itemCount context cartId skuId "Eqx Index " // one is a 404, one is a 200
     }

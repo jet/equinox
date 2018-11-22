@@ -38,7 +38,6 @@ module Folds =
         for e in events do evolve s e
         s.AsState()
     let compact = Events.Compaction.EventType, fun state -> Events.Compacted { net = state }
-    let index = (fun x -> x = Events.Compaction.EventType), fun state -> seq [ Events.Compacted { net = state } ]
 
 type Command =
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list

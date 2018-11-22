@@ -1,6 +1,5 @@
 ﻿module Equinox.Cosmos.Integration.CosmosIntegration
 
-open Equinox
 open Equinox.Cosmos.Integration.Infrastructure
 open Equinox.Cosmos.Builder
 open Swensen.Unquote
@@ -12,47 +11,36 @@ let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
-    let fold, initial, compact, index = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact, Domain.Cart.Folds.index
+    let fold, initial, project = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
-        let gateway = createEqxGateway connection batchSize
-        let resolveStream (StoreCollection args) =
-            EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
+        let store = createEqxStore connection batchSize
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial).Create
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompaction connection batchSize log =
-        let gateway = createEqxGateway connection batchSize
-        let resolveStream (StoreCollection args) =
-            EqxStreamBuilder(gateway, codec, fold, initial, Cosmos.AccessStrategy.RollingSnapshots compact).Create(args)
+        let store = createEqxStore connection batchSize
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection project).Create
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching connection batchSize log cache =
-        let gateway = createEqxGateway connection batchSize
+        let store = createEqxStore connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create(args)
-        Backend.Cart.Service(log, resolveStream)
-    let createServiceIndexed connection batchSize log =
-        let gateway = createEqxGateway connection batchSize
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, Cosmos.AccessStrategy.IndexedSearch index).Create(args)
-        Backend.Cart.Service(log, resolveStream)
-    let createServiceWithCachingIndexed connection batchSize log cache =
-        let gateway = createEqxGateway connection batchSize
-        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, Cosmos.AccessStrategy.IndexedSearch index, caching=sliding20m).Create(args)
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, caching = sliding20m).Create
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCompactionAndCaching connection batchSize log cache =
-        let gateway = createEqxGateway connection batchSize
+        let store = createEqxStore connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial, Cosmos.AccessStrategy.RollingSnapshots compact, sliding20m).Create(args)
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection project, sliding20m).Create
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
-    let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
+    let fold, initial, eventTypes = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial, Domain.ContactPreferences.Events.eventTypeNames
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
+        let resolveStream = EqxStreamBuilder(gateway, codec, fold, initial).Create
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService createGateway log =
-        let resolveStream (StoreCollection args) = EqxStreamBuilder(createGateway 1, codec, fold, initial, Cosmos.AccessStrategy.EventsAreState).Create(args)
+        let resolveStream = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType eventTypes).Create
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -180,49 +168,9 @@ type Tests(testOutputHelper) =
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly compacting to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
-        let cartId = Domain.Infrastructure.CartId(System.Guid.NewGuid())
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let batchSize = 10
-        let service = Cart.createServiceWithCompaction conn batchSize log
-        capture.Clear()
-
-        // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service 5
-        let! _ = service.Read cartId
-
-        // ... should see a single read as we are inside the batch threshold
-        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
-        capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service 1
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 13 events, we should be able to read them with a single call
-        capture.Clear()
-        let! _ = service.Read cartId
-        test <@ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
-        capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service 4
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 21 events, we should be able to read them with a single call
-        capture.Clear()
-        let! _ = service.Read cartId
-        // ... and trigger a second snapshotting (inducing a single additional read + write)
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service 1
-        // and reload the 24 events with a single read
-        let! _ = service.Read cartId
-        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-    }
-
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with EventsAreState Access Strategy`` value = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let service = ContactPreferences.createService (createEqxGateway conn) log
+        let service = ContactPreferences.createService (createEqxStore conn) log
 
         let email = let g = System.Guid.NewGuid() in g.ToString "N"
         //let (Domain.ContactPreferences.Id email) = id ()
@@ -277,7 +225,7 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let cache = Caching.Cache("cart", sizeMb = 50)
-        let createServiceCached () = Cart.createServiceWithCachingIndexed conn batchSize log cache
+        let createServiceCached () = Cart.createServiceWithCompactionAndCaching conn batchSize log cache
         let service1, service2 = createServiceCached (), createServiceCached ()
 
         // Trigger 10 events, then reload
@@ -305,7 +253,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Cosmos, correctly using the index to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
-        let createServiceIndexed () = Cart.createServiceIndexed conn batchSize log
+        let createServiceIndexed () = Cart.createServiceWithCompaction conn batchSize log
         let service1, service2 = createServiceIndexed (), createServiceIndexed ()
 
         // Trigger 10 events, then reload
@@ -324,46 +272,4 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! _ = service2.Read cartId
         test <@ [EqxAct.Indexed] = capture.ExternalCalls @>
-    }
-
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can combine compaction with caching against Cosmos`` context skuId = Async.RunSynchronously <| async {
-        let cartId = Domain.Infrastructure.CartId(System.Guid.NewGuid())
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let batchSize = 10
-        let service1 = Cart.createServiceWithCompaction conn batchSize log
-        let cache = Caching.Cache("cart", sizeMb = 50)
-        let service2 = Cart.createServiceWithCompactionAndCaching conn batchSize log cache
-
-        // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
-        let! _ = service2.Read cartId
-
-        // ... should see a single read as we are inside the batch threshold
-        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
-        capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 13 events, we whould be able to read them backwards with a single call
-        capture.Clear()
-        let! _ = service1.Read cartId
-        test <@ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
-        capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 4
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 21 events, we should be able to read them with a single call
-        capture.Clear()
-        let! _ = service1.Read cartId
-        // ... and trigger a second snapshotting (inducing a single additional read + write)
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
-        // and we _could_ reload the 24 events with a single read if reading backwards. However we are using the cache, which last saw it with 10 events, which necessitates two reads
-        let! _ = service2.Read cartId
-        let suboptimalExtraSlice = [singleSliceForward]
-        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }

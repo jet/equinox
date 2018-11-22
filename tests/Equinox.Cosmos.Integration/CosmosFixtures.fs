@@ -25,10 +25,13 @@ let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) =
         Discovery.FromConnectionString connectionString
         |> connectToCosmos log "EQUINOX_COSMOS_CONNECTION"
 
-let (|StoreCollection|) streamName =
-    let databaseId = read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test"
-    let collectionId = read "EQUINOX_COSMOS_COLLECTION" |> Option.defaultValue "equinox-test"
-    databaseId, collectionId, streamName
-
 let defaultBatchSize = 500
-let createEqxGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=batchSize))
+
+let collections =
+    EqxCollections(
+        read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test",
+        read "EQUINOX_COSMOS_COLLECTION" |> Option.defaultValue "equinox-test")
+
+let createEqxStore connection batchSize =
+    let gateway = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=batchSize))
+    EqxStore(gateway, collections)

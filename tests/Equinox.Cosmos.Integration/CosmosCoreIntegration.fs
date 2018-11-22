@@ -34,20 +34,19 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let (|TestDbCollStream|) (TestStream streamName) =
-        let (StoreCollection (dbId,collId,streamName)) = streamName
-        dbId,collId,streamName
-    let mkContextWithSliceLimit conn dbId collId maxEventsPerSlice =
-        EqxContext(conn,dbId,collId,log,defaultMaxItems=defaultBatchSize)
-    let mkContext conn dbId collId = mkContextWithSliceLimit conn dbId collId None
+        streamName
+    let mkContextWithItemLimit conn defaultBatchSize =
+        EqxContext(conn,collections,log,?defaultMaxItems=defaultBatchSize)
+    let mkContext conn = mkContextWithItemLimit conn None
 
     let verifyRequestChargesMax rus =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let append (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+    let append (TestDbCollStream (streamName)) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn dbId collId
+        let ctx = mkContext conn
 
         let event = EventData.Create("test_event")
         let index = 0L
@@ -100,9 +99,9 @@ type Tests(testOutputHelper) =
     let verifyCorrectEvents = verifyCorrectEventsEx Direction.Forward
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``appendAtEnd and getNextIndex`` (extras, TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+    let ``appendAtEnd and getNextIndex`` (extras, TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithSliceLimit conn dbId collId (Some 1)
+        let ctx = mkContextWithItemLimit conn (Some 1)
 
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
@@ -151,7 +150,7 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x * 100 > max -> max | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, Array.replicate extrasCount event)
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 705 // 703.5 observed // was 300 // 278 observed
+        verifyRequestChargesMax 1050 // 1038.15 observed // was 300 // 278 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -166,9 +165,9 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``append - fails on non-matching`` (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+    let ``append - fails on non-matching`` (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn dbId collId
+        let ctx = mkContext conn
 
         // Attempt to write, skipping Index 0
         let event = EventData.Create("test_event")
@@ -199,9 +198,9 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let get (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+    let get (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn dbId collId
+        let ctx = mkContext conn
 
         // We're going to ignore the first, to prove we can
         let! expected = add6EventsIn2Batches ctx streamName
@@ -216,9 +215,9 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let getBackwards (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+    let getBackwards (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn dbId collId
+        let ctx = mkContext conn
 
         let! expected = add6EventsIn2Batches ctx streamName
 
@@ -238,9 +237,9 @@ type Tests(testOutputHelper) =
     // TODO 2 batches test
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``get (in 2 batches)`` (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+    let ``get (in 2 batches)`` (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithSliceLimit conn dbId collId (Some 1)
+        let ctx = mkContextWithItemLimit conn (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
         let expected = Array.skip 1 expected
@@ -255,9 +254,9 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let getAll (TestDbCollStream (dbId,collId,streamName)) = Async.RunSynchronously <| async {
+    let getAll (TestDbCollStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn dbId collId
+        let ctx = mkContext conn
 
         let! expected = add6EventsIn2Batches ctx streamName
 
