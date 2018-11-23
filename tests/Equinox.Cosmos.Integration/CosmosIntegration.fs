@@ -12,31 +12,32 @@ let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
-    let fold, initial, project = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact
+    let fold, initial, snapshot = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.snapshot
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
         let store = createEqxStore connection batchSize
         let resolveStream = EqxStreamBuilder(store, codec, fold, initial).Create
         Backend.Cart.Service(log, resolveStream)
+    let projection = "Compacted",snd snapshot
     let createServiceWithProjection connection batchSize log =
         let store = createEqxStore connection batchSize
-        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection project).Create
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection projection).Create
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithProjectionAndCaching connection batchSize log cache =
         let store = createEqxStore connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection project, sliding20m).Create
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection projection, sliding20m).Create
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
-    let fold, initial, eventTypes = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial, Domain.ContactPreferences.Events.eventTypeNames
+    let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
         let resolveStream = EqxStreamBuilder(gateway, codec, fold, initial).Create
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService createGateway log =
-        let resolveStream = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType eventTypes).Create
+        let resolveStream = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType (System.Collections.Generic.HashSet ["contactPreferencesChanged"])).Create
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

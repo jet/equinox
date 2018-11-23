@@ -10,7 +10,7 @@ type IEvent =
     abstract member Meta : byte[]
 
 /// Represents an Event or Projection and its relative position in the event sequence
-type IOrderedEvent =
+type IIndexedEvent =
     inherit IEvent
     /// The index into the event sequence of this event
     abstract member Index : int64
@@ -26,7 +26,7 @@ type [<NoComparison>] Position = { index: int64; etag: string option } with
     /// Just Do It mode
     static member internal FromAppendAtEnd = Position.FromI -1L // sic - needs to yield -1
     /// NB very inefficient compared to FromDocument or using one already returned to you
-    static member internal FromMaxIndex(xs: IOrderedEvent[]) =
+    static member internal FromMaxIndex(xs: IIndexedEvent[]) =
         if Array.isEmpty xs then Position.FromKnownEmpty
         else Position.FromI (1L + Seq.max (seq { for x in xs -> x.Index }))
 
@@ -153,7 +153,7 @@ and Projection =
 type Enum() =
     static member Events (b:WipBatch) =
         b.e |> Seq.mapi (fun offset x ->
-        { new IOrderedEvent with
+        { new IIndexedEvent with
             member __.Index = b._i + int64 offset
             member __.IsProjection = false
             member __.EventType = x.t
@@ -161,7 +161,7 @@ type Enum() =
             member __.Meta = x.m })
     static member Events (i: int64, e:BatchEvent[]) =
         e |> Seq.mapi (fun offset x ->
-            { new IOrderedEvent with
+            { new IIndexedEvent with
                 member __.Index = i + int64 offset
                 member __.IsProjection = false
                 member __.EventType = x.t
@@ -169,20 +169,20 @@ type Enum() =
                 member __.Meta = x.m })
     static member Event (x:Event) =
         Seq.singleton
-            { new IOrderedEvent with
+            { new IIndexedEvent with
                 member __.Index = x.i
                 member __.IsProjection = false
                 member __.EventType = x.t
                 member __.Data = x.d
                 member __.Meta = x.m }
     static member Projections (xs: Projection[]) = seq {
-        for x in xs -> { new IOrderedEvent with
+        for x in xs -> { new IIndexedEvent with
             member __.Index = x.i
             member __.IsProjection = true
             member __.EventType = x.t
             member __.Data = x.d
             member __.Meta = x.m } }
-    static member EventsAndProjections (x:WipBatch): IOrderedEvent seq =
+    static member EventsAndProjections (x:WipBatch): IIndexedEvent seq =
         Enum.Projections x.c
 
 /// Reference to Collection and name that will be used as the location for the stream
@@ -203,6 +203,8 @@ open System
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward with
     override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
+
+type IRetryPolicy = abstract member Execute: (int -> Async<'T>) -> Async<'T>
 
 module Log =
     [<NoEquality; NoComparison>]
@@ -229,14 +231,14 @@ module Log =
     let propEvents = propData "events"
     let propDataProjections = Enum.Projections >> propData "projections"
 
-    let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
+    let withLoggedRetries<'t> (retryPolicy: IRetryPolicy option) (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
         match retryPolicy with
         | None -> f log
         | Some retryPolicy ->
             let withLoggingContextWrapping count =
                 let log = if count = 1 then log else log |> prop contextLabel count
                 f log
-            retryPolicy withLoggingContextWrapping
+            retryPolicy.Execute withLoggingContextWrapping
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     open Serilog.Events
@@ -388,7 +390,7 @@ function sync(req, expectedVersion) {
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Result =
         | Written of Position
-        | Conflict of Position * events: IOrderedEvent[]
+        | Conflict of Position * events: IIndexedEvent[]
         | ConflictUnknown of Position
 
     let private run (client: IDocumentClient) (stream: CollectionStream) (expectedVersion: int64 option, req: WipBatch)
@@ -419,7 +421,7 @@ function sync(req, expectedVersion) {
         let! t, (ru,result) = run client stream (expectedVersion, req) |> Stopwatch.Time
         let resultLog =
             let mkMetric ru : Log.Measurement = { stream = stream.name; interval = t; bytes = bytes; count = count; ru = ru }
-            let logConflict () = writeLog.Information("Eqx TrySync Conflict writing {eventTypes}", [| for x in req.e -> x.t |])
+            let logConflict () = writeLog.Information("Eqx Sync Conflict writing {eventTypes}", [| for x in req.e -> x.t |])
             match result with
             | Result.Written pos ->
                 log |> Log.event (Log.WriteSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" pos
@@ -501,7 +503,7 @@ module private Index =
             let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataProjections doc.c |> Log.prop "etag" doc._etag
             log.Information("Eqx {action:l} {res} {ms}ms rc={ru}", "Index", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
-    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * IOrderedEvent[]
+    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * IIndexedEvent[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.UnChanged
     let tryLoad (log : ILogger) retryPolicy client (stream: CollectionStream) (maybePos: Position option): Async<Result> = async {
         let get = get client
@@ -525,7 +527,7 @@ module private Index =
 
     // Unrolls the Batches in a response - note when reading backawards, the events are emitted in reverse order of index
     let private handleSlice direction (stream: CollectionStream) (startPos: Position option) (query: IDocumentQuery<Event>) (log: ILogger)
-        : Async<IOrderedEvent[] * Position option * float> = async {
+        : Async<IIndexedEvent[] * Position option * float> = async {
         let! ct = Async.CancellationToken
         let! t, (res : Client.FeedResponse<Event>) = query.ExecuteNextAsync<Event>(ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let batches, ru = Array.ofSeq res, res.RequestCharge
@@ -542,23 +544,23 @@ module private Index =
         let maybePosition = batches |> Array.tryPick (fun x -> x.TryToPosition())
         return events, maybePosition, ru }
 
-    let private runQuery (log : ILogger) (readSlice: IDocumentQuery<Event> -> ILogger -> Async<IOrderedEvent[] * Position option * float>)
+    let private runQuery (log : ILogger) (readSlice: IDocumentQuery<Event> -> ILogger -> Async<IIndexedEvent[] * Position option * float>)
             (maxPermittedBatchReads: int option)
             (query: IDocumentQuery<Event>)
-        : AsyncSeq<IOrderedEvent[] * Position option * float> =
-        let rec loop batchCount : AsyncSeq<IOrderedEvent[] * Position option * float> = asyncSeq {
+        : AsyncSeq<IIndexedEvent[] * Position option * float> =
+        let rec loop batchCount : AsyncSeq<IIndexedEvent[] * Position option * float> = asyncSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! (slice : IOrderedEvent[] * Position option * float) = readSlice query batchLog
+            let! (slice : IIndexedEvent[] * Position option * float) = readSlice query batchLog
             yield slice
             if query.HasMoreResults then
                 yield! loop (batchCount + 1) }
         loop 0
 
-    let private logBatchRead direction batchSize streamName interval (responsesCount, events : IOrderedEvent []) nextI (ru: float) (log : ILogger) =
+    let private logBatchRead direction batchSize streamName interval (responsesCount, events : IIndexedEvent []) nextI (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
@@ -568,9 +570,7 @@ module private Index =
             "Eqx {action:l} {stream} v{nextI} {count}/{responses} {ms}ms rc={ru}",
             action, streamName, nextI, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
-    let private inferPosition maybeIndexDocument (events: IOrderedEvent[]): Position = match maybeIndexDocument with Some p -> p | None -> Position.FromMaxIndex events
-
-    let private calculateUsedVersusDroppedPayload stopIndex (xs: IOrderedEvent[]) : int * int =
+    let private calculateUsedVersusDroppedPayload stopIndex (xs: IIndexedEvent[]) : int * int =
         let mutable used, dropped = 0, 0
         let mutable found = false
         for x in xs do
@@ -581,10 +581,10 @@ module private Index =
         used, dropped
 
     let walk (log : ILogger) client retryPolicy maxItems maxRequests direction (stream: CollectionStream) startPos predicate
-        : Async<Position * IOrderedEvent[]> = async {
+        : Async<Position * IIndexedEvent[]> = async {
         let responseCount = ref 0
-        let mergeBatches (log : ILogger) (batchesBackward : AsyncSeq<IOrderedEvent[] * Position option * float>)
-            : Async<IOrderedEvent[] * Position option * float> = async {
+        let mergeBatches (log : ILogger) (batchesBackward : AsyncSeq<IIndexedEvent[] * Position option * float>)
+            : Async<IIndexedEvent[] * Position option * float> = async {
             let mutable lastResponse = None
             let mutable maybeIndexDocument = None
             let mutable ru = 0.0
@@ -612,23 +612,13 @@ module private Index =
         let retryingLoggingReadSlice query = Log.withLoggedRetries retryPolicy "readAttempt" (pullSlice query)
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream.name
         let readlog = log |> Log.prop "direction" direction
-        let batches : AsyncSeq<IOrderedEvent[] * Position option * float> = runQuery readlog retryingLoggingReadSlice maxRequests query
+        let batches : AsyncSeq<IIndexedEvent[] * Position option * float> = runQuery readlog retryingLoggingReadSlice maxRequests query
         let! t, (events, maybeIndexDocument, ru) = mergeBatches log batches |> Stopwatch.Time
         query.Dispose()
-        let pos = inferPosition maybeIndexDocument events
+        let pos = match maybeIndexDocument with Some p -> p | None -> Position.FromMaxIndex events
 
         log |> logBatchRead direction maxItems stream.name t (!responseCount,events) pos.index ru
         return pos, events }
-
-module UnionEncoderAdapters =
-    let encodeEvent (codec : UnionCodec.IUnionEncoder<'event, byte[]>) (x : 'event) : IEvent =
-        let e = codec.Encode x
-        { new IEvent with
-            member __.EventType = e.caseName
-            member __.Data = e.payload
-            member __.Meta = null }
-    let decodeKnownEvents (codec : UnionCodec.IUnionEncoder<'event, byte[]>): IOrderedEvent seq -> 'event seq =
-        Seq.choose (fun x -> codec.TryDecode { caseName = x.EventType; payload = x.Data })
 
 type [<NoComparison>] Token = { stream: CollectionStream; pos: Position }
 module Token =
@@ -654,17 +644,16 @@ open System.Collections.Generic
 [<AutoOpen>]
 module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type InternalSyncResult = Written of Storage.StreamToken | ConflictUnknown of Storage.StreamToken | Conflict of Storage.StreamToken * IOrderedEvent[]
+    type InternalSyncResult = Written of Storage.StreamToken | ConflictUnknown of Storage.StreamToken | Conflict of Storage.StreamToken * IIndexedEvent[]
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type LoadFromTokenResult = Unchanged | Found of Storage.StreamToken * IOrderedEvent[]
+    type LoadFromTokenResult = Unchanged | Found of Storage.StreamToken * IIndexedEvent[]
 
-/// Defines the policies in force for retrying with regard to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type EqxConnection(client: IDocumentClient, ?readRetryPolicy (*: (int -> Async<'T>) -> Async<'T>*), ?writeRetryPolicy) =
+/// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
+type EqxConnection(client: IDocumentClient, ?readRetryPolicy: IRetryPolicy, ?writeRetryPolicy: IRetryPolicy) =
     member __.Client = client
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
-    //member __.Close = (client :?> Client.DocumentClient).Dispose()
 
 /// Defines the policies in force regarding how to constrain query responses
 type EqxBatchingPolicy
@@ -682,26 +671,26 @@ type EqxBatchingPolicy
 
 type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     let eventTypesPredicate resolved =
-        let acc = HashSet<string>()
-        fun (x: IOrderedEvent) ->
+        let acc = System.Collections.Generic.HashSet<string>()
+        fun (x: IIndexedEvent) ->
             acc.Add x.EventType |> ignore
             resolved acc
-    let (|Satisfies|_|) predicate (xs:IOrderedEvent[]) =
+    let (|Satisfies|_|) predicate (xs:IIndexedEvent[]) =
         match Array.tryFindIndexBack predicate xs with
         | None -> None
         | Some index -> Array.sub xs index (xs.Length - index) |> Some
-    let loadBackwardsStopping log predicate stream: Async<Storage.StreamToken * IOrderedEvent[]> = async {
+    let loadBackwardsStopping log predicate stream: Async<Storage.StreamToken * IIndexedEvent[]> = async {
         let! pos, events = Query.walk log conn.Client conn.ReadRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward stream None predicate
         Array.Reverse events
         return Token.create stream pos, events }
-    member __.LoadBackwardsStopping log predicate stream: Async<Storage.StreamToken * IOrderedEvent[]> =
+    member __.LoadBackwardsStopping log predicate stream: Async<Storage.StreamToken * IIndexedEvent[]> =
         let predicate = eventTypesPredicate predicate
         loadBackwardsStopping log predicate stream
-    member __.Read log batchingOverride stream direction startPos predicate: Async<Storage.StreamToken * IOrderedEvent[]> = async {
+    member __.Read log batchingOverride stream direction startPos predicate: Async<Storage.StreamToken * IIndexedEvent[]> = async {
         let batching = defaultArg batchingOverride batching
         let! pos, events = Query.walk log conn.Client conn.ReadRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos predicate
         return Token.create stream pos, events }
-    member __.LoadFromProjectionsOrRollingSnapshots log predicate (stream,maybePos): Async<Storage.StreamToken * IOrderedEvent[]> = async {
+    member __.LoadFromProjectionsOrRollingSnapshots log predicate (stream,maybePos): Async<Storage.StreamToken * IIndexedEvent[]> = async {
         let! res = Index.tryLoad log None(* TODO conn.ReadRetryPolicy*) conn.Client stream maybePos
         let predicate = eventTypesPredicate predicate
         match res with
@@ -733,8 +722,10 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
 type private Category<'event, 'state>(gateway : EqxGateway, codec : UnionCodec.IUnionEncoder<'event, byte[]>) =
+    let tryDecode (x: #IEvent) = codec.TryDecode { caseName = x.EventType; payload = x.Data }
+    let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: IIndexedEvent seq) : 'state = Seq.choose tryDecode events |> fold initial
     let respond (fold: 'state -> 'event seq -> 'state) initial events : 'state =
-        fold initial (UnionEncoderAdapters.decodeKnownEvents codec events)
+        fold initial (Seq.choose tryDecode events)
     member __.Load includeProjections collectionStream fold initial predicate (log : ILogger): Async<Storage.StreamToken * 'state> = async {
         let! token, events =
             if not includeProjections then gateway.LoadBackwardsStopping log predicate collectionStream
@@ -749,8 +740,14 @@ type private Category<'event, 'state>(gateway : EqxGateway, codec : UnionCodec.I
             (expectedVersion : int64 option, events, state')
             fold predicate log
         : Async<Storage.SyncResult<'state>> = async {
-        let encode = UnionEncoderAdapters.encodeEvent codec
-        let eventsEncoded, projectionsEncoded = Seq.map encode events |> Array.ofSeq, Seq.map encode (project state' events)
+        let encodeEvent (x : 'event) : IEvent =
+            let e = codec.Encode x
+            { new IEvent with
+                member __.EventType = e.caseName
+                member __.Data = e.payload
+                member __.Meta = null }
+        let state' = fold state (Seq.ofList events)
+        let eventsEncoded, projectionsEncoded = Seq.map encodeEvent events |> Array.ofSeq, Seq.map encodeEvent (project state' events)
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkProjections baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
@@ -802,9 +799,9 @@ module Caching =
         interface ICategory<'event, 'state> with
             member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
                 interceptAsync (inner.Load streamName log) streamName
-            member __.TrySync (log : ILogger) (Token.Unpack (stream,_) as streamToken,state) (events : 'event list, state': 'state)
+            member __.TrySync (log : ILogger) (Token.Unpack (stream,_) as streamToken,state) (events : 'event list)
                 : Async<Storage.SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync log (streamToken, state) (events,state')
+                let! syncRes = inner.TrySync log (streamToken, state) events
                 match syncRes with
                 | Storage.SyncResult.Conflict resync ->         return Storage.SyncResult.Conflict (interceptAsync resync stream.name)
                 | Storage.SyncResult.Written (token', state') ->return Storage.SyncResult.Written (intercept stream.name (token', state')) }
@@ -821,7 +818,7 @@ module Caching =
 
 type private Folder<'event, 'state>
     (   category : Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state,
-        predicate : HashSet<string> -> bool,
+        predicate : System.Collections.Generic.HashSet<string> -> bool,
         mkCollectionStream : string -> Store.CollectionStream,
         // Whether or not a projection function is supplied controls whether reads consult the index or not
         ?project: ('state -> 'event seq -> 'event seq),
@@ -837,9 +834,9 @@ type private Folder<'event, 'state>
                 match cache.TryGet(prefix + streamName) with
                 | None -> batched
                 | Some tokenAndState -> cached tokenAndState
-        member __.TrySync (log : ILogger) (Token.Unpack (_stream,pos) as streamToken,state) (events : 'event list, state': 'state)
+        member __.TrySync (log : ILogger) (Token.Unpack (_stream,pos) as streamToken,state) (events : 'event list)
             : Async<Storage.SyncResult<'state>> = async {
-            let! syncRes = category.Sync (streamToken,state) (defaultArg project (fun _ _ -> Seq.empty)) (Some pos.index, events, state') fold predicate log
+            let! syncRes = category.Sync (streamToken,state) (defaultArg project (fun _ _ -> Seq.empty)) (Some pos.index, events, fold state events) fold predicate log
             match syncRes with
             | Storage.SyncResult.Conflict resync ->             return Storage.SyncResult.Conflict resync
             | Storage.SyncResult.Written (token',state') ->     return Storage.SyncResult.Written (token',state') }
@@ -873,7 +870,7 @@ type AccessStrategy<'event,'state> =
     /// Provides equivalent performance to Projections, just simplified function signatures
     | Projection of eventType: string * ('state -> 'event)
     /// Simplified version
-    | AnyKnownEventType of eventTypes: ISet<string>
+    | AnyKnownEventType of eventTypes: System.Collections.Generic.ISet<string>
 
 type EqxStreamBuilder<'event, 'state>(store : EqxStore, codec, fold, initial, ?access, ?caching) =
     member __.Create streamName : Equinox.IStream<'event, 'state> =
@@ -888,10 +885,10 @@ type EqxStreamBuilder<'event, 'state>(store : EqxStore, codec, fold, initial, ?a
                 predicate,
                 Some (fun state _events -> project state)
             | Some (AccessStrategy.Projection (et,compact)) ->
-                (fun (ets: HashSet<string>) -> ets.Contains et),
+                (fun (ets: System.Collections.Generic.HashSet<string>) -> ets.Contains et),
                 Some (fun state _events -> seq [compact state])
             | Some (AccessStrategy.AnyKnownEventType knownEventTypes) ->
-                (fun (ets: HashSet<string>) -> knownEventTypes.Overlaps ets),
+                (fun (ets: System.Collections.Generic.HashSet<string>) -> knownEventTypes.Overlaps ets),
                 Some (fun _ events -> Seq.last events |> Seq.singleton)
         let category = Category<'event, 'state>(store.Gateway, codec)
         let folder = Folder<'event, 'state>(category, fold, initial, predicate, store.Collections.CollectionForStream, ?project=projectOption, ?readCache = readCacheOption)
@@ -985,13 +982,12 @@ open Equinox.Cosmos
 open Equinox.Cosmos.Builder
 open Equinox.Cosmos.Events
 open FSharp.Control
-open Equinox
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]
 type AppendResult<'t> =
     | Ok of pos: 't
-    | Conflict of index: 't * conflictingEvents: IOrderedEvent[]
+    | Conflict of index: 't * conflictingEvents: IIndexedEvent[]
     | ConflictUnknown of index: 't
 
 /// Encapsulates the core facilites Equinox.Cosmos offers for operating directly on Events in Streams.
@@ -1030,11 +1026,11 @@ type EqxContext
             // Search semantics include the first hit so we need to special case this anyway
             return Token.create stream (defaultArg startPos Position.FromKnownEmpty), Array.empty
         else
-            let predicate =
+            let isOrigin =
                 match maxCount with
                 | Some limit -> maxCountPredicate limit
                 | None -> fun _ -> false
-            return! gateway.Read logger None stream direction startPos predicate }
+            return! gateway.Read logger None stream direction startPos isOrigin }
 
     /// Establishes the current position of the stream in as effficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
@@ -1045,13 +1041,13 @@ type EqxContext
 
     /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member __.Walk(stream, batchSize, ?position, ?direction) : AsyncSeq<IOrderedEvent[]> = asyncSeq {
+    member __.Walk(stream, batchSize, ?position, ?direction) : AsyncSeq<IIndexedEvent[]> = asyncSeq {
         let! _pos,data = __.GetInternal((stream, position), batchSize, ?direction=direction)
         // TODO add laziness
         return AsyncSeq.ofSeq data }
 
     /// Reads all Events from a `Position` in a given `direction`
-    member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*IOrderedEvent[]> =
+    member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*IIndexedEvent[]> =
         __.GetInternal((stream, position), ?maxCount=maxCount, ?direction=direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
@@ -1085,7 +1081,7 @@ module Events =
     let private stripPosition (f: Async<Position>): Async<int64> = async {
         let! (PositionIndex index) = f
         return index }
-    let private dropPosition (f: Async<Position*IOrderedEvent[]>): Async<IOrderedEvent[]> = async {
+    let private dropPosition (f: Async<Position*IIndexedEvent[]>): Async<IIndexedEvent[]> = async {
         let! _,xs = f
         return xs }
     let (|MinPosition|) = function
@@ -1095,18 +1091,18 @@ module Events =
         | int64.MaxValue -> None
         | i -> Some (Position.FromI (i + 1L))
 
-    /// Returns an aFromLastIndexs in the stream starting at the specified sequence number,
+    /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: EqxContext) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<IOrderedEvent[]> =
-        ctx.Walk(ctx.CreateStream streamName, batchSize,?position=index)
+    let getAll (ctx: EqxContext) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
+        ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: EqxContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<IOrderedEvent[]> =
+    let get (ctx: EqxContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
@@ -1126,14 +1122,14 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): AsyncSeq<IOrderedEvent[]> =
+    let getAllBackwards (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): AsyncSeq<IIndexedEvent[]> =
         ctx.Walk(ctx.CreateStream streamName, maxCount, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<IOrderedEvent[]> =
+    let getBackwards (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position
