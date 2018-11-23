@@ -1,6 +1,6 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
-open Equinox.Cosmos
+open Equinox.Cosmos.Builder
 open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
@@ -23,10 +23,10 @@ let resolveGesStreamWithRollingSnapshots gateway =
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
 
-let resolveEqxStreamWithCompactionEventType gateway (StreamArgs args) =
-    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact).Create(args)
-let resolveEqxStreamWithoutCompactionSemantics gateway (StreamArgs args) =
-    EqxStreamBuilder(gateway, codec, fold, initial).Create(args)
+let resolveEqxStreamWithProjection gateway =
+    EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Projection snapshot).Create
+let resolveEqxStreamWithoutCustomAccessStrategy gateway =
+    EqxStreamBuilder(gateway, codec, fold, initial).Create
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->
@@ -72,13 +72,13 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxGateway resolveEqxStreamWithoutCompactionSemantics
+    let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveEqxStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events with compaction`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxGateway resolveEqxStreamWithCompactionEventType
+    let ``Can roundtrip against Cosmos, correctly folding the events with With Projection`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveEqxStreamWithProjection
         do! act service args
     }
