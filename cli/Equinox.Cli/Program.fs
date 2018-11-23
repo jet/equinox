@@ -158,7 +158,8 @@ module Test =
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create
             | Store.Cosmos (gateway, databaseId, connectionId) ->
                 let store = EqxStore(gateway, EqxCollections(databaseId, connectionId))
-                if targs.Contains Indexed then EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection snapshot, ?caching = eqxCache).Create
+                let projection = "Compacted",snd snapshot
+                if targs.Contains Indexed then EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection projection, ?caching = eqxCache).Create
                 else EqxStreamBuilder(store, codec, fold, initial, ?access=None, ?caching = eqxCache).Create
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
@@ -170,17 +171,17 @@ module Test =
 [<AutoOpen>]
 module SerilogHelpers =
     let inline (|Stats|) ({ interval = i; ru = ru }: Equinox.Cosmos.Log.Measurement) = ru, let e = i.Elapsed in int64 e.TotalMilliseconds
-    let (|CosmosReadRu|CosmosWriteRu|CosmosResyncRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
-        match evt with
-        | Equinox.Cosmos.Log.Index (Stats s)
-        | Equinox.Cosmos.Log.IndexNotFound (Stats s)
-        | Equinox.Cosmos.Log.IndexNotModified (Stats s)
-        | Equinox.Cosmos.Log.Batch (_,_, (Stats s)) -> CosmosReadRu s
-        | Equinox.Cosmos.Log.WriteSuccess (Stats s)
-        | Equinox.Cosmos.Log.WriteConflict (Stats s) -> CosmosWriteRu s
-        | Equinox.Cosmos.Log.WriteResync (Stats s) -> CosmosResyncRu s
+    open Equinox.Cosmos
+    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosSliceRc|) = function
+        | Log.Index (Stats s)
+        | Log.IndexNotFound (Stats s)
+        | Log.IndexNotModified (Stats s)
+        | Log.Batch (_,_, (Stats s)) -> CosmosReadRc s
+        | Log.WriteSuccess (Stats s)
+        | Log.WriteConflict (Stats s) -> CosmosWriteRc s
+        | Log.WriteResync (Stats s) -> CosmosResyncRc s
         // slices are rolled up into batches so be sure not to double-count
-        | Equinox.Cosmos.Log.Slice (_,{ ru = ru }) -> CosmosSliceRu ru
+        | Log.Slice (_,(Stats s)) -> CosmosSliceRc s
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
@@ -201,9 +202,9 @@ module SerilogHelpers =
         static member val Resync = RuCounter.Create()
         interface Serilog.Core.ILogEventSink with
             member __.Emit logEvent = logEvent |> function
-                | CosmosMetric (CosmosReadRu stats) -> RuCounterSink.Read.Ingest stats
-                | CosmosMetric (CosmosWriteRu stats) -> RuCounterSink.Write.Ingest stats
-                | CosmosMetric (CosmosResyncRu stats) -> RuCounterSink.Resync.Ingest stats
+                | CosmosMetric (CosmosReadRc stats) -> RuCounterSink.Read.Ingest stats
+                | CosmosMetric (CosmosWriteRc stats) -> RuCounterSink.Write.Ingest stats
+                | CosmosMetric (CosmosResyncRc stats) -> RuCounterSink.Resync.Ingest stats
                 | _ -> ()
 
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =

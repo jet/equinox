@@ -68,23 +68,21 @@ module SerilogHelpers =
         | Log.IndexNotFound _ -> EqxAct.IndexNotFound
         | Log.IndexNotModified _ -> EqxAct.IndexNotModified
     let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Log.Measurement) = ru
-    let (|CosmosReadRu|CosmosWriteRu|CosmosResyncRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
-        match evt with
+    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosSliceRc|) = function
         | Log.Index (Stats s)
         | Log.IndexNotFound (Stats s)
         | Log.IndexNotModified (Stats s)
-        | Log.Batch (_,_, (Stats s)) -> CosmosReadRu s
+        | Log.Batch (_,_, (Stats s)) -> CosmosReadRc s
         | Log.WriteSuccess (Stats s)
-        | Log.WriteConflict (Stats s) -> CosmosWriteRu s
-        | Log.WriteResync (Stats s) -> CosmosResyncRu s
+        | Log.WriteConflict (Stats s) -> CosmosWriteRc s
+        | Log.WriteResync (Stats s) -> CosmosResyncRc s
         // slices are rolled up into batches so be sure not to double-count
-        | Log.Slice (_,Stats s) -> CosmosSliceRu s
+        | Log.Slice (_,Stats s) -> CosmosSliceRc s
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
-    let (|CosmosRequestCharge|EquinoxChargeRollup|) c =
-        match c with
-        | CosmosSliceRu _ ->
+    let (|CosmosRequestCharge|EquinoxChargeRollup|) = function
+        | CosmosSliceRc _ ->
             EquinoxChargeRollup
-        | CosmosReadRu rc | CosmosWriteRu rc | CosmosResyncRu rc as e ->
+        | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc as e ->
             CosmosRequestCharge (e,rc)
     let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
