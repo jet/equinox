@@ -3,7 +3,9 @@ module Equinox.Cosmos.Integration.Infrastructure
 
 open Domain
 open FsCheck
+open Serilog
 open System
+open Serilog.Core
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
@@ -37,30 +39,53 @@ type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
 
 [<AutoOpen>]
 module SerilogHelpers =
-    open Serilog
     open Serilog.Events
 
     let createLogger sink =
         LoggerConfiguration()
             .WriteTo.Sink(sink)
+            .WriteTo.Seq("http://localhost:5341")
             .CreateLogger()
 
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
+    open Equinox.Cosmos
     [<RequireQualifiedAccess>]
-    type EqxAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Indexed | IndexedNotFound | IndexedCached
+    type EqxAct = Append | Resync | Conflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Index | IndexNotFound | IndexNotModified | SliceWaste
     let (|EqxAction|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
-        | Equinox.Cosmos.Log.WriteSuccess _ -> EqxAct.Append
-        | Equinox.Cosmos.Log.WriteConflict _ -> EqxAct.AppendConflict
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Forward,_) -> EqxAct.SliceForward
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Backward,_) -> EqxAct.SliceBackward
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_,_) -> EqxAct.BatchForward
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_,_) -> EqxAct.BatchBackward
-        | Equinox.Cosmos.Log.Index _ -> EqxAct.Indexed
-        | Equinox.Cosmos.Log.IndexNotFound _ -> EqxAct.IndexedNotFound
-        | Equinox.Cosmos.Log.IndexNotModified _ -> EqxAct.IndexedCached
+        | Log.WriteSuccess _ -> EqxAct.Append
+        | Log.WriteResync _ -> EqxAct.Resync
+        | Log.WriteConflict _ -> EqxAct.Conflict
+        | Log.Slice (Direction.Forward,{count = 0}) -> EqxAct.SliceWaste // TODO remove, see comment where these are emitted
+        | Log.Slice (Direction.Forward,_) -> EqxAct.SliceForward
+        | Log.Slice (Direction.Backward,{count = 0}) -> EqxAct.SliceWaste // TODO remove, see comment where these are emitted
+        | Log.Slice (Direction.Backward,_) -> EqxAct.SliceBackward
+        | Log.Batch (Direction.Forward,_,_) -> EqxAct.BatchForward
+        | Log.Batch (Direction.Backward,_,_) -> EqxAct.BatchBackward
+        | Log.Index _ -> EqxAct.Index
+        | Log.IndexNotFound _ -> EqxAct.IndexNotFound
+        | Log.IndexNotModified _ -> EqxAct.IndexNotModified
+    let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Log.Measurement) = ru
+    let (|CosmosReadRu|CosmosWriteRu|CosmosResyncRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
+        match evt with
+        | Log.Index (Stats s)
+        | Log.IndexNotFound (Stats s)
+        | Log.IndexNotModified (Stats s)
+        | Log.Batch (_,_, (Stats s)) -> CosmosReadRu s
+        | Log.WriteSuccess (Stats s)
+        | Log.WriteConflict (Stats s) -> CosmosWriteRu s
+        | Log.WriteResync (Stats s) -> CosmosResyncRu s
+        // slices are rolled up into batches so be sure not to double-count
+        | Log.Slice (_,Stats s) -> CosmosSliceRu s
+    /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
+    let (|CosmosRequestCharge|EquinoxChargeRollup|) c =
+        match c with
+        | CosmosSliceRu _ ->
+            EquinoxChargeRollup
+        | CosmosReadRu rc | CosmosWriteRu rc | CosmosResyncRu rc as e ->
+            CosmosRequestCharge (e,rc)
     let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
             | SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e
@@ -80,6 +105,26 @@ module SerilogHelpers =
             captured.Add logEvent
         interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
         member __.Clear () = captured.Clear()
-        member __.Entries = captured.ToArray()
         member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
-        member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
+        member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) (*when act <> EqxAct.Waste*) -> Some act | _ -> None)
+        member __.RequestCharges = __.ChooseCalls (function EqxEvent (CosmosRequestCharge e) -> Some e | _ -> None)
+
+type TestsWithLogCapture(testOutputHelper) =
+    let log, capture = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
+
+    /// NB the returned Logger must be Dispose()'d to guarantee all log output has been flushed upon completion of a test
+    static member CreateLoggerWithCapture testOutputHelper : Logger* LogCaptureBuffer =
+        let testOutput = TestOutputAdapter testOutputHelper
+        let capture = LogCaptureBuffer()
+        let logger =
+            Serilog.LoggerConfiguration()
+                .WriteTo.Seq("http://localhost:5341")
+                .WriteTo.Sink(testOutput)
+                .WriteTo.Sink(capture)
+                .CreateLogger()
+        logger, capture
+
+    member __.Capture = capture
+    member __.Log = log
+
+    interface IDisposable with member __.Dispose() = log.Dispose()
