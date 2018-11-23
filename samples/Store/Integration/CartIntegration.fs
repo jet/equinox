@@ -22,8 +22,9 @@ let resolveGesStreamWithRollingSnapshots gateway =
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
 
+let projection = "Compacted",snd snapshot
 let resolveEqxStreamWithProjection gateway =
-    EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Projection snapshot).Create
+    EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Projection projection).Create
 let resolveEqxStreamWithoutCustomAccessStrategy gateway =
     EqxStreamBuilder(gateway, codec, fold, initial).Create
 
