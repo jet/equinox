@@ -48,7 +48,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| EventData.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 12 // was 10, observed 11.03
+        verifyRequestChargesMax 14 // observed 12.03 // was 10
         // Clear the counters
         capture.Clear()
 
@@ -101,7 +101,7 @@ type Tests(testOutputHelper) =
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
         let! pos = Events.getNextIndex ctx streamName
-        test <@ [EqxAct.IndexedNotFound] = capture.ExternalCalls @>
+        test <@ [EqxAct.IndexNotFound] = capture.ExternalCalls @>
         0L =! pos
         verifyRequestChargesMax 1 // for a 404 by definition
         capture.Clear()
@@ -132,7 +132,7 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
-        test <@ [EqxAct.Indexed] = capture.ExternalCalls @>
+        test <@ [EqxAct.Index] = capture.ExternalCalls @>
         verifyRequestChargesMax 2
         capture.Clear()
         pos =! res
@@ -148,12 +148,12 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
-        test <@ [EqxAct.Indexed] = capture.ExternalCalls @>
+        test <@ [EqxAct.Index] = capture.ExternalCalls @>
         verifyRequestChargesMax 50 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
         capture.Clear()
 
         let! _pos = ctx.Sync(stream,pos)
-        test <@ [EqxAct.IndexedCached] = capture.ExternalCalls @>
+        test <@ [EqxAct.IndexNotModified] = capture.ExternalCalls @>
         verifyRequestChargesMax 1 // for a 302 by definition - when an etag IfNotMatch is honored, you only pay one RU
         capture.Clear()
     }

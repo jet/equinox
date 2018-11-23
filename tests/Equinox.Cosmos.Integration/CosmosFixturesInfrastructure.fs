@@ -52,19 +52,21 @@ module SerilogHelpers =
         | _ -> None
     open Equinox.Cosmos
     [<RequireQualifiedAccess>]
-    type EqxAct = Append | Resync | Conflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Indexed | IndexedNotFound | IndexedCached
+    type EqxAct = Append | Resync | Conflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Index | IndexNotFound | IndexNotModified | SliceWaste
     let (|EqxAction|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
         | Log.WriteSuccess _ -> EqxAct.Append
         | Log.WriteResync _ -> EqxAct.Resync
         | Log.WriteConflict _ -> EqxAct.Conflict
+        | Log.Slice (Direction.Forward,{count = 0}) -> EqxAct.SliceWaste // TODO remove, see comment where these are emitted
         | Log.Slice (Direction.Forward,_) -> EqxAct.SliceForward
+        | Log.Slice (Direction.Backward,{count = 0}) -> EqxAct.SliceWaste // TODO remove, see comment where these are emitted
         | Log.Slice (Direction.Backward,_) -> EqxAct.SliceBackward
         | Log.Batch (Direction.Forward,_,_) -> EqxAct.BatchForward
         | Log.Batch (Direction.Backward,_,_) -> EqxAct.BatchBackward
-        | Log.Index _ -> EqxAct.Indexed
-        | Log.IndexNotFound _ -> EqxAct.IndexedNotFound
-        | Log.IndexNotModified _ -> EqxAct.IndexedCached
+        | Log.Index _ -> EqxAct.Index
+        | Log.IndexNotFound _ -> EqxAct.IndexNotFound
+        | Log.IndexNotModified _ -> EqxAct.IndexNotModified
     let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Log.Measurement) = ru
     let (|CosmosReadRu|CosmosWriteRu|CosmosResyncRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
@@ -76,7 +78,7 @@ module SerilogHelpers =
         | Log.WriteConflict (Stats s) -> CosmosWriteRu s
         | Log.WriteResync (Stats s) -> CosmosResyncRu s
         // slices are rolled up into batches so be sure not to double-count
-        | Log.Slice (_,{ ru = ru }) -> CosmosSliceRu ru
+        | Log.Slice (_,Stats s) -> CosmosSliceRu s
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|CosmosRequestCharge|EquinoxChargeRollup|) c =
         match c with
@@ -103,9 +105,8 @@ module SerilogHelpers =
             captured.Add logEvent
         interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
         member __.Clear () = captured.Clear()
-        member __.Entries = captured.ToArray()
         member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
-        member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
+        member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) (*when act <> EqxAct.Waste*) -> Some act | _ -> None)
         member __.RequestCharges = __.ChooseCalls (function EqxEvent (CosmosRequestCharge e) -> Some e | _ -> None)
 
 type TestsWithLogCapture(testOutputHelper) =

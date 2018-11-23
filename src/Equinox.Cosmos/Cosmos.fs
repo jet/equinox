@@ -750,6 +750,9 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
         let! pos, events = Query.walk log conn.Client conn.ReadRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward stream None predicate
         Array.Reverse events
         return Token.create stream pos, events }
+    member __.LoadBackwardsStopping log predicate stream: Async<Storage.StreamToken * IOrderedEvent[]> =
+        let predicate = eventTypesPredicate predicate
+        loadBackwardsStopping log predicate stream
     member __.Read log batchingOverride stream direction startPos predicate: Async<Storage.StreamToken * IOrderedEvent[]> = async {
         let batching = defaultArg batchingOverride batching
         let! pos, events = Query.walk log conn.Client conn.ReadRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos predicate
@@ -788,17 +791,19 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
 type private Category<'event, 'state>(gateway : EqxGateway, codec : UnionCodec.IUnionEncoder<'event, byte[]>) =
     let respond (fold: 'state -> 'event seq -> 'state) initial events : 'state =
         fold initial (UnionEncoderAdapters.decodeKnownEvents codec events)
-    let handle fold initial load: Async<'t * 'state> = async {
-        let! token, events = load
+    member __.Load includeProjections collectionStream fold initial predicate (log : ILogger): Async<Storage.StreamToken * 'state> = async {
+        let! token, events =
+            if not includeProjections then gateway.LoadBackwardsStopping log predicate collectionStream
+            else gateway.LoadFromProjectionsOrRollingSnapshots log predicate (collectionStream,None)
         return token, respond fold initial events }
-    member __.Load collectionStream fold initial predicate (log : ILogger): Async<Storage.StreamToken * 'state> =
-        gateway.LoadFromProjectionsOrRollingSnapshots log predicate (collectionStream,None) |> handle fold initial
     member __.LoadFromToken (Token.Unpack streamPos, state: 'state as current) fold predicate (log : ILogger): Async<Storage.StreamToken * 'state> = async {
         let! res = gateway.LoadFromToken log streamPos predicate
         match res with
         | LoadFromTokenResult.Unchanged -> return current
         | LoadFromTokenResult.Found (token',events) -> return token', respond fold state events }
-    member __.Sync (Token.Unpack (stream,pos), state as current) (project: 'state -> 'event seq -> 'event seq) (expectedVersion : int64 option, events, state') fold predicate log
+    member __.Sync (Token.Unpack (stream,pos), state as current) (project: 'state -> 'event seq -> 'event seq)
+            (expectedVersion : int64 option, events, state')
+            fold predicate log
         : Async<Storage.SyncResult<'state>> = async {
         let encode = UnionEncoderAdapters.encodeEvent codec
         let eventsEncoded, projectionsEncoded = Seq.map encode events |> Array.ofSeq, Seq.map encode (project state' events)
@@ -872,11 +877,15 @@ module Caching =
 
 type private Folder<'event, 'state>
     (   category : Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state,
-        project: ('state -> 'event seq -> 'event seq), predicate : HashSet<string> -> bool, mkCollectionStream : string -> Store.CollectionStream, ?readCache) =
+        predicate : HashSet<string> -> bool,
+        mkCollectionStream : string -> Store.CollectionStream,
+        // Whether or not a projection function is supplied controls whether reads consult the index or not
+        ?project: ('state -> 'event seq -> 'event seq),
+        ?readCache) =
     interface ICategory<'event, 'state> with
         member __.Load streamName (log : ILogger): Async<Storage.StreamToken * 'state> =
             let collStream = mkCollectionStream streamName
-            let batched = category.Load collStream fold initial predicate log
+            let batched = category.Load (Option.isSome project) collStream fold initial predicate log
             let cached tokenAndState = category.LoadFromToken tokenAndState fold predicate log
             match readCache with
             | None -> batched
@@ -886,7 +895,7 @@ type private Folder<'event, 'state>
                 | Some tokenAndState -> cached tokenAndState
         member __.TrySync (log : ILogger) (Token.Unpack (_stream,pos) as streamToken,state) (events : 'event list, state': 'state)
             : Async<Storage.SyncResult<'state>> = async {
-            let! syncRes = category.Sync (streamToken,state) project (Some pos.index, events, state') fold predicate log
+            let! syncRes = category.Sync (streamToken,state) (defaultArg project (fun _ _ -> Seq.empty)) (Some pos.index, events, state') fold predicate log
             match syncRes with
             | Storage.SyncResult.Conflict resync ->             return Storage.SyncResult.Conflict resync
             | Storage.SyncResult.Written (token',state') ->     return Storage.SyncResult.Written (token',state') }
@@ -928,20 +937,20 @@ type EqxStreamBuilder<'event, 'state>(store : EqxStore, codec, fold, initial, ?a
             match caching with
             | None -> None
             | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
-        let predicate, project =
+        let predicate, projectOption =
             match access with
-            | None -> (fun _ -> false), (fun _ _ -> Seq.empty)
+            | None -> (fun _ -> false), None
             | Some (AccessStrategy.Projections (predicate,project)) ->
                 predicate,
-                (fun state _events -> project state)
+                Some (fun state _events -> project state)
             | Some (AccessStrategy.Projection (et,compact)) ->
                 (fun (ets: HashSet<string>) -> ets.Contains et),
-                (fun state _events -> seq [compact state])
+                Some (fun state _events -> seq [compact state])
             | Some (AccessStrategy.AnyKnownEventType knownEventTypes) ->
                 (fun (ets: HashSet<string>) -> knownEventTypes.Overlaps ets),
-                (fun _ events -> Seq.last events |> Seq.singleton)
+                Some (fun _ events -> Seq.last events |> Seq.singleton)
         let category = Category<'event, 'state>(store.Gateway, codec)
-        let folder = Folder<'event, 'state>(category, fold, initial, project, predicate, store.Collections.CollectionForStream, ?readCache = readCacheOption)
+        let folder = Folder<'event, 'state>(category, fold, initial, predicate, store.Collections.CollectionForStream, ?project=projectOption, ?readCache = readCacheOption)
 
         let category : ICategory<_,_> =
             match caching with
