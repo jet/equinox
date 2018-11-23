@@ -239,10 +239,7 @@ type Enum() =
             member __.Data = x.d
             member __.Meta = x.m } }
     static member EventsAndProjections (x:WipBatch): IOrderedEvent seq =
-        Enum.Events x
-        |> Seq.append (Enum.Projections x.c)
-        // where Index is equal, projections get delivered after the events so the fold semantics can be 'idempotent'
-        |> Seq.sortBy (fun x -> x.Index, x.IsProjection)
+        Enum.Projections x.c
 
 /// Reference to Collection and name that will be used as the location for the stream
 type [<NoComparison>] CollectionStream = { collectionUri: System.Uri; name: string } with
@@ -258,7 +255,6 @@ open FSharp.Control
 open Microsoft.Azure.Documents
 open Serilog
 open System
-open System.Collections.Generic
 
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward with
@@ -352,7 +348,7 @@ module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
     type SyncResponse = { etag: string; nextI: int64; conflicts: BatchEvent[] }
-    let [<Literal>] sprocName = "EquinoxSync-SingleEvents-020"  // NB need to renumber for any breaking change
+    let [<Literal>] sprocName = "EquinoxSync-SingleEvents-021"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
@@ -1036,6 +1032,7 @@ open Equinox.Cosmos
 open Equinox.Cosmos.Builder
 open Equinox.Cosmos.Events
 open FSharp.Control
+open Equinox
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]
@@ -1062,11 +1059,12 @@ type EqxContext
     let gateway = EqxGateway(conn, batching)
 
     let maxCountPredicate count =
-        let acc = ref (max count 0)
+        let acc = ref (max (count-1) 0)
         fun _ ->
             if !acc = 0 then true else
             decr acc
             false
+
     let yieldPositionAndData res = async {
         let! (Token.Unpack (_,pos')), data = res
         return pos', data }
@@ -1075,8 +1073,15 @@ type EqxContext
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
         let direction = defaultArg direction Direction.Forward
-        let predicate = match maxCount with Some limit -> maxCountPredicate limit | None -> fun _ -> false
-        return! gateway.Read logger None stream direction startPos predicate }
+        if maxCount = Some 0 then
+            // Search semantics include the first hit so we need to special case this anyway
+            return Token.create stream (defaultArg startPos Position.FromKnownEmpty), Array.empty
+        else
+            let predicate =
+                match maxCount with
+                | Some limit -> maxCountPredicate limit
+                | None -> fun _ -> false
+            return! gateway.Read logger None stream direction startPos predicate }
 
     /// Establishes the current position of the stream in as effficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
@@ -1114,7 +1119,6 @@ type EqxContext
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
-[<AutoOpen>]
 /// Api as defined in the Equinox Specification
 /// Note the EqxContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's WipBatch
 module Events =
