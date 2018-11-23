@@ -7,9 +7,11 @@ module Events =
     type Preferences = { manyPromotions : bool; littlePromotions : bool; productReview : bool; quickSurveys : bool }
     type Value = { email : string; preferences : Preferences }
 
+    let [<Literal>] EventTypeName = "contactPreferencesChanged"
     type Event =
-        | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
+        | [<System.Runtime.Serialization.DataMember(Name = EventTypeName)>]Updated of Value
         interface TypeShape.UnionContract.IUnionContract
+    let eventTypeNames = System.Collections.Generic.HashSet<string>([EventTypeName])
 
 module Folds =
     type State = Events.Preferences

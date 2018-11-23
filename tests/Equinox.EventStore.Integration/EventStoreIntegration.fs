@@ -67,9 +67,9 @@ type Tests(testOutputHelper) =
         let capture = LogCaptureBuffer()
         let logger =
             Serilog.LoggerConfiguration()
-                .WriteTo.Seq("http://localhost:5341")
                 .WriteTo.Sink(testOutput)
                 .WriteTo.Sink(capture)
+                .WriteTo.Seq("http://localhost:5341")
                 .CreateLogger()
         logger, capture
 

@@ -1,6 +1,6 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
-open Equinox.Cosmos
+open Equinox.Cosmos.Builder
 open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
@@ -21,7 +21,7 @@ let createServiceGes gateway log =
     Backend.Favorites.Service(log, resolveStream)
 
 let createServiceEqx gateway log =
-    let resolveStream (StreamArgs args) = EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots compact).Create(args)
+    let resolveStream = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Projection compact).Create
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =
@@ -58,7 +58,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Cosmos, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createEqxGateway conn defaultBatchSize
+        let gateway = createEqxStore conn defaultBatchSize
         let service = createServiceEqx gateway log
         do! act service args
     }

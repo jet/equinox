@@ -2,7 +2,7 @@
 
 open Argu
 open Domain
-open Equinox.Cosmos
+open Equinox.Cosmos.Builder
 open Equinox.EventStore
 open Infrastructure
 open Serilog
@@ -119,7 +119,7 @@ module Cosmos =
     let connect (log: ILogger) discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
             .Connect("equinox-cli", discovery)
-    let createGateway connection batchSize = EqxGateway(connection, EqxBatchingPolicy(maxBatchSize = batchSize))
+    let createGateway connection maxItems = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=maxItems))
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type Store =
@@ -147,22 +147,19 @@ module Test =
             else None
         let eqxCache =
             if targs.Contains Cached then
-                let c = Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50)
-                Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
+                let c = Equinox.Cosmos.Builder.Caching.Cache("Cli", sizeMb = 50)
+                Equinox.Cosmos.Builder.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
         let resolveStream =
             match store with
             | Store.Mem store ->
                 Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create
             | Store.Es gateway ->
-                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create(streamName)
+                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create
             | Store.Cosmos (gateway, databaseId, connectionId) ->
-                if targs.Contains Indexed then
-                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.IndexedSearch index, ?caching = cache)
-                        .Create(databaseId, connectionId, streamName)
-                else
-                    EqxStreamBuilder(gateway, codec, fold, initial, Equinox.Cosmos.AccessStrategy.RollingSnapshots snapshot, ?caching = cache)
-                        .Create(databaseId, connectionId, streamName)
+                let store = EqxStore(gateway, EqxCollections(databaseId, connectionId))
+                if targs.Contains Indexed then EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection snapshot, ?caching = eqxCache).Create
+                else EqxStreamBuilder(store, codec, fold, initial, ?access=None, ?caching = eqxCache).Create
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId
@@ -172,18 +169,18 @@ module Test =
 
 [<AutoOpen>]
 module SerilogHelpers =
-    let (|CosmosReadRu|CosmosWriteRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
+    let inline (|Stats|) ({ interval = i; ru = ru }: Equinox.Cosmos.Log.Measurement) = ru, let e = i.Elapsed in int64 e.TotalMilliseconds
+    let (|CosmosReadRu|CosmosWriteRu|CosmosResyncRu|CosmosSliceRu|) (evt : Equinox.Cosmos.Log.Event) =
         match evt with
-        | Equinox.Cosmos.Log.Index { ru = ru }
-        | Equinox.Cosmos.Log.IndexNotFound { ru = ru }
-        | Equinox.Cosmos.Log.IndexNotModified { ru = ru }
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Forward,_, { ru = ru })
-        | Equinox.Cosmos.Log.Batch (Equinox.Cosmos.Direction.Backward,_, { ru = ru }) -> CosmosReadRu ru
-        | Equinox.Cosmos.Log.WriteSuccess {ru = ru }
-        | Equinox.Cosmos.Log.WriteConflict {ru = ru }  -> CosmosWriteRu ru
+        | Equinox.Cosmos.Log.Index (Stats s)
+        | Equinox.Cosmos.Log.IndexNotFound (Stats s)
+        | Equinox.Cosmos.Log.IndexNotModified (Stats s)
+        | Equinox.Cosmos.Log.Batch (_,_, (Stats s)) -> CosmosReadRu s
+        | Equinox.Cosmos.Log.WriteSuccess (Stats s)
+        | Equinox.Cosmos.Log.WriteConflict (Stats s) -> CosmosWriteRu s
+        | Equinox.Cosmos.Log.WriteResync (Stats s) -> CosmosResyncRu s
         // slices are rolled up into batches so be sure not to double-count
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Forward,{ ru = ru })
-        | Equinox.Cosmos.Log.Slice (Equinox.Cosmos.Direction.Backward,{ ru = ru }) -> CosmosSliceRu ru
+        | Equinox.Cosmos.Log.Slice (_,{ ru = ru }) -> CosmosSliceRu ru
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
@@ -191,15 +188,22 @@ module SerilogHelpers =
         match logEvent.Properties.TryGetValue("cosmosEvt") with
         | true, SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e
         | _ -> None
+    type RuCounter =
+        { mutable rux100: int64; mutable count: int64; mutable ms: int64 }
+        static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
+        member __.Ingest (ru, ms) =
+            Interlocked.Increment(&__.count) |> ignore
+            Interlocked.Add(&__.rux100, int64 (ru*100.)) |> ignore
+            Interlocked.Add(&__.ms, ms) |> ignore
     type RuCounterSink() =
-        static let mutable readX10 = 0L
-        static let mutable writeX10 = 0L
-        static member Read = readX10 / 10L
-        static member Write = writeX10 / 10L
+        static member val Read = RuCounter.Create()
+        static member val Write = RuCounter.Create()
+        static member val Resync = RuCounter.Create()
         interface Serilog.Core.ILogEventSink with
             member __.Emit logEvent = logEvent |> function
-                | CosmosMetric (CosmosReadRu ru) -> Interlocked.Add(&readX10, int64 (ru*10.)) |> ignore
-                | CosmosMetric (CosmosWriteRu ru) -> Interlocked.Add(&writeX10, int64 (ru*10.)) |> ignore
+                | CosmosMetric (CosmosReadRu stats) -> RuCounterSink.Read.Ingest stats
+                | CosmosMetric (CosmosWriteRu stats) -> RuCounterSink.Write.Ingest stats
+                | CosmosMetric (CosmosResyncRu stats) -> RuCounterSink.Resync.Ingest stats
                 | _ -> ()
 
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
@@ -260,7 +264,7 @@ let main argv =
             let resultFile = createResultLog report
             for r in results do
                 resultFile.Information("Aggregate: {aggregate}", r)
-            log.Information("Run completed; Current memory allocation: {bytes:n0}", GC.GetTotalMemory(true))
+            log.Information("Run completed; Current memory allocation: {bytes:n2}MB", (GC.GetTotalMemory(true) |> float) / 1024./1024.)
             0
 
         match args.GetSubCommand() with
@@ -309,15 +313,34 @@ let main argv =
             match sargs.TryGetSubCommand() with
             | Some (Provision args) ->
                 let rus = args.GetResult(Rus)
-                log.Information("Configuring CosmosDb with Request Units (RU) Provision: {rus:n0}", rus)
-                Equinox.Cosmos.Initialization.initialize conn.Client dbName collName rus |> Async.RunSynchronously
+                log.Information("Configuring CosmosDb Collection with Throughput Provision: {rus:n0} RU/s", rus)
+                Equinox.Cosmos.Sync.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
                 0
             | Some (Run targs) ->
                 let conn = Store.Cosmos (Cosmos.createGateway conn defaultBatchSize, dbName, collName)
                 let res = runTest log conn targs
-                let read, write = RuCounterSink.Read, RuCounterSink.Write
-                let total = read+write
-                log.Information("Total Request Charges sustained in test: {totalRus:n0} (R:{readRus:n0}, W:{writeRus:n0})", total, read, write)
+                let stats =
+                  [ "Read", RuCounterSink.Read
+                    "Write", RuCounterSink.Write
+                    "Resync", RuCounterSink.Resync ]
+                let mutable totalCount, totalRc, totalMs = 0L, 0., 0L
+                let logActivity name count rc lat =
+                    log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
+                        name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
+                for name, stat in stats do
+                    let ru = float stat.rux100 / 100.
+                    totalCount <- totalCount + stat.count
+                    totalRc <- totalRc + ru
+                    totalMs <- totalMs + stat.ms
+                    logActivity name stat.count ru stat.ms
+                logActivity "TOTAL" totalCount totalRc totalMs
+                let measures : (string * (TimeSpan -> float)) list =
+                  [ "s", fun x -> x.TotalSeconds
+                    "m", fun x -> x.TotalMinutes
+                    "h", fun x -> x.TotalHours ]
+                let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
+                let duration = targs.GetResult(DurationM,1.) |> TimeSpan.FromMinutes
+                for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d)
                 res
             | _ -> failwith "init or run is required"
         | _ -> failwith "ERROR: please specify memory, es or cosmos Store"

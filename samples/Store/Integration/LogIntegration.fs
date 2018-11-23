@@ -31,7 +31,8 @@ module EquinoxCosmosInterop =
         let action, metric, batches, ru =
             match evt with
             | Log.WriteSuccess m -> "EqxAppendToStreamAsync", m, None, m.ru
-            | Log.WriteConflict m -> "EqxAppendToStreamAsync", m, None, m.ru
+            | Log.WriteConflict m -> "EqxAppendToStreamConflictAsync", m, None, m.ru
+            | Log.WriteResync m -> "EqxAppendToStreamResyncAsync", m, None, m.ru
             | Log.Slice (Direction.Forward,m) -> "EqxReadStreamEventsForwardAsync", m, None, m.ru
             | Log.Slice (Direction.Backward,m) -> "EqxReadStreamEventsBackwardAsync", m, None, m.ru
             | Log.Batch (Direction.Forward,c,m) -> "EqxLoadF", m, Some c, m.ru
@@ -117,13 +118,14 @@ type Tests() =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` context cartId skuId = Async.RunSynchronously <| async {
-        let buffer = ResizeArray<string>()
+    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` context skuId = Async.RunSynchronously <| async {
         let batchSize = defaultBatchSize
-        let (log,capture) = createLoggerWithMetricsExtraction buffer.Add
+        let buffer = ConcurrentQueue<string>()
+        let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createEqxGateway conn batchSize
-        let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithCompactionEventType gateway)
-        let itemCount, cartId = batchSize / 2 + 1, cartId ()
-        do! act buffer capture service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
+        let gateway = createEqxStore conn batchSize
+        let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithProjection gateway)
+        let itemCount = batchSize / 2 + 1
+        let cartId = Guid.NewGuid() |> CartId
+        do! act buffer service itemCount context cartId skuId "Eqx Index " // one is a 404, one is a 200
     }
