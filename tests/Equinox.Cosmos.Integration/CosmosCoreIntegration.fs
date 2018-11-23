@@ -12,7 +12,7 @@ open System.Text
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-type EventData = { eventType: string; data: byte[] } with
+type EventData = { eventType:string; data: byte[] } with
     interface Events.IEvent with
         member __.EventType = __.eventType
         member __.Data = __.data
@@ -56,7 +56,7 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesMax 30 // observed 26.62 was 11
+        verifyRequestChargesMax 29 // observed 28.61 // was 11
     }
 
     let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
@@ -81,7 +81,7 @@ type Tests(testOutputHelper) =
         return EventData.Create(0,6)
     }
 
-    let verifyCorrectEventsEx direction baseIndex (expected: Events.IEvent []) (xs: Events.IOrderedEvent[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: Events.IEvent []) (xs: Events.IIndexedEvent[]) =
         let xs, baseIndex =
             if direction = Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
