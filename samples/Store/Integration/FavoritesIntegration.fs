@@ -6,7 +6,7 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial, compact = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.compact
+let fold, initial, snapshot = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.snapshot
 
 let createMemoryStore () =
     new VolatileStore()
@@ -15,7 +15,8 @@ let createServiceMem log store =
 
 let codec = genCodec<Domain.Favorites.Events.Event>()
 let createServiceGes gateway log =
-    Backend.Favorites.Service(log, GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots compact).Create)
+    let resolveStream = GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Create
+    Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

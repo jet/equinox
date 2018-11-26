@@ -23,19 +23,19 @@ let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
-    let fold, initial, compact = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.compact
+    let fold, initial, snapshot = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.snapshot
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization log gateway =
         Backend.Cart.Service(log, GesStreamBuilder(gateway, codec, fold, initial).Create)
     let createServiceWithCompaction log gateway =
-        let resolveStream streamName = GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact).Create(streamName)
+        let resolveStream streamName = GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Create(streamName)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Backend.Cart.Service(log, GesStreamBuilder(gateway, codec, fold, initial, caching = sliding20m).Create)
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots compact, sliding20m).Create)
+        Backend.Cart.Service(log, GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, sliding20m).Create)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
