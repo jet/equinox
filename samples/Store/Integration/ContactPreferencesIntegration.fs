@@ -22,7 +22,7 @@ let resolveStreamGesWithoutAccessStrategy gateway =
     GesResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 let resolveStreamEqxWithKnownEventTypeSemantics gateway =
-    EqxStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType (System.Collections.Generic.HashSet ["contactPreferencesChanged"])).Create
+    EqxStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Create
 let resolveStreamEqxWithoutCustomAccessStrategy gateway =
     EqxStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create
 

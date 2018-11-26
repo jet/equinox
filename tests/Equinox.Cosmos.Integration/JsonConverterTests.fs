@@ -36,7 +36,7 @@ type Base64ZipUtf8Tests() =
     [<Fact>]
     let ``serializes, achieving compression`` () =
         let encoded = unionEncoder.Encode(A { embed = String('x',5000) })
-        let e : Store.Projection =
+        let e : Store.Unfold =
             {   i = 42L
                 t = encoded.caseName
                 d = encoded.payload
@@ -53,14 +53,14 @@ type Base64ZipUtf8Tests() =
         if hasNulls then () else
 
         let encoded = unionEncoder.Encode value
-        let e : Store.Projection =
+        let e : Store.Unfold =
             {   i = 42L
                 t = encoded.caseName
                 d = encoded.payload
                 m = null }
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
-        let des = JsonConvert.DeserializeObject<Store.Projection>(ser)
-        let d : Equinox.UnionCodec.EncodedUnion<_> = { caseName = des.t; payload=des.d }
+        let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
+        let d : Equinox.UnionCodec.EncodedUnion<_> = { caseName = des.t; payload = des.d }
         let decoded = unionEncoder.Decode d
         test <@ value = decoded @>

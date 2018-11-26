@@ -52,35 +52,38 @@ module SerilogHelpers =
         | _ -> None
     open Equinox.Cosmos
     [<RequireQualifiedAccess>]
-    type EqxAct = Append | Resync | Conflict | SliceForward | SliceBackward | BatchForward | BatchBackward | Index | IndexNotFound | IndexNotModified | SliceWaste
-    let (|EqxAction|) (evt : Equinox.Cosmos.Log.Event) =
-        match evt with
-        | Log.WriteSuccess _ -> EqxAct.Append
-        | Log.WriteResync _ -> EqxAct.Resync
-        | Log.WriteConflict _ -> EqxAct.Conflict
-        | Log.Slice (Direction.Forward,{count = 0}) -> EqxAct.SliceWaste // TODO remove, see comment where these are emitted
-        | Log.Slice (Direction.Forward,_) -> EqxAct.SliceForward
-        | Log.Slice (Direction.Backward,{count = 0}) -> EqxAct.SliceWaste // TODO remove, see comment where these are emitted
-        | Log.Slice (Direction.Backward,_) -> EqxAct.SliceBackward
-        | Log.Batch (Direction.Forward,_,_) -> EqxAct.BatchForward
-        | Log.Batch (Direction.Backward,_,_) -> EqxAct.BatchBackward
-        | Log.Index _ -> EqxAct.Index
-        | Log.IndexNotFound _ -> EqxAct.IndexNotFound
-        | Log.IndexNotModified _ -> EqxAct.IndexNotModified
+    type EqxAct =
+        | Tip | TipNotFound | TipNotModified
+        | ResponseForward | ResponseBackward | ResponseWaste
+        | QueryForward | QueryBackward
+        | Append | Resync | Conflict
+    let (|EqxAction|) = function
+        | Log.Tip _ -> EqxAct.Tip
+        | Log.TipNotFound _ -> EqxAct.TipNotFound
+        | Log.TipNotModified _ -> EqxAct.TipNotModified
+        | Log.Response (Direction.Forward, {count = 0}) -> EqxAct.ResponseWaste // TODO remove, see comment where these are emitted
+        | Log.Response (Direction.Forward,_) -> EqxAct.ResponseForward
+        | Log.Response (Direction.Backward, {count = 0}) -> EqxAct.ResponseWaste // TODO remove, see comment where these are emitted
+        | Log.Response (Direction.Backward,_) -> EqxAct.ResponseBackward
+        | Log.Query (Direction.Forward,_,_) -> EqxAct.QueryForward
+        | Log.Query (Direction.Backward,_,_) -> EqxAct.QueryBackward
+        | Log.SyncSuccess _ -> EqxAct.Append
+        | Log.SyncResync _ -> EqxAct.Resync
+        | Log.SyncConflict _ -> EqxAct.Conflict
     let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Log.Measurement) = ru
-    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosSliceRc|) = function
-        | Log.Index (Stats s)
-        | Log.IndexNotFound (Stats s)
-        | Log.IndexNotModified (Stats s)
-        | Log.Batch (_,_, (Stats s)) -> CosmosReadRc s
-        | Log.WriteSuccess (Stats s)
-        | Log.WriteConflict (Stats s) -> CosmosWriteRc s
-        | Log.WriteResync (Stats s) -> CosmosResyncRc s
+    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|) = function
+        | Log.Tip (Stats s)
+        | Log.TipNotFound (Stats s)
+        | Log.TipNotModified (Stats s)
         // slices are rolled up into batches so be sure not to double-count
-        | Log.Slice (_,Stats s) -> CosmosSliceRc s
+        | Log.Response (_,Stats s) -> CosmosResponseRc s
+        | Log.Query (_,_, (Stats s)) -> CosmosReadRc s
+        | Log.SyncSuccess (Stats s)
+        | Log.SyncConflict (Stats s) -> CosmosWriteRc s
+        | Log.SyncResync (Stats s) -> CosmosResyncRc s
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|CosmosRequestCharge|EquinoxChargeRollup|) = function
-        | CosmosSliceRc _ ->
+        | CosmosResponseRc _ ->
             EquinoxChargeRollup
         | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc as e ->
             CosmosRequestCharge (e,rc)
