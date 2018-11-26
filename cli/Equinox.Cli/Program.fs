@@ -158,8 +158,7 @@ module Test =
                 GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create
             | Store.Cosmos (gateway, databaseId, connectionId) ->
                 let store = EqxStore(gateway, EqxCollections(databaseId, connectionId))
-                let projection = "Compacted",snd snapshot
-                if targs.Contains Indexed then EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection projection, ?caching = eqxCache).Create
+                if targs.Contains Indexed then EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Snapshot snapshot, ?caching = eqxCache).Create
                 else EqxStreamBuilder(store, codec, fold, initial, ?access=None, ?caching = eqxCache).Create
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
@@ -172,16 +171,16 @@ module Test =
 module SerilogHelpers =
     let inline (|Stats|) ({ interval = i; ru = ru }: Equinox.Cosmos.Log.Measurement) = ru, let e = i.Elapsed in int64 e.TotalMilliseconds
     open Equinox.Cosmos
-    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosSliceRc|) = function
-        | Log.Index (Stats s)
-        | Log.IndexNotFound (Stats s)
-        | Log.IndexNotModified (Stats s)
-        | Log.Batch (_,_, (Stats s)) -> CosmosReadRc s
-        | Log.WriteSuccess (Stats s)
-        | Log.WriteConflict (Stats s) -> CosmosWriteRc s
-        | Log.WriteResync (Stats s) -> CosmosResyncRc s
+    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|) = function
+        | Log.Tip (Stats s)
+        | Log.TipNotFound (Stats s)
+        | Log.TipNotModified (Stats s)
+        | Log.Query (_,_, (Stats s)) -> CosmosReadRc s
         // slices are rolled up into batches so be sure not to double-count
-        | Log.Slice (_,(Stats s)) -> CosmosSliceRc s
+        | Log.Response (_,(Stats s)) -> CosmosResponseRc s
+        | Log.SyncSuccess (Stats s)
+        | Log.SyncConflict (Stats s) -> CosmosWriteRc s
+        | Log.SyncResync (Stats s) -> CosmosResyncRc s
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None

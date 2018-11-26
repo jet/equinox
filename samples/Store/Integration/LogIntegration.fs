@@ -25,22 +25,22 @@ module EquinoxEsInterop =
 module EquinoxCosmosInterop =
     open Equinox.Cosmos
     [<NoEquality; NoComparison>]
-    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option; ru: float } with
+    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" __.action __.stream __.action __.interval.Elapsed __.ru
     let flatten (evt : Log.Event) : FlatMetric =
         let action, metric, batches, ru =
             match evt with
-            | Log.WriteSuccess m -> "EqxAppendToStreamAsync", m, None, m.ru
-            | Log.WriteConflict m -> "EqxAppendToStreamConflictAsync", m, None, m.ru
-            | Log.WriteResync m -> "EqxAppendToStreamResyncAsync", m, None, m.ru
-            | Log.Slice (Direction.Forward,m) -> "EqxReadStreamEventsForwardAsync", m, None, m.ru
-            | Log.Slice (Direction.Backward,m) -> "EqxReadStreamEventsBackwardAsync", m, None, m.ru
-            | Log.Batch (Direction.Forward,c,m) -> "EqxLoadF", m, Some c, m.ru
-            | Log.Batch (Direction.Backward,c,m) -> "EqxLoadB", m, Some c, m.ru
-            | Log.Index m -> "EqxLoadI", m, None, m.ru
-            | Log.IndexNotFound m -> "EqxLoadI404", m, None, m.ru
-            | Log.IndexNotModified m -> "EqxLoadI302", m, None, m.ru
-        {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; batches = batches
+            | Log.Tip m -> "CosmosTip", m, None, m.ru
+            | Log.TipNotFound m -> "CosmosTip404", m, None, m.ru
+            | Log.TipNotModified m -> "CosmosTip302", m, None, m.ru
+            | Log.Query (Direction.Forward,c,m) -> "CosmosQueryF", m, Some c, m.ru
+            | Log.Query (Direction.Backward,c,m) -> "CosmosQueryB", m, Some c, m.ru
+            | Log.Response (Direction.Forward,m) -> "CosmosResponseF", m, None, m.ru
+            | Log.Response (Direction.Backward,m) -> "CosmosResponseB", m, None, m.ru
+            | Log.SyncSuccess m -> "CosmosSync200", m, None, m.ru
+            | Log.SyncConflict m -> "CosmosSync409", m, None, m.ru
+            | Log.SyncResync m -> "CosmosSyncResync", m, None, m.ru
+        {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; responses = batches
             interval = StopwatchInterval(metric.interval.StartTicks,metric.interval.EndTicks); ru = ru }
 
 type SerilogMetricsExtractor(emit : string -> unit) =
