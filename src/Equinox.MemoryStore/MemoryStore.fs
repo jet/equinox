@@ -79,7 +79,7 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
             match store.TryLoad<'event> streamName log with
             | None -> return Token.ofEmpty streamName initial
             | Some events -> return Token.ofEventArray streamName fold initial events }
-        member __.TrySync (log : ILogger) (Token.Unpack token, state) (events : 'event list, _state': 'state) = async {
+        member __.TrySync (log : ILogger) (Token.Unpack token, state) (events : 'event list) = async {
             let trySyncValue currentValue =
                 if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue events)

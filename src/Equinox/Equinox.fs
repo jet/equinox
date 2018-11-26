@@ -51,7 +51,7 @@ type IStream<'event, 'state> =
     /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
     abstract TrySync: log: ILogger
         -> token: Storage.StreamToken * originState: 'state
-        -> eventsAndState: 'event list * 'state
+        -> events: 'event list
         -> Async<Storage.SyncResult<'state>>
 
 /// Store-agnostic interface representing interactions an Application can have with a set of streams
@@ -66,7 +66,7 @@ type ICategory<'event, 'state> =
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
     abstract TrySync : log: ILogger
         -> token: Storage.StreamToken * originState: 'state
-        -> events: 'event list * state: 'state
+        -> events: 'event list
         -> Async<Storage.SyncResult<'state>>
 
 /// Defines a hook enabling retry and backoff policies to be specified
@@ -80,10 +80,10 @@ module private Flow =
     /// Represents stream and folding state between the load and run/render phases
     type SyncState<'event, 'state>
         (   fold, originState : Storage.StreamToken * 'state,
-            trySync : ILogger -> Storage.StreamToken * 'state -> 'event list * 'state-> Async<Storage.SyncResult<'state>>) =
+            trySync : ILogger -> Storage.StreamToken * 'state -> 'event list -> Async<Storage.SyncResult<'state>>) =
         let mutable tokenAndState = originState
-        let tryOr log eventsAndState handleFailure = async {
-            let! res = trySync log tokenAndState eventsAndState
+        let tryOr log events handleFailure = async {
+            let! res = trySync log tokenAndState events
             match res with
             | Storage.SyncResult.Conflict resync ->
                 return! handleFailure resync
@@ -95,15 +95,15 @@ module private Flow =
         member __.State = snd __.Memento
         member __.CreateContext(): Context<'event, 'state> =
             Context<'event, 'state>(fold, __.State)
-        member __.TryOrResync (retryPolicy : IRetryPolicy) (attemptNumber: int) (log : ILogger) eventsAndState =
+        member __.TryOrResync (retryPolicy : IRetryPolicy) (attemptNumber: int) (log : ILogger) events =
             let resyncInPreparationForRetry resync = async {
                 let! streamState' = retryPolicy.Execute(log, attemptNumber, resync)
                 tokenAndState <- streamState'
                 return false }
-            tryOr log eventsAndState resyncInPreparationForRetry
-        member __.TryOrThrow log eventsAndState attempt =
+            tryOr log events resyncInPreparationForRetry
+        member __.TryOrThrow log events attempt =
             let throw _ = async { return raise <| MaxResyncsExhaustedException attempt }
-            tryOr log eventsAndState throw |> Async.Ignore
+            tryOr log events throw |> Async.Ignore
 
     /// Obtain a representation of the current state and metadata from the underlying storage stream
     let load (fold : 'state -> 'event seq -> 'state) (log : ILogger) (stream : IStream<'event, 'state>)
@@ -129,10 +129,10 @@ module private Flow =
                 return outcome
             elif attempt = maxSyncAttempts then
                 log.Debug "Max Sync Attempts exceeded"
-                do! sync.TryOrThrow log (events, ctx.State) attempt
+                do! sync.TryOrThrow log events attempt
                 return outcome
             else
-                let! committed = sync.TryOrResync retryPolicy attempt log (events, ctx.State)
+                let! committed = sync.TryOrResync retryPolicy attempt log events
                 if not committed then
                     log.Debug "Resyncing and retrying"
                     return! loop (attempt + 1)
@@ -161,8 +161,8 @@ module Stream =
         interface IStream<'event, 'state> with
             member __.Load log =
                 category.Load streamName log
-            member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list, state: 'state) =
-                category.TrySync log (token, originState) (events,state)
+            member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list) =
+                category.TrySync log (token, originState) events
 
     /// Handles case where some earlier processing has loaded or determined a the state of a stream, allowing us to avoid a read roundtrip
     type private InitializedStream<'event, 'state>(inner : IStream<'event, 'state>, memento : Storage.StreamToken * 'state) =
@@ -172,8 +172,8 @@ module Stream =
                 match preloadedTokenAndState with
                 | Some value -> async { preloadedTokenAndState <- None; return value }
                 | None -> inner.Load log
-            member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list, state: 'state) =
-                inner.TrySync log (token, originState) (events,state)
+            member __.TrySync (log: ILogger) (token: Storage.StreamToken, originState: 'state) (events: 'event list) =
+                inner.TrySync log (token, originState) events
 
     let create (category : ICategory<'event, 'state>) streamName : IStream<'event, 'state> = Stream(category, streamName) :> _
     let ofMemento (memento : Storage.StreamToken * 'state) (x : IStream<_,_>) : IStream<'event, 'state> = InitializedStream(x, memento) :> _

@@ -11,13 +11,11 @@ module Events =
     type ItemWaiveReturnsInfo =     { context: ContextInfo; skuId: SkuId; waived: bool }
 
     module Compaction =
-        let [<Literal>] EventType = "compact/1"
         type StateItemInfo =        { skuId: SkuId; quantity: int; returnsWaived: bool }
         type State =                { items: StateItemInfo[] }
 
     type Event =
-        | [<System.Runtime.Serialization.DataMember(Name = Compaction.EventType)>]
-          Compacted                 of Compaction.State
+        | Compacted                 of Compaction.State
         | ItemAdded                 of ItemAddInfo
         | ItemRemoved               of ItemRemoveInfo
         | ItemQuantityChanged       of ItemQuantityChangeInfo
@@ -42,8 +40,8 @@ module Folds =
         | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
     let fold state = Seq.fold evolve state
-    let compact = Events.Compaction.EventType, fun state -> Events.Compacted (State.toSnapshot state)
-
+    let isOrigin = function Events.Compacted _ -> true | _ -> false
+    let snapshot = isOrigin, State.toSnapshot >> Events.Compacted
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
     | AddItem               of Context * SkuId * quantity: int

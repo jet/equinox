@@ -14,10 +14,10 @@ let createServiceMem log store =
     Backend.ContactPreferences.Service(log, MemoryStreamBuilder(store, fold, initial).Create)
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
-let resolveStreamGesWithCompactionSemantics gateway streamName =
-    GesStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create(streamName)
-let resolveStreamGesWithoutCompactionSemantics gateway streamName =
-    GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create(streamName)
+let resolveStreamGesWithOptimizedStorageSemantics gateway =
+    GesStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create
+let resolveStreamGesWithoutAccessStrategy gateway =
+    GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -44,12 +44,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutCompactionSemantics
+        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithCompactionSemantics
+        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithOptimizedStorageSemantics
         do! act service args
     }

@@ -5,12 +5,10 @@ module Events =
     type Favorited =                            { date: System.DateTimeOffset; skuId: SkuId }
     type Unfavorited =                          { skuId: SkuId }
     module Compaction =
-        let [<Literal>] EventType = "compacted/1"
         type Compacted =                        { net: Favorited[] }
 
     type Event =
-        | [<System.Runtime.Serialization.DataMember(Name = Compaction.EventType)>]
-          Compacted                             of Compaction.Compacted
+        | Compacted                             of Compaction.Compacted
         | Favorited                             of Favorited
         | Unfavorited                           of Unfavorited
         interface TypeShape.UnionContract.IUnionContract
@@ -37,7 +35,8 @@ module Folds =
         let s = InternalState state
         for e in events do evolve s e
         s.AsState()
-    let compact = Events.Compaction.EventType, fun state -> Events.Compacted { net = state }
+    let isOrigin = function Events.Compacted _ -> true | _ -> false
+    let snapshot = isOrigin, fun state -> Events.Compacted { net = state }
 
 type Command =
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
