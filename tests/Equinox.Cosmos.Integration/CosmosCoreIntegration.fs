@@ -101,7 +101,7 @@ type Tests(testOutputHelper) =
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
         let! pos = Events.getNextIndex ctx streamName
-        test <@ [EqxAct.IndexNotFound] = capture.ExternalCalls @>
+        test <@ [EqxAct.TipNotFound] = capture.ExternalCalls @>
         0L =! pos
         verifyRequestChargesMax 1 // for a 404 by definition
         capture.Clear()
@@ -132,7 +132,7 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
-        test <@ [EqxAct.Index] = capture.ExternalCalls @>
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 2
         capture.Clear()
         pos =! res
@@ -148,12 +148,12 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
-        test <@ [EqxAct.Index] = capture.ExternalCalls @>
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 50 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
         capture.Clear()
 
         let! _pos = ctx.Sync(stream,pos)
-        test <@ [EqxAct.IndexNotModified] = capture.ExternalCalls @>
+        test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
         verifyRequestChargesMax 1 // for a 302 by definition - when an etag IfNotMatch is honored, you only pay one RU
         capture.Clear()
     }
@@ -205,7 +205,7 @@ type Tests(testOutputHelper) =
 
         verifyCorrectEvents 1L expected res
 
-        test <@ List.replicate 2 EqxAct.SliceForward @ [EqxAct.BatchForward] = capture.ExternalCalls @>
+        test <@ List.replicate 2 EqxAct.ResponseForward @ [EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 8 // observed 6.14 // was 3
     }
 
@@ -222,7 +222,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 1L expected res
 
         // 2 items atm
-        test <@ [EqxAct.SliceForward; EqxAct.SliceForward; EqxAct.BatchForward] = capture.ExternalCalls @>
+        test <@ [EqxAct.ResponseForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 7 // observed 6.14 // was 6
     }
 
@@ -239,7 +239,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 1L expected res
 
         // TODO [implement and] prove laziness
-        test <@ List.replicate 2 EqxAct.SliceForward @ [EqxAct.BatchForward] = capture.ExternalCalls @>
+        test <@ List.replicate 2 EqxAct.ResponseForward @ [EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 10 // observed 8.99 // was 3
     }
 
@@ -259,7 +259,7 @@ type Tests(testOutputHelper) =
 
         verifyCorrectEventsBackward 4L expected res
 
-        test <@ List.replicate 3 EqxAct.SliceBackward @ [EqxAct.BatchBackward] = capture.ExternalCalls @>
+        test <@ List.replicate 3 EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
         verifyRequestChargesMax 10 // observed 8.98 // was 3
     }
 

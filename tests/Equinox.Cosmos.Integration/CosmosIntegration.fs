@@ -21,12 +21,12 @@ module Cart =
     let projection = "Compacted",snd snapshot
     let createServiceWithProjection connection batchSize log =
         let store = createEqxStore connection batchSize
-        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection projection).Create
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Snapshot snapshot).Create
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithProjectionAndCaching connection batchSize log cache =
         let store = createEqxStore connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Projection projection, sliding20m).Create
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Snapshot snapshot, sliding20m).Create
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
@@ -37,7 +37,7 @@ module ContactPreferences =
         let resolveStream = EqxStreamBuilder(gateway, codec, fold, initial).Create
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService createGateway log =
-        let resolveStream = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType (System.Collections.Generic.HashSet ["contactPreferencesChanged"])).Create
+        let resolveStream = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Create
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -69,7 +69,7 @@ type Tests(testOutputHelper) =
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 6
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service addRemoveCount
-        test <@ [EqxAct.SliceWaste; EqxAct.BatchBackward; EqxAct.Append] = capture.ExternalCalls @>
+        test <@ [EqxAct.ResponseWaste; EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
         // Restart the counting
         capture.Clear()
 
@@ -80,7 +80,7 @@ type Tests(testOutputHelper) =
 
         // Need to read 4 batches to read 11 events in batches of 3
         let expectedBatches = ceil(float expectedEventCount/float batchSize) |> int
-        test <@ List.replicate (expectedBatches-1) EqxAct.SliceBackward @ [EqxAct.SliceBackward; EqxAct.BatchBackward] = capture.ExternalCalls @>
+        test <@ List.replicate (expectedBatches-1) EqxAct.ResponseBackward @ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -163,7 +163,7 @@ type Tests(testOutputHelper) =
                 && [EqxAct.Resync] = c2 @>
     }
 
-    let singleBatchBackwards = [EqxAct.SliceBackward; EqxAct.BatchBackward]
+    let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -186,7 +186,7 @@ type Tests(testOutputHelper) =
         let! result = service.Read email
         test <@ value = result @>
 
-        test <@ [EqxAct.Index; EqxAct.Append; EqxAct.Index] = capture.ExternalCalls @>
+        test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -203,17 +203,17 @@ type Tests(testOutputHelper) =
         let! _ = service2.Read cartId
 
         // ... should see a single read as we are writes are cached
-        test <@ [EqxAct.IndexNotFound; EqxAct.Append; EqxAct.Index] = capture.ExternalCalls @>
+        test <@ [EqxAct.TipNotFound; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
 
         // Add two more - the roundtrip should only incur a single read
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
-        test <@ [EqxAct.Index; EqxAct.Append] = capture.ExternalCalls @>
+        test <@ [EqxAct.Tip; EqxAct.Append] = capture.ExternalCalls @>
 
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service2.Read cartId
-        test <@ [EqxAct.Index] = capture.ExternalCalls @>
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -231,17 +231,17 @@ type Tests(testOutputHelper) =
         let! _ = service2.Read cartId
 
         // ... should see a single Cached Indexed read given writes are cached and writer emits etag
-        test <@ [EqxAct.IndexNotFound; EqxAct.Append; EqxAct.IndexNotModified] = capture.ExternalCalls @>
+        test <@ [EqxAct.TipNotFound; EqxAct.Append; EqxAct.TipNotModified] = capture.ExternalCalls @>
 
         // Add two more - the roundtrip should only incur a single read, which should be cached by virtue of being a second one in successono
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
-        test <@ [EqxAct.IndexNotModified; EqxAct.Append] = capture.ExternalCalls @>
+        test <@ [EqxAct.TipNotModified; EqxAct.Append] = capture.ExternalCalls @>
 
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service2.Read cartId
         let! _ = service2.Read cartId
         // First is cached because writer emits etag, second remains cached
-        test <@ [EqxAct.IndexNotModified; EqxAct.IndexNotModified] = capture.ExternalCalls @>
+        test <@ [EqxAct.TipNotModified; EqxAct.TipNotModified] = capture.ExternalCalls @>
     }

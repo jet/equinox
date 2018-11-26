@@ -22,8 +22,7 @@ let createServiceGes gateway log =
     Backend.Favorites.Service(log, resolveStream)
 
 let createServiceEqx gateway log =
-    let projection = "Compacted",snd snapshot
-    let resolveStream = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Projection projection).Create
+    let resolveStream = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Create
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =
