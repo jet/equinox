@@ -32,7 +32,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit conn defaultBatchSize =
-        EqxContext(conn,collections,log,?defaultMaxItems=defaultBatchSize)
+        EqxContext(conn,collections,log,?defaultMaxItems=defaultBatchSize,maxEventsPerSlice=10)
     let mkContext conn = mkContextWithItemLimit conn None
 
     let verifyRequestChargesMax rus =
@@ -48,7 +48,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| EventData.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 14 // observed 12.03 // was 10
+        verifyRequestChargesMax 10
         // Clear the counters
         capture.Clear()
 
@@ -107,28 +107,25 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         let mutable pos = 0L
-        let ae = false // TODO fix bug
         for appendBatchSize in [4; 5; 9] do
-            if ae then
-                let! res = Events.appendAtEnd ctx streamName <| EventData.Create (int pos,appendBatchSize)
-                pos <- pos + int64 appendBatchSize
-                //let! res = Events.append ctx streamName pos (Array.replicate appendBatchSize event)
-                test <@ [EqxAct.Append] = capture.ExternalCalls @>
-                pos =! res
-            else
-                let! res = Events.append ctx streamName pos <| EventData.Create (int pos,appendBatchSize)
-                pos <- pos + int64 appendBatchSize
-                //let! res = Events.append ctx streamName pos (Array.replicate appendBatchSize event)
-                test <@ [EqxAct.Append] = capture.ExternalCalls @>
-                AppendResult.Ok pos =! res
-            verifyRequestChargesMax 50 // was 20, observed 41.64 // 15.59 observed
+            let! res = Events.appendAtEnd ctx streamName <| EventData.Create (int pos,appendBatchSize)
+            test <@ [EqxAct.Append] = capture.ExternalCalls @>
+            pos <- pos + int64 appendBatchSize
+            pos =! res
+            verifyRequestChargesMax 20 // 15.59 observed
+            capture.Clear()
+
+            let! res = Events.getNextIndex ctx streamName
+            test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+            verifyRequestChargesMax 2
+            pos =! res
             capture.Clear()
 
         let! res = Events.appendAtEnd ctx streamName <| EventData.Create (int pos,42)
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 180 // observed 167.32 // was 20
+        verifyRequestChargesMax 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -140,11 +137,10 @@ type Tests(testOutputHelper) =
         // Demonstrate benefit/mechanism for using the Position-based API to avail of the etag tracking
         let stream  = ctx.CreateStream streamName
 
-        let max = 2000 // observed to time out server side // WAS 5000
-        let extrasCount = match extras with x when x * 100 > max -> max | x when x < 1 -> 1 | x -> x*100
+        let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, EventData.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 7000 // 6867.7 observed // was 300 // 278 observed
+        verifyRequestChargesMax 300 // 278 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -176,7 +172,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 14 // observed 12.73 // was 10
+        verifyRequestChargesMax 10
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
@@ -186,7 +182,7 @@ type Tests(testOutputHelper) =
         | AppendResult.Conflict (1L, e) -> verifyCorrectEvents 0L expected e
         | x -> x |> failwithf "Unexpected %A"
         test <@ [EqxAct.Resync] = capture.ExternalCalls @>
-        verifyRequestChargesMax 5 // observed 4.21 // was 4
+        verifyRequestChargesMax 4
         capture.Clear()
     }
 
@@ -205,25 +201,25 @@ type Tests(testOutputHelper) =
 
         verifyCorrectEvents 1L expected res
 
-        test <@ List.replicate 2 EqxAct.ResponseForward @ [EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 8 // observed 6.14 // was 3
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        verifyRequestChargesMax 3
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get (in 2 batches)`` (TestStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 2)
+        let ctx = mkContextWithItemLimit conn (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
-        let expected = Array.tail expected |> Array.take 3
+        let expected = expected |> Array.take 3
 
-        let! res = Events.get ctx streamName 1L 3
+        let! res = Events.get ctx streamName 0L 3
 
-        verifyCorrectEvents 1L expected res
+        verifyCorrectEvents 0L expected res
 
         // 2 items atm
         test <@ [EqxAct.ResponseForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 7 // observed 6.14 // was 6
+        verifyRequestChargesMax 6
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -242,7 +238,7 @@ type Tests(testOutputHelper) =
         let queryRoundTripsAndItemCounts = function EqxEvent (Log.Query (Direction.Forward, responses, { count = c })) -> Some (responses,c) | _ -> None
         // validate that, despite only requesting max 1 item, we only needed one trip (which contained only one item)
         [1,1] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 4 // 3.07 // was 3 // 2.94
+        verifyRequestChargesMax 3 // 2.94
     }
 
     (* Backward *)
@@ -250,19 +246,19 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getBackwards (TestStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 2)
+        let ctx = mkContextWithItemLimit conn (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
 
         // We want to skip reading the last
-        let expected = Array.take 5 expected
+        let expected = Array.take 5 expected |> Array.tail
 
-        let! res = Events.getBackwards ctx streamName 4L 5
+        let! res = Events.getBackwards ctx streamName 4L 4
 
         verifyCorrectEventsBackward 4L expected res
 
-        test <@ List.replicate 3 EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 10 // observed 8.98 // was 3
+        test <@ List.replicate 2 EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+        verifyRequestChargesMax 3
     }
 
     // TODO 2 batches backward test
@@ -270,19 +266,19 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getAllBackwards (TestStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 2)
+        let ctx = mkContextWithItemLimit conn (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
         capture.Clear()
 
-        let! res = Events.getAllBackwards ctx streamName 10L 2 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun x -> x.Index <> 2L) |> AsyncSeq.toArrayAsync
+        let! res = Events.getAllBackwards ctx streamName 10L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun x -> x.Index <> 2L) |> AsyncSeq.toArrayAsync
         let expected = expected |> Array.skip 2
 
         verifyCorrectEventsBackward 5L expected res
-        // only 2 batches of 2 items triggered
-        test <@ List.replicate 2 EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        // validate that we didnt trigger loading of the last item
+        // only 1 request of 1 item triggered
+        test <@ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
+        // validate that, despite only requesting max 1 item, we only needed one trip, bearing 5 items (from which one item was omitted)
         let queryRoundTripsAndItemCounts = function EqxEvent (Log.Query (Direction.Backward, responses, { count = c })) -> Some (responses,c) | _ -> None
-        [2,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 7 // observed 6.03 // was 3 // 2.95
+        [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
+        verifyRequestChargesMax 3 // 2.95
     }
