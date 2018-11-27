@@ -54,16 +54,14 @@ module SerilogHelpers =
     [<RequireQualifiedAccess>]
     type EqxAct =
         | Tip | TipNotFound | TipNotModified
-        | ResponseForward | ResponseBackward | ResponseWaste
+        | ResponseForward | ResponseBackward
         | QueryForward | QueryBackward
         | Append | Resync | Conflict
     let (|EqxAction|) = function
         | Log.Tip _ -> EqxAct.Tip
         | Log.TipNotFound _ -> EqxAct.TipNotFound
         | Log.TipNotModified _ -> EqxAct.TipNotModified
-        | Log.Response (Direction.Forward, {count = 0}) -> EqxAct.ResponseWaste // TODO remove, see comment where these are emitted
         | Log.Response (Direction.Forward,_) -> EqxAct.ResponseForward
-        | Log.Response (Direction.Backward, {count = 0}) -> EqxAct.ResponseWaste // TODO remove, see comment where these are emitted
         | Log.Response (Direction.Backward,_) -> EqxAct.ResponseBackward
         | Log.Query (Direction.Forward,_,_) -> EqxAct.QueryForward
         | Log.Query (Direction.Backward,_,_) -> EqxAct.QueryBackward
@@ -107,7 +105,7 @@ module SerilogHelpers =
         interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
         member __.Clear () = captured.Clear()
         member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
-        member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) (*when act <> EqxAct.Waste*) -> Some act | _ -> None)
+        member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
         member __.RequestCharges = __.ChooseCalls (function EqxEvent (CosmosRequestCharge e) -> Some e | _ -> None)
 
 type TestsWithLogCapture(testOutputHelper) =
