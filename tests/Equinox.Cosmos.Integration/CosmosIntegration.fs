@@ -57,30 +57,43 @@ type Tests(testOutputHelper) =
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
         addAndThenRemoveItems true context cartId skuId service count
 
+    let verifyRequestChargesMax rus =
+        let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
+        test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without using the Index for reads]`` context skuId = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
 
-        let batchSize = 3
-        let service = Cart.createServiceWithoutOptimization conn batchSize log
+        let maxItemsPerRequest = 2
+        let maxEventsPerBatch = 1
+        let service = Cart.createServiceWithoutOptimization conn maxItemsPerRequest log
         capture.Clear() // for re-runs of the test
 
         let cartId = Guid.NewGuid() |> CartId
         // The command processing should trigger only a single read and a single write call
-        let addRemoveCount = 6
-        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service addRemoveCount
-        test <@ [EqxAct.ResponseWaste; EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-        // Restart the counting
-        capture.Clear()
+        let addRemoveCount = 2
+        let eventsPerAction = addRemoveCount * 2 - 1
+        let batches = 4
+        for i in [1..batches] do
+            do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service addRemoveCount
+            let expectedBatchesOf2Items =
+                match i with
+                | 1 -> 1 // it does cost a single trip to determine there are 0 items
+                | i -> ceil(float (i-1) * float eventsPerAction / float maxItemsPerRequest / float maxEventsPerBatch) |> int
+            test <@ List.replicate expectedBatchesOf2Items EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
+            verifyRequestChargesMax 39 // 37.15
+            capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
         let! state = service.Read cartId
-        let expectedEventCount = 2 * addRemoveCount - 1
+        let expectedEventCount = batches * eventsPerAction
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        // Need to read 4 batches to read 11 events in batches of 3
-        let expectedBatches = ceil(float expectedEventCount/float batchSize) |> int
-        test <@ List.replicate (expectedBatches-1) EqxAct.ResponseBackward @ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
+        // Need 6 trips of 2 maxItemsPerRequest to read 12 events
+        test <@ let expectedResponses = ceil(float expectedEventCount/float maxItemsPerRequest/float maxEventsPerBatch) |> int
+                List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+        verifyRequestChargesMax 20 // 18.47
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
