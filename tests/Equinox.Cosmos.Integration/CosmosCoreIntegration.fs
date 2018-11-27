@@ -229,18 +229,20 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getAll (TestStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 2)
+        let ctx = mkContextWithItemLimit conn (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
+        capture.Clear()
 
-        let! res = Events.get ctx streamName 1L 4 // Events.getAll >> AsyncSeq.concatSeq |> AsyncSeq.toArrayAsync
-        let expected = expected |> Array.tail |> Array.take 4
+        let! res = Events.getAll ctx streamName 0L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun _ -> false) |> AsyncSeq.toArrayAsync
+        let expected = expected |> Array.take 1
 
-        verifyCorrectEvents 1L expected res
-
-        // TODO [implement and] prove laziness
-        test <@ List.replicate 2 EqxAct.ResponseForward @ [EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 10 // observed 8.99 // was 3
+        verifyCorrectEvents 0L expected res
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        let queryRoundTripsAndItemCounts = function EqxEvent (Log.Query (Direction.Forward, responses, { count = c })) -> Some (responses,c) | _ -> None
+        // validate that, despite only requesting max 1 item, we only needed one trip (which contained only one item)
+        [1,1] =! capture.ChooseCalls queryRoundTripsAndItemCounts
+        verifyRequestChargesMax 4 // 3.07 // was 3 // 2.94
     }
 
     (* Backward *)
@@ -263,8 +265,24 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 10 // observed 8.98 // was 3
     }
 
-    // TODO AsyncSeq version
-
     // TODO 2 batches backward test
 
-    // TODO mine other integration tests
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let getAllBackwards (TestStream streamName) = Async.RunSynchronously <| async {
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        let ctx = mkContextWithItemLimit conn (Some 2)
+
+        let! expected = add6EventsIn2Batches ctx streamName
+        capture.Clear()
+
+        let! res = Events.getAllBackwards ctx streamName 10L 2 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun x -> x.Index <> 2L) |> AsyncSeq.toArrayAsync
+        let expected = expected |> Array.skip 2
+
+        verifyCorrectEventsBackward 5L expected res
+        // only 2 batches of 2 items triggered
+        test <@ List.replicate 2 EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+        // validate that we didnt trigger loading of the last item
+        let queryRoundTripsAndItemCounts = function EqxEvent (Log.Query (Direction.Backward, responses, { count = c })) -> Some (responses,c) | _ -> None
+        [2,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
+        verifyRequestChargesMax 7 // observed 6.03 // was 3 // 2.95
+    }
