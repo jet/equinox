@@ -615,6 +615,52 @@ module private Tip =
         log |> logQuery direction maxItems stream.name t (!responseCount,raws) pos.index ru
         return pos, decoded }
 
+    let walkLazy<'event> (log : ILogger) client retryPolicy maxItems maxRequests direction (stream: CollectionStream) startPos
+        (tryDecode : IIndexedEvent -> 'event option, isOrigin: 'event -> bool)
+        : AsyncSeq<'event[]> = asyncSeq {
+        let responseCount = ref 0
+        use query = mkQuery client maxItems stream direction startPos
+        let pullSlice = handleResponse direction stream startPos
+        let retryingLoggingReadSlice query = Log.withLoggedRetries retryPolicy "readAttempt" (pullSlice query)
+        let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream.name
+        let mutable ru = 0.
+        let allSlices = ResizeArray()
+        let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+        try
+            let readlog = log |> Log.prop "direction" direction
+            let mutable ok = true
+            while ok do
+                incr responseCount
+
+                match maxRequests with
+                | Some mpbr when !responseCount >= mpbr -> readlog.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
+                | _ -> ()
+
+                let batchLog = readlog |> Log.prop "batchIndex" !responseCount
+                let! (slice,_pos,rus) = retryingLoggingReadSlice query batchLog
+                ru <- ru + rus
+                allSlices.AddRange(slice)
+
+                let acc = ResizeArray()
+                for x in slice do
+                    match tryDecode x with
+                    | Some e when isOrigin e ->
+                        let used, residual = slice |> calculateUsedVersusDroppedPayload x.Index
+                        log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
+                            stream.name, x.Index, x.EventType, used, residual)
+                        ok <- false
+                        acc.Add e
+                    | Some e -> acc.Add e
+                    | None -> ()
+                yield acc.ToArray()
+                ok <- ok && query.HasMoreResults
+        finally
+            let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+            let t = StopwatchInterval(startTicks, endTicks)
+
+            query.Dispose()
+            log |> logQuery direction maxItems stream.name t (!responseCount,allSlices.ToArray()) -1L ru }
+
 type [<NoComparison>] Token = { stream: CollectionStream; pos: Position }
 module Token =
     let create stream pos : Storage.StreamToken = { value = box { stream = stream; pos = pos } }
@@ -676,6 +722,8 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     member __.Read log stream direction startPos (tryDecode,isOrigin) : Async<Storage.StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos (tryDecode,isOrigin)
         return Token.create stream pos, events }
+    member __.ReadLazy (batching: EqxBatchingPolicy) log stream direction startPos (tryDecode,isOrigin) : AsyncSeq<'event[]> =
+        Query.walkLazy log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos (tryDecode,isOrigin)
     member __.LoadFromUnfoldsOrRollingSnapshots log (stream,maybePos) (tryDecode,isOrigin): Async<Storage.StreamToken * 'event[]> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy conn.Client stream maybePos
         match res with
@@ -990,6 +1038,11 @@ type EqxContext
 
     member __.CreateStream(streamName) = collections.CollectionForStream streamName
 
+    member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
+        let direction = defaultArg direction Direction.Forward
+        let batching = EqxBatchingPolicy(defaultArg batchSize 10)
+        gateway.ReadLazy batching logger stream direction startPos (Some,fun _ -> false)
+
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
         let direction = defaultArg direction Direction.Forward
         if maxCount = Some 0 then
@@ -1011,10 +1064,8 @@ type EqxContext
 
     /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member __.Walk(stream, batchSize, ?position, ?direction) : AsyncSeq<IIndexedEvent[]> = asyncSeq {
-        let! _pos,data = __.GetInternal((stream, position), batchSize, ?direction=direction)
-        // TODO add laziness
-        return AsyncSeq.ofSeq data }
+    member __.Walk(stream, batchSize, ?position, ?direction) : AsyncSeq<IIndexedEvent[]> =
+        __.GetLazy((stream, position), batchSize, ?direction=direction)
 
     /// Reads all Events from a `Position` in a given `direction`
     member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*IIndexedEvent[]> =
@@ -1092,8 +1143,8 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): AsyncSeq<IIndexedEvent[]> =
-        ctx.Walk(ctx.CreateStream streamName, maxCount, ?position=index, direction=Direction.Backward)
+    let getAllBackwards (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
+        ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
