@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
+    <WarningLevel>5</WarningLevel>
+    <IsTestProject>false</IsTestProject>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="CompositionRoot.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--Handle TypeShape-restriction; would otherwise use 3.1.2.5-->
+    <PackageReference Include="FSharp.Core" Version="4.0.0.1" Condition=" '$(TargetFramework)' == 'net461' " />
+    <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />
+    <PackageReference Include="Jet.JsonNet.Converters" Version="0.0.3-CI69140" />
+    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
+  </ItemGroup>
+
+</Project>

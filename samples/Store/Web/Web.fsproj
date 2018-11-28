@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\Backend\Backend.fsproj" />
     <ProjectReference Include="..\Domain\Domain.fsproj" />
+    <ProjectReference Include="..\Infrastructure\Infrastructure.fsproj" />
   </ItemGroup>
 
 </Project>

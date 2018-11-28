@@ -29,6 +29,7 @@
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\samples\Store\Infrastructure\Infrastructure.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
   </ItemGroup>
 

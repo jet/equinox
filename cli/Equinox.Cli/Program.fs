@@ -7,6 +7,7 @@ open Equinox.EventStore
 open Equinox.Cli.Infrastructure
 open Serilog
 open Serilog.Events
+open Store.CompositionRoot
 open System
 open System.Threading
 
@@ -122,12 +123,6 @@ module Cosmos =
             .Connect("equinox-cli", discovery)
     let createGateway connection (maxItems,maxEvents) = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=maxItems, maxEventsPerSlice=maxEvents))
 
-[<RequireQualifiedAccess; NoEquality; NoComparison>]
-type Store =
-    | Mem of Equinox.MemoryStore.VolatileStore
-    | Es of GesGateway
-    | Cosmos of EqxGateway * databaseId: string * collectionId: string
-
 module Test =
     let run log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
         let mutable idx = -1L
@@ -136,45 +131,6 @@ module Test =
             clients.[clientIndex % clients.Length]
         let selectClient = async { return async { return selectClient() } }
         Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
-    let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-    let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
-    type EsResolver(useCache) =
-        member val Cache =
-            if useCache then
-                let c = Equinox.EventStore.Caching.Cache("Cli", sizeMb = 50)
-                CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
-            else None
-        member __.CreateAccessStrategy snapshot =
-            match snapshot with
-            | None -> None
-            | Some snapshot -> Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot |> Some
-    type CosmosResolver(useCache) =
-        member val Cache =
-            if useCache then
-                let c = Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50)
-                Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
-            else None
-        member __.CreateAccessStrategy snapshot =
-            match snapshot with
-            | None -> None
-            | Some snapshot -> AccessStrategy.Snapshot snapshot |> Some
-    type Builder(store, useCache, useUnfolds) =
-        member __.ResolveStream
-            (   codec : Equinox.UnionCodec.IUnionEncoder<'event,byte[]>,
-                fold: ('state -> 'event seq -> 'state),
-                initial: 'state,
-                snapshot: (('event -> bool) * ('state -> 'event))) =
-            let snapshot = if useUnfolds then Some snapshot else None
-            match store with
-            | Store.Mem store ->
-                Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve
-            | Store.Es gateway ->
-                let resolver = EsResolver(useCache)
-                GesResolver<'event,'state>(gateway, codec, fold, initial, ?access = resolver.CreateAccessStrategy(snapshot), ?caching = resolver.Cache).Resolve
-            | Store.Cosmos (gateway, databaseId, connectionId) ->
-                let resolver = CosmosResolver(useCache)
-                let store = EqxStore(gateway, EqxCollections(databaseId, connectionId))
-                EqxResolver<'event,'state>(store, codec, fold, initial, ?access = resolver.CreateAccessStrategy snapshot, ?caching = resolver.Cache).Resolve
 
     let createTest store test (cache,unfolds)  log =
         let builder = Builder(store, cache, unfolds)
