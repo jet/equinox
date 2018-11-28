@@ -40,6 +40,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     Batch =
     {   /// DocDb-mandated Partition Key, must be maintained within the document
         /// Not actually required if running in single partition mode, but for simplicity, we always write it
+        [<JsonProperty(Required=Required.Default)>] // Not requested in queries
         p: string // "{streamName}"
 
         /// DocDb-mandated unique row key; needs to be unique within any partition it is maintained; must be string
@@ -56,17 +57,20 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// base 'i' value for the Events held herein
         i: int64 // {index}
 
+        // `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
+        n: int64 // {index}
+
         /// The events at this offset in the stream
         e: BatchEvent[] }
     /// Unless running in single partion mode (which would restrict us to 10GB per collection)
     /// we need to nominate a partition key that will be in every document
     static member PartitionKeyField = "p"
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
-    static member IndexedFields = [Batch.PartitionKeyField; "i"]
+    static member IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
     /// If we encounter the tip (id=-1) doc, we're interested in its etag so we can re-sync for 1 RU
     member x.TryToPosition() =
         if x.id <> Tip.WellKnownDocumentId then None
-        else Some { index = x.i+x.e.LongLength; etag = match x._etag with null -> None | x -> Some x }
+        else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
 /// A single event from the array held in a batch
 and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     BatchEvent =
@@ -84,6 +88,7 @@ and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
         m: byte[] } // optional
+
 /// The Special 'Pending' Batch Format
 /// NB this Type does double duty as
 /// a) transport for when we read it
@@ -93,7 +98,8 @@ and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 /// b) contains unfolds (`u`)
 and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     Tip =
-    {   /// Partition key, as per Batch
+    {   [<JsonProperty(Required=Required.Default)>] // Not requested in queries
+        /// Partition key, as per Batch
         p: string // "{streamName}"
         /// Document Id within partition, as per Batch
         id: string // "{-1}" - Well known IdConstant used while this remains the pending batch
@@ -107,6 +113,9 @@ and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// base 'i' value for the Events held herein
         i: int64
 
+        /// `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
+        n: int64 // {index}
+
         /// Events
         e: BatchEvent[]
 
@@ -115,7 +124,7 @@ and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     /// arguably this should be a high nember to reflect fact it is the freshest ?
     static member WellKnownDocumentId = "-1"
     /// Create Position from Tip record context (facilitating 1 RU reads)
-    member x.ToPosition() = { index = x.i+x.e.LongLength; etag = match x._etag with null -> None | x -> Some x }
+    member x.ToPosition() = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 and Unfold =
     {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
@@ -142,16 +151,26 @@ type Enum() =
                 member __.EventType = x.c
                 member __.Data = x.d
                 member __.Meta = x.m })
-    static member Events(i: int64, e: BatchEvent seq) =
-        e |> Seq.mapi (fun offset x ->
-            { new IIndexedEvent with
-                member __.Index = i + int64 offset
-                member __.IsUnfold = false
-                member __.EventType = x.c
-                member __.Data = x.d
-                member __.Meta = x.m })
-    static member Events(b: Batch, backwards) =
-        Enum.Events(b.i, b.e) |> if backwards then System.Linq.Enumerable.Reverse else id
+    static member Events(i: int64, e: BatchEvent[], startIndex, backward) = seq {
+        let isValidGivenStartIndex backward si i =
+            match si with
+            | Some si when backward -> i < si
+            | Some si -> i >= si
+            | _ -> true
+        for offset in 0..e.Length-1 do
+            let index = i + int64 offset
+            if isValidGivenStartIndex backward startIndex index then
+                let x = e.[offset]
+                yield {
+                    new IIndexedEvent with
+                        member __.Index = index
+                        member __.IsUnfold = false
+                        member __.EventType = x.c
+                        member __.Data = x.d
+                        member __.Meta = x.m } }
+    static member Events(b: Batch, startIndex, backward) =
+        Enum.Events(b.i, b.e, startIndex, backward)
+        |> if backward then System.Linq.Enumerable.Reverse else id
     static member Unfolds (xs: Unfold[]) = seq {
         for x in xs -> { new IIndexedEvent with
             member __.Index = x.i
@@ -272,14 +291,14 @@ module private DocDb =
 module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
-    type SyncResponse = { etag: string; nextI: int64; conflicts: BatchEvent[] }
-    let [<Literal>] sprocName = "EquinoxSync001"  // NB need to renumber for any breaking change
+    type SyncResponse = { etag: string; n: int64; conflicts: BatchEvent[] }
+    let [<Literal>] sprocName = "EquinoxSync002"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
 // 1 Verify no current Tip batch, the incoming `req` becomes the Tip batch (the caller is entrusted to provide a valid and complete set of inputs, or it's GIGO)
 // 2 Current Tip batch has space to accommodate the incoming unfolds (req.u) and events (req.e) - merge them in, replacing any superseded unfolds
-// 3. Current Tip batch would become too large - remove Tip-specific state from active doc by replacing the well known id with a correct one; proceed as per 1
+// 3 Current Tip batch would become too large - remove Tip-specific state from active doc by replacing the well known id with a correct one; proceed as per 1
 function sync(req, expectedVersion, maxEvents) {
     if (!req) throw new Error("Missing req argument");
     const collection = getContext().getCollection();
@@ -288,19 +307,18 @@ function sync(req, expectedVersion, maxEvents) {
 
     // Locate the Tip (-1) batch (which may not exist)
     const tipDocId = collection.getAltLink() + "/docs/" + req.id;
-    const isAccepted = collection.readDocument(tipDocId, {}, function (err, current, options) {
+    const isAccepted = collection.readDocument(tipDocId, {}, function (err, current) {
         // Verify we dont have a conflicting write
         if (expectedVersion === -1) {
             executeUpsert(current);
         } else if (!current && expectedVersion !== 0) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero
-            response.setBody({ etag: null, nextI: 0, conflicts: [] });
-        } else if (current && expectedVersion !== current.i + current.e.length) {
+            response.setBody({ etag: null, n: 0, conflicts: [] });
+        } else if (current && expectedVersion !== current.n) {
             // Where possible, we extract conflicting events from e and/or c in order to avoid another read cycle
             // yielding [] triggers the client to go loading the events itself
             const conflicts = expectedVersion < current.i ? [] : current.e.slice(expectedVersion - current.i);
-            const nextI = current.i + current.e.length;
-            response.setBody({ etag: current._etag, nextI: nextI, conflicts: conflicts });
+            response.setBody({ etag: current._etag, n: current.n, conflicts: conflicts });
         } else {
             executeUpsert(current);
         }
@@ -310,7 +328,13 @@ function sync(req, expectedVersion, maxEvents) {
     function executeUpsert(current) {
         function callback(err, doc) {
             if (err) throw err;
-            response.setBody({ etag: doc._etag, nextI: doc.i + doc.e.length, conflicts: null });
+            response.setBody({ etag: doc._etag, n: doc.n, conflicts: null });
+        }
+        // `i` is established when first written; `n` needs to stay in step with i+batch.e.length
+        function pos(batch, i) {
+            batch.i = i
+            batch.n = batch.i + batch.e.length;
+            return batch;
         }
         // If we have hit a sensible limit for a slice, swap to a new one
         if (current && current.e.length + req.e.length > maxEvents) {
@@ -325,8 +349,7 @@ function sync(req, expectedVersion, maxEvents) {
             const tipUpdateAccepted = collection.replaceDocument(current._self, current, { etag: current._etag }, callback);
             if (!tipUpdateAccepted) throw new Error("Unable to remove Tip markings.");
 
-            req.i = current.i + current.e.length
-            const isAccepted = collection.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
+            const isAccepted = collection.createDocument(collectionLink, pos(req,current.n), { disableAutomaticIdGeneration: true }, callback);
             if (!isAccepted) throw new Error("Unable to create Tip batch.");
         } else if (current) {
             // Append the new events into the current batch
@@ -335,11 +358,10 @@ function sync(req, expectedVersion, maxEvents) {
             current.u = req.u;
 
             // as we've mutated the document in a manner that can conflict with other writers, out write needs to be contingent on no competing updates having taken place
-            const isAccepted = collection.replaceDocument(current._self, current, { etag: current._etag }, callback);
+            const isAccepted = collection.replaceDocument(current._self, pos(current, current.i), { etag: current._etag }, callback);
             if (!isAccepted) throw new Error("Unable to replace Tip batch.");
         } else {
-            req.i = 0
-            const isAccepted = collection.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
+            const isAccepted = collection.createDocument(collectionLink, pos(req,0), { disableAutomaticIdGeneration: true }, callback);
             if (!isAccepted) throw new Error("Unable to create Tip batch.");
         }
     }
@@ -360,12 +382,12 @@ function sync(req, expectedVersion, maxEvents) {
         let! (res : Client.StoredProcedureResponse<SyncResponse>) =
             client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ev.index, box maxEvents) |> Async.AwaitTaskCorrect
 
-        let newPos = { index = res.Response.nextI; etag = Option.ofObj res.Response.etag }
+        let newPos = { index = res.Response.n; etag = Option.ofObj res.Response.etag }
         return res.RequestCharge, res.Response.conflicts |> function
             | null -> Result.Written newPos
             | [||] when newPos.index = 0L -> Result.Conflict (newPos, Array.empty)
             | [||] -> Result.ConflictUnknown newPos
-            | xs  -> Result.Conflict (newPos, Enum.Events (ev.index, xs) |> Array.ofSeq) }
+            | xs  -> Result.Conflict (newPos, Enum.Events(ev.index, xs, None, false) |> Array.ofSeq) }
 
     let private logged client (stream: CollectionStream) (expectedVersion, req: Tip, maxEvents) (log : ILogger)
         : Async<Result> = async {
@@ -397,7 +419,7 @@ function sync(req, expectedVersion, maxEvents) {
         let call = logged client pk batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
     let mkBatch (stream: Store.CollectionStream) (events: IEvent[]) unfolds: Tip =
-        {   p = stream.name; id = Store.Tip.WellKnownDocumentId; i = -1L(*Server-managed*); _etag = null
+        {   p = stream.name; id = Store.Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = [| for e in events -> { t = DateTimeOffset.UtcNow; c = e.EventType; d = e.Data; m = e.Meta } |]
             u = Array.ofSeq unfolds }
     let mkUnfold baseIndex (unfolds: IEvent seq) : Store.Unfold seq =
@@ -475,11 +497,12 @@ module private Tip =
     open Microsoft.Azure.Documents.Linq
     let private mkQuery (client : IDocumentClient) maxItems (stream: CollectionStream) (direction: Direction) (startPos: Position option) =
         let querySpec =
+            let fields = "c.id, c.i, c._etag, c.n, c.e"
             match startPos with
-            | None -> SqlQuerySpec("SELECT * FROM c ORDER BY c.i " + if direction = Direction.Forward then "ASC" else "DESC")
+            | None -> SqlQuerySpec(sprintf "SELECT %s FROM c ORDER BY c.i " fields + if direction = Direction.Forward then "ASC" else "DESC")
             | Some p ->
-                let f = if direction = Direction.Forward then "c.i >= @id ORDER BY c.i ASC" else "c.i < @id ORDER BY c.i DESC"
-                SqlQuerySpec("SELECT * FROM c WHERE " + f, SqlParameterCollection [SqlParameter("@id", p.index)])
+                let f = if direction = Direction.Forward then "c.n > @id ORDER BY c.i ASC" else "c.i < @id ORDER BY c.i DESC"
+                SqlQuerySpec(sprintf "SELECT %s FROM c WHERE " fields + f, SqlParameterCollection [SqlParameter("@id", p.index)])
         let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey(stream.name), MaxItemCount=Nullable maxItems)
         client.CreateDocumentQuery<Batch>(stream.collectionUri, querySpec, feedOptions).AsDocumentQuery()
 
@@ -489,13 +512,14 @@ module private Tip =
         let! ct = Async.CancellationToken
         let! t, (res : Client.FeedResponse<Batch>) = query.ExecuteNextAsync<Batch>(ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let batches, ru = Array.ofSeq res, res.RequestCharge
-        let events = batches |> Seq.collect (fun b -> Enum.Events(b, backwards=(direction = Direction.Backward))) |> Array.ofSeq
+        let startIndex = match startPos with Some { index = i } -> Some i | _ -> None
+        let events = batches |> Seq.collect (fun b -> Enum.Events(b, startIndex, backward=(direction = Direction.Backward))) |> Array.ofSeq
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = stream.name; interval = t; bytes = bytes; count = count; ru = ru }
         let log = let evt = Log.Response (direction, reqMetric) in log |> Log.event evt
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
         let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
-        (log |> Log.prop "startIndex" (match startPos with Some { index = i } -> Nullable i | _ -> Nullable()) |> Log.prop "bytes" bytes)
+        (log |> Log.prop "startIndex" (match startIndex with Some i -> Nullable i | None -> Nullable()) |> Log.prop "bytes" bytes)
             .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
                 "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
         let maybePosition = batches |> Array.tryPick (fun x -> x.TryToPosition())
@@ -517,13 +541,13 @@ module private Tip =
                 yield! loop (batchCount + 1) }
         loop 0
 
-    let private logQuery direction batchSize streamName interval (responsesCount, events : IIndexedEvent []) nextI (ru: float) (log : ILogger) =
+    let private logQuery direction batchSize streamName interval (responsesCount, events : IIndexedEvent []) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
         (log |> Log.prop "bytes" bytes |> Log.prop "batchSize" batchSize |> Log.event (Log.Event.Query (direction, responsesCount, reqMetric))).Information(
-            "EqxCosmos {action:l} {stream} v{nextI} {count}/{responses} {ms}ms rc={ru}",
-            action, streamName, nextI, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
+            "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms rc={ru}",
+            action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
     let private calculateUsedVersusDroppedPayload stopIndex (xs: IIndexedEvent[]) : int * int =
         let mutable used, dropped = 0, 0
@@ -669,9 +693,9 @@ type EqxBatchingPolicy
     let getdefaultMaxItems = defaultArg getDefaultMaxItems (fun () -> defaultArg defaultMaxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
     member __.MaxItems = getdefaultMaxItems ()
-    /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxSlices`
+    /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
-    /// Maximum number of events to accumulate within the `WipBatch` before switching to a new one when adding Events
+    /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events
     member __.MaxEventsPerSlice = defaultArg maxEventsPerSlice 10
 
 type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
