@@ -29,8 +29,8 @@ type Tests(testOutputHelper) =
     let createLog () = createLogger testOutput
 
     let act (service : Backend.Favorites.Service) (clientId, command) = async {
-        do! service.Execute clientId command
-        let! items = service.Read clientId
+        do! service.Execute(clientId, command)
+        let! items = service.List clientId
 
         match command with
         | Domain.Favorites.Favorite (_,skuIds) ->

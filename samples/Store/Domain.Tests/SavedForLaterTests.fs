@@ -2,7 +2,7 @@
 
 open Domain
 open Domain.SavedForLater
-open Domain.SavedForLater.Fold
+open Domain.SavedForLater.Folds
 open Swensen.Unquote.Assertions
 open System
 open System.Collections.Generic
@@ -118,17 +118,13 @@ module Specification =
     let verifyIdempotency (command: Commands.Command) state =
         // Establish a state where the command should not trigger an event
         let eventsToEstablish: Events.Event list = command |> function
-            | Commands.Add (d,skus) ->   mkAppendDated d skus
+            | Commands.Add (d,skus) ->      mkAppendDated d skus
             | Commands.Merge items ->       mkMerged items
-            | Commands.Remove _
-            | Commands.Compact _ ->         []
+            | Commands.Remove _ ->          []
         let state = fold state eventsToEstablish
         let events = interpret command state
-        match command, events with
-        // Command should be unconditional
-        | Commands.Compact, [ Events.Compacted _ ] -> ()
         // Assert we decided nothing needs to happen
-        | _, events -> test <@ List.isEmpty events @>
+        test <@ List.isEmpty events @>
 
     let (|TakeHalf|) items = items |> Seq.mapi (fun i x -> if i % 2 = 0 then Some x else None) |> Seq.choose id |> Seq.toArray
     let mkAppend skus = mkAppendDated DateTimeOffset.Now skus
@@ -139,8 +135,6 @@ module Specification =
     let verify variant command originState =
         let initialEvents: Events.Event list =
             match command, variant with
-            | Commands.Compact, Choice1Of2 content
-            | Commands.Compact, Choice2Of2 content ->                   mkAppend content
             | Commands.Remove skus, Choice1Of2 randomSkus ->            mkAppend <| Array.append skus randomSkus
             | Commands.Remove (TakeHalf skus), Choice2Of2 randomSkus -> mkAppend <| Array.append skus randomSkus
             | Commands.Add (d,_skus), Choice1Of2 randomSkus ->          mkAppendDated d randomSkus
@@ -151,12 +145,6 @@ module Specification =
         let events = interpret command state
         let state' = fold state events
         match command, events with
-        // A Compaction request should always be honored
-        | Commands.Compact,             [ Events.Compacted { items = e } ] ->
-            // Verify the event is correct
-            test <@ state = e @>
-            // Verify the post state is correct
-            test <@ e = state' @>
         // Remove command that resulted in no action
         | Commands.Remove requested,    [] ->
             let original, remaining = state |> asSkus |> set, state' |> asSkus |> set
@@ -184,7 +172,7 @@ module Specification =
                         && e.skus |> Seq.forall updated.ContainsKey @>
             | x -> x |> failwithf "Unexpected %A"
             // Verify the post state is correct and there is no remaining work
-            let updatedIsSameOrNewerThan date sku = not (updated.[sku] |> Fold.isSupersededAt date)
+            let updatedIsSameOrNewerThan date sku = not (updated.[sku] |> Folds.isSupersededAt date)
             test <@ original |> Seq.forall updated.ContainsKey
                     && skus |> Seq.forall (updatedIsSameOrNewerThan date) @>
         // Any merge event should onl reflect variances from current contet
@@ -196,12 +184,12 @@ module Specification =
             | [Events.Merged e] ->
                 let originalIsSupersededByMerged (item : Events.Item) =
                     match original.TryGetValue item.skuId with
-                    | true, originalItem -> originalItem |> Fold.isSupersededAt item.dateSaved
+                    | true, originalItem -> originalItem |> Folds.isSupersededAt item.dateSaved
                     | false, _ -> true
                 test <@ e.items |> Seq.forall originalIsSupersededByMerged @>
             | x -> x |> failwithf "Unexpected %A"
             // Verify the post state is correct and there is no remaining work
-            let updatedIsSameOrNewerThan (item : Events.Item) = not (updated.[item.skuId] |> Fold.isSupersededAt item.dateSaved)
+            let updatedIsSameOrNewerThan (item : Events.Item) = not (updated.[item.skuId] |> Folds.isSupersededAt item.dateSaved)
             let combined = Seq.append state donorState |> Array.ofSeq
             let combinedSkus = combined |> asSkus |> set
             test <@ combined |> Seq.forall updatedIsSameOrNewerThan

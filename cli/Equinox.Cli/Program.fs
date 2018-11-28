@@ -8,7 +8,6 @@ open Equinox.Cli.Infrastructure
 open Serilog
 open Serilog.Events
 open System
-open System.IO
 open System.Threading
 
 [<NoEquality; NoComparison>]
@@ -46,7 +45,7 @@ and TestArguments =
             | DurationM _ -> "specify a run duration in minutes (default: 30)."
             | ErrorCutoff _ -> "specify an error cutoff (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
-and Test = Favorites
+and Test = Favorites | SaveForLater
 and [<NoEquality; NoComparison>] EsArguments =
     | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
@@ -186,9 +185,25 @@ module Test =
             let service = Backend.Favorites.Service(log, builder.ResolveStream(codec,fold,initial,snapshot))
             fun clientId -> async {
                 let sku = Guid.NewGuid() |> SkuId
-                do! service.Execute clientId <| Domain.Favorites.Command.Favorite (DateTimeOffset.UtcNow,[sku])
-                let! items = service.Read clientId
+                do! service.Favorite(clientId,[sku])
+                let! items = service.List clientId
                 if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
+        | SaveForLater ->
+            let fold, initial, snapshot = Domain.SavedForLater.Folds.fold, Domain.SavedForLater.Folds.initial, Domain.SavedForLater.Folds.snapshot
+            let codec = genCodec<Domain.SavedForLater.Events.Event>()
+            let service = Backend.SavedForLater.Service(log, builder.ResolveStream(codec,fold,initial,snapshot), maxSavedItems=50, maxAttempts=3)
+            fun clientId -> async {
+                let skus = [Guid.NewGuid() |> SkuId; Guid.NewGuid() |> SkuId; Guid.NewGuid() |> SkuId]
+                let! saved = service.Save(clientId,skus)
+                if saved then
+                    let! items = service.List clientId
+                    if skus |> List.forall (fun sku -> items |> Array.exists (fun x -> x.skuId = sku)) |> not then invalidOp "Added item not found"
+                else
+                    let! current = service.List clientId
+                    let resolveSkus _hasSku = async {
+                        return [|for x in current -> x.skuId|] }
+                    let! removed = service.Remove(clientId, resolveSkus)
+                    if not removed then invalidOp "Remove failed" }
 
     let createRunner conn domainLog verbose (targs: ParseResults<TestArguments>) =
         let test = targs.GetResult(Name,Favorites)
@@ -270,7 +285,7 @@ let main argv =
         let args = parser.ParseCommandLine argv
         let verboseConsole = args.Contains(VerboseConsole)
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
-        let report = args.GetResult(LogFile,programName+".log") |> fun n -> FileInfo(n).FullName
+        let report = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
         let runTest (log: ILogger) conn (targs: ParseResults<TestArguments>) =
             let verbose = args.Contains(VerboseDomain)
             let domainLog = createDomainLog verbose verboseConsole maybeSeq
