@@ -1,10 +1,10 @@
 ﻿module Equinox.Cli.Program
 
 open Argu
-open Domain
+open Domain.Infrastructure
 open Equinox.Cosmos.Builder
 open Equinox.EventStore
-open Infrastructure
+open Equinox.Cli.Infrastructure
 open Serilog
 open Serilog.Events
 open System
@@ -30,9 +30,9 @@ type Arguments =
             | Es _ -> "specify EventStore actions"
             | Cosmos _ -> "specify CosmosDb actions"
 and TestArguments =
-    | Name of Test
-    | Cached
-    | Indexed
+    | [<AltCommandLine("-t"); MainCommand>] Name of Test
+    | [<AltCommandLine("-C")>] Cached
+    | [<AltCommandLine("-U")>] Unfolds
     | [<AltCommandLine("-f")>] TestsPerSecond of int
     | [<AltCommandLine("-d")>] DurationM of float
     | [<AltCommandLine("-e")>] ErrorCutoff of int64
@@ -40,10 +40,10 @@ and TestArguments =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Name _ -> "Specify which test to run. (default: Favorites)"
-            | Cached -> "Whether to employ a Cache"
-            | Indexed -> "Whether to employ an Index for Cosmos"
+            | Cached -> "Employ a 50MB cache"
+            | Unfolds -> "Employ a store-appropriate Rolling Snapshots and/or Unfolding strategy"
             | TestsPerSecond _ -> "specify a target number of requests per second (default: 1000)."
-            | DurationM _ -> "specify a run duration in minutes (default: 1)."
+            | DurationM _ -> "specify a run duration in minutes (default: 30)."
             | ErrorCutoff _ -> "specify an error cutoff (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
 and Test = Favorites
@@ -137,37 +137,71 @@ module Test =
             clients.[clientIndex % clients.Length]
         let selectClient = async { return async { return selectClient() } }
         Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
-    let fold, initial, snapshot = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.snapshot
     let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
     let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
-    let codec = genCodec<Domain.Favorites.Events.Event>()
-    let createFavoritesService store (targs: ParseResults<TestArguments>) log =
-        let esCache =
-            if targs.Contains Cached then
-                let c = Caching.Cache("Cli", sizeMb = 50)
+    type EsResolver(useCache) =
+        member val Cache =
+            if useCache then
+                let c = Equinox.EventStore.Caching.Cache("Cli", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
-        let eqxCache =
-            if targs.Contains Cached then
+        member __.CreateAccessStrategy snapshot =
+            match snapshot with
+            | None -> None
+            | Some snapshot -> Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot |> Some
+    type CosmosResolver(useCache) =
+        member val Cache =
+            if useCache then
                 let c = Equinox.Cosmos.Builder.Caching.Cache("Cli", sizeMb = 50)
                 Equinox.Cosmos.Builder.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
-        let resolveStream =
+        member __.CreateAccessStrategy snapshot =
+            match snapshot with
+            | None -> None
+            | Some snapshot -> AccessStrategy.Snapshot snapshot |> Some
+    type Builder(store, useCache, useUnfolds) =
+        member __.ResolveStream
+            (   codec : Equinox.UnionCodec.IUnionEncoder<'event,byte[]>,
+                fold: ('state -> 'event seq -> 'state),
+                initial: 'state,
+                snapshot: (('event -> bool) * ('state -> 'event))) =
+            let snapshot = if useUnfolds then Some snapshot else None
             match store with
             | Store.Mem store ->
                 Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create
             | Store.Es gateway ->
-                GesStreamBuilder(gateway, codec, fold, initial, Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create
+                let resolver = EsResolver(useCache)
+                GesStreamBuilder<'event,'state>(gateway, codec, fold, initial, ?access = resolver.CreateAccessStrategy(snapshot), ?caching = resolver.Cache).Create
             | Store.Cosmos (gateway, databaseId, connectionId) ->
+                let resolver = CosmosResolver(useCache)
                 let store = EqxStore(gateway, EqxCollections(databaseId, connectionId))
-                if targs.Contains Indexed then EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Snapshot snapshot, ?caching = eqxCache).Create
-                else EqxStreamBuilder(store, codec, fold, initial, ?access=None, ?caching = eqxCache).Create
-        Backend.Favorites.Service(log, resolveStream)
-    let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
-        let sku = Guid.NewGuid() |> SkuId
-        do! service.Execute clientId (Favorites.Command.Favorite(DateTimeOffset.Now, [sku]))
-        let! items = service.Read clientId
-        if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
+                EqxStreamBuilder<'event,'state>(store, codec, fold, initial, ?access = resolver.CreateAccessStrategy snapshot, ?caching = resolver.Cache).Create
+
+    let createTest store test (cache,unfolds)  log =
+        let builder = Builder(store, cache, unfolds)
+        match test with
+        | Favorites ->
+            let fold, initial, snapshot = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.snapshot
+            let codec = genCodec<Domain.Favorites.Events.Event>()
+            let service = Backend.Favorites.Service(log, builder.ResolveStream(codec,fold,initial,snapshot))
+            fun clientId -> async {
+                let sku = Guid.NewGuid() |> SkuId
+                do! service.Execute clientId <| Domain.Favorites.Command.Favorite (DateTimeOffset.UtcNow,[sku])
+                let! items = service.Read clientId
+                if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
+
+    let createRunner conn domainLog verbose (targs: ParseResults<TestArguments>) =
+        let test = targs.GetResult(Name,Favorites)
+        let options = targs.GetResults Cached @ targs.GetResults Unfolds
+        let cache, unfold = options |> List.contains Cached, options |> List.contains Unfolds
+        let run = createTest conn test (cache,unfold) domainLog
+        let execute clientId =
+            if not verbose then run clientId
+            else async {
+                domainLog.Information("Executing for client {sessionId}", clientId)
+                try return! run clientId
+                with e -> domainLog.Warning(e, "Test threw an exception"); e.Reraise () }
+        test,options,execute
 
 [<AutoOpen>]
 module SerilogHelpers =
@@ -240,11 +274,11 @@ let main argv =
         let runTest (log: ILogger) conn (targs: ParseResults<TestArguments>) =
             let verbose = args.Contains(VerboseDomain)
             let domainLog = createDomainLog verbose verboseConsole maybeSeq
-            let service = Test.createFavoritesService conn targs domainLog
+            let test, options, runTest = Test.createRunner conn domainLog verbose targs
 
             let errorCutoff = targs.GetResult(ErrorCutoff,10000L)
             let testsPerSecond = targs.GetResult(TestsPerSecond,1000)
-            let duration = targs.GetResult(DurationM,1.) |> TimeSpan.FromMinutes
+            let duration = targs.GetResult(DurationM,30.) |> TimeSpan.FromMinutes
             let reportingIntervals =
                 match targs.GetResults(ReportIntervalS) with
                 | [] -> TimeSpan.FromSeconds 10.|> Seq.singleton
@@ -252,21 +286,13 @@ let main argv =
                 |> fun intervals -> [| yield duration; yield! intervals |]
             let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
 
-            let test = targs.GetResult(Name,Favorites)
-            log.Information( "Running {test} with caching: {cached}, indexing: {indexed}. "+
-                "Duration for {duration} with test freq {tps} hits/s; max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
-                test, targs.Contains Cached, targs.Contains Indexed, duration, testsPerSecond, errorCutoff, reportingIntervals, report)
-            let runSingleTest clientId =
-                if not verbose then Test.runFavoriteTest service clientId
-                else async {
-                    domainLog.Information("Executing for client {sessionId}", ([|clientId|] : obj []))
-                    try return! Test.runFavoriteTest service clientId
-                    with e -> domainLog.Warning(e, "Test threw an exception"); e.Reraise () }
-            let results = Test.run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
+            log.Information( "Running {test} {options:l} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
+                test, options, duration, testsPerSecond, clients.Length, errorCutoff, reportingIntervals, report)
+            let results = Test.run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runTest |> Async.RunSynchronously
             let resultFile = createResultLog report
             for r in results do
                 resultFile.Information("Aggregate: {aggregate}", r)
-            log.Information("Run completed; Current memory allocation: {bytes:n2}MB", (GC.GetTotalMemory(true) |> float) / 1024./1024.)
+            log.Information("Run completed; Current memory allocation: {bytes:n2} MiB", (GC.GetTotalMemory(true) |> float) / 1024./1024.)
             0
 
         match args.GetSubCommand() with
@@ -279,6 +305,7 @@ let main argv =
             runTest log conn targs
         | Es sargs ->
             let verboseStore = sargs.Contains(EsArguments.VerboseStore)
+            // TODO implement backoffs
             let log = createStoreLog verboseStore verboseConsole maybeSeq
             let host = sargs.GetResult(Host,"localhost")
             let creds = sargs.GetResult(Username,"admin"), sargs.GetResult(Password,"changeit")
@@ -309,7 +336,7 @@ let main argv =
             let timeout = sargs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
             let (retries, maxRetryWaitTime) as operationThrottling = sargs.GetResult(Retries, 1), sargs.GetResult(RetriesWaitTime, 5)
             let pageSize = sargs.GetResult(PageSize,1)
-            log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection} with page size: {pageSize}. " +
+            log.Information("Using CosmosDb Connection {connection} Database: {database} Collection: {collection} maxEventsPerSlice: {pageSize}. " +
                 "Request timeout: {timeout} with {retries} retries; throttling MaxRetryWaitTime {maxRetryWaitTime}",
                 connUri, dbName, collName, pageSize, timeout, retries, maxRetryWaitTime)
             let conn = Cosmos.connect log discovery timeout operationThrottling |> Async.RunSynchronously
