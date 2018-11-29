@@ -1,6 +1,6 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
-open Equinox.Cosmos.Builder
+open Equinox.Cosmos
 open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
@@ -22,9 +22,9 @@ let resolveStreamGesWithoutAccessStrategy gateway =
     GesResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 let resolveStreamEqxWithKnownEventTypeSemantics gateway =
-    EqxStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Create
+    EqxResolver(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Resolve
 let resolveStreamEqxWithoutCustomAccessStrategy gateway =
-    EqxStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create
+    EqxResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
