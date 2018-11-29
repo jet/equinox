@@ -1,8 +1,8 @@
 ﻿module Equinox.Cosmos.Integration.CosmosIntegration
 
 open Domain
+open Equinox.Cosmos
 open Equinox.Cosmos.Integration.Infrastructure
-open Equinox.Cosmos.Builder
 open Swensen.Unquote
 open System.Threading
 open System

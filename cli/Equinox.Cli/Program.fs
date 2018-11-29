@@ -2,7 +2,7 @@
 
 open Argu
 open Domain.Infrastructure
-open Equinox.Cosmos.Builder
+open Equinox.Cosmos
 open Equinox.EventStore
 open Equinox.Cli.Infrastructure
 open Serilog
@@ -151,8 +151,8 @@ module Test =
     type CosmosResolver(useCache) =
         member val Cache =
             if useCache then
-                let c = Equinox.Cosmos.Builder.Caching.Cache("Cli", sizeMb = 50)
-                Equinox.Cosmos.Builder.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
+                let c = Equinox.Cosmos.Caching.Cache("Cli", sizeMb = 50)
+                Equinox.Cosmos.CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
         member __.CreateAccessStrategy snapshot =
             match snapshot with
@@ -220,8 +220,8 @@ module Test =
 
 [<AutoOpen>]
 module SerilogHelpers =
-    let inline (|Stats|) ({ interval = i; ru = ru }: Equinox.Cosmos.Log.Measurement) = ru, let e = i.Elapsed in int64 e.TotalMilliseconds
-    open Equinox.Cosmos
+    let inline (|Stats|) ({ interval = i; ru = ru }: Equinox.Cosmos.Store.Log.Measurement) = ru, let e = i.Elapsed in int64 e.TotalMilliseconds
+    open Equinox.Cosmos.Store
     let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|) = function
         | Log.Tip (Stats s)
         | Log.TipNotFound (Stats s)
@@ -235,9 +235,9 @@ module SerilogHelpers =
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
-    let (|CosmosMetric|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
+    let (|CosmosMetric|_|) (logEvent : LogEvent) : Log.Event option =
         match logEvent.Properties.TryGetValue("cosmosEvt") with
-        | true, SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e
+        | true, SerilogScalar (:? Log.Event as e) -> Some e
         | _ -> None
     type RuCounter =
         { mutable rux100: int64; mutable count: int64; mutable ms: int64 }
@@ -359,7 +359,7 @@ let main argv =
             | Some (Provision args) ->
                 let rus = args.GetResult(Rus)
                 log.Information("Configuring CosmosDb Collection with Throughput Provision: {rus:n0} RU/s", rus)
-                Equinox.Cosmos.Sync.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
+                Equinox.Cosmos.Store.Sync.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
                 0
             | Some (Run targs) ->
                 let conn = Store.Cosmos (Cosmos.createGateway conn (defaultBatchSize,pageSize), dbName, collName)

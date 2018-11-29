@@ -50,7 +50,8 @@ module SerilogHelpers =
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
-    open Equinox.Cosmos
+    open Equinox.Cosmos.Store
+    open Equinox.Cosmos.Store.Log
     [<RequireQualifiedAccess>]
     type EqxAct =
         | Tip | TipNotFound | TipNotModified
@@ -58,36 +59,36 @@ module SerilogHelpers =
         | QueryForward | QueryBackward
         | Append | Resync | Conflict
     let (|EqxAction|) = function
-        | Log.Tip _ -> EqxAct.Tip
-        | Log.TipNotFound _ -> EqxAct.TipNotFound
-        | Log.TipNotModified _ -> EqxAct.TipNotModified
-        | Log.Response (Direction.Forward,_) -> EqxAct.ResponseForward
-        | Log.Response (Direction.Backward,_) -> EqxAct.ResponseBackward
-        | Log.Query (Direction.Forward,_,_) -> EqxAct.QueryForward
-        | Log.Query (Direction.Backward,_,_) -> EqxAct.QueryBackward
-        | Log.SyncSuccess _ -> EqxAct.Append
-        | Log.SyncResync _ -> EqxAct.Resync
-        | Log.SyncConflict _ -> EqxAct.Conflict
-    let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Log.Measurement) = ru
+        | Event.Tip _ -> EqxAct.Tip
+        | Event.TipNotFound _ -> EqxAct.TipNotFound
+        | Event.TipNotModified _ -> EqxAct.TipNotModified
+        | Event.Response (Direction.Forward,_) -> EqxAct.ResponseForward
+        | Event.Response (Direction.Backward,_) -> EqxAct.ResponseBackward
+        | Event.Query (Direction.Forward,_,_) -> EqxAct.QueryForward
+        | Event.Query (Direction.Backward,_,_) -> EqxAct.QueryBackward
+        | Event.SyncSuccess _ -> EqxAct.Append
+        | Event.SyncResync _ -> EqxAct.Resync
+        | Event.SyncConflict _ -> EqxAct.Conflict
+    let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Store.Log.Measurement) = ru
     let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|) = function
-        | Log.Tip (Stats s)
-        | Log.TipNotFound (Stats s)
-        | Log.TipNotModified (Stats s)
+        | Event.Tip (Stats s)
+        | Event.TipNotFound (Stats s)
+        | Event.TipNotModified (Stats s)
         // slices are rolled up into batches so be sure not to double-count
-        | Log.Response (_,Stats s) -> CosmosResponseRc s
-        | Log.Query (_,_, (Stats s)) -> CosmosReadRc s
-        | Log.SyncSuccess (Stats s)
-        | Log.SyncConflict (Stats s) -> CosmosWriteRc s
-        | Log.SyncResync (Stats s) -> CosmosResyncRc s
+        | Event.Response (_,Stats s) -> CosmosResponseRc s
+        | Event.Query (_,_, (Stats s)) -> CosmosReadRc s
+        | Event.SyncSuccess (Stats s)
+        | Event.SyncConflict (Stats s) -> CosmosWriteRc s
+        | Event.SyncResync (Stats s) -> CosmosResyncRc s
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|CosmosRequestCharge|EquinoxChargeRollup|) = function
         | CosmosResponseRc _ ->
             EquinoxChargeRollup
         | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc as e ->
             CosmosRequestCharge (e,rc)
-    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Log.Event option =
+    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Store.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Equinox.Cosmos.Log.Event as e) -> Some e
+            | SerilogScalar (:? Equinox.Cosmos.Store.Log.Event as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =

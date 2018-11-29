@@ -1,6 +1,6 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
-open Equinox.Cosmos.Builder
+open Equinox.Cosmos
 open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore

@@ -1,8 +1,8 @@
 ﻿module Equinox.Cosmos.Integration.CoreIntegration
 
-open Equinox.Cosmos.Integration.Infrastructure
 open Equinox.Cosmos
 open Equinox.Cosmos.Core
+open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.Control
 open Newtonsoft.Json.Linq
 open Swensen.Unquote
@@ -13,13 +13,11 @@ open System.Text
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type EventData = { eventType:string; data: byte[] } with
-    interface Events.IEvent with
-        member __.EventType = __.eventType
-        member __.Data = __.data
-        member __.Meta = Encoding.UTF8.GetBytes("{\"m\":\"m\"}")
-    static member private Create(i, ?eventType, ?json) : Events.IEvent =
-        {   eventType = sprintf "%s:%d" (defaultArg eventType "test_event") i
-            data = System.Text.Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}") } :> _
+    static member private Create(i, ?eventType, ?json) =
+        Events.create
+            (sprintf "%s:%d" (defaultArg eventType "test_event") i)
+            (Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}"))
+            (Encoding.UTF8.GetBytes "{\"m\":\"m\"}")
     static member Create(i, c) = Array.init c (fun x -> EventData.Create(x+i))
 
 type Tests(testOutputHelper) =
@@ -81,16 +79,16 @@ type Tests(testOutputHelper) =
         return EventData.Create(0,6)
     }
 
-    let verifyCorrectEventsEx direction baseIndex (expected: Events.IEvent []) (xs: Events.IIndexedEvent[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: Store.IEvent []) (xs: Store.IIndexedEvent[]) =
         let xs, baseIndex =
-            if direction = Direction.Forward then xs, baseIndex
+            if direction = Equinox.Cosmos.Store.Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
         test <@ [for i in 0..expected.Length - 1 -> baseIndex + int64 i] = [for r in xs -> r.Index] @>
         test <@ [for e in expected -> e.EventType] = [ for r in xs -> r.EventType ] @>
         for i,x,y in Seq.mapi2 (fun i x y -> i,x,y) [for e in expected -> e.Data] [for r in xs -> r.Data] do
             verifyUtf8JsonEquals i x y
-    let verifyCorrectEventsBackward = verifyCorrectEventsEx Direction.Backward
-    let verifyCorrectEvents = verifyCorrectEventsEx Direction.Forward
+    let verifyCorrectEventsBackward = verifyCorrectEventsEx Equinox.Cosmos.Store.Direction.Backward
+    let verifyCorrectEvents = verifyCorrectEventsEx Equinox.Cosmos.Store.Direction.Forward
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``appendAtEnd and getNextIndex`` (extras, TestStream streamName) = Async.RunSynchronously <| async {
@@ -233,7 +231,9 @@ type Tests(testOutputHelper) =
 
         verifyCorrectEvents 0L expected res
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        let queryRoundTripsAndItemCounts = function EqxEvent (Log.Query (Direction.Forward, responses, { count = c })) -> Some (responses,c) | _ -> None
+        let queryRoundTripsAndItemCounts = function
+            | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Forward, responses, { count = c })) -> Some (responses,c)
+            | _ -> None
         // validate that, despite only requesting max 1 item, we only needed one trip (which contained only one item)
         [1,1] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 3 // 2.97
@@ -285,14 +285,20 @@ type Tests(testOutputHelper) =
         let! expected = add6EventsIn2Batches ctx streamName
         capture.Clear()
 
-        let! res = Events.getAllBackwards ctx streamName 10L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun x -> x.Index <> 2L) |> AsyncSeq.toArrayAsync
+        let! res =
+            Events.getAllBackwards ctx streamName 10L 1
+            |> AsyncSeq.concatSeq
+            |> AsyncSeq.takeWhileInclusive (fun x -> x.Index <> 2L)
+            |> AsyncSeq.toArrayAsync
         let expected = expected |> Array.skip 2 // omit index 0, 1 as we vote to finish at 2L
 
         verifyCorrectEventsBackward 5L expected res
         // only 1 request of 1 item triggered
         test <@ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
         // validate that, despite only requesting max 1 item, we only needed one trip, bearing 5 items (from which one item was omitted)
-        let queryRoundTripsAndItemCounts = function EqxEvent (Log.Query (Direction.Backward, responses, { count = c })) -> Some (responses,c) | _ -> None
+        let queryRoundTripsAndItemCounts = function
+            | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Backward, responses, { count = c })) -> Some (responses,c)
+            | _ -> None
         [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 3 // 2.98
     }

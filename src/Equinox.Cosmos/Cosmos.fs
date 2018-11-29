@@ -1,39 +1,25 @@
-﻿namespace Equinox.Cosmos.Events
+﻿namespace Equinox.Cosmos.Store
 
-/// Common form for either a Domain Event or an Unfolded Event
-type IEvent =
-    /// The Event Type, used to drive deserialization
-    abstract member EventType : string
-    /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
-    abstract member Data : byte[]
-    /// Optional metadata (null, or same as d, not written if missing)
-    abstract member Meta : byte[]
-
-/// Represents a Domain Event or Unfold, together with it's Index in the event sequence
-type IIndexedEvent =
-    inherit IEvent
-    /// The index into the event sequence of this event
-    abstract member Index : int64
-    /// Indicates whether this is a Domain Event or an Unfolded Event based on the state inferred from the events up to `Index`
-    abstract member IsUnfold: bool
-
-/// Position and Etag to which an operation is relative
-type [<NoComparison>] Position = { index: int64; etag: string option } with
-    /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
-    static member internal FromKnownEmpty = Position.FromI 0L
-    /// NB very inefficient compared to FromDocument or using one already returned to you
-    static member internal FromI(i: int64) = { index = i; etag = None }
-    /// Just Do It mode
-    static member internal FromAppendAtEnd = Position.FromI -1L // sic - needs to yield -1
-    /// NB very inefficient compared to FromDocument or using one already returned to you
-    static member internal FromMaxIndex(xs: IIndexedEvent[]) =
-        if Array.isEmpty xs then Position.FromKnownEmpty
-        else Position.FromI (1L + Seq.max (seq { for x in xs -> x.Index }))
-
-namespace Equinox.Cosmos.Store
-
-open Equinox.Cosmos.Events
 open Newtonsoft.Json
+open System
+
+/// A single Domain Event from the array held in a Batch
+type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
+    Event =
+    {   /// Creation datetime (as opposed to system-defined _lastUpdated which is touched by triggers, replication etc.)
+        t: DateTimeOffset // ISO 8601
+
+        /// The Case (Event Type); used to drive deserialization
+        c: string // required
+
+        /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
+        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+        d: byte[] // required
+
+        /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
+        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+        m: byte[] } // optional
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
@@ -60,43 +46,35 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         // `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
         n: int64 // {index}
 
-        /// The events at this offset in the stream
-        e: BatchEvent[] }
+        /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
+        e: Event[] }
     /// Unless running in single partion mode (which would restrict us to 10GB per collection)
     /// we need to nominate a partition key that will be in every document
-    static member PartitionKeyField = "p"
+    static member internal PartitionKeyField = "p"
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
-    static member IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
-    /// If we encounter the tip (id=-1) doc, we're interested in its etag so we can re-sync for 1 RU
-    member x.TryToPosition() =
-        if x.id <> Tip.WellKnownDocumentId then None
-        else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
-/// A single event from the array held in a batch
-and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
-    BatchEvent =
-    {   /// Creation datetime (as opposed to system-defined _lastUpdated which is touched by triggers, replication etc.)
-        t: System.DateTimeOffset // ISO 8601
+    static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
 
-        /// The Case (Event Type), used to drive deserialization
+/// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
+type Unfold =
+    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
+        i: int64
+
+        /// The Case (Event Type) of this compaction/snapshot, used to drive deserialization
         c: string // required
 
-        /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
-        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+        /// Event body - Json -> UTF-8 -> Deflate -> Base64
+        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
         d: byte[] // required
 
-        /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
-        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+        /// Optional metadata, same encoding as `d` (can be null; not written if missing)
+        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
         m: byte[] } // optional
 
-/// The Special 'Pending' Batch Format
-/// NB this Type does double duty as
-/// a) transport for when we read it
-/// b) a way of encoding a batch that the stored procedure will write in to the actual document (`i` is -1 until Stored Proc computes it)
-/// The stored representation has the following differences vs a 'normal' (frozen/completed) Batch
-/// a) `id` = `-1`
-/// b) contains unfolds (`u`)
-and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
+/// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
+/// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
+/// NB the type does double duty as a) model for when we read it b) encoding a batch being sent to the stored proc
+type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     Tip =
     {   [<JsonProperty(Required=Required.Default)>] // Not requested in queries
         /// Partition key, as per Batch
@@ -116,34 +94,72 @@ and [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
         n: int64 // {index}
 
-        /// Events
-        e: BatchEvent[]
+        /// Domain Events, will eventually move out to a Batch
+        e: Event[]
 
-        /// Compaction/Snapshot/Projection events
+        /// Compaction/Snapshot/Projection events - owned and managed by the sync stored proc
         u: Unfold[] }
     /// arguably this should be a high nember to reflect fact it is the freshest ?
-    static member WellKnownDocumentId = "-1"
+    static member internal WellKnownDocumentId = "-1"
+
+/// Position and Etag to which an operation is relative
+type [<NoComparison>]
+    Position = { index: int64; etag: string option }
+
+/// Common form for either a Domain Event or an Unfolded Event
+type IEvent =
+    /// The Event Type, used to drive deserialization
+    abstract member EventType : string
+    /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
+    abstract member Data : byte[]
+    /// Optional metadata (null, or same as d, not written if missing)
+    abstract member Meta : byte[]
+
+/// Represents a Domain Event or Unfold, together with it's Index in the event sequence
+type IIndexedEvent =
+    inherit IEvent
+    /// The index into the event sequence of this event
+    abstract member Index : int64
+    /// Indicates this is not a Domain Event, but actually an Unfolded Event based on the state inferred from the events up to `Index`
+    abstract member IsUnfold: bool
+
+/// An Event about to be written, see IEventData for further information
+type EventData =
+    { eventType : string; data : byte[]; meta : byte[] }
+    interface IEvent with
+        member __.EventType = __.eventType
+        member __.Data = __.data
+        member __.Meta = __.meta
+    static member Create(eventType, data, ?meta) = { eventType = eventType; data = data; meta = defaultArg meta null}
+
+module internal Position =
+    /// NB very inefficient compared to FromDocument or using one already returned to you
+    let fromI(i: int64) = { index = i; etag = None }
+    /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
+    let fromKnownEmpty = fromI 0L
+    /// Just Do It mode
+    let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
+    /// NB very inefficient compared to FromDocument or using one already returned to you
+    let fromMaxIndex(xs: IIndexedEvent[]) =
+        if Array.isEmpty xs then fromKnownEmpty
+        else fromI (1L + Seq.max (seq { for x in xs -> x.Index }))
     /// Create Position from Tip record context (facilitating 1 RU reads)
-    member x.ToPosition() = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
-/// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
-and Unfold =
-    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
-        i: int64
+    let fromTip (x: Tip) = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
+    /// If we encounter the tip (id=-1) doc, we're interested in its etag so we can re-sync for 1 RU
+    let tryFromBatch (x: Batch) =
+        if x.id <> Tip.WellKnownDocumentId then None
+        else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
 
-        /// The Case (Event Type) of this compaction/snapshot, used to drive deserialization
-        c: string // required
+/// Reference to Collection and name that will be used as the location for the stream
+type [<NoComparison>]
+    CollectionStream = { collectionUri: System.Uri; name: string } //with
 
-        /// Event body - Json -> UTF-8 -> Deflate -> Base64
-        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
-        d: byte[] // required
+[<RequireQualifiedAccess>]
+type Direction = Forward | Backward with
+    override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
-        /// Optional metadata, same encoding as `d` (can be null; not written if missing)
-        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        m: byte[] } // optional
-
-type Enum() =
-    static member Events(b: Tip) =
+type internal Enum() =
+    static member internal Events(b: Tip) =
         b.e |> Seq.mapi (fun offset x ->
             { new IIndexedEvent with
                 member __.Index = b.i + int64 offset
@@ -151,15 +167,15 @@ type Enum() =
                 member __.EventType = x.c
                 member __.Data = x.d
                 member __.Meta = x.m })
-    static member Events(i: int64, e: BatchEvent[], startIndex, backward) = seq {
-        let isValidGivenStartIndex backward si i =
-            match si with
-            | Some si when backward -> i < si
-            | Some si -> i >= si
+    static member Events(i: int64, e: Event[], startPos : Position option, direction) = seq {
+        let isValidGivenStartPos i =
+            match startPos with
+            | Some sp when direction = Direction.Backward -> i < sp.index
+            | Some sp -> i >= sp.index
             | _ -> true
         for offset in 0..e.Length-1 do
             let index = i + int64 offset
-            if isValidGivenStartIndex backward startIndex index then
+            if isValidGivenStartPos index then
                 let x = e.[offset]
                 yield {
                     new IIndexedEvent with
@@ -168,9 +184,9 @@ type Enum() =
                         member __.EventType = x.c
                         member __.Data = x.d
                         member __.Meta = x.m } }
-    static member Events(b: Batch, startIndex, backward) =
-        Enum.Events(b.i, b.e, startIndex, backward)
-        |> if backward then System.Linq.Enumerable.Reverse else id
+    static member internal Events(b: Batch, startPos, direction) =
+        Enum.Events(b.i, b.e, startPos, direction)
+        |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
     static member Unfolds (xs: Unfold[]) = seq {
         for x in xs -> { new IIndexedEvent with
             member __.Index = x.i
@@ -184,30 +200,14 @@ type Enum() =
         // where Index is equal, unfolds get delivered after the events so the fold semantics can be 'idempotent'
         |> Seq.sortBy (fun x -> x.Index, x.IsUnfold)
 
-/// Reference to Collection and name that will be used as the location for the stream
-type [<NoComparison>] CollectionStream = { collectionUri: System.Uri; name: string } with
-    static member Create(collectionUri, name) = { collectionUri = collectionUri; name = name }
-
-namespace Equinox.Cosmos
-
-open Equinox
-open Equinox.Cosmos.Events
-open Equinox.Cosmos.Store
-open Equinox.Store
-open FSharp.Control
-open Microsoft.Azure.Documents
-open Serilog
-open System
-
-[<RequireQualifiedAccess>]
-type Direction = Forward | Backward with
-    override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
-
 type IRetryPolicy = abstract member Execute: (int -> Async<'T>) -> Async<'T>
+
+open Equinox.Store
+open Serilog
 
 module Log =
     [<NoEquality; NoComparison>]
-    type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int; ru: float }
+    type Measurement = { stream: string; interval: Infrastructure.StopwatchInterval; bytes: int; count: int; ru: float }
     [<NoEquality; NoComparison>]
     type Event =
         /// Individual read request for the Tip
@@ -229,6 +229,8 @@ module Log =
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let propEvents = propData "events"
     let propDataUnfolds = Enum.Unfolds >> propData "unfolds"
+    let propStartPos (value : Position) log = prop "startPos" value.index log
+    let propMaybeStartPos (value : Position option) log = match value with None -> log | Some value -> propStartPos value log
 
     let withLoggedRetries<'t> (retryPolicy: IRetryPolicy option) (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
         match retryPolicy with
@@ -248,8 +250,12 @@ module Log =
     let (|EventLen|) (x: #IEvent) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
+open Microsoft.Azure.Documents
+//open Microsoft.Azure.Documents.Linq
+
 [<AutoOpen>]
 module private DocDb =
+
     /// Extracts the innermost exception from a nested hierarchy of Aggregate Exceptions
     let (|AggregateException|) (exn : exn) =
         let rec aux (e : exn) =
@@ -291,7 +297,7 @@ module private DocDb =
 module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
-    type SyncResponse = { etag: string; n: int64; conflicts: BatchEvent[] }
+    type SyncResponse = { etag: string; n: int64; conflicts: Event[] }
     let [<Literal>] sprocName = "EquinoxSync002"  // NB need to renumber for any breaking change
     let [<Literal>] sprocBody = """
 
@@ -378,7 +384,7 @@ function sync(req, expectedVersion, maxEvents) {
         let sprocLink = sprintf "%O/sprocs/%s" stream.collectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey(stream.name))
         let! ct = Async.CancellationToken
-        let ev = match expectedVersion with Some ev -> Position.FromI ev | None -> Position.FromAppendAtEnd
+        let ev = match expectedVersion with Some ev -> Position.fromI ev | None -> Position.fromAppendAtEnd
         let! (res : Client.StoredProcedureResponse<SyncResponse>) =
             client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ev.index, box maxEvents) |> Async.AwaitTaskCorrect
 
@@ -387,11 +393,11 @@ function sync(req, expectedVersion, maxEvents) {
             | null -> Result.Written newPos
             | [||] when newPos.index = 0L -> Result.Conflict (newPos, Array.empty)
             | [||] -> Result.ConflictUnknown newPos
-            | xs  -> Result.Conflict (newPos, Enum.Events(ev.index, xs, None, false) |> Array.ofSeq) }
+            | xs  -> Result.Conflict (newPos, Enum.Events(ev.index, xs, None, Direction.Forward) |> Array.ofSeq) }
 
     let private logged client (stream: CollectionStream) (expectedVersion, req: Tip, maxEvents) (log : ILogger)
         : Async<Result> = async {
-        let verbose = log.IsEnabled Events.LogEventLevel.Debug
+        let verbose = log.IsEnabled Serilog.Events.LogEventLevel.Debug
         let log = if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log
         let (Log.BatchLen bytes), count = Enum.Events req, req.e.Length
         let log = log |> Log.prop "bytes" bytes
@@ -418,12 +424,12 @@ function sync(req, expectedVersion, maxEvents) {
     let batch (log : ILogger) retryPolicy client pk batch: Async<Result> =
         let call = logged client pk batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
-    let mkBatch (stream: Store.CollectionStream) (events: IEvent[]) unfolds: Tip =
-        {   p = stream.name; id = Store.Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
+    let mkBatch (stream: CollectionStream) (events: IEvent[]) unfolds: Tip =
+        {   p = stream.name; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = [| for e in events -> { t = DateTimeOffset.UtcNow; c = e.EventType; d = e.Data; m = e.Meta } |]
             u = Array.ofSeq unfolds }
-    let mkUnfold baseIndex (unfolds: IEvent seq) : Store.Unfold seq =
-        unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta } : Store.Unfold)
+    let mkUnfold baseIndex (unfolds: IEvent seq) : Unfold seq =
+        unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta } : Unfold)
 
     module Initialization =
         open System.Collections.ObjectModel
@@ -434,7 +440,7 @@ function sync(req, expectedVersion, maxEvents) {
 
         let createCollection (client: IDocumentClient) (dbUri: Uri) collName ru = async {
             let pkd = PartitionKeyDefinition()
-            pkd.Paths.Add(sprintf "/%s" Store.Batch.PartitionKeyField)
+            pkd.Paths.Add(sprintf "/%s" Batch.PartitionKeyField)
             let colld = DocumentCollection(Id = collName, PartitionKey = pkd)
 
             colld.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
@@ -443,7 +449,7 @@ function sync(req, expectedVersion, maxEvents) {
             // Given how long and variable the blacklist would be, we whitelist instead
             colld.IndexingPolicy.ExcludedPaths <- Collection [|ExcludedPath(Path="/*")|]
             // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
-            colld.IndexingPolicy.IncludedPaths <- Collection [| for k in Store.Batch.IndexedFields -> IncludedPath(Path=sprintf "/%s/?" k) |]
+            colld.IndexingPolicy.IncludedPaths <- Collection [| for k in Batch.IndexedFields -> IncludedPath(Path=sprintf "/%s/?" k) |]
             let! coll = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, colld, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect
             return coll.Resource.Id }
 
@@ -461,7 +467,7 @@ function sync(req, expectedVersion, maxEvents) {
             //let! _aux = createAux client dbUri collName auxRu
             return! createProc log client collUri }
 
-module private Tip =
+module internal Tip =
     let private get (client: IDocumentClient) (stream: CollectionStream, maybePos: Position option) =
         let coll = DocDbCollection(client, stream.collectionUri)
         let ac = match maybePos with Some { etag=Some etag } -> Client.AccessCondition(Type=Client.AccessConditionType.IfNoneMatch, Condition=etag) | _ -> null
@@ -491,38 +497,38 @@ module private Tip =
         match res with
         | ReadResult.NotModified -> return Result.NotModified
         | ReadResult.NotFound -> return Result.NotFound
-        | ReadResult.Found doc -> return Result.Found (doc.ToPosition(), Enum.EventsAndUnfolds doc |> Array.ofSeq) }
+        | ReadResult.Found doc -> return Result.Found (Position.fromTip doc, Enum.EventsAndUnfolds doc |> Array.ofSeq) }
 
- module private Query =
+ module internal Query =
     open Microsoft.Azure.Documents.Linq
-    let private mkQuery (client : IDocumentClient) maxItems (stream: CollectionStream) (direction: Direction) (startPos: Position option) =
+    open FSharp.Control
+    let private mkQuery (client : IDocumentClient) maxItems (stream: CollectionStream) (direction: Direction) startPos =
         let querySpec =
             let fields = "c.id, c.i, c._etag, c.n, c.e"
             match startPos with
             | None -> SqlQuerySpec(sprintf "SELECT %s FROM c ORDER BY c.i " fields + if direction = Direction.Forward then "ASC" else "DESC")
-            | Some p ->
-                let f = if direction = Direction.Forward then "c.n > @id ORDER BY c.i ASC" else "c.i < @id ORDER BY c.i DESC"
-                SqlQuerySpec(sprintf "SELECT %s FROM c WHERE " fields + f, SqlParameterCollection [SqlParameter("@id", p.index)])
+            | Some { index = positionSoExclusiveWhenBackward } ->
+                let f = if direction = Direction.Forward then "c.n > @startPos ORDER BY c.i ASC" else "c.i < @startPos ORDER BY c.i DESC"
+                SqlQuerySpec(sprintf "SELECT %s FROM c WHERE " fields + f, SqlParameterCollection [SqlParameter("@startPos", positionSoExclusiveWhenBackward)])
         let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey(stream.name), MaxItemCount=Nullable maxItems)
         client.CreateDocumentQuery<Batch>(stream.collectionUri, querySpec, feedOptions).AsDocumentQuery()
 
     // Unrolls the Batches in a response - note when reading backwards, the events are emitted in reverse order of index
-    let private handleResponse direction (stream: CollectionStream) (startPos: Position option) (query: IDocumentQuery<Batch>) (log: ILogger)
+    let private handleResponse direction (stream: CollectionStream) startPos (query: IDocumentQuery<Batch>) (log: ILogger)
         : Async<IIndexedEvent[] * Position option * float> = async {
         let! ct = Async.CancellationToken
         let! t, (res : Client.FeedResponse<Batch>) = query.ExecuteNextAsync<Batch>(ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let batches, ru = Array.ofSeq res, res.RequestCharge
-        let startIndex = match startPos with Some { index = i } -> Some i | _ -> None
-        let events = batches |> Seq.collect (fun b -> Enum.Events(b, startIndex, backward=(direction = Direction.Backward))) |> Array.ofSeq
+        let events = batches |> Seq.collect (fun b -> Enum.Events(b, startPos, direction)) |> Array.ofSeq
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = stream.name; interval = t; bytes = bytes; count = count; ru = ru }
         let log = let evt = Log.Response (direction, reqMetric) in log |> Log.event evt
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
         let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
-        (log |> Log.prop "startIndex" (match startIndex with Some i -> Nullable i | None -> Nullable()) |> Log.prop "bytes" bytes)
+        (log |> Log.propMaybeStartPos startPos |> Log.prop "bytes" bytes)
             .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
                 "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
-        let maybePosition = batches |> Array.tryPick (fun x -> x.TryToPosition())
+        let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         return events, maybePosition, ru }
 
     let private run (log : ILogger) (readSlice: IDocumentQuery<Batch> -> ILogger -> Async<IIndexedEvent[] * Position option * float>)
@@ -544,8 +550,9 @@ module private Tip =
     let private logQuery direction batchSize streamName interval (responsesCount, events : IIndexedEvent []) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
+        let evt = Log.Event.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
-        (log |> Log.prop "bytes" bytes |> Log.prop "batchSize" batchSize |> Log.event (Log.Event.Query (direction, responsesCount, reqMetric))).Information(
+        (log |> Log.prop "bytes" bytes |> Log.prop "batchSize" batchSize |> Log.event evt).Information(
             "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms rc={ru}",
             action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
@@ -594,7 +601,7 @@ module private Tip =
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         query.Dispose()
         let raws, decoded = (Array.map fst events), (events |> Seq.choose snd |> Array.ofSeq)
-        let pos = match maybeTipPos with Some p -> p | None -> Position.FromMaxIndex raws
+        let pos = match maybeTipPos with Some p -> p | None -> Position.fromMaxIndex raws
 
         log |> logQuery direction maxItems stream.name t (!responseCount,raws) pos.index ru
         return pos, decoded }
@@ -647,34 +654,32 @@ module private Tip =
 
 type [<NoComparison>] Token = { stream: CollectionStream; pos: Position }
 module Token =
-    let create stream pos : Storage.StreamToken = { value = box { stream = stream; pos = pos } }
-    let (|Unpack|) (token: Storage.StreamToken) : CollectionStream*Position = let t = unbox<Token> token.value in t.stream,t.pos
+    let create stream pos : Equinox.Storage.StreamToken = { value = box { stream = stream; pos = pos } }
+    let (|Unpack|) (token: Equinox.Storage.StreamToken) : CollectionStream*Position = let t = unbox<Token> token.value in t.stream,t.pos
     let supersedes (Unpack (_,currentPos)) (Unpack (_,xPos)) =
         let currentVersion, newVersion = currentPos.index, xPos.index
         let currentETag, newETag = currentPos.etag, xPos.etag
         newVersion > currentVersion || currentETag <> newETag
 
-namespace Equinox.Cosmos.Builder
-
-open Equinox
-open Equinox.Cosmos.Events // NB needs to be shadow by Equinox.Cosmos
-open Equinox.Cosmos
-open Equinox.Store.Infrastructure
-open FSharp.Control
-open Microsoft.Azure.Documents
-open Serilog
-open System
-
 [<AutoOpen>]
 module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type InternalSyncResult = Written of Storage.StreamToken | ConflictUnknown of Storage.StreamToken | Conflict of Storage.StreamToken * IIndexedEvent[]
+    type InternalSyncResult = Written of Equinox.Storage.StreamToken | ConflictUnknown of Equinox.Storage.StreamToken | Conflict of Equinox.Storage.StreamToken * IIndexedEvent[]
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type LoadFromTokenResult<'event> = Unchanged | Found of Storage.StreamToken * 'event[]
+    type LoadFromTokenResult<'event> = Unchanged | Found of Equinox.Storage.StreamToken * 'event[]
+
+namespace Equinox.Cosmos
+
+open Equinox
+open Equinox.Cosmos.Store
+open Equinox.Store.Infrastructure
+open FSharp.Control
+open Serilog
+open System
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type EqxConnection(client: IDocumentClient, ?readRetryPolicy: IRetryPolicy, ?writeRetryPolicy) =
+type EqxConnection(client: Microsoft.Azure.Documents.IDocumentClient, ?readRetryPolicy: IRetryPolicy, ?writeRetryPolicy) =
     member __.Client = client
     member __.TipRetryPolicy = readRetryPolicy
     member __.QueryRetryPolicy = readRetryPolicy
@@ -715,25 +720,25 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     member __.LoadFromUnfoldsOrRollingSnapshots log (stream,maybePos) (tryDecode,isOrigin): Async<Storage.StreamToken * 'event[]> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy conn.Client stream maybePos
         match res with
-        | Tip.Result.NotFound -> return Token.create stream Position.FromKnownEmpty, Array.empty
+        | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
         | Tip.Result.NotModified -> return invalidOp "Not handled"
         | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return Token.create stream pos, span
         | _ -> return! __.LoadBackwardsStopping log stream (tryDecode,isOrigin) }
     member __.GetPosition(log, stream, ?pos): Async<Storage.StreamToken> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy conn.Client stream pos
         match res with
-        | Tip.Result.NotFound -> return Token.create stream Position.FromKnownEmpty
+        | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
         | Tip.Result.NotModified -> return Token.create stream pos.Value
         | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create stream pos }
     member __.LoadFromToken(log, (stream,pos), (tryDecode, isOrigin)): Async<LoadFromTokenResult<'event>> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy conn.Client stream (Some pos)
         match res with
-        | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.FromKnownEmpty,Array.empty)
+        | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty,Array.empty)
         | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
         | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return LoadFromTokenResult.Found (Token.create stream pos, span)
         | _ ->  let! res = __.Read log stream Direction.Forward (Some pos) (tryDecode,isOrigin)
                 return LoadFromTokenResult.Found res }
-    member __.Sync log stream (expectedVersion, batch: Store.Tip): Async<InternalSyncResult> = async {
+    member __.Sync log stream (expectedVersion, batch: Tip): Async<InternalSyncResult> = async {
         let! wr = Sync.batch log conn.WriteRetryPolicy conn.Client stream (expectedVersion,batch,batching.MaxItems)
         match wr with
         | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (Token.create stream pos',events)
@@ -754,12 +759,7 @@ type private Category<'event, 'state>(gateway : EqxGateway, codec : UnionCodec.I
         | LoadFromTokenResult.Unchanged -> return current
         | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
     member __.Sync(Token.Unpack (stream,pos), state as current, expectedVersion, events, unfold, fold, isOrigin, log): Async<Storage.SyncResult<'state>> = async {
-        let encodeEvent (x : 'event) : IEvent =
-            let e = codec.Encode x
-            { new IEvent with
-                member __.EventType = e.caseName
-                member __.Data = e.payload
-                member __.Meta = null }
+        let encodeEvent (x : 'event) : IEvent = let e = codec.Encode x in EventData.Create(e.caseName,e.payload) :> _
         let state' = fold state (Seq.ofList events)
         let eventsEncoded, projectionsEncoded = Seq.map encodeEvent events |> Array.ofSeq, Seq.map encodeEvent (unfold state' events)
         let baseIndex = pos.index + int64 (List.length events)
@@ -833,7 +833,7 @@ module Caching =
 type private Folder<'event, 'state>
     (   category: Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state,
         isOrigin: 'event -> bool,
-        mkCollectionStream: string -> Store.CollectionStream,
+        mkCollectionStream: string -> CollectionStream,
         // Whether or not an `unfold` function is supplied controls whether reads do a point read before querying
         ?unfold: ('state -> 'event list -> 'event seq),
         ?readCache) =
@@ -858,9 +858,9 @@ type private Folder<'event, 'state>
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
 type EqxCollections(selectDatabaseAndCollection : string -> string*string) =
     new (databaseId, collectionId) = EqxCollections(fun _streamName -> databaseId, collectionId)
-    member __.CollectionForStream streamName =
+    member __.CollectionForStream streamName : CollectionStream =
         let databaseId, collectionId = selectDatabaseAndCollection streamName
-        Store.CollectionStream.Create(Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId), streamName)
+        { collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId); name = streamName }
 
 /// Pairs a Gateway, defining the retry policies for CosmosDb with an EqxCollections to
 type EqxStore(gateway: EqxGateway, collections: EqxCollections) =
@@ -928,6 +928,7 @@ type ConnectionMode =
     // More efficient than Gateway, but suboptimal
     | DirectHttps
 
+open Microsoft.Azure.Documents
 type EqxConnector
     (   requestTimeout: TimeSpan, maxRetryAttemptsOnThrottledRequests: int, maxRetryWaitTimeInSeconds: int,
         log : ILogger,
@@ -985,8 +986,7 @@ type EqxConnector
 namespace Equinox.Cosmos.Core
 
 open Equinox.Cosmos
-open Equinox.Cosmos.Builder
-open Equinox.Cosmos.Events
+open Equinox.Cosmos.Store
 open FSharp.Control
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
@@ -1040,7 +1040,7 @@ type EqxContext
         let direction = defaultArg direction Direction.Forward
         if maxCount = Some 0 then
             // Search semantics include the first hit so we need to special case this anyway
-            return Token.create stream (defaultArg startPos Position.FromKnownEmpty), Array.empty
+            return Token.create stream (defaultArg startPos Position.fromKnownEmpty), Array.empty
         else
             let isOrigin =
                 match maxCount with
@@ -1070,14 +1070,14 @@ type EqxContext
         let batch = Sync.mkBatch stream events Seq.empty
         let! res = gateway.Sync logger stream (Some position.index,batch)
         match res with
-        | Builder.Internal.InternalSyncResult.Written (Token.Unpack (_,pos)) -> return AppendResult.Ok pos
-        | Builder.Internal.InternalSyncResult.Conflict (Token.Unpack (_,pos),events) -> return AppendResult.Conflict (pos, events)
-        | Builder.Internal.InternalSyncResult.ConflictUnknown (Token.Unpack (_,pos)) -> return AppendResult.ConflictUnknown pos }
+        | InternalSyncResult.Written (Token.Unpack (_,pos)) -> return AppendResult.Ok pos
+        | InternalSyncResult.Conflict (Token.Unpack (_,pos),events) -> return AppendResult.Conflict (pos, events)
+        | InternalSyncResult.ConflictUnknown (Token.Unpack (_,pos)) -> return AppendResult.ConflictUnknown pos }
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Handler enables building equivalent equivalent idempotent handling with minimal code.
     member __.NonIdempotentAppend(stream, events: IEvent[]) : Async<Position> = async {
-        let! res = __.Sync(stream, Position.FromAppendAtEnd, events)
+        let! res = __.Sync(stream, Position.fromAppendAtEnd, events)
         match res with
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
@@ -1100,10 +1100,13 @@ module Events =
         return xs }
     let (|MinPosition|) = function
         | 0L -> None
-        | i -> Some (Position.FromI i)
+        | i -> Some (Position.fromI i)
     let (|MaxPosition|) = function
         | int64.MaxValue -> None
-        | i -> Some (Position.FromI (i + 1L))
+        | i -> Some (Position.fromI (i + 1L))
+
+    /// Creates an Event record, suitable for supplying to Append et al
+    let create eventType data meta = Store.EventData.Create(eventType, data, meta) :> IEvent
 
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
@@ -1123,7 +1126,7 @@ module Events =
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (ctx: EqxContext) (streamName: string) (index: int64) (events: IEvent[]): Async<AppendResult<int64>> =
-        ctx.Sync(ctx.CreateStream streamName, Position.FromI index, events) |> stripSyncResult
+        ctx.Sync(ctx.CreateStream streamName, Position.fromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
