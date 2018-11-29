@@ -18,6 +18,10 @@ module Cart =
         let store = createEqxStore connection batchSize
         let resolveStream = EqxStreamBuilder(store, codec, fold, initial).Create
         Backend.Cart.Service(log, resolveStream)
+    let createServiceWithoutOptimizationAndMaxItems connection batchSize maxEventsPerSlice log =
+        let store = createEqxStoreWithMaxEventsPerSlice connection batchSize maxEventsPerSlice
+        let resolveStream = EqxStreamBuilder(store, codec, fold, initial).Create
+        Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
     let createServiceWithProjection connection batchSize log =
         let store = createEqxStore connection batchSize
@@ -66,8 +70,8 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
 
         let maxItemsPerRequest = 2
-        let maxEventsPerBatch = 1
-        let service = Cart.createServiceWithoutOptimization conn maxItemsPerRequest log
+        let maxEventsPerBatch = 3
+        let service = Cart.createServiceWithoutOptimizationAndMaxItems conn maxItemsPerRequest maxEventsPerBatch log
         capture.Clear() // for re-runs of the test
 
         let cartId = Guid.NewGuid() |> CartId
@@ -82,7 +86,7 @@ type Tests(testOutputHelper) =
                 | 1 -> 1 // it does cost a single trip to determine there are 0 items
                 | i -> ceil(float (i-1) * float eventsPerAction / float maxItemsPerRequest / float maxEventsPerBatch) |> int
             test <@ List.replicate expectedBatchesOf2Items EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 39 // 37.15
+            verifyRequestChargesMax 25 // 20.59
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -93,7 +97,7 @@ type Tests(testOutputHelper) =
         // Need 6 trips of 2 maxItemsPerRequest to read 12 events
         test <@ let expectedResponses = ceil(float expectedEventCount/float maxItemsPerRequest/float maxEventsPerBatch) |> int
                 List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 20 // 18.47
+        verifyRequestChargesMax 7 // 5.93
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
