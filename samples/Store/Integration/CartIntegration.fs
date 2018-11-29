@@ -1,6 +1,6 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
-open Equinox.Cosmos.Builder
+open Equinox.Cosmos
 open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
@@ -24,9 +24,9 @@ let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
 
 let resolveEqxStreamWithProjection gateway =
-    EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Create
+    EqxResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
 let resolveEqxStreamWithoutCustomAccessStrategy gateway =
-    EqxStreamBuilder(gateway, codec, fold, initial).Create
+    EqxResolver(gateway, codec, fold, initial).Resolve
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->

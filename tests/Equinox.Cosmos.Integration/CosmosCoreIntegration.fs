@@ -1,8 +1,8 @@
 ﻿module Equinox.Cosmos.Integration.CoreIntegration
 
-open Equinox.Cosmos.Integration.Infrastructure
 open Equinox.Cosmos
 open Equinox.Cosmos.Core
+open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.Control
 open Newtonsoft.Json.Linq
 open Swensen.Unquote
@@ -12,15 +12,13 @@ open System.Text
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-type EventData = { eventType:string; data: byte[] } with
-    interface Events.IEvent with
-        member __.EventType = __.eventType
-        member __.Data = __.data
-        member __.Meta = Encoding.UTF8.GetBytes("{\"m\":\"m\"}")
-    static member private Create(i, ?eventType, ?json) : Events.IEvent =
-        {   eventType = sprintf "%s:%d" (defaultArg eventType "test_event") i
-            data = System.Text.Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}") } :> _
-    static member Create(i, c) = Array.init c (fun x -> EventData.Create(x+i))
+type TestEvents() =
+    static member private Create(i, ?eventType, ?json) =
+        Events.create
+            (sprintf "%s:%d" (defaultArg eventType "test_event") i)
+            (Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}"))
+            (Encoding.UTF8.GetBytes "{\"m\":\"m\"}")
+    static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
 
 type Tests(testOutputHelper) =
     inherit TestsWithLogCapture(testOutputHelper)
@@ -45,14 +43,14 @@ type Tests(testOutputHelper) =
         let ctx = mkContext conn
 
         let index = 0L
-        let! res = Events.append ctx streamName index <| EventData.Create(0,1)
+        let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         verifyRequestChargesMax 10
         // Clear the counters
         capture.Clear()
 
-        let! res = Events.append ctx streamName 1L <| EventData.Create(1,5)
+        let! res = Events.append ctx streamName 1L <| TestEvents.Create(1,5)
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
@@ -71,26 +69,26 @@ type Tests(testOutputHelper) =
 
     let add6EventsIn2Batches ctx streamName = async {
         let index = 0L
-        let! res = Events.append ctx streamName index <| EventData.Create(0,1)
+        let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
 
         test <@ AppendResult.Ok 1L = res @>
-        let! res = Events.append ctx streamName 1L <| EventData.Create(1,5)
+        let! res = Events.append ctx streamName 1L <| TestEvents.Create(1,5)
         test <@ AppendResult.Ok 6L = res @>
         // Only start counting RUs from here
         capture.Clear()
-        return EventData.Create(0,6)
+        return TestEvents.Create(0,6)
     }
 
-    let verifyCorrectEventsEx direction baseIndex (expected: Events.IEvent []) (xs: Events.IIndexedEvent[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: Store.IEvent []) (xs: Store.IIndexedEvent[]) =
         let xs, baseIndex =
-            if direction = Direction.Forward then xs, baseIndex
+            if direction = Equinox.Cosmos.Store.Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
         test <@ [for i in 0..expected.Length - 1 -> baseIndex + int64 i] = [for r in xs -> r.Index] @>
         test <@ [for e in expected -> e.EventType] = [ for r in xs -> r.EventType ] @>
         for i,x,y in Seq.mapi2 (fun i x y -> i,x,y) [for e in expected -> e.Data] [for r in xs -> r.Data] do
             verifyUtf8JsonEquals i x y
-    let verifyCorrectEventsBackward = verifyCorrectEventsEx Direction.Backward
-    let verifyCorrectEvents = verifyCorrectEventsEx Direction.Forward
+    let verifyCorrectEventsBackward = verifyCorrectEventsEx Equinox.Cosmos.Store.Direction.Backward
+    let verifyCorrectEvents = verifyCorrectEventsEx Equinox.Cosmos.Store.Direction.Forward
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``appendAtEnd and getNextIndex`` (extras, TestStream streamName) = Async.RunSynchronously <| async {
@@ -107,7 +105,7 @@ type Tests(testOutputHelper) =
 
         let mutable pos = 0L
         for appendBatchSize in [4; 5; 9] do
-            let! res = Events.appendAtEnd ctx streamName <| EventData.Create (int pos,appendBatchSize)
+            let! res = Events.appendAtEnd ctx streamName <| TestEvents.Create (int pos,appendBatchSize)
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
@@ -120,7 +118,7 @@ type Tests(testOutputHelper) =
             pos =! res
             capture.Clear()
 
-        let! res = Events.appendAtEnd ctx streamName <| EventData.Create (int pos,42)
+        let! res = Events.appendAtEnd ctx streamName <| TestEvents.Create (int pos,42)
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
@@ -137,7 +135,7 @@ type Tests(testOutputHelper) =
         let stream  = ctx.CreateStream streamName
 
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
-        let! _pos = ctx.NonIdempotentAppend(stream, EventData.Create (int pos,extrasCount))
+        let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         verifyRequestChargesMax 300 // 278 observed
         capture.Clear()
@@ -159,7 +157,7 @@ type Tests(testOutputHelper) =
         let ctx = mkContext conn
 
         // Attempt to write, skipping Index 0
-        let! res = Events.append ctx streamName 1L <| EventData.Create(0,1)
+        let! res = Events.append ctx streamName 1L <| TestEvents.Create(0,1)
         test <@ [EqxAct.Resync] = capture.ExternalCalls @>
         // The response aligns with a normal conflict in that it passes the entire set of conflicting events ()
         test <@ AppendResult.Conflict (0L,[||]) = res @>
@@ -167,15 +165,15 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         // Now write at the correct position
-        let expected = EventData.Create(1,1)
+        let expected = TestEvents.Create(1,1)
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 10
+        verifyRequestChargesMax 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
-        let! res = Events.append ctx streamName 0L <| EventData.Create(-42,2)
+        let! res = Events.append ctx streamName 0L <| TestEvents.Create(-42,2)
         // This time we get passed the conflicting events - we pay a little for that, but that's unavoidable
         match res with
         | AppendResult.Conflict (1L, e) -> verifyCorrectEvents 0L expected e
@@ -233,7 +231,9 @@ type Tests(testOutputHelper) =
 
         verifyCorrectEvents 0L expected res
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        let queryRoundTripsAndItemCounts = function EqxEvent (Log.Query (Direction.Forward, responses, { count = c })) -> Some (responses,c) | _ -> None
+        let queryRoundTripsAndItemCounts = function
+            | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Forward, responses, { count = c })) -> Some (responses,c)
+            | _ -> None
         // validate that, despite only requesting max 1 item, we only needed one trip (which contained only one item)
         [1,1] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 3 // 2.97
@@ -285,14 +285,20 @@ type Tests(testOutputHelper) =
         let! expected = add6EventsIn2Batches ctx streamName
         capture.Clear()
 
-        let! res = Events.getAllBackwards ctx streamName 10L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun x -> x.Index <> 2L) |> AsyncSeq.toArrayAsync
+        let! res =
+            Events.getAllBackwards ctx streamName 10L 1
+            |> AsyncSeq.concatSeq
+            |> AsyncSeq.takeWhileInclusive (fun x -> x.Index <> 2L)
+            |> AsyncSeq.toArrayAsync
         let expected = expected |> Array.skip 2 // omit index 0, 1 as we vote to finish at 2L
 
         verifyCorrectEventsBackward 5L expected res
         // only 1 request of 1 item triggered
         test <@ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
         // validate that, despite only requesting max 1 item, we only needed one trip, bearing 5 items (from which one item was omitted)
-        let queryRoundTripsAndItemCounts = function EqxEvent (Log.Query (Direction.Backward, responses, { count = c })) -> Some (responses,c) | _ -> None
+        let queryRoundTripsAndItemCounts = function
+            | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Backward, responses, { count = c })) -> Some (responses,c)
+            | _ -> None
         [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 3 // 2.98
     }

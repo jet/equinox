@@ -20,7 +20,7 @@ type VerbatimUtf8Tests() =
 
     [<Fact>]
     let ``encodes correctly`` () =
-        let encoded = mkUnionEncoder().Encode(A { embed = "\"" })
+        let encoded = unionEncoder.Encode(A { embed = "\"" })
         let e : Store.Batch =
             {   p = "streamName"; id = string 0; i = -1L; n = -1L; _etag = null
                 e = [| { t = DateTimeOffset.MinValue; c = encoded.caseName; d = encoded.payload; m = null } |] }

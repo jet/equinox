@@ -1,6 +1,6 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
-open Equinox.Cosmos.Builder
+open Equinox.Cosmos
 open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
@@ -22,7 +22,7 @@ let createServiceGes gateway log =
     Backend.Favorites.Service(log, resolveStream)
 
 let createServiceEqx gateway log =
-    let resolveStream = EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Create
+    let resolveStream = EqxResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =
