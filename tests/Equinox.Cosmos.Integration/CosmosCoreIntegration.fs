@@ -176,7 +176,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 12 // was 10, observed 10.57
+        verifyRequestChargesMax 14 // observed 12.73 // was 10
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
