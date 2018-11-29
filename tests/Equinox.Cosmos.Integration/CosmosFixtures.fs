@@ -35,3 +35,6 @@ let collections =
 let createEqxStore connection batchSize =
     let gateway = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=batchSize))
     EqxStore(gateway, collections)
+let createEqxStoreWithMaxEventsPerSlice connection batchSize maxEventsPerSlice =
+    let gateway = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=batchSize, maxEventsPerSlice=maxEventsPerSlice))
+    EqxStore(gateway, collections)
