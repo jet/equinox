@@ -12,13 +12,13 @@ open System.Text
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-type EventData = { eventType:string; data: byte[] } with
+type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
         Events.create
             (sprintf "%s:%d" (defaultArg eventType "test_event") i)
             (Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}"))
             (Encoding.UTF8.GetBytes "{\"m\":\"m\"}")
-    static member Create(i, c) = Array.init c (fun x -> EventData.Create(x+i))
+    static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
 
 type Tests(testOutputHelper) =
     inherit TestsWithLogCapture(testOutputHelper)
@@ -43,14 +43,14 @@ type Tests(testOutputHelper) =
         let ctx = mkContext conn
 
         let index = 0L
-        let! res = Events.append ctx streamName index <| EventData.Create(0,1)
+        let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         verifyRequestChargesMax 10
         // Clear the counters
         capture.Clear()
 
-        let! res = Events.append ctx streamName 1L <| EventData.Create(1,5)
+        let! res = Events.append ctx streamName 1L <| TestEvents.Create(1,5)
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
@@ -69,14 +69,14 @@ type Tests(testOutputHelper) =
 
     let add6EventsIn2Batches ctx streamName = async {
         let index = 0L
-        let! res = Events.append ctx streamName index <| EventData.Create(0,1)
+        let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
 
         test <@ AppendResult.Ok 1L = res @>
-        let! res = Events.append ctx streamName 1L <| EventData.Create(1,5)
+        let! res = Events.append ctx streamName 1L <| TestEvents.Create(1,5)
         test <@ AppendResult.Ok 6L = res @>
         // Only start counting RUs from here
         capture.Clear()
-        return EventData.Create(0,6)
+        return TestEvents.Create(0,6)
     }
 
     let verifyCorrectEventsEx direction baseIndex (expected: Store.IEvent []) (xs: Store.IIndexedEvent[]) =
@@ -105,7 +105,7 @@ type Tests(testOutputHelper) =
 
         let mutable pos = 0L
         for appendBatchSize in [4; 5; 9] do
-            let! res = Events.appendAtEnd ctx streamName <| EventData.Create (int pos,appendBatchSize)
+            let! res = Events.appendAtEnd ctx streamName <| TestEvents.Create (int pos,appendBatchSize)
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
@@ -118,7 +118,7 @@ type Tests(testOutputHelper) =
             pos =! res
             capture.Clear()
 
-        let! res = Events.appendAtEnd ctx streamName <| EventData.Create (int pos,42)
+        let! res = Events.appendAtEnd ctx streamName <| TestEvents.Create (int pos,42)
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
@@ -135,7 +135,7 @@ type Tests(testOutputHelper) =
         let stream  = ctx.CreateStream streamName
 
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
-        let! _pos = ctx.NonIdempotentAppend(stream, EventData.Create (int pos,extrasCount))
+        let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         verifyRequestChargesMax 300 // 278 observed
         capture.Clear()
@@ -157,7 +157,7 @@ type Tests(testOutputHelper) =
         let ctx = mkContext conn
 
         // Attempt to write, skipping Index 0
-        let! res = Events.append ctx streamName 1L <| EventData.Create(0,1)
+        let! res = Events.append ctx streamName 1L <| TestEvents.Create(0,1)
         test <@ [EqxAct.Resync] = capture.ExternalCalls @>
         // The response aligns with a normal conflict in that it passes the entire set of conflicting events ()
         test <@ AppendResult.Conflict (0L,[||]) = res @>
@@ -165,15 +165,15 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         // Now write at the correct position
-        let expected = EventData.Create(1,1)
+        let expected = TestEvents.Create(1,1)
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 10
+        verifyRequestChargesMax 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
-        let! res = Events.append ctx streamName 0L <| EventData.Create(-42,2)
+        let! res = Events.append ctx streamName 0L <| TestEvents.Create(-42,2)
         // This time we get passed the conflicting events - we pay a little for that, but that's unavoidable
         match res with
         | AppendResult.Conflict (1L, e) -> verifyCorrectEvents 0L expected e
