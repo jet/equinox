@@ -62,6 +62,29 @@ type StopwatchInterval (startTicks : int64, endTicks : int64) =
     member __.Elapsed = timeSpanFromStopwatchTicks(endTicks - startTicks)
     override __.ToString () = let e = __.Elapsed in sprintf "%g ms" e.TotalMilliseconds
 
+/// Exception yielded by after `count` attempts to complete an operation have taken place
+type OperationRetriesExceededException(count : int, innerException : exn) =
+   inherit exn(sprintf "Retry failed after %i attempts." count, innerException)
+
+/// Helper for defining backoffs within the definition of a retry policy for a store.
+module Retry =
+    /// Wraps an async computation in a retry loop, passing the (1-based) count into the computation and,
+    ///   (until `attempts` exhausted) on an exception matching the `filter`, waiting for the timespan chosen by `backoff` before retrying
+    let withBackoff (maxAttempts : int) (backoff : int -> System.TimeSpan option) (f : int -> Async<'a>) : Async<'a> =
+        if maxAttempts < 1 then raise (invalidArg "maxAttempts" "Should be >= 1")
+        let rec go attempt = async {
+            try
+                let! res = f attempt
+                return res
+            with ex ->
+                if attempt = maxAttempts then return raise (OperationRetriesExceededException(maxAttempts, ex))
+                else
+                    match backoff attempt with
+                    | Some timespan -> do! Async.Sleep (int timespan.TotalMilliseconds)
+                    | None -> ()
+                    return! go (attempt + 1) }
+        go 1
+
 /// Low level stream builders, generally consumed via Store-specific Stream Builders that layer policies such as Caching in at the Category level
 module Stream =
     /// Represents a specific stream in a ICategory
