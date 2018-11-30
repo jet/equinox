@@ -167,14 +167,14 @@ module Test =
             let snapshot = if useUnfolds then Some snapshot else None
             match store with
             | Store.Mem store ->
-                Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create
+                Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve
             | Store.Es gateway ->
                 let resolver = EsResolver(useCache)
-                GesStreamBuilder<'event,'state>(gateway, codec, fold, initial, ?access = resolver.CreateAccessStrategy(snapshot), ?caching = resolver.Cache).Create
+                GesResolver<'event,'state>(gateway, codec, fold, initial, ?access = resolver.CreateAccessStrategy(snapshot), ?caching = resolver.Cache).Resolve
             | Store.Cosmos (gateway, databaseId, connectionId) ->
                 let resolver = CosmosResolver(useCache)
                 let store = EqxStore(gateway, EqxCollections(databaseId, connectionId))
-                EqxStreamBuilder<'event,'state>(store, codec, fold, initial, ?access = resolver.CreateAccessStrategy snapshot, ?caching = resolver.Cache).Create
+                EqxResolver<'event,'state>(store, codec, fold, initial, ?access = resolver.CreateAccessStrategy snapshot, ?caching = resolver.Cache).Resolve
 
     let createTest store test (cache,unfolds)  log =
         let builder = Builder(store, cache, unfolds)

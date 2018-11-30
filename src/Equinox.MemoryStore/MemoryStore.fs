@@ -3,6 +3,7 @@
 /// 2. Illustrates a minimal implemention of the Storage interface interconnects for the purpose of writing Store connectors
 namespace Equinox.MemoryStore
 
+open Equinox
 open Serilog
 
 /// Equivalent to GetEventStore in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
@@ -60,9 +61,9 @@ type Token = { streamVersion: int; streamName: string }
 
 /// Internal implementation detail of MemoryStreamStore
 module private Token =
-    let private streamTokenOfIndex streamName (streamVersion : int) : Equinox.Store.StreamToken =
+    let private streamTokenOfIndex streamName (streamVersion : int) : Store.StreamToken =
         { value = box { streamName = streamName; streamVersion = streamVersion; } }
-    let (|Unpack|) (token: Equinox.Store.StreamToken) : Token = unbox<Token> token.value
+    let (|Unpack|) (token: Store.StreamToken) : Token = unbox<Token> token.value
     /// Represent a stream known to be empty
     let ofEmpty streamName initial = streamTokenOfIndex streamName -1, initial
     let tokenOfArray streamName (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex streamName
@@ -73,7 +74,7 @@ module private Token =
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
-    interface Equinox.Store.ICategory<'event, 'state> with
+    interface Store.ICategory<'event, 'state, string> with
         member __.Load streamName (log : ILogger) = async {
             match store.TryLoad<'event> streamName log with
             | None -> return Token.ofEmpty streamName initial
@@ -88,10 +89,22 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
                     let version = Token.tokenOfArray token.streamName conflictingEvents
                     let successorEvents = conflictingEvents |> Seq.skip (token.streamVersion + 1) |> List.ofSeq
                     return version, fold state (Seq.ofList successorEvents) }
-                return Equinox.Store.SyncResult.Conflict resync
-            | ConcurrentArraySyncResult.Written events -> return Equinox.Store.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
+                return Store.SyncResult.Conflict resync
+            | ConcurrentArraySyncResult.Written events -> return Store.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
-type MemoryStreamBuilder<'event, 'state>(store : VolatileStore, fold, initial) =
-    member __.Create streamName : Equinox.Store.IStream<'event, 'state> =
-        let category = MemoryCategory(store, fold, initial)
-        Equinox.Store.Stream.create category streamName
+type MemResolver<'event, 'state>(store : VolatileStore, fold, initial) =
+    let category = MemoryCategory<'event,'state>(store, fold, initial)
+    let mkStreamName categoryName streamId = sprintf "%s-%s" categoryName streamId
+    let resolveStream streamName = Store.Stream.create category streamName
+
+    member __.Resolve = function
+        | Target.CatId (categoryName,streamId) ->
+            resolveStream (mkStreamName categoryName streamId)
+        | Target.CatIdEmpty (categoryName,streamId) ->
+            let streamName = mkStreamName categoryName streamId
+            Store.Stream.ofMemento (Token.ofEmpty streamName initial) (resolveStream streamName)
+        | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x
+
+    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Handler.CreateMemento]
+    member __.FromMemento(Token.Unpack stream as streamToken,state) =
+        Store.Stream.ofMemento (streamToken,state) (resolveStream stream.streamName)

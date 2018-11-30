@@ -266,6 +266,7 @@ type GatewaySyncResult = Written of Store.StreamToken | Conflict
 type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
     let isResolvedEventEventType (tryDecode,predicate) (x:ResolvedEvent) = predicate (tryDecode (x.Event.Data))
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
+    member __.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
     member __.LoadBatched streamName log (tryDecode,isCompactionEventType): Async<Store.StreamToken * 'event[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
@@ -393,14 +394,14 @@ module Caching =
             | x -> failwithf "TryGet Incompatible cache entry %A" x
 
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state>, tee : string -> Store.StreamToken * 'state -> unit) =
+    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, string>, tee : string -> Store.StreamToken * 'state -> unit) =
         let intercept streamName tokenAndState =
             tee streamName tokenAndState
             tokenAndState
         let interceptAsync load streamName = async {
             let! tokenAndState = load
             return intercept streamName tokenAndState }
-        interface ICategory<'event, 'state> with
+        interface ICategory<'event, 'state, string> with
             member __.Load (streamName : string) (log : ILogger) : Async<Store.StreamToken * 'state> =
                 interceptAsync (inner.Load streamName log) streamName
             member __.TrySync (log : ILogger) ((Token.StreamPos (stream,_) as token), state) (events : 'event list) : Async<Store.SyncResult<'state>> = async {
@@ -413,8 +414,8 @@ module Caching =
             (cache: Cache)
             (prefix: string)
             (slidingExpiration : TimeSpan)
-            (category: ICategory<'event, 'state>)
-            : ICategory<'event, 'state> =
+            (category: ICategory<'event, 'state, string>)
+            : ICategory<'event, 'state, string> =
         let policy = new CacheItemPolicy(SlidingExpiration = slidingExpiration)
         let addOrUpdateSlidingExpirationCacheEntry streamName = CacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
@@ -429,7 +430,7 @@ type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: '
             match cache.TryGet(prefix + streamName) with
             | None -> batched
             | Some (token, state) -> cached token state
-    interface ICategory<'event, 'state> with
+    interface ICategory<'event, 'state, string> with
         member __.Load (streamName : string) (log : ILogger) : Async<Store.StreamToken * 'state> =
             loadAlgorithm streamName initial log
         member __.TrySync (log : ILogger) (token, initialState) (events : 'event list) : Async<Store.SyncResult<'state>> = async {
@@ -444,30 +445,43 @@ type CachingStrategy =
     /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
-type GesStreamBuilder<'event,'state>(gateway : GesGateway, codec, fold, initial, ?access, ?caching) =
-    member __.Create streamName : Equinox.Store.IStream<'event, 'state> =
-        let category = Category<'event, 'state>(gateway, codec, ?access = access)
-        match access with
+type GesResolver<'event,'state>(gateway : GesGateway, codec, fold, initial, ?access, ?caching) =
+    do  match access with
         | Some (AccessStrategy.EventsAreState) when Option.isSome caching ->
-            invalidOp "Equinox.EventStore does not support (and it would not make things _less_ efficient even if it did) mixing CompactionStrategy.All with Caching."
+            "Equinox.EventStore does not support (and it would make things _less_ efficient even if it did)"
+            + "mixing AccessStrategy.EventsAreState with Caching."
+            |> invalidOp
         | _ -> ()
 
-        let readCacheOption =
-            match caching with
-            | None -> None
-            | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
-            | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some(cache, prefix)
-        let folder = Folder<'event, 'state>(category, fold, initial, ?readCache = readCacheOption)
+    let inner = Category<'event, 'state>(gateway, codec, ?access = access)
+    let readCacheOption =
+        match caching with
+        | None -> None
+        | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
+        | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some(cache, prefix)
+    let folder = Folder<'event, 'state>(inner, fold, initial, ?readCache = readCacheOption)
+    let category : Equinox.Store.ICategory<_,_,_> =
+        match caching with
+        | None -> folder :> _
+        | Some (CachingStrategy.SlidingWindow(cache, window)) ->
+            Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+        | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
+            Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
+    let mkStreamName categoryName streamId = sprintf "%s-%s" categoryName streamId
+    let resolve = Stream.create category
 
-        let category : Equinox.Store.ICategory<_,_> =
-            match caching with
-            | None -> folder :> _
-            | Some (CachingStrategy.SlidingWindow(cache, window)) ->
-                Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
-            | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
-                Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
+    member __.Resolve = function
+        | Target.CatId (categoryName,streamId) ->
+            resolve <| mkStreamName categoryName streamId
+        | Target.CatIdEmpty (categoryName,streamId) ->
+            let streamName = mkStreamName categoryName streamId
+            Stream.ofMemento (gateway.LoadEmpty streamName,initial) <| resolve streamName
+        | Target.DeprecatedRawName streamName ->
+            resolve streamName
 
-        Equinox.Store.Stream.create category streamName
+    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Handler.CreateMemento]
+    member __.FromMemento(Token.Unpack token as streamToken, state) =
+            Stream.ofMemento (streamToken,state) <| resolve token.stream.name
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with

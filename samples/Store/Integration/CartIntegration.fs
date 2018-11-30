@@ -13,19 +13,19 @@ let fold, initial, snapshot = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial,
 let createMemoryStore () =
     new VolatileStore ()
 let createServiceMem log store =
-    Backend.Cart.Service(log, MemoryStreamBuilder(store, fold, initial).Create)
+    Backend.Cart.Service(log, MemResolver(store, fold, initial).Resolve)
 
 let codec = Equinox.EventStore.Integration.EventStoreIntegration.genCodec<Domain.Cart.Events.Event>()
 
 let resolveGesStreamWithRollingSnapshots gateway =
-    GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Create
+    GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
-    GesStreamBuilder(gateway, codec, fold, initial).Create
+    GesResolver(gateway, codec, fold, initial).Resolve
 
 let resolveEqxStreamWithProjection gateway =
-    EqxStreamBuilder(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Create
+    EqxResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
 let resolveEqxStreamWithoutCustomAccessStrategy gateway =
-    EqxStreamBuilder(gateway, codec, fold, initial).Create
+    EqxResolver(gateway, codec, fold, initial).Resolve
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->

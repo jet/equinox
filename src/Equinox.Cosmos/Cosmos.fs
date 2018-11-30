@@ -798,16 +798,16 @@ module Caching =
             | x -> failwithf "TryGet Incompatible cache entry %A" x
 
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: Store.ICategory<'event, 'state>, tee : string -> Store.StreamToken * 'state -> unit) =
+    type CategoryTee<'event, 'state>(inner: Store.ICategory<'event, 'state, CollectionStream>, tee : string -> Store.StreamToken * 'state -> unit) =
         let intercept streamName tokenAndState =
             tee streamName tokenAndState
             tokenAndState
         let interceptAsync load streamName = async {
             let! tokenAndState = load
             return intercept streamName tokenAndState }
-        interface Store.ICategory<'event, 'state> with
-            member __.Load (streamName : string) (log : ILogger) : Async<Store.StreamToken * 'state> =
-                interceptAsync (inner.Load streamName log) streamName
+        interface Store.ICategory<'event, 'state, CollectionStream> with
+            member __.Load stream (log : ILogger) : Async<Store.StreamToken * 'state> =
+                interceptAsync (inner.Load stream log) stream.name
             member __.TrySync (log : ILogger) (Token.Unpack (stream,_) as streamToken,state) (events : 'event list)
                 : Async<Store.SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync log (streamToken, state) events
@@ -819,8 +819,8 @@ module Caching =
             (cache: Cache)
             (prefix: string)
             (slidingExpiration : TimeSpan)
-            (category: Store.ICategory<'event, 'state>)
-            : Store.ICategory<'event, 'state> =
+            (category: Store.ICategory<'event, 'state, CollectionStream>)
+            : Store.ICategory<'event, 'state, CollectionStream> =
         let policy = new CacheItemPolicy(SlidingExpiration = slidingExpiration)
         let addOrUpdateSlidingExpirationCacheEntry streamName = CacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
@@ -828,19 +828,17 @@ module Caching =
 type private Folder<'event, 'state>
     (   category: Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state,
         isOrigin: 'event -> bool,
-        mkCollectionStream: string -> CollectionStream,
         // Whether or not an `unfold` function is supplied controls whether reads do a point read before querying
         ?unfold: ('state -> 'event list -> 'event seq),
         ?readCache) =
-    interface Store.ICategory<'event, 'state> with
-        member __.Load streamName (log : ILogger): Async<Store.StreamToken * 'state> =
-            let collStream = mkCollectionStream streamName
+    interface Store.ICategory<'event, 'state, CollectionStream> with
+        member __.Load collStream (log : ILogger): Async<Store.StreamToken * 'state> =
             let batched = category.Load (Option.isSome unfold) collStream fold initial isOrigin log
             let cached tokenAndState = category.LoadFromToken tokenAndState fold isOrigin log
             match readCache with
             | None -> batched
             | Some (cache : Caching.Cache, prefix : string) ->
-                match cache.TryGet(prefix + streamName) with
+                match cache.TryGet(prefix + collStream.name) with
                 | None -> batched
                 | Some tokenAndState -> cached tokenAndState
         member __.TrySync (log : ILogger) (Token.Unpack (_stream,pos) as streamToken,state) (events : 'event list)
@@ -851,10 +849,13 @@ type private Folder<'event, 'state>
             | Store.SyncResult.Written (token',state') ->     return Store.SyncResult.Written (token',state') }
 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type EqxCollections(selectDatabaseAndCollection : string -> string*string) =
-    new (databaseId, collectionId) = EqxCollections(fun _streamName -> databaseId, collectionId)
-    member __.CollectionForStream streamName : CollectionStream =
-        let databaseId, collectionId = selectDatabaseAndCollection streamName
+type EqxCollections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string) =
+    new (databaseId, collectionId) =
+        // TOCONSIDER - this works to support the Core.Events APIs
+        let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
+        EqxCollections(fun categoryName streamId -> databaseId, collectionId, genStreamName categoryName streamId)
+    member __.CollectionForStream (categoryName,id) : CollectionStream =
+        let databaseId, collectionId, streamName = categoryAndIdToDatabaseCollectionAndStream categoryName id
         { collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId); name = streamName }
 
 /// Pairs a Gateway, defining the retry policies for CosmosDb with an EqxCollections to
@@ -880,27 +881,38 @@ type AccessStrategy<'event,'state> =
     /// Trust every event type as being an origin
     | AnyKnownEventType
 
-type EqxStreamBuilder<'event, 'state>(store : EqxStore, codec, fold, initial, ?access, ?caching) =
-    member __.Create streamName : Store.IStream<'event, 'state> =
-        let readCacheOption =
-            match caching with
-            | None -> None
-            | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
-        let isOrigin, projectOption =
-            match access with
-            | None -> (fun _ -> false), None
-            | Some (AccessStrategy.Unfolded (isOrigin, unfold)) -> isOrigin, Some (fun state _events -> unfold state)
-            | Some (AccessStrategy.Snapshot (isValid,generate)) -> isValid, Some (fun state _events -> seq [generate state])
-            | Some (AccessStrategy.AnyKnownEventType) ->           (fun _ -> true), Some (fun _ events -> Seq.last events |> Seq.singleton)
-        let category = Category<'event, 'state>(store.Gateway, codec)
-        let folder = Folder<'event, 'state>(category, fold, initial, isOrigin, store.Collections.CollectionForStream, ?unfold=projectOption, ?readCache = readCacheOption)
-        let category : Store.ICategory<_,_> =
-            match caching with
-            | None -> folder :> _
-            | Some (CachingStrategy.SlidingWindow(cache, window)) ->
-                Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+type EqxResolver<'event, 'state>(store : EqxStore, codec, fold, initial, ?access, ?caching) =
+    let readCacheOption =
+        match caching with
+        | None -> None
+        | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
+    let isOrigin, projectOption =
+        match access with
+        | None -> (fun _ -> false), None
+        | Some (AccessStrategy.Unfolded (isOrigin, unfold)) -> isOrigin, Some (fun state _events -> unfold state)
+        | Some (AccessStrategy.Snapshot (isValid,generate)) -> isValid, Some (fun state _events -> seq [generate state])
+        | Some (AccessStrategy.AnyKnownEventType) ->           (fun _ -> true), Some (fun _ events -> Seq.last events |> Seq.singleton)
+    let cosmosCat = Category<'event, 'state>(store.Gateway, codec)
+    let folder = Folder<'event, 'state>(cosmosCat, fold, initial, isOrigin, ?unfold=projectOption, ?readCache = readCacheOption)
+    let category : Store.ICategory<_,_,CollectionStream> =
+        match caching with
+        | None -> folder :> _
+        | Some (CachingStrategy.SlidingWindow(cache, window)) ->
+            Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
-        Equinox.Store.Stream.create category streamName
+    let mkStreamName = store.Collections.CollectionForStream
+    let resolve = Equinox.Store.Stream.create category
+
+    member __.Resolve = function
+        | Target.CatId (categoryName,streamId) ->
+            resolve <| mkStreamName (categoryName, streamId)
+        | Target.CatIdEmpty (categoryName,streamId) ->
+            let stream = mkStreamName (categoryName, streamId)
+            Store.Stream.ofMemento (Token.create stream Position.fromKnownEmpty,initial) (resolve stream)
+        | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x
+
+    member __.FromMemento(Token.Unpack (stream,_pos) as streamToken,state) =
+        Store.Stream.ofMemento (streamToken,state) (resolve stream)
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
@@ -1023,7 +1035,7 @@ type EqxContext
         let! (Token.Unpack (_,pos')), data = res
         return pos', data }
 
-    member __.CreateStream(streamName) = collections.CollectionForStream streamName
+    member __.CreateStream(streamName) = collections.CollectionForStream(null, streamName)
 
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
         let direction = defaultArg direction Direction.Forward

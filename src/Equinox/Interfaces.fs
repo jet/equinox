@@ -18,21 +18,6 @@ type SyncResult<'state> =
     /// The inner is Async as some stores (and/or states) are such that determining the conflicting state (iff required) needs an extra trip to obtain
     | Conflict of Async<StreamToken * 'state>
 
-/// Store-agnostic interface representing interactions an Application can have with a set of streams with a common event type
-type ICategory<'event, 'state> =
-    /// Obtain the state from the target stream
-    abstract Load : streamName: string -> log: ILogger
-        -> Async<StreamToken * 'state>
-    /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
-    /// - Written: signifies synchronization has succeeded, implying the included StreamState should now be assumed to be the state of the stream
-    /// - Conflict: signifies the synch failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
-    /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
-    ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
-    abstract TrySync : log: ILogger
-        -> token: StreamToken * originState: 'state
-        -> events: 'event list
-        -> Async<SyncResult<'state>>
-
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
 type IStream<'event, 'state> =
     /// Obtain the state from the target stream
@@ -85,15 +70,33 @@ module Retry =
                     return! go (attempt + 1) }
         go 1
 
+/// Store-agnostic interface representing interactions an Application can have with a set of streams with a common event type
+type ICategory<'event, 'state, 'streamId> =
+    /// Obtain the state from the target stream
+    abstract Load : streamName: 'streamId -> log: ILogger
+        -> Async<StreamToken * 'state>
+    /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
+    /// - Written: signifies synchronization has succeeded, implying the included StreamState should now be assumed to be the state of the stream
+    /// - Conflict: signifies the synch failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
+    /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
+    ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
+    abstract TrySync : log: ILogger
+        -> token: StreamToken * originState: 'state
+        -> events: 'event list
+        -> Async<SyncResult<'state>>
+
 /// Low level stream builders, generally consumed via Store-specific Stream Builders that layer policies such as Caching in at the Category level
+// TOCONSIDER does not need to live here as it's only used in the implementation of a Store-level Resolver
 module Stream =
     /// Represents a specific stream in a ICategory
-    type private Stream<'event, 'state>(category : ICategory<'event, 'state>, streamName) =
+    type private Stream<'event, 'state, 'streamId>(category : ICategory<'event, 'state, 'streamId>, streamId: 'streamId) =
         interface IStream<'event, 'state> with
             member __.Load log =
-                category.Load streamName log
+                category.Load streamId log
             member __.TrySync (log: ILogger) (token: StreamToken, originState: 'state) (events: 'event list) =
                 category.TrySync log (token, originState) events
+
+    let create (category : ICategory<'event, 'state, 'streamId>) streamId : IStream<'event, 'state> = Stream(category, streamId) :> _
 
     /// Handles case where some earlier processing has loaded or determined a the state of a stream, allowing us to avoid a read roundtrip
     type private InitializedStream<'event, 'state>(inner : IStream<'event, 'state>, memento : StreamToken * 'state) =
@@ -106,5 +109,4 @@ module Stream =
             member __.TrySync (log: ILogger) (token: StreamToken, originState: 'state) (events: 'event list) =
                 inner.TrySync log (token, originState) events
 
-    let create (category : ICategory<'event, 'state>) streamName : IStream<'event, 'state> = Stream(category, streamName) :> _
-    let ofMemento (memento : StreamToken * 'state) (inner : IStream<_,_>) : IStream<'event, 'state> = InitializedStream(inner, memento) :> _
+    let ofMemento (memento : StreamToken * 'state) (inner : IStream<'event,'state>) : IStream<'event, 'state> = InitializedStream(inner, memento) :> _

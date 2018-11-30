@@ -7,9 +7,9 @@ open System
 
 type Service(log, resolveStream, maxSavedItems : int, maxAttempts) =
     do if maxSavedItems < 0 then invalidArg "maxSavedItems" "must be non-negative value."
-    let (|Stream|) (clientId : ClientId) =
-        let streamName = sprintf "savedforlater-%O" clientId
-        Handler(log, resolveStream streamName, maxSavedItems, maxAttempts)
+    let (|Stream|) (id: ClientId) =
+        let stream = resolveStream <| Equinox.CatId ("savedforlater", id.Value)
+        Handler(log, stream, maxSavedItems, maxAttempts)
 
     member __.MaxSavedItems = maxSavedItems
 

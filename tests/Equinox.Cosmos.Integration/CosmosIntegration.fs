@@ -16,21 +16,21 @@ module Cart =
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
         let store = createEqxStore connection batchSize
-        let resolveStream = EqxStreamBuilder(store, codec, fold, initial).Create
+        let resolveStream = EqxResolver(store, codec, fold, initial).Resolve
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithoutOptimizationAndMaxItems connection batchSize maxEventsPerSlice log =
         let store = createEqxStoreWithMaxEventsPerSlice connection batchSize maxEventsPerSlice
-        let resolveStream = EqxStreamBuilder(store, codec, fold, initial).Create
+        let resolveStream = EqxResolver(store, codec, fold, initial).Resolve
         Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
     let createServiceWithProjection connection batchSize log =
         let store = createEqxStore connection batchSize
-        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Snapshot snapshot).Create
+        let resolveStream = EqxResolver(store, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithProjectionAndCaching connection batchSize log cache =
         let store = createEqxStore connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream = EqxStreamBuilder(store, codec, fold, initial, AccessStrategy.Snapshot snapshot, sliding20m).Create
+        let resolveStream = EqxResolver(store, codec, fold, initial, AccessStrategy.Snapshot snapshot, sliding20m).Resolve
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
@@ -38,10 +38,10 @@ module ContactPreferences =
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolveStream = EqxStreamBuilder(gateway, codec, fold, initial).Create
+        let resolveStream = EqxResolver(gateway, codec, fold, initial).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService createGateway log =
-        let resolveStream = EqxStreamBuilder(createGateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Create
+        let resolveStream = EqxResolver(createGateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

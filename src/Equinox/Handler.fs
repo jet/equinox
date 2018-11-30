@@ -34,7 +34,7 @@ type Context<'event, 'state>(fold, originState : 'state) =
 type MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Retry failed after %i attempts." count)
 
-/// Core Application-facing API. Wraps the handling of decision or query flow in a manner that is store agnostic
+/// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 type Handler<'event, 'state>(fold, log, stream : Store.IStream<'event, 'state>, maxAttempts : int, ?mkAttemptsExhaustedException, ?resyncPolicy) =
     let contextArgs =
         let mkContext state : Context<'event,'state> = Context<'event,'state>(fold, state)
@@ -54,9 +54,21 @@ type Handler<'event, 'state>(fold, log, stream : Store.IStream<'event, 'state>, 
     /// Tries up to `maxAttempts` times in the case of a conflict, throwing MaxResyncsExhaustedException` to signal failure.
     member __.DecideAsync(flowAsync) =
         Flow.decideAsync contextArgs resyncArgs (stream, log, flowAsync)
-    /// Low Level helper to allow one to obtain the complete state of a stream (including the position) in order to pass it as a continuation within the application
-    member __.Raw: Async<Store.StreamToken * 'state> =
-        Flow.query(stream, log, fun syncState -> syncState.Memento)
     /// Project from the folded `State` without executing a decision flow as `Decide` does
     member __.Query(projection : 'state -> 'view) : Async<'view> =
         Flow.query(stream, log, fun syncState -> projection syncState.State)
+    /// Low Level helper to allow one to obtain a reference to a stream and state pair (including the position) in order to pass it as a continuation within the application
+    /// Such a memento is then held within the application and passed in lieue of a StreamId to the StreamResolver in order to avoid having to reload state
+    member __.CreateMemento(): Async<Store.StreamToken * 'state> =
+        Flow.query(stream, log, fun syncState -> syncState.Memento)
+
+/// Store-agnostic way to specify a target Stream (with optional known State) to pass to a Resolver
+[<NoComparison; NoEquality>]
+type Target =
+    /// Recommended way to specify a stream name
+    | CatId of category: string * id: string
+    /// Resolve the stream, but stub the attempt to Load based on a strong likelihood that a stream is empty and hence it's reasonable to optimistically avoid
+    /// a Load roundtrip; if that turns out not to be the case, the price is to have to do a re-run after the resync
+    | CatIdEmpty of category: string * id: string
+    /// prefer CatId
+    | DeprecatedRawName of streamName: string
