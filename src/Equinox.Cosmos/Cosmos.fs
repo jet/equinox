@@ -123,24 +123,21 @@ type IIndexedEvent =
     /// Indicates this is not a Domain Event, but actually an Unfolded Event based on the state inferred from the events up to `Index`
     abstract member IsUnfold: bool
 
-/// An Event about to be written, see IEventData for further information
+/// An Event about to be written, see IEvent for further information
 type EventData =
     { eventType : string; data : byte[]; meta : byte[] }
-    interface IEvent with
-        member __.EventType = __.eventType
-        member __.Data = __.data
-        member __.Meta = __.meta
+    interface IEvent with member __.EventType = __.eventType member __.Data = __.data member __.Meta = __.meta
     static member Create(eventType, data, ?meta) = { eventType = eventType; data = data; meta = defaultArg meta null}
 
 module internal Position =
     /// NB very inefficient compared to FromDocument or using one already returned to you
-    let fromI(i: int64) = { index = i; etag = None }
+    let fromI (i: int64) = { index = i; etag = None }
     /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
     let fromKnownEmpty = fromI 0L
     /// Just Do It mode
     let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
     /// NB very inefficient compared to FromDocument or using one already returned to you
-    let fromMaxIndex(xs: IIndexedEvent[]) =
+    let fromMaxIndex (xs: IIndexedEvent[]) =
         if Array.isEmpty xs then fromKnownEmpty
         else fromI (1L + Seq.max (seq { for x in xs -> x.Index }))
     /// Create Position from Tip record context (facilitating 1 RU reads)
@@ -150,13 +147,12 @@ module internal Position =
         if x.id <> Tip.WellKnownDocumentId then None
         else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
 
+[<RequireQualifiedAccess>]
+type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
+
 /// Reference to Collection and name that will be used as the location for the stream
 type [<NoComparison>]
     CollectionStream = { collectionUri: System.Uri; name: string } //with
-
-[<RequireQualifiedAccess>]
-type Direction = Forward | Backward with
-    override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 type internal Enum() =
     static member internal Events(b: Tip) =
@@ -168,6 +164,7 @@ type internal Enum() =
                 member __.Data = x.d
                 member __.Meta = x.m })
     static member Events(i: int64, e: Event[], startPos : Position option, direction) = seq {
+        // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         let isValidGivenStartPos i =
             match startPos with
             | Some sp when direction = Direction.Backward -> i < sp.index
@@ -207,7 +204,7 @@ open Serilog
 
 module Log =
     [<NoEquality; NoComparison>]
-    type Measurement = { stream: string; interval: Infrastructure.StopwatchInterval; bytes: int; count: int; ru: float }
+    type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int; ru: float }
     [<NoEquality; NoComparison>]
     type Event =
         /// Individual read request for the Tip
@@ -251,11 +248,9 @@ module Log =
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
 open Microsoft.Azure.Documents
-//open Microsoft.Azure.Documents.Linq
 
 [<AutoOpen>]
 module private DocDb =
-
     /// Extracts the innermost exception from a nested hierarchy of Aggregate Exceptions
     let (|AggregateException|) (exn : exn) =
         let rec aux (e : exn) =
@@ -525,7 +520,7 @@ module internal Tip =
         let log = let evt = Log.Response (direction, reqMetric) in log |> Log.event evt
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
         let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
-        (log |> Log.propMaybeStartPos startPos |> Log.prop "bytes" bytes)
+        (log |> (match startPos with Some pos -> Log.propStartPos pos | None -> id) |> Log.prop "bytes" bytes)
             .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
                 "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
@@ -654,8 +649,8 @@ module internal Tip =
 
 type [<NoComparison>] Token = { stream: CollectionStream; pos: Position }
 module Token =
-    let create stream pos : Equinox.Storage.StreamToken = { value = box { stream = stream; pos = pos } }
-    let (|Unpack|) (token: Equinox.Storage.StreamToken) : CollectionStream*Position = let t = unbox<Token> token.value in t.stream,t.pos
+    let create stream pos : Equinox.Store.StreamToken = { value = box { stream = stream; pos = pos } }
+    let (|Unpack|) (token: Equinox.Store.StreamToken) : CollectionStream*Position = let t = unbox<Token> token.value in t.stream,t.pos
     let supersedes (Unpack (_,currentPos)) (Unpack (_,xPos)) =
         let currentVersion, newVersion = currentPos.index, xPos.index
         let currentETag, newETag = currentPos.etag, xPos.etag
@@ -664,10 +659,10 @@ module Token =
 [<AutoOpen>]
 module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type InternalSyncResult = Written of Equinox.Storage.StreamToken | ConflictUnknown of Equinox.Storage.StreamToken | Conflict of Equinox.Storage.StreamToken * IIndexedEvent[]
+    type InternalSyncResult = Written of Equinox.Store.StreamToken | ConflictUnknown of Equinox.Store.StreamToken | Conflict of Equinox.Store.StreamToken * IIndexedEvent[]
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type LoadFromTokenResult<'event> = Unchanged | Found of Equinox.Storage.StreamToken * 'event[]
+    type LoadFromTokenResult<'event> = Unchanged | Found of Equinox.Store.StreamToken * 'event[]
 
 namespace Equinox.Cosmos
 
@@ -708,23 +703,23 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
         match Array.tryFindIndexBack (tryDecode >> Option.exists isOrigin) xs with
         | None -> None
         | Some index -> xs |> Seq.skip index |> Seq.choose tryDecode |> Array.ofSeq |> Some
-    member __.LoadBackwardsStopping log stream (tryDecode,isOrigin): Async<Storage.StreamToken * 'event[]> = async {
+    member __.LoadBackwardsStopping log stream (tryDecode,isOrigin): Async<Store.StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward stream None (tryDecode,isOrigin)
         Array.Reverse events
         return Token.create stream pos, events }
-    member __.Read log stream direction startPos (tryDecode,isOrigin) : Async<Storage.StreamToken * 'event[]> = async {
+    member __.Read log stream direction startPos (tryDecode,isOrigin) : Async<Store.StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos (tryDecode,isOrigin)
         return Token.create stream pos, events }
     member __.ReadLazy (batching: EqxBatchingPolicy) log stream direction startPos (tryDecode,isOrigin) : AsyncSeq<'event[]> =
         Query.walkLazy log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos (tryDecode,isOrigin)
-    member __.LoadFromUnfoldsOrRollingSnapshots log (stream,maybePos) (tryDecode,isOrigin): Async<Storage.StreamToken * 'event[]> = async {
+    member __.LoadFromUnfoldsOrRollingSnapshots log (stream,maybePos) (tryDecode,isOrigin): Async<Store.StreamToken * 'event[]> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy conn.Client stream maybePos
         match res with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
         | Tip.Result.NotModified -> return invalidOp "Not handled"
         | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return Token.create stream pos, span
         | _ -> return! __.LoadBackwardsStopping log stream (tryDecode,isOrigin) }
-    member __.GetPosition(log, stream, ?pos): Async<Storage.StreamToken> = async {
+    member __.GetPosition(log, stream, ?pos): Async<Store.StreamToken> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy conn.Client stream pos
         match res with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
@@ -748,17 +743,17 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
 type private Category<'event, 'state>(gateway : EqxGateway, codec : UnionCodec.IUnionEncoder<'event, byte[]>) =
     let tryDecode (x: #IEvent) = codec.TryDecode { caseName = x.EventType; payload = x.Data }
     let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: IIndexedEvent seq) : 'state = Seq.choose tryDecode events |> fold initial
-    member __.Load includeUnfolds collectionStream fold initial isOrigin (log : ILogger): Async<Storage.StreamToken * 'state> = async {
+    member __.Load includeUnfolds collectionStream fold initial isOrigin (log : ILogger): Async<Store.StreamToken * 'state> = async {
         let! token, events =
             if not includeUnfolds then gateway.LoadBackwardsStopping log collectionStream (tryDecode,isOrigin)
             else gateway.LoadFromUnfoldsOrRollingSnapshots log (collectionStream,None) (tryDecode,isOrigin)
         return token, fold initial events }
-    member __.LoadFromToken (Token.Unpack streamPos, state: 'state as current) fold isOrigin (log : ILogger): Async<Storage.StreamToken * 'state> = async {
+    member __.LoadFromToken (Token.Unpack streamPos, state: 'state as current) fold isOrigin (log : ILogger): Async<Store.StreamToken * 'state> = async {
         let! res = gateway.LoadFromToken(log, streamPos, (tryDecode,isOrigin))
         match res with
         | LoadFromTokenResult.Unchanged -> return current
         | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
-    member __.Sync(Token.Unpack (stream,pos), state as current, expectedVersion, events, unfold, fold, isOrigin, log): Async<Storage.SyncResult<'state>> = async {
+    member __.Sync(Token.Unpack (stream,pos), state as current, expectedVersion, events, unfold, fold, isOrigin, log): Async<Store.SyncResult<'state>> = async {
         let encodeEvent (x : 'event) : IEvent = let e = codec.Encode x in EventData.Create(e.caseName,e.payload) :> _
         let state' = fold state (Seq.ofList events)
         let eventsEncoded, projectionsEncoded = Seq.map encodeEvent events |> Array.ofSeq, Seq.map encodeEvent (unfold state' events)
@@ -767,14 +762,14 @@ type private Category<'event, 'state>(gateway : EqxGateway, codec : UnionCodec.I
         let batch = Sync.mkBatch stream eventsEncoded projections
         let! res = gateway.Sync log stream (expectedVersion,batch)
         match res with
-        | InternalSyncResult.Conflict (token',TryDecodeFold fold state events') -> return Storage.SyncResult.Conflict (async { return token', events' })
-        | InternalSyncResult.ConflictUnknown _token' -> return Storage.SyncResult.Conflict (__.LoadFromToken current fold isOrigin log)
-        | InternalSyncResult.Written token' -> return Storage.SyncResult.Written (token', state') }
+        | InternalSyncResult.Conflict (token',TryDecodeFold fold state events') -> return Store.SyncResult.Conflict (async { return token', events' })
+        | InternalSyncResult.ConflictUnknown _token' -> return Store.SyncResult.Conflict (__.LoadFromToken current fold isOrigin log)
+        | InternalSyncResult.Written token' -> return Store.SyncResult.Written (token', state') }
 
 module Caching =
     open System.Runtime.Caching
     [<AllowNullLiteral>]
-    type CacheEntry<'state>(initialToken : Storage.StreamToken, initialState :'state) =
+    type CacheEntry<'state>(initialToken : Store.StreamToken, initialState :'state) =
         let mutable currentToken, currentState = initialToken, initialState
         member __.UpdateIfNewer (other : CacheEntry<'state>) =
             lock __ <| fun () ->
@@ -782,7 +777,7 @@ module Caching =
                 if otherToken |> Token.supersedes currentToken then
                     currentToken <- otherToken
                     currentState <- otherState
-        member __.Value : Storage.StreamToken  * 'state =
+        member __.Value : Store.StreamToken  * 'state =
             lock __ <| fun () ->
                 currentToken, currentState
 
@@ -803,29 +798,29 @@ module Caching =
             | x -> failwithf "TryGet Incompatible cache entry %A" x
 
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state>, tee : string -> Storage.StreamToken * 'state -> unit) =
+    type CategoryTee<'event, 'state>(inner: Store.ICategory<'event, 'state>, tee : string -> Store.StreamToken * 'state -> unit) =
         let intercept streamName tokenAndState =
             tee streamName tokenAndState
             tokenAndState
         let interceptAsync load streamName = async {
             let! tokenAndState = load
             return intercept streamName tokenAndState }
-        interface ICategory<'event, 'state> with
-            member __.Load (streamName : string) (log : ILogger) : Async<Storage.StreamToken * 'state> =
+        interface Store.ICategory<'event, 'state> with
+            member __.Load (streamName : string) (log : ILogger) : Async<Store.StreamToken * 'state> =
                 interceptAsync (inner.Load streamName log) streamName
             member __.TrySync (log : ILogger) (Token.Unpack (stream,_) as streamToken,state) (events : 'event list)
-                : Async<Storage.SyncResult<'state>> = async {
+                : Async<Store.SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync log (streamToken, state) events
                 match syncRes with
-                | Storage.SyncResult.Conflict resync ->         return Storage.SyncResult.Conflict (interceptAsync resync stream.name)
-                | Storage.SyncResult.Written (token', state') ->return Storage.SyncResult.Written (intercept stream.name (token', state')) }
+                | Store.SyncResult.Conflict resync ->         return Store.SyncResult.Conflict (interceptAsync resync stream.name)
+                | Store.SyncResult.Written (token', state') ->return Store.SyncResult.Written (intercept stream.name (token', state')) }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache: Cache)
             (prefix: string)
             (slidingExpiration : TimeSpan)
-            (category: ICategory<'event, 'state>)
-            : ICategory<'event, 'state> =
+            (category: Store.ICategory<'event, 'state>)
+            : Store.ICategory<'event, 'state> =
         let policy = new CacheItemPolicy(SlidingExpiration = slidingExpiration)
         let addOrUpdateSlidingExpirationCacheEntry streamName = CacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
@@ -837,8 +832,8 @@ type private Folder<'event, 'state>
         // Whether or not an `unfold` function is supplied controls whether reads do a point read before querying
         ?unfold: ('state -> 'event list -> 'event seq),
         ?readCache) =
-    interface ICategory<'event, 'state> with
-        member __.Load streamName (log : ILogger): Async<Storage.StreamToken * 'state> =
+    interface Store.ICategory<'event, 'state> with
+        member __.Load streamName (log : ILogger): Async<Store.StreamToken * 'state> =
             let collStream = mkCollectionStream streamName
             let batched = category.Load (Option.isSome unfold) collStream fold initial isOrigin log
             let cached tokenAndState = category.LoadFromToken tokenAndState fold isOrigin log
@@ -849,11 +844,11 @@ type private Folder<'event, 'state>
                 | None -> batched
                 | Some tokenAndState -> cached tokenAndState
         member __.TrySync (log : ILogger) (Token.Unpack (_stream,pos) as streamToken,state) (events : 'event list)
-            : Async<Storage.SyncResult<'state>> = async {
+            : Async<Store.SyncResult<'state>> = async {
             let! res = category.Sync((streamToken,state), Some pos.index, events, (defaultArg unfold (fun _ _ -> Seq.empty)), fold, isOrigin, log)
             match res with
-            | Storage.SyncResult.Conflict resync ->             return Storage.SyncResult.Conflict resync
-            | Storage.SyncResult.Written (token',state') ->     return Storage.SyncResult.Written (token',state') }
+            | Store.SyncResult.Conflict resync ->             return Store.SyncResult.Conflict resync
+            | Store.SyncResult.Written (token',state') ->     return Store.SyncResult.Written (token',state') }
 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
 type EqxCollections(selectDatabaseAndCollection : string -> string*string) =
@@ -886,7 +881,7 @@ type AccessStrategy<'event,'state> =
     | AnyKnownEventType
 
 type EqxStreamBuilder<'event, 'state>(store : EqxStore, codec, fold, initial, ?access, ?caching) =
-    member __.Create streamName : Equinox.IStream<'event, 'state> =
+    member __.Create streamName : Store.IStream<'event, 'state> =
         let readCacheOption =
             match caching with
             | None -> None
@@ -899,13 +894,13 @@ type EqxStreamBuilder<'event, 'state>(store : EqxStore, codec, fold, initial, ?a
             | Some (AccessStrategy.AnyKnownEventType) ->           (fun _ -> true), Some (fun _ events -> Seq.last events |> Seq.singleton)
         let category = Category<'event, 'state>(store.Gateway, codec)
         let folder = Folder<'event, 'state>(category, fold, initial, isOrigin, store.Collections.CollectionForStream, ?unfold=projectOption, ?readCache = readCacheOption)
-        let category : ICategory<_,_> =
+        let category : Store.ICategory<_,_> =
             match caching with
             | None -> folder :> _
             | Some (CachingStrategy.SlidingWindow(cache, window)) ->
                 Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
-        Equinox.Stream.create category streamName
+        Equinox.Store.Stream.create category streamName
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
