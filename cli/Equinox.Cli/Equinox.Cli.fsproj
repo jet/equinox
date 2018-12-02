@@ -26,26 +26,21 @@
   <ItemGroup>
     <!-- workaround for not being able to make Backend and Domain as inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
     <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Infrastructure\Infrastructure.fsproj" PrivateAssets="all" />
-    <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Argu" Version="5.1.0" />
-    <PackageReference Include="Destructurama.FSharp" Version="1.0.14" Condition=" '$(TargetFramework)' == 'net461' " />
-    <PackageReference Include="Destructurama.FSharp.NetCore" Version="1.0.14" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />
     <!--Handle TypeShape-restriction; would otherwise use 3.1.2.5-->
     <PackageReference Include="FSharp.Core" Version="4.0.0.1" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />
     <PackageReference Include="MathNet.Numerics" Version="4.6.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
     <PackageReference Include="System.Reactive" Version="4.0.0" />
-    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
   </ItemGroup>
 
   <!-- workaround for not being able to make Backend and Domain as inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->

@@ -5,8 +5,6 @@ open Microsoft.AspNetCore.Hosting
 open Serilog
 
 module Program =
-    let exitCode = 0
-
     let createWebHostBuilder args : IWebHostBuilder =
         WebHost
             .CreateDefaultBuilder(args)
@@ -19,6 +17,9 @@ module Program =
 
     [<EntryPoint>]
     let main args =
-        createWebHostBuilder(args).Build().Run()
-
-        exitCode
+        try
+            createWebHostBuilder(args).Build().Run()
+            0
+        with e ->
+            eprintfn "%s" e.Message
+            1
