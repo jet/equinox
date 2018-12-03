@@ -116,37 +116,37 @@ let createResultLog fileName =
         .WriteTo.File(fileName)
         .CreateLogger()
 
-let runTest (domainLog: ILogger) (verbose,verboseConsole,maybeSeq) reportFilename (args: ParseResults<TestArguments>) =
+let runTest (log: ILogger) (verbose,verboseConsole,maybeSeq) reportFilename (args: ParseResults<TestArguments>) =
     let storage = args.TryGetSubCommand()
 
     let createStoreLog verboseStore = Log.createStoreLog verboseStore verboseConsole maybeSeq
-    let storeConfig : StorageConfig option =
+    let storeLog, storeConfig: ILogger * StorageConfig option =
         let options = args.GetResults Cached @ args.GetResults Unfolds
         let cache, unfolds = options |> List.contains Cached, options |> List.contains Unfolds
 
         match storage with
         | Some (Es sargs) ->
-            let log = createStoreLog <| sargs.Contains EsArguments.VerboseStore
-            domainLog.Information("EventStore Storage options: {options:l}", options)
-            EventStore.config log (cache, unfolds) sargs |> Some
+            let storeLog = createStoreLog <| sargs.Contains EsArguments.VerboseStore
+            log.Information("EventStore Storage options: {options:l}", options)
+            storeLog, EventStore.config (log,storeLog) (cache, unfolds) sargs |> Some
         | Some (Cosmos sargs) ->
-            let log = createStoreLog <| sargs.Contains CosmosArguments.VerboseStore
-            domainLog.Information("CosmosDb Storage options: {options:l}", options)
-            Cosmos.config log (cache, unfolds) sargs |> Some
+            let storeLog = createStoreLog <| sargs.Contains CosmosArguments.VerboseStore
+            log.Information("CosmosDb Storage options: {options:l}", options)
+            storeLog, Cosmos.config (log,storeLog) (cache, unfolds) sargs |> Some
         | Some (Web wargs) ->
-            None
+            createStoreLog false, None
         | _  | Some (Memory _) ->
-            domainLog.Information("Volatile Store; Storage options: {options:l}", options)
-            MemoryStore.config () |> Some
+            log.Information("Volatile Store; Storage options: {options:l}", options)
+            createStoreLog false, MemoryStore.config () |> Some
     match storeConfig with
     | None -> failwith "TODO web"
     | Some storeConfig ->
         let services = ServiceCollection()
+        services.AddSingleton<ILogger>(storeLog) |> ignore
         Services.registerServices(services, storeConfig)
-        services.AddSingleton(log) |> ignore
         let container = services.BuildServiceProvider()
 
-        let test, runTest = Test.createRunner (domainLog, verbose) container args
+        let test, runTest = Test.createRunner (log, verbose) container args
 
         let errorCutoff = args.GetResult(ErrorCutoff,10000L)
         let testsPerSecond = args.GetResult(TestsPerSecond,1000)
@@ -158,9 +158,9 @@ let runTest (domainLog: ILogger) (verbose,verboseConsole,maybeSeq) reportFilenam
             |> fun intervals -> [| yield duration; yield! intervals |]
         let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
 
-        domainLog.Information( "Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
+        log.Information( "Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, duration, testsPerSecond, clients.Length, errorCutoff, reportingIntervals, reportFilename)
-        let results = Test.run domainLog testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runTest |> Async.RunSynchronously
+        let results = Test.run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runTest |> Async.RunSynchronously
 
         let resultFile = createResultLog reportFilename
         for r in results do
@@ -201,20 +201,20 @@ let main argv =
         let args = parser.ParseCommandLine argv
         let verboseConsole = args.Contains VerboseConsole
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
+        let verbose = args.Contains Verbose
+        let log = Log.createDomainLog verbose verboseConsole maybeSeq
         match args.GetSubCommand() with
         | Initialize iargs ->
             let rus = iargs.GetResult(Rus)
             match iargs.TryGetSubCommand() with
             | Some (InitArguments.Cosmos sargs) ->
-                let log = Log.createStoreLog (sargs.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
-                let dbName, collName, (_pageSize: int), conn = Cosmos.conn log sargs
+                let storeLog = Log.createStoreLog (sargs.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
+                let dbName, collName, (_pageSize: int), conn = Cosmos.conn (log,storeLog) sargs
                 log.Information("Configuring CosmosDb Collection with Throughput Provision: {rus:n0} RU/s", rus)
                 Equinox.Cosmos.Store.Sync.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
             | _ -> failwith "please specify a cosmos endpoint"
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
-            let verbose = args.Contains Verbose
-            let log = Log.createDomainLog verbose verboseConsole maybeSeq
             runTest log (verbose,verboseConsole,maybeSeq) reportFilename rargs
         | _ -> failwith "Please specify a valid subcommand :- init or run"
         0

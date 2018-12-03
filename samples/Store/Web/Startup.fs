@@ -56,11 +56,11 @@ type Startup(_configuration: IConfiguration) =
             | Some (Es sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains EsArguments.VerboseStore
                 log.Information("EventStore Storage options: {options:l}", options)
-                EventStore.config storeLog (cache, unfolds) sargs
+                EventStore.config (log,storeLog) (cache, unfolds) sargs
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains CosmosArguments.VerboseStore
                 log.Information("CosmosDb Storage options: {options:l}", options)
-                Cosmos.config storeLog (cache, unfolds) sargs
+                Cosmos.config (log,storeLog) (cache, unfolds) sargs
             | _  | Some (Memory _) ->
                 log.Information("Volatile Store; Storage options: {options:l}", options)
                 MemoryStore.config ()
