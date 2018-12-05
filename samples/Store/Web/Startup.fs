@@ -31,7 +31,7 @@ type Arguments =
 
 type App = class end
 
-// :shame: This should be a class uaed via UseStartup, but I couldnt figure out how to pass the parsed args in as MS have changed stuff around too much to make it googleable within my boredom threshold
+// :shame: This should be a class used via UseStartup, but I couldnt figure out how to pass the parsed args in as MS have changed stuff around too much to make it googleable within my boredom threshold
 type Startup() =
     // This method gets called by the runtime. Use this method to add services to the container.
     static member ConfigureServices(services: IServiceCollection, args: ParseResults<Arguments>) : unit =
@@ -46,7 +46,7 @@ type Startup() =
             let c = match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
             c.CreateLogger() :> ILogger
 
-        let storeConfig : StorageConfig =
+        let storeConfig, storeLog : StorageConfig * ILogger =
             let options = args.GetResults Cached @ args.GetResults Unfolds
             let cache, unfolds = options |> List.contains Cached, options |> List.contains Unfolds
             let log = Log.ForContext<App>()
@@ -55,15 +55,15 @@ type Startup() =
             | Some (Es sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains EsArguments.VerboseStore
                 log.Information("EventStore Storage options: {options:l}", options)
-                EventStore.config (log,storeLog) (cache, unfolds) sargs
+                EventStore.config (log,storeLog) (cache, unfolds) sargs, storeLog
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains CosmosArguments.VerboseStore
                 log.Information("CosmosDb Storage options: {options:l}", options)
-                Cosmos.config (log,storeLog) (cache, unfolds) sargs
+                Cosmos.config (log,storeLog) (cache, unfolds) sargs, storeLog
             | _  | Some (Memory _) ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
-                MemoryStore.config ()
-        Services.registerServices(services, storeConfig)
+                MemoryStore.config (), log
+        Services.registerServices(services, storeConfig, storeLog)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
     static member Configure(app: IApplicationBuilder, env: IHostingEnvironment) : unit =

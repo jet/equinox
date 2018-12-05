@@ -90,6 +90,17 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 	./build -se -scp
 
+# BENCHMARKS
+
+A key facility of this repo is beoing able to run load tests, either in process against a nominated store, or via HTTP to a nominated Web app. The following tests are implemented at present:
+
+- `Favorite` - Simulate a very enthusiastic user that favorites things once per Second - triggering an ever-growing state which can only work efficiently if you:
+    - apply a snapshotting scheme (although being unbounded, it will eventually hit the store's limits - 4MB/event for EventStore, 3MB/document for CosmosDb)
+    - apply caching on CosmosDb (so re-reading and transporting the snapshots is eliminated from the RU/bandwidth/latency costs)
+- `SaveForLater` - Simulate a happy shopper that saves 3 items per second, and empties the Save For Later list whenever it is full (when it hits 50 items)
+    - Snapshotting helps a lot
+    - Caching is not as essential as it is for the `Favorite` test
+
 ## Run EventStore benchmark (when provisioned)
 
 	& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe run es
@@ -97,16 +108,26 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 ## run CosmosDb benchmark (when provisioned)
 
-```
-$env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
-$env:EQUINOX_COSMOS_DATABASE="equinox-test"
-$env:EQUINOX_COSMOS_COLLECTION="equinox-test"
+    $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
+    $env:EQUINOX_COSMOS_DATABASE="equinox-test"
+    $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
 
-cli/Equinox.cli/bin/Release/net461/Equinox.Cli run `
-    cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
-dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- run `
-    cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
-```
+    cli/Equinox.cli/bin/Release/net461/Equinox.Cli run `
+        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+    dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- run `
+        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+
+## run Web benchmark
+
+The CLI can drive the Store/Web ASP.NET Core app. Doing so requires starting a web process with an appropriate store (Cosmos in this example, but can be `memory`/omitted, `es` etc as in the other examples)
+
+### in Window 1
+
+    & dotnet run -c Release -f netcoreapp2.1 -p samples/Store/Web -- -C -U cosmos
+
+### in Window 2
+
+    & dotnet run -c Release -f netcoreapp2.1 -p cli/Equinox.Cli -- run -t saveforlater -f 200 web
 
 # PROVISIONING
 

@@ -5,11 +5,11 @@ open Microsoft.Extensions.DependencyInjection
 open System
 open System.Net.Http
 
-type Test = Favorites | SaveForLater
+type Test = Favorite | SaveForLater
 
 let executeLocal (container: ServiceProvider) test: ClientId -> Async<unit> =
     match test with
-    | Favorites ->
+    | Favorite ->
         let service = container.GetRequiredService<Backend.Favorites.Service>()
         fun clientId -> async {
             let sku = Guid.NewGuid() |> SkuId
@@ -32,7 +32,7 @@ let executeLocal (container: ServiceProvider) test: ClientId -> Async<unit> =
 
 let executeRemote (client: HttpClient) test =
     match test with
-    | Favorites ->
+    | Favorite ->
         fun clientId ->
             let session = Clients.Session(client, clientId)
             let client = session.Favorites

@@ -13,8 +13,6 @@
 
   <ItemGroup>
     <PackageReference Include="Argu" Version="5.1.0" />
-    <!--<PackageReference Include="Destructurama.FSharp" Version="1.0.14" Condition=" '$(TargetFramework)' == 'net461' " />
-    <PackageReference Include="Destructurama.FSharp.NetCore" Version="1.0.14" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />-->
     <PackageReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Serilog.AspNetCore" Version="2.1.1" />
     <PackageReference Include="Serilog.Settings.Configuration" Version="3.0.1" />

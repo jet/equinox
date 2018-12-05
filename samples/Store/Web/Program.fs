@@ -18,6 +18,7 @@ module Program =
     let main argv =
         try
             let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
+            printfn "Running at pid %d" (System.Diagnostics.Process.GetCurrentProcess().Id)
             let args = ArgumentParser.Create<Arguments>(programName = programName).ParseCommandLine(argv)
             // Replace logger chain with https://github.com/serilog/serilog-aspnetcore
             let c =

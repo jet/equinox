@@ -6,6 +6,7 @@ open Equinox.Cli.Infrastructure
 open Microsoft.Extensions.DependencyInjection
 open Samples
 open Samples.Config
+open Samples.Log
 open Serilog
 open Serilog.Events
 open System
@@ -67,6 +68,14 @@ and [<NoComparison>]
             | Cosmos _ -> "Run transaction in-process against CosmosDb"
             | Web _ -> "Run transaction against Web endpoint"
 
+let createStoreLog verbose verboseConsole maybeSeqEndpoint =
+    let c = LoggerConfiguration().Destructure.FSharpTypes()
+    let c = if verbose then c.MinimumLevel.Debug() else c
+    let c = c.WriteTo.Sink(Log.SerilogHelpers.RuCounterSink())
+    let c = c.WriteTo.Console((if verbose && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+    let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
+    c.CreateLogger() :> ILogger
+
 module LoadTest =
     let private runLoadTest log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
         let mutable idx = -1L
@@ -91,7 +100,7 @@ module LoadTest =
     let run (log: ILogger) (verbose,verboseConsole,maybeSeq) reportFilename (args: ParseResults<TestArguments>) =
         let storage = args.TryGetSubCommand()
 
-        let createStoreLog verboseStore = Log.createStoreLog verboseStore verboseConsole maybeSeq
+        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
         let storeLog, storeConfig, httpClient: ILogger * StorageConfig option * HttpClient option =
             let options = args.GetResults Cached @ args.GetResults Unfolds
             let cache, unfolds = options |> List.contains Cached, options |> List.contains Unfolds
@@ -111,7 +120,7 @@ module LoadTest =
             | _  | Some (Memory _) ->
                 log.Information("Volatile Store; Storage options: {options:l}", options)
                 createStoreLog false, MemoryStore.config () |> Some, None
-        let test = args.GetResult(Name,Tests.Favorites)
+        let test = args.GetResult(Name,Tests.Favorite)
         let runSingleTest : ClientId -> Async<unit> =
             match storeConfig, httpClient with
             | None, Some client ->
@@ -119,8 +128,7 @@ module LoadTest =
                 decorateWithLogger (log,verbose) execForClient
             | Some storeConfig, _ ->
                 let services = ServiceCollection()
-                services.AddSingleton<ILogger>(storeLog) |> ignore
-                Services.registerServices(services, storeConfig)
+                Services.registerServices(services, storeConfig, storeLog)
                 let container = services.BuildServiceProvider()
                 let execForClient = Tests.executeLocal container test
                 decorateWithLogger (log, verbose) execForClient
@@ -177,14 +185,6 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
-
-let createStoreLog verbose verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration().Destructure.FSharpTypes()
-    let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(Log.SerilogHelpers.RuCounterSink())
-    let c = c.WriteTo.Console((if verbose && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
-    let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
-    c.CreateLogger() :> ILogger
 
 [<EntryPoint>]
 let main argv =
