@@ -4,15 +4,14 @@ open Argu
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Hosting
 open Microsoft.AspNetCore.Mvc
-open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.DependencyInjection
 open Samples
 open Samples.Config
-open System
+open Serilog
+open Serilog.Events
 
 [<NoComparison>]
 type Arguments =
-    | [<AltCommandLine("-v")>] Verbose
     | [<AltCommandLine("-vc")>] VerboseConsole
     | [<AltCommandLine("-S")>] LocalSeq
     | [<AltCommandLine("-C")>] Cached
@@ -22,7 +21,6 @@ type Arguments =
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Verbose -> "Include low level Domain logging."
             | VerboseConsole -> "Include low level Domain and Store logging in screen output."
             | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | Memory _ -> "specify In-Memory Volatile Store (Default store)"
@@ -31,26 +29,27 @@ type Arguments =
             | Cached -> "Employ a 50MB cache"
             | Unfolds -> "Employ a store-appropriate Rolling Snapshots and/or Unfolding strategy"
 
-type Startup(_configuration: IConfiguration) =
-    let configureMvc (services : IServiceCollection) =
-        services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1) |> ignore
+type App = class end
 
+// :shame: This should be a class uaed via UseStartup, but I couldnt figure out how to pass the parsed args in as MS have changed stuff around too much to make it googleable within my boredom threshold
+type Startup() =
     // This method gets called by the runtime. Use this method to add services to the container.
-    member __.ConfigureServices(services: IServiceCollection) : unit =
-        configureMvc services
-
-        let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
-        let args = ArgumentParser.Create<Arguments>(programName = programName).ParseCommandLine(Environment.GetCommandLineArgs() |> Array.tail)
+    static member ConfigureServices(services: IServiceCollection, args: ParseResults<Arguments>) : unit =
+        services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1) |> ignore
 
         let verboseConsole = args.Contains VerboseConsole
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
-        let createStoreLog verboseStore = Log.createStoreLog verboseStore verboseConsole maybeSeq
+        let createStoreLog verboseStore =
+            let c = LoggerConfiguration().Destructure.FSharpTypes()
+            let c = if verboseStore then c.MinimumLevel.Debug() else c
+            let c = c.WriteTo.Console((if verboseStore && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+            let c = match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
+            c.CreateLogger() :> ILogger
 
         let storeConfig : StorageConfig =
             let options = args.GetResults Cached @ args.GetResults Unfolds
             let cache, unfolds = options |> List.contains Cached, options |> List.contains Unfolds
-            let verbose = args.Contains Verbose
-            let log = Log.createDomainLog verbose verboseConsole maybeSeq
+            let log = Log.ForContext<App>()
 
             match args.TryGetSubCommand() with
             | Some (Es sargs) ->
@@ -62,12 +61,12 @@ type Startup(_configuration: IConfiguration) =
                 log.Information("CosmosDb Storage options: {options:l}", options)
                 Cosmos.config (log,storeLog) (cache, unfolds) sargs
             | _  | Some (Memory _) ->
-                log.Information("Volatile Store; Storage options: {options:l}", options)
+                log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 MemoryStore.config ()
         Services.registerServices(services, storeConfig)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-    member __.Configure(app: IApplicationBuilder, env: IHostingEnvironment) : unit =
+    static member Configure(app: IApplicationBuilder, env: IHostingEnvironment) : unit =
         if env.IsDevelopment() then app.UseDeveloperExceptionPage() |> ignore
         else app.UseHsts() |> ignore
 

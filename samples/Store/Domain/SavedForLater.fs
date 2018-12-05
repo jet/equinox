@@ -109,11 +109,12 @@ type Handler(log, stream, maxSavedItems, maxAttempts) =
     let decide (ctx : Equinox.Context<_,_>) command =
         ctx.Decide (Commands.decide maxSavedItems command)
 
-    member __.Remove (resolve : ((SkuId->bool) -> Async<Commands.Command>)) : Async<bool> =
+    member __.Remove (resolve : ((SkuId->bool) -> Async<Commands.Command>)) : Async<unit> =
         inner.DecideAsync <| fun ctx -> async {
             let contents = seq { for item in ctx.State -> item.skuId } |> set
             let! cmd = resolve contents.Contains
             return cmd |> decide ctx }
+        |> Async.Ignore
 
     member __.Execute command : Async<bool> =
         inner.Decide <| fun fctx ->

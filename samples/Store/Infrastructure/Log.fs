@@ -1,6 +1,5 @@
 ﻿module Samples.Log
 
-open Serilog
 open Serilog.Events
 
 [<AutoOpen>]
@@ -42,19 +41,3 @@ module SerilogHelpers =
                 | CosmosMetric (CosmosWriteRc stats) -> RuCounterSink.Write.Ingest stats
                 | CosmosMetric (CosmosResyncRc stats) -> RuCounterSink.Resync.Ingest stats
                 | _ -> ()
-
-let createDomainLog verbose verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
-    let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(RuCounterSink())
-    let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
-    let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
-    c.CreateLogger()
-
-let createStoreLog verbose verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration().Destructure.FSharpTypes()
-    let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(RuCounterSink())
-    let c = c.WriteTo.Console((if verbose && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
-    let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
-    c.CreateLogger() :> ILogger

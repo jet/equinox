@@ -3,24 +3,33 @@
 open Domain
 open Microsoft.AspNetCore.Mvc
 
+type FromClientIdHeaderAttribute() = inherit FromHeaderAttribute(Name="COMPLETELY_INSECURE_CLIENT_ID")
+
 [<Route("api/[controller]")>]
 [<ApiController>]
 type SavesController(service : Backend.SavedForLater.Service) =
     inherit ControllerBase()
 
-    [<HttpGet("{clientId}")>]
-    member __.Get(clientId : ClientId) = async {
+    [<HttpGet>]
+    member __.Get
+        (   [<FromClientIdHeader>]clientId : ClientId) = async {
         let! res = service.List(clientId)
         return ActionResult<_> res
     }
 
-    [<HttpPost("{clientId}")>]
-    member __.Save(clientId : ClientId, [<FromBody>]skuIds : SkuId[]) = async {
-        return! service.Save(clientId, List.ofArray skuIds)
+    // Returns 400 if item limit exceeded
+    [<HttpPost>]
+    member __.Save
+        (   [<FromClientIdHeader>]clientId : ClientId,
+            [<FromBody>]skuIds : SkuId[]) : Async<ActionResult> = async {
+        let! ok = service.Save(clientId, List.ofArray skuIds)
+        if ok then return __.NoContent() :> _ else return __.BadRequest("Exceeded maximum number of items in Saved list; please validate before requesting Save.") :> _
     }
 
-    [<HttpDelete("{clientId}")>]
-    member __.Remove(clientId : ClientId, [<FromBody>]skuIds : SkuId[]) = async {
+    [<HttpDelete>]
+    member __.Remove
+        (   [<FromClientIdHeader>]clientId : ClientId,
+            [<FromBody>]skuIds : SkuId[]) : Async<unit> = async {
         let resolveSkus _hasSavedSku = async { return skuIds }
         return! service.Remove(clientId, resolveSkus)
     }
