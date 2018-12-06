@@ -105,9 +105,9 @@ module Test =
         let resolveStream =
             match store with
             | Store.Mem store ->
-                Equinox.MemoryStore.MemoryStreamBuilder(store, fold, initial).Create
+                Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve
             | Store.Es gateway ->
-                GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Create
+                GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Resolve
         Backend.Favorites.Service(log, resolveStream)
     let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
         let sku = Guid.NewGuid() |> SkuId

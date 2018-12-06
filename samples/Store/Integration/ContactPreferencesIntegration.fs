@@ -11,13 +11,13 @@ let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferen
 let createMemoryStore () =
     new VolatileStore()
 let createServiceMem log store =
-    Backend.ContactPreferences.Service(log, MemoryStreamBuilder(store, fold, initial).Create)
+    Backend.ContactPreferences.Service(log, MemResolver(store, fold, initial).Resolve)
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
-    GesStreamBuilder(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Create
+    GesResolver(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
-    GesStreamBuilder(gateway defaultBatchSize, codec, fold, initial).Create
+    GesResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

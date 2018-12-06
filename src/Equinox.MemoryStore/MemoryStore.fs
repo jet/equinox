@@ -92,7 +92,19 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
                 return Store.SyncResult.Conflict resync
             | ConcurrentArraySyncResult.Written events -> return Store.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
-type MemoryStreamBuilder<'event, 'state>(store : VolatileStore, fold, initial) =
-    member __.Create streamName : Equinox.Store.IStream<'event, 'state> =
-        let category = MemoryCategory(store, fold, initial)
-        Equinox.Store.Stream.create category streamName
+type MemResolver<'event, 'state>(store : VolatileStore, fold, initial) =
+    let category = MemoryCategory<'event,'state>(store, fold, initial)
+    let mkStreamName categoryName streamId = sprintf "%s-%s" categoryName streamId
+    let resolveStream streamName = Store.Stream.create category streamName
+
+    member __.Resolve = function
+        | Target.CatId (categoryName,streamId) ->
+            resolveStream (mkStreamName categoryName streamId)
+        | Target.CatIdEmpty (categoryName,streamId) ->
+            let streamName = mkStreamName categoryName streamId
+            Store.Stream.ofMemento (Token.ofEmpty streamName initial) (resolveStream streamName)
+        | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x
+
+    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Handler.CreateMemento]
+    member __.FromMemento(Token.Unpack stream as streamToken,state) =
+        Store.Stream.ofMemento (streamToken,state) (resolveStream stream.streamName)

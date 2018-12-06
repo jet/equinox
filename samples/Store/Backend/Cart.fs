@@ -3,9 +3,8 @@
 open Domain
 
 type Service(log, resolveStream) =
-    let (|Stream|) (id: CartId) =
-        let streamName = sprintf "Cart-%s" id.Value
-        Cart.Handler(log, resolveStream streamName)
+    let (|CatId|) (id: CartId) = Equinox.CatId ("Cart", id.Value)
+    let (|Stream|) (CatId id) = Cart.Handler(log, resolveStream id)
 
     member __.FlowAsync (Stream stream, flow, ?prepare) =
         stream.FlowAsync(flow, ?prepare = prepare)

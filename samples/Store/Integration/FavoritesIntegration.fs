@@ -11,11 +11,11 @@ let fold, initial, snapshot = Domain.Favorites.Folds.fold, Domain.Favorites.Fold
 let createMemoryStore () =
     new VolatileStore()
 let createServiceMem log store =
-    Backend.Favorites.Service(log, MemoryStreamBuilder(store, fold, initial).Create)
+    Backend.Favorites.Service(log, MemResolver(store, fold, initial).Resolve)
 
 let codec = genCodec<Domain.Favorites.Events.Event>()
 let createServiceGes gateway log =
-    let resolveStream = GesStreamBuilder(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Create
+    let resolveStream = GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =
