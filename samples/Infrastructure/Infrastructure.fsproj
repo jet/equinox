@@ -11,10 +11,12 @@
   <ItemGroup>
     <Compile Include="Storage.fs" />
     <Compile Include="Services.fs" />
+    <Compile Include="Log.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\Store\Backend\Backend.fsproj" />

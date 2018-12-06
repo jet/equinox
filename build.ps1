@@ -20,8 +20,8 @@ $env:EQUINOX_INTEGRATION_SKIP_EVENTSTORE=[string]$skipEs
 if ($skipEs) { warn "Skipping EventStore tests" }
 
 function cliCosmos($arghs) {
-	Write-Host "dotnet run cli/Equinox.Cli cosmos -s <REDACTED> -d $cosmosDatabase -c $cosmosCollection $arghs"
-	dotnet run -p cli/Equinox.Cli -f netcoreapp2.1 cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosCollection @arghs
+	Write-Host "dotnet run cli/Equinox.Cli -- $arghs cosmos -s <REDACTED> -d $cosmosDatabase -c $cosmosCollection"
+	dotnet run -p cli/Equinox.Cli -f netcoreapp2.1 -- @arghs cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosCollection
 }
 
 if ($skipCosmos) {
@@ -30,7 +30,7 @@ if ($skipCosmos) {
 	warn "Skipping Provisioning Cosmos"
 } else {
     warn "Provisioning cosmos..."
-    cliCosmos @("provision", "-ru", "1000")
+    cliCosmos @("init", "-ru", "1000")
 	$deprovisionCosmos=$true
 }
 $env:EQUINOX_INTEGRATION_SKIP_COSMOS=[string]$skipCosmos

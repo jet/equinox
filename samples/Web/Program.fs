@@ -4,6 +4,7 @@ open Argu
 open Microsoft.AspNetCore
 open Microsoft.AspNetCore.Hosting
 open Microsoft.Extensions.DependencyInjection
+open Samples.Infrastructure.Log
 open Serilog
 
 module Program =
@@ -27,6 +28,8 @@ module Program =
                     .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
                     .Enrich.FromLogContext()
                     .WriteTo.Console()
+                    // TOCONSIDER log and reset every minute or something ?
+                    .WriteTo.Sink(RuCounterSink())
             let c =
                 let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
                 match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
