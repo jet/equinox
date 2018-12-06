@@ -19,7 +19,7 @@ type Service(handlerLog, resolveStream, maxSavedItems : int, maxAttempts) =
     member __.Save(Stream stream, skus : seq<SkuId>) : Async<bool> =
         stream.Execute <| Add (DateTimeOffset.Now, Seq.toArray skus)
 
-    member __.Remove(Stream stream, resolve : (SkuId -> bool) -> Async<SkuId[]>) : Async<bool> =
+    member __.Remove(Stream stream, resolve : (SkuId -> bool) -> Async<SkuId[]>) : Async<unit> =
         let resolve hasSku = async {
             let! skus = resolve hasSku
             return Remove skus }

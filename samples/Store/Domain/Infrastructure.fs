@@ -94,6 +94,8 @@ and private CartIdJsonConverter() =
 
 /// ClientId strongly typed id
 [<Sealed; JsonConverter(typeof<ClientIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
+// To support model binding using aspnetcore 2 FromHeader
+[<System.ComponentModel.TypeConverter(typeof<ClientIdStringConverter>)>]
 // (Internally a string for most efficient copying semantics)
 type ClientId private (id : string) =
     inherit Comparable<ClientId, string>(id)
@@ -111,3 +113,15 @@ and private ClientIdJsonConverter() =
     override __.Pickle value = value.Value
     /// Input must be a Guid.Parseable value
     override __.UnPickle input = ClientId.Parse input
+and private ClientIdStringConverter() =
+    inherit System.ComponentModel.TypeConverter()
+    override __.CanConvertFrom(context, sourceType) =
+        sourceType = typedefof<string> || base.CanConvertFrom(context,sourceType)
+    override __.ConvertFrom(context, culture, value) =
+        match value with
+        | :? string as s -> s |> ClientId.Parse |> box
+        | _ -> base.ConvertFrom(context, culture, value)
+    override __.ConvertTo(context, culture, value, destinationType) =
+        match value with
+        | :? ClientId as value when destinationType = typedefof<string> -> value.Value :> _
+        | _ -> base.ConvertTo(context, culture, value, destinationType)

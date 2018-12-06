@@ -59,5 +59,5 @@ type Handler(log, stream, ?maxAttempts) =
     member __.Execute command : Async<unit> =
         inner.Decide <| fun ctx ->
             ctx.Execute (Commands.interpret command)
-    member __.Read : Async<Folds.State> =
+    member __.Read : Async<Events.Favorited []> =
         inner.Query id

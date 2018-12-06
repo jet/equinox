@@ -18,7 +18,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 - Designed not to invade application code; Domain tests can be written directly against your models without any need to use Equinox assemblies or constructs as part of writing those tests.
 - Encoding of events via `Equinox.UnionCodec` provides for pluggable encoding of events based on either:
     - Using a [versionable convention-based approach (using `Typeshape`'s `UnionContractEncoder` under the covers)](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/), providing for serializer-agnostic schema evolution with minimal boilerplate
-    - Also providing a hook using an explicitly coded pair of `encode` and `tryDecode` functions for when you need to customize
+    - optionally using an explicitly coded pair of `encode` and `tryDecode` functions for when you need to customize
 - Independent of the store used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / Request Charges by maintaining the folded state, without any explicit code within the Domain Model
 - Logging is both high performance and pluggable (using [Serilog](https://github.com/serilog/serilog) to your hosting context (we feed log info to Splunk and the metrics embedded in the LogEvent Properties to Prometheus; see relevant tests for examples)
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
@@ -33,7 +33,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 
 The Equinox components within this repository are delivered as a series of multi-targeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
-- `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic secision flow runner that manages the optimistic concurrency protocol
+- `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic decision flow runner that manages the optimistic concurrency protocol
 - `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): [a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/):
 	- independent of any specific serializer
 	- allows tagging of Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
@@ -83,10 +83,32 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 	./build -se
 
+# BENCHMARKS
+
+A key facility of this repo is beoing able to run load tests, either in process against a nominated store, or via HTTP to a nominated Web app. The following tests are implemented at present:
+
+- `Favorite` - Simulate a very enthusiastic user that favorites things once per Second - triggering an ever-growing state which can only work efficiently if you:
+    - apply a snapshotting scheme (although being unbounded, it will eventually hit the store's limits - 4MB/event for EventStore, 3MB/document for CosmosDb)
+- `SaveForLater` - Simulate a happy shopper that saves 3 items per second, and empties the Save For Later list whenever it is full (when it hits 50 items)
+    - Snapshotting helps a lot
+    - Caching is not as essential as it is for the `Favorite` test
+
 ## Run EventStore benchmark (when provisioned)
 
-	& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe es run
-	& dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- es run
+	& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe run es
+	& dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- run es
+
+## run Web benchmark
+
+The CLI can drive the Store/Web ASP.NET Core app. Doing so requires starting a web process with an appropriate store (EventStore in this example, but can be `memory`/omitted etc. as in the other examples)
+
+### in Window 1
+
+    & dotnet run -c Release -f netcoreapp2.1 -p samples/Store/Web -- -C -U es
+
+### in Window 2
+
+    & dotnet run -c Release -f netcoreapp2.1 -p cli/Equinox.Cli -- run -t saveforlater -f 200 web
 
 # PROVISIONING
 

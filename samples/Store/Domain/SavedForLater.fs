@@ -12,19 +12,22 @@ module Events =
     type Merged =           { items : Item [] }
     module Compaction =
         type Compacted =    { items : Item [] }
+        // NB need to revise this tag if you break the unfold schema
         let [<Literal>] EventType = "compacted"
 
     type Event =
         /// Checkpoint with snapshot of entire preceding event fold, avoiding need for any further reads
         | [<System.Runtime.Serialization.DataMember(Name=Compaction.EventType)>] Compacted of Compaction.Compacted
+
         /// Inclusion of another set of state in this one
         | Merged of Merged
         /// Removal of a set of skus
         | Removed of Removed
         /// Addition of a collection of skus to the list
         | Added of Added
+        interface TypeShape.UnionContract.IUnionContract
 
-module Fold =
+module Folds =
     open Events
     let isSupersededAt effectiveDate (item : Item) = item.dateSaved < effectiveDate
     type private InternalState(externalState : seq<Item>) =
@@ -58,10 +61,13 @@ module Fold =
     let proposedEventsWouldExceedLimit maxSavedItems events state =
         let newState = fold state events
         Array.length newState > maxSavedItems
+    let snapshot =
+        let isOrigin = function Compacted _ -> true | _ -> false
+        let generate state = Events.Compacted { items = state }
+        isOrigin, generate
 
 module Commands =
     type Command =
-        | Compact
         | Merge of merges : Events.Item []
         | Remove of skuIds : SkuId []
         | Add of dateSaved : DateTimeOffset * skuIds : SkuId []
@@ -78,13 +84,11 @@ module Commands =
             this.DoesNotAlreadyContainSameOrMoreRecent item.dateSaved item.skuId
 
     // yields true if the command was executed, false if it would have breached the invariants
-    let decide (maxSavedItems : int) (cmd : Command) (state : Fold.State) : bool * Events.Event list =
+    let decide (maxSavedItems : int) (cmd : Command) (state : Folds.State) : bool * Events.Event list =
         let validateAgainstInvariants events =
-            if Fold.proposedEventsWouldExceedLimit maxSavedItems events state then false, []
+            if Folds.proposedEventsWouldExceedLimit maxSavedItems events state then false, []
             else true, events
         match cmd with
-        | Compact ->
-            true, [ Events.Compacted { items = state }]
         | Merge merges ->
             let net = merges |> Array.filter (Index state).DoesNotAlreadyContainItem
             if Array.isEmpty net then true, []
@@ -101,15 +105,16 @@ module Commands =
             else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
 
 type Handler(log, stream, maxSavedItems, maxAttempts) =
-    let inner = Equinox.Handler(Fold.fold, log, stream, maxAttempts = maxAttempts)
+    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = maxAttempts)
     let decide (ctx : Equinox.Context<_,_>) command =
         ctx.Decide (Commands.decide maxSavedItems command)
 
-    member __.Remove (resolve : ((SkuId->bool) -> Async<Commands.Command>)) : Async<bool> =
+    member __.Remove (resolve : ((SkuId->bool) -> Async<Commands.Command>)) : Async<unit> =
         inner.DecideAsync <| fun ctx -> async {
             let contents = seq { for item in ctx.State -> item.skuId } |> set
             let! cmd = resolve contents.Contains
             return cmd |> decide ctx }
+        |> Async.Ignore
 
     member __.Execute command : Async<bool> =
         inner.Decide <| fun fctx ->

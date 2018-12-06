@@ -132,6 +132,20 @@ module HttpHelpers =
         /// Creates an HTTP GET request.
         let inline create () = new HttpRequestMessage()
 
+        /// Assigns a method to an HTTP request.
+        let inline withMethod (m : HttpMethod) (req : HttpRequestMessage) =
+            req.Method <- m
+            req
+
+        /// Creates an HTTP GET request.
+        let inline get () = create ()
+
+        /// Creates an HTTP POST request.
+        let inline post () = create () |> withMethod HttpMethod.Post
+
+        /// Creates an HTTP DELET request.
+        let inline delete () = create () |> withMethod HttpMethod.Delete
+
         /// Assigns a path to an HTTP request.
         let inline withUri (u : Uri) (req : HttpRequestMessage) =
             req.RequestUri <- u
@@ -144,6 +158,24 @@ module HttpHelpers =
         /// Assigns a path to a Http request using printf-like formatting.
         let inline withPathf fmt =
             Printf.ksprintf withPath fmt
+
+        /// Uses supplied string as UTF8-encoded json request body
+        let withJsonString (json : string) (request : HttpRequestMessage) =
+            request.Content <- new StringContent(json, Encoding.UTF8, "application/json")
+            request
+
+        /// Use supplied serialize to convert the request to a json string, include that as a UTF-8 encoded body
+        let withJson (serialize : 'Request -> string) (input : 'Request) (request : HttpRequestMessage) =
+            request |> withJsonString (serialize input)
+
+        /// Use Batman Json.Net profile convert the request to a json rendering
+        let withJsonNet<'Request> (input : 'Request) (request : HttpRequestMessage) =
+            request |> withJson Newtonsoft.Json.JsonConvert.SerializeObject input
+
+        /// Appends supplied header to request header
+        let inline withHeader (name : string) (value : string) (request : HttpRequestMessage) =
+            request.Headers.Add(name, value)
+            request
 
     type HttpContent with
         member c.ReadAsString() = async {
@@ -245,3 +277,30 @@ module HttpHelpers =
                 let! exn = InvalidHttpResponseException.Create("Http request yielded unanticipated HTTP Result.", response)
                 do raise exn
         }
+
+        /// <summary>Asynchronously deserializes the json response content using the supplied `deserializer`, without validating the `StatusCode`</summary>
+        /// <param name="deserializer">The decoder routine to apply to the body content. Exceptions are wrapped in exceptions containing the offending content.</param>
+        member response.InterpretContent<'Decoded>(deserializer : string -> 'Decoded) : Async<'Decoded> = async {
+            let! content = response.Content.ReadAsString()
+            try return deserializer content
+            with e ->
+                let! exn = InvalidHttpResponseException.Create("HTTP response could not be decoded.", response, e)
+                return raise exn
+        }
+
+        /// <summary>Asynchronously deserializes the json response content using the supplied `deserializer`, validating the `StatusCode` is `expectedStatusCode`</summary>
+        /// <param name="expectedStatusCode">check that status code matches supplied code or raise a <c>InvalidHttpResponseException</c> if it doesn't.</param>
+        /// <param name="deserializer">The decoder routine to apply to the body content. Exceptions are wrapped in exceptions containing the offending content.</param>
+        member response.Interpret<'Decoded>(expectedStatusCode : HttpStatusCode, deserializer : string -> 'Decoded) : Async<'Decoded> = async {
+            do! response.EnsureStatusCode expectedStatusCode
+            return! response.InterpretContent deserializer
+        }
+
+    module HttpRes =
+        /// Deserialize body using default Json.Net profile - throw with content details if StatusCode is unexpected or decoding fails
+        let deserializeExpectedJsonNet<'t> expectedStatusCode (res : HttpResponseMessage) =
+            res.Interpret(expectedStatusCode, Newtonsoft.Json.JsonConvert.DeserializeObject<'t>)
+
+        /// Deserialize body using Batman Json.Net profile - throw with content details if StatusCode is not OK or decoding fails
+        let deserializeOkJsonNet<'t> =
+            deserializeExpectedJsonNet<'t> HttpStatusCode.OK

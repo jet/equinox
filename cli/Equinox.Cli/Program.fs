@@ -1,137 +1,141 @@
 ﻿module Equinox.Cli.Program
 
 open Argu
-open Domain
-open Equinox.EventStore
-open Infrastructure
+open Domain.Infrastructure
+open Equinox.Cli.Infrastructure
+open Microsoft.Extensions.DependencyInjection
+open Samples.Infrastructure.Storage
 open Serilog
 open Serilog.Events
 open System
-open System.IO
+open System.Net.Http
 open System.Threading
 
 [<NoEquality; NoComparison>]
 type Arguments =
-    | [<AltCommandLine("-vd")>] VerboseDomain
+    | [<AltCommandLine("-v")>] Verbose
     | [<AltCommandLine("-vc")>] VerboseConsole
     | [<AltCommandLine("-S")>] LocalSeq
     | [<AltCommandLine("-l")>] LogFile of string
-    | [<CliPrefix(CliPrefix.None)>] Memory of ParseResults<TestArguments>
-    | [<CliPrefix(CliPrefix.None)>] Es of ParseResults<EsArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique; AltCommandLine>] Run of ParseResults<TestArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | VerboseDomain -> "Include low level Domain logging."
-            | VerboseConsole -> "Include low level Domain and Store logging in screen output."
+            | Verbose -> "Include low level logging regarding specific test runs."
+            | VerboseConsole -> "Include low level test and store actions logging in on-screen output to console."
             | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
-            | LogFile _ -> "specify a log file to write the result breakdown (default: Equinox.Cli.log)."
-            | Memory _ -> "specify In-Memory Volatile Store baseline test"
-            | Es _ -> "specify EventStore actions"
-and TestArguments =
-    | Name of Test
-    | Cached
+            | LogFile _ -> "specify a log file to write the result breakdown into (default: Equinox.Cli.log)."
+            | Run _ -> "Run a load test"
+and [<NoComparison>]WebArguments =
+    | [<AltCommandLine("-u")>] Endpoint of string
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Endpoint _ -> "Target address. Default: https://localhost:5001"
+and [<NoComparison>]
+    TestArguments =
+    | [<AltCommandLine("-t"); First; Unique>] Name of Tests.Test
+    | [<AltCommandLine("-C")>] Cached
+    | [<AltCommandLine("-U")>] Unfolds
     | [<AltCommandLine("-f")>] TestsPerSecond of int
     | [<AltCommandLine("-d")>] DurationM of float
     | [<AltCommandLine("-e")>] ErrorCutoff of int64
     | [<AltCommandLine("-i")>] ReportIntervalS of int
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<Samples.Infrastructure.Storage.MemArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Es of ParseResults<Samples.Infrastructure.Storage.EsArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Web of ParseResults<WebArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Name _ -> "Specify which test to run. (default: Favorites)"
-            | Cached -> "Whether to employ a Cache"
+            | Name _ -> "specify which test to run. (default: Favorite)."
+            | Cached -> "employ a 50MB cache, wire in to Stream configuration."
+            | Unfolds -> "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
             | TestsPerSecond _ -> "specify a target number of requests per second (default: 1000)."
-            | DurationM _ -> "specify a run duration in minutes (default: 1)."
-            | ErrorCutoff _ -> "specify an error cutoff (default: 10000)."
+            | DurationM _ -> "specify a run duration in minutes (default: 30)."
+            | ErrorCutoff _ -> "specify an error cutoff; test ends when exceeded (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
-and Test = Favorites
-and [<NoEquality; NoComparison>] EsArguments =
-    | [<AltCommandLine("-vs")>] VerboseStore
-    | [<AltCommandLine("-o")>] Timeout of float
-    | [<AltCommandLine("-r")>] Retries of int
-    | [<AltCommandLine("-g")>] Host of string
-    | [<AltCommandLine("-u")>] Username of string
-    | [<AltCommandLine("-p")>] Password of string
-    | [<AltCommandLine("-c")>] ConcurrentOperationsLimit of int
-    | [<AltCommandLine("-h")>] HeartbeatTimeout of float
+            | Memory _ -> "target in-process Transient Memory Store (Default if not other target specified)."
+            | Es _ -> "Run transactions in-process against EventStore."
+            | Web _ -> "Run transactions against a Web endpoint."
 
-    | [<CliPrefix(CliPrefix.None)>] Run of ParseResults<TestArguments>
-    interface IArgParserTemplate with
-        member a.Usage = a |> function
-            | VerboseStore -> "Include low level Store logging."
-            | Timeout _ -> "specify operation timeout in seconds (default: 5)."
-            | Retries _ -> "specify operation retries (default: 1)."
-            | Host _ -> "specify a DNS query, using Gossip-driven discovery against all A records returned (default: localhost)."
-            | Username _ -> "specify a username (default: admin)."
-            | Password _ -> "specify a Password (default: changeit)."
-            | ConcurrentOperationsLimit _ -> "max concurrent operations in flight (default: 5000)."
-            | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 1.5)."
-            | Run _ -> "Run a load test."
+let createStoreLog verbose verboseConsole maybeSeqEndpoint =
+    let c = LoggerConfiguration().Destructure.FSharpTypes()
+    let c = if verbose then c.MinimumLevel.Debug() else c
+    let c = c.WriteTo.Console((if verbose && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+    let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
+    c.CreateLogger() :> ILogger
 
-let defaultBatchSize = 500
-
-module EventStore =
-    /// To establish a local node to run the tests against:
-    ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-    ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-    let connect (log: ILogger) (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
-        GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
-                heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
-                log=(if log.IsEnabled(LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
-                tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
-            .Establish("equinox-cli", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
-    let createGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
-
-[<RequireQualifiedAccess; NoEquality; NoComparison>]
-type Store =
-    | Mem of Equinox.MemoryStore.VolatileStore
-    | Es of GesGateway
-
-module Test =
-    let run log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
+module LoadTest =
+    let private runLoadTest log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
         let mutable idx = -1L
         let selectClient () =
             let clientIndex = Interlocked.Increment(&idx) |> int
             clients.[clientIndex % clients.Length]
         let selectClient = async { return async { return selectClient() } }
         Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
-    let fold, initial, snapshot = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.snapshot
-    let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-    let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
-    let codec = genCodec<Domain.Favorites.Events.Event>()
-    let createFavoritesService store (targs: ParseResults<TestArguments>) log =
-        let esCache =
-            if targs.Contains Cached then
-                let c = Caching.Cache("Cli", sizeMb = 50)
-                CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
-            else None
-        let resolveStream =
-            match store with
-            | Store.Mem store ->
-                Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve
-            | Store.Es gateway ->
-                GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, ?caching = esCache).Resolve
-        Backend.Favorites.Service(log, resolveStream)
-    let runFavoriteTest (service : Backend.Favorites.Service) clientId = async {
-        let sku = Guid.NewGuid() |> SkuId
-        do! service.Execute clientId (Favorites.Command.Favorite(DateTimeOffset.Now, [sku]))
-        let! items = service.Read clientId
-        if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
+    let private decorateWithLogger (domainLog : ILogger, verbose) (run: 't -> Async<unit>) =
+        let execute clientId =
+            if not verbose then run clientId
+            else async {
+                domainLog.Information("Executing for client {sessionId}", clientId)
+                try return! run clientId
+                with e -> domainLog.Warning(e, "Test threw an exception"); e.Reraise () }
+        execute
+    let private createResultLog fileName = LoggerConfiguration().WriteTo.File(fileName).CreateLogger()
+    let run (log: ILogger) (verbose,verboseConsole,maybeSeq) reportFilename (args: ParseResults<TestArguments>) =
+        let storage = args.TryGetSubCommand()
 
-let createStoreLog verbose verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration().Destructure.FSharpTypes()
-    let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
-    let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
-    c.CreateLogger() :> ILogger
+        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
+        let storeLog, storeConfig, httpClient: ILogger * StorageConfig option * HttpClient option =
+            let options = args.GetResults Cached @ args.GetResults Unfolds
+            let cache, unfolds = options |> List.contains Cached, options |> List.contains Unfolds
+            match storage with
+            | Some (Web wargs) ->
+                let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
+                log.Information("Running web test targetting: {url}", uri)
+                createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
+            | Some (Es sargs) ->
+                let storeLog = createStoreLog <| sargs.Contains EsArguments.VerboseStore
+                log.Information("Running transactions in-process against EventStore with storage options: {options:l}", options)
+                storeLog, EventStore.config (log,storeLog) (cache, unfolds) sargs |> Some, None
+            | _  | Some (Memory _) ->
+                log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", options)
+                createStoreLog false, MemoryStore.config () |> Some, None
+        let test = args.GetResult(Name,Tests.Favorite)
+        let runSingleTest : ClientId -> Async<unit> =
+            match storeConfig, httpClient with
+            | None, Some client ->
+                let execForClient = Tests.executeRemote client test
+                decorateWithLogger (log,verbose) execForClient
+            | Some storeConfig, _ ->
+                let services = ServiceCollection()
+                Samples.Infrastructure.Services.register(services, storeConfig, storeLog)
+                let container = services.BuildServiceProvider()
+                let execForClient = Tests.executeLocal container test
+                decorateWithLogger (log, verbose) execForClient
+            | None, None -> invalidOp "impossible None, None"
+        let errorCutoff = args.GetResult(ErrorCutoff,10000L)
+        let testsPerSecond = args.GetResult(TestsPerSecond,1000)
+        let duration = args.GetResult(DurationM,30.) |> TimeSpan.FromMinutes
+        let reportingIntervals =
+            match args.GetResults(ReportIntervalS) with
+            | [] -> TimeSpan.FromSeconds 10.|> Seq.singleton
+            | intervals -> seq { for i in intervals -> TimeSpan.FromSeconds(float i) }
+            |> fun intervals -> [| yield duration; yield! intervals |]
+        let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
+
+        log.Information( "Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
+            test, duration, testsPerSecond, clients.Length, errorCutoff, reportingIntervals, reportFilename)
+        let results = runLoadTest log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
+
+        let resultFile = createResultLog reportFilename
+        for r in results do
+            resultFile.Information("Aggregate: {aggregate}", r)
+        log.Information("Run completed; Current memory allocation: {bytes:n2} MiB", (GC.GetTotalMemory(true) |> float) / 1024./1024.)
+
 let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+    let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
-let createResultLog fileName =
-    LoggerConfiguration()
-        .Destructure.FSharpTypes()
-        .WriteTo.File(fileName)
-        .CreateLogger()
 
 [<EntryPoint>]
 let main argv =
@@ -139,68 +143,16 @@ let main argv =
     let parser = ArgumentParser.Create<Arguments>(programName = programName)
     try
         let args = parser.ParseCommandLine argv
-        let verboseConsole = args.Contains(VerboseConsole)
+        let verboseConsole = args.Contains VerboseConsole
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
-        let report = args.GetResult(LogFile,programName+".log") |> fun n -> FileInfo(n).FullName
-        let runTest (log: ILogger) conn (targs: ParseResults<TestArguments>) =
-            let verbose = args.Contains(VerboseDomain)
-            let domainLog = createDomainLog verbose verboseConsole maybeSeq
-            let service = Test.createFavoritesService conn targs domainLog
-
-            let errorCutoff = targs.GetResult(ErrorCutoff,10000L)
-            let testsPerSecond = targs.GetResult(TestsPerSecond,1000)
-            let duration = targs.GetResult(DurationM,1.) |> TimeSpan.FromMinutes
-            let reportingIntervals =
-                match targs.GetResults(ReportIntervalS) with
-                | [] -> TimeSpan.FromSeconds 10.|> Seq.singleton
-                | intervals -> seq { for i in intervals -> TimeSpan.FromSeconds(float i) }
-                |> fun intervals -> [| yield duration; yield! intervals |]
-            let clients = Array.init (testsPerSecond * 2) (fun _ -> Guid.NewGuid () |> ClientId)
-
-            let test = targs.GetResult(Name,Favorites)
-            log.Information( "Running {test} with caching: {cached}"+
-                "Duration for {duration} with test freq {tps} hits/s; max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
-                test, targs.Contains Cached, duration, testsPerSecond, errorCutoff, reportingIntervals, report)
-            let runSingleTest clientId =
-                if not verbose then Test.runFavoriteTest service clientId
-                else async {
-                    domainLog.Information("Executing for client {sessionId}", ([|clientId|] : obj []))
-                    try return! Test.runFavoriteTest service clientId
-                    with e -> domainLog.Warning(e, "Test threw an exception"); e.Reraise () }
-            let results = Test.run log testsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) errorCutoff reportingIntervals clients runSingleTest |> Async.RunSynchronously
-            let resultFile = createResultLog report
-            for r in results do
-                resultFile.Information("Aggregate: {aggregate}", r)
-            log.Information("Run completed; Current memory allocation: {bytes:n2}MB", (GC.GetTotalMemory(true) |> float) / 1024./1024.)
-            0
-
+        let verbose = args.Contains Verbose
+        let log = createDomainLog verbose verboseConsole maybeSeq
         match args.GetSubCommand() with
-        | Memory targs ->
-            let verboseStore = false
-            let log = createStoreLog verboseStore verboseConsole maybeSeq
-            log.Information( "Using In-memory Volatile Store")
-            // TODO implement backoffs
-            let conn = Store.Mem (Equinox.MemoryStore.VolatileStore())
-            runTest log conn targs
-        | Es sargs ->
-            let verboseStore = sargs.Contains(EsArguments.VerboseStore)
-            let log = createStoreLog verboseStore verboseConsole maybeSeq
-            let host = sargs.GetResult(Host,"localhost")
-            let creds = sargs.GetResult(Username,"admin"), sargs.GetResult(Password,"changeit")
-            let (timeout, retries) as operationThrottling =
-                sargs.GetResult(EsArguments.Timeout,5.) |> float |> TimeSpan.FromSeconds,
-                sargs.GetResult(EsArguments.Retries,1)
-            let heartbeatTimeout = sargs.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
-            let concurrentOperationsLimit = sargs.GetResult(ConcurrentOperationsLimit,5000)
-            log.Information("Using EventStore targeting {host} with heartbeat: {heartbeat}, max concurrent requests: {concurrency}. " +
-                "Operation timeout: {timeout} with {retries} retries",
-                host, heartbeatTimeout, concurrentOperationsLimit, timeout, retries)
-            let conn = EventStore.connect log (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
-            let store = Store.Es (EventStore.createGateway conn defaultBatchSize)
-            match sargs.TryGetSubCommand() with
-            | Some (EsArguments.Run targs) -> runTest log store targs
-            | _ -> failwith "run is required"
-        | _ -> failwith "ERROR: please specify memory or es Store"
+        | Run rargs ->
+            let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
+            LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
+        | _ -> failwith "Please specify a valid subcommand :- init or run"
+        0
     with e ->
         printfn "%s" e.Message
         1
