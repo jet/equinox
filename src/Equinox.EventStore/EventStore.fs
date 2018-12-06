@@ -548,7 +548,7 @@ type GesConnector
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
-        //.SetQueueTimeoutTo(reqTimeout) // ES default: Zero/unlimited
+        .SetQueueTimeoutTo(reqTimeout) // ES default: Zero/unlimited
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
         .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
