@@ -18,6 +18,10 @@ type StreamResolver(storage) =
         | Storage.StorageConfig.Es (gateway, cache, unfolds) ->
             let accessStrategy = if unfolds then Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot |> Some else None
             Equinox.EventStore.GesResolver<'event,'state>(gateway, codec, fold, initial, ?access = accessStrategy, ?caching = cache).Resolve
+        | Storage.StorageConfig.Cosmos (gateway, cache, unfolds, databaseId, connectionId) ->
+            let store = Equinox.Cosmos.EqxStore(gateway, Equinox.Cosmos.EqxCollections(databaseId, connectionId))
+            let accessStrategy = if unfolds then Equinox.Cosmos.AccessStrategy.Snapshot snapshot |> Some else None
+            Equinox.Cosmos.EqxResolver<'event,'state>(store, codec, fold, initial, ?access = accessStrategy, ?caching = cache).Resolve
 
 type ServiceBuilder(storageConfig, handlerLog) =
      let resolver = StreamResolver(storageConfig)

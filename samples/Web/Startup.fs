@@ -18,6 +18,7 @@ type Arguments =
     | [<AltCommandLine("-U")>] Unfolds
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<MemArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Es of ParseResults<EsArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | VerboseConsole -> "Include low level Domain and Store logging in screen output."
@@ -26,6 +27,7 @@ type Arguments =
             | Unfolds -> "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
             | Memory _ -> "specify In-Memory Volatile Store (Default store)."
             | Es _ -> "specify storage in EventStore (--help for options)."
+            | Cosmos _ -> "specify storage in CosmosDb (--help for options)."
 
 type App = class end
 
@@ -54,6 +56,10 @@ type Startup() =
                 let storeLog = createStoreLog <| sargs.Contains EsArguments.VerboseStore
                 log.Information("EventStore Storage options: {options:l}", options)
                 EventStore.config (log,storeLog) (cache, unfolds) sargs, storeLog
+            | Some (Cosmos sargs) ->
+                let storeLog = createStoreLog <| sargs.Contains CosmosArguments.VerboseStore
+                log.Information("CosmosDb Storage options: {options:l}", options)
+                Cosmos.config (log,storeLog) (cache, unfolds) sargs, storeLog
             | _  | Some (Memory _) ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 MemoryStore.config (), log

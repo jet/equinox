@@ -185,6 +185,11 @@ For EventStore, the tests assume a running local instance configured as follows 
 	# run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
 	& $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 
+## CosmosDb (when not using -sc)
+
+    dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- init -ru 10000 `
+        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+
 # DEPROVISIONING
 
 ## Deprovisioning (aka nuking) EventStore data resulting from tests to reset baseline
