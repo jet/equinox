@@ -93,10 +93,18 @@ A key facility of this repo is beoing able to run load tests, either in process 
     - Snapshotting helps a lot
     - Caching is not as essential as it is for the `Favorite` test
 
-## Run EventStore benchmark (when provisioned)
+## Run EventStore benchmark on Full Framework(when provisioned)
 
-	& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe run es
-	& dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- run es
+This benchmark continually reads and writes very small events across multiple streams on .NET Full Framework
+
+    dotnet pack -c Release .\build.proj
+	& .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe run -f 2500 -C es
+
+## Run EventStore benchmark on .NET Core (when provisioned)
+
+At present, .NET Core seems to show comparable perf under normal load, but becomes very unpredictable under load. The following benchmark should produce pretty consistent levels of reads and writes, and can be used as a baseline for investigation:
+
+	& dotnet run -c Release -f netcoreapp2.1 -p cli/equinox.cli -- run -t saveforlater -f 1000 -d 5 -C -U es
 
 ## run Web benchmark
 
