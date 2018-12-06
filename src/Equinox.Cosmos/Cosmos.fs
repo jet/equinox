@@ -953,6 +953,7 @@ type EqxConnector
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
         ?tags : (string*string) seq) =
+    do if log = null then nullArg "log"
 
     let connPolicy =
         let cp = Client.ConnectionPolicy.Default
@@ -1010,7 +1011,7 @@ type EqxContext
         /// Database + Collection selector
         collections: EqxCollections,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
-        logger : Serilog.ILogger,
+        log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by maxEventsPerSlice).
         /// Defaults to 10
         ?defaultMaxItems,
@@ -1019,6 +1020,7 @@ type EqxContext
         /// Threshold defining the number of events a slice is allowed to hold before switching to a new Batch is triggered.
         /// Defaults to 1
         ?maxEventsPerSlice) =
+    do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
     let maxEventsPerSlice = defaultArg maxEventsPerSlice 1
     let batching = EqxBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems, maxEventsPerSlice=maxEventsPerSlice)
@@ -1041,7 +1043,7 @@ type EqxContext
         let direction = defaultArg direction Direction.Forward
         let batchSize = defaultArg batchSize batching.MaxItems * maxEventsPerSlice
         let batching = EqxBatchingPolicy(if batchSize < maxEventsPerSlice then 1 else batchSize/maxEventsPerSlice)
-        gateway.ReadLazy batching logger stream direction startPos (Some,fun _ -> false)
+        gateway.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
         let direction = defaultArg direction Direction.Forward
@@ -1053,13 +1055,13 @@ type EqxContext
                 match maxCount with
                 | Some limit -> maxCountPredicate limit
                 | None -> fun _ -> false
-            return! gateway.Read logger stream direction startPos (Some,isOrigin) }
+            return! gateway.Read log stream direction startPos (Some,isOrigin) }
 
     /// Establishes the current position of the stream in as effficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
     member __.Sync(stream, ?position: Position) : Async<Position> = async {
         //let indexed predicate = load fold initial (coll.Gateway.IndexedOrBatched log predicate (stream,None))
-        let! (Token.Unpack (_,pos')) = gateway.GetPosition(logger, stream, ?pos=position)
+        let! (Token.Unpack (_,pos')) = gateway.GetPosition(log, stream, ?pos=position)
         return pos' }
 
     /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
@@ -1075,7 +1077,7 @@ type EqxContext
     /// Callers should implement appropriate idempotent handling, or use Equinox.Handler for that purpose
     member __.Sync(stream, position, events: IEvent[]) : Async<AppendResult<Position>> = async {
         let batch = Sync.mkBatch stream events Seq.empty
-        let! res = gateway.Sync logger stream (Some position.index,batch)
+        let! res = gateway.Sync log stream (Some position.index,batch)
         match res with
         | InternalSyncResult.Written (Token.Unpack (_,pos)) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (Token.Unpack (_,pos),events) -> return AppendResult.Conflict (pos, events)
