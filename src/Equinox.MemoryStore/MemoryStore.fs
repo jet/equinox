@@ -61,9 +61,9 @@ type Token = { streamVersion: int; streamName: string }
 
 /// Internal implementation detail of MemoryStreamStore
 module private Token =
-    let private streamTokenOfIndex streamName (streamVersion : int) : Storage.StreamToken =
+    let private streamTokenOfIndex streamName (streamVersion : int) : Store.StreamToken =
         { value = box { streamName = streamName; streamVersion = streamVersion; } }
-    let (|Unpack|) (token: Storage.StreamToken) : Token = unbox<Token> token.value
+    let (|Unpack|) (token: Store.StreamToken) : Token = unbox<Token> token.value
     /// Represent a stream known to be empty
     let ofEmpty streamName initial = streamTokenOfIndex streamName -1, initial
     let tokenOfArray streamName (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex streamName
@@ -74,7 +74,7 @@ module private Token =
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
-    interface ICategory<'event, 'state> with
+    interface Store.ICategory<'event, 'state, string> with
         member __.Load streamName (log : ILogger) = async {
             match store.TryLoad<'event> streamName log with
             | None -> return Token.ofEmpty streamName initial
@@ -89,10 +89,10 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
                     let version = Token.tokenOfArray token.streamName conflictingEvents
                     let successorEvents = conflictingEvents |> Seq.skip (token.streamVersion + 1) |> List.ofSeq
                     return version, fold state (Seq.ofList successorEvents) }
-                return Storage.SyncResult.Conflict resync
-            | ConcurrentArraySyncResult.Written events -> return Storage.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
+                return Store.SyncResult.Conflict resync
+            | ConcurrentArraySyncResult.Written events -> return Store.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
 type MemoryStreamBuilder<'event, 'state>(store : VolatileStore, fold, initial) =
-    member __.Create streamName : Equinox.IStream<'event, 'state> =
+    member __.Create streamName : Equinox.Store.IStream<'event, 'state> =
         let category = MemoryCategory(store, fold, initial)
-        Equinox.Stream.create category streamName
+        Equinox.Store.Stream.create category streamName

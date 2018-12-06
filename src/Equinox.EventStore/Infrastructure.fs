@@ -92,22 +92,6 @@ module AsyncSeq =
     let takeWhileInclusive p (source : AsyncSeq<'T>) =
         takeWhileInclusiveAsync (p >> async.Return) source
 
-type TimeSpan with
-    /// Converts a tick count as measured by stopwatch into a TimeSpan value
-    static member FromStopwatchTicks(ticks : int64) =
-        let ticksPerSecond = double Stopwatch.Frequency
-        let totalSeconds = double ticks / ticksPerSecond
-        TimeSpan.FromSeconds totalSeconds
-
-/// Represents a time measurement of a computation that includes stopwatch tick metadata
-[<NoEquality; NoComparison>]
-type StopwatchInterval (startTicks : int64, endTicks : int64) =
-    do if startTicks < 0L || startTicks > endTicks then invalidArg "ticks" "tick arguments do not form a valid interval."
-    member __.StartTicks = startTicks
-    member __.EndTicks = endTicks
-    member __.Elapsed = TimeSpan.FromStopwatchTicks(endTicks - startTicks)
-    override __.ToString () = let e = __.Elapsed in sprintf "%g ms" e.TotalMilliseconds
-
 type Stopwatch =
     /// <summary>
     ///     Times a computation, returning the result with a time range measurement.

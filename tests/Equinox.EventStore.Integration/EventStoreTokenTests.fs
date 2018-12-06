@@ -6,7 +6,7 @@ open FsCheck.Xunit
 open Swensen.Unquote.Assertions
 open Xunit
 
-let unpack (Token.Unpack token : Storage.StreamToken) =
+let unpack (Token.Unpack token : Store.StreamToken) =
     token.pos.streamVersion, token.pos.compactionEventNumber, token.pos.batchCapacityLimit
 
 [<Theory
