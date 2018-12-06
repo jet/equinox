@@ -5,7 +5,8 @@ open Domain.Favorites
 open System
 
 type Service(log, resolveStream) =
-    let (|Stream|) (id: ClientId) = Handler(log, resolveStream (Equinox.CatId("Favorites", id.Value)))
+    let (|CatId|) (id: ClientId) = Equinox.CatId("Favorites", id.Value)
+    let (|Stream|) (CatId id) = Handler(log, resolveStream id)
 
     member __.Execute(Stream stream, command) =
         stream.Execute command

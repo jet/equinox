@@ -14,6 +14,7 @@
     <Compile Include="ContactPreferences.fs" />
     <Compile Include="Favorites.fs" />
     <Compile Include="SavedForLater.fs" />
+    <Compile Include="InventoryItem.fs" />
   </ItemGroup>
 
   <ItemGroup>
