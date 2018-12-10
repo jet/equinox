@@ -83,9 +83,38 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 	./build -se
 
+# SAMPLES
+
+The `samples/` folder contains various examples, with the complementary goals of:
+
+- being a starting point for users to see how one might consume the libraries.
+- acting as [Consumer Driven Contracts](https://martinfowler.com/articles/consumerDrivenContracts.html) to validate and pin API designs.
+- providing rough, but not official guidance as to things that are valid to do in an application consuming Equinox components.
+- to validate that each specific Storage implementation can fulfill the needs of each of the example Services/Aggregates/Applications. (_unfortunately this concern makes a lot of the DI wiring more complex than a real application should be; it's definitely not a goal for every Equinox app to be able to switch between backends, even though that's very much possible to achieve._)
+
+## [TODOBACKEND, see samples/TodoBackend](/samples/TodoBackend)
+
+The repo contains a vanilla ASP.NET Core 2.1 implemention of [the well-known TodoBackend Spec](https://www.todobackend.com). **NB the implementation is largely dictated by spec; no architectural guidance expressed or implied ;)**. It can be run via:
+
+    & dotnet run -f netcoreapp2.1 -p samples/TodoBackend -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE, below
+    start https://www.todobackend.com/specs/index.html?https://localhost:5001/todos # for low-level debugging / validation of hosting arrangements
+    start https://www.todobackend.com/client/index.html?https://localhost:5001/todos # Actual UI
+    start http://localhost:5341/#/events # see logs triggered by `-S` above in https://getseq.net        
+
+## [STORE, see /samples/Store](/samples/Store)
+
+The core sample in this repo is the `Store` sample, which contains code and tests extracted from real implementations (with minor simplifications in some cases).
+
+These facts mean that:
+
+- some of the code may be less than approachable for a beginner (e.g. some of the code is written is in its present form for reasons of efficiency)
+- some of the code may not represent official best practice guidance that the authors would necessarily stand over (e.g., the CQRS pattern is not strictly adhered to in all circumstances; some command designs are not completely correct from the point of view of making sense from an idempotency perspective)
+
+While these things can of course be perfected through PRs, this is definitely not top of the TODO list for the purposes of this repo. (We'd be happy to link to other samples, including cleanups / rewrites of these samples written with different testing platforms, web platforms, or DDD/CQRS/ES design flavors).
+
 # BENCHMARKS
 
-A key facility of this repo is beoing able to run load tests, either in process against a nominated store, or via HTTP to a nominated Web app. The following tests are implemented at present:
+A key facility of this repo is being able to run load tests, either in process against a nominated store, or via HTTP to a nominated Web app. The following tests are implemented at present:
 
 - `Favorite` - Simulate a very enthusiastic user that favorites things once per Second - triggering an ever-growing state which can only work efficiently if you:
     - apply a snapshotting scheme (although being unbounded, it will eventually hit the store's limits - 4MB/event for EventStore, 3MB/document for CosmosDb)
