@@ -1,5 +1,7 @@
 ﻿namespace TodoBackend
 
+open Domain
+
 // NB - these schemas reflect the actual storage formats and hence need to be versioned with care
 [<AutoOpen>]
 module Events =
@@ -23,7 +25,7 @@ module Folds =
         | Cleared -> { s with items = [] }
         | Compacted items -> { s with items = List.ofArray items }
     let fold state = Seq.fold evolve state
-    let isOrigin = function Events.Compacted _ -> true | _ -> false
+    let isOrigin = function Events.Cleared | Events.Compacted _ -> true | _ -> false
     let snapshot = isOrigin, fun state -> Compacted (Array.ofList state.items)
 
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
@@ -52,22 +54,21 @@ type Handler(log, stream, ?maxAttempts) =
         inner.Query projection
 
 type Service(handlerLog, resolve) =
-    // TODOBackend does not consider multitenancy, but we're ready when it does ;)
-    let stream = Handler(handlerLog, resolve (Equinox.CatId("Todos", "1")))
+    let (|Stream|) (clientId: ClientId) = Handler(handlerLog, resolve (Equinox.CatId("Todos", if obj.ReferenceEquals(clientId,null) then "1" else clientId.Value)))
 
-    member __.List : Async<Todo seq> =
+    member __.List(Stream stream) : Async<Todo seq> =
         stream.Query (fun s -> s.items |> Seq.ofList)
 
-    member __.TryGet id =
+    member __.TryGet(Stream stream, id) =
         stream.Query (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
 
-    member __.Execute command : Async<unit> =
+    member __.Execute(Stream stream, command) : Async<unit> =
         stream.Execute command
 
-    member __.Create(template: Todo) : Async<Todo> = async {
+    member __.Create(Stream stream, template: Todo) : Async<Todo> = async {
         let! state' = stream.Handle(Command.Add template)
         return List.head state' }
 
-    member __.Patch(item: Todo) : Async<Todo> = async {
+    member __.Patch(Stream stream, item: Todo) : Async<Todo> = async {
         let! state' = stream.Handle(Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }

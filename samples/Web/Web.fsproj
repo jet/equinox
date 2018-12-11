@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Controllers\TodosController.fs" />
     <Compile Include="Controllers\SavesController.fs" />
     <Compile Include="Controllers\FavoritesController.fs" />
     <Compile Include="Startup.fs" />
@@ -18,9 +19,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
-    <ProjectReference Include="..\Backend\Backend.fsproj" />
-    <ProjectReference Include="..\Domain\Domain.fsproj" />
     <ProjectReference Include="..\Infrastructure\Infrastructure.fsproj" />
   </ItemGroup>
 

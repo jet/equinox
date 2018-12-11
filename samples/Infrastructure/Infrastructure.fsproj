@@ -14,11 +14,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
-    <ProjectReference Include="..\..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
-    <ProjectReference Include="..\..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" PrivateAssets="all" />
-    <ProjectReference Include="..\Backend\Backend.fsproj" />
-    <ProjectReference Include="..\Domain\Domain.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Store\Backend\Backend.fsproj" />
+    <ProjectReference Include="..\Store\Domain\Domain.fsproj" />
+    <ProjectReference Include="..\TodoBackend\TodoBackend.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

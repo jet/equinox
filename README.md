@@ -41,7 +41,8 @@ The Equinox components within this repository are delivered as a series of multi
 - `Equinox.EventStore` (Nuget: `Equinox.EventStore`, depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`): Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
 - `Equinox.MemoryStore` (Nuget: `Equinox.MemoryStore`): In-memory store for integration testing/performance baselining/providing out-of-the-box zero dependency storage for examples.
 - `samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
-- `Equinox.Cli` (in this repo): General purpose tool incorporating a scenario runner that facilitates running representative load tests composed of transactions in `samples/Store` against each backend store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
+- `samples/TodoBackend` (in this repo): Standard https://todobackend.com compliant backend
+- `Equinox.Cli` (in this repo): General purpose tool incorporating a scenario runner that facilitates running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against each backend store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
 
 # CONTRIBUTING
 
@@ -87,16 +88,16 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 The `samples/` folder contains various examples, with the complementary goals of:
 
-- being a starting point for users to see how one might consume the libraries.
+- being a starting point to see how one might consume the libraries.
 - acting as [Consumer Driven Contracts](https://martinfowler.com/articles/consumerDrivenContracts.html) to validate and pin API designs.
-- providing rough, but not official guidance as to things that are valid to do in an application consuming Equinox components.
+- providing outline (not official and complete) guidance as to things that are valid to do in an application consuming Equinox components.
 - to validate that each specific Storage implementation can fulfill the needs of each of the example Services/Aggregates/Applications. (_unfortunately this concern makes a lot of the DI wiring more complex than a real application should be; it's definitely not a goal for every Equinox app to be able to switch between backends, even though that's very much possible to achieve._)
 
 ## [TODOBACKEND, see samples/TodoBackend](/samples/TodoBackend)
 
 The repo contains a vanilla ASP.NET Core 2.1 implemention of [the well-known TodoBackend Spec](https://www.todobackend.com). **NB the implementation is largely dictated by spec; no architectural guidance expressed or implied ;)**. It can be run via:
 
-    & dotnet run -f netcoreapp2.1 -p samples/TodoBackend -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE, below
+    & dotnet run -f netcoreapp2.1 -p samples/Web -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE, below
     start https://www.todobackend.com/specs/index.html?https://localhost:5001/todos # for low-level debugging / validation of hosting arrangements
     start https://www.todobackend.com/client/index.html?https://localhost:5001/todos # Actual UI
     start http://localhost:5341/#/events # see logs triggered by `-S` above in https://getseq.net        
@@ -137,11 +138,11 @@ At present, .NET Core seems to show comparable perf under normal load, but becom
 
 ## run Web benchmark
 
-The CLI can drive the Store/Web ASP.NET Core app. Doing so requires starting a web process with an appropriate store (EventStore in this example, but can be `memory`/omitted etc. as in the other examples)
+The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET Core app. Doing so requires starting a web process with an appropriate store (EventStore in this example, but can be `memory`/omitted etc. as in the other examples)
 
 ### in Window 1
 
-    & dotnet run -c Release -f netcoreapp2.1 -p samples/Store/Web -- -C -U es
+    & dotnet run -c Release -f netcoreapp2.1 -p samples/Web -- -C -U es
 
 ### in Window 2
 
