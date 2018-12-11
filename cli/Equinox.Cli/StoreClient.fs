@@ -1,4 +1,4 @@
-﻿module Equinox.Cli.Clients
+﻿module Equinox.Cli.StoreClient
 
 open Domain
 open Equinox.Cli.Infrastructure

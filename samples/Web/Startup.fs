@@ -65,4 +65,5 @@ type Startup() =
         else app.UseHsts() |> ignore
 
         app.UseHttpsRedirection()
+            .UseCors(fun x -> x.WithOrigins([|"https://www.todobackend.com"|]).AllowAnyHeader().AllowAnyMethod() |> ignore)
             .UseMvc() |> ignore

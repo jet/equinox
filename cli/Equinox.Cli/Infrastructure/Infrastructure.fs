@@ -143,7 +143,10 @@ module HttpHelpers =
         /// Creates an HTTP POST request.
         let inline post () = create () |> withMethod HttpMethod.Post
 
-        /// Creates an HTTP DELET request.
+        /// Creates an HTTP PATCH request.
+        let inline patch () = create () |> withMethod (HttpMethod "PATCH")
+
+        /// Creates an HTTP DELETE request.
         let inline delete () = create () |> withMethod HttpMethod.Delete
 
         /// Assigns a path to an HTTP request.
@@ -168,7 +171,7 @@ module HttpHelpers =
         let withJson (serialize : 'Request -> string) (input : 'Request) (request : HttpRequestMessage) =
             request |> withJsonString (serialize input)
 
-        /// Use Batman Json.Net profile convert the request to a json rendering
+        /// Use standard Json.Net profile convert the request to a json rendering
         let withJsonNet<'Request> (input : 'Request) (request : HttpRequestMessage) =
             request |> withJson Newtonsoft.Json.JsonConvert.SerializeObject input
 
@@ -301,6 +304,6 @@ module HttpHelpers =
         let deserializeExpectedJsonNet<'t> expectedStatusCode (res : HttpResponseMessage) =
             res.Interpret(expectedStatusCode, Newtonsoft.Json.JsonConvert.DeserializeObject<'t>)
 
-        /// Deserialize body using Batman Json.Net profile - throw with content details if StatusCode is not OK or decoding fails
+        /// Deserialize body using default Json.Net profile - throw with content details if StatusCode is not OK or decoding fails
         let deserializeOkJsonNet<'t> =
             deserializeExpectedJsonNet<'t> HttpStatusCode.OK

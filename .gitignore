@@ -14,6 +14,7 @@ msbuild.*
 
 # Visual Studio 2015+ cache/options directory
 .vs/
+*.fsproj.user
 
 # ReSharper is a .NET coding add-in
 _ReSharper*/

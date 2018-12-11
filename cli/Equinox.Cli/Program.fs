@@ -32,7 +32,8 @@ and [<NoComparison>]WebArguments =
             | Endpoint _ -> "Target address. Default: https://localhost:5001"
 and [<NoComparison>]
     TestArguments =
-    | [<AltCommandLine("-t"); First; Unique>] Name of Tests.Test
+    | [<AltCommandLine("-t"); Unique>] Name of Test
+    | [<AltCommandLine("-s")>] Size of int
     | [<AltCommandLine("-C")>] Cached
     | [<AltCommandLine("-U")>] Unfolds
     | [<AltCommandLine("-f")>] TestsPerSecond of int
@@ -45,6 +46,7 @@ and [<NoComparison>]
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Name _ -> "specify which test to run. (default: Favorite)."
+            | Size _ -> "For `-t Todo`: specify random title length max size to use (default 100)."
             | Cached -> "employ a 50MB cache, wire in to Stream configuration."
             | Unfolds -> "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
             | TestsPerSecond _ -> "specify a target number of requests per second (default: 1000)."
@@ -54,6 +56,7 @@ and [<NoComparison>]
             | Memory _ -> "target in-process Transient Memory Store (Default if not other target specified)."
             | Es _ -> "Run transactions in-process against EventStore."
             | Web _ -> "Run transactions against a Web endpoint."
+and Test = Favorite | SaveForLater | Todo
 
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes()
@@ -98,7 +101,11 @@ module LoadTest =
             | _  | Some (Memory _) ->
                 log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", options)
                 createStoreLog false, MemoryStore.config () |> Some, None
-        let test = args.GetResult(Name,Tests.Favorite)
+        let test =
+            match args.GetResult(Name,Favorite) with
+            | Favorite -> Tests.Favorite
+            | SaveForLater -> Tests.SaveForLater
+            | Todo -> Tests.Todo (args.GetResult(Size,100))
         let runSingleTest : ClientId -> Async<unit> =
             match storeConfig, httpClient with
             | None, Some client ->

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
+    <WarningLevel>5</WarningLevel>
+    <IsTestProject>false</IsTestProject>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="TodosService.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' == 'net461' " />
+    <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Store\Domain\Domain.fsproj" />
+  </ItemGroup>
+
+</Project>

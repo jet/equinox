@@ -32,6 +32,11 @@ type ServiceBuilder(storageConfig, handlerLog) =
         let fold, initial, snapshot = Domain.SavedForLater.Folds.fold, Domain.SavedForLater.Folds.initial, Domain.SavedForLater.Folds.snapshot
         Backend.SavedForLater.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot), maxSavedItems=50, maxAttempts=3)
 
+     member __.CreateTodosService() =
+        let codec = genCodec<TodoBackend.Events.Event>()
+        let fold, initial, snapshot = TodoBackend.Folds.fold, TodoBackend.Folds.initial, TodoBackend.Folds.snapshot
+        TodoBackend.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot))
+
 let register (services : IServiceCollection, storageConfig, handlerLog) =
     let regF (factory : IServiceProvider -> 'T) = services.AddSingleton<'T>(fun (sp: IServiceProvider) -> factory sp) |> ignore
 
@@ -39,3 +44,4 @@ let register (services : IServiceCollection, storageConfig, handlerLog) =
 
     regF <| fun sp -> sp.GetService<ServiceBuilder>().CreateFavoritesService()
     regF <| fun sp -> sp.GetService<ServiceBuilder>().CreateSaveForLaterService()
+    regF <| fun sp -> sp.GetService<ServiceBuilder>().CreateTodosService()
