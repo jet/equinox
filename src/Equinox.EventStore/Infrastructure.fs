@@ -118,6 +118,28 @@ type Stopwatch =
         return tr, result
     }
 
+/// Asynchronous Lazy<'T> that guarantees workflow will be executed at most once.
+type AsyncLazy<'T>(workflow : Async<'T>) =
+    let task = lazy(Async.StartAsTask workflow)
+    member __.AwaitValue() = Async.AwaitTaskCorrect task.Value
+
+/// Generic async lazy caching implementation that admits expiration/recomputation semantics
+type AsyncCacheCell<'T>(workflow : Async<'T>, isExpired : 'T -> bool) =
+    let mutable currentCell = AsyncLazy workflow
+
+    /// Gets or asynchronously recomputes a cached value depending on expiry and availability
+    member __.AwaitValue() = async {
+        let cell = currentCell
+        let! current = cell.AwaitValue()
+        if isExpired current then
+            // avoid unneccessary recomputation in cases where competing threads detect expiry;
+            // the first write attempt wins, and everybody else reads off that value.
+            let _ = System.Threading.Interlocked.CompareExchange(&currentCell, AsyncLazy workflow, cell)
+            return! currentCell.AwaitValue()
+        else
+            return current
+    }
+    
 [<RequireQualifiedAccess>]
 module Regex =
     open System.Text.RegularExpressions
