@@ -151,8 +151,7 @@ module internal Position =
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 /// Reference to Collection and name that will be used as the location for the stream
-type [<NoComparison>]
-    CollectionStream = { collectionUri: System.Uri; name: string } //with
+type [<NoComparison>] CollectionStream = { collectionUri: Uri; name: string }
 
 type internal Enum() =
     static member internal Events(b: Tip) =
@@ -293,8 +292,8 @@ module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
     type SyncResponse = { etag: string; n: int64; conflicts: Event[] }
-    let [<Literal>] sprocName = "EquinoxNoTipEvents"  // NB need to renumber for any breaking change
-    let [<Literal>] sprocBody = """
+    let [<Literal>] private sprocName = "EquinoxNoTipEvents"  // NB need to renumber for any breaking change
+    let [<Literal>] private sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
 // 1 perform expectedVersion verification (can request inhibiting of check by supplying -1)
@@ -413,12 +412,10 @@ function sync(req, expectedVersion, maxEvents) {
 
     module Initialization =
         open System.Collections.ObjectModel
-        let createDatabase (client:IDocumentClient) dbName = async {
+        let createDatabaseIfNotExists (client:IDocumentClient) dbName =
             let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
-            let! db = client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect
-            return db.Resource.Id }
-
-        let createCollection (client: IDocumentClient) (dbUri: Uri) collName ru = async {
+            client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect |> Async.Ignore
+        let createCollectionIfNotExists (client: IDocumentClient) (dbName,collName) ru = async {
             let pkd = PartitionKeyDefinition()
             pkd.Paths.Add(sprintf "/%s" Batch.PartitionKeyField)
             let colld = DocumentCollection(Id = collName, PartitionKey = pkd)
@@ -430,22 +427,17 @@ function sync(req, expectedVersion, maxEvents) {
             colld.IndexingPolicy.ExcludedPaths <- Collection [|ExcludedPath(Path="/*")|]
             // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
             colld.IndexingPolicy.IncludedPaths <- Collection [| for k in Batch.IndexedFields -> IncludedPath(Path=sprintf "/%s/?" k) |]
-            let! coll = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, colld, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect
-            return coll.Resource.Id }
-
-        let createProc (log: ILogger) (client: IDocumentClient) (collectionUri: Uri) = async {
-            let def = new StoredProcedure(Id = sprocName, Body = sprocBody)
-            log.Information("Creating stored procedure {sprocId}", def.Id)
-            // TODO ifnotexist semantics
-            return! client.CreateStoredProcedureAsync(collectionUri, def) |> Async.AwaitTaskCorrect |> Async.Ignore }
-
-        let initialize log (client : IDocumentClient) dbName collName ru = async {
-            let! dbId = createDatabase client dbName
-            let dbUri = Client.UriFactory.CreateDatabaseUri dbId
-            let! collId = createCollection client dbUri collName ru
-            let collUri = Client.UriFactory.CreateDocumentCollectionUri (dbName, collId)
-            //let! _aux = createAux client dbUri collName auxRu
-            return! createProc log client collUri }
+            let dbUri = Client.UriFactory.CreateDatabaseUri dbName
+            return! client.CreateDocumentCollectionIfNotExistsAsync(dbUri, colld, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect |> Async.Ignore }
+        let private createStoredProcIfNotExists (client: IDocumentClient) (collectionUri: Uri) (name, body): Async<float> = async {
+            try let! r = client.CreateStoredProcedureAsync(collectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
+                return r.RequestCharge
+            with DocDbException ((DocDbStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
+        let createSyncStoredProcIfNotExists (log: ILogger option) client collUri = async {
+            let! t, ru = createStoredProcIfNotExists client collUri (sprocName,sprocBody) |> Stopwatch.Time
+            match log with
+            | None -> ()
+            | Some log -> log.Information("Created stored procedure {sprocId} rc={ru} t={ms}", sprocName, ru, (let e = t.Elapsed in e.TotalMilliseconds)) }
 
 module internal Tip =
     let private get (client: IDocumentClient) (stream: CollectionStream, maybePos: Position option) =
@@ -658,6 +650,7 @@ open Equinox.Store.Infrastructure
 open FSharp.Control
 open Serilog
 open System
+open System.Collections.Concurrent
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
 type EqxConnection(client: Microsoft.Azure.Documents.IDocumentClient, ?readRetryPolicy: IRetryPolicy, ?writeRetryPolicy) =
@@ -719,6 +712,8 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
         | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return LoadFromTokenResult.Found (Token.create stream pos, span)
         | _ ->  let! res = __.Read log stream Direction.Forward (Some pos) (tryDecode,isOrigin)
                 return LoadFromTokenResult.Found res }
+    member __.CreateSyncStoredProcIfNotExists log = 
+        Sync.Initialization.createSyncStoredProcIfNotExists log conn.Client
     member __.Sync log stream (expectedVersion, batch: Tip): Async<InternalSyncResult> = async {
         let! wr = Sync.batch log conn.WriteRetryPolicy conn.Client stream (expectedVersion,batch,batching.MaxItems)
         match wr with
@@ -834,20 +829,37 @@ type private Folder<'event, 'state>
             | Store.SyncResult.Conflict resync ->             return Store.SyncResult.Conflict resync
             | Store.SyncResult.Written (token',state') ->     return Store.SyncResult.Written (token',state') }
 
+/// Holds Database/Collection pair, coordinating initialization activities
+type private EqxCollection(databaseId, collectionId, ?initCollection : Uri -> Async<unit>) =
+    let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId)
+    let initGuard = initCollection |> Option.map (fun init -> AsyncCacheCell<unit>(init collectionUri))
+
+    member __.CollectionUri = collectionUri
+    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
+
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type EqxCollections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string) =
+type EqxCollections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string, ?disableInitialization) =
+    // Index of database*collection -> Initialization Context
+    let collections = ConcurrentDictionary<string*string, EqxCollection>()
     new (databaseId, collectionId) =
         // TOCONSIDER - this works to support the Core.Events APIs
         let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         EqxCollections(fun categoryName streamId -> databaseId, collectionId, genStreamName categoryName streamId)
-    member __.CollectionForStream (categoryName,id) : CollectionStream =
-        let databaseId, collectionId, streamName = categoryAndIdToDatabaseCollectionAndStream categoryName id
-        { collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId); name = streamName }
 
-/// Pairs a Gateway, defining the retry policies for CosmosDb with an EqxCollections to
-type EqxStore(gateway: EqxGateway, collections: EqxCollections) =
+    member internal __.Resolve(categoryName, id, init) : CollectionStream * (unit -> Async<unit>) option =
+        let databaseId, collectionId, streamName = categoryAndIdToDatabaseCollectionAndStream categoryName id
+        let init = match disableInitialization with Some true -> None | _ -> Some init
+
+        let coll = collections.GetOrAdd((databaseId,collectionId), fun (db,coll) -> EqxCollection(db, coll, ?initCollection = init))
+        { collectionUri = coll.CollectionUri; name = streamName },coll.InitializationGate
+
+/// Pairs a Gateway, defining the retry policies for CosmosDb with an EqxCollections defining mappings from (category,id) to (database,collection,streamName)
+type EqxStore(gateway: EqxGateway, collections: EqxCollections, ?resolverLog) =
+    let init = gateway.CreateSyncStoredProcIfNotExists resolverLog
     member __.Gateway = gateway
     member __.Collections = collections
+    member internal __.ResolveCollStream(categoryName, id) : CollectionStream * (unit -> Async<unit>) option =
+        collections.Resolve(categoryName, id, init)
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
@@ -886,19 +898,27 @@ type EqxResolver<'event, 'state>(store : EqxStore, codec, fold, initial, ?access
         | Some (CachingStrategy.SlidingWindow(cache, window)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
-    let mkStreamName = store.Collections.CollectionForStream
-    let resolve = Equinox.Store.Stream.create category
+    let resolveStream (streamId, maybeCollectionInitializationGate) =
+        { new Store.IStream<'event, 'state> with
+            member __.Load log = category.Load streamId log
+            member __.TrySync (log: ILogger) (token: Store.StreamToken, originState: 'state) (events: 'event list) =
+                match maybeCollectionInitializationGate with
+                | None -> category.TrySync log (token, originState) events
+                | Some init -> async {
+                    do! init ()
+                    return! category.TrySync log (token, originState) events } }
 
     member __.Resolve = function
         | Target.CatId (categoryName,streamId) ->
-            resolve <| mkStreamName (categoryName, streamId)
+            store.ResolveCollStream(categoryName, streamId) |> resolveStream
         | Target.CatIdEmpty (categoryName,streamId) ->
-            let stream = mkStreamName (categoryName, streamId)
-            Store.Stream.ofMemento (Token.create stream Position.fromKnownEmpty,initial) (resolve stream)
+            let collStream, maybeInit = store.ResolveCollStream(categoryName, streamId)
+            Store.Stream.ofMemento (Token.create collStream Position.fromKnownEmpty,initial) (resolveStream (collStream, maybeInit))
         | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x
 
     member __.FromMemento(Token.Unpack (stream,_pos) as streamToken,state) =
-        Store.Stream.ofMemento (streamToken,state) (resolve stream)
+        let skipInitialization = None
+        Store.Stream.ofMemento (streamToken,state) (resolveStream (stream,skipInitialization))
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
@@ -1023,7 +1043,8 @@ type EqxContext
         let! (Token.Unpack (_,pos')), data = res
         return pos', data }
 
-    member __.CreateStream(streamName) = collections.CollectionForStream(null, streamName)
+    member __.ResolveStream(streamName) = collections.Resolve(null, streamName, gateway.CreateSyncStoredProcIfNotExists (Some log))
+    member __.CreateStream(streamName) = __.ResolveStream streamName |> fst
 
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
         let direction = defaultArg direction Direction.Forward
@@ -1061,7 +1082,13 @@ type EqxContext
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Handler for that purpose
-    member __.Sync(stream, position, events: IEvent[]) : Async<AppendResult<Position>> = async {
+    member __.Sync(stream : CollectionStream, position, events: IEvent[]) : Async<AppendResult<Position>> = async {
+        // Writes go through the stored proc, which we need to provision per-collection
+        // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
+        //   to move this about before we reach a final destination in any case
+        match __.ResolveStream stream.name |> snd with
+        | None -> ()
+        | Some init -> do! init ()
         let batch = Sync.mkBatch stream events Seq.empty
         let! res = gateway.Sync log stream (Some position.index,batch)
         match res with

@@ -30,7 +30,8 @@ if ($skipCosmos) {
 	warn "Skipping Provisioning Cosmos"
 } else {
     warn "Provisioning cosmos..."
-    cliCosmos @("init", "-ru", "1000")
+	# -P: inhibit creation of stored proc (everything in the repo should work without it due to auto-provisioning)
+    cliCosmos @("init", "-ru", "400", "-P")
 	$deprovisionCosmos=$true
 }
 $env:EQUINOX_INTEGRATION_SKIP_COSMOS=[string]$skipCosmos

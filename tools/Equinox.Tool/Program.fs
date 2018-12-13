@@ -30,10 +30,12 @@ type Arguments =
             | Initialize _ -> "Initialize a store"
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
+    | [<AltCommandLine("-P")>] SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<CosmosArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ -> "Specify RU/s level to provision for the Application Collection."
+            | SkipStoredProc -> "Inhibit creation of stored procedure in cited Collection."
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
@@ -206,7 +208,12 @@ let main argv =
                 let storeLog = createStoreLog (sargs.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
                 let dbName, collName, (_pageSize: int), conn = Cosmos.conn (log,storeLog) sargs
                 log.Information("Configuring CosmosDb Collection with Throughput Provision: {rus:n0} RU/s", rus)
-                Equinox.Cosmos.Store.Sync.Initialization.initialize log conn.Client dbName collName rus |> Async.RunSynchronously
+                Async.RunSynchronously <| async {
+                    do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
+                    do! Equinox.Cosmos.Store.Sync.Initialization.createCollectionIfNotExists conn.Client (dbName,collName) rus
+                    let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(dbName,collName)
+                    if not (iargs.Contains SkipStoredProc) then
+                        do! Equinox.Cosmos.Store.Sync.Initialization.createSyncStoredProcIfNotExists (Some (upcast log)) conn.Client collectionUri }
             | _ -> failwith "please specify a `cosmos` endpoint"
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
