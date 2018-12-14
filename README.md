@@ -28,15 +28,17 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
     - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing compaction schemas in a given stream (A snapshot isa Event) 
     - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
     - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
-- **Azure CosmosDb Indexed mode**: Using `Equinox.Cosmos`, command processing can be optimized through an index document in the same partition as the event documents that maintains:
-  a) compacted rendition(s) of the folded state
-  b) (optionally) events since those snapshots have last been updated
+- **`Equinox.Cosmos` 'Tip with Unfolds' schema**: In contrast to `Equinox.EventStore`'s `Access.RollingSnapshots`, when using `Equinox.Cosmos`, optimized command processing is managed via the `Tip`; a document per stream with a well-known identity enabling syncs via point-reads by virtue of the fact that the document maintains:
+  a) the present Position of the stream - i.e. the index at which the next events will be appended
+  b) compressed [_unfolds_]((https://github.com/jet/equinox/wiki/Cosmos-Storage-Model)
+  c) (optionally) events since those unfolded events ([presently removed](https://github.com/jet/equinox/pull/58), but [should return](https://github.com/jet/equinox/wiki/Roadmap))
   
-  This yields many of the benefits of rolling snapshots while reducing latency, RU provisioning requirement, and Request Charges:-
+  This yields many of the benefits of the in-stream Rolling Snapshots approach while reducing latency, RU provisioning requirement, and Request Charges:-
+    - Writes never need to do queries or touch event documents in any way
+	- when coupled with the cache, a typical read is a point read [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response] (when the stream is empty, a `404 NotFound` response pertains, costing 1.0 RU)
 	- no additional roundtrips to the store needed at either the Load or Sync points in the flow
-	- when coupled with the cache, a typical read is a point read with an etag, costing 1 RU
-	- The index isa DocDb Document, but _not_ an Event
-	- The index can safely be deleted at any time; it'll get regenerated in the course of normal processing
+
+  It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58)) 
 
 # Elements
 
@@ -92,6 +94,7 @@ Run, including running the tests that assume you've got a local EventStore and p
 ## build, skip EventStore tests
 
 	./build -se
+
 ## build, skip EventStore tests, skip auto-provisioning + de-provisioning Cosmos
 
 	./build -se -scp
@@ -185,9 +188,9 @@ For EventStore, the tests assume a running local instance configured as follows 
 	# run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
 	& $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 
-## CosmosDb (when not using -sc)
+## Provisioning CosmosDb (when not using -sc)
 
-    dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- init -ru 10000 `
+    dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- init -ru 1000 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
 
 # DEPROVISIONING
@@ -199,12 +202,7 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 	# requires admin privilege
 	rm $env:ProgramData\chocolatey\lib\eventstore-oss\tools\data
 
-## COSMOSDB (when not using -sc)
-
-	dotnet run cli/Equinox.Cli init -ru 10000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
-
-
-## DEPROVISIONING COSMOSDB
+## Deprovisioning CosmosDb
 
 The above provisioning step provisions RUs in DocDB for the collection, which add up quickly. *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism*. 
 
