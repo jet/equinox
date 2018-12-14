@@ -19,7 +19,9 @@
     <EnableSourceLink Condition=" '$(OS)' != 'Windows_NT' AND '$(MSBuildRuntimeType)' != 'Core' ">false</EnableSourceLink>
 
     <!-- suppress false positive warning FS2003 about invalid version of AssemblyInformationalVersionAttribute -->
-    <NoWarn>FS2003</NoWarn>
+    <!-- supress warning FS0988: Main module of program is empty: nothing will happen when it is run
+         arising in test assemblies (yes, could hide a problem in an actual EXE, but we'll survive that ;)) -->
+    <NoWarn>FS2003;FS0988</NoWarn>
   </PropertyGroup>
 
   <!-- Workaround for https://github.com/xunit/xunit/issues/1357 -->
