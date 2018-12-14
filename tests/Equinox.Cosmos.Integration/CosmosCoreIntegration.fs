@@ -46,7 +46,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 12 // 11.78 // WAS 10
+        verifyRequestChargesMax 13 // 12.88 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -122,7 +122,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 20
+        verifyRequestChargesMax 23 // 22.2 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName

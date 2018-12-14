@@ -28,6 +28,7 @@
   <Target Name="VSTest" Condition=" '$(IsOSX)' != 'true' " >
     <Exec Command="dotnet test tests/Equinox.MemoryStore.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test tests/Equinox.EventStore.Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test tests/Equinox.Cosmos.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
   </Target>
