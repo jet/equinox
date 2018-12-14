@@ -33,6 +33,9 @@ let ``ofUncompactedVersion - batchCapacityLimit`` streamVersion batchSize expect
     ; InlineData(   0,  2, 1, 3, 0)
     ; InlineData(   1,  2, 1, 3, 0)
     ; InlineData(   2,  2, 1, 3, 1)>]
+#if NET461
+[<Trait("KnownFailOn","Mono")>]
+#endif
 let ``ofPreviousTokenAndEventsLength - batchCapacityLimit`` (previousCompactionEventNumber : System.Nullable<int64>) streamVersion eventsLength batchSize expectedCapacity =
     let previousToken =
         if not previousCompactionEventNumber.HasValue then Token.ofCompactionEventNumber None 0 -84 null -42L
