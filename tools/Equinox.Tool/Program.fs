@@ -20,7 +20,8 @@ type Arguments =
     | [<AltCommandLine("-l")>] LogFile of string
     | [<CliPrefix(CliPrefix.None); Last; Unique; AltCommandLine>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique; AltCommandLine("initAux")>] InitAux of ParseResults<InitAuxArguments>
+    | [<Hidden>] // this command is not useful unless you have access to the [presently closed-source] Equinox.Cosmos.Projector
+      [<CliPrefix(CliPrefix.None); Last; Unique; AltCommandLine("initAux")>] InitAux of ParseResults<InitAuxArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose -> "Include low level logging regarding specific test runs."
