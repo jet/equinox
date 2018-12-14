@@ -415,29 +415,38 @@ function sync(req, expectedVersion, maxEvents) {
         let createDatabaseIfNotExists (client:IDocumentClient) dbName =
             let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
             client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect |> Async.Ignore
-        let createCollectionIfNotExists (client: IDocumentClient) (dbName,collName) ru = async {
-            let pkd = PartitionKeyDefinition()
-            pkd.Paths.Add(sprintf "/%s" Batch.PartitionKeyField)
-            let colld = DocumentCollection(Id = collName, PartitionKey = pkd)
-
-            colld.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
-            colld.IndexingPolicy.Automatic <- true
-            // Can either do a blacklist or a whitelist
-            // Given how long and variable the blacklist would be, we whitelist instead
-            colld.IndexingPolicy.ExcludedPaths <- Collection [|ExcludedPath(Path="/*")|]
-            // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
-            colld.IndexingPolicy.IncludedPaths <- Collection [| for k in Batch.IndexedFields -> IncludedPath(Path=sprintf "/%s/?" k) |]
+        let private createCollectionIfNotExists (client: IDocumentClient) dbName (def: DocumentCollection, ru) = async {
             let dbUri = Client.UriFactory.CreateDatabaseUri dbName
-            return! client.CreateDocumentCollectionIfNotExistsAsync(dbUri, colld, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect |> Async.Ignore }
+            return! client.CreateDocumentCollectionIfNotExistsAsync(dbUri, def, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect |> Async.Ignore }
         let private createStoredProcIfNotExists (client: IDocumentClient) (collectionUri: Uri) (name, body): Async<float> = async {
             try let! r = client.CreateStoredProcedureAsync(collectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
             with DocDbException ((DocDbStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
+        let createBatchAndTipCollectionIfNotExists (client: IDocumentClient) (dbName,collName) ru : Async<unit> =
+            let pkd = PartitionKeyDefinition()
+            pkd.Paths.Add(sprintf "/%s" Batch.PartitionKeyField)
+            let def = DocumentCollection(Id = collName, PartitionKey = pkd)
+
+            def.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
+            def.IndexingPolicy.Automatic <- true
+            // Can either do a blacklist or a whitelist
+            // Given how long and variable the blacklist would be, we whitelist instead
+            def.IndexingPolicy.ExcludedPaths <- Collection [|ExcludedPath(Path="/*")|]
+            // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
+            def.IndexingPolicy.IncludedPaths <- Collection [| for k in Batch.IndexedFields -> IncludedPath(Path=sprintf "/%s/?" k) |]
+            createCollectionIfNotExists client dbName (def, ru)
         let createSyncStoredProcIfNotExists (log: ILogger option) client collUri = async {
             let! t, ru = createStoredProcIfNotExists client collUri (sprocName,sprocBody) |> Stopwatch.Time
             match log with
             | None -> ()
             | Some log -> log.Information("Created stored procedure {sprocId} rc={ru} t={ms}", sprocName, ru, (let e = t.Elapsed in e.TotalMilliseconds)) }
+        let createAuxCollectionIfNotExists (client: IDocumentClient) (dbName,collName) ru : Async<unit> =
+            let def = DocumentCollection(Id = collName)
+            // for now, we are leaving the default IndexingPolicy mode wrt fields to index and in which manner as default: autoindexing all fields
+            def.IndexingPolicy.IndexingMode <- IndexingMode.Lazy
+            // Expire Projector documentId to Kafka offsets mapping records after one year
+            def.DefaultTimeToLive <- Nullable (365 * 60 * 60 * 24)
+            createCollectionIfNotExists client dbName (def, ru)
 
 module internal Tip =
     let private get (client: IDocumentClient) (stream: CollectionStream, maybePos: Position option) =
