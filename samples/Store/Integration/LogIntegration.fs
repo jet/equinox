@@ -1,8 +1,8 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
 open Domain
-open Equinox.Store
 open Equinox.Cosmos.Integration
+open Equinox.Store
 open Swensen.Unquote
 open System
 open System.Collections.Concurrent
