@@ -45,5 +45,5 @@ let codec = genCodec<SimpleDu>()
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =
     let serialized = codec.Encode x
     render x =! System.Text.Encoding.UTF8.GetString(serialized.payload)
-    let deserialized = codec.Decode serialized
+    let deserialized = codec.TryDecode serialized |> Option.get
     deserialized =! x

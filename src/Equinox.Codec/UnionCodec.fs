@@ -5,20 +5,12 @@ open System.IO
 open TypeShape
 
 /// Represents an encoded union case
-type EncodedUnion<'Encoding> =
-    {
-        caseName : string
-        payload  : 'Encoding
-    }
+type EncodedUnion<'Encoding> = { caseName : string; payload  : 'Encoding }
 
 /// Defines a contract interpreter for a Discriminated Union representing a set of events borne by a stream
 type IUnionEncoder<'Union, 'Format> =
-    /// Gets the union case string identifier for given union instance
-    abstract GetCaseName : value:'Union -> string
     /// Encodes a union instance into a decoded representation
     abstract Encode      : value:'Union -> EncodedUnion<'Format>
-    /// Decodes a formatted representation into a union instance. Can potentially throw FormatException
-    abstract Decode      : encodedUnion:EncodedUnion<'Format> -> 'Union
     /// Decodes a formatted representation into a union instance. Does not throw exception on format mismatches
     abstract TryDecode   : encodedUnion:EncodedUnion<'Format> -> 'Union option
 
@@ -41,18 +33,9 @@ module private Impl =
     /// Provide an IUnionContractEncoder based on a pair of encode and a tryDecode methods
     type EncodeTryDecodeCodec<'Union,'Format>(encode : 'Union -> string * 'Format, tryDecode : string * 'Format -> 'Union option) =
         interface IUnionEncoder<'Union, 'Format> with
-            member __.GetCaseName(_) =
-                invalidOp "Not implemented"
-
             member __.Encode e =
                 let eventType, payload = encode e
                 { caseName = eventType; payload = payload }
-
-            member __.Decode encodedEvent =
-                match tryDecode (encodedEvent.caseName, encodedEvent.payload) with
-                | None -> raise (System.FormatException <| sprintf "Unrecognized event type '%s'" encodedEvent.caseName)
-                | Some e -> e
-
             member __.TryDecode ee =
                 tryDecode (ee.caseName, ee.payload)
 
@@ -78,12 +61,11 @@ type JsonUtf8 =
                 ?requireRecordFields=requireRecordFields,
                 ?allowNullaryCases=allowNullaryCases)
         { new IUnionEncoder<'Union,byte[]> with
-            member __.GetCaseName value = inner.GetCaseName value
             member __.Encode value =
                 let r = inner.Encode value
                 { caseName = r.CaseName; payload = r.Payload}
-            member __.Decode encoded = inner.Decode { CaseName = encoded.caseName; Payload = encoded.payload }
-            member __.TryDecode encoded = inner.TryDecode { CaseName = encoded.caseName; Payload = encoded.payload } }
+            member __.TryDecode encoded =
+                inner.TryDecode { CaseName = encoded.caseName; Payload = encoded.payload } }
 
     /// <summary>
     ///    Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
