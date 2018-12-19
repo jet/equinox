@@ -5,7 +5,7 @@ Equinox provides a unified programming model for event sourced processing agains
 Current supported backends are:
 
 - [EventStore](https://eventstore.org/) - this codebase itself has been in production since 2017 (commit history reflects usage), with elements dating back to 2016.
-- [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db/) (See [`cosmos` branch](https://github.com/jet/equinox/tree/cosmos) - will converge with `master` very shortly).
+- [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains code dating back to 2016, however [the storage model](https://github.com/jet/equinox/wiki/Cosmos-Storage-Model) was arrived at based on intensive benchmarking squash-merged in [#42](https://github.com/jet/equinox/pull/42).
 - (For integration test purposes only) Volatile in-memory store.
 
 The underlying patterns have their roots in the [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due.
@@ -31,7 +31,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
   - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
 - **`Equinox.Cosmos` 'Tip with Unfolds' schema**: In contrast to `Equinox.EventStore`'s `Access.RollingSnapshots`, when using `Equinox.Cosmos`, optimized command processing is managed via the `Tip`; a document per stream with a well-known identity enabling syncs via point-reads by virtue of the fact that the document maintains:
   a) the present Position of the stream - i.e. the index at which the next events will be appended
-  b) compressed [_unfolds_]((https://github.com/jet/equinox/wiki/Cosmos-Storage-Model)
+  b) (compressed) [_unfolds_]((https://github.com/jet/equinox/wiki/Cosmos-Storage-Model)
   c) (optionally) events since those unfolded events ([presently removed](https://github.com/jet/equinox/pull/58), but [should return](https://github.com/jet/equinox/wiki/Roadmap))
   
   This yields many of the benefits of the in-stream Rolling Snapshots approach while reducing latency, RU provisioning requirement, and Request Charges:-
@@ -49,8 +49,8 @@ The Equinox components within this repository are delivered as a series of multi
 - `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, (optionally) `Newtonsoft.Json >= 11.0.2` but can support any serializer): [a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/):
   - independent of any specific serializer
   - allows tagging of Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
-- `Equinox.Cosmos` (Nuget: `Equinox.Cosmos`, depends on `DocumentDb.Client`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`): Production-strength Azure CosmosDb Adapter with integrated transactionally-consistent snapshotting, facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
-- `Equinox.EventStore` (Nuget: `Equinox.EventStore`, depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`): Production-strength [EventStore](http://geteventstore.com) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
+- `Equinox.Cosmos` (Nuget: `Equinox.Cosmos`, depends on `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`, `Microsoft.Azure.DocumentDb[Core]`): Production-strength Azure CosmosDb Adapter with integrated transactionally-consistent snapshotting, facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
+- `Equinox.EventStore` (Nuget: `Equinox.EventStore`, depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`, `TypeShape`): Production-strength [EventStore](https://eventstore.org/) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
 - `Equinox.MemoryStore` (Nuget: `Equinox.MemoryStore`): In-memory store for integration testing/performance baselining/providing out-of-the-box zero dependency storage for examples.
 - `samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
 - `samples/TodoBackend` (in this repo): Standard https://todobackend.com compliant backend
@@ -60,22 +60,18 @@ The Equinox components within this repository are delivered as a series of multi
 
 Please raise GitHub issues for any questions so others can benefit from the discussion.
 
-We are getting very close to that point and are extremely excited by that. But we're not there yet; this is intentionally a soft launch.
-
-For now, the core focus of work here will be on converging the `cosmos` branch, which will bring changes, clarifications, simplifications and features, that all need to be integrated into the production systems built on it, before we can consider broader-based additive changes and/or significantly increasing the API surface area.
-
 The aim in the medium term (and the hope from the inception of this work) is to run Equinox as a proper Open Source project at the point where there is enough time for maintainers to do that properly.
 
-Unfortunately, in the interim, the barrier for contributions will unfortunately be inordinately high in the short term:
+We are getting very close to that point and are extremely excited by that. But we're not there yet; this is intentionally a soft launch.
 
-- bugfixes with good test coverage are always welcome - PRs yield MyGet-hosted NuGets and in general we'll seek to move them to NuGet prerelease and then NuGet release packages with relatively short timelines.
+Unfortunately, in the interim, the barrier for contributions will unfortunately be inordinately high:
+- bugfixes with good test coverage are always welcome - PRs yield [MyGet-hosted NuGets](https://www.myget.org/F/jet/api/v3/index.json); in general we'll seek to move them to NuGet prerelease and then NuGet release packages with relatively short timelines.
 - minor improvements / tweaks, subject to discussing in a GitHub issue first to see if it fits, but no promises at this time, even if the ideas are fantastic and necessary :sob:
 - tests, examples and scenarios are always welcome; Equinox is intended to address a very broad base of usage patterns; Please note that the emphasis will always be (in order)
   1. providing advice on how to achieve your aims without changing Equinox
   2. how to open up an appropriate extension point in Equinox
   3. (when all else fails), add to the complexity of the system by adding API surface area or logic.
-- we will likely punt on non-IO perf improvements until such point as Cosmos support is converged into `master`
-- Naming is hard; there is definitely room for improvement. There likely will be a set of controlled deprecations, switching to names, and then removing the old ones. However, PRs other than for discussion purposes probably don't make sense right now.
+- Naming is hard; there is definitely room for improvement. There may at some point be a set of controlled deprecations, switching to names, and then removing the old ones. However it should be noted that widespread renaming is not on the cards due to the number of downstream systems that would be affected.
 
 ## BUILDING
 
