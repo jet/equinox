@@ -5,6 +5,7 @@
     <OutputType>Library</OutputType>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
+    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">NET461</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,6 +35,5 @@
     <PackageReference Include="unquote" Version="4.0" />
     <PackageReference Include="xunit" Version="2.3.1" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.3.1" />
-    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />
   </ItemGroup>
 </Project>
