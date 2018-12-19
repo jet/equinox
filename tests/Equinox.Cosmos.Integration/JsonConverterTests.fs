@@ -19,6 +19,9 @@ type VerbatimUtf8Tests() =
     let unionEncoder = mkUnionEncoder ()
 
     [<Fact>]
+#if NET461
+    [<Trait("KnownFailOn","Mono")>] // Likely due to net461 not having consistent json.net refs and no binding redirects
+#endif
     let ``encodes correctly`` () =
         let encoded = unionEncoder.Encode(A { embed = "\"" })
         let e : Store.Batch =
@@ -31,6 +34,9 @@ type Base64ZipUtf8Tests() =
     let unionEncoder = mkUnionEncoder ()
 
     [<Fact>]
+#if NET461
+    [<Trait("KnownFailOn","Mono")>] // Likely due to net461 not having consistent json.net refs and no binding redirects
+#endif
     let ``serializes, achieving compression`` () =
         let encoded = unionEncoder.Encode(A { embed = String('x',5000) })
         let e : Store.Unfold =
@@ -42,6 +48,9 @@ type Base64ZipUtf8Tests() =
         test <@ res.Contains("\"d\":\"") && res.Length < 100 @>
 
     [<Property>]
+#if NET461
+    [<Trait("KnownFailOn","Mono")>] // Likely due to net461 not having consistent json.net refs and no binding redirects
+#endif
     let roundtrips value =
         let hasNulls =
             match value with
