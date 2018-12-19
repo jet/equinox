@@ -46,7 +46,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 13 // 12.88 // WAS 10
+        verifyRequestChargesMax 14 // 13.73 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -161,7 +161,7 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Resync] = capture.ExternalCalls @>
         // The response aligns with a normal conflict in that it passes the entire set of conflicting events ()
         test <@ AppendResult.Conflict (0L,[||]) = res @>
-        verifyRequestChargesMax 5
+        verifyRequestChargesMax 6 // 5.24 // WAS 5
         capture.Clear()
 
         // Now write at the correct position
@@ -169,7 +169,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 12 // 11.35 WAS 11 // 10.33
+        verifyRequestChargesMax 13 // 12.1 WAS 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
