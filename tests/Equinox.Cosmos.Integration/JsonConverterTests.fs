@@ -59,5 +59,5 @@ type Base64ZipUtf8Tests() =
         test <@ ser.Contains("\"d\":\"") @>
         let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
         let d : Equinox.UnionCodec.EncodedUnion<_> = { caseName = des.c; payload = des.d }
-        let decoded = unionEncoder.Decode d
+        let decoded = unionEncoder.TryDecode d |> Option.get
         test <@ value = decoded @>
