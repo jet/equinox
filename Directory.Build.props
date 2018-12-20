@@ -9,6 +9,8 @@
     <PackageLicenseUrl>https://github.com/jet/equinox/blob/master/LICENSE</PackageLicenseUrl>
     <Copyright>Copyright © 2016-8</Copyright>
 
+    <RepoDir>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</RepoDir>
+
     <IsOSX Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'">true</IsOSX>
 
     <!-- SourceLink related properties https://github.com/dotnet/SourceLink#using-sourcelink -->

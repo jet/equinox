@@ -30,7 +30,7 @@ jobs:
       VersionSuffix: '$(VersionSuffix)'
   - task: PublishBuildArtifacts@1
     inputs:
-      pathtoPublish: 'bin'
+      pathtoPublish: 'bin/nupkg'
       artifactName: 'nupkgs'
   - task: NuGetCommand@2
     inputs:
@@ -39,7 +39,7 @@ jobs:
       publishFeedCredentials: 'Jet-MyGet'
       versioningScheme: byEnvVar
       versionEnvVar: Version
-      packagesToPush: 'bin/*.nupkg;bin/*.symbols.nupkg'
+      packagesToPush: 'bin/nupkg/*.nupkg'
 
 - job: Linux
   pool:
