@@ -23,7 +23,7 @@ type Arguments =
             | Verbose -> "Include low level logging regarding specific test runs."
             | VerboseConsole -> "Include low level test and store actions logging in on-screen output to console."
             | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
-            | LogFile _ -> "specify a log file to write the result breakdown into (default: Equinox.Cli.log)."
+            | LogFile _ -> "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ -> "Run a load test"
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string

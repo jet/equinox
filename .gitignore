@@ -1,7 +1,7 @@
 # User-specific files
 
 # Cli logs
-Equinox.Cli.log
+eqx.log
 
 # Test results
 *.trx

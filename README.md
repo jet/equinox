@@ -54,7 +54,7 @@ The Equinox components within this repository are delivered as a series of multi
 - `Equinox.MemoryStore` (Nuget: `Equinox.MemoryStore`): In-memory store for integration testing/performance baselining/providing out-of-the-box zero dependency storage for examples.
 - `samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
 - `samples/TodoBackend` (in this repo): Standard https://todobackend.com compliant backend
-- `Equinox.Cli` (in this repo): General purpose tool incorporating a benchmakr scenario runner, facilitating running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any nominated store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
+- `Equinox.Cli` (Nuget: `dotnet tool install Equinox.Cli -g`): Tool incorporating a benchmark scenario runner, facilitating running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any nominated store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
 
 ## CONTRIBUTING
 
@@ -143,12 +143,12 @@ A key facility of this repo is being able to run load tests, either in process a
   - the `Cleared` event acts as a natural event to use in the `isOrigin` check. This makes snapshotting less crucial than it is, for example, in the case of the `Favorite` test
   - the `-s` parameter can be used to adjust the maximum itme text length from the default (`100`, implying average length of 50)
 
-### Run EventStore benchmark on Full Framework(when provisioned)
+### Run EventStore benchmark on Full Framework (when provisioned)
 
 This benchmark continually reads and writes very small events across multiple streams on .NET Full Framework
 
     dotnet pack -c Release .\build.proj
-    & .\cli\Equinox.Cli\bin\Release\net461\Equinox.Cli.exe run -f 2500 -C es
+    & .\cli\Equinox.Cli\bin\Release\net461\eqx.exe run -f 2500 -C es
 
 ### Run EventStore benchmark on .NET Core (when provisioned)
 
@@ -166,7 +166,8 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 #### in Window 2
 
-    & dotnet run -c Release -f netcoreapp2.1 -p cli/Equinox.Cli -- run -t saveforlater -f 200 web
+    dotnet tool install -g Equinox.Cli # only once
+    eqx run -t saveforlater -f 200 web
 
 ### run CosmosDb benchmark (when provisioned)
 
@@ -174,7 +175,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
     $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
 
-    cli/Equinox.cli/bin/Release/net461/Equinox.Cli run `
+    cli/Equinox.cli/bin/Release/net461/eqx run `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
     dotnet run -f netcoreapp2.1 -p cli/equinox.cli -- run `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
