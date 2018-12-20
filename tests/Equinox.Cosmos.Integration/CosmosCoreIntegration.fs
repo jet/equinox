@@ -332,11 +332,16 @@ type Tests(testOutputHelper) =
         let pub = {
             equinox = "equinox-test-ming"
             databaseEndpoint = Uri("<redacted>")
-            databaseAuth = "<redacted>"
+            databaseAuth = "<authKey>"
             collectionName = "michael"
             database = "equinox-test"
             changefeedBatchSize = 100
             projections = [|projection|]
+            region = "eastus2"
+            kafkaBroker = "<redacted>"
+            clientId = "projector"
+            startPositionStrategy = ChangefeedProcessor.StartingPosition.ResumePrevious
+            progressInterval = 30.0
         }
 
         let! res = Projector.go pub
