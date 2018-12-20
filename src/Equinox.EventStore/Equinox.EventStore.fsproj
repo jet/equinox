@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0-beta-63127-02" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="1.0.0-beta.2+build.172" />
+
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
     <PackageReference Include="EventStore.ClientAPI.NetCore" Version="4.1.1-rc" Condition=" '$(TargetFramework)' == 'netstandard2.0'" />
