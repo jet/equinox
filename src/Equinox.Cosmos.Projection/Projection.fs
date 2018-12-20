@@ -800,29 +800,36 @@ module Projector =
     
     type Publisher =
       {
-        equinox : string // "equinox-test-ming"
-        databaseEndpoint: Uri // Uri("https://marvel-batman-equinox.documents.azure.com:443/")
-        databaseAuth: string // "9WaRihbtAImGeii2nixYwI0cWqMfI2NdXMAWCyHrtRrZdkRM1qRreG8M0f97FTRoQQwRZ4UP3E55Rf1Btog7Ew=="
-        collectionName : string // "ming"
-        database : string // "equinox-test"
-        changefeedBatchSize : int // 100
+        equinox : string 
+        databaseEndpoint: Uri 
+        databaseAuth: string 
+        collectionName : string 
+        database : string 
+        changefeedBatchSize : int 
         projections : Projection[]
+        region: string
+        kafkaBroker: string
+        clientId: string
+        startPositionStrategy: ChangefeedProcessor.StartingPosition
+        progressInterval: float
       }
 
     let go (pub:Publisher) = async {
       let! ct = Async.CancellationToken
 
-      let region = "eastus2"
+      let region = pub.region
       let groupId = sprintf "%s-%s" pub.collectionName region
       let databaseEndpoint = pub.databaseEndpoint
       let databaseAuth = pub.databaseAuth
       let databaseName = pub.database
       let collectionName = pub.collectionName
       let auxCollectionName = collectionName + "-aux"
+      let kafkaBroker = pub.kafkaBroker
+      let clientId = pub.clientId
+      let startPositionStrategy = pub.startPositionStrategy
+      let progressInterval = pub.progressInterval
 
       let client = new DocumentClient (pub.databaseEndpoint, pub.databaseAuth)
-
-      let kafkaBroker = "shared.kafka.eastus2.qa.jet.network:9092"
 
       let endpoint = {
         uri = databaseEndpoint
@@ -840,8 +847,8 @@ module Projector =
 
       let config : ChangefeedProcessor.Config = {
         batchSize = pub.changefeedBatchSize
-        progressInterval = TimeSpan.FromSeconds 30.0
-        startPosition = ChangefeedProcessor.StartingPosition.ResumePrevious
+        progressInterval = TimeSpan.FromSeconds progressInterval
+        startPosition = startPositionStrategy
         endPosition = None
         cosmos = endpoint
         auxCollection = auxendpoint
@@ -852,7 +859,7 @@ module Projector =
       let filteredProjections = (pub.projections |> Array.filter(fun proj -> proj.collection = pub.collectionName))
       let kafkaConfig = {
         broker = kafkaBroker
-        clientId = "projector"
+        clientId = clientId
       }
 
       let! topicsPublishers =
@@ -871,7 +878,6 @@ module Projector =
         Interlocked.Add (count, events.Length) |> ignore
         return!
           events
-         //|> Array.iter(fun e -> Probe.infof "Projecting Event sn=%A data=%A" e.Index (System.Text.Encoding.UTF8.GetString e.Data))
           |> Array.filter(fun d -> d.Id <> "-1")
           |> Array.map (fun d -> d |> Utils.ProjectEvent.fromDocument)
           |> Array.concat

@@ -337,6 +337,11 @@ type Tests(testOutputHelper) =
             database = "equinox-test"
             changefeedBatchSize = 100
             projections = [|projection|]
+            region = "eastus2"
+            kafkaBroker = "shared.kafka.eastus2.qa.jet.network:9092"
+            clientId = "projector"
+            startPositionStrategy = ChangefeedProcessor.StartingPosition.ResumePrevious
+            progressInterval = 30.0
         }
 
         let! res = Projector.go pub
