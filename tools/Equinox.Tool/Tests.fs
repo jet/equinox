@@ -1,4 +1,4 @@
-﻿module Equinox.Cli.Tests
+﻿module Equinox.Tool.Tests
 
 open Domain
 open Infrastructure

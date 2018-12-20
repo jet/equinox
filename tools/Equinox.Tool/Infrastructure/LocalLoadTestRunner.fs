@@ -1,4 +1,4 @@
-﻿namespace Equinox.Cli.Infrastructure
+﻿namespace Equinox.Tool.Infrastructure
 
 open Serilog
 open System

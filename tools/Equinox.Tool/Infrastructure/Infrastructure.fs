@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.Cli.Infrastructure.Prelude
+module Equinox.Tool.Infrastructure.Prelude
 
 open System
 open System.Diagnostics
