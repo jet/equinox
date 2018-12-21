@@ -3,4 +3,18 @@
   <Target Name="VSTestIfTestProject">
     <CallTarget Targets="VSTest" Condition="'$(IsTestProject)' == 'true'" />
   </Target>
+  <Target Name="ComputePackageVersion" AfterTargets="MinVer" Condition="'$(BUILD_PR)' != ''" >
+    <PropertyGroup>
+      <PackageVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch)-pr.$(BUILD_PR)</PackageVersion>
+      <PackageVersion Condition="'$(MinVerPreRelease)' != ''">$(PackageVersion).$(MinVerPreRelease)</PackageVersion>
+      <PackageVersion Condition="'$(MinVerBuildMetadata)' != ''">$(PackageVersion)+$(MinVerBuildMetadata)</PackageVersion>
+      <Version>$(PackageVersion)</Version>
+    </PropertyGroup>
+  </Target>
+  <Target Name="ComputeFileVersion" AfterTargets="MinVer">
+    <PropertyGroup>
+      <BUILD_ID Condition="'$(BUILD_ID)' == ''">0</BUILD_ID>
+      <FileVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch).$(BUILD_ID)</FileVersion>
+    </PropertyGroup>
+  </Target>
 </Project>

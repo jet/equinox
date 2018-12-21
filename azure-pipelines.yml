@@ -4,16 +4,6 @@ jobs:
   pool:
     vmImage: 'vs2017-win2016'
   steps:
-  - powershell: |
-      $buildId = $env:BUILD_BUILDNUMBER.PadLeft(7, '0');
-      $versionSuffixPR = "ci-$buildId-pr$($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER)";
-      $branchName = "$env:BUILD_SOURCEBRANCHNAME".Replace("_","");
-      $versionSuffixBRANCH = "$branchName-$buildId";
-      $isTag = "$env:BUILD_SOURCEBRANCH".StartsWith('refs/tags/');
-      $isPR = "$env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER" -ne ""
-      $versionSuffix = if ($isTag) { "" } else { if ($isPR) { $versionSuffixPR } else { $versionSuffixBRANCH } };
-      Write-Host "##vso[task.setvariable variable=VersionSuffix]$versionSuffix";
-    displayName: compute VersionSuffix
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
     env:
@@ -27,7 +17,8 @@ jobs:
   - script: dotnet pack build.proj
     displayName: dotnet pack build.proj
     env:
-      VersionSuffix: '$(VersionSuffix)'
+      BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
+      BUILD_ID: $(BUILD.BUILDNUMBER) 
   - task: PublishBuildArtifacts@1
     inputs:
       pathtoPublish: 'bin/nupkg'
@@ -58,7 +49,10 @@ jobs:
       testResultsFiles: 'tests/**/*.trx'
     condition: succeededOrFailed()
   - script: dotnet pack build.proj
-    displayName: dotnet pack build.proj
+    displayName: dotnet pack
+    env:
+      BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
+      BUILD_ID: $(BUILD.BUILDNUMBER) 
 
 - job: MacOS
   pool:
@@ -77,4 +71,7 @@ jobs:
       testResultsFiles: 'tests/**/*.trx'
     condition: succeededOrFailed()
   - script: dotnet pack build.proj
-    displayName: dotnet pack build.proj
+    displayName: dotnet pack
+    env:
+      BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
+      BUILD_ID: $(BUILD.BUILDNUMBER) 

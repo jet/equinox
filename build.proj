@@ -6,7 +6,7 @@
     <Cfg>--configuration Release</Cfg>
 
     <ThisDirAbsolute>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</ThisDirAbsolute>
-    <PackOptions>-o $(ThisDirAbsolute)bin/nupkg --version-suffix "$(VersionSuffix)"</PackOptions>
+    <PackOptions>/p:BUILD_ID=$(BUILD_ID) /p:BUILD_PR=$(BUILD_PR) -o $(ThisDirAbsolute)bin/nupkg</PackOptions>
 
     <TestOptions>--logger:trx</TestOptions>
     <!-- disable known test failures on mono -->

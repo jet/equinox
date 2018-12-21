@@ -1,6 +1,5 @@
 <Project ToolsVersion="15.0">
   <PropertyGroup>
-    <VersionPrefix>0.0.1</VersionPrefix>
     <Authors>@jet @bartelink @eiriktsarpalis and contributors</Authors>
     <Company>Jet.com</Company>
     <Description>Composable high performance event sourcing componentry</Description>
@@ -21,7 +20,8 @@
     <EnableSourceLink Condition=" '$(OS)' != 'Windows_NT' AND '$(MSBuildRuntimeType)' != 'Core' ">false</EnableSourceLink>
 
     <!-- suppress false positive warning FS2003 about invalid version of AssemblyInformationalVersionAttribute -->
-    <NoWarn>FS2003</NoWarn>
+    <!-- Supress NU5105 triggerd by MinVer height e.g.: pr43-rc1.2: The package version '<X>' uses SemVer 2.0.0 or components of SemVer 1.0.0 that are not supported on legacy clients. Change the package version to a SemVer 1.0.0 string. If the version contains a release label it must start with a letter. This message can be ignored if the package is not intended for older clients. -->
+    <NoWarn>$(NoWarn);FS2003;NU5105</NoWarn>
   </PropertyGroup>
 
   <!-- Workaround for https://github.com/xunit/xunit/issues/1357 -->
