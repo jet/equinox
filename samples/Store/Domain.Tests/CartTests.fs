@@ -75,8 +75,15 @@ let verifyIdempotency (cmd: Command) (originState: State) =
     // Assert we decided nothing needs to happen
     test <@ List.isEmpty events @>
 
-[<DomainProperty(MaxTest = 1000)>]
+/// These cases are assumed to be covered by external validation, so logic can treat them as hypotheticals rather than have to reject
+let isValid = function
+    | PatchItem (_, _, Some quantity, _)
+    | AddItem (_, _, quantity) -> quantity >= 0 
+    | _ -> true
+
+[<DomainProperty>]
 let ``interpret yields correct events, idempotently`` (cmd: Command) (originState: State) =
+    if not (isValid cmd) then () else
     verifyCanProcessInInitialState cmd originState
     verifyCorrectEventGenerationWhenAppropriate cmd originState
     verifyIdempotency cmd originState

@@ -54,7 +54,7 @@ module Commands =
         let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
         let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)
         let itemExistsWithSameQuantity skuId quantity       = itemExists (fun x -> x.skuId = skuId && x.quantity = quantity)
-        let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId)
+        let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId && x.quantity <> 0)
         let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
         let (|Context|) (context : Context)                 = toEventContext context
         match command with
