@@ -332,7 +332,7 @@ type Tests(testOutputHelper) =
         let pub = {
             equinox = "equinox-test-ming"
             databaseEndpoint = Uri("https://marvel-batman-equinox.documents.azure.com:443/")
-            databaseAuth = "9WaRihbtAImGeii2nixYwI0cWqMfI2NdXMAWCyHrtRrZdkRM1qRreG8M0f97FTRoQQwRZ4UP3E55Rf1Btog7Ew=="
+            databaseAuth = "[authKey]"
             collectionName = "michael"
             database = "equinox-test"
             changefeedBatchSize = 100
