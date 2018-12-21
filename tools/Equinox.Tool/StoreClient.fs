@@ -1,7 +1,7 @@
-﻿module Equinox.Cli.StoreClient
+﻿module Equinox.Tool.StoreClient
 
 open Domain
-open Equinox.Cli.Infrastructure
+open Equinox.Tool.Infrastructure
 open System
 open System.Net
 open System.Net.Http

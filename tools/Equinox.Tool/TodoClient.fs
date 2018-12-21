@@ -1,7 +1,7 @@
-﻿module Equinox.Cli.TodoClient
+﻿module Equinox.Tool.TodoClient
 
 open Domain
-open Equinox.Cli.Infrastructure
+open Equinox.Tool.Infrastructure
 open System.Net
 open System.Net.Http
 open System

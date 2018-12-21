@@ -1,8 +1,8 @@
-﻿module Equinox.Cli.Program
+﻿module Equinox.Tool.Program
 
 open Argu
 open Domain.Infrastructure
-open Equinox.Cli.Infrastructure
+open Equinox.Tool.Infrastructure
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure.Storage
 open Serilog
