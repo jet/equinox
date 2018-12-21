@@ -6,8 +6,9 @@
     <Cfg>--configuration Release</Cfg>
 
     <ThisDirAbsolute>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</ThisDirAbsolute>
-    <PackOptions>-o $(ThisDirAbsolute)bin/nupkg --version-suffix "$(VersionSuffix)"</PackOptions>
-
+    <PrOption Condition =" '$(BUILD_PR)' != '%24(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)' ">/p:BUILD_PR=$(BUILD_PR) </PrOption>
+    <PackOptions>/p:BUILD_ID=$(BUILD_ID) $(PrOption) -o $(ThisDirAbsolute)bin/nupkg</PackOptions>
+    
     <TestOptions>--logger:trx</TestOptions>
     <!-- disable known test failures on mono -->
     <TestOptions Condition=" '$(OS)' != 'Windows_NT' " >$(TestOptions) --filter KnownFailOn!=Mono</TestOptions>
@@ -18,9 +19,8 @@
     <Exec Command="dotnet pack src/Equinox.Codec $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
-    <!-- TODO reinstate - this is just to make the build pass while MyGet chokes on it
     <Exec Command='dotnet publish tools/Equinox.Tool $(Cfg) -f net461 -o "$(RepoDir)/bin/equinox-tool/net461" ' />
-    <Exec Command="dotnet pack tools/Equinox.Tool $(Cfg) $(PackOptions) /p:PackAsTool=true" /> -->
+    <Exec Command="dotnet pack tools/Equinox.Tool $(Cfg) $(PackOptions) /p:PackAsTool=true" />
   </Target>
 
   <!-- tests hangs on osx -->

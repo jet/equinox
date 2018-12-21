@@ -38,6 +38,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="MinVer" Version="1.0.0-beta.2" />
+
     <PackageReference Include="Argu" Version="5.1.0" />
     <!--Handle TypeShape-restriction; would otherwise use 3.1.2.5-->
     <PackageReference Include="FSharp.Core" Version="4.0.0.1" Condition=" '$(TargetFramework)' == 'net461' " />

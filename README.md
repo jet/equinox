@@ -58,6 +58,12 @@ The Equinox components within this repository are delivered as a series of multi
 - `samples/TodoBackend` (in this repo): Standard https://todobackend.com compliant backend
 - `Equinox.Tool` (Nuget: `dotnet tool install Equinox.Tool -g`): Tool incorporating a benchmark scenario runner, facilitating running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any nominated store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
 
+## Versioning
+
+## About Versioning
+
+The repo is versioned based on [SemVer 2.0](https://semver.org/spec/v2.0.0.html) using the tiny-but-mighty [MinVer](https://github.com/adamralph/minver) from @adamralph. [See here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
+
 ## CONTRIBUTING
 
 Please raise GitHub issues for any questions so others can benefit from the discussion.
