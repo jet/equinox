@@ -17,9 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
+    <ProjectReference Include="..\..\..\tests\Equinox.Cosmos.Integration\Equinox.Cosmos.Integration.fsproj" />
     <ProjectReference Include="..\..\..\tests\Equinox.EventStore.Integration\Equinox.EventStore.Integration.fsproj" />
     <ProjectReference Include="..\Backend\Backend.fsproj" />
     <ProjectReference Include="..\Domain\Domain.fsproj" />

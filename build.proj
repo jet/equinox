@@ -17,6 +17,7 @@
   <Target Name="Pack">
     <Exec Command="dotnet pack src/Equinox $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.Codec $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.Cosmos $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
     <Exec Command='dotnet publish tools/Equinox.Tool $(Cfg) -f net461 -o "$(RepoDir)/bin/equinox-tool/net461" ' />
@@ -27,6 +28,7 @@
   <Target Name="VSTest" Condition=" '$(IsOSX)' != 'true' " >
     <Exec Command="dotnet test tests/Equinox.MemoryStore.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test tests/Equinox.EventStore.Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test tests/Equinox.Cosmos.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
   </Target>

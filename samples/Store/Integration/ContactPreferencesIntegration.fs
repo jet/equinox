@@ -1,8 +1,11 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
+open Equinox.Cosmos
+open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
+open Xunit
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -19,6 +22,11 @@ let resolveStreamGesWithOptimizedStorageSemantics gateway =
 let resolveStreamGesWithoutAccessStrategy gateway =
     GesResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
+let resolveStreamEqxWithKnownEventTypeSemantics gateway =
+    EqxResolver(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Resolve
+let resolveStreamEqxWithoutCustomAccessStrategy gateway =
+    EqxResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
+
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput
@@ -31,6 +39,9 @@ type Tests(testOutputHelper) =
         test <@ value = actual @> }
 
     [<AutoData>]
+#if NET461
+    [<Trait("KnownFailOn","Mono")>] // Likely due to net461 not having consistent json.net refs and no binding redirects
+#endif
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
         let service = let log, store = createLog (), createMemoryStore () in createServiceMem log store
         do! act service args
@@ -51,5 +62,17 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithOptimizedStorageSemantics
+        do! act service args
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveStreamEqxWithoutCustomAccessStrategy
+        do! act service args
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveStreamEqxWithKnownEventTypeSemantics
         do! act service args
     }

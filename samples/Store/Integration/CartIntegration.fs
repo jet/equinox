@@ -1,8 +1,11 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
+open Equinox.Cosmos
+open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
+open Xunit
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -20,6 +23,11 @@ let resolveGesStreamWithRollingSnapshots gateway =
     GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
+
+let resolveEqxStreamWithProjection gateway =
+    EqxResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
+let resolveEqxStreamWithoutCustomAccessStrategy gateway =
+    EqxResolver(gateway, codec, fold, initial).Resolve
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->
@@ -40,6 +48,9 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData>]
+#if NET461
+    [<Trait("KnownFailOn","Mono")>] // Likely due to net461 not having consistent json.net refs and no binding redirects
+#endif
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log, store = createLog (), createMemoryStore ()
         let service = createServiceMem log store
@@ -61,5 +72,17 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with RollingSnapshots`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithRollingSnapshots
+        do! act service args
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveEqxStreamWithoutCustomAccessStrategy
+        do! act service args
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events with With Projection`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveEqxStreamWithProjection
         do! act service args
     }
