@@ -4,6 +4,7 @@ module Samples.Store.Integration.CodecIntegration
 open Domain
 open Swensen.Unquote
 open TypeShape.UnionContract
+open Xunit
 
 let serializationSettings =
     Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect(converters=
@@ -42,6 +43,9 @@ let render = function
 let codec = genCodec<SimpleDu>()
 
 [<AutoData(MaxTest=100)>]
+#if NET461
+    [<Trait("KnownFailOn","Mono")>] // Likely due to net461 not having consistent json.net refs and no binding redirects
+#endif
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =
     let serialized = codec.Encode x
     render x =! System.Text.Encoding.UTF8.GetString(serialized.payload)

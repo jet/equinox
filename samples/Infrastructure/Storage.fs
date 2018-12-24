@@ -9,7 +9,7 @@ type [<NoEquality; NoComparison>] MemArguments =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | VerboseStore -> "Include low level Store logging."
-type [<NoEquality; NoComparison>] EsArguments =
+and [<NoEquality; NoComparison>] EsArguments =
     | [<AltCommandLine("-vs")>] VerboseStore
     | [<AltCommandLine("-o")>] Timeout of float
     | [<AltCommandLine("-r")>] Retries of int
@@ -73,7 +73,7 @@ module EventStore =
                 heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
                 log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
-            .Establish("equinox-tool", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
+            .Establish("equinox-samples", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
     let private createGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
     let config (log: ILogger, storeLog) (cache, unfolds) (sargs : ParseResults<EsArguments>) =
         let host = sargs.GetResult(Host,"localhost")
@@ -89,7 +89,7 @@ module EventStore =
         let conn = connect storeLog (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
         let cacheStrategy =
             if cache then
-                let c = Caching.Cache("Cli", sizeMb = 50)
+                let c = Caching.Cache("equinox-samples", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
         StorageConfig.Es ((createGateway conn defaultBatchSize), cacheStrategy, unfolds)
@@ -99,11 +99,11 @@ module Cosmos =
 
     /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
     /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
-    /// 2) Set the 3x environment variables and create a local Equinox using cli/Equinox.cli/bin/Release/net461/Equinox.Cli `
+    /// 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net461/eqx.exe `
     ///     cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 1000
     let private connect (log: ILogger) mode discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
         EqxConnector(log=log, mode=mode, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
-            .Connect("equinox-cli", discovery)
+            .Connect("equinox-samples", discovery)
     let private createGateway connection (maxItems,maxEvents) = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=maxItems, maxEventsPerSlice=maxEvents))
     let conn (log: ILogger, storeLog) (sargs : ParseResults<CosmosArguments>) =
         let read key = Environment.GetEnvironmentVariable key |> Option.ofObj
@@ -126,7 +126,7 @@ module Cosmos =
         let dbName, collName, pageSize, conn = conn (log, storeLog) sargs
         let cacheStrategy =
             if cache then
-                let c = Caching.Cache("Cli", sizeMb = 50)
+                let c = Caching.Cache("equinox-tool", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
         StorageConfig.Cosmos (createGateway conn (defaultBatchSize,pageSize), cacheStrategy, unfolds, dbName, collName)
