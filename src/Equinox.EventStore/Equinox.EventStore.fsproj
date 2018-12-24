@@ -7,7 +7,7 @@
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
-    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">NET461</DefineConstants>
+    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">$(DefineConstants);NET461</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

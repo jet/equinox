@@ -12,7 +12,8 @@ let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
-    let fold, initial, snapshot = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial, Domain.Cart.Folds.snapshot
+    let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
+    let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
         let store = createEqxStore connection batchSize
