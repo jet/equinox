@@ -36,7 +36,7 @@ module Folds =
         for e in events do evolve s e
         s.AsState()
     let isOrigin = function Events.Compacted _ -> true | _ -> false
-    let snapshot = isOrigin, fun state -> Events.Compacted { net = state }
+    let compact state = Events.Compacted { net = state }
 
 type Command =
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list

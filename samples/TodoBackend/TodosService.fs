@@ -26,7 +26,7 @@ module Folds =
         | Compacted items -> { s with items = List.ofArray items }
     let fold state = Seq.fold evolve state
     let isOrigin = function Events.Cleared | Events.Compacted _ -> true | _ -> false
-    let snapshot = isOrigin, fun state -> Compacted (Array.ofList state.items)
+    let compact state = Compacted (Array.ofList state.items)
 
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
 

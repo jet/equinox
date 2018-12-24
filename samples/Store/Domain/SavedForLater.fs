@@ -61,10 +61,8 @@ module Folds =
     let proposedEventsWouldExceedLimit maxSavedItems events state =
         let newState = fold state events
         Array.length newState > maxSavedItems
-    let snapshot =
-        let isOrigin = function Compacted _ -> true | _ -> false
-        let generate state = Events.Compacted { items = state }
-        isOrigin, generate
+    let isOrigin = function Compacted _ -> true | _ -> false
+    let compact state = Events.Compacted { items = state }
 
 module Commands =
     type Command =

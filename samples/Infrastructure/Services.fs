@@ -24,17 +24,20 @@ type ServiceBuilder(storageConfig, handlerLog) =
 
      member __.CreateFavoritesService() =
         let codec = genCodec<Domain.Favorites.Events.Event>()
-        let fold, initial, snapshot = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial, Domain.Favorites.Folds.snapshot
+        let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
+        let snapshot = Domain.Favorites.Folds.isOrigin,Domain.Favorites.Folds.compact
         Backend.Favorites.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot))
 
      member __.CreateSaveForLaterService() =
         let codec = genCodec<Domain.SavedForLater.Events.Event>()
-        let fold, initial, snapshot = Domain.SavedForLater.Folds.fold, Domain.SavedForLater.Folds.initial, Domain.SavedForLater.Folds.snapshot
+        let fold, initial = Domain.SavedForLater.Folds.fold, Domain.SavedForLater.Folds.initial
+        let snapshot = Domain.SavedForLater.Folds.isOrigin,Domain.SavedForLater.Folds.compact
         Backend.SavedForLater.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot), maxSavedItems=50, maxAttempts=3)
 
      member __.CreateTodosService() =
         let codec = genCodec<TodoBackend.Events.Event>()
-        let fold, initial, snapshot = TodoBackend.Folds.fold, TodoBackend.Folds.initial, TodoBackend.Folds.snapshot
+        let fold, initial = TodoBackend.Folds.fold, TodoBackend.Folds.initial
+        let snapshot = TodoBackend.Folds.isOrigin, TodoBackend.Folds.compact
         TodoBackend.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot))
 
 let register (services : IServiceCollection, storageConfig, handlerLog) =

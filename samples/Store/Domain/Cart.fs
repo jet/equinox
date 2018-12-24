@@ -41,7 +41,7 @@ module Folds =
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
     let fold state = Seq.fold evolve state
     let isOrigin = function Events.Compacted _ -> true | _ -> false
-    let snapshot = isOrigin, State.toSnapshot >> Events.Compacted
+    let compact = State.toSnapshot >> Events.Compacted
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
     | AddItem               of Context * SkuId * quantity: int
