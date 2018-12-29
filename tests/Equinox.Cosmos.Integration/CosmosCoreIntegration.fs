@@ -31,7 +31,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit conn defaultBatchSize =
-        CosmosContext(conn,collections,log,?defaultMaxItems=defaultBatchSize)
+        CosmosContext(conn,collections,log,?defaultMaxItems=defaultBatchSize,maxTipEvents=10)
     let mkContext conn = mkContextWithItemLimit conn None
 
     let verifyRequestChargesMax rus =
@@ -47,7 +47,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 15 // 14.18 // WAS 10
+        verifyRequestChargesMax 10
         // Clear the counters
         capture.Clear()
 
@@ -183,25 +183,17 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 14 // 13.1 WAS 11 // 10.33
+        verifyRequestChargesMax 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
         let! res = Events.append ctx streamName 0L <| TestEvents.Create(-42,2)
         // This time we get passed the conflicting events - we pay a little for that, but that's unavoidable
         match res with
-#if EVENTS_IN_TIP
         | AppendResult.Conflict (1L, e) -> verifyCorrectEvents 0L expected e
-#else
-        | AppendResult.ConflictUnknown 1L -> ()
-#endif
         | x -> x |> failwithf "Unexpected %A"
-#if EVENTS_IN_TIP
         test <@ [EqxAct.Resync] = capture.ExternalCalls @>
-#else
-        test <@ [EqxAct.Conflict] = capture.ExternalCalls @>
-#endif
-        verifyRequestChargesMax 7 // 6.64
+        verifyRequestChargesMax 5 // 4.02
         capture.Clear()
     }
 
@@ -259,7 +251,7 @@ type Tests(testOutputHelper) =
             | _ -> None
         // validate that, despite only requesting max 1 item, we only needed one trip (which contained only one item)
         [1,1] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 4 // 3.02 // WAS 3 // 2.97
+        verifyRequestChargesMax 3 // 2.97
     }
 
     (* Backward *)
@@ -280,7 +272,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEventsBackward 4L expected res
 
         test <@ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 4 // 3.04 // WAS 3
+        verifyRequestChargesMax 3
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -324,5 +316,5 @@ type Tests(testOutputHelper) =
             | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Backward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 4 // 3.04 // WAS 3 // 2.98
+        verifyRequestChargesMax 3 // 2.98
     }

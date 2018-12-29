@@ -174,15 +174,9 @@ type Tests(testOutputHelper) =
                 && has sku21 21 && has sku22 22 @>
        // Intended conflicts pertained
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
-#if EVENTS_IN_TIP
         test <@ let c2 = List.choose conflict capture2.ExternalCalls
                 [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
                 && [EqxAct.Resync] = c2 @>
-#else
-        test <@ let c2 = List.choose conflict capture2.ExternalCalls
-                [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
-                && [EqxAct.Conflict] = c2 @>
-#endif
     }
 
     let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]

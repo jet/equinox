@@ -35,3 +35,6 @@ let collections =
 let createCosmosStore connection batchSize =
     let gateway = CosmosGateway(connection, CosmosBatchingPolicy(defaultMaxItems=batchSize))
     CosmosStore(gateway, collections)
+let createCosmosStoreWithMaxEventsPerSlice connection batchSize maxTipEvents =
+    let gateway = CosmosGateway(connection, CosmosBatchingPolicy(defaultMaxItems=batchSize, maxTipEvents=maxTipEvents))
+    CosmosStore(gateway, collections)

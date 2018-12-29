@@ -271,14 +271,13 @@ module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
     type SyncResponse = { etag: string; n: int64; conflicts: Event[] }
-    let [<Literal>] private sprocName = "EquinoxNoTipEvents"  // NB need to renumber for any breaking change
+    let [<Literal>] private sprocName = "EquinoxSync001"  // NB need to renumber for any breaking change
     let [<Literal>] private sprocBody = """
 
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
-// 1 perform expectedVersion verification (can request inhibiting of check by supplying -1)
-// 2a Verify no current Tip; if so - incoming req.e and defines the 'next' position / unfolds
-// 2b If we already have a tip, move position forward, replace unfolds
-// 3 insert a new document containing the events as part of the same batch of work
+// 1 Verify no current Tip batch, the incoming `req` becomes the Tip batch (the caller is entrusted to provide a valid and complete set of inputs, or it's GIGO)
+// 2 Current Tip batch has space to accommodate the incoming unfolds (req.u) and events (req.e) - merge them in, replacing any superseded unfolds
+// 3 Current Tip batch would become too large - remove Tip-specific state from active doc by replacing the well known id with a correct one; proceed as per 1
 function sync(req, expectedVersion, maxEvents) {
     if (!req) throw new Error("Missing req argument");
     const collection = getContext().getCollection();
@@ -295,7 +294,10 @@ function sync(req, expectedVersion, maxEvents) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero
             response.setBody({ etag: null, n: 0, conflicts: [] });
         } else if (current && expectedVersion !== current.n) {
-            response.setBody({ etag: current._etag, n: current.n, conflicts: [] });
+            // Where possible, we extract conflicting events from e and/or c in order to avoid another read cycle
+            // yielding [] triggers the client to go loading the events itself
+            const conflicts = expectedVersion < current.i ? [] : current.e.slice(expectedVersion - current.i);
+            response.setBody({ etag: current._etag, n: current.n, conflicts: conflicts });
         } else {
             executeUpsert(current);
         }
@@ -307,27 +309,40 @@ function sync(req, expectedVersion, maxEvents) {
             if (err) throw err;
             response.setBody({ etag: doc._etag, n: doc.n, conflicts: null });
         }
-        var tip;
-        if (!current) {
-            tip = { p: req.p, id: req.id, i: req.e.length, n: req.e.length, e: [], u: req.u };
-            const tipAccepted = collection.createDocument(collectionLink, tip, { disableAutomaticIdGeneration: true }, callback);
-            if (!tipAccepted) throw new Error("Unable to create Tip.");
-        } else {
-            // TODO Carry forward `u` items not in `req`, together with supporting catchup events from preceding batches
-            const n = current.n + req.e.length;
-            tip = { p: current.p, id: current.id, i: n, n: n, e: [], u: req.u };
+        // `i` is established when first written; `n` needs to stay in step with i+batch.e.length
+        function pos(batch, i) {
+            batch.i = i
+            batch.n = batch.i + batch.e.length;
+            return batch;
+        }
+        // If we have hit a sensible limit for a slice, swap to a new one
+        if (current && current.e.length + req.e.length > maxEvents) {
+            // remove the well-known `id` value identifying the batch as being the Tip
+            current.id = current.i.toString();
+            // ... As it's no longer a Tip batch, we definitely don't want unfolds taking up space
+            delete current.u;
+
+            // TODO Carry forward `u` items not present in `batch`, together with supporting catchup events from preceding batches
 
             // as we've mutated the document in a manner that can conflict with other writers, out write needs to be contingent on no competing updates having taken place
-            const tipAccepted = collection.replaceDocument(current._self, tip, { etag: current._etag }, callback);
-            if (!tipAccepted) throw new Error("Unable to replace Tip.");
+            const tipUpdateAccepted = collection.replaceDocument(current._self, current, { etag: current._etag }, callback);
+            if (!tipUpdateAccepted) throw new Error("Unable to remove Tip markings.");
+
+            const isAccepted = collection.createDocument(collectionLink, pos(req,current.n), { disableAutomaticIdGeneration: true }, callback);
+            if (!isAccepted) throw new Error("Unable to create Tip batch.");
+        } else if (current) {
+            // Append the new events into the current batch
+            Array.prototype.push.apply(current.e, req.e);
+            // Replace all the unfolds // TODO: should remove only unfolds being superseded
+            current.u = req.u;
+
+            // as we've mutated the document in a manner that can conflict with other writers, out write needs to be contingent on no competing updates having taken place
+            const isAccepted = collection.replaceDocument(current._self, pos(current, current.i), { etag: current._etag }, callback);
+            if (!isAccepted) throw new Error("Unable to replace Tip batch.");
+        } else {
+            const isAccepted = collection.createDocument(collectionLink, pos(req,0), { disableAutomaticIdGeneration: true }, callback);
+            if (!isAccepted) throw new Error("Unable to create Tip batch.");
         }
-        // For now, always do an Insert, as Change Feed mechanism does not yet afford us a way to
-        // a) guarantee an item per write (can be squashed)
-        // b) with metadata sufficient for us to determine the items added (only etags, no way to convey i/n in feed item)
-        const i = tip.n - req.e.length;
-        const batch = { p: tip.p, id: i.toString(), i: i, n: tip.n, e: req.e };
-        const batchAccepted = collection.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
-        if (!batchAccepted) throw new Error("Unable to insert Batch.");
     }
 }"""
 
@@ -463,13 +478,12 @@ module internal Tip =
     open FSharp.Control
     let private mkQuery (client : IDocumentClient) maxItems (stream: CollectionStream) (direction: Direction) startPos =
         let querySpec =
-            let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.id!=\"%s\"" Tip.WellKnownDocumentId
-            let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
+            let fields = "c.id, c.i, c._etag, c.n, c.e"
             match startPos with
-            | None -> SqlQuerySpec(sprintf "%s %s" root tail)
+            | None -> SqlQuerySpec(sprintf "SELECT %s FROM c ORDER BY c.i " fields + if direction = Direction.Forward then "ASC" else "DESC")
             | Some { index = positionSoExclusiveWhenBackward } ->
-                let cond = if direction = Direction.Forward then "c.n > @startPos" else "c.i < @startPos"
-                SqlQuerySpec(sprintf "%s AND %s %s" root cond tail, SqlParameterCollection [SqlParameter("@startPos", positionSoExclusiveWhenBackward)])
+                let f = if direction = Direction.Forward then "c.n > @startPos ORDER BY c.i ASC" else "c.i < @startPos ORDER BY c.i DESC"
+                SqlQuerySpec(sprintf "SELECT %s FROM c WHERE " fields + f, SqlParameterCollection [SqlParameter("@startPos", positionSoExclusiveWhenBackward)])
         let feedOptions = new Client.FeedOptions(PartitionKey=PartitionKey(stream.name), MaxItemCount=Nullable maxItems)
         client.CreateDocumentQuery<Batch>(stream.collectionUri, querySpec, feedOptions).AsDocumentQuery()
 
@@ -652,12 +666,16 @@ type CosmosBatchingPolicy
         // Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default to using `defaultMaxItems`
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
         /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxSlices`. Default: unlimited.
-        [<O; D(null)>]?maxRequests) =
+        [<O; D(null)>]?maxRequests,
+        /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events. Defaults to 10.
+        [<O; D(null)>]?maxTipEvents) =
     let getDefaultMaxItems = defaultArg getDefaultMaxItems (fun () -> defaultArg defaultMaxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
     member __.MaxItems = getDefaultMaxItems ()
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
+    /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events. Defaults to 10.
+    member __.MaxTipEvents = defaultArg maxTipEvents 10
 
 type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
     let (|FromUnfold|_|) (tryDecode: #Equinox.Codec.IEvent<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#Equinox.Codec.IEvent<_>[]) : Option<'event[]> =
@@ -1024,10 +1042,13 @@ type CosmosContext
         /// Defaults to 10
         [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
         /// Alternate way of specifying defaultMaxItems which facilitates reading it from a cached dynamic configuration
-        [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
+        [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems,
+        /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events. Defaults to 10.
+        [<Optional; DefaultParameterValue(null)>]?maxTipEvents) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let batching = CosmosBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems)
+    let maxTipEvents = defaultArg maxTipEvents 1
+    let batching = CosmosBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems,maxTipEvents=maxTipEvents)
     let gateway = CosmosGateway(conn, batching)
 
     let maxCountPredicate count =
@@ -1046,7 +1067,8 @@ type CosmosContext
 
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
         let direction = defaultArg direction Direction.Forward
-        let batching = CosmosBatchingPolicy(defaultArg batchSize batching.MaxItems)
+        let batchSize = defaultArg batchSize batching.MaxItems * maxTipEvents
+        let batching = CosmosBatchingPolicy(if batchSize < maxTipEvents then 1 else batchSize/maxTipEvents)
         gateway.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {

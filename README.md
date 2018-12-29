@@ -182,19 +182,18 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
   - no additional roundtrips to the store needed at either the Load or Sync points in the flow
   - support, (via `UnionContractEncoder`) for the maintenance of multiple co-existing compaction schemas in a given stream (A 'compaction' event/snapshot isa Event) 
   - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
-  - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore.org article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
-- **`Equinox.Cosmos` 'Tip with Unfolds' schema**: (In contrast to `Equinox.EventStore`'s `Access.RollingSnapshots`,) when using `Equinox.Cosmos`, optimized command processing is managed via the `Tip`; a document per stream with a well-known identity enabling Syncing the r/w Position via a single point-reads by virtue of the fact that the document maintains:
-  a) the present Position of the stream - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
+  - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
+- **`Equinox.Cosmos` 'Tip isa Batch (with Unfolds)' schema**: In contrast to `Equinox.EventStore`'s `Access.RollingSnapshots`, when using `Equinox.Cosmos`, optimized command processing is managed via the `Tip`; a document per stream with a well-known identity enabling syncs via point-reads by virtue of the fact that the document maintains:
+  a) the present Position of the stream - i.e. the index at which the next events will be appended
   b) ephemeral (`deflate+base64` compressed) [_unfolds_](DOCUMENTATION.md#Cosmos-Storage-Model)
-  c) (optionally) events since those unfolded events ([presently removed](https://github.com/jet/equinox/pull/58), but [should return](DOCUMENTATION.md#Roadmap), see [#109](https://github.com/jet/equinox/pull/109))
+  c) pending events, up to a specified maximum number of events before it gets [all-but] renamed to become a 'frozen' Batch
+  d) (optionally) copies of events since the oldest unfold that are have been moved out to 'frozen' Batches, on order to allow any Command Processor to work solely off point reads.
   
   This yields many of the benefits of the in-stream Rolling Snapshots approach while reducing latency and RU provisioning requirements due to meticulously tuned Request Charge costs:-
   - Writes never need to do queries or touch event documents in any way
   - when coupled with the cache, a typical read is a point read [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response] (when the stream is empty, a `404 NotFound` response pertains also costing 1.0 RU)
   - no additional roundtrips to the store needed at either the Load or Sync points in the flow
-
-  It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
-
+  
 ## Components
 
 The components within this repository are delivered as a series of multi-targeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
