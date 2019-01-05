@@ -249,13 +249,13 @@ module Token =
         let currentVersion, newVersion = current.pos.streamVersion, x.pos.streamVersion
         newVersion > currentVersion
 
-type GesConnection(readConnection, ?writeConnection, ?readRetryPolicy, ?writeRetryPolicy) =
+type GesConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.ReadConnection = readConnection
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteConnection = defaultArg writeConnection readConnection
     member __.WriteRetryPolicy = writeRetryPolicy
 
-type GesBatchingPolicy(getMaxBatchSize : unit -> int, ?batchCountLimit) =
+type GesBatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountLimit) =
     new (maxBatchSize) = GesBatchingPolicy(fun () -> maxBatchSize)
     member __.BatchSize = getMaxBatchSize()
     member __.MaxBatches = batchCountLimit
@@ -445,7 +445,7 @@ type CachingStrategy =
     /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
-type GesResolver<'event,'state>(gateway : GesGateway, codec, fold, initial, ?access, ?caching) =
+type GesResolver<'event,'state>(gateway : GesGateway, codec, fold, initial, [<O; D(null)>]?access, [<O; D(null)>]?caching) =
     do  match access with
         | Some (AccessStrategy.EventsAreState) when Option.isSome caching ->
             "Equinox.EventStore does not support (and it would make things _less_ efficient even if it did)"
@@ -554,11 +554,11 @@ type ConnectionStrategy =
 
 type GesConnector
     (   username, password, reqTimeout: TimeSpan, reqRetries: int,
-        ?log : Logger, ?heartbeatTimeout: TimeSpan, ?concurrentOperationsLimit,
-        ?readRetryPolicy, ?writeRetryPolicy,
+        [<O; D(null)>]?log : Logger, [<O; D(null)>]?heartbeatTimeout: TimeSpan, [<O; D(null)>]?concurrentOperationsLimit,
+        [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy,
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
-        ?tags : (string*string) seq) =
+        [<O; D(null)>]?tags : (string*string) seq) =
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)

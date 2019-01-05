@@ -662,7 +662,7 @@ open System
 open System.Collections.Concurrent
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type EqxConnection(client: Microsoft.Azure.Documents.IDocumentClient, ?readRetryPolicy: IRetryPolicy, ?writeRetryPolicy) =
+type EqxConnection(client: Microsoft.Azure.Documents.IDocumentClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.Client = client
     member __.TipRetryPolicy = readRetryPolicy
     member __.QueryRetryPolicy = readRetryPolicy
@@ -671,13 +671,13 @@ type EqxConnection(client: Microsoft.Azure.Documents.IDocumentClient, ?readRetry
 /// Defines the policies in force regarding how to a) split up calls b) limit the number of events per slice
 type EqxBatchingPolicy
     (   // Max items to request in query response. Defaults to 10.
-        ?defaultMaxItems : int,
+        [<O; D(null)>]?defaultMaxItems : int,
         // Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default to using `defaultMaxItems`
-        ?getDefaultMaxItems : unit -> int,
+        [<O; D(null)>]?getDefaultMaxItems : unit -> int,
         /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxSlices`. Default: unlimited.
-        ?maxRequests,
+        [<O; D(null)>]?maxRequests,
         /// Maximum number of events to accumualte within the `WipBatch` before switching to a new one when adding Events. Defaults to 10.
-        ?maxEventsPerSlice) =
+        [<O; D(null)>]?maxEventsPerSlice) =
     let getdefaultMaxItems = defaultArg getDefaultMaxItems (fun () -> defaultArg defaultMaxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
     member __.MaxItems = getdefaultMaxItems ()
@@ -847,7 +847,7 @@ type private EqxCollection(databaseId, collectionId, ?initCollection : Uri -> As
     member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type EqxCollections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string, ?disableInitialization) =
+type EqxCollections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
     // Index of database*collection -> Initialization Context
     let collections = ConcurrentDictionary<string*string, EqxCollection>()
     new (databaseId, collectionId) =
@@ -863,7 +863,7 @@ type EqxCollections(categoryAndIdToDatabaseCollectionAndStream : string -> strin
         { collectionUri = coll.CollectionUri; name = streamName },coll.InitializationGate
 
 /// Pairs a Gateway, defining the retry policies for CosmosDb with an EqxCollections defining mappings from (category,id) to (database,collection,streamName)
-type EqxStore(gateway: EqxGateway, collections: EqxCollections, ?resolverLog) =
+type EqxStore(gateway: EqxGateway, collections: EqxCollections, [<O; D(null)>]?resolverLog) =
     let init = gateway.CreateSyncStoredProcIfNotExists resolverLog
     member __.Gateway = gateway
     member __.Collections = collections
@@ -888,7 +888,7 @@ type AccessStrategy<'event,'state> =
     /// Trust every event type as being an origin
     | AnyKnownEventType
 
-type EqxResolver<'event, 'state>(store : EqxStore, codec, fold, initial, ?access, ?caching) =
+type EqxResolver<'event, 'state>(store : EqxStore, codec, fold, initial, [<O; D(null)>]?access, [<O; D(null)>]?caching) =
     let readCacheOption =
         match caching with
         | None -> None
@@ -955,19 +955,19 @@ type EqxConnector
     (   requestTimeout: TimeSpan, maxRetryAttemptsOnThrottledRequests: int, maxRetryWaitTimeInSeconds: int,
         log : ILogger,
         /// Connection limit (default 1000)
-        ?maxConnectionLimit,
+        [<O; D(null)>]?maxConnectionLimit,
         /// Connection mode (default: ConnectionMode.Gateway (lowest perf, least trouble))
-        ?mode : ConnectionMode,
+        [<O; D(null)>]?mode : ConnectionMode,
         /// consistency mode  (default: ConsistencyLevel.Session)
-        ?defaultConsistencyLevel : ConsistencyLevel,
+        [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
 
         /// Retries for read requests, over and above those defined by the mandatory policies
-        ?readRetryPolicy,
+        [<O; D(null)>]?readRetryPolicy,
         /// Retries for write requests, over and above those defined by the mandatory policies
-        ?writeRetryPolicy,
+        [<O; D(null)>]?writeRetryPolicy,
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
-        ?tags : (string*string) seq) =
+        [<O; D(null)>]?tags : (string*string) seq) =
     do if log = null then nullArg "log"
 
     let connPolicy =
@@ -1008,6 +1008,7 @@ type EqxConnector
 
 namespace Equinox.Cosmos.Core
 
+open Equinox.Store.Infrastructure
 open Equinox.Cosmos
 open Equinox.Cosmos.Store
 open FSharp.Control
@@ -1029,12 +1030,12 @@ type EqxContext
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by maxEventsPerSlice).
         /// Defaults to 10
-        ?defaultMaxItems,
+        [<O; D(null)>]?defaultMaxItems,
         /// Alternate way of specifying defaultMaxItems which facilitates reading it from a cached dynamic configuration
-        ?getDefaultMaxItems,
+        [<O; D(null)>]?getDefaultMaxItems,
         /// Threshold defining the number of events a slice is allowed to hold before switching to a new Batch is triggered.
         /// Defaults to 1
-        ?maxEventsPerSlice) =
+        [<O; D(null)>]?maxEventsPerSlice) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
     let maxEventsPerSlice = defaultArg maxEventsPerSlice 1
