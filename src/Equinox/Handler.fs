@@ -1,5 +1,8 @@
 ﻿namespace Equinox
 
+type OAttribute = System.Runtime.InteropServices.OptionalAttribute
+type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
+
 /// Maintains a rolling folded State while Accumulating Events decided upon as part of a decision flow
 type Context<'event, 'state>(fold : 'state -> 'event seq -> 'state, originState : 'state) =
     let accumulated = ResizeArray<'event>()
@@ -35,7 +38,10 @@ type MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Retry failed after %i attempts." count)
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
-type Handler<'event, 'state>(fold, log, stream : Store.IStream<'event, 'state>, maxAttempts : int, ?mkAttemptsExhaustedException, ?resyncPolicy) =
+type Handler<'event, 'state>
+    (   fold, log, stream : Store.IStream<'event, 'state>, maxAttempts : int,
+        [<O;D(null)>]?mkAttemptsExhaustedException,
+        [<O;D(null)>]?resyncPolicy) =
     let contextArgs =
         let mkContext state : Context<'event,'state> = Context<'event,'state>(fold, state)
         let getEvents (ctx: Context<'event,'state>) = ctx.Accumulated
