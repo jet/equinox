@@ -187,7 +187,7 @@ type Tests(testOutputHelper) =
 #else
         test <@ [EqxAct.Conflict] = capture.ExternalCalls @>
 #endif
-        verifyRequestChargesMax 5 // 4.02
+        verifyRequestChargesMax 7 // 6.64
         capture.Clear()
     }
 
