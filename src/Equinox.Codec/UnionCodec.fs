@@ -1,5 +1,8 @@
 namespace Equinox.UnionCodec
 
+type OAttribute = System.Runtime.InteropServices.OptionalAttribute
+type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
+
 open Newtonsoft.Json
 open System.IO
 open TypeShape
@@ -53,7 +56,7 @@ type JsonUtf8 =
     /// <param name="settings">Configuration to be used by the underlying <c>Newtonsoft.Json</c> Serializer when encoding/decoding.</param>
     /// <param name="requireRecordFields">Fail encoder generation if union cases contain fields that are not F# records. Defaults to <c>false</c>.</param>
     /// <param name="allowNullaryCases">Fail encoder generation if union contains nullary cases. Defaults to <c>true</c>.</param>
-    static member Create<'Union when 'Union :> UnionContract.IUnionContract>(settings, ?requireRecordFields, ?allowNullaryCases)
+    static member Create<'Union when 'Union :> UnionContract.IUnionContract>(settings, [<O;D(null)>]?requireRecordFields, [<O;D(null)>]?allowNullaryCases)
         : IUnionEncoder<'Union,byte[]> =
         let inner =
             UnionContract.UnionContractEncoder.Create<'Union,byte[]>(

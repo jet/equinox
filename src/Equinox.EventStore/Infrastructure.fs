@@ -5,6 +5,10 @@ open FSharp.Control
 open System
 open System.Diagnostics
 
+
+type OAttribute = System.Runtime.InteropServices.OptionalAttribute
+type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
+    
 #if NET461
 module Seq =
     let tryLast (source : seq<_>) =
