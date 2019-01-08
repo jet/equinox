@@ -274,12 +274,16 @@ module private DocDb =
         | Null -> None
 
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
-    type DocDbCollection(client : IDocumentClient, collectionUri) =
+    type DocDbCollection(client : Client.DocumentClient, collectionUri) =
         member __.TryReadDocument(documentId : string, ?options : Client.RequestOptions): Async<float * ReadResult<'T>> = async {
-            let! ct = Async.CancellationToken
             let options = defaultArg options null
             let docLink = sprintf "%O/docs/%s" collectionUri documentId
+#if NET461
+            try let! document = async { return! client.ReadDocumentAsync<'T>(docLink, options = options) |> Async.AwaitTaskCorrect }
+#else
+            let! ct = Async.CancellationToken
             try let! document = async { return! client.ReadDocumentAsync<'T>(docLink, options = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
+#endif
                 if document.StatusCode = System.Net.HttpStatusCode.NotModified then return document.RequestCharge, NotModified
                 // NB `.Document` will NRE if a IfNoneModified precondition triggers a NotModified result
                 else return document.RequestCharge, Found document.Document
@@ -358,14 +362,19 @@ function sync(req, expectedVersion, maxEvents) {
         | Conflict of Position * events: IIndexedEvent[]
         | ConflictUnknown of Position
 
-    let private run (client: IDocumentClient) (stream: CollectionStream) (expectedVersion: int64 option, req: Tip, maxEvents: int)
+    let private run (client: Client.DocumentClient) (stream: CollectionStream) (expectedVersion: int64 option, req: Tip, maxEvents: int)
         : Async<float*Result> = async {
         let sprocLink = sprintf "%O/sprocs/%s" stream.collectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey(stream.name))
-        let! ct = Async.CancellationToken
         let ev = match expectedVersion with Some ev -> Position.fromI ev | None -> Position.fromAppendAtEnd
+#if NET461
+        let! (res : Client.StoredProcedureResponse<SyncResponse>) =
+            client.ExecuteStoredProcedureAsync(sprocLink, opts, box req, box ev.index, box maxEvents) |> Async.AwaitTaskCorrect
+#else
+        let! ct = Async.CancellationToken
         let! (res : Client.StoredProcedureResponse<SyncResponse>) =
             client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ev.index, box maxEvents) |> Async.AwaitTaskCorrect
+#endif
 
         let newPos = { index = res.Response.n; etag = Option.ofObj res.Response.etag }
         return res.RequestCharge, res.Response.conflicts |> function
@@ -412,17 +421,17 @@ function sync(req, expectedVersion, maxEvents) {
 
     module Initialization =
         open System.Collections.ObjectModel
-        let createDatabaseIfNotExists (client:IDocumentClient) dbName =
+        let createDatabaseIfNotExists (client:Client.DocumentClient) dbName =
             let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
             client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect |> Async.Ignore
-        let private createCollectionIfNotExists (client: IDocumentClient) dbName (def: DocumentCollection, ru) = async {
+        let private createCollectionIfNotExists (client: Client.DocumentClient) dbName (def: DocumentCollection, ru) = async {
             let dbUri = Client.UriFactory.CreateDatabaseUri dbName
             return! client.CreateDocumentCollectionIfNotExistsAsync(dbUri, def, Client.RequestOptions(OfferThroughput=Nullable ru)) |> Async.AwaitTaskCorrect |> Async.Ignore }
         let private createStoredProcIfNotExists (client: IDocumentClient) (collectionUri: Uri) (name, body): Async<float> = async {
             try let! r = client.CreateStoredProcedureAsync(collectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
             with DocDbException ((DocDbStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
-        let createBatchAndTipCollectionIfNotExists (client: IDocumentClient) (dbName,collName) ru : Async<unit> =
+        let createBatchAndTipCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) ru : Async<unit> =
             let pkd = PartitionKeyDefinition()
             pkd.Paths.Add(sprintf "/%s" Batch.PartitionKeyField)
             let def = DocumentCollection(Id = collName, PartitionKey = pkd)
@@ -440,7 +449,7 @@ function sync(req, expectedVersion, maxEvents) {
             match log with
             | None -> ()
             | Some log -> log.Information("Created stored procedure {sprocId} rc={ru} t={ms}", sprocName, ru, (let e = t.Elapsed in e.TotalMilliseconds)) }
-        let createAuxCollectionIfNotExists (client: IDocumentClient) (dbName,collName) ru : Async<unit> =
+        let createAuxCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) ru : Async<unit> =
             let def = DocumentCollection(Id = collName)
             // for now, we are leaving the default IndexingPolicy mode wrt fields to index and in which manner as default: autoindexing all fields
             def.IndexingPolicy.IndexingMode <- IndexingMode.Lazy
@@ -449,7 +458,7 @@ function sync(req, expectedVersion, maxEvents) {
             createCollectionIfNotExists client dbName (def, ru)
 
 module internal Tip =
-    let private get (client: IDocumentClient) (stream: CollectionStream, maybePos: Position option) =
+    let private get (client: Client.DocumentClient) (stream: CollectionStream, maybePos: Position option) =
         let coll = DocDbCollection(client, stream.collectionUri)
         let ac = match maybePos with Some { etag=Some etag } -> Client.AccessCondition(Type=Client.AccessConditionType.IfNoneMatch, Condition=etag) | _ -> null
         let ro = Client.RequestOptions(PartitionKey=PartitionKey(stream.name), AccessCondition = ac)
@@ -662,7 +671,7 @@ open System
 open System.Collections.Concurrent
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type EqxConnection(client: Microsoft.Azure.Documents.IDocumentClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type EqxConnection(client: Microsoft.Azure.Documents.Client.DocumentClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.Client = client
     member __.TipRetryPolicy = readRetryPolicy
     member __.QueryRetryPolicy = readRetryPolicy
@@ -988,7 +997,7 @@ type EqxConnector
     let connect
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name,
-            discovery  : Discovery) : Async<IDocumentClient> =
+            discovery  : Discovery) : Async<Client.DocumentClient> =
         let connect (uri: Uri, key: string) = async {
             let name = String.concat ";" <| seq {
                 yield name
@@ -997,7 +1006,7 @@ type EqxConnector
             let client = new Client.DocumentClient(uri, key, connPolicy, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
             log.ForContext("Uri", uri).Information("EqxCosmos connecting to Cosmos with Connection Name {connectionName}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
-            return client :> IDocumentClient }
+            return client }
 
         match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
 
