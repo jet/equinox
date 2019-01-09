@@ -406,6 +406,7 @@ module SaganChangefeedProcessor =
 open Confluent.Kafka
 open Confluent.Kafka.Legacy
 open Equinox.Cosmos.Store
+open Equinox.Store.Infrastructure
 open FSharp.Control
 open Microsoft.Azure.Documents
 open Microsoft.Azure.Documents.Client
