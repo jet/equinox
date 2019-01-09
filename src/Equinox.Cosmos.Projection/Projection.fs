@@ -793,7 +793,7 @@ module ProgressWriter =
         client.CreateDocumentQuery<OffsetIndexEntry>(auxCollectionUri, querySpec).AsDocumentQuery()
 
       if iter.HasMoreResults then
-        let! entry = iter.ExecuteNextAsync<Document>() |> Async.AwaitTask //used to be Marvel.Async.AwaitTaskCorrect
+        let! entry = iter.ExecuteNextAsync<Document>() |> Async.AwaitTaskCorrect
         if entry.Count > 0 then
           return Some (entry.First().ToString() |> JToken.Parse |> OffsetIndexEntry.FromJsonObject)
         else
