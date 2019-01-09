@@ -13,6 +13,7 @@
     <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
     <Compile Include="CosmosCoreIntegration.fs" />
+    <Compile Include="ProjectionIntegration.fs" />
     <Compile Include="JsonConverterTests.fs" />
     <Compile Include="CacheCellTests.fs" />
   </ItemGroup>

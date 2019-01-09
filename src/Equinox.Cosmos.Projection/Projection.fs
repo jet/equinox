@@ -526,9 +526,6 @@ module Extensions =
     clientId : string
   }
   
-  module Binary =
-    open System.Text
-      
   /// Gets the last offset in the offset index topic.
   let latestTopicOffset (kafkaConfig:KafkaConfig) topic = async {
     let! offsets = Consumer.offsetRange kafkaConfig.broker topic []
@@ -593,11 +590,6 @@ module Utils =
         | [] -> jsonProperty.Value<string>()
       tryFindValue fieldNames x
 
-    let getUniqueId (e:ProjectEvent) =
-      match e with
-      | CustomEvent t -> t |> getPropertyRec "id"
-      | EquinoxEvent t -> sprintf "%s-%O" t.Stream t.Index
-
     let fromDocument(d:Document) : ProjectEvent[] =
       // checks to see if the format is equinox event or just a generic event for pass through
       let isEquinoxEvent =
@@ -621,6 +613,21 @@ module Utils =
           |> JToken.Parse
           |> ProjectEvent.CustomEvent
         [|e|]
+
+module Log =
+    open Serilog
+    type Event =
+        | CustomEmitted of key: string * topic: string
+        | EquinoxEmitted of stream: string * eventType: string * number: int64 * topic: string
+        | Messages of ProjectEvent.ProjectEvent[]
+        | BatchRead of timestamp: obj * lastTimestamp: obj * size: obj * range: obj * continuationLSN: obj
+
+    /// Attach a property to the log context to hold the metrics
+    // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
+    open Serilog.Events
+    let event (value : Event) (log : ILogger) =
+        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("prjEvent", ScalarValue value))
+        log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
 
 module Route =
     open ProjectEvent
@@ -663,23 +670,6 @@ module Route =
       /// Emit a projected event into a topic.
       | Emit of ProjectEvent * topic:string * partitionKey:string option
 
-    // Instrumentation ------------------------------------------------------------
-
-    /// Indicates that the projector emitted an event for production into Kafka.
-    type EventEmitted(event, topic, partitionKey) =
-      member val event : ProjectEvent = event
-      member val topic : string = topic
-      member val partitionKey : string option = partitionKey
-      override __.ToString() =
-        match event,partitionKey with
-        |  CustomEvent t,Some key ->
-          sprintf "event_emitted|key=%s|topic=%s" (Utils.ProjectEvent.getPropertyRec key t) topic
-        | EquinoxEvent t, None ->
-          sprintf "event_emitted|stream=%s|type=%s|number=%i|topic=%s"
-            (t.Stream) (t.EventType) (t.Index) topic
-        | _,_ ->
-          "event is invalid"
-
     // Implementation -------------------------------------------------------------
 
     /// Determines whether a given event should be projected with respect to the
@@ -699,24 +689,21 @@ module Route =
       | CustomEvent event ->
         true
 
-    // Public API -----------------------------------------------------------------
-
     /// Projects the specified projections.
     /// @projections - the projection definitions.
     /// @checkpointStream - the checkpoint stream name.
     /// @events - the incoming event stream.
-    let project (projections:Projection[]) (events:ProjectEvent[]) : Step [] =
+    let project (log: Serilog.ILogger) (projections:Projection[]) (events:ProjectEvent[]) : Step [] =
       [|
         for event in events do
           for p in projections do
             if (cond event p.predicate) then
               yield Emit(event, p.topic, p.partitionKeyPath)
-              printf "%s" <| EventEmitted(event, p.topic, p.partitionKeyPath).ToString()
+              match event, p.partitionKeyPath with
+              | CustomEvent t,Some key -> log |> Log.event (Log.CustomEmitted (Utils.ProjectEvent.getPropertyRec key t, p.topic)) |> fun l -> l.Information("Emitted")
+              | EquinoxEvent t, None -> log |> Log.event (Log.EquinoxEmitted (t.Stream, t.EventType, t.Index, p.topic)) |> fun l -> l.Information("Emitted")
+              | _,_ -> log.Warning "event is invalid"
       |]
-   
-    //TODO: rename
-    let filter (predicate:Predicate) (events:seq<ProjectEvent>) : seq<ProjectEvent> =
-      events |> Seq.filter (fun e -> cond e predicate)
 
 [<AutoOpen>]
 module Changefeed =
@@ -934,13 +921,6 @@ module ProgressWriter =
 [<RequireQualifiedAccess>]
 module ChangefeedProcessor =
 
-  type BatchRead(timestamp, lastTimestamp, size, range, continuationLSN) =
-    member val timestamp = timestamp with get
-    member val lastTimestamp = lastTimestamp with get
-    member val size = size with get
-    member val range = range with get
-    member val continuationLSN = continuationLSN with get
-
   /// Projector configuration.
   type Config = {
       /// The identity of the upstream Equinox/Eventstore being consumed
@@ -977,7 +957,7 @@ module ChangefeedProcessor =
   /// Sets up a cosmos/equinox changefeed processor that calls the `handle` function when a new batch of event is received
   /// Handle takes in the latest changefeed position as well as the events read from changefeed
   /// latest changefeed position is obtained from the RangeLSN field embedded within the document response
-  let run (config:Config) (eventHandler:Document[] -> Async<'a>) progressHandler merge : Async<unit> = async {
+  let run log (config:Config) (eventHandler:Document[] -> Async<'a>) progressHandler merge : Async<unit> = async {
 
     // Sagan changefeed processor configuration. Some logic is needed to determine the starting position
     let! cfConfig = async {
@@ -1008,11 +988,11 @@ module ChangefeedProcessor =
 
     let sw = Diagnostics.Stopwatch.StartNew()
 
-    let handler (docs:Document[], rangePosition:RangePosition) = async {
+    let handler log (docs:Document[], rangePosition:RangePosition) = async {
       let range = (rangePosition.RangeMin, rangePosition.RangeMax)
       let ts = (Seq.last docs).Timestamp
-      
-      printf "%O" (BatchRead(sw.ElapsedMilliseconds, ts, docs.Length, range, rangePosition.LastLSN))
+    
+      log |> Log.event (Log.BatchRead(sw.ElapsedMilliseconds, ts, docs.Length, range, rangePosition.LastLSN)) |> fun l -> l.Information("Read {count} in {ms} ms", docs.Length, sw.ElapsedMilliseconds)
       sw.Restart()  // not accurate, but close enough
       
       return!
@@ -1020,7 +1000,7 @@ module ChangefeedProcessor =
         |> eventHandler
     }
 
-    return! SaganChangefeedProcessor.go config.cosmos cfConfig PartitionSelectors.allPartitions handler progressHandler merge
+    return! SaganChangefeedProcessor.go config.cosmos cfConfig PartitionSelectors.allPartitions (handler log) progressHandler merge
   }
 
 [<AutoOpen>]
@@ -1031,6 +1011,7 @@ module ArraySegmentExtensions =
 module Publish =
     open Extensions
     open ProjectEvent
+    open Equinox.Store
     
     /// State for a projection topic.
     type TopicPublisher =
@@ -1041,9 +1022,6 @@ module Publish =
         /// The producer used to write messages into the topic.
         producer : Producer
       }
-
-    type EventPublished(event:ProjectEvent) =
-      member val event = event
 
     /// Creates a Kafka producer message given an event.
     let private messageOfEvent (event:ProjectEvent) (partitionKeyPath:string option) =
@@ -1090,7 +1068,7 @@ module Publish =
 
     /// Performs a projection step.
     /// For Emit it produces into the projected Kafka topic.
-    let private performBatch (topics:Map<TopicName, TopicPublisher>) (steps:Route.Step[]) : Async<Map<TopicName, TopicPublisher>> = async {
+    let private performBatch (log: Serilog.ILogger) (topics:Map<TopicName, TopicPublisher>) (steps:Route.Step[]) : Async<Map<TopicName, TopicPublisher>> = async {
       let! rs =
         steps
         |> Seq.map (fun step ->
@@ -1107,14 +1085,12 @@ module Publish =
               let rec retry retryCount = async {
                 try
                   let t0 = DateTime.UtcNow
-                  let! rs = Legacy.produceBatched pubTopic.producer topic ms
+                  let! t, rs = Legacy.produceBatched pubTopic.producer topic ms |> Stopwatch.Time
                   let t1 = DateTime.UtcNow
-                  for e in es do
-                    printf "%O" <| EventPublished(e)
-                  //Probe.infof "Produced %O messages |Elapsed:%Oms" es.Length (t1-t0).TotalMilliseconds
+                  log |> Log.event (Log.Messages es) |> fun l -> l.Information("Produced {count} messages in {ms} ms", es.Length, (let e = t.Elapsed in e.TotalMilliseconds))
                   return rs
                 with ex ->
-                  printf "producer_exception|topic=%s retryCount=%O error=%O" topic retryCount ex
+                  log.Error(ex,"producer_exception|topic={topic} retryCount={retryCount}", topic, retryCount)
                   if retryCount <= 0 then
                     return raise ex
                   else
@@ -1187,11 +1163,11 @@ module Publish =
 
     /// Consumes a stream of projector steps and writes them into Kafka based
     /// on the specified configuration.
-    let write (topicsPublishers:Map<TopicName, TopicPublisher>) (steps:Route.Step []) : Async<Map<TopicName, int64[]>> = async {
+    let write log (topicsPublishers:Map<TopicName, TopicPublisher>) (steps:Route.Step []) : Async<Map<TopicName, int64[]>> = async {
       match steps.Length with
       | 0 -> return Map.empty<TopicName, int64[]>
       | _ ->
-        let! res = steps |> performBatch topicsPublishers
+        let! res = steps |> performBatch log topicsPublishers
         return res |> Map.map(fun _ value -> value.offsets)
     }
 
@@ -1215,7 +1191,7 @@ module Projector =
         progressInterval: float
       }
 
-    let go (pub:Publisher) = async {
+    let go (log: Serilog.ILogger) (pub:Publisher) = async {
       let! ct = Async.CancellationToken
 
       let region = pub.region
@@ -1275,18 +1251,18 @@ module Projector =
           do! Async.Sleep 10000 }
       |> (fun x -> Async.Start (x,ct))
 
-      let handler (events:Document[]) = async {
+      let handler log (events:Document[]) = async {
         Interlocked.Add (count, events.Length) |> ignore
         return!
           events
           |> Array.filter(fun d -> d.Id <> "-1")
           |> Array.map (fun d -> d |> Utils.ProjectEvent.fromDocument)
           |> Array.concat
-          |> Route.project filteredProjections
-          |> Publish.write topicsPublishers
+          |> Route.project log filteredProjections
+          |> Publish.write log topicsPublishers
       }
 
-      printf "Equinox Projector Starting"
+      log.Information "Equinox Projector Starting"
 
       let progressWriterConfig : ProgressWriter.ProgressWriterConfig = {
         Owner = groupId
@@ -1302,5 +1278,5 @@ module Projector =
       }
 
       let! progressWriter = ProgressWriter.create progressWriterConfig
-      return! ChangefeedProcessor.run config handler progressWriter ProgressWriter.kafkaOffsetsMerge
+      return! ChangefeedProcessor.run log config (handler log) progressWriter ProgressWriter.kafkaOffsetsMerge
     }

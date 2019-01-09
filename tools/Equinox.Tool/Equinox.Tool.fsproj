@@ -35,6 +35,7 @@
     <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Infrastructure\Infrastructure.fsproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

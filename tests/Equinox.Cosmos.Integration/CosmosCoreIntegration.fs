@@ -9,9 +9,6 @@ open Swensen.Unquote
 open Serilog
 open System
 open System.Text
-open Equinox.Cosmos.Projection
-open Equinox.Cosmos.Projection.Route
-open Equinox.Cosmos.Projection.Projector
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -312,39 +309,4 @@ type Tests(testOutputHelper) =
             | _ -> None
         [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 4 // 3.04 // WAS 3 // 2.98
-    }
-
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let projector (TestStream streamName) = Async.RunSynchronously <| async {
-
-        let predicate = Predicate.All
-
-        let projection = {
-            name = "test"
-            topic = "xray-telemetry"
-            partitionCount = 8
-            predicate = predicate
-            collection = "michael"
-            makeKeyName = Some "p"
-            partitionKeyPath = None
-          } 
-
-        let pub = {
-            equinox = "equinox-test-ming"
-            databaseEndpoint = Uri("<redacted>")
-            databaseAuth = "<authKey>"
-            collectionName = "michael"
-            database = "equinox-test"
-            changefeedBatchSize = 100
-            projections = [|projection|]
-            region = "eastus2"
-            kafkaBroker = "<redacted>"
-            clientId = "projector"
-            startPositionStrategy = ChangefeedProcessor.StartingPosition.ResumePrevious
-            progressInterval = 30.0
-        }
-
-        let! res = Projector.go pub
-        printf "%O" res
-        test <@ 1 = 1 @>
     }
