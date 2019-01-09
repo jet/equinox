@@ -321,3 +321,12 @@ The `sync` stored procedure takes a document as input which is almost identical 
     - if the total length including the new `e`vents would exceed `maxEvents`, the Tip is 'renamed' (gets its `id` set to `i.toString()`) to become a batch, and the new events go into the new Tip-Batch, the _tip_ gets frozen as a `Batch`, and the new request becomes the _tip_ (as an atomic transaction on the server side)
 - (PROPOSAL/FUTURE) `thirdPartyUnfoldRetention`: how many events to keep before the base (`i`) of the batch if required by lagging `u`nfolds which would otherwise fall out of scope as a result of the appends in this batch (this will default to `0`, so for example if a writer says maxEvents `10` and there is an `u`nfold based on an event more than `10` old it will be removed as part of the appending process)
 - (PROPOSAL/FUTURE): adding an `expectedEtag` would enable competing writers to maintain and update `u`nfold data in a consistent fashion (backign off and retrying in the case of conflict, _without any events being written per state change_)
+
+# Cosmos Projection
+
+An integral part of the `Equinox.Cosmos` featureset is the ability to project events via the Azrue DocumentDb Changefeed mechanism
+
+Please refer to the following background documentation for key information underpinning how the propagation mechanism works:
+
+- [Changefeed high level docs](https://docs.microsoft.com/en-us/azure/cosmos-db/change-feed), and [.NET SDK docs](https://docs.microsoft.com/en-us/azure/cosmos-db/sql-api-sdk-dotnet-changefeed)
+  - [Partition core concepts](https://docs.microsoft.com/en-us/azure/cosmos-db/partition-data)
