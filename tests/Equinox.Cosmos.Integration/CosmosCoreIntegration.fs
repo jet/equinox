@@ -318,6 +318,9 @@ type Tests(testOutputHelper) =
     let projector (TestStream streamName) = Async.RunSynchronously <| async {
 
         let predicate = Predicate.All
+                                  //EventTypeSelector "<c>"
+                                  //CategorySelector "<first token before - in p>"
+                                  //StreamSelector "<p>"
 
         let projection = {
             name = "test"
@@ -325,7 +328,7 @@ type Tests(testOutputHelper) =
             partitionCount = 8
             predicate = predicate
             collection = "michael"
-            makeKeyName = Some "p"
+            makeKeyName = None
             partitionKeyPath = None
           } 
 

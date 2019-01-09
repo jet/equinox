@@ -744,6 +744,21 @@ module Changefeed =
     let toString (cfp: ChangefeedPosition): string =
       cfp |> Array.map RangePosition.ToString |> String.concat ";"
 
+module AsyncOps =
+    open System.Threading.Tasks
+    let awaitTaskCorrect (t:Task<'a>) : Async<'a> =
+        Async.FromContinuations <| fun (ok,err,cnc) ->
+          t.ContinueWith (fun (t:Task<'a>) ->
+            if t.IsFaulted then
+                let e = t.Exception
+                if e.InnerExceptions.Count = 1 then err e.InnerExceptions.[0]
+                else err e
+            elif t.IsCanceled then err (TaskCanceledException("Task wrapped with Async has been cancelled."))
+            elif t.IsCompleted then ok t.Result
+            else err(Exception "invalid Task state!")
+          )
+          |> ignore
+
 module ProgressWriter =
     open Extensions
     open Route
@@ -843,7 +858,7 @@ module ProgressWriter =
         client.CreateDocumentQuery<OffsetIndexEntry>(auxCollectionUri, querySpec).AsDocumentQuery()
 
       if iter.HasMoreResults then
-        let! entry = iter.ExecuteNextAsync<Document>() |> Async.AwaitTask //used to be Marvel.Async.AwaitTaskCorrect
+        let! entry = iter.ExecuteNextAsync<Document>() |> AsyncOps.awaitTaskCorrect
         if entry.Count > 0 then
           return Some (entry.First().ToString() |> JToken.Parse |> OffsetIndexEntry.FromJsonObject)
         else
