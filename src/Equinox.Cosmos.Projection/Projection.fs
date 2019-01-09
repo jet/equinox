@@ -430,14 +430,8 @@ module Map =
 
   let inline MergeRight right = Choice3Of3(right)
 
-  /// Maps over the first item of a tuple.
-  let inline mapFst f (a,b) = (f a, b)
-
-    /// Maps over the second item of a tuple.
+  /// Maps over the second item of a tuple.
   let inline mapSnd f (a,b) = (a, f b)
-
-  [<System.Obsolete("use Map.add instead")>]
-  let replace = Map.add
 
   /// Gets the set of keys.
   let inline keys m = m |> Map.toSeq |> Seq.map fst |> Set.ofSeq
@@ -476,34 +470,6 @@ module Map =
       | _ -> None
     )
     |> Map.ofSeq
-
-  /// Searches the map for the specified keys and if any are missing returns Choice2Of2 with
-  /// all of the missing keys, otherwise returns the provided map.
-  let missingKeys (keys:seq<'a>) (args:Map<'a, 'b>) : Choice<Map<'a, 'b>, 'a list> =
-    keys |> Seq.fold (fun s k ->
-      if args.ContainsKey k then s
-      else
-        match s with
-        | Choice1Of2 _  -> Choice2Of2 [k]
-        | Choice2Of2 ks -> k::ks |> Choice2Of2 )
-      (Choice1Of2 args)
-
-  /// Creates a multi-map from a sequence of key-value pairs.
-  let ofSeqMultimap (f:'b seq -> 'c) : ('a * 'b) seq -> Map<'a, 'c> =
-    Seq.groupBy fst >> Seq.map (mapSnd (Seq.map snd >> f)) >> Map.ofSeq
-
-  /// Creates a multi-map from a sequence of key-value pairs.
-  let inline ofSeqMultimapArray<'a, 'b when 'a : comparison> : ('a * 'b) seq -> Map<'a, 'b[]> =
-    ofSeqMultimap Seq.toArray
-
-  /// Creates a multi-map from a sequence of key-value pairs.
-  let inline ofSeqMultimapList<'a, 'b when 'a : comparison> : ('a * 'b) seq -> Map<'a, 'b list> =
-    ofSeqMultimap Seq.toList
-
-  /// Adds a new key-value pair or updates an existing value.
-  let addOrUpdate (k:'a) (f:'b option -> 'b) (m:Map<'a, 'b>) : Map<'a, 'b> =
-    let b = m |> Map.tryFind k
-    m |> Map.add k (f b)
     
 module Array =
     /// Makes an array, its elements are calculated from the function and the elements of input arrays occuring at the same position in both array.
@@ -511,10 +477,6 @@ module Array =
     let zipWith (f:'a -> 'b -> 'c) (a:'a[]) (b:'b[]) : 'c[] =
       // TODO: optimize such that only one result array is allocated.
       Array.zip a b |> Array.map (fun (a,b) -> f a b)
-
-module Option =
-    /// Folds an option by applying f to Some otherwise returning the default value.
-    let inline foldOr (f:'a -> 'b) (defaultValue:'b) = function Some a -> f a | None -> defaultValue
 
 module Extensions =
   
@@ -860,12 +822,10 @@ module ProgressWriter =
 
       let! latestEntry = getLatestProgressEntry config.CosmosDBClient auxCollectionUri config.Region
 
-      let mutable epoch = latestEntry |> Option.foldOr (fun e -> e.Epoch + 1) 0
+      let mutable epoch = match latestEntry with Some e -> e.Epoch + 1 | None -> 0
 
       // The generation of the current projector is incremented when the projector is reset
-      let generation =
-        latestEntry
-        |> Option.foldOr (fun e -> if config.IncrementGeneration then e.Generation + 1 else e.Generation) 0
+      let generation = match latestEntry with Some e -> (if config.IncrementGeneration then e.Generation + 1 else e.Generation) | None -> 0
 
       // The progressWriter function to be called by Sagan's ChangefeedProcessor
       let writer (kafkaOffsets:Map<TopicName, int64[]>, cfp:SaganChangefeedProcessor.ChangefeedPosition) = async {

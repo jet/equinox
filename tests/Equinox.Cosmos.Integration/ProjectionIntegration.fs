@@ -9,7 +9,7 @@ open System
 
 type Tests(testOutputHelper) =
     inherit TestsWithLogCapture(testOutputHelper)
-    let log, capture = base.Log, base.Capture
+    let log = base.Log
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let projector () = Async.RunSynchronously <| async {
