@@ -583,6 +583,7 @@ module Log =
         | EquinoxEmitted of stream: string * eventType: string * number: int64 * topic: string
         | Messages of ProjectEvent.ProjectEvent[]
         | BatchRead of timestamp: obj * lastTimestamp: obj * size: obj * range: obj * continuationLSN: obj
+        | ProducerMsg of LogMessage
 
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
@@ -1093,7 +1094,7 @@ module Publish =
 
     /// Prepares projection kafka topics.
     /// For each topic, it creates a Kafka producer fetches the latest offsets
-    let prepareKafkaTopicsPublishers (kafkaConfig:KafkaConfig) (topics:TopicName[]) = async {
+    let prepareKafkaTopicsPublishers (log: Serilog.ILogger) (kafkaConfig:KafkaConfig) (topics:TopicName[]) = async {
       let prepareTopic (topicName:TopicName) = async {
         let! offsets = Extensions.latestTopicOffset kafkaConfig topicName
 
@@ -1106,10 +1107,7 @@ module Publish =
           |> Config.Producer.batchNumMessages 10000 // default 2000; 10k for higher throughput
           |> Config.Producer.lingerMs 1000 // default 300 ms; 1 sec for higher throughput
           |> Producer.create
-          |> Producer.onLog (fun logger ->
-            let msg = sprintf "producer: %s" logger.Message
-            printf "%s" msg)
-
+          |> Producer.onLog (fun msg -> log |> Log.event (Log.ProducerMsg msg) |> fun l -> l.Warning("Producer: {msg}", msg.Message))
         let topicPublisher = {offsets = offsets; producer = producer}
         return (topicName, topicPublisher)}
 
@@ -1202,12 +1200,12 @@ module Projector =
       let! topicsPublishers =
         filteredProjections
         |> Array.map (fun p -> p.topic)
-        |> Publish.prepareKafkaTopicsPublishers kafkaConfig
+        |> Publish.prepareKafkaTopicsPublishers log kafkaConfig
 
       let count = ref 0
       async {
         while true do
-          printf "%d" <| int(!count)
+          log.Information("Projected {i}", !count)
           do! Async.Sleep 10000 }
       |> (fun x -> Async.Start (x,ct))
 
