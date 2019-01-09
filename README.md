@@ -2,12 +2,12 @@
 
 Equinox provides a unified programming model for event sourced processing against diverse stream-based stores.
 
-[![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master)
+[![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-blue.svg?style=popout)](DOCUMENTATION.md)
 
 Current supported backends are:
 
 - [EventStore](https://eventstore.org/) - this codebase itself has been in production since 2017 (commit history reflects usage), with elements dating back to 2016.
-- [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains code dating back to 2016, however [the storage model](https://github.com/jet/equinox/wiki/Cosmos-Storage-Model) was arrived at based on intensive benchmarking squash-merged in [#42](https://github.com/jet/equinox/pull/42).
+- [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains code dating back to 2016, however [the storage model](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking squash-merged in [#42](https://github.com/jet/equinox/pull/42).
 - (For integration test purposes only) Volatile in-memory store.
 
 The underlying patterns have their roots in the [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due.
@@ -33,8 +33,8 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
   - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
 - **`Equinox.Cosmos` 'Tip with Unfolds' schema**: In contrast to `Equinox.EventStore`'s `Access.RollingSnapshots`, when using `Equinox.Cosmos`, optimized command processing is managed via the `Tip`; a document per stream with a well-known identity enabling syncs via point-reads by virtue of the fact that the document maintains:
   a) the present Position of the stream - i.e. the index at which the next events will be appended
-  b) (compressed) [_unfolds_](https://github.com/jet/equinox/wiki/Cosmos-Storage-Model)
-  c) (optionally) events since those unfolded events ([presently removed](https://github.com/jet/equinox/pull/58), but [should return](https://github.com/jet/equinox/wiki/Roadmap))
+  b) (compressed) [_unfolds_](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#Cosmos-Storage-Model)
+  c) (optionally) events since those unfolded events ([presently removed](https://github.com/jet/equinox/pull/58), but [should return](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#Roadmap))
   
   This yields many of the benefits of the in-stream Rolling Snapshots approach while reducing latency, RU provisioning requirement, and Request Charges:-
   - Writes never need to do queries or touch event documents in any way
