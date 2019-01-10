@@ -11,6 +11,7 @@ open Serilog.Events
 open System
 open System.Net.Http
 open System.Threading
+open Equinox.Cosmos.Projection
 
 [<NoEquality; NoComparison>]
 type Arguments =
@@ -18,10 +19,10 @@ type Arguments =
     | [<AltCommandLine("-vc")>] VerboseConsole
     | [<AltCommandLine("-S")>] LocalSeq
     | [<AltCommandLine("-l")>] LogFile of string
-    | [<CliPrefix(CliPrefix.None); Last; Unique; AltCommandLine>] Run of ParseResults<TestArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
-    | [<Hidden>] // this command is not useful unless you have access to the [presently closed-source] Equinox.Cosmos.Projector
-      [<CliPrefix(CliPrefix.None); Last; Unique; AltCommandLine("initAux")>] InitAux of ParseResults<InitAuxArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Project of ParseResults<ProjectArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose -> "Include low level logging regarding specific test runs."
@@ -30,7 +31,8 @@ type Arguments =
             | LogFile _ -> "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ -> "Run a load test"
             | Init _ -> "Initialize store (presently only relevant for `cosmos`, where it creates database+collection+stored proc if not already present)."
-            | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the [presently closed source] Projector)."
+            | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the Projector)."
+            | Project _ -> "Project from store specified as the last argument, storing state in the specified `aux` Store (see initAux)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     | [<AltCommandLine("-P")>] SkipStoredProc
@@ -42,12 +44,29 @@ and [<NoComparison>]InitArguments =
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]InitAuxArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
-    | [<AltCommandLine("-s"); Mandatory>] Suffix of string
+    | [<AltCommandLine("-s")>] Suffix of string
     | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<CosmosArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ -> "Specify RU/s level to provision for the Application Collection."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
+            | Cosmos _ -> "Cosmos Connection parameters."
+and [<NoComparison>]ProjectArguments =
+    | [<AltCommandLine("-s"); Unique>] Suffix of string
+    | [<AltCommandLine("-bs"); Unique>] ChangeFeedBatchSize of int
+    | [<AltCommandLine("-r"); ExactlyOnce>] Region of string
+    | [<AltCommandLine("-kb"); ExactlyOnce>] KafkaBroker of string
+    | [<AltCommandLine("-kc"); Unique>] KafkaClientId of string
+    | [<AltCommandLine("-cf"); Unique>] WriterCheckpointFreqS of float
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
+            | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 100"
+            | Region _ -> "Projector instance context name."
+            | KafkaBroker _ -> "Kafka broker."
+            | KafkaClientId _ -> "Kafka client id."
+            | WriterCheckpointFreqS _ -> "Specify frequency to update progress checkpoints. Default: 30 seconds"
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
@@ -233,16 +252,43 @@ let main argv =
             | Some (InitAuxArguments.Cosmos sargs) ->
                 let storeLog = createStoreLog (sargs.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
                 let dbName, collName, (_pageSize: int), conn = Cosmos.conn (log,storeLog) sargs
-                let collName = collName + (iargs.GetResult(InitAuxArguments.Suffix,"-aux"))
+                let collName = collName + iargs.GetResult(InitAuxArguments.Suffix,"-aux")
                 log.Information("Configuring CosmosDb Aux Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
                 Async.RunSynchronously <| async {
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
                     do! Equinox.Cosmos.Store.Sync.Initialization.createAuxCollectionIfNotExists conn.Client (dbName,collName) rus }
             | _ -> failwith "please specify a `cosmos` endpoint"
+        | Project pargs ->
+            match pargs.TryGetSubCommand() with
+            | Some (ProjectArguments.Cosmos args) ->
+                let storeLog = createStoreLog (args.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
+                let dbName, collName, (_pageSize: int), conn = Cosmos.conn (log,storeLog) args
+                let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
+                log.Information("Projecting using Aux Collection {auxCollName}", auxCollName)
+                let predicate = Route.Predicate.All
+                let projection : Route.Projection = {
+                    name = "test"
+                    topic = "xray-telemetry"
+                    predicate = predicate
+                    collection = "michael"
+                    partitionKeyPath = None } 
+
+                let projectorConfig : Projector.Config = {
+                    region = pargs.GetResult(Region)
+                    conn = conn; dbName = dbName; collectionName = collName
+                    changefeedBatchSize = pargs.GetResult(ProjectArguments.ChangeFeedBatchSize, 100)
+                    auxCollectionName = auxCollName
+                    projections = [|projection|]
+                    kafkaBroker = pargs.GetResult(ProjectArguments.KafkaBroker)
+                    kafkaClientId = pargs.GetResult(ProjectArguments.KafkaClientId, "projector")
+                    startPositionStrategy = StartingPosition.ResumePrevious
+                    progressInterval = TimeSpan.FromSeconds <| pargs.GetResult(ProjectArguments.WriterCheckpointFreqS, 30.) }
+                Async.RunSynchronously <| Projector.go log projectorConfig
+            | _ -> failwith "please specify a `cosmos` endpoint"
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
-        | _ -> failwith "Please specify a valid subcommand :- init, initAux or run"
+        | _ -> failwith "Please specify a valid subcommand :- init, initAux, project or run"
         0
     with e ->
         printfn "%s" e.Message

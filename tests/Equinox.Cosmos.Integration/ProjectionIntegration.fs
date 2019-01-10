@@ -5,7 +5,6 @@ open Equinox.Cosmos.Projection
 open Equinox.Cosmos.Projection.Projector
 open Equinox.Cosmos.Projection.Route
 open Swensen.Unquote
-open System
 
 type Tests(testOutputHelper) =
     inherit TestsWithLogCapture(testOutputHelper)
@@ -13,7 +12,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let projector () = Async.RunSynchronously <| async {
-
+        let! conn = connectToSpecifiedCosmosOrSimulator log
         let predicate = Predicate.All
                                   //EventTypeSelector "<c>"
                                   //CategorySelector "<first token before - in p>"
@@ -22,26 +21,23 @@ type Tests(testOutputHelper) =
         let projection = {
             name = "test"
             topic = "xray-telemetry"
-            partitionCount = 8
             predicate = predicate
             collection = "michael"
-            makeKeyName = None
             partitionKeyPath = None
           } 
 
-        let pub = {
-            equinox = "equinox-test-ming"
-            databaseEndpoint = Uri("<redacted>")
-            databaseAuth = "<authKey>"
+        let pub : Projector.Config = {
+            region = "eastus2"
+            conn = conn
+            dbName = "equinox-test"
             collectionName = "michael"
-            database = "equinox-test"
+            auxCollectionName = "michael-aux"
             changefeedBatchSize = 100
             projections = [|projection|]
-            region = "eastus2"
             kafkaBroker = "<redacted>"
-            clientId = "projector"
-            startPositionStrategy = ChangefeedProcessor.StartingPosition.ResumePrevious
-            progressInterval = 30.0
+            kafkaClientId = "projector"
+            startPositionStrategy = StartingPosition.ResumePrevious
+            progressInterval = System.TimeSpan.FromSeconds 30.
         }
 
         let! res = Projector.go log pub

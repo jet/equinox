@@ -75,6 +75,15 @@ module Infra =
 
       let recv (r:Reactor<'a>) : AsyncSeq<'a> = r.events
 
+type CosmosDb(client: Microsoft.Azure.Documents.Client.DocumentClient, databaseId) =
+    member __.Client = client
+    member __.DatabaseId = databaseId
+
+type CosmosCollection(db: CosmosDb, collectionId) =
+    let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(db.DatabaseId, collectionId)
+    member __.Client = db.Client
+    member __.CollectionUri = collectionUri
+
 module SaganChangefeedProcessor =
 
     open System
@@ -85,21 +94,6 @@ module SaganChangefeedProcessor =
 
     open FSharp.Control
     open Equinox.Store.Infrastructure
-
-    type CosmosEndpoint = {
-      uri : Uri
-      authKey : string
-      databaseName : string
-      collectionName : string
-    }
-
-    type RangePosition = {
-      RangeMin : int64
-      RangeMax : int64
-      LastLSN : int64
-    }
-
-    type ChangefeedPosition = RangePosition[]
 
     /// ChangefeedProcessor configuration
     type Config = {
@@ -124,45 +118,38 @@ module SaganChangefeedProcessor =
       | Beginning
       | ChangefeedPosition of ChangefeedPosition
 
-    type private State = {
-      /// The client used to communicate with DocumentDB
-      client : DocumentClient
+    and ChangefeedPosition = RangePosition[]
+    and RangePosition =
+        {   MinInc : int64; MaxExc : int64; LastLSN : int64 }
 
-      /// URI of the collection being processed
-      collectionUri : Uri
-    }
+        /// Returns true if the range, r, covers the semi-open interval [min, max)
+        member r.RangeCoversMinMax min max =
+            (r.MinInc <= min) && (r.MaxExc >= max)
 
-    [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-    module RangePosition =
-      /// Returns true if the range, r, covers the semi-open interval [min, max)
-      let inline rangeCoversMinMax (r:RangePosition) min max =
-        (r.RangeMin <= min) && (r.RangeMax >= max)
+        /// Returns true if the range of the second argument, y, is fully contained within the first one.
+        member x.Covers(y:RangePosition) =
+            x.RangeCoversMinMax y.MinInc y.MaxExc
 
-      /// Returns true if the range of the second argument, y, is fully contained within the first one.
-      let inline fstCoversSnd (x:RangePosition) (y:RangePosition) =
-        rangeCoversMinMax x y.RangeMin y.RangeMax
+        /// Converts a cosmos range string from hex to int64
+        static member ToInt64 str =
+            match Int64.TryParse(str, Globalization.NumberStyles.HexNumber, Globalization.CultureInfo.InvariantCulture) with
+            | true, 255L when str.ToLower() = "ff" -> Int64.MaxValue    // max for last partition
+            | true, i -> i
+            | false, _ when str = "" -> 0L
+            | false, _ -> 0L  // NOTE: I am not sure if this should be the default or if we should return an option instead
 
-      /// Converts a cosmos range string from hex to int64
-      let rangeToInt64 str =
-        match Int64.TryParse(str, Globalization.NumberStyles.HexNumber, Globalization.CultureInfo.InvariantCulture) with
-        | true, 255L when str.ToLower() = "ff" -> Int64.MaxValue    // max for last partition
-        | true, i -> i
-        | false, _ when str = "" -> 0L
-        | false, _ -> 0L  // NOTE: I am not sure if this should be the default or if we should return an option instead
+        /// Converts a cosmos logical sequence number (LSN) from string to int64
+        static member LsnToInt64 str =
+            match Int64.TryParse str with
+            | true, i -> i
+            | false, _ -> 0L
 
-      /// Converts a cosmos logical sequence number (LSN) from string to int64
-      let lsnToInt64 str =
-        match Int64.TryParse str with
-        | true, i -> i
-        | false, _ -> 0L
-
-    [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
     module ChangefeedPosition =
       let fstSucceedsSnd (cfp1:ChangefeedPosition) (cfp2:ChangefeedPosition) =
         let successionViolationExists =
           seq { // test range covers
             for x in cfp1 do
-              yield cfp2 |> Seq.exists (fun y -> (RangePosition.fstCoversSnd x y) && (x.LastLSN > y.LastLSN))
+              yield cfp2 |> Seq.exists (fun y -> x.Covers y && x.LastLSN > y.LastLSN)
           }
           |> Seq.exists id // find any succession violations
         not successionViolationExists
@@ -173,10 +160,9 @@ module SaganChangefeedProcessor =
         else None
 
       let tryGetPartitionByRange min max (cfp:ChangefeedPosition) =
-        cfp |> Array.tryFind (fun rp -> RangePosition.rangeCoversMinMax rp min max)
+        cfp |> Array.tryFind (fun rp -> rp.RangeCoversMinMax min max)
 
     [<RequireQualifiedAccess>]
-    /// A PartitionSelector is a function that filters a list of CosmosDB partitions into ones that a single processor will handle
     module PartitionSelectors =
       /// A PartitionSelector is a function that filters a list of CosmosDB partitions into ones that a single processor will handle
       type PartitionSelector = PartitionKeyRange[] -> PartitionKeyRange[]
@@ -189,14 +175,14 @@ module SaganChangefeedProcessor =
       let evenSplit totalProcessors n : PartitionSelector =
         fun allPartitions ->
           allPartitions
-          |> Array.sortBy (fun pkr -> pkr.GetPropertyValue "minInclusive" |> RangePosition.rangeToInt64)
+          |> Array.sortBy (fun (pkr : PartitionKeyRange) -> pkr.GetPropertyValue "minInclusive" |> RangePosition.ToInt64)
           |> Array.mapi (fun i pkr -> if i % totalProcessors = n then Some pkr else None)
           |> Array.choose id
 
     /// Returns the current set of partitions in docdb changefeed
-    let private getPartitions (st:State) = async {
+    let private getPartitions (coll:CosmosCollection) = async {
       // TODO: set FeedOptions properly. Needed for resuming from a changefeed position
-      let! response = st.client.ReadPartitionKeyRangeFeedAsync st.collectionUri |> Async.AwaitTaskCorrect
+      let! response = coll.Client.ReadPartitionKeyRangeFeedAsync coll.CollectionUri |> Async.AwaitTaskCorrect
       return response.ToArray()
     }
 
@@ -204,9 +190,9 @@ module SaganChangefeedProcessor =
     ///   - Document[] is a batch of documents read from changefeed
     ///   - RangePosition is a record containing the partition's key range and the last logical sequence number in the batch.
     /// This function attempts to read all documents in the semi-closed LSN range [start, end).
-    let rec private readPartition (config:Config) (st:State) (pkr:PartitionKeyRange) =
-      let rangeMin = pkr.GetPropertyValue "minInclusive" |> RangePosition.rangeToInt64
-      let rangeMax = pkr.GetPropertyValue "maxExclusive" |> RangePosition.rangeToInt64
+    let rec private readPartition (config:Config) (st:CosmosCollection) (pkr:PartitionKeyRange) =
+      let rangeMin = pkr.GetPropertyValue "minInclusive" |> RangePosition.ToInt64
+      let rangeMax = pkr.GetPropertyValue "maxExclusive" |> RangePosition.ToInt64
 
       let continuationToken : string =
         match config.StartingPosition with
@@ -226,15 +212,15 @@ module SaganChangefeedProcessor =
           MaxItemCount = Nullable config.BatchSize,
           StartFromBeginning = true,   // TODO: double check that this is ignored by docdb if RequestContinuation is set
           RequestContinuation = continuationToken)
-      use query = st.client.CreateDocumentChangeFeedQuery(st.collectionUri, cfo)
+      use query = st.Client.CreateDocumentChangeFeedQuery(st.CollectionUri, cfo)
 
       let rec readPartition (query:Linq.IDocumentQuery<Document>) (pkr:PartitionKeyRange) = asyncSeq {
         let! response = query.ExecuteNextAsync<Document>() |> Async.AwaitTask
 
         let rp : RangePosition = {
-          RangeMin = rangeMin
-          RangeMax = rangeMax
-          LastLSN = response.ResponseContinuation.Replace("\"", "") |> RangePosition.lsnToInt64
+          MinInc = rangeMin
+          MaxExc = rangeMax
+          LastLSN = response.ResponseContinuation.Replace("\"", "") |> RangePosition.LsnToInt64
         }
         if response <> null then
           if response.Count > 0 then
@@ -263,24 +249,11 @@ module SaganChangefeedProcessor =
     ///    that is called periodically with a list of outputs that were produced by the handle function since the
     ///    last invocation and the current position of the changefeedprocessor.
     /// - `partitionSelector`: is a filtering function `PartitionKeyRange[] -> PartitionKeyRange` that is used to narrow down the list of partitions to process.
-    let go (cosmos:CosmosEndpoint) (config:Config) (partitionSelector:PartitionSelectors.PartitionSelector)
+    let go (coll:CosmosCollection) (config:Config) (partitionSelector:PartitionSelectors.PartitionSelector)
         (handle:Document[]*RangePosition -> Async<'a>) (progressHandler:'a * ChangefeedPosition -> Async<Unit>) (outputMerge:'a*'a -> 'a) = async {
-      use client = 
-        let connPolicy = 
-            let cp = ConnectionPolicy.Default
-            cp.ConnectionMode <- ConnectionMode.Direct
-            cp.ConnectionProtocol <- Protocol.Tcp
-            cp.MaxConnectionLimit <- 1000
-            cp
-        new DocumentClient(cosmos.uri, cosmos.authKey, connPolicy, Nullable ConsistencyLevel.Session)
-      let state = {
-        client = client
-        collectionUri = UriFactory.CreateDocumentCollectionUri(cosmos.databaseName, cosmos.collectionName)
-      }
-
       // updates the given partition position in the given changefeed position
       let updateChangefeedPosition (cfp:ChangefeedPosition) (rp:RangePosition) =
-        let index = cfp |> Array.tryFindIndex (function x -> x.RangeMin=rp.RangeMin && x.RangeMax=rp.RangeMax)
+        let index = cfp |> Array.tryFindIndex (function x -> x.MinInc=rp.MinInc && x.MaxExc=rp.MaxExc)
         match index with
         | Some i ->
           let newCfp = Array.copy cfp
@@ -336,11 +309,11 @@ module SaganChangefeedProcessor =
         |> AsyncSeq.iterAsync reactorProgressHandler
         |> Async.StartChild
 
-      let! partitions = getPartitions state
+      let! partitions = getPartitions coll
       let workers =
         partitions
         |> partitionSelector
-        |> Array.map ((fun pkr -> readPartition config state pkr) >> AsyncSeq.iterAsync handle)
+        |> Array.map ((fun pkr -> readPartition config coll pkr) >> AsyncSeq.iterAsync handle)
         |> Async.Parallel
         |> Async.Ignore
 
@@ -349,31 +322,18 @@ module SaganChangefeedProcessor =
 
     /// Periodically queries DocDB for the latest positions and timestamp of all partitions in its changefeed.
     /// The `handler` function will be called periodically, once per `interval`, with an updated ChangefeedPosition and timestamp of last document
-    let trackTailPosition (cosmos:CosmosEndpoint) (interval:TimeSpan) (handler:DateTime*(DateTime*RangePosition)[] -> Async<unit>) = async {
-      use client = 
-        let connPolicy = 
-            let cp = ConnectionPolicy.Default
-            cp.ConnectionMode <- ConnectionMode.Direct
-            cp.ConnectionProtocol <- Protocol.Tcp
-            cp.MaxConnectionLimit <- 1000
-            cp
-        new DocumentClient(cosmos.uri, cosmos.authKey, connPolicy, Nullable ConsistencyLevel.Session)
-      let state = {
-        client = client
-        collectionUri = UriFactory.CreateDocumentCollectionUri(cosmos.databaseName, cosmos.collectionName)
-      }
-
+    let trackTailPosition (coll:CosmosCollection) (interval:TimeSpan) (handler:DateTime*(DateTime*RangePosition)[] -> Async<unit>) = async {
       let getRecentPosition (pkr:PartitionKeyRange) = async {
         let cfo = ChangeFeedOptions(PartitionKeyRangeId = pkr.Id, StartTime = Nullable (DateTime.Now.AddHours(1.)))
-        use query = client.CreateDocumentChangeFeedQuery(state.collectionUri, cfo)
+        use query = coll.Client.CreateDocumentChangeFeedQuery(coll.CollectionUri, cfo)
         let! response = query.ExecuteNextAsync<Document>() |> Async.AwaitTask
         let rp : RangePosition = {
-          RangeMin = pkr.GetPropertyValue "minInclusive" |> RangePosition.rangeToInt64
-          RangeMax = pkr.GetPropertyValue "maxExclusive" |> RangePosition.rangeToInt64
-          LastLSN = response.ResponseContinuation.Replace("\"", "") |> RangePosition.lsnToInt64
+          MinInc = pkr.GetPropertyValue "minInclusive" |> RangePosition.ToInt64
+          MaxExc = pkr.GetPropertyValue "maxExclusive" |> RangePosition.ToInt64
+          LastLSN = response.ResponseContinuation.Replace("\"", "") |> RangePosition.LsnToInt64
         }
         let cfoForLastDoc = ChangeFeedOptions(PartitionKeyRangeId = pkr.Id, RequestContinuation = string (rp.LastLSN - 1L))
-        use queryForLastDoc = client.CreateDocumentChangeFeedQuery(state.collectionUri, cfoForLastDoc)
+        use queryForLastDoc = coll.Client.CreateDocumentChangeFeedQuery(coll.CollectionUri, cfoForLastDoc)
         let! responseForLastDoc = queryForLastDoc.ExecuteNextAsync<Document>() |> Async.AwaitTask
         let lastDocument = 
             Seq.last <| responseForLastDoc.ToArray()
@@ -388,7 +348,7 @@ module SaganChangefeedProcessor =
         handler input
         |> Async.timeoutAfter (TimeSpan.FromTicks(interval.Ticks * 3L))
 
-      let! partitions = getPartitions state   // NOTE: partitions will only be fetched once. Consider moving this inside the query function in case of a docdb partition split.
+      let! partitions = getPartitions coll   // NOTE: partitions will only be fetched once. Consider moving this inside the query function in case of a docdb partition split.
       let queryPartitions dateTime = async {
         let! changefeedPosition =
           partitions
@@ -409,7 +369,6 @@ open Equinox.Cosmos.Store
 open Equinox.Store.Infrastructure
 open FSharp.Control
 open Microsoft.Azure.Documents
-open Microsoft.Azure.Documents.Client
 open Microsoft.Azure.Documents.Linq
 open Newtonsoft.Json.Linq
 open SaganChangefeedProcessor
@@ -482,7 +441,6 @@ module Array =
 module Extensions =
   
   type TopicName = string
-  type Partition = int
 
   type KafkaConfig = {
     broker : string
@@ -583,7 +541,7 @@ module Log =
         | CustomEmitted of key: string * topic: string
         | EquinoxEmitted of stream: string * eventType: string * number: int64 * topic: string
         | Messages of ProjectEvent.ProjectEvent[]
-        | BatchRead of timestamp: obj * lastTimestamp: obj * size: obj * range: obj * continuationLSN: obj
+        | BatchRead of elaspedTime: int64 * lastTimestamp: DateTime * size: int * rp: RangePosition
         | ProducerMsg of LogMessage
 
     /// Attach a property to the log context to hold the metrics
@@ -614,16 +572,12 @@ module Route =
         /// The topic projected to.
         topic : string
 
-        partitionCount : int
-
         /// The selector predicate used to filter events
         /// from the incoming stream.
         predicate : Predicate
 
         /// the collection name that this projection projects from
         collection : string
-
-        makeKeyName : string option
 
         /// Partition key path, eg conversation.id
         partitionKeyPath : string option
@@ -636,9 +590,7 @@ module Route =
 
     // Implementation -------------------------------------------------------------
 
-    /// Determines whether a given event should be projected with respect to the
-    /// specified projection.
-
+    /// Determines whether a given event should be projected with respect to the specified projection.
     let private cond (e:ProjectEvent) predicate =
       match e with
       | EquinoxEvent event ->
@@ -655,13 +607,12 @@ module Route =
 
     /// Projects the specified projections.
     /// @projections - the projection definitions.
-    /// @checkpointStream - the checkpoint stream name.
     /// @events - the incoming event stream.
-    let project (log: Serilog.ILogger) (projections:Projection[]) (events:ProjectEvent[]) : Step [] =
+    let project (log: Serilog.ILogger) (projections:Projection[]) (events:ProjectEvent seq) : Step [] =
       [|
         for event in events do
           for p in projections do
-            if (cond event p.predicate) then
+            if cond event p.predicate then
               yield Emit(event, p.topic, p.partitionKeyPath)
               match event, p.partitionKeyPath with
               | CustomEvent t,Some key -> log |> Log.event (Log.CustomEmitted (Utils.ProjectEvent.getPropertyRec key t, p.topic)) |> fun l -> l.Information("Emitted")
@@ -669,63 +620,19 @@ module Route =
               | _,_ -> log.Warning "event is invalid"
       |]
 
-[<AutoOpen>]
-module Changefeed =
-  type RangePosition with
-    static member ToString (x : RangePosition): string =
-      String.Format("[MinInc={0}, MaxExc={1}, LastLSN={2}]", x.RangeMin, x.RangeMax, x.LastLSN)
-
-    static member FromJsonObject (jobj: JToken): RangePosition =
-      let rangeMin = jobj.["MinInc"].Value<int64>()
-      let rangeMax = jobj.["MaxExc"].Value<int64>()
-      let lastLSN = jobj.["LastLSN"].Value<int64>()
-      {RangeMin = rangeMin; RangeMax = rangeMax; LastLSN = lastLSN}
-
-    member v.ToJson() = JObject(JProperty("MinInc", v.RangeMin),
-                               JProperty("MaxExc", v.RangeMax),
-                               JProperty("LastLSN", v.LastLSN))
-
-  module ChangefeedPosition =
-    let ToJson (cfp: ChangefeedPosition): JToken =
-      JArray([| for p in cfp -> p.ToJson() |]) :> JToken
-
-    let FromJson (jobj: JToken): RangePosition[] =
-      [| for c in jobj.Children() -> RangePosition.FromJsonObject c |]
-
-    let toString (cfp: ChangefeedPosition): string =
-      cfp |> Array.map RangePosition.ToString |> String.concat ";"
-
-module ProgressWriter =
+module internal ProgressWriter =
     open Extensions
-    open Route
+    open System.Collections.Generic
     
-    type ProgressWriterConfig = {
-      Owner : string
-      WritePeriodMs : int
-      CosmosDBClient : DocumentClient
-      CosmosDBDatabaseName : string
-      CosmosDBCollectionName : string
-      CosmosDBAuxCollectionName : string
-      KafkaConfig : KafkaConfig
-      Region : string
-      IncrementGeneration : bool
-      Projections : Projection [] }
+    type internal Config = {
+      region : string
+      auxCollection : CosmosCollection
+      kafkaConfig : KafkaConfig
+      incrementGeneration : bool
+      projections : Route.Projection [] }
     
     /// A record of the latest kafka offsets for all the partitions of a kafka projection topic
-    type ProjectionPosition = {
-      Projection: string
-      Topic: string
-      KafkaOffsets: int64[]
-    } with
-      static member FromJsonObject (jobj: JToken): ProjectionPosition =
-        let projection = jobj.["Projection"].Value<string>()
-        let topic = jobj.["Topic"].Value<string>()
-        let kafkaOffsets = [| for c in jobj.["KafkaOffsets"].Children() -> c.Value<int64>() |]
-        {Projection = projection; Topic = topic; KafkaOffsets = kafkaOffsets}
-
-      member v.ToJson = JObject([JProperty("Projection", v.Projection);
-                                 JProperty("Topic", v.Topic);
-                                 JProperty("KafkaOffsets", v.KafkaOffsets)])
+    type ProjectionPosition = { Projection: string; Topic: string; KafkaOffsets: int64[] }
 
     /// The projector offset index entry maps a changefeed position (range*lsn)[] to the latest kafka (partition*offset)[]
     /// for all projections produced
@@ -734,76 +641,20 @@ module ProgressWriter =
       Generation: int
       Epoch: int
       ChangefeedPosition: ChangefeedPosition
-      ChangefeedPositionIndex: Map<string, int64>
+      ChangefeedPositionIndex: IDictionary<string, int64>
       ProjectionsPositions: ProjectionPosition[]
-      ProjectionsPositionsIndex: Map<string, int64>
-    }
-    with
-      static member FromJsonObject (jobj: JToken): OffsetIndexEntry =
-        let region = jobj.["Region"].Value<string>()
-        let generation = jobj.["Generation"].Value<int>()
-        let epoch = jobj.["Epoch"].Value<int>()
-        let changeFeedPosition = ChangefeedPosition.FromJson jobj.["ChangefeedPosition"]
-        let changeFeedPositionIndex = [
-          for p in jobj.["ChangefeedPositionIndex"].Children<JProperty>() ->
-            (p.Name, Int64.Parse(p.Value.ToString()))] |> Map.ofList
-        let projectionsPositions = [|
-          for c in jobj.["ProjectionsPositions"].Children() ->
-            ProjectionPosition.FromJsonObject c |]
-        let projectionsPositionsIndex = [
-          for p in jobj.["ProjectionsPositionsIndex"].Children<JProperty>() ->
-            (p.Name, Int64.Parse(p.Value.ToString()))] |> Map.ofList
-        in
-        {Region = region; Generation = generation;
-        Epoch = epoch;
-        ChangefeedPosition = changeFeedPosition;
-        ChangefeedPositionIndex = changeFeedPositionIndex;
-        ProjectionsPositions = projectionsPositions;
-        ProjectionsPositionsIndex = projectionsPositionsIndex}
+      ProjectionsPositionsIndex: IDictionary<string, int64>
+    } with member v.id = sprintf "offsetIndex-%s-%i" v.Region v.Epoch
 
-      static member FromJsonString (json: string): OffsetIndexEntry =
-        JToken.Parse json |> OffsetIndexEntry.FromJsonObject
-
-      member v.ToJson: JObject =
-        JObject(
-          [JProperty("Region", v.Region);
-           JProperty("Generation", v.Generation);
-           JProperty("Epoch", v.Epoch);
-           JProperty("ChangefeedPosition", ChangefeedPosition.ToJson(v.ChangefeedPosition));
-           JProperty("ChangefeedPositionIndex", JObject.FromObject(v.ChangefeedPositionIndex));
-           JProperty("ProjectionsPositions", [for p in v.ProjectionsPositions -> p.ToJson]);
-           JProperty("ProjectionsPositionsIndex", JObject.FromObject(v.ProjectionsPositionsIndex));           
-           JProperty("DocType", "OffsetIndexEntry");
-           JProperty("id", String.Format("offsetIndex-{0}-{1}", v.Region, v.Epoch));
-          ])
-
-    let getLatestProgressEntry (client: DocumentClient) (auxCollectionUri: Uri) (region: string) = async {
-      let querySpec =
-        let q =
-          """
-          SELECT TOP 1 * FROM c
-          WHERE
-                c.Region = @region
-            AND c.DocType = "OffsetIndexEntry"
-          ORDER BY
-                c.Epoch DESC"""
-        let p = SqlParameterCollection [| SqlParameter ("@region", region) |]
-        SqlQuerySpec(q,p)
-
-      use iter =
-        client.CreateDocumentQuery<OffsetIndexEntry>(auxCollectionUri, querySpec).AsDocumentQuery()
-
-      if iter.HasMoreResults then
-        let! entry = iter.ExecuteNextAsync<Document>() |> Async.AwaitTaskCorrect
-        if entry.Count > 0 then
-          return Some (entry.First().ToString() |> JToken.Parse |> OffsetIndexEntry.FromJsonObject)
-        else
-          return None
-      else
-        return None
+    let getLatestProgressEntry (coll: CosmosCollection) (region: string) = async {
+      let q = """SELECT TOP 1 * FROM c WHERE c.Region = @region AND c.DocType = "OffsetIndexEntry" ORDER BY c.Epoch DESC"""
+      let querySpec = SqlQuerySpec(q,SqlParameterCollection [| SqlParameter ("@region", region) |])
+      use iter = coll.Client.CreateDocumentQuery<OffsetIndexEntry>(coll.CollectionUri, querySpec).AsDocumentQuery()
+      let! entry = iter.ExecuteNextAsync<OffsetIndexEntry>() |> Async.AwaitTaskCorrect
+      return Seq.tryHead entry
     }
 
-    let kafkaOffsetsMerge ((o1,o2):Map<TopicName, int64[]> * Map<TopicName, int64[]>) : Map<TopicName, int64[]> =
+    let kafkaOffsetsMerge ((o1,o2):Map<string, int64[]> * Map<string, int64[]>) : Map<string, int64[]> =
         Map.mergeWith(
           fun _ a b ->
             match a,b with
@@ -816,18 +667,13 @@ module ProgressWriter =
 
     /// Returns an Async computation that in turns returns a function that marks the progress of the projector to be called by
     /// Sagan's changefeed processor.
-    let create (config:ProgressWriterConfig) = async {
-      // everything that's needed to get a lease
-      let auxCollectionUri =
-        (config.CosmosDBDatabaseName, config.CosmosDBAuxCollectionName)
-        |> UriFactory.CreateDocumentCollectionUri
-
-      let! latestEntry = getLatestProgressEntry config.CosmosDBClient auxCollectionUri config.Region
+    let create (config:Config) = async {
+      let! latestEntry = getLatestProgressEntry config.auxCollection config.region
 
       let mutable epoch = match latestEntry with Some e -> e.Epoch + 1 | None -> 0
 
       // The generation of the current projector is incremented when the projector is reset
-      let generation = match latestEntry with Some e -> (if config.IncrementGeneration then e.Generation + 1 else e.Generation) | None -> 0
+      let generation = match latestEntry with Some e -> (if config.incrementGeneration then e.Generation + 1 else e.Generation) | None -> 0
 
       // The progressWriter function to be called by Sagan's ChangefeedProcessor
       let writer (kafkaOffsets:Map<TopicName, int64[]>, cfp:SaganChangefeedProcessor.ChangefeedPosition) = async {
@@ -835,67 +681,47 @@ module ProgressWriter =
           if kafkaOffsets.IsEmpty then return ()
           else
             let projectionPositions : ProjectionPosition[] =
-              config.Projections
-              |> Array.map (fun p ->
-                { Projection = p.name
-                  Topic = p.topic
-                  KafkaOffsets = kafkaOffsets |> Map.find p.topic })
-
-            // lookup indices
-            let projectionsIndex =
-              projectionPositions
-              |> Array.collect (fun pp -> pp.KafkaOffsets |> Array.mapi (fun i offset -> (sprintf "%s_%d" pp.Projection i), offset))
-              |> Map.ofArray
-
-            /// Sequencing operator like Haskell's ($). Has better precedence than (<|) due to the
-            /// first character used in the symbol.
-            let (^) = (<|)
-
-            let changefeedIndex =
-              cfp
-              |> Seq.map (fun pp -> (sprintf "cfp%d_%d" pp.RangeMin pp.RangeMax), pp.LastLSN)
-              |> Map.ofSeq
-              |> Map.add "length" (int64 ^ Microsoft.FSharp.Collections.Array.length cfp)
-
+              [| for p in config.projections -> { Projection = p.name; Topic = p.topic; KafkaOffsets = kafkaOffsets |> Map.find p.topic }|]
 
             let indexEntry =
-              {
-                Region = config.Region
+              { Region = config.region
                 Epoch = epoch
                 Generation = generation
-                ChangefeedPosition = cfp |> Array.sortBy (fun rp -> rp.RangeMin)
+                ChangefeedPosition = cfp |> Array.sortBy (fun rp -> rp.MinInc)
                 ProjectionsPositions = projectionPositions
-
-                ChangefeedPositionIndex = changefeedIndex
-                ProjectionsPositionsIndex = projectionsIndex
-              }
+                ChangefeedPositionIndex =
+                  cfp
+                  |> Seq.map (fun pp -> sprintf "cfp%d_%d" pp.MinInc pp.MaxExc, pp.LastLSN)
+                  |> Map.ofSeq
+                  |> Map.add "length" cfp.LongLength
+                ProjectionsPositionsIndex =
+                  projectionPositions
+                  |> Seq.collect (fun pp -> pp.KafkaOffsets |> Seq.mapi (fun i offset -> (sprintf "%s_%d" pp.Projection i), offset))
+                  |> Map.ofSeq }
             epoch <- epoch + 1
-            let bytes = Encoding.UTF8.GetBytes(indexEntry.ToJson.ToString())
-            use documentStream = new System.IO.MemoryStream(bytes)
-            do!
-              config.CosmosDBClient.CreateDocumentAsync(auxCollectionUri, Resource.LoadFrom<Document> documentStream)
-              |> Async.AwaitTask
-              |> Async.Ignore }
+            do! config.auxCollection.Client.CreateDocumentAsync(config.auxCollection.CollectionUri, indexEntry) |> Async.AwaitTask |> Async.Ignore }
 
       return writer
     }
 
+type StartingPosition =
+    | ResumePrevious
+    | StartFromBeginning
+    | ResetToChangefeedPosition of ChangefeedPosition
+
 [<RequireQualifiedAccess>]
-module ChangefeedProcessor =
+module internal ChangefeedProcessor =
 
   /// Projector configuration.
   type Config = {
-      /// The identity of the upstream Equinox/Eventstore being consumed
-      equinox : string
-
       /// Region in which this projector is running
       region : string
 
       /// Cosmos collection containing Equinox database to project
-      cosmos : CosmosEndpoint
+      collection : CosmosCollection
 
       /// Auxilliary collection where changefeed processor keeps tracks its progress
-      auxCollection : CosmosEndpoint
+      auxCollection : CosmosCollection
 
       /// Where in the changefeed should the processor start
       startPosition : StartingPosition
@@ -909,12 +735,6 @@ module ChangefeedProcessor =
       /// How often to run the progress handler function
       progressInterval : TimeSpan
     }
-
-  and StartingPosition =
-    | ResumePrevious
-    | StartFromBeginning
-    | ResetToChangefeedPosition of ChangefeedPosition
-
 
   /// Sets up a cosmos/equinox changefeed processor that calls the `handle` function when a new batch of event is received
   /// Handle takes in the latest changefeed position as well as the events read from changefeed
@@ -931,9 +751,7 @@ module ChangefeedProcessor =
           return SaganChangefeedProcessor.StartingPosition.ChangefeedPosition cfp
         | ResumePrevious ->
           return! async{
-            use client = new DocumentClient(config.auxCollection.uri, config.auxCollection.authKey)
-            let auxCollectionUri = UriFactory.CreateDocumentCollectionUri(config.auxCollection.databaseName, config.auxCollection.collectionName)
-            let! entry = ProgressWriter.getLatestProgressEntry client auxCollectionUri config.region
+            let! entry = ProgressWriter.getLatestProgressEntry config.auxCollection config.region
             match entry with
             | Some e -> return SaganChangefeedProcessor.StartingPosition.ChangefeedPosition e.ChangefeedPosition
             | None -> return SaganChangefeedProcessor.StartingPosition.Beginning
@@ -950,11 +768,11 @@ module ChangefeedProcessor =
 
     let sw = Diagnostics.Stopwatch.StartNew()
 
-    let handler log (docs:Document[], rangePosition:RangePosition) = async {
-      let range = (rangePosition.RangeMin, rangePosition.RangeMax)
+    let handler log (docs:Document[], rp:RangePosition) = async {
       let ts = (Seq.last docs).Timestamp
     
-      log |> Log.event (Log.BatchRead(sw.ElapsedMilliseconds, ts, docs.Length, range, rangePosition.LastLSN)) |> fun l -> l.Information("Read {count} in {ms} ms", docs.Length, sw.ElapsedMilliseconds)
+      log   |> Log.event (Log.BatchRead(sw.ElapsedMilliseconds, ts, docs.Length, rp))
+            |> fun l -> l.Information("Read {count} in {ms} ms", docs.Length, sw.ElapsedMilliseconds)
       sw.Restart()  // not accurate, but close enough
       
       return!
@@ -962,7 +780,7 @@ module ChangefeedProcessor =
         |> eventHandler
     }
 
-    return! SaganChangefeedProcessor.go config.cosmos cfConfig PartitionSelectors.allPartitions (handler log) progressHandler merge
+    return! SaganChangefeedProcessor.go config.collection cfConfig PartitionSelectors.allPartitions (handler log) progressHandler merge
   }
 
 [<AutoOpen>]
@@ -973,7 +791,6 @@ module ArraySegmentExtensions =
 module Publish =
     open Extensions
     open ProjectEvent
-    open Equinox.Store
     
     /// State for a projection topic.
     type TopicPublisher =
@@ -1033,12 +850,10 @@ module Publish =
     let private performBatch (log: Serilog.ILogger) (topics:Map<TopicName, TopicPublisher>) (steps:Route.Step[]) : Async<Map<TopicName, TopicPublisher>> = async {
       let! rs =
         steps
-        |> Seq.map (fun step ->
-          match step with
-          | Route.Emit (event,topic,partitionKey) -> topic,event,partitionKey)
-        |> Seq.groupBy(fun (x,_,p) -> x,p)
-        |> Seq.map (fun (topic,xs) -> topic, xs |> Seq.map(fun (_,x,_) -> x) |> Seq.toArray)
-        |> Seq.map (fun ((topic,partitionKey),es)-> async {
+        |> Seq.map (function Route.Emit (event,topic,partitionKey) -> topic,event,partitionKey)
+        |> Seq.groupBy (fun (x,_,p) -> x,p)
+        |> Seq.map (fun (topic,xs) -> topic, xs |> Seq.map (fun (_,x,_) -> x) |> Seq.toArray)
+        |> Seq.map (fun ((topic,partitionKey),es) -> async {
           match topics |> Map.tryFind topic with
           | Some(pubTopic) ->
             let ms = es |> Seq.map (fun event -> messageOfEvent event partitionKey)
@@ -1095,7 +910,7 @@ module Publish =
 
     /// Prepares projection kafka topics.
     /// For each topic, it creates a Kafka producer fetches the latest offsets
-    let prepareKafkaTopicsPublishers (log: Serilog.ILogger) (kafkaConfig:KafkaConfig) (topics:TopicName[]) = async {
+    let prepareKafkaTopicsPublishers (log: Serilog.ILogger) (kafkaConfig:KafkaConfig) (topics:TopicName seq) = async {
       let prepareTopic (topicName:TopicName) = async {
         let! offsets = Extensions.latestTopicOffset kafkaConfig topicName
 
@@ -1110,11 +925,11 @@ module Publish =
           |> Producer.create
           |> Producer.onLog (fun msg -> log |> Log.event (Log.ProducerMsg msg) |> fun l -> l.Warning("Producer: {msg}", msg.Message))
         let topicPublisher = {offsets = offsets; producer = producer}
-        return (topicName, topicPublisher)}
+        return topicName, topicPublisher }
 
       let! topicsPublishers =
         topics
-        |> Array.map prepareTopic
+        |> Seq.map prepareTopic
         |> Async.Parallel
 
       return Map.ofArray topicsPublishers
@@ -1131,111 +946,83 @@ module Publish =
     }
 
 module Projector =
-    open Extensions
-    open Route
     
-    type Publisher =
-      {
-        equinox : string 
-        databaseEndpoint: Uri 
-        databaseAuth: string 
-        collectionName : string 
-        database : string 
-        changefeedBatchSize : int 
-        projections : Projection[]
+    type Config =
+      { (* Context identifiers *)
         region: string
+
+        (* Source *)
+        conn: Equinox.Cosmos.EqxConnection
+        dbName: string
+        collectionName : string 
+
+        (* Change feed params *)
+
+        changefeedBatchSize : int 
+        startPositionStrategy: StartingPosition
+
+        (* State storage *)
+
+        auxCollectionName : string
+
+        projections : Route.Projection[]
+
         kafkaBroker: string
-        clientId: string
-        startPositionStrategy: ChangefeedProcessor.StartingPosition
-        progressInterval: float
+        kafkaClientId: string
+        progressInterval: TimeSpan
       }
 
-    let go (log: Serilog.ILogger) (pub:Publisher) = async {
+    let go (log: Serilog.ILogger) (pub:Config) = async {
       let! ct = Async.CancellationToken
 
-      let region = pub.region
-      let groupId = sprintf "%s-%s" pub.collectionName region
-      let databaseEndpoint = pub.databaseEndpoint
-      let databaseAuth = pub.databaseAuth
-      let databaseName = pub.database
-      let collectionName = pub.collectionName
-      let auxCollectionName = collectionName + "-aux"
-      let kafkaBroker = pub.kafkaBroker
-      let clientId = pub.clientId
-      let startPositionStrategy = pub.startPositionStrategy
-      let progressInterval = pub.progressInterval
+      let db = CosmosDb(pub.conn.Client,pub.dbName)
 
-      let client = new DocumentClient (pub.databaseEndpoint, pub.databaseAuth)
+      let auxCollection = CosmosCollection(db,pub.auxCollectionName)
 
-      let endpoint = {
-        uri = databaseEndpoint
-        authKey = databaseAuth
-        databaseName = databaseName
-        collectionName = collectionName
-      }
-
-      let auxendpoint = {
-        uri = databaseEndpoint
-        authKey = databaseAuth
-        databaseName = databaseName
-        collectionName = auxCollectionName
-      }
-
-      let config : ChangefeedProcessor.Config = {
+      let changefeedConfig : ChangefeedProcessor.Config = {
         batchSize = pub.changefeedBatchSize
-        progressInterval = TimeSpan.FromSeconds progressInterval
-        startPosition = startPositionStrategy
+        progressInterval = pub.progressInterval
+        startPosition = pub.startPositionStrategy
         endPosition = None
-        cosmos = endpoint
-        auxCollection = auxendpoint
-        equinox = collectionName
-        region = region
+        collection = CosmosCollection(db,pub.collectionName)
+        auxCollection = auxCollection
+        region = pub.region
       }
 
-      let filteredProjections = (pub.projections |> Array.filter(fun proj -> proj.collection = pub.collectionName))
-      let kafkaConfig = {
-        broker = kafkaBroker
-        clientId = clientId
-      }
+      let filteredProjections = pub.projections |> Array.filter (fun proj -> proj.collection = pub.collectionName)
+      let kafkaConfig : Extensions.KafkaConfig = { broker = pub.kafkaBroker; clientId = pub.kafkaClientId }
 
       let! topicsPublishers =
         filteredProjections
-        |> Array.map (fun p -> p.topic)
+        |> Seq.map (fun p -> p.topic)
         |> Publish.prepareKafkaTopicsPublishers log kafkaConfig
 
       let count = ref 0
-      async {
-        while true do
-          log.Information("Projected {i}", !count)
-          do! Async.Sleep 10000 }
-      |> (fun x -> Async.Start (x,ct))
+      Async.Start(cancellationToken=ct, computation = async {
+                while true do
+                    log.Information("Projected {i}", !count)
+                    do! Async.Sleep 10000 })
 
-      let handler log (events:Document[]) = async {
-        Interlocked.Add (count, events.Length) |> ignore
+      let publish (events:Document[]) = async {
+        Interlocked.Add(count, events.Length) |> ignore
         return!
-          events
-          |> Array.filter(fun d -> d.Id <> "-1")
-          |> Array.map (fun d -> d |> Utils.ProjectEvent.fromDocument)
-          |> Array.concat
-          |> Route.project log filteredProjections
-          |> Publish.write log topicsPublishers
+            events
+            |> Seq.filter (fun d -> d.Id <> "-1")
+            |> Seq.collect Utils.ProjectEvent.fromDocument
+            |> Route.project log filteredProjections
+            |> Publish.write log topicsPublishers
       }
 
       log.Information "Equinox Projector Starting"
 
-      let progressWriterConfig : ProgressWriter.ProgressWriterConfig = {
-        Owner = groupId
-        WritePeriodMs = 30000
-        CosmosDBClient = client
-        CosmosDBDatabaseName = databaseName
-        CosmosDBCollectionName = collectionName
-        CosmosDBAuxCollectionName = auxCollectionName
-        KafkaConfig = kafkaConfig
-        Region = region
-        Projections = pub.projections
-        IncrementGeneration = true  // FIXME
+      let progressWriterConfig : ProgressWriter.Config = {
+        region = pub.region
+        auxCollection = auxCollection
+        kafkaConfig = kafkaConfig
+        projections = pub.projections
+        incrementGeneration = true  // FIXME
       }
 
-      let! progressWriter = ProgressWriter.create progressWriterConfig
-      return! ChangefeedProcessor.run log config (handler log) progressWriter ProgressWriter.kafkaOffsetsMerge
+      let! progressHandler = ProgressWriter.create progressWriterConfig
+      return! ChangefeedProcessor.run log changefeedConfig publish progressHandler ProgressWriter.kafkaOffsetsMerge
     }
