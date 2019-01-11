@@ -58,12 +58,6 @@ The Equinox components within this repository are delivered as a series of multi
 - `samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
 - `samples/TodoBackend` (in this repo): Standard https://todobackend.com compliant backend
 
-## Versioning
-
-## About Versioning
-
-The repo is versioned based on [SemVer 2.0](https://semver.org/spec/v2.0.0.html) using the tiny-but-mighty [MinVer](https://github.com/adamralph/minver) from [@adamralph](https://github.com/adamralph). [See here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
-
 ## CONTRIBUTING
 
 Please raise GitHub issues for any questions so others can benefit from the discussion.
@@ -80,6 +74,12 @@ Unfortunately, in the interim, the barrier for contributions will unfortunately 
   2. how to open up an appropriate extension point in Equinox
   3. (when all else fails), add to the complexity of the system by adding API surface area or logic.
 - Naming is hard; there is definitely room for improvement. There may at some point be a set of controlled deprecations, switching to names, and then removing the old ones. However it should be noted that widespread renaming is not on the cards due to the number of downstream systems that would be affected.
+
+## Versioning
+
+## About Versioning
+
+The repo is versioned based on [SemVer 2.0](https://semver.org/spec/v2.0.0.html) using the tiny-but-mighty [MinVer](https://github.com/adamralph/minver) from [@adamralph](https://github.com/adamralph). [See here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
 
 ## BUILDING
 
@@ -179,9 +179,9 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
     $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
 
     tools/Equinox.Tool/bin/Release/net461/eqx run `
-      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
+      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
     dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- run `
-      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION `
+      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
 
 ## PROVISIONING
 
@@ -214,3 +214,79 @@ The above provisioning step provisions RUs in DocDB for the collection, which ad
 
 - Kill the collection and/or database
 - Use the portal to change the allocation
+
+## QuickStart
+
+### Spin up a [TodoBackend](https://www.todobackend.com/) app (In Memory Store/Simulator)
+
+0. Make a scratch area
+
+    ```powershell
+    mkdir ExampleApp
+    cd ExampleApp 
+    ```
+
+1. Use a `dotnet new` template to get fresh code in your repo
+
+    ```powershell
+    dotnet new -i Equinox.Templates # see source in https://github.com/jet/dotnet-templates
+    dotnet new equinoxweb -t # -t for todos, defaults to memory store (-m) # use --help to see options regarding storage subsystem configuration etc
+    ```
+
+2. Run the TodoBackend:
+
+    ```powershell
+    dotnet run -p Web
+    ```
+
+4. Run the standard TodoMvc frontend against your locally-hosted, fresh backend (See generated `readme.md` for more details)
+    - Todo App: https://www.todobackend.com/client/index.html?https://localhost:5001/todos 
+    - Run individual specs: https://www.todobackend.com/specs/index.html?https://localhost:5001/todos
+
+### Store data in [EventStore](https://eventstore.org)
+
+1. install EventStore locally (requires admin privilege)
+
+    ```powershell
+    cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+    ```
+
+    - Homebrew install for a version >= 4.0 is pending
+
+2. start local EventStore instance
+
+    ```powershell
+    # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
+    & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+    ```
+
+3. make and stand up sample app with EventStore wiring
+
+    ```powershell
+    dotnet new equinoxweb -t -e # -t for todos, -e for eventstore
+    dotnet run -p Web
+    ```
+
+### Store data in [Azure CosmosDb](https://docs.microsoft.com/en-us/azure/cosmos-db/introduction)
+
+1. *export 3x env vars* (see [provisioning instructions](#run-cosmosdb-benchmark-when-provisioned))
+
+    ```powershell
+    $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
+    $env:EQUINOX_COSMOS_DATABASE="equinox-test"
+    $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
+    ```
+
+2. start the app, referencing those env vars
+
+    ```powershell
+    dotnet tool -i Equinox.Tool
+    eqx init cosmos # generates a database+collection, adds optimized indexes
+    ```
+
+3. make and stand up sample app with CosmosDb wiring
+
+    ```powershell
+    dotnet new equinoxweb -t -c # -t for todos, -c for cosmos
+    dotnet run -p Web
+    ```
