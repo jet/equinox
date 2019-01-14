@@ -961,7 +961,13 @@ type ConnectionMode =
 
 open Microsoft.Azure.Documents
 type EqxConnector
-    (   requestTimeout: TimeSpan, maxRetryAttemptsOnThrottledRequests: int, maxRetryWaitTimeInSeconds: int,
+    (   /// Timeout to apply to individual reads/write roundtrips going to CosmosDb
+        requestTimeout: TimeSpan,
+        /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
+        maxRetryAttemptsOnThrottledRequests: int,
+        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
+        maxRetryWaitTimeInSeconds: int,
+        /// Log to emit connection messages to
         log : ILogger,
         /// Connection limit (default 1000)
         [<O; D(null)>]?maxConnectionLimit,
@@ -1123,6 +1129,11 @@ type EqxContext
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
+/// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
+type EventData() =
+    /// Creates an Event record, suitable for supplying to Append et al
+    static member FromUtf8Bytes(eventType,data,?meta) : IEvent = EventData.Create(eventType, data, defaultArg meta null) :> IEvent
+
 /// Api as defined in the Equinox Specification
 /// Note the EqxContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's WipBatch
 module Events =
@@ -1145,9 +1156,6 @@ module Events =
     let (|MaxPosition|) = function
         | int64.MaxValue -> None
         | i -> Some (Position.fromI (i + 1L))
-
-    /// Creates an Event record, suitable for supplying to Append et al
-    let create eventType data meta = Store.EventData.Create(eventType, data, meta) :> IEvent
 
     /// Returns an async sequence of events in the stream starting at the specified sequence number,
     /// reading in batches of the specified size.
