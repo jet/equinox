@@ -14,10 +14,10 @@ open System.Text
 
 type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
-        Events.create
-            (sprintf "%s:%d" (defaultArg eventType "test_event") i)
-            (Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}"))
-            (Encoding.UTF8.GetBytes "{\"m\":\"m\"}")
+        EventData.FromUtf8Bytes
+            (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
+                Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}"),
+                Encoding.UTF8.GetBytes "{\"m\":\"m\"}")
     static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
 
 type Tests(testOutputHelper) =
