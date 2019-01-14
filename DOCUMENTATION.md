@@ -123,6 +123,69 @@ EventStore, and it's Store adapter is the most proven and is pretty feature rich
 
 ## Wouldn't it be nice - `Equinox.SqlStreamStore`: See [#62](https://github.com/jet/equinox/issues/62)
 
+# Architectural Overview
+
+There are virtually unlimited ways to build an event-sourced model. It's critical that, for any set of components to be useful, that they are designed in a manner where one combines small elements to compose a whole, [versus trying to provide a hardwired end-to-end 'framework'](https://youtu.be/LDW0QWie21s?t=1928).
+
+While going the library route leaves plenty seams needing to be tied together at the point of consumption (with resulting unavoidable complexity), it's unavoidable if one is to provide a system that can work in the real world.
+
+This section outlines key concerns that the Equinox [Programming Model](#programming-model) is specifically taking a view on, and those that it is going to particular ends to leave open.
+
+## Concerns leading to need for a programming model
+
+F#, out of the box has a very relevant featureset for building Domain models in an event sourced fashion (DUs, persistent data structures, total matching, list comprehensions, async builders etc). However, there are still lots of ways to split the process of folding the events, encoding them, deciding events to produce etc.
+
+In the general case, it doesnt really matter what way one opts to model the events, folding and decision processing.
+
+However, given one has a specific store (or set of stores) in mind for the events, a number of key aspects need to be taken into consideration:
+
+1. Coding/encoding events - Per aggregate or system, there is commonality in how one might wish to encode and/or deal with versioning of event representations. Per store, the most efficient way to bridge to that concern can vary. Per domain and encoding system, the degree to which one wants to unit or integration test this codec process will vary.
+
+2. Caching - Per store, there are different tradeoffs/benefits for Caching./ Per system, caching may or may not even make sense. For some stores, it makes sense to integrate caching into the primary storage.
+
+3. Snapshotting - The store, and/or the business need may provide a strong influence on whether or not (and how) one might employ a snapshotting mechanism. 
+
+## Store-specific concerns mapping to the programming model
+
+This sections enumerates key concerns feeding into how the Store binds to the [Programming Model](#programming-model):
+
+#### EventStore
+
+TL;DR caching not really needed, storing snapshots has many considerations in play, projections built in 
+
+Overview: EventStore is a mature and complete system, explicitly designed to address key aspects of building an event-sourced system. There are myriad bindings for multiple languages and various programming models. The docs present various ways to do snapshotting. The projection system provides ways in which to manage snapshotting. 
+
+Key aspects relevant to the Equinox programming model:
+- In general, EventStore provides excellent caching and performance characteristics intrinsically by virtue of it's design
+- Projections can be managed by either tailing streams (including the syntethetic `$all` stream) or using the Projections facility - there's no obvious reason to wrap it for any particular reason
+- In general event streams should be considered append only, with no mutations or deletes
+- For snapshotting, one can either maintain a separate stream with a maximum count or TTL rule, or include faux _Compaction_ events in the normal streams (to make it possible to combine reading of events and a snapshot in a single roundtrip)
+- While there is no generic querying facilitit, the APIs are designed in such a manner that it's generally possible to achieve any typically useful event access pattern needed in an optimal fashion (rendeirng that moot)
+- While EventStore allows either json or binary data, its generally accepted that json (presented as UTF-8 byte arrays) is a good default for reasons of interoperability (the projections facility also strongly implies json)
+
+#### Azure CosmosDb
+
+TL;DR caching can optimize RU consumption significantly. Due to ability to mutate easily, potential to integrate rolling snapshots into core storage is provided. Providing ways to cache and snapshot matter a lot on CosmosDb, as lowest-common-demominator queries loading lots of events cost in performance and cash. The specifics of how you use the changefeed matters more than one might thing from the CosmosDb high level docs.
+
+Overview: CosmosDb has been in production for >5 years and is a mature Document database. The initial DocumentDb offering is at this point a mere projected programming model atop a generic Document data store. Its changefeed mechanism affords one a base upon which one can manage projections, but there is no directly provided mechanism which lends itself to building projections that map directly to EventStore's facilties in this regard.
+
+Key aspects relevant to the Equinox programming model:
+- CosmosDb has pervasive optimization feedback per call in the form of a Request Charge attached to each and every action. Working to optimize one's request charges per scenario is critical both in terms of the effect it has on the amount of Request Units/s one you need to preprovision (which translates directly to costs on your bill), and then live predictably within if one is not to be throttled with 429 responses. In general, the request charging structure can be considered a very strong mechanical sympathy feedback signal.
+- Point reads of single documents based on their identifier are charged as 1 RU plus a price per KB and are optimal. Queries, even ones returning that same single document, have significant overhead and hence are to be avoided
+- One key mechanism CosmosDb provides to allow one to work efficiently is that any point-read request where one supplies a valid `etag` is charged at 1 RU, regardless of the size one would be transferring in the case of a cache miss (the other key benefit of using this is that it avoids unecessarly clogging of the bandwidth, and optimal latencies due to no unnecessary data transfers)
+- Indexing things surfaces in terms of increased request charges; at scale, each indexing hence needs to be justified
+- Similarly to EventStore, the default ARS encoding CosmosDb provides, together with interoperability concerns, means that straight json makes sense as an encoding form for events (UTF-8 arrays)
+- Collectively, the above implies that, counterintuitively, using the powerful generic querying facility that CosmosDb provides should actually be a last resort.
+- See [Cosmos Storage Model](#cosmos-storage-model) for further information on the specific encoding used, informed by these concerns.
+- Because reads, writes _and updates_ of items in the Tip document are charged based on the size of the document in units of 1KB, it's worth compressing and/or storing snapshots ouside of the Tip-document (while those factors are also a concern with EventStore, the key difference is their direct effect of charges in this case).
+
+The implications of how the changefeed mechanism works also have implications for how events and snapshots should be encoded and/or stored.
+- Each write results in a potential cost per changefeed consumer, hence one should minimize changefeed consumers count
+- Each update of a document can have the same effect in terms of Request Charges incurred in tracking the changefeed (each write results in a document "moving to the tail" in the consumption order - if multiple writes occur within a polling period, you'll only see the last one)
+- The changefeed presents a programming model which stores a position. Typically one should store that in an auxilliary collection in order to avoid feedback and/or interaction between the changefeed and those writes
+
+It can be useful to consider keeping snapshots in the auxilliary collection employed by the changefeed in order to optimize the interrelated concerns of not reading data redundantly, and not feeding back into the oneself (although having separate roundtrips obviously implications).
+ 
 # Programming Model
 
 NB this is long and needs _lots_ of editing, having started as a placeholder in [#50](https://github.com/jet/equinox/issues/50). The original article mixed two concerns: the programming model, and the `Equinox.Cosmos` implementation of the store; Some aspects have been been moved into [Cosmos Storage Model](#cosmos-storage-model), but both sides are still far from complete; don't look for a discernible story arc ;) **edits are absolutely welcome, as this is intended for an audience with diverse levels fo familiarity with event sourcing in general, and Equinox in particular**.
@@ -321,3 +384,67 @@ The `sync` stored procedure takes a document as input which is almost identical 
     - if the total length including the new `e`vents would exceed `maxEvents`, the Tip is 'renamed' (gets its `id` set to `i.toString()`) to become a batch, and the new events go into the new Tip-Batch, the _tip_ gets frozen as a `Batch`, and the new request becomes the _tip_ (as an atomic transaction on the server side)
 - (PROPOSAL/FUTURE) `thirdPartyUnfoldRetention`: how many events to keep before the base (`i`) of the batch if required by lagging `u`nfolds which would otherwise fall out of scope as a result of the appends in this batch (this will default to `0`, so for example if a writer says maxEvents `10` and there is an `u`nfold based on an event more than `10` old it will be removed as part of the appending process)
 - (PROPOSAL/FUTURE): adding an `expectedEtag` would enable competing writers to maintain and update `u`nfold data in a consistent fashion (backign off and retrying in the case of conflict, _without any events being written per state change_)
+
+# Equinox.Cosmos.Core.Events
+
+The `Equinox.Cosmos.Core` namespace provides a lower level API which can be used to manipulate events stored within a Azure CosmosDb using optimized native access patterns.
+
+The higher level APIs (i.e. not `Core`), as demonstrated by the `dotnet new templates` are recommended to be used in the general case, as they provide the following key benefits:
+
+- Domain logic is store-agnostic, leaving it easy to:
+  a) Unit Test in isolation (verifying decisions produce correct events)
+  b) Integration test using the `MemoryStore`, where relevant
+- Decouples encoding/decoding of events from the decision process of what events to write (means your Domain layer does not couple to a specific storage layer or encoding mechanism)
+- Enables efficient caching and/or snapshotting (providing Equinox with `fold`, `initial`, `isOrigin`, `unfold` and a codec allows it to manage this efficiently)
+- Provides Optimistic Concurrency Control with retries in the case of conflicting events
+
+## Example Code:
+
+```fsharp
+
+open Equinox.Cosmos.Core.Events
+// open MyCodecs.Json // example of using specific codec which can yield UTF-8 byte arrays from a type using `Json.toBytes` via Fleece or similar
+
+type EventData with
+    static member FromT eventType value = EventData.FromUtf8Bytes(eventType, Json.toBytes value)
+
+// Load connection sring from your Key Vault (example here is the CosmosDb simulator's well known key)
+let connectionString: string = "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;"
+
+// Forward to Log (you can use `Log.Logger` and/or `Log.ForContext` if your app uses Serilog already)
+let outputLog = LoggerConfiguration().WriteTo.NLog().CreateLogger()
+// Serilog has a `ForContext<T>()`, but if you are using a `module` for the wiring, you might create a tagged logger like this:
+let gatewayLog = outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
+
+// When starting the app, we connect (once)
+let connector : Equinox.Cosmos.EqxConnector =
+    EqxConnector(
+        requestTimeout = TimeSpan.FromSeconds 5.,
+        maxRetryAttemptsOnThrottledRequests = 1,
+        maxRetryWaitTimeInSeconds = 3,
+        log=gatewayLog)
+let cnx = connector.Connect("Application.CommandProcessor", Discovery.FromConnectionString connectionString) |> Async.RunSynchronously
+
+// If storing in a single collection, one specifies the db and collection
+// alternately use the overload which defers the mapping until the stream one is writing to becomes clear
+let coll = EqxCollections("databaseName","collectionName")
+let eqxCtx = EqxContext(cnx, coll, gatewayLog)
+
+//
+// Write an event
+//
+
+let expectedSequenceNumber = 0 // new stream
+let streamName, eventType, eventJson = "stream-1", "myEvent", Request.ToJson event
+let eventData = EventData.fromT(eventType, eventJson) |> Array.singleton
+
+let! res =
+    Events.append
+        eqxCtx
+        streamName 
+        expectedSequenceNumber 
+        eventData
+match res with
+| AppendResult.Ok -> ()
+| c -> failwithf "conflict %A" c
+```
