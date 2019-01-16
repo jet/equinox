@@ -58,6 +58,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{8F3E
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Todo", "Todo", "{8CDE1CC3-8619-44DE-8B4D-4102CE476C35}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Cosmos.Projection", "src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj", "{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -128,6 +130,10 @@ Global
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

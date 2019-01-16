@@ -2,8 +2,14 @@
 
 open Argu
 open Domain.Infrastructure
+#if !NET461
+open Equinox.Cosmos.Projection
+#endif
 open Equinox.Tool.Infrastructure
 open FSharp.UMX
+#if !NET461
+open Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing
+#endif
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure.Log
 open Samples.Infrastructure.Storage
@@ -12,6 +18,7 @@ open Serilog.Events
 open System
 open System.Net.Http
 open System.Threading
+open System.Collections.Generic
 
 [<NoEquality; NoComparison>]
 type Arguments =
@@ -21,8 +28,10 @@ type Arguments =
     | [<AltCommandLine("-l")>] LogFile of string
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
-    | [<Hidden>] // this command is not useful unless you have access to the [presently closed-source] Equinox.Cosmos.Projector
-      [<AltCommandLine("initAux"); CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
+    | [<AltCommandLine("initAux"); CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
+#if !NET461
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Project of ParseResults<ProjectArguments>
+#endif
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose -> "Include low level logging regarding specific test runs."
@@ -31,7 +40,10 @@ type Arguments =
             | LogFile _ -> "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ -> "Run a load test"
             | Init _ -> "Initialize store (presently only relevant for `cosmos`, where it creates database+collection+stored proc if not already present)."
-            | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the [presently closed source] Projector)."
+            | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the Projector)."
+#if !NET461
+            | Project _ -> "Project from store specified as the last argument, storing state in the specified `aux` Store (see initAux)."
+#endif
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     | [<AltCommandLine("-P")>] SkipStoredProc
@@ -50,6 +62,27 @@ and [<NoComparison>]InitAuxArguments =
             | Rus _ -> "Specify RU/s level to provision for the Application Collection."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
             | Cosmos _ -> "Cosmos Connection parameters."
+#if !NET461
+and [<NoComparison>]ProjectArguments =
+    | [<MainCommand; ExactlyOnce>] LeaseId of string
+    | [<AltCommandLine("-s"); Unique>] Suffix of string
+    | [<AltCommandLine("-b"); Unique>] ChangeFeedBatchSize of int
+    | [<AltCommandLine("-f"); Unique>] ForceStartFromHere
+    | [<AltCommandLine("-c"); Unique>] WriterCheckpointFreqS of float
+    | [<AltCommandLine("-l"); Unique>] LagFreqS of float
+    | [<AltCommandLine("-v"); Unique>] ChangeFeedVerbose
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | LeaseId _ -> "Projector instance context name."
+            | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
+            | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 1000"
+            | ForceStartFromHere _ -> "(Where this is `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and eveery event is projected from the start."
+            | WriterCheckpointFreqS _ -> "Specify frequency to update progress checkpoints. Default: 30s"
+            | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
+            | ChangeFeedVerbose -> "Request Verbose Logging from ChangeFeedProcessor. Default: off"
+            | Cosmos _ -> "Cosmos Connection parameters."
+#endif
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
     interface IArgParserTemplate with
@@ -240,10 +273,43 @@ let main argv =
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
                     do! Equinox.Cosmos.Store.Sync.Initialization.createAuxCollectionIfNotExists conn.Client (dbName,collName) rus }
             | _ -> failwith "please specify a `cosmos` endpoint"
+#if !NET461
+        | Project pargs ->
+            match pargs.TryGetSubCommand() with
+            | Some (ProjectArguments.Cosmos args) ->
+                let storeLog = createStoreLog (args.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
+                let (endpointUri, masterKey), dbName, collName, connectionPolicy = Cosmos.connectionPolicy (log,storeLog) args
+                pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
+                let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
+                let leaseId = pargs.GetResult(LeaseId)
+                log.Information("Processing using LeaseId {leaseId} in Aux coll {auxCollName}", leaseId, auxCollName)
+                let _checkpointInterval = pargs.GetResult(WriterCheckpointFreqS,30.) |> TimeSpan.FromSeconds
+                if pargs.Contains ForceStartFromHere then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
+                let source = { database = dbName; collection = collName }
+                let aux = { database = dbName; collection = auxCollName }
+                let run = async {
+                    let observe (context : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async { 
+                        log.Information("Range {rangeId} Observed {count} docs rc={requestCharge}", context.PartitionKeyRangeId, docs.Count, context.FeedResponse.RequestCharge)
+                    }
+                    let changeFeedObserver = IChangeFeedObserver.Create(log, observe)
+                    let! feedEventHost =
+                        ChangeFeedProcessor.Start
+                          ( log, endpointUri, masterKey, connectionPolicy, source, aux, changeFeedObserver,
+                            leasePrefix = leaseId,
+                            forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
+                            ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
+                            ?lagMonitorInterval = (pargs.TryGetResult LagFreqS |> Option.map TimeSpan.FromSeconds))
+                    do! Async.AwaitKeyboardInterrupt()
+                    log.Warning("Stopping...")
+                    do! feedEventHost.StopAsync() |> Async.AwaitTaskCorrect }
+                if pargs.Contains ChangeFeedVerbose then Log.Logger <- storeLog // LibLog will write to the global logger, if you let it
+                Async.RunSynchronously run
+            | _ -> failwith "please specify a `cosmos` endpoint"
+#endif
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
-        | _ -> failwith "Please specify a valid subcommand :- init, initAux or run"
+        | _ -> failwith "Please specify a valid subcommand :- init, initAux, project or run"
         0
     with e ->
         printfn "%s" e.Message
