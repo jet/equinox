@@ -301,6 +301,13 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Web
     ```
 
+4. **(WIP)** Run a projector
+
+    ```powershell
+    eqx initAux -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to stash projector checkpoints within
+    eqx project default cosmos -v # `default` represents the identiy of the projection - >=1 are allowed, allowing multiple independent projections to run concurrently # -v for verbose ChangeFeedProcessor logging
+    ```
+
 # FURTHER READING
 
 See [`DOCUMENTATION.md`](DOCUMENTATION.md)
