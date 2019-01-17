@@ -230,7 +230,7 @@ The above provisioning step provisions RUs in DocDB for the collection, which ad
 
     ```powershell
     dotnet new -i Equinox.Templates # see source in https://github.com/jet/dotnet-templates
-    dotnet new equinoxweb -t # -t for todos, defaults to memory store (-m) # use --help to see options regarding storage subsystem configuration etc
+    dotnet new eqxweb -t # -t for todos, defaults to memory store (-m) # use --help to see options regarding storage subsystem configuration etc
     ```
 
 2. Run the TodoBackend:
@@ -242,6 +242,10 @@ The above provisioning step provisions RUs in DocDB for the collection, which ad
 4. Run the standard TodoMvc frontend against your locally-hosted, fresh backend (See generated `readme.md` for more details)
     - Todo App: https://www.todobackend.com/client/index.html?https://localhost:5001/todos 
     - Run individual specs: https://www.todobackend.com/specs/index.html?https://localhost:5001/todos
+
+### Spin up a [TodoBackend](https://www.todobackend.com/) app with C# code
+
+While Equinox is implemented in F#, and F# is a great fit for writing event-sourced domain models, [the APIs are not F#-specific](https://docs.microsoft.com/en-us/dotnet/fsharp/style-guide/component-design-guidelines); there's a [C# edition of the template](https://github.com/jet/dotnet-templates/tree/master/equinox-web-csharp). The instructions are identical to the rest, but you need to use the `eqxwebcs` template instead of `eqxweb`.
 
 ### Store data in [EventStore](https://eventstore.org)
 
@@ -263,7 +267,7 @@ The above provisioning step provisions RUs in DocDB for the collection, which ad
 3. make and stand up sample app with EventStore wiring
 
     ```powershell
-    dotnet new equinoxweb -t -e # -t for todos, -e for eventstore
+    dotnet new eqxweb -t -e # -t for todos, -e for eventstore
     dotnet run -p Web
     ```
 
@@ -287,6 +291,6 @@ The above provisioning step provisions RUs in DocDB for the collection, which ad
 3. make and stand up sample app with CosmosDb wiring
 
     ```powershell
-    dotnet new equinoxweb -t -c # -t for todos, -c for cosmos
+    dotnet new eqxweb -t -c # -t for todos, -c for cosmos
     dotnet run -p Web
     ```
