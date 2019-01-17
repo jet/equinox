@@ -6,6 +6,7 @@ open Domain.Infrastructure
 open Equinox.Cosmos.Projection
 #endif
 open Equinox.Tool.Infrastructure
+open Equinox.Store.Infrastructure
 open FSharp.UMX
 #if !NET461
 open Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing
@@ -67,7 +68,7 @@ and [<NoComparison>]ProjectArguments =
     | [<MainCommand; ExactlyOnce>] LeaseId of string
     | [<AltCommandLine("-s"); Unique>] Suffix of string
     | [<AltCommandLine("-b"); Unique>] ChangeFeedBatchSize of int
-    | [<AltCommandLine("-f"); Unique>] ForceStartFromHere
+    | [<AltCommandLine("-i"); Unique>] ForceStartFromHere
     | [<AltCommandLine("-c"); Unique>] WriterCheckpointFreqS of float
     | [<AltCommandLine("-l"); Unique>] LagFreqS of float
     | [<AltCommandLine("-v"); Unique>] ChangeFeedVerbose
@@ -279,6 +280,7 @@ let main argv =
             | Some (ProjectArguments.Cosmos args) ->
                 let storeLog = createStoreLog (args.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
                 let (endpointUri, masterKey), dbName, collName, connectionPolicy = Cosmos.connectionPolicy (log,storeLog) args
+                pargs.TryGetResult ChangeFeedBatchSize |> Option.iter (fun bs -> log.Information("Using MaxItemCount {batchSize}", bs))
                 pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
                 let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
                 let leaseId = pargs.GetResult(LeaseId)
@@ -288,8 +290,10 @@ let main argv =
                 let source = { database = dbName; collection = collName }
                 let aux = { database = dbName; collection = auxCollName }
                 let run = async {
-                    let observe (context : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async { 
-                        log.Information("Range {rangeId} Observed {count} docs rc={requestCharge}", context.PartitionKeyRangeId, docs.Count, context.FeedResponse.RequestCharge)
+                    let observe (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
+                        let t, eventCount = (fun () -> docs |> Seq.collect Parse.enumEvents |> Seq.length) |> Stopwatch.Time 
+                        log.Information("Range {rangeId} Observed {count} docs with {events} events {requestCharge:n0}RU Parse: {t}ms",
+                            ctx.PartitionKeyRangeId, docs.Count, eventCount, ctx.FeedResponse.RequestCharge, let e = t.Elapsed in e.TotalMilliseconds)
                     }
                     let changeFeedObserver = IChangeFeedObserver.Create(log, observe)
                     let! feedEventHost =
