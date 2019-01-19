@@ -2,7 +2,7 @@
 
 Equinox provides a unified programming model for event sourced processing against diverse stream-based stores.
 
-[![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-blue.svg?style=popout)](DOCUMENTATION.md)
+[![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![release](https://img.shields.io/github/release/jet/equinox.svg)](https://github.com/jet/equinox/releases) [![NuGet](https://img.shields.io/nuget/vpre/Equinox.svg)](https://www.nuget.org/packages/Equinox/) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-blue.svg?style=popout)](DOCUMENTATION.md) ![code size](https://img.shields.io/github/languages/code-size/jet/equinox.svg) [![license](https://img.shields.io/github/license/jet/equinox.svg)](LICENSE)
 
 Current supported backends are:
 
@@ -10,11 +10,9 @@ Current supported backends are:
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains code dating back to 2016, however [the storage model](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking squash-merged in [#42](https://github.com/jet/equinox/pull/42).
 - (For integration test purposes only) Volatile in-memory store.
 
-The underlying patterns have their roots in the [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due.
-
 While the implementations are distilled from code from [`Jet.com` systems dating all the way back to 2013](http://gorodinski.com/blog/2013/02/17/domain-driven-design-with-fsharp-and-eventstore/), the abstractions in the API design are informed significantly by work, discussions and documentation and countless hours invested with no expectation of any reward from many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain) and the outstanding continuous work of the :raised_hands: [EventStore](https://github.com/eventstore) founders, team and community over the years.
 
-_If you're looking to learn more about and/or discuss Event Sourcing and it's myriad benefits, tradeoffs and pitfalls as you apply it to your Domain, look no further than the DDD-CQRS-ES Slack. There's a thriving 2000+ strong [community on Slack](https://t.co/MRxpx0rLH2) you'll get patient and impartial world class advice from 24x7._
+The underlying patterns have their roots in the [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due. _If you're looking to learn more about and/or discuss Event Sourcing and it's myriad benefits, tradeoffs and pitfalls as you apply it to your Domain, look no further than the thriving 2000+ member community on the [DDD-CQRS-ES Slack](https://github.com/ddd-cqrs-es/slack-community); you'll get patient and impartial world class advice from 24x7 (there's a [#equinox channel](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) if you want to ask for general help in advance of this being generally released - for now we're not declaring it released yet)._ [invite link](https://t.co/MRxpx0rLH2) 
 
 ## Features
 
@@ -47,24 +45,32 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 
 The Equinox components within this repository are delivered as a series of multi-targeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
-- `Equinox.Handler` (Nuget: `Equinox`, depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic decision flow runner that manages the optimistic concurrency protocol
-- `Equinox.Codec` (Nuget: `Equinox.Codec`, depends on `TypeShape`, `Newtonsoft.Json` (`>= 10.0.3` on `net461`, `>= 11.0.2` on `netstandard2.0` but can support any serializer): [a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/):
+### Core libraries
+- [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/) `Equinox.Handler` (depends on `Serilog` (but no specific Serilog sinks, i.e. you can forward to `NLog` etc)): Store-agnostic decision flow runner that manages the optimistic concurrency protocol
+- [![Codec NuGet](https://img.shields.io/nuget/v/Equinox.Codec.svg)](https://www.nuget.org/packages/Equinox.Codec/) `Equinox.Codec` (depends on `TypeShape`, `Newtonsoft.Json` (`>= 10.0.3` on `net461`, `>= 11.0.2` on `netstandard2.0` but can support any serializer): [a scheme for the serializing Events modelled as an F# Discriminated Union with the following capabilities](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/):
   - independent of any specific serializer
   - allows tagging of F# Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
-- `Equinox.Tool` (Nuget: `dotnet tool install Equinox.Tool -g`): Tool incorporating a benchmark scenario runner, facilitating running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any nominated store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
-- `Equinox.MemoryStore` (Nuget: `Equinox.MemoryStore`): In-memory store for integration testing/performance baselining/providing out-of-the-box zero dependency storage for examples.
-- `Equinox.EventStore` (Nuget: `Equinox.EventStore`, depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`): Production-strength [EventStore](https://eventstore.org/) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
-- `Equinox.Cosmos` (Nuget: `Equinox.Cosmos`, depends on `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`,  `Microsoft.Azure.DocumentDb[.Core]`): Production-strength Azure CosmosDb Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
-- `samples/Store` (in this repo): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
-- `samples/TodoBackend` (in this repo): Standard https://todobackend.com compliant backend
+
+### Store libraries
+- [![MemoryStore NuGet](https://img.shields.io/nuget/v/Equinox.MemoryStore.svg)](https://www.nuget.org/packages/Equinox.MemoryStore/) `Equinox.MemoryStore`: In-memory store for integration testing/performance baselining/providing out-of-the-box zero dependency storage for examples.
+- [![EventStore NuGet](https://img.shields.io/nuget/v/Equinox.EventStore.svg)](https://www.nuget.org/packages/Equinox.EventStore/) `Equinox.EventStore` (depends on `EventStore.Client[Api.NetCore] >= 4`, `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`): Production-strength [EventStore](https://eventstore.org/) Adapter instrumented to the degree necessitated by Jet's production monitoring requirements
+- [![Cosmos NuGet](https://img.shields.io/nuget/v/Equinox.Cosmos.svg)](https://www.nuget.org/packages/Equinox.Cosmos/) `Equinox.Cosmos` (depends on `System.Runtime.Caching`, `FSharp.Control.AsyncSeq`,  `Microsoft.Azure.DocumentDb[.Core]`): Production-strength Azure CosmosDb Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to the degree necessitated by Jet's production monitoring requirements.
+
+### `dotnet tool` provisioning / benchmarking tool
+
+- [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/) `Equinox.Tool` (Install via: `dotnet tool install Equinox.Tool -g`): Tool incorporating a benchmark scenario runner, facilitating running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any nominated store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects.
+
+### `dotnet new` starter project templates and sample applications
+
+-  [![Templates NuGet](https://img.shields.io/nuget/v/Equinox.Templates.svg)](https://www.nuget.org/packages/Equinox.Templates/) `Equinox.Templates`: (Install via `dotnet new -i Equinox.Templates && dotnet new eqxweb && dotnet new exqwebcs`) [The templates repo](https://github.com/jet/dotnet-templates) has C# and F# sample apps, see [the quickstart](quickstart) for examples of how to use it.
+- [`samples/Store` (in this repo)](/samples/Store): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
+- [`samples/TodoBackend` (in this repo)](/samples/TodoBackend): Standard https://todobackend.com compliant backend
 
 ## CONTRIBUTING
 
 Please raise GitHub issues for any questions so others can benefit from the discussion.
 
-The aim in the medium term (and the hope from the inception of this work) is to run Equinox as a proper Open Source project at the point where there is enough time for maintainers to do that properly.
-
-We are getting very close to that point and are extremely excited by that. But we're not there yet; this is intentionally a soft launch.
+The aim in the medium term (and the hope from the inception of this work) is to run Equinox as a proper Open Source project at the point where there is enough time for maintainers to do that properly. We are getting very close to that point and are extremely excited by that. But we're not there yet; this is intentionally a soft launch.
 
 Unfortunately, in the interim, the barrier for contributions will unfortunately be inordinately high:
 - bugfixes with good test coverage are always welcome - PRs yield [MyGet-hosted NuGets](https://www.myget.org/F/jet/api/v3/index.json); in general we'll seek to move them to NuGet prerelease and then NuGet release packages with relatively short timelines.
@@ -76,8 +82,6 @@ Unfortunately, in the interim, the barrier for contributions will unfortunately 
 - Naming is hard; there is definitely room for improvement. There may at some point be a set of controlled deprecations, switching to names, and then removing the old ones. However it should be noted that widespread renaming is not on the cards due to the number of downstream systems that would be affected.
 
 ## Versioning
-
-## About Versioning
 
 The repo is versioned based on [SemVer 2.0](https://semver.org/spec/v2.0.0.html) using the tiny-but-mighty [MinVer](https://github.com/adamralph/minver) from [@adamralph](https://github.com/adamralph). [See here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
 
