@@ -18,10 +18,10 @@ type Arguments =
     | [<AltCommandLine("-vc")>] VerboseConsole
     | [<AltCommandLine("-S")>] LocalSeq
     | [<AltCommandLine("-l")>] LogFile of string
-    | [<CliPrefix(CliPrefix.None); Last; Unique; AltCommandLine>] Run of ParseResults<TestArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
     | [<Hidden>] // this command is not useful unless you have access to the [presently closed-source] Equinox.Cosmos.Projector
-      [<CliPrefix(CliPrefix.None); Last; Unique; AltCommandLine("initAux")>] InitAux of ParseResults<InitAuxArguments>
+      [<AltCommandLine("initAux"); CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose -> "Include low level logging regarding specific test runs."
@@ -42,7 +42,7 @@ and [<NoComparison>]InitArguments =
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]InitAuxArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
-    | [<AltCommandLine("-s"); Mandatory>] Suffix of string
+    | [<AltCommandLine("-s")>] Suffix of string
     | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<CosmosArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
@@ -218,7 +218,7 @@ let main argv =
             match iargs.TryGetSubCommand() with
             | Some (InitArguments.Cosmos sargs) ->
                 let storeLog = createStoreLog (sargs.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
-                let dbName, collName, (_pageSize: int), conn = Cosmos.conn (log,storeLog) sargs
+                let dbName, collName, (_pageSize: int), conn = Cosmos.connect (log,storeLog) sargs
                 log.Information("Configuring CosmosDb Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
                 Async.RunSynchronously <| async {
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
@@ -232,8 +232,8 @@ let main argv =
             match iargs.TryGetSubCommand() with
             | Some (InitAuxArguments.Cosmos sargs) ->
                 let storeLog = createStoreLog (sargs.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
-                let dbName, collName, (_pageSize: int), conn = Cosmos.conn (log,storeLog) sargs
-                let collName = collName + (iargs.GetResult(InitAuxArguments.Suffix,"-aux"))
+                let dbName, collName, (_pageSize: int), conn = Cosmos.connect (log,storeLog) sargs
+                let collName = collName + iargs.GetResult(InitAuxArguments.Suffix,"-aux")
                 log.Information("Configuring CosmosDb Aux Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
                 Async.RunSynchronously <| async {
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName

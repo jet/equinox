@@ -1016,6 +1016,9 @@ type EqxConnector
 
         match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
 
+    /// Connection policy (for ChangeFeed)
+    member __.ConnectionPolicy : Client.ConnectionPolicy = connPolicy
+
     /// Yields a DocDbConnection configured per the specified strategy
     member __.Connect(name, discovery : Discovery) : Async<EqxConnection> = async {
         let! conn = connect(name, discovery)

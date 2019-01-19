@@ -62,12 +62,12 @@ module MemoryStore =
     let config () =
         StorageConfig.Memory (Equinox.MemoryStore.VolatileStore())
 
+/// To establish a local node to run the tests against:
+///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 module EventStore =
     open Equinox.EventStore
 
-    /// To establish a local node to run the tests against:
-    ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-    ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
     let private connect (log: ILogger) (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
         GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
                 heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
@@ -94,36 +94,39 @@ module EventStore =
             else None
         StorageConfig.Es ((createGateway conn defaultBatchSize), cacheStrategy, unfolds)
 
+/// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
+/// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
+/// 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net461/eqx.exe `
+///     cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 1000
 module Cosmos =
     open Equinox.Cosmos
 
-    /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
-    /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
-    /// 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net461/eqx.exe `
-    ///     cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 1000
-    let private connect (log: ILogger) mode discovery operationTimeout (maxRetryForThrottling, maxRetryWaitTime) =
-        EqxConnector(log=log, mode=mode, requestTimeout=operationTimeout, maxRetryAttemptsOnThrottledRequests=maxRetryForThrottling, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
-            .Connect("equinox-samples", discovery)
     let private createGateway connection (maxItems,maxEvents) = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=maxItems, maxEventsPerSlice=maxEvents))
-    let conn (log: ILogger, storeLog) (sargs : ParseResults<CosmosArguments>) =
+    let private ctx (log: ILogger, storeLog: ILogger) (sargs : ParseResults<CosmosArguments>) =
         let read key = Environment.GetEnvironmentVariable key |> Option.ofObj
-
-        let (Discovery.UriAndKey (connUri,_)) as discovery =
+        let (Discovery.UriAndKey (endpointUri,_)) as discovery =
             sargs.GetResult(Connection, defaultArg (read "EQUINOX_COSMOS_CONNECTION") "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;")
             |> Discovery.FromConnectionString
-
         let dbName = sargs.GetResult(Database, defaultArg (read "EQUINOX_COSMOS_DATABASE") "equinox-test")
         let collName = sargs.GetResult(Collection, defaultArg (read "EQUINOX_COSMOS_COLLECTION") "equinox-test")
         let timeout = sargs.GetResult(Timeout,5.) |> float |> TimeSpan.FromSeconds
         let mode = sargs.GetResult(ConnectionMode,ConnectionMode.DirectTcp)
-        let (retries, maxRetryWaitTime) as operationThrottling = sargs.GetResult(Retries, 1), sargs.GetResult(RetriesWaitTime, 5)
+        let retries = sargs.GetResult(Retries, 1)
+        let maxRetryWaitTime = sargs.GetResult(RetriesWaitTime, 5)
+        log.Information("Using CosmosDb {mode} {connection} Database {database} Collection: {collection}. ", mode, endpointUri, dbName, collName)
+        log.Information("CosmosDb timeout: {timeout}s, {retries} retries; Throttling maxRetryWaitTime {maxRetryWaitTime}", timeout.TotalSeconds, retries, maxRetryWaitTime)
+        let c = EqxConnector(log=storeLog, mode=mode, requestTimeout=timeout, maxRetryAttemptsOnThrottledRequests=retries, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
+        discovery, dbName, collName, c
+    let connectionPolicy (log, storeLog) (sargs : ParseResults<CosmosArguments>) =
+        let (Discovery.UriAndKey (endpointUri, masterKey)), dbName, collName, connector = ctx (log, storeLog) sargs
+        (endpointUri, masterKey), dbName, collName, connector.ConnectionPolicy
+    let connect (log : ILogger, storeLog) (sargs : ParseResults<CosmosArguments>) =
+        let discovery, dbName, collName, connector = ctx (log,storeLog) sargs
         let pageSize = sargs.GetResult(PageSize,1)
-        log.Information("Using CosmosDb {mode} Connection {connection} Database: {database} Collection: {collection} maxEventsPerSlice: {pageSize}. " +
-            "Request timeout: {timeout} with {retries} retries; throttling MaxRetryWaitTime {maxRetryWaitTime}",
-            mode, connUri, dbName, collName, pageSize, timeout, retries, maxRetryWaitTime)
-        dbName, collName, pageSize, connect storeLog mode discovery timeout operationThrottling |> Async.RunSynchronously
+        log.Information("CosmosDb MaxEventsPerSlice: {pageSize}", pageSize)
+        dbName, collName, pageSize, connector.Connect("equinox-samples", discovery) |> Async.RunSynchronously
     let config (log: ILogger, storeLog) (cache, unfolds) (sargs : ParseResults<CosmosArguments>) =
-        let dbName, collName, pageSize, conn = conn (log, storeLog) sargs
+        let dbName, collName, pageSize, conn = connect (log, storeLog) sargs
         let cacheStrategy =
             if cache then
                 let c = Caching.Cache("equinox-tool", sizeMb = 50)
