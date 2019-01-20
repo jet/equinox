@@ -58,7 +58,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{8F3E
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Todo", "Todo", "{8CDE1CC3-8619-44DE-8B4D-4102CE476C35}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Cosmos.Projection", "src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj", "{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cosmos.Projection", "src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj", "{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Kafka", "src\Equinox.Projection.Kafka\Equinox.Projection.Kafka.fsproj", "{F76A4BA7-3DA8-4012-843B-9E28A4D2EC86}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Kafka.Integration", "tests\Equinox.Projection.Kafka.Integration\Equinox.Projection.Kafka.Integration.fsproj", "{C8383D84-80F5-46B8-B59B-48B2359E6A37}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -134,6 +138,14 @@ Global
 		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F76A4BA7-3DA8-4012-843B-9E28A4D2EC86}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F76A4BA7-3DA8-4012-843B-9E28A4D2EC86}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F76A4BA7-3DA8-4012-843B-9E28A4D2EC86}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F76A4BA7-3DA8-4012-843B-9E28A4D2EC86}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8383D84-80F5-46B8-B59B-48B2359E6A37}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8383D84-80F5-46B8-B59B-48B2359E6A37}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8383D84-80F5-46B8-B59B-48B2359E6A37}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8383D84-80F5-46B8-B59B-48B2359E6A37}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
