@@ -949,7 +949,7 @@ type Discovery =
             let uri = m.Groups.[1].Value
             let key = m.Groups.[2].Value
             UriAndKey (Uri uri, key)
-        | _ -> invalidArg "connectionString" "unrecognized connection string format"
+        | _ -> invalidArg "connectionString" "unrecognized connection string format; must be `AccountEndpoint=https://...;AccountKey=...=;`"
 
 type ConnectionMode =
     /// Default mode, uses Https - inefficient as uses a double hop
