@@ -1,18 +1,20 @@
 # Equinox
 
+[![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![release](https://img.shields.io/github/release/jet/equinox.svg)](https://github.com/jet/equinox/releases) [![NuGet](https://img.shields.io/nuget/vpre/Equinox.svg)](https://www.nuget.org/packages/Equinox/) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-blue.svg?style=popout)](DOCUMENTATION.md) ![code size](https://img.shields.io/github/languages/code-size/jet/equinox.svg) [![license](https://img.shields.io/github/license/jet/equinox.svg)](LICENSE)
+
 Equinox provides a unified programming model for event sourced processing against diverse stream-based stores.
 
-[![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![release](https://img.shields.io/github/release/jet/equinox.svg)](https://github.com/jet/equinox/releases) [![NuGet](https://img.shields.io/nuget/vpre/Equinox.svg)](https://www.nuget.org/packages/Equinox/) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-blue.svg?style=popout)](DOCUMENTATION.md) ![code size](https://img.shields.io/github/languages/code-size/jet/equinox.svg) [![license](https://img.shields.io/github/license/jet/equinox.svg)](LICENSE)
+Critically, it strives to do that while remaining a humble set of _libraries_ that _you compose_ into an architecture that fits your needs as you see fit, not a final object model/processing pipeline/Architecture that's going dictate The Best one-size-fits-all Patterns. _You_ decide what facilities make sense for your context; Equinox covers the chosen infrastructural aspects without pulling in a cascade of dependencies from a jungle. (That's not to say we don't have plenty opinions and well polished patterns; we just try to confine the opinionated bits to [`samples`](samples) or [templates](https://github.com/jet/dotnet-templates), leaving the final judgement calls open to overruling as your changing (and expanding) needs dictate).
+
+While the implementations are distilled from code from [`Jet.com` systems dating all the way back to 2013](http://gorodinski.com/blog/2013/02/17/domain-driven-design-with-fsharp-and-eventstore/), the abstractions in the API design are informed significantly by work, discussions and documentation and countless hours invested with no expectation of any reward from many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain) and the outstanding continuous work of the :raised_hands: [EventStore](https://github.com/eventstore) founders, team and community over the years.
+
+The underlying patterns have their roots in the [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due. _If you're looking to learn more about and/or discuss Event Sourcing and it's myriad benefits, tradeoffs and pitfalls as you apply it to your Domain, look no further than the thriving 2000+ member community on the [DDD-CQRS-ES Slack](https://github.com/ddd-cqrs-es/slack-community); you'll get patient and impartial world class advice from 24x7 (psst there's an [#equinox channel](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) there; if you have questions or want to offer feedback in advance of it being documented enough to warrant declaring it _released_)._ ([invite link](https://t.co/MRxpx0rLH2))
 
 Current supported backends are:
 
 - [EventStore](https://eventstore.org/) - this codebase itself has been in production since 2017 (commit history reflects usage), with elements dating back to 2016.
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains code dating back to 2016, however [the storage model](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking squash-merged in [#42](https://github.com/jet/equinox/pull/42).
 - (For integration test purposes only) Volatile in-memory store.
-
-While the implementations are distilled from code from [`Jet.com` systems dating all the way back to 2013](http://gorodinski.com/blog/2013/02/17/domain-driven-design-with-fsharp-and-eventstore/), the abstractions in the API design are informed significantly by work, discussions and documentation and countless hours invested with no expectation of any reward from many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain) and the outstanding continuous work of the :raised_hands: [EventStore](https://github.com/eventstore) founders, team and community over the years.
-
-The underlying patterns have their roots in the [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community, and the hard work and generosity of countless folks there presenting, explaining, writing and hacking over the years. It would be unfair to single out even a small number of people despite the immense credit that is due. _If you're looking to learn more about and/or discuss Event Sourcing and it's myriad benefits, tradeoffs and pitfalls as you apply it to your Domain, look no further than the thriving 2000+ member community on the [DDD-CQRS-ES Slack](https://github.com/ddd-cqrs-es/slack-community); you'll get patient and impartial world class advice from 24x7 (there's a [#equinox channel](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) if you want to ask for general help in advance of this being generally released - for now we're not declaring it released yet)._ [invite link](https://t.co/MRxpx0rLH2) 
 
 ## Features
 
@@ -298,3 +300,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet new eqxweb -t -c # -t for todos, -c for cosmos
     dotnet run -p Web
     ```
+
+# FURTHER READING
+
+See [`DOCUMENTATION.md`](DOCUMENTATION.md)
