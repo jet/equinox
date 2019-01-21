@@ -121,6 +121,59 @@ type KafkaMessage internal (message : Message<string, string>) =
     member __.Key = message.Key
     member __.Value = message.Value
 
+[<NoComparison>]
+type KafkaProducerConfig(kvps, broker : Uri, compression : Config.Producer.Compression, acks : Config.Producer.Acks) =
+    member val Kvps = kvps
+    member val Acks = acks
+    member val Broker = broker
+    member val Compression = compression
+
+    /// Creates a Kafka producer instance with supplied configuration
+    static member Create
+        (   clientId : string, broker : Uri, 
+            /// Message compression. Defaults to 'none'.
+            ?compression,
+            /// Number of retries. Defaults to 60.
+            ?retries,
+            /// Backoff interval. Defaults to 1 second.
+            ?retryBackoff,
+            /// Statistics Interval. Defaults to no stats.
+            ?statisticsInterval,
+            /// Defaults to 10 ms.
+            ?queueBufferingMaxInterval,
+            /// Defaults to true.
+            ?socketKeepAlive,
+            /// Defaults to 200 milliseconds.
+            ?linger,
+            /// Defaults to 'One'
+            ?acks,
+            /// Defaults to 'consistent_random'.
+            ?partitioner,
+            /// Misc configuration parameter to be passed to the underlying CK producer.
+            ?custom) =
+
+        let compression = defaultArg compression Config.Producer.Compression.None
+        let acks = defaultArg acks Config.Producer.Acks.One
+        let config =
+            [|  yield Config.clientId ==> clientId
+                yield Config.broker ==> broker
+
+                yield Config.socketKeepAlive ==> defaultArg socketKeepAlive true
+                yield Config.retries ==> defaultArg retries 60
+                yield Config.retryBackoff ==> defaultArg retryBackoff (TimeSpan.FromSeconds 1.)
+                match statisticsInterval with Some t -> yield Config.statisticsInterval ==> t | None -> ()
+                yield Config.Producer.linger ==> defaultArg linger (TimeSpan.FromMilliseconds 200.)
+                yield Config.Producer.compression ==> compression 
+                yield Config.Producer.partitioner ==> defaultArg partitioner Config.Producer.Partitioner.ConsistentRandom
+                yield Config.Producer.acks ==> acks
+                yield Config.Producer.queueBufferingMaxInterval ==> defaultArg queueBufferingMaxInterval (TimeSpan.FromMilliseconds 10.)
+
+                // https://github.com/confluentinc/confluent-kafka-dotnet/issues/124#issuecomment-289727017
+                yield Config.logConnectionClose ==> false
+
+                match custom with None -> () | Some miscConfig -> yield! miscConfig |]
+        KafkaProducerConfig(config, broker, compression, acks)
+
 type KafkaProducer private (log: ILogger, producer : Producer<string, string>, topic : string) =
     let log = log.ForContext<KafkaProducer>()
     let d1 = producer.OnLog.Subscribe(fun m -> log.Information("{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
@@ -173,65 +226,20 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
                         let i = Interlocked.Increment numCompleted
                         results.[i - 1] <- m
                         if i = numMessages then tcs.TrySetResult results |> ignore }
-
-
-        do for key,value in keyValueBatch do
+        for key,value in keyValueBatch do
             producer.ProduceAsync(topic, key, value, blockIfQueueFull = true, deliveryHandler = handler)
-
-
         return! Async.AwaitTaskCorrect tcs.Task }
 
     interface IDisposable with member __.Dispose() = for d in [d1;d2;producer:>_] do d.Dispose()
 
-    /// Creates a Kafka producer instance with supplied configuration
-    static member Create
-        (   log: ILogger, clientId : string, broker : Uri, topic : string, 
-            /// Message compression. Defaults to 'none'.
-            ?compression,
-            /// Number of retries. Defaults to 60.
-            ?retries,
-            /// Backoff interval. Defaults to 1 second.
-            ?retryBackoff,
-            /// Statistics Interval. Defaults to no stats.
-            ?statisticsInterval,
-            /// Defaults to 10 ms.
-            ?queueBufferingMaxInterval,
-            /// Defaults to true.
-            ?socketKeepAlive,
-            /// Defaults to 200 milliseconds.
-            ?linger,
-            /// Defaults to 'One'
-            ?acks,
-            /// Defaults to 'consistent_random'.
-            ?partitioner,
-            /// Misc configuration parameter to be passed to the underlying CK producer.
-            ?custom) =
+    static member Create(log : ILogger, config : KafkaProducerConfig, topic : string) =
         if String.IsNullOrEmpty topic then nullArg "topic"
-
-        let config =
-            [|  yield Config.clientId ==> clientId
-                yield Config.broker ==> broker
-
-                yield Config.socketKeepAlive ==> defaultArg socketKeepAlive true
-                yield Config.retries ==> defaultArg retries 60
-                yield Config.retryBackoff ==> defaultArg retryBackoff (TimeSpan.FromSeconds 1.)
-                match statisticsInterval with Some t -> yield Config.statisticsInterval ==> t | None -> ()
-                yield Config.Producer.linger ==> defaultArg linger (TimeSpan.FromMilliseconds 200.)
-                yield Config.Producer.compression ==> defaultArg compression Config.Producer.Compression.None
-                yield Config.Producer.partitioner ==> defaultArg partitioner Config.Producer.Partitioner.ConsistentRandom
-                yield Config.Producer.acks ==> defaultArg acks Config.Producer.Acks.One
-                yield Config.Producer.queueBufferingMaxInterval ==> defaultArg queueBufferingMaxInterval (TimeSpan.FromMilliseconds 10.)
-
-                // https://github.com/confluentinc/confluent-kafka-dotnet/issues/124#issuecomment-289727017
-                yield Config.logConnectionClose ==> false
-
-                match custom with None -> () | Some miscConfig -> yield! miscConfig |]
-
-        log.Information("Starting Kafka Producer on topic={topic} broker={broker} compression={compression} acks={acks}", topic, broker, compression, acks)
-        let producer = new Producer<string, string>(config, mkSerializer(), mkSerializer())
+        log.Information("Starting Kafka Producer on topic={topic} broker={broker} compression={compression} acks={acks}",
+                          topic, config.Broker, config.Compression, config.Acks)
+        let producer = new Producer<string, string>(config.Kvps, mkSerializer(), mkSerializer())
         new KafkaProducer(log, producer, topic)
-
-module private ConsumerImpl =
+        
+ module private ConsumerImpl =
 
     /// used for calculating approximate message size in bytes
     let getMessageSize (message : Message<string, string>) =
