@@ -32,8 +32,8 @@ module Helpers =
             .CreateLogger()
 
     type Assert with
-            static member ThrowsAsync<'ExpectedExn when 'ExpectedExn :> exn> (workflow : Async<unit>) : unit =
-                Assert.ThrowsAsync<'ExpectedExn>(workflow) |> ignore
+        static member ThrowsAsync<'ExpectedExn when 'ExpectedExn :> exn> (workflow : Async<unit>) : unit =
+            Assert.ThrowsAsync<'ExpectedExn>(workflow) |> ignore
 
     let getTestBroker() = 
         match Environment.GetEnvironmentVariable "EQUINOX_KAFKA_BROKER" with
@@ -66,7 +66,7 @@ module Helpers =
 
     let runProducers log (broker : Uri) (topic : string) (numProducers : int) (messagesPerProducer : int) = async {
         let runProducer (producerId : int) = async {
-            use producer = KafkaProducer.Create(log, "panther", broker, topic)
+            use producer = KafkaProducer.Create(log, KafkaProducerConfig.Create( "panther", broker), topic)
 
             let! results =
                 [1 .. messagesPerProducer]
