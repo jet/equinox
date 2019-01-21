@@ -1,6 +1,9 @@
 namespace Equinox.Projection.Kafka.Infrastructure.Tests
 
+open Equinox.Projection.Kafka.Infrastructure
 open Newtonsoft.Json
+open Serilog
+open Swensen.Unquote
 open System
 open System.Collections.Concurrent
 open System.ComponentModel
@@ -12,31 +15,32 @@ open Xunit
 [<EditorBrowsable(EditorBrowsableState.Never)>]
 module Helpers =
 
-    let getTestBroker() = 
-        match Environment.GetEnvironmentVariable "KAFORK_TEST_BROKER" with
-        | x when String.IsNullOrEmpty x -> invalidOp "missing environment variable 'KAFORK_TEST_BROKER'"
-        | x -> Uri x
+    // Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
+    // NB VS does not surface these atm, but other test runners / test reports do
+    type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
+        let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null);
+        let writeSerilogEvent logEvent =
+            use writer = new System.IO.StringWriter()
+            formatter.Format(logEvent, writer);
+            writer |> string |> testOutput.WriteLine
+        interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
 
-    let newId() = System.Guid.NewGuid().ToString("N")
+    let createLogger sink =
+        LoggerConfiguration()
+            .WriteTo.Sink(sink)
+            .WriteTo.Seq("http://localhost:5341")
+            .CreateLogger()
 
     type Assert with
-        static member ThrowsAsync<'ExpectedExn when 'ExpectedExn :> exn> (workflow : Async<unit>) : unit =
-            Assert.ThrowsAsync<'ExpectedExn>(workflow) |> ignore
+            static member ThrowsAsync<'ExpectedExn when 'ExpectedExn :> exn> (workflow : Async<unit>) : unit =
+                Assert.ThrowsAsync<'ExpectedExn>(workflow) |> ignore
 
-    [<AbstractClass>]
-    type AsyncBuilderAbstract() =
-        member __.Zero() = async.Zero()
-        member __.Return t = async.Return t
-        member __.ReturnFrom t = async.ReturnFrom t
-        member __.Bind(f,g) = async.Bind(f,g)
-        member __.Combine(f,g) = async.Combine(f,g)
-        member __.Delay f = async.Delay f
-        member __.While(c,b) = async.While(c,b)
-        member __.For(xs,b) = async.For(xs,b)
-        member __.Using(d,b) = async.Using(d,b)
-        member __.TryWith(b,e) = async.TryWith(b,e)
-        member __.TryFinally(b,f) = async.TryFinally(b,f)
+    let getTestBroker() = 
+        match Environment.GetEnvironmentVariable "EQUINOX_KAFKA_BROKER" with
+        | x when String.IsNullOrEmpty x -> invalidOp "missing environment variable 'EQUINOX_KAFKA_BROKER'"
+        | x -> Uri x
 
+    let newId () = let g = System.Guid.NewGuid() in g.ToString("N")
 
     type Async with
         static member ParallelThrottled degreeOfParallelism jobs = async {
@@ -51,31 +55,18 @@ module Helpers =
                 |> Async.Parallel
         }
 
-    type TaskBuilder(?ct : CancellationToken) =
-        inherit AsyncBuilderAbstract()
-        member __.Run f : Task<'T> = Async.StartAsTask(f, ?cancellationToken = ct)
-
-    type UnitTaskBuilder() =
-        inherit AsyncBuilderAbstract()
-        member __.Run f : Task = Async.StartAsTask f :> _
-
-    /// Async builder variation that automatically runs top-level expression as task
-    let task = new TaskBuilder()
-
-    /// Async builder variation that automatically runs top-level expression as untyped task
-    let utask = new UnitTaskBuilder()
-
     type KafkaConsumer with
         member c.StopAfter(delay : TimeSpan) =
             Task.Delay(delay).ContinueWith(fun (_:Task) -> c.Stop()) |> ignore
 
     type TestMessage = { producerId : int ; messageId : int }
+    [<NoComparison>]
     type ConsumedTestMessage = { consumerId : int ; message : KafkaMessage ; payload : TestMessage }
     type ConsumerCallback = KafkaConsumer -> ConsumedTestMessage [] -> Async<unit>
 
-    let runProducers (broker : Uri) (topic : string) (numProducers : int) (messagesPerProducer : int) = async {
+    let runProducers log (broker : Uri) (topic : string) (numProducers : int) (messagesPerProducer : int) = async {
         let runProducer (producerId : int) = async {
-            use producer = KafkaProducer.Create("panther", broker, topic)
+            use producer = KafkaProducer.Create(log, "panther", broker, topic)
 
             let! results =
                 [1 .. messagesPerProducer]
@@ -94,7 +85,7 @@ module Helpers =
         return! Async.Parallel [for i in 1 .. numProducers -> runProducer i]
     }
 
-    let runConsumers (config : KafkaConsumerConfig) (numConsumers : int) (timeout : TimeSpan option) (handler : ConsumerCallback) = async {
+    let runConsumers log (config : KafkaConsumerConfig) (numConsumers : int) (timeout : TimeSpan option) (handler : ConsumerCallback) = async {
         let mkConsumer (consumerId : int) = async {
             let deserialize (msg : KafkaMessage) = { consumerId = consumerId ; message = msg ; payload = JsonConvert.DeserializeObject<_> msg.Value }
 
@@ -107,7 +98,7 @@ module Helpers =
                 | None -> Thread.SpinWait 20; getConsumer()
                 | Some c -> c
 
-            let consumer = KafkaConsumer.Start config (fun batch -> handler (getConsumer()) (Array.map deserialize batch))
+            let consumer = KafkaConsumer.Start log config (fun batch -> handler (getConsumer()) (Array.map deserialize batch))
 
             consumerCell := Some consumer
 
@@ -119,11 +110,11 @@ module Helpers =
         do! Async.Parallel [for i in 1 .. numConsumers -> mkConsumer i] |> Async.Ignore
     }
 
+type Tests(testOutputHelper) =
+    let testOutput = TestOutputAdapter testOutputHelper
+    let log = createLogger testOutput
 
-module Tests =
-
-    [<Test; Category("IntegrationTest")>]
-    let ``ConfluentKafka producer-consumer basic roundtrip`` () = utask {
+    let [<Fact>] ``ConfluentKafka producer-consumer basic roundtrip`` () = async {
         let broker = getTestBroker()
 
         let numProducers = 10
@@ -143,10 +134,10 @@ module Tests =
         }
 
         // Section: run the test
-        let producers = runProducers broker topic numProducers messagesPerProducer |> Async.Ignore
+        let producers = runProducers log broker topic numProducers messagesPerProducer |> Async.Ignore
 
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
-        let consumers = runConsumers config numConsumers None consumerCallback
+        let consumers = runConsumers log config numConsumers None consumerCallback
 
         do!
             [ producers ; consumers ]
@@ -158,14 +149,14 @@ module Tests =
             consumedBatches
             |> Seq.forall (not << Array.isEmpty)
 
-        Assert.IsTrue(``consumed batches should be non-empty``, "consumed batches should all be non-empty")
+        test <@ ``consumed batches should be non-empty`` @> // "consumed batches should all be non-empty")
 
         let ``batches should be grouped by partition`` =
             consumedBatches
             |> Seq.map (fun batch -> batch |> Seq.distinctBy (fun b -> b.message.Partition) |> Seq.length)
             |> Seq.forall (fun numKeys -> numKeys = 1)
         
-        Assert.IsTrue(``batches should be grouped by partition``, "batches should be grouped by partition")
+        test <@ ``batches should be grouped by partition`` @> // "batches should be grouped by partition"
 
         let allMessages =
             consumedBatches
@@ -175,7 +166,7 @@ module Tests =
         let ``all message keys should have expected value`` =
             allMessages |> Array.forall (fun msg -> int msg.message.Key = msg.payload.messageId)
 
-        Assert.IsTrue(``all message keys should have expected value``, "all message keys should have expected value")
+        test <@ ``all message keys should have expected value`` @> // "all message keys should have expected value"
 
         let ``should have consumed all expected messages`` =
             allMessages
@@ -183,51 +174,48 @@ module Tests =
             |> Array.map (fun (_, gp) -> gp |> Array.distinctBy (fun msg -> msg.payload.messageId))
             |> Array.forall (fun gp -> gp.Length = messagesPerProducer)
 
-        Assert.IsTrue(``should have consumed all expected messages``, "should have consumed all expected messages")
+        test <@ ``should have consumed all expected messages`` @> // "should have consumed all expected messages"
     }
 
-    [<Test; Category("IntegrationTest")>]
-    let ``ConfluentKafka consumer should have expected exception semantics`` () = utask {
+    let [<Fact>] ``ConfluentKafka consumer should have expected exception semantics`` () = async {
         let broker = getTestBroker()
 
         let topic = newId() // dev kafka topics are created and truncated automatically
         let groupId = newId()
 
-        let! _ = runProducers broker topic 1 10 // populate the topic with a few messages
+        let! _ = runProducers log broker topic 1 10 // populate the topic with a few messages
 
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
-        runConsumers config 1 None (fun _ _ -> raise <| IndexOutOfRangeException())
+        runConsumers log config 1 None (fun _ _ -> raise <| IndexOutOfRangeException())
         |> Assert.ThrowsAsync<IndexOutOfRangeException>
     }
 
-    [<Test; Category("IntegrationTest")>]
-    let ``Given a topic different consumer group ids should be consuming the same message set`` () = utask {
+    let [<Fact>] ``Given a topic different consumer group ids should be consuming the same message set`` () = async {
         let broker = getTestBroker()
         let numMessages = 10
 
         let topic = newId() // dev kafka topics are created and truncated automatically
 
-        let! _ = runProducers broker topic 1 numMessages // populate the topic with a few messages
+        let! _ = runProducers log broker topic 1 numMessages // populate the topic with a few messages
 
         let messageCount = ref 0
         let groupId1 = newId()
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId1)
-        do! runConsumers config 1 None 
+        do! runConsumers log config 1 None 
                 (fun c b -> async { if Interlocked.Add(messageCount, b.Length) >= numMessages then c.Stop() })
 
-        Assert.AreEqual(numMessages, !messageCount)
+        test <@ numMessages = !messageCount @>
 
         let messageCount = ref 0
         let groupId2 = newId()
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId2)
-        do! runConsumers config 1 None
+        do! runConsumers log config 1 None
                 (fun c b -> async { if Interlocked.Add(messageCount, b.Length) >= numMessages then c.Stop() })
 
-        Assert.AreEqual(numMessages, !messageCount)
+        test <@ numMessages = !messageCount @>
     }
 
-    [<Test; Category("IntegrationTest")>]
-    let ``Spawning a new consumer with same consumer group id should not receive new messages`` () = utask {
+    let [<Fact>] ``Spawning a new consumer with same consumer group id should not receive new messages`` () = async {
         let broker = getTestBroker()
 
         let numMessages = 10
@@ -235,28 +223,27 @@ module Tests =
         let groupId = newId()
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
 
-        let! _ = runProducers broker topic 1 numMessages // populate the topic with a few messages
+        let! _ = runProducers log broker topic 1 numMessages // populate the topic with a few messages
 
         // expected to read 10 messages from the first consumer
         let messageCount = ref 0
-        do! runConsumers config 1 None
+        do! runConsumers log config 1 None
                 (fun c b -> async {
                     if Interlocked.Add(messageCount, b.Length) >= numMessages then 
                         c.StopAfter(TimeSpan.FromSeconds 1.) }) // cancel after 1 second to allow offsets to be stored
 
-        Assert.AreEqual(numMessages, !messageCount)
+        test <@ numMessages = !messageCount @>
 
         // expected to read no messages from the subsequent consumer
         let messageCount = ref 0
-        do! runConsumers config 1 (Some (TimeSpan.FromSeconds 10.)) 
+        do! runConsumers log config 1 (Some (TimeSpan.FromSeconds 10.)) 
                 (fun c b -> async { 
                     if Interlocked.Add(messageCount, b.Length) >= numMessages then c.Stop() })
 
-        Assert.AreEqual(0, !messageCount)
+        test <@ 0 = !messageCount @>
     }
 
-    [<Test; Category("IntegrationTest")>]
-    let ``Commited offsets should not result in missing messages`` () = utask {
+    let [<Fact>] ``Commited offsets should not result in missing messages`` () = async {
         let broker = getTestBroker()
 
         let numMessages = 10
@@ -264,32 +251,31 @@ module Tests =
         let groupId = newId()
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
 
-        let! _ = runProducers broker topic 1 numMessages // populate the topic with a few messages
+        let! _ = runProducers log broker topic 1 numMessages // populate the topic with a few messages
 
         // expected to read 10 messages from the first consumer
         let messageCount = ref 0
-        do! runConsumers config 1 None
+        do! runConsumers log config 1 None
                 (fun c b -> async {
                     if Interlocked.Add(messageCount, b.Length) >= numMessages then 
                         c.StopAfter(TimeSpan.FromSeconds 1.) }) // cancel after 1 second to allow offsets to be committed)
 
-        Assert.AreEqual(numMessages, !messageCount)
+        test <@ numMessages = !messageCount @>
 
-        let! _ = runProducers broker topic 1 numMessages // produce more messages
+        let! _ = runProducers log broker topic 1 numMessages // produce more messages
 
         // expected to read 10 messages from the subsequent consumer,
         // this is to verify there are no off-by-one errors in how offsets are committed
         let messageCount = ref 0
-        do! runConsumers config 1 None
+        do! runConsumers log config 1 None
                 (fun c b -> async {
                     if Interlocked.Add(messageCount, b.Length) >= numMessages then 
                         c.StopAfter(TimeSpan.FromSeconds 1.) }) // cancel after 1 second to allow offsets to be committed)
 
-        Assert.AreEqual(numMessages, !messageCount)
+        test <@ numMessages = !messageCount @>
     }
 
-    [<Test; Category("IntegrationTest")>]
-    let ``Consumers should never schedule two batches of the same partition concurrently`` () = utask {
+    let [<Fact>] ``Consumers should never schedule two batches of the same partition concurrently`` () = async {
         // writes 2000 messages down a topic with a shuffled partition key
         // then attempts to consume the topic, while verifying that per-partition batches
         // are never scheduled for concurrent execution. also checks that batches are
@@ -303,7 +289,7 @@ module Tests =
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId, maxBatchSize = maxBatchSize)
 
         // Produce messages in the topic
-        do! runProducers broker topic 1 numMessages |> Async.Ignore
+        do! runProducers log broker topic 1 numMessages |> Async.Ignore
 
         let globalMessageCount = ref 0
 
@@ -315,22 +301,22 @@ module Tests =
             let state = new ConcurrentDictionary<int, int ref>()
             fun partition -> state.GetOrAdd(partition, fun _ -> ref 0)
 
-        do! runConsumers config 1 None
+        do! runConsumers log config 1 None
                 (fun c b -> async {
                     let partition = b.[0].message.Partition
 
                     // check batch sizes are bounded by maxBatchSize
-                    Assert.LessOrEqual(b.Length, maxBatchSize, "batch sizes should never exceed maxBatchSize")
+                    test <@ b.Length <= maxBatchSize @> // "batch sizes should never exceed maxBatchSize")
 
                     // check per-partition handlers are serialized
                     let concurrentBatchCell = getBatchPartitionCount partition
                     let concurrentBatches = Interlocked.Increment concurrentBatchCell
-                    Assert.AreEqual(1, concurrentBatches, "partitions should never schedule more than one batch concurrently")
+                    test <@ 1 = concurrentBatches @> // "partitions should never schedule more than one batch concurrently")
 
                     // check for message monotonicity
                     let offset = getPartitionOffset partition
                     for msg in b do
-                        Assert.Greater(msg.message.Offset, !offset, "offset for partition should be monotonic")
+                        Assert.True(msg.message.Offset > !offset, "offset for partition should be monotonic")
                         offset := msg.message.Offset
 
                     do! Async.Sleep 100
@@ -340,5 +326,5 @@ module Tests =
                     if Interlocked.Add(globalMessageCount, b.Length) >= numMessages then c.Stop() })
 
 
-        Assert.AreEqual(numMessages, !globalMessageCount)
+        Assert.Equal(numMessages, !globalMessageCount)
     }
