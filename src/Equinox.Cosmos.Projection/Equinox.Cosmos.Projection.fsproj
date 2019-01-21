@@ -12,12 +12,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
+    <ProjectReference Include="../Equinox.Cosmos/Equinox.Cosmos.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0-beta-63127-02" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="1.0.0-beta.2" PrivateAssets="All" />
+
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
-    <PackageReference Include="Microsoft.Azure.DocumentDB.Core" Version="2.2.1" />
+
     <PackageReference Include="Microsoft.Azure.DocumentDB.ChangeFeedProcessor" Version="2.2.5" />
   </ItemGroup>
 
