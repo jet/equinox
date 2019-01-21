@@ -41,6 +41,7 @@ module private Helpers =
                 |> ignore
 
 // A small DSL for interfacing with Kafka configuration c.f. https://kafka.apache.org/documentation/#configuration
+/// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md for documentation on the implications of specfic settings
 [<RequireQualifiedAccess>]
 module Config =
 
@@ -80,7 +81,7 @@ module Config =
     /// Config keys applying to Producers
     module Producer =
         type Acks = Zero | One | All
-        type Compression    = None | GZip | Snappy | LZ4
+        type Compression = None | GZip | Snappy | LZ4
         type Partitioner = Random | Consistent | ConsistentRandom
 
         let acks                = mkKey "acks" (function Zero -> 0 | One -> 1 | All -> -1)
@@ -230,87 +231,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         let producer = new Producer<string, string>(config, mkSerializer(), mkSerializer())
         new KafkaProducer(log, producer, topic)
 
-[<NoComparison>]
-type KafkaConsumerConfig =
-    {   clientId : string; broker : Uri; topics : string list; groupId : string
-        autoOffsetReset : Config.Consumer.AutoOffsetReset
-        offsetCommitInterval : TimeSpan
-        fetchMinBytes : int; fetchMaxBytes : int
-        retries : int; retryBackoff : TimeSpan
-        statisticsInterval : TimeSpan option
-        pollTimeout : TimeSpan
-        maxBatchSize : int; maxBatchDelay : TimeSpan
-        minInFlightBytes : int64; maxInFlightBytes : int64
-        miscConfig : KeyValuePair<string, obj> list }
-    static member Create
-        (   /// Identify this consumer in logs etc
-            clientId, broker, topics,
-            /// Consumer group identifier.
-            groupId,
-            /// Default Earliest.
-            ?autoOffsetReset,
-            /// Default 100kB.
-            ?fetchMaxBytes,
-            /// Default 10B.
-            ?fetchMinBytes,
-            /// Default 60.
-            ?retries,
-            /// Default 1s.
-            ?retryBackoff, ?statisticsInterval,
-            /// Poll timeout used by the CK consumer. Default 200ms.
-            ?pollTimeout,
-            /// Maximum number of messages to group per batch on consumer callbacks. Default 1000.
-            ?maxBatchSize,
-            /// Message batch linger time. Default 500ms.
-            ?maxBatchDelay,
-            /// Consumed offsets commit interval. Default 10s. (WAS 1s)
-            ?offsetCommitInterval,
-            /// Minimum total size of consumed messages in-memory for the consumer to attempt to fill. Default 16MiB.
-            ?minInFlightBytes,
-            /// Maximum total size of consumed messages in-memory before broker polling is throttled. Default 24MiB.
-            ?maxInFlightBytes,
-            /// Misc configuration parameters to pass to the underlying CK consumer.
-            ?custom) =
-        {   clientId = clientId; broker = broker; topics = match Seq.toList topics with [] -> invalidArg "topics" "must be non-empty collection" | ts -> ts
-            groupId = groupId
-            autoOffsetReset = defaultArg autoOffsetReset Config.Consumer.AutoOffsetReset.Earliest
-            fetchMaxBytes = defaultArg fetchMaxBytes 100000
-            fetchMinBytes = defaultArg fetchMinBytes 10 // TODO check if sane default
-            retries = defaultArg retries 60
-            retryBackoff = defaultArg retryBackoff (TimeSpan.FromSeconds 1.)
-            statisticsInterval = statisticsInterval
-            pollTimeout = defaultArg pollTimeout (TimeSpan.FromMilliseconds 200.)
-            maxBatchSize = defaultArg maxBatchSize 1000
-            maxBatchDelay = defaultArg maxBatchDelay (TimeSpan.FromMilliseconds 500.)
-            minInFlightBytes = defaultArg minInFlightBytes (16L * 1024L * 1024L)
-            maxInFlightBytes = defaultArg maxInFlightBytes (24L * 1024L * 1024L)
-            offsetCommitInterval = defaultArg offsetCommitInterval (TimeSpan.FromSeconds 10.)
-            miscConfig = match custom with None -> [] | Some c -> Seq.toList c }
-
 module private ConsumerImpl =
-
-    type KafkaConsumerConfig with
-        member c.ToKeyValuePairs() =
-            [|  yield Config.clientId ==> c.clientId
-                yield Config.broker ==> c.broker
-                yield Config.Consumer.groupId ==> c.groupId
-
-                yield Config.Consumer.fetchMaxBytes ==> c.fetchMaxBytes
-                yield Config.Consumer.fetchMinBytes ==> c.fetchMinBytes
-                yield Config.retries ==> c.retries
-                yield Config.retryBackoff ==> c.retryBackoff
-                match c.statisticsInterval with None -> () | Some t -> yield Config.statisticsInterval ==> t
-
-                yield Config.Consumer.enableAutoCommit ==> true
-                yield Config.Consumer.enableAutoOffsetStore ==> false
-                yield Config.Consumer.autoCommitInterval ==> c.offsetCommitInterval
-
-                yield Config.Consumer.topicConfig ==> [ Config.Consumer.autoOffsetReset ==> Config.Consumer.AutoOffsetReset.Earliest ]
-
-                // https://github.com/confluentinc/confluent-kafka-dotnet/issues/124#issuecomment-289727017
-                yield Config.logConnectionClose ==> false
-
-                yield! c.miscConfig |]
 
     /// used for calculating approximate message size in bytes
     let getMessageSize (message : Message<string, string>) =
@@ -390,14 +311,6 @@ module private ConsumerImpl =
                 log.Information "Consumer resuming polling"
 
     type Consumer<'Key, 'Value> with
-        static member Create (config : KafkaConsumerConfig) keyDeserializer valueDeserializer =
-            let kvps = config.ToKeyValuePairs()
-            let consumer = new Consumer<'Key, 'Value>(kvps, keyDeserializer, valueDeserializer)
-            let _ = consumer.OnPartitionsAssigned.Subscribe(fun m -> consumer.Assign m)
-            let _ = consumer.OnPartitionsRevoked.Subscribe(fun _ -> consumer.Unassign())
-            consumer.Subscribe config.topics
-            consumer
-
         member c.StoreOffset(tpo : TopicPartitionOffset) =
             c.StoreOffsets[| TopicPartitionOffset(tpo.Topic, tpo.Partition, Offset(let o = tpo.Offset in o.Value + 1L)) |]
             |> ignore
@@ -432,7 +345,15 @@ module private ConsumerImpl =
             let d6 = c.OnOffsetsCommitted.Subscribe(fun cos -> for fmt in fmtTopicPartitionOffsetErrors cos.Offsets do log.Information("consumer_committed_offsets|{offsets}{oe}", fmt, fmtError cos.Error))
             { new IDisposable with member __.Dispose() = for d in [d1;d2;d3;d4;d5;d6] do d.Dispose() }
 
-    let mkBatchedMessageConsumer (log: ILogger) (config : KafkaConsumerConfig) (ct : CancellationToken) (consumer : Consumer<string, string>) (handler : KafkaMessage[] -> Async<unit>) = async {
+    let mkConsumer (kvps, topics : string seq) keyDeserializer valueDeserializer =
+        let consumer = new Consumer<'Key, 'Value>(kvps, keyDeserializer, valueDeserializer)
+        let _ = consumer.OnPartitionsAssigned.Subscribe(fun m -> consumer.Assign m)
+        let _ = consumer.OnPartitionsRevoked.Subscribe(fun _ -> consumer.Unassign())
+        consumer.Subscribe topics
+        consumer
+
+    let mkBatchedMessageConsumer (log: ILogger) (minInFlightBytes, maxInFlightBytes, maxBatchSize, maxBatchDelay, pollTimeout)
+            (ct : CancellationToken) (consumer : Consumer<string, string>) (handler : KafkaMessage[] -> Async<unit>) = async {
         let tcs = new TaskCompletionSource<unit>()
         use cts = CancellationTokenSource.CreateLinkedTokenSource(ct)
         use _ = ct.Register(fun _ -> tcs.TrySetResult () |> ignore)
@@ -440,14 +361,14 @@ module private ConsumerImpl =
         use _ = consumer
         use _ = consumer.WithLogging(log)
         
-        let counter = new InFlightMessageCounter(log, config.minInFlightBytes, config.maxInFlightBytes)
+        let counter = new InFlightMessageCounter(log, minInFlightBytes, maxInFlightBytes)
         let partitionedCollection = new PartitionedBlockingCollection<TopicPartition, Message<string, string>>()
 
         // starts a tail recursive loop which dequeues batches for a given partition buffer and schedules the user callback
         let consumePartition (_key : TopicPartition) (collection : BlockingCollection<Message<string, string>>) =
-            let buffer = Array.zeroCreate config.maxBatchSize
+            let buffer = Array.zeroCreate maxBatchSize
             let nextBatch () =
-                let count = collection.FillBuffer(buffer, config.maxBatchDelay)
+                let count = collection.FillBuffer(buffer, maxBatchDelay)
                 let batch = Array.init count (fun i -> mkMessage buffer.[i])
                 Array.Clear(buffer, 0, count)
                 batch
@@ -477,13 +398,98 @@ module private ConsumerImpl =
         use _ = consumer.OnPartitionsRevoked.Subscribe (fun ps -> for p in ps do partitionedCollection.Revoke p)
         use _ = consumer.OnMessage.Subscribe (fun m -> counter.Add(getMessageSize m) ; partitionedCollection.Add(m.TopicPartition, m))
 
-        use _ = consumer.RunPoll(config.pollTimeout, counter) // run the consumer
+        use _ = consumer.RunPoll(pollTimeout, counter) // run the consumer
 
         // await for handler faults or external cancellation
         do! Async.AwaitTaskCorrect tcs.Task
     }
 
-open ConsumerImpl
+[<NoComparison>]
+type KafkaConsumerConfig =
+    {   clientId : string; broker : Uri; topics : string list; groupId : string
+        autoOffsetReset : Config.Consumer.AutoOffsetReset
+        offsetCommitInterval : TimeSpan
+        fetchMinBytes : int; fetchMaxBytes : int
+        retries : int; retryBackoff : TimeSpan
+        statisticsInterval : TimeSpan option
+        miscConfig : KeyValuePair<string, obj> list
+
+        (* Local Batching configuration *)
+
+        minInFlightBytes : int64; maxInFlightBytes : int64
+        maxBatchSize : int; maxBatchDelay : TimeSpan
+        pollTimeout : TimeSpan }
+    member c.ToKeyValuePairs() =
+        [|  yield Config.clientId ==> c.clientId
+            yield Config.broker ==> c.broker
+            yield Config.Consumer.groupId ==> c.groupId
+
+            yield Config.Consumer.fetchMaxBytes ==> c.fetchMaxBytes
+            yield Config.Consumer.fetchMinBytes ==> c.fetchMinBytes
+            yield Config.retries ==> c.retries
+            yield Config.retryBackoff ==> c.retryBackoff
+            match c.statisticsInterval with None -> () | Some t -> yield Config.statisticsInterval ==> t
+
+            yield Config.Consumer.enableAutoCommit ==> true
+            yield Config.Consumer.enableAutoOffsetStore ==> false
+            yield Config.Consumer.autoCommitInterval ==> c.offsetCommitInterval
+
+            yield Config.Consumer.topicConfig ==> [ Config.Consumer.autoOffsetReset ==> Config.Consumer.AutoOffsetReset.Earliest ]
+
+            // https://github.com/confluentinc/confluent-kafka-dotnet/issues/124#issuecomment-289727017
+            yield Config.logConnectionClose ==> false
+
+            yield! c.miscConfig |]
+
+    /// Builds a Kafka Consumer Config suitable for KafkaConsumer.Start*
+    static member Create
+        (   /// Identify this consumer in logs etc
+            clientId, broker, topics,
+            /// Consumer group identifier.
+            groupId,
+            /// Default Earliest.
+            ?autoOffsetReset,
+            /// Default 100kB.
+            ?fetchMaxBytes,
+            /// Default 10B.
+            ?fetchMinBytes,
+            /// Default 60.
+            ?retries,
+            /// Default 1s.
+            ?retryBackoff, ?statisticsInterval,
+            /// Consumed offsets commit interval. Default 10s. (WAS 1s)
+            ?offsetCommitInterval,
+            /// Misc configuration parameters to pass to the underlying CK consumer.
+            ?custom,
+
+            (* Client side batching *)
+
+            /// Poll timeout used by the CK consumer. Default 200ms.
+            ?pollTimeout,
+            /// Maximum number of messages to group per batch on consumer callbacks. Default 1000.
+            ?maxBatchSize,
+            /// Message batch linger time. Default 500ms.
+            ?maxBatchDelay,
+            /// Minimum total size of consumed messages in-memory for the consumer to attempt to fill. Default 16MiB.
+            ?minInFlightBytes,
+            /// Maximum total size of consumed messages in-memory before broker polling is throttled. Default 24MiB.
+            ?maxInFlightBytes) =
+        {   clientId = clientId; broker = broker; topics = match Seq.toList topics with [] -> invalidArg "topics" "must be non-empty collection" | ts -> ts
+            groupId = groupId
+            autoOffsetReset = defaultArg autoOffsetReset Config.Consumer.AutoOffsetReset.Earliest
+            fetchMaxBytes = defaultArg fetchMaxBytes 100000
+            fetchMinBytes = defaultArg fetchMinBytes 10 // TODO check if sane default
+            retries = defaultArg retries 60
+            retryBackoff = defaultArg retryBackoff (TimeSpan.FromSeconds 1.)
+            statisticsInterval = statisticsInterval
+            offsetCommitInterval = defaultArg offsetCommitInterval (TimeSpan.FromSeconds 10.)
+            miscConfig = match custom with None -> [] | Some c -> Seq.toList c
+            
+            pollTimeout = defaultArg pollTimeout (TimeSpan.FromMilliseconds 200.)
+            maxBatchSize = defaultArg maxBatchSize 1000
+            maxBatchDelay = defaultArg maxBatchDelay (TimeSpan.FromMilliseconds 500.)
+            minInFlightBytes = defaultArg minInFlightBytes (16L * 1024L * 1024L)
+            maxInFlightBytes = defaultArg maxInFlightBytes (24L * 1024L * 1024L) }
 
 type KafkaConsumer private (config : KafkaConsumerConfig, consumer : Consumer<string, string>, task : Task<unit>, cts : CancellationTokenSource) =
 
@@ -508,8 +514,9 @@ type KafkaConsumer private (config : KafkaConsumerConfig, consumer : Consumer<st
                         config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay)
 
         let cts = new CancellationTokenSource()
-        let consumer = Consumer<string, string>.Create config (mkDeserializer()) (mkDeserializer())
-        let task = ConsumerImpl.mkBatchedMessageConsumer log config cts.Token consumer partitionHandler |> Async.StartAsTask
+        let consumer = ConsumerImpl.mkConsumer (config.ToKeyValuePairs(), config.topics) (mkDeserializer()) (mkDeserializer())
+        let cfg = config.minInFlightBytes, config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay, config.pollTimeout
+        let task = ConsumerImpl.mkBatchedMessageConsumer log cfg cts.Token consumer partitionHandler |> Async.StartAsTask
 
         new KafkaConsumer(config, consumer, task, cts)
 
