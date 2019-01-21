@@ -31,10 +31,6 @@ module Helpers =
             .WriteTo.Seq("http://localhost:5341")
             .CreateLogger()
 
-    type Assert with
-        static member ThrowsAsync<'ExpectedExn when 'ExpectedExn :> exn> (workflow : Async<unit>) : unit =
-            Assert.ThrowsAsync<'ExpectedExn>(workflow) |> ignore
-
     let getTestBroker() = 
         match Environment.GetEnvironmentVariable "EQUINOX_KAFKA_BROKER" with
         | x when String.IsNullOrEmpty x -> invalidOp "missing environment variable 'EQUINOX_KAFKA_BROKER'"
@@ -102,7 +98,7 @@ module Helpers =
 
             consumerCell := Some consumer
 
-            timeout |> Option.iter (fun t -> consumer.StopAfter t)
+            timeout |> Option.iter consumer.StopAfter
 
             do! consumer.AwaitConsumer()
         }
@@ -110,13 +106,14 @@ module Helpers =
         do! Async.Parallel [for i in 1 .. numConsumers -> mkConsumer i] |> Async.Ignore
     }
 
-type Tests(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
-    let log = createLogger testOutput
+type FactIfBroker() =
+    inherit FactAttribute()
+    override __.Skip = if null <> Environment.GetEnvironmentVariable "EQUINOX_KAFKA_BROKER" then null else "Skipping as no EQUINOX_KAFKA_BROKER supplied"
 
-    let [<Fact>] ``ConfluentKafka producer-consumer basic roundtrip`` () = async {
-        let broker = getTestBroker()
+type T1(testOutputHelper) =
+    let log, broker = createLogger (TestOutputAdapter testOutputHelper), getTestBroker ()
 
+    let [<FactIfBroker>] ``ConfluentKafka producer-consumer basic roundtrip`` () = async {
         let numProducers = 10
         let numConsumers = 10
         let messagesPerProducer = 1000
@@ -139,8 +136,7 @@ type Tests(testOutputHelper) =
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
         let consumers = runConsumers log config numConsumers None consumerCallback
 
-        do!
-            [ producers ; consumers ]
+        do! [ producers ; consumers ]
             |> Async.Parallel
             |> Async.Ignore
 
@@ -177,21 +173,23 @@ type Tests(testOutputHelper) =
         test <@ ``should have consumed all expected messages`` @> // "should have consumed all expected messages"
     }
 
-    let [<Fact>] ``ConfluentKafka consumer should have expected exception semantics`` () = async {
-        let broker = getTestBroker()
-
+    let [<FactIfBroker>] ``ConfluentKafka consumer should have expected exception semantics`` () = async {
         let topic = newId() // dev kafka topics are created and truncated automatically
         let groupId = newId()
 
         let! _ = runProducers log broker topic 1 10 // populate the topic with a few messages
 
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
-        runConsumers log config 1 None (fun _ _ -> raise <| IndexOutOfRangeException())
-        |> Assert.ThrowsAsync<IndexOutOfRangeException>
+        
+        let! r = Async.Catch <| runConsumers log config 1 None (fun _ _ -> raise <|IndexOutOfRangeException())
+        test <@ match r with Choice2Of2 (:? IndexOutOfRangeException) -> true | x -> failwithf "%A" x @>
     }
 
-    let [<Fact>] ``Given a topic different consumer group ids should be consuming the same message set`` () = async {
-        let broker = getTestBroker()
+// separated test type to allow the tests to run in parallel
+type T2(testOutputHelper) =
+    let log, broker = createLogger (TestOutputAdapter testOutputHelper), getTestBroker ()
+
+    let [<FactIfBroker>] ``Given a topic different consumer group ids should be consuming the same message set`` () = async {
         let numMessages = 10
 
         let topic = newId() // dev kafka topics are created and truncated automatically
@@ -215,9 +213,7 @@ type Tests(testOutputHelper) =
         test <@ numMessages = !messageCount @>
     }
 
-    let [<Fact>] ``Spawning a new consumer with same consumer group id should not receive new messages`` () = async {
-        let broker = getTestBroker()
-
+    let [<FactIfBroker>] ``Spawning a new consumer with same consumer group id should not receive new messages`` () = async {
         let numMessages = 10
         let topic = newId() // dev kafka topics are created and truncated automatically
         let groupId = newId()
@@ -243,9 +239,11 @@ type Tests(testOutputHelper) =
         test <@ 0 = !messageCount @>
     }
 
-    let [<Fact>] ``Commited offsets should not result in missing messages`` () = async {
-        let broker = getTestBroker()
+// separated test type to allow the tests to run in parallel
+type T3(testOutputHelper) =
+    let log, broker = createLogger (TestOutputAdapter testOutputHelper), getTestBroker ()
 
+    let [<FactIfBroker>] ``Commited offsets should not result in missing messages`` () = async {
         let numMessages = 10
         let topic = newId() // dev kafka topics are created and truncated automatically
         let groupId = newId()
@@ -275,13 +273,11 @@ type Tests(testOutputHelper) =
         test <@ numMessages = !messageCount @>
     }
 
-    let [<Fact>] ``Consumers should never schedule two batches of the same partition concurrently`` () = async {
+    let [<FactIfBroker>] ``Consumers should never schedule two batches of the same partition concurrently`` () = async {
         // writes 2000 messages down a topic with a shuffled partition key
         // then attempts to consume the topic, while verifying that per-partition batches
         // are never scheduled for concurrent execution. also checks that batches are
         // monotonic w.r.t. offsets
-        let broker = getTestBroker()
-
         let numMessages = 2000
         let maxBatchSize = 5
         let topic = newId() // dev kafka topics are created and truncated automatically
@@ -325,6 +321,5 @@ type Tests(testOutputHelper) =
 
                     if Interlocked.Add(globalMessageCount, b.Length) >= numMessages then c.Stop() })
 
-
-        Assert.Equal(numMessages, !globalMessageCount)
+        test <@ numMessages = !globalMessageCount @>
     }

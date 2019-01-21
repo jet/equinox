@@ -347,8 +347,8 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
                     
             let d1 = c.OnLog.Subscribe(fun m -> log.Information("consumer_info|{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
             let d2 = c.OnError.Subscribe(fun e -> log.Error("consumer_error|{error}", fmtError e))
-            let d3 = c.OnPartitionsAssigned.Subscribe(fun tps -> for fmt in fmtTopicPartitions tps do log.Information("consumer_partitions_assigned|%s", fmt))
-            let d4 = c.OnPartitionsRevoked.Subscribe(fun tps -> for fmt in fmtTopicPartitions tps do log.Information("consumer_partitions_revoked|%s", fmt))
+            let d3 = c.OnPartitionsAssigned.Subscribe(fun tps -> for fmt in fmtTopicPartitions tps do log.Information("consumer_partitions_assigned|{topics}", fmt))
+            let d4 = c.OnPartitionsRevoked.Subscribe(fun tps -> for fmt in fmtTopicPartitions tps do log.Information("consumer_partitions_revoked|{topics}", fmt))
             let d5 = c.OnPartitionEOF.Subscribe(fun tpo -> log.Verbose("consumer_partition_eof|topic={topic}|partition={partition}|offset={offset}", tpo.Topic, tpo.Partition, let o = tpo.Offset in o.Value))
             let d6 = c.OnOffsetsCommitted.Subscribe(fun cos -> for fmt in fmtTopicPartitionOffsetErrors cos.Offsets do log.Information("consumer_committed_offsets|{offsets}{oe}", fmt, fmtError cos.Error))
             { new IDisposable with member __.Dispose() = for d in [d1;d2;d3;d4;d5;d6] do d.Dispose() }
