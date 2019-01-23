@@ -4,9 +4,10 @@ open Argu
 open Domain.Infrastructure
 #if !NET461
 open Equinox.Cosmos.Projection
+open Equinox.Projection.Kafka.Infrastructure
 #endif
-open Equinox.Tool.Infrastructure
 open Equinox.Store.Infrastructure
+open Equinox.Tool.Infrastructure
 open FSharp.UMX
 #if !NET461
 open Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing
@@ -20,6 +21,7 @@ open System
 open System.Net.Http
 open System.Threading
 open System.Collections.Generic
+open System.Diagnostics
 
 [<NoEquality; NoComparison>]
 type Arguments =
@@ -64,24 +66,39 @@ and [<NoComparison>]InitAuxArguments =
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
             | Cosmos _ -> "Cosmos Connection parameters."
 #if !NET461
-and [<NoComparison>]ProjectArguments =
+and [<NoComparison; RequireSubcommand>]ProjectArguments =
     | [<MainCommand; ExactlyOnce>] LeaseId of string
     | [<AltCommandLine("-s"); Unique>] Suffix of string
-    | [<AltCommandLine("-b"); Unique>] ChangeFeedBatchSize of int
     | [<AltCommandLine("-i"); Unique>] ForceStartFromHere
-    | [<AltCommandLine("-c"); Unique>] WriterCheckpointFreqS of float
+    | [<AltCommandLine("-b"); Unique>] ChangeFeedBatchSize of int
     | [<AltCommandLine("-l"); Unique>] LagFreqS of float
     | [<AltCommandLine("-v"); Unique>] ChangeFeedVerbose
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
+    | [<AltCommandLine("stats"); Last>] Stats of ParseResults<StatsTarget>
+    | [<AltCommandLine("kafka"); Last>] Kafka of ParseResults<KafkaTarget>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | LeaseId _ -> "Projector instance context name."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
-            | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 1000"
             | ForceStartFromHere _ -> "(Where this is `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and eveery event is projected from the start."
-            | WriterCheckpointFreqS _ -> "Specify frequency to update progress checkpoints. Default: 30s"
+            | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 1000"
             | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
+
             | ChangeFeedVerbose -> "Request Verbose Logging from ChangeFeedProcessor. Default: off"
+            | Stats _ -> "Do not emit events, only stats."
+            | Kafka _ -> "Project to Kafka."
+and [<NoComparison>] KafkaTarget =
+    | [<AltCommandLine("-b"); Unique>] Broker of string
+    | [<AltCommandLine("-t"); Unique>] Topic of string
+    | [<CliPrefix(CliPrefix.None); Last>] Cosmos of ParseResults<CosmosArguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Broker _ -> "Specify target broker. Default: Use $env:EQUINOX_KAFKA_BROKER"
+            | Topic _ -> "Specify target topic. Default: Use $env:EQUINOX_KAFKA_TOPIC"
+            | Cosmos _ -> "Cosmos Connection parameters."
+and [<NoComparison>] StatsTarget =
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
             | Cosmos _ -> "Cosmos Connection parameters."
 #endif
 and [<NoComparison>]WebArguments =
@@ -276,39 +293,72 @@ let main argv =
             | _ -> failwith "please specify a `cosmos` endpoint"
 #if !NET461
         | Project pargs ->
-            match pargs.TryGetSubCommand() with
-            | Some (ProjectArguments.Cosmos args) ->
-                let storeLog = createStoreLog (args.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
-                let (endpointUri, masterKey), dbName, collName, connectionPolicy = Cosmos.connectionPolicy (log,storeLog) args
-                pargs.TryGetResult ChangeFeedBatchSize |> Option.iter (fun bs -> log.Information("Using MaxItemCount {batchSize}", bs))
-                pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
-                let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
-                let leaseId = pargs.GetResult(LeaseId)
-                log.Information("Processing using LeaseId {leaseId} in Aux coll {auxCollName}", leaseId, auxCollName)
-                let _checkpointInterval = pargs.GetResult(WriterCheckpointFreqS,30.) |> TimeSpan.FromSeconds
-                if pargs.Contains ForceStartFromHere then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
-                let source = { database = dbName; collection = collName }
-                let aux = { database = dbName; collection = auxCollName }
-                let run = async {
-                    let observe (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
-                        let t, eventCount = (fun () -> docs |> Seq.collect Parse.enumEvents |> Seq.length) |> Stopwatch.Time 
-                        log.Information("Range {rangeId} Observed {count} docs with {events} events {requestCharge:n0}RU Parse: {t}ms",
-                            ctx.PartitionKeyRangeId, docs.Count, eventCount, ctx.FeedResponse.RequestCharge, let e = t.Elapsed in e.TotalMilliseconds)
-                    }
-                    let changeFeedObserver = IChangeFeedObserver.Create(log, observe)
-                    let! feedEventHost =
-                        ChangeFeedProcessor.Start
-                          ( log, endpointUri, masterKey, connectionPolicy, source, aux, changeFeedObserver,
-                            leasePrefix = leaseId,
-                            forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
-                            ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
-                            ?lagMonitorInterval = (pargs.TryGetResult LagFreqS |> Option.map TimeSpan.FromSeconds))
-                    do! Async.AwaitKeyboardInterrupt()
-                    log.Warning("Stopping...")
-                    do! feedEventHost.StopAsync() |> Async.AwaitTaskCorrect }
-                if pargs.Contains ChangeFeedVerbose then Log.Logger <- storeLog // LibLog will write to the global logger, if you let it
-                Async.RunSynchronously run
-            | _ -> failwith "please specify a `cosmos` endpoint"
+            let envBackstop msg key =
+                match Environment.GetEnvironmentVariable key with
+                | null -> failwithf "Please provide a %s, either as an argment or via the %s environment variable" msg key
+                | x -> x 
+            let broker, topic, args =
+                match pargs.GetSubCommand() with
+                | Kafka kargs ->
+                    let broker = match kargs.TryGetResult Broker with Some x -> x | None -> envBackstop "Broker" "EQUINOX_KAFKA_BROKER"
+                    let topic = match kargs.TryGetResult Topic with Some x -> x | None -> envBackstop "Topic" "EQUINOX_KAFKA_TOPIC"
+                    Some broker, Some topic,kargs.GetResult KafkaTarget.Cosmos
+                | Stats sargs -> None, None, sargs.GetResult StatsTarget.Cosmos
+                | x -> failwithf "Invalid subcommand %A" x
+            let storeLog = createStoreLog (args.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
+            let (endpointUri, masterKey), dbName, collName, connectionPolicy = Cosmos.connectionPolicy (log,storeLog) args
+            pargs.TryGetResult ChangeFeedBatchSize |> Option.iter (fun bs -> log.Information("ChangeFeed BatchSize {batchSize}", bs))
+            pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
+            let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
+            let leaseId = pargs.GetResult(LeaseId)
+            log.Information("Processing using LeaseId {leaseId} in Aux coll {auxCollName}", leaseId, auxCollName)
+            if pargs.Contains ForceStartFromHere then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
+            let source = { database = dbName; collection = collName }
+            let aux = { database = dbName; collection = auxCollName }
+          
+            let createRangeProjector () =
+                let sw = Stopwatch.StartNew()
+                let producer, disposeProducer = // yes, can be `null` ;P
+                    match broker,topic with
+                    | Some b,Some t ->
+                        let cfg = KafkaProducerConfig.Create("equinox-tool", Uri b, maxInFlight = 1, compression = Config.Producer.LZ4)
+                        let p = KafkaProducer.Create(log, cfg, t)
+                        p, (p :> IDisposable).Dispose
+                    | _ -> Unchecked.defaultof<KafkaProducer>, id
+                let handle (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
+                    sw.Stop()
+                    let toKafkaEvent (e: Parse.IEvent) : Equinox.Projection.Producer.EqxKafkaEvent =
+                        { h = { s = e.Stream; i = e.Index; c = e.EventType; t = e.TimeStamp }; d = e.Data; m = e.Meta }
+                    let pt, events = (fun () -> docs |> Seq.collect Parse.enumEvents |> Seq.map toKafkaEvent |> Array.ofSeq) |> Stopwatch.Time 
+                    let emit = async {
+                        if not <| obj.ReferenceEquals(null,producer) then
+                            let es = [| for e in events -> e.h.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
+                            let! et,_ = producer.ProduceBatch es |> Stopwatch.Time
+                            return et
+                        else
+                            let! et,() = ctx.CheckpointAsync() |> Async.AwaitTaskCorrect |> Stopwatch.Time
+                            return et }
+                    let! et = emit
+                    log.Information("Range {rangeId} Fetch: {requestCharge:n0}RU {count} docs {l:n1}s; Parse: {events} events {p:n3}s; Emit: {e:n1}s",
+                        ctx.PartitionKeyRangeId, ctx.FeedResponse.RequestCharge, docs.Count,float sw.ElapsedMilliseconds / 1000., 
+                        events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
+                    sw.Restart()
+                }
+                IChangeFeedObserver.Create(log, handle, disposeProducer)
+
+            let run = async {
+                let! feedEventHost =
+                    ChangeFeedProcessor.Start
+                      ( log, endpointUri, masterKey, connectionPolicy, source, aux, createRangeProjector,
+                        leasePrefix = leaseId,
+                        forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
+                        ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
+                        ?lagMonitorInterval = (pargs.TryGetResult LagFreqS |> Option.map TimeSpan.FromSeconds))
+                do! Async.AwaitKeyboardInterrupt()
+                log.Warning("Stopping...")
+                do! feedEventHost.StopAsync() |> Async.AwaitTaskCorrect }
+            if pargs.Contains ChangeFeedVerbose then Log.Logger <- storeLog // LibLog will write to the global logger, if you let it
+            Async.RunSynchronously run
 #endif
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName

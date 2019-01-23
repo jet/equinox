@@ -42,7 +42,7 @@ module Parse =
 [<AutoOpen>]
 module Wrappers =
     type IChangeFeedObserver with
-        static member Create(log: ILogger, onChange : IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>) =
+        static member Create(log: ILogger, onChange : IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>, ?dispose: unit -> unit) =
             { new IChangeFeedObserver with
                 member __.ProcessChangesAsync(ctx, docs, ct) = (UnitTaskBuilder ct) {
                     try do! onChange ctx docs
@@ -52,7 +52,10 @@ module Wrappers =
                 member __.OpenAsync ctx = UnitTaskBuilder() {
                     log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId) }
                 member __.CloseAsync (ctx, reason) = UnitTaskBuilder() {
-                    log.Information("Range {partitionKeyRangeId} Closed {reason}", ctx.PartitionKeyRangeId, reason) } }
+                    log.Information("Range {partitionKeyRangeId} Closed {reason}", ctx.PartitionKeyRangeId, reason) } 
+              interface IDisposable with
+                member __.Dispose() =
+                    match dispose with Some f -> f () | None -> () }
 
     type IChangeFeedObserverFactory with
         static member FromFunction (f : unit -> #IChangeFeedObserver) =
@@ -69,7 +72,7 @@ type ChangeFeedProcessor =
             // updates the leases. Since the non-write region(s) might lag behind due to us using non-strong consistency, during
             // failover we are likely to reprocess some messages, but that's okay since we are idempotent.
             aux : CosmosCollection,
-            changeFeedObserver : IChangeFeedObserver,
+            createObserver : unit -> IChangeFeedObserver,
             ?leaseOwnerId : string,
             /// Identifier to disambiguate multiple independent feed processor positions
             ?leasePrefix : string,
@@ -115,15 +118,13 @@ type ChangeFeedProcessor =
 
         leasePrefix |> Option.iter (fun lp -> feedProcessorOptions.LeasePrefix <- lp + ":")
 
-        let factory = IChangeFeedObserverFactory.FromFunction (fun () -> changeFeedObserver)
-       
         let! processor =
             ChangeFeedProcessorBuilder()
                 .WithHostName(leaseOwnerId)
                 .WithFeedCollection(monitoredColl)
                 .WithLeaseCollection(auxColl)
                 .WithProcessorOptions(feedProcessorOptions)
-                .WithObserverFactory(factory)
+                .WithObserverFactory(IChangeFeedObserverFactory.FromFunction createObserver)
                 .BuildAsync() |> Async.AwaitTaskCorrect
         do! processor.StartAsync() |> Async.AwaitTaskCorrect
 
