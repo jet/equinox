@@ -88,7 +88,6 @@ module Config =
         let batchNumMessages    = mkKey "batch.num.messages" id<int>
         let compression         = mkKey "compression.type" (function None -> "none" | GZip -> "gzip" | Snappy -> "snappy" | LZ4 -> "lz4")
         let linger              = mkKey "linger.ms" ms
-        let maxInFlight         = mkKey "max.in.flight.requests.per.connection" id<int>
         let messageSendRetries  = mkKey "message.send.max.retries" id<int>
         let partitioner         = mkKey "partitioner" (function | Random -> "random" | Consistent -> "consistent" | ConsistentRandom -> "consistent_random")
         let queueBufferingMaxInterval = mkKey "queue.buffering.max.ms" ms
@@ -133,6 +132,9 @@ type KafkaProducerConfig(kvps, broker : Uri, compression : Config.Producer.Compr
         (   clientId : string, broker : Uri, 
             /// Message compression. Defaults to 'none'.
             ?compression,
+            /// Maximum in-flight requests. Default 1000000.
+            /// Set to 1 to prevent potential reordering of writes should a batch fail and then succeed in a subsequent retry
+            ?maxInFlight,
             /// Number of retries. Defaults to 60.
             ?retries,
             /// Backoff interval. Defaults to 1 second.
@@ -157,7 +159,7 @@ type KafkaProducerConfig(kvps, broker : Uri, compression : Config.Producer.Compr
         let config =
             [|  yield Config.clientId ==> clientId
                 yield Config.broker ==> broker
-
+                yield Config.maxInFlight ==> defaultArg maxInFlight 1000000
                 yield Config.socketKeepAlive ==> defaultArg socketKeepAlive true
                 yield Config.retries ==> defaultArg retries 60
                 yield Config.retryBackoff ==> defaultArg retryBackoff (TimeSpan.FromSeconds 1.)
@@ -198,12 +200,10 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
 
     /// Produces a batch of supplied key/value messages. Results are returned in order of writing.  
     member __.ProduceBatch
-        (   keyValueBatch : seq<string * string>,
+        (   keyValueBatch : (string * string)[],
             /// Enable marshalling of data in returned messages. Defaults to false.
             ?marshalDeliveryReportData : bool) = async {
-        match Seq.toArray keyValueBatch with
-        | [||] -> return [||]
-        | keyValueBatch ->
+        if Array.isEmpty keyValueBatch then return [||] else
 
         let! ct = Async.CancellationToken
 
