@@ -56,7 +56,7 @@ module Helpers =
             Task.Delay(delay).ContinueWith(fun (_:Task) -> c.Stop()) |> ignore
 
     type TestMessage = { producerId : int ; messageId : int }
-    [<NoComparison>]
+    [<NoComparison; NoEquality>]
     type ConsumedTestMessage = { consumerId : int ; message : KafkaMessage ; payload : TestMessage }
     type ConsumerCallback = KafkaConsumer -> ConsumedTestMessage [] -> Async<unit>
 
