@@ -205,6 +205,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
             ?marshalDeliveryReportData : bool) = async {
         if Array.isEmpty keyValueBatch then return [||] else
 
+
         let! ct = Async.CancellationToken
 
         let tcs = new TaskCompletionSource<KafkaMessage[]>()
