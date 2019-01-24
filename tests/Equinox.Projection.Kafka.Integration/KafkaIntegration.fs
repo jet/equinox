@@ -1,6 +1,6 @@
-namespace Equinox.Projection.Kafka.Infrastructure.Tests
+namespace Equinox.Projection.Kafka.KafkaIntegration
 
-open Equinox.Projection.Kafka.Infrastructure
+open Equinox.Projection.Kafka
 open Newtonsoft.Json
 open Serilog
 open Swensen.Unquote

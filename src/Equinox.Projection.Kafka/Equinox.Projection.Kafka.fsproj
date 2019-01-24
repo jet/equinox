@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="Infrastructure.fs" />
+    <Compile Include="Kafka.fs" />
   </ItemGroup>
 
   <ItemGroup>
