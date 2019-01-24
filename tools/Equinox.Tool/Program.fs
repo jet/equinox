@@ -5,7 +5,7 @@ open Domain.Infrastructure
 #if !NET461
 open Equinox.Cosmos.Projection
 open Equinox.Projection.Codec
-open Equinox.Projection.Kafka.Infrastructure
+open Equinox.Projection.Kafka
 #endif
 open Equinox.Store.Infrastructure
 open Equinox.Tool.Infrastructure
@@ -339,9 +339,22 @@ let main argv =
                             let es = [| for e in events -> e.h.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
                             let! et,_ = producer.ProduceBatch es |> Stopwatch.Time
                             return et }
+                            
                     log.Information("Range {rangeId} Fetch: {requestCharge:n0}RU {count} docs {l:n1}s; Parse: {events} events {p:n3}s; Emit: {e:n1}s",
                         ctx.PartitionKeyRangeId, ctx.FeedResponse.RequestCharge, docs.Count,float sw.ElapsedMilliseconds / 1000., 
                         events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
+                    if log.IsEnabled LogEventLevel.Debug then
+                        let f = ctx.FeedResponse
+                        let rendered =
+                            [   "cq", box f.CollectionQuota; "csq",box f.CollectionSizeQuota; "cu",box f.CollectionUsage
+                                "csu",box f.CollectionSizeUsage
+                                "dq",box f.DatabaseQuota; "du",box f.DatabaseUsage
+                                "mrq",box f.MaxResourceQuota; "crqu", box f.CurrentResourceQuotaUsage
+                                "pq",box f.PermissionQuota; "pu",box f.PermissionUsage
+                                "_con",box f.ResponseContinuation
+                                "_st",box f.SessionToken ]
+                        let rhs = let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]]
+                        log.Debug("FeedResponse {0}, Headers {1}", rendered, rhs)
                     sw.Restart() // restart the clock as we handoff back to the CFP
                 }
                 IChangeFeedObserver.Create(log, projectBatch, disposeProducer)
