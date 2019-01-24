@@ -4,6 +4,7 @@ open Argu
 open Domain.Infrastructure
 #if !NET461
 open Equinox.Cosmos.Projection
+open Equinox.Projection.Codec
 open Equinox.Projection.Kafka.Infrastructure
 #endif
 open Equinox.Store.Infrastructure
@@ -297,7 +298,7 @@ let main argv =
                 match Environment.GetEnvironmentVariable key with
                 | null -> failwithf "Please provide a %s, either as an argment or via the %s environment variable" msg key
                 | x -> x 
-            let broker, topic, args =
+            let broker, topic, storeArgs =
                 match pargs.GetSubCommand() with
                 | Kafka kargs ->
                     let broker = match kargs.TryGetResult Broker with Some x -> x | None -> envBackstop "Broker" "EQUINOX_KAFKA_BROKER"
@@ -305,8 +306,8 @@ let main argv =
                     Some broker, Some topic,kargs.GetResult KafkaTarget.Cosmos
                 | Stats sargs -> None, None, sargs.GetResult StatsTarget.Cosmos
                 | x -> failwithf "Invalid subcommand %A" x
-            let storeLog = createStoreLog (args.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
-            let (endpointUri, masterKey), dbName, collName, connectionPolicy = Cosmos.connectionPolicy (log,storeLog) args
+            let storeLog = createStoreLog (storeArgs.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
+            let (endpointUri, masterKey), dbName, collName, connectionPolicy = Cosmos.connectionPolicy (log,storeLog) storeArgs
             pargs.TryGetResult ChangeFeedBatchSize |> Option.iter (fun bs -> log.Information("ChangeFeed BatchSize {batchSize}", bs))
             pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
             let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
@@ -316,40 +317,40 @@ let main argv =
             let source = { database = dbName; collection = collName }
             let aux = { database = dbName; collection = auxCollName }
           
-            let createRangeProjector () =
-                let sw = Stopwatch.StartNew()
-                let producer, disposeProducer = // yes, can be `null` ;P
+            let buildRangeProjector () =
+                let sw = Stopwatch.StartNew() // we'll report the warmup/connect time on the first batch
+                let producer, disposeProducer =
                     match broker,topic with
                     | Some b,Some t ->
                         let cfg = KafkaProducerConfig.Create("equinox-tool", Uri b, maxInFlight = 1, compression = Config.Producer.LZ4)
                         let p = KafkaProducer.Create(log, cfg, t)
-                        p, (p :> IDisposable).Dispose
-                    | _ -> Unchecked.defaultof<KafkaProducer>, id
-                let handle (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
-                    sw.Stop()
-                    let toKafkaEvent (e: Parse.IEvent) : Equinox.Projection.Producer.EqxKafkaEvent =
+                        Some p, (p :> IDisposable).Dispose
+                    | _ -> None, id
+                let projectBatch (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
+                    sw.Stop() // Stop the clock after CFP hands off to us
+                    let toKafkaEvent (e: Parse.IEvent) : Equinox.Projection.Codec.KafkaEvent =
                         { h = { s = e.Stream; i = e.Index; c = e.EventType; t = e.TimeStamp }; d = e.Data; m = e.Meta }
                     let pt, events = (fun () -> docs |> Seq.collect Parse.enumEvents |> Seq.map toKafkaEvent |> Array.ofSeq) |> Stopwatch.Time 
-                    let emit = async {
-                        if not <| obj.ReferenceEquals(null,producer) then
+                    let! et = async {
+                        match producer with
+                        | None ->
+                            let! et,() = ctx.CheckpointAsync() |> Async.AwaitTaskCorrect |> Stopwatch.Time
+                            return et
+                        | Some producer ->
                             let es = [| for e in events -> e.h.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
                             let! et,_ = producer.ProduceBatch es |> Stopwatch.Time
-                            return et
-                        else
-                            let! et,() = ctx.CheckpointAsync() |> Async.AwaitTaskCorrect |> Stopwatch.Time
                             return et }
-                    let! et = emit
                     log.Information("Range {rangeId} Fetch: {requestCharge:n0}RU {count} docs {l:n1}s; Parse: {events} events {p:n3}s; Emit: {e:n1}s",
                         ctx.PartitionKeyRangeId, ctx.FeedResponse.RequestCharge, docs.Count,float sw.ElapsedMilliseconds / 1000., 
                         events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
-                    sw.Restart()
+                    sw.Restart() // restart the clock as we handoff back to the CFP
                 }
-                IChangeFeedObserver.Create(log, handle, disposeProducer)
+                IChangeFeedObserver.Create(log, projectBatch, disposeProducer)
 
             let run = async {
                 let! feedEventHost =
                     ChangeFeedProcessor.Start
-                      ( log, endpointUri, masterKey, connectionPolicy, source, aux, createRangeProjector,
+                      ( log, endpointUri, masterKey, connectionPolicy, source, aux, buildRangeProjector,
                         leasePrefix = leaseId,
                         forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
                         ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
