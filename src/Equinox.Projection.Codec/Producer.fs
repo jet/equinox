@@ -3,7 +3,7 @@ module Equinox.Projection.Codec
 open Newtonsoft.Json
 open System
 
-type [<NoEquality; NoComparison; Struct>] EqxHeader =
+type [<NoEquality; NoComparison>] EqxHeader =
     {   /// Timestamp of original write
         t: DateTimeOffset // ISO 8601
 
@@ -19,7 +19,7 @@ type [<NoEquality; NoComparison; Struct>] EqxHeader =
         i: int64 }
 
 /// Default rendition of an event when being projected to Kafka
-type [<NoEquality; NoComparison; Struct>] KafkaEvent =
+type [<NoEquality; NoComparison>] KafkaEvent =
     {   /// TODO inline into d, which needs to be top level for backcompat
         [<JsonProperty(PropertyName="~eqxheader")>]
         h: EqxHeader

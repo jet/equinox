@@ -79,7 +79,7 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
         member a.Usage = a |> function
             | LeaseId _ -> "Projector instance context name."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
-            | ForceStartFromHere _ -> "(Where this is `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and eveery event is projected from the start."
+            | ForceStartFromHere _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
             | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 1000"
             | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
 
@@ -341,7 +341,7 @@ let main argv =
                             return et }
                             
                     log.Information("Range {rangeId} Fetch: {requestCharge:n0}RU {count} docs {l:n1}s; Parse: {events} events {p:n3}s; Emit: {e:n1}s",
-                        ctx.PartitionKeyRangeId, ctx.FeedResponse.RequestCharge, docs.Count,float sw.ElapsedMilliseconds / 1000., 
+                        ctx.PartitionKeyRangeId, ctx.FeedResponse.RequestCharge, docs.Count, float sw.ElapsedMilliseconds / 1000., 
                         events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
                     if log.IsEnabled LogEventLevel.Debug then
                         let f = ctx.FeedResponse
