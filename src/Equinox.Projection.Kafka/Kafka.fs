@@ -492,9 +492,9 @@ type KafkaConsumer private (config : KafkaConsumerConfig, consumer : Consumer<st
     /// however batches from different partitions can be run concurrently.
     static member Start (log : ILogger) (config : KafkaConsumerConfig) (partitionHandler : KafkaMessage[] -> Async<unit>) =
         if List.isEmpty config.topics then invalidArg "config" "must specify at least one topic"
-        log.Information("Starting Kafka consumer on topics={topics} groupId={groupId} broker={broker} autoOffsetReset={autoOffsetRead} fetchMaxBytes={fetchMaxB} maxInFlightBytes={maxInFlightB} maxBatchSize={maxBatchB} maxBatchDelay={maxBatchDelay}",
-                        config.topics, config.groupId, config.broker, config.autoOffsetReset, config.fetchMaxBytes,
-                        config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay)
+        log.Information("Starting Kafka consumer on broker={broker} topics={topics} groupId={groupId} autoOffsetReset={autoOffsetRead} fetchMaxBytes={fetchMaxB} maxInFlightBytes={maxInFlightB} maxBatchSize={maxBatchB} maxBatchDelay={maxBatchDelay}",
+            config.broker, config.topics, config.groupId, config.autoOffsetReset, config.fetchMaxBytes,
+            config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay)
 
         let cts = new CancellationTokenSource()
         let consumer = ConsumerImpl.mkConsumer (config.ToKeyValuePairs(), config.topics) (mkDeserializer()) (mkDeserializer())
