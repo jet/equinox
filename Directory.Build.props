@@ -5,7 +5,7 @@
     <Description>Composable high performance event sourcing componentry</Description>
     <PackageProjectUrl>https://github.com/jet/equinox</PackageProjectUrl>
     <PackageTags>fsharp unionencoder eventsourcing eventstore typeshape</PackageTags>
-    <PackageLicenseUrl>https://github.com/jet/equinox/blob/master/LICENSE</PackageLicenseUrl>
+    <PackageLicense>Apache-2.0</PackageLicense>
     <Copyright>Copyright © 2016-9</Copyright>
 
     <RepoDir>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</RepoDir>
