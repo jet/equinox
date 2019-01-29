@@ -327,8 +327,8 @@ let main argv =
                     | _ -> None, id
                 let projectBatch (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
                     sw.Stop() // Stop the clock after CFP hands off to us
-                    let toKafkaEvent (e: Parse.IEvent) : Equinox.Projection.Codec.KafkaEvent =
-                        { h = { s = e.Stream; i = e.Index; c = e.EventType; t = e.TimeStamp }; d = e.Data; m = e.Meta }
+                    let toKafkaEvent (e: Parse.IEvent) : Equinox.Projection.Codec.RenderedEvent =
+                        { s = e.Stream; i = e.Index; c = e.EventType; t = e.TimeStamp; d = e.Data; m = e.Meta }
                     let pt, events = (fun () -> docs |> Seq.collect Parse.enumEvents |> Seq.map toKafkaEvent |> Array.ofSeq) |> Stopwatch.Time 
                     let! et = async {
                         match producer with
@@ -336,7 +336,7 @@ let main argv =
                             let! et,() = ctx.CheckpointAsync() |> Async.AwaitTaskCorrect |> Stopwatch.Time
                             return et
                         | Some producer ->
-                            let es = [| for e in events -> e.h.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
+                            let es = [| for e in events -> e.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
                             let! et,_ = producer.ProduceBatch es |> Stopwatch.Time
                             return et }
                             

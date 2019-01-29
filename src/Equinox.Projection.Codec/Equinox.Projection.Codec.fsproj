@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox.Cosmos\CosmosInternalJson.fs" Link="CosmosInternalJson.fs" />
-    <Compile Include="Producer.fs" />
+    <Compile Include="RenderedEvent.fs" />
   </ItemGroup>
 
   <ItemGroup>
