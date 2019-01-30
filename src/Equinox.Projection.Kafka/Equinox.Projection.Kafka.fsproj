@@ -21,7 +21,7 @@
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
-    <PackageReference Include="Confluent.Kafka" Version="0.11.4" />
+    <PackageReference Include="Confluent.Kafka" Version="1.0.0-beta2" />
     <!-- TODO remove special casing
          While the general policy is to use 11.0.2 across the board for consistency (11.0.2 being the first version that cleanly supports netstandard2.0),
          in this case we're relaxing the constraint for net461 so as to not trigger a set of transitive dependency updates at the present time

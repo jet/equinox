@@ -23,6 +23,7 @@ module Helpers =
             use writer = new System.IO.StringWriter()
             formatter.Format(logEvent, writer);
             writer |> string |> testOutput.WriteLine
+            writer |> string |> System.Diagnostics.Debug.WriteLine
         interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
 
     let createLogger sink =
@@ -57,7 +58,7 @@ module Helpers =
 
     type TestMessage = { producerId : int ; messageId : int }
     [<NoComparison; NoEquality>]
-    type ConsumedTestMessage = { consumerId : int ; message : KafkaMessage ; payload : TestMessage }
+    type ConsumedTestMessage = { consumerId : int ; message : KafkaConsumerMessage ; payload : TestMessage }
     type ConsumerCallback = KafkaConsumer -> ConsumedTestMessage [] -> Async<unit>
 
     let runProducers log (broker : Uri) (topic : string) (numProducers : int) (messagesPerProducer : int) = async {
@@ -83,7 +84,7 @@ module Helpers =
 
     let runConsumers log (config : KafkaConsumerConfig) (numConsumers : int) (timeout : TimeSpan option) (handler : ConsumerCallback) = async {
         let mkConsumer (consumerId : int) = async {
-            let deserialize (msg : KafkaMessage) = { consumerId = consumerId ; message = msg ; payload = JsonConvert.DeserializeObject<_> msg.Value }
+            let deserialize (msg : KafkaConsumerMessage) = { consumerId = consumerId ; message = msg ; payload = JsonConvert.DeserializeObject<_> msg.Value }
 
             // need to pass the consumer instance to the handler callback
             // do a bit of cyclic dependency fixups
