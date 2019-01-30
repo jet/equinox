@@ -12,19 +12,9 @@ open System.Threading.Tasks
 /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md for documentation on the implications of specfic settings
 [<RequireQualifiedAccess>]
 module Config =
-    [<NoComparison; NoEquality>]
-    type ConfigKey<'T> = Key of id:string * render:('T -> obj) with
-        member k.Id = let (Key(id,_)) = k in id
-
-        static member (==>) (Key(id, render) : ConfigKey<'T>, value : 'T) = 
-            match render value with
-            | null -> nullArg id
-            | :? string as str when String.IsNullOrWhiteSpace str -> nullArg id
-            | obj -> KeyValuePair(id, string obj)
-
-    let private mkKey id render = Key(id, render >> box)
-    let private ms (t : TimeSpan) = int t.TotalMilliseconds
-    let validateBrokerUri (u:Uri) =
+    type Acks = Zero | One | All
+    type Compression = None | GZip | Snappy | LZ4
+    let internal validateBrokerUri (u:Uri) =
         if not u.IsAbsoluteUri then invalidArg "broker" "should be of 'host:port' format"
         if String.IsNullOrEmpty u.Authority then 
             // handle a corner case in which Uri instances are erroneously putting the hostname in the `scheme` field.
@@ -32,33 +22,6 @@ module Config =
             else invalidArg "broker" "should be of 'host:port' format"
 
         else u.Authority
-
-    (* shared keys applying to producers and consumers alike *)
-
-    let broker              = mkKey "bootstrap.servers" validateBrokerUri
-    let clientId            = mkKey "client.id" id<string>
-    let logConnectionClose  = mkKey "log.connection.close" id<bool>
-    let maxInFlight         = mkKey "max.in.flight.requests.per.connection" id<int>
-    let rebalanceTimeout    = mkKey "rebalance.timeout.ms" ms
-    let socketKeepAlive     = mkKey "socket.keepalive.enable" id<bool>
-    let statisticsInterval  = mkKey "statistics.interval.ms" ms
-
-    /// Config keys applying to Producers
-    module Producer =
-        type Acks = Zero | One | All
-        type Compression = None | GZip | Snappy | LZ4
-        type Partitioner = Random | Consistent | ConsistentRandom
-
-        let acks                = mkKey "acks" (function Zero -> 0 | One -> 1 | All -> -1)
-        let batchNumMessages    = mkKey "batch.num.messages" id<int>
-        let compression         = mkKey "compression.type" (function None -> "none" | GZip -> "gzip" | Snappy -> "snappy" | LZ4 -> "lz4")
-        let linger              = mkKey "linger.ms" ms
-        let messageSendRetries  = mkKey "message.send.max.retries" id<int>
-        let partitioner         = mkKey "partitioner" (function | Random -> "random" | Consistent -> "consistent" | ConsistentRandom -> "consistent_random")
-        let queueBufferingMaxInterval = mkKey "queue.buffering.max.ms" ms
-        let retries             = mkKey "retries" id<int>
-        let retryBackoff        = mkKey "retry.backoff.ms" ms
-        let timeout             = mkKey "request.timeout.ms" ms
 
 // NB we deliberately wrap all types exposed by Confluent.Kafka to avoid needing to reference librdkafka everywhere
 [<NoComparison>]
@@ -88,11 +51,12 @@ type KafkaConsumerMessage internal (message : ConsumeResult<string,string>) =
     member __.Value : string = message.Value
 
 [<NoComparison>]
-type KafkaProducerConfig(kvps, broker : Uri, compression : Config.Producer.Compression, acks : Config.Producer.Acks) =
-    member val Kvps : seq<KeyValuePair<string,string>> = kvps
+type KafkaProducerConfig(conf, cfgs, broker : Uri, compression : Config.Compression, acks : Config.Acks) =
+    member val Conf : ProducerConfig = conf
     member val Acks = acks
     member val Broker = broker
     member val Compression = compression
+    member __.Kvps = Seq.append conf cfgs
 
     /// Creates a Kafka producer instance with supplied configuration
     static member Create
@@ -108,40 +72,41 @@ type KafkaProducerConfig(kvps, broker : Uri, compression : Config.Producer.Compr
             ?retryBackoff,
             /// Statistics Interval. Defaults to no stats.
             ?statisticsInterval,
-            /// Defaults to 10 ms.
-            ?queueBufferingMaxInterval,
             /// Defaults to true.
             ?socketKeepAlive,
-            /// Defaults to 200 milliseconds.
-            ?linger,
+            /// Defaults to 10 ms.
+            ?linger : TimeSpan,
             /// Defaults to 'One'
-            ?acks,
+            ?acks : Config.Acks,
             /// Defaults to 'consistent_random'.
             ?partitioner,
             /// Misc configuration parameter to be passed to the underlying CK producer.
             ?custom) =
+        let acks = defaultArg acks Config.Acks.One
+        let compression = defaultArg compression Config.Compression.None
+        let compressionStr =
+            match compression with
+            | Config.Compression.None -> "none"
+            | Config.Compression.GZip -> "gzip"
+            | Config.Compression.Snappy -> "snappy"
+            | Config.Compression.LZ4 -> "lz4"
+        let cfgs = seq {
+            yield KeyValuePair("compression.codec", compressionStr)
 
-        let compression = defaultArg compression Config.Producer.Compression.None
-        let acks = defaultArg acks Config.Producer.Acks.One
-        let config =
-            [|  yield Config.clientId ==> clientId
-                yield Config.broker ==> broker
-                yield Config.maxInFlight ==> defaultArg maxInFlight 1000000
-                yield Config.socketKeepAlive ==> defaultArg socketKeepAlive true
-                yield Config.Producer.retries ==> defaultArg retries 60
-                yield Config.Producer.retryBackoff ==> defaultArg retryBackoff (TimeSpan.FromSeconds 1.)
-                match statisticsInterval with Some t -> yield Config.statisticsInterval ==> t | None -> ()
-                yield Config.Producer.linger ==> defaultArg linger (TimeSpan.FromMilliseconds 200.)
-                yield Config.Producer.compression ==> compression 
-                yield Config.Producer.partitioner ==> defaultArg partitioner Config.Producer.Partitioner.ConsistentRandom
-                yield Config.Producer.acks ==> acks
-                yield Config.Producer.queueBufferingMaxInterval ==> defaultArg queueBufferingMaxInterval (TimeSpan.FromMilliseconds 10.)
-
-                // https://github.com/confluentinc/confluent-kafka-dotnet/issues/124#issuecomment-289727017
-                yield Config.logConnectionClose ==> false
-
-                match custom with None -> () | Some miscConfig -> yield! miscConfig |]
-        KafkaProducerConfig(config, broker, compression, acks)
+            match custom with None -> () | Some miscConfig -> yield! miscConfig  }
+        let conf =
+            ProducerConfig(
+                ClientId = clientId, BootstrapServers = Config.validateBrokerUri broker,
+                RetryBackoffMs = Nullable (match retryBackoff with Some (t : TimeSpan) -> int t.TotalMilliseconds | None -> 1000),
+                MessageSendMaxRetries = Nullable (defaultArg retries 60),
+                Acks = Nullable (match acks with Config.Acks.One -> 1 | Config.Acks.Zero -> 0 | Config.Acks.All -> -1),
+                LingerMs = Nullable (match linger with Some t -> int t.TotalMilliseconds | None -> 10),
+                SocketKeepaliveEnable = Nullable (defaultArg socketKeepAlive true),
+                Partitioner = Nullable (defaultArg partitioner PartitionerType.Consistent_Random),
+                MaxInFlight = Nullable (defaultArg maxInFlight 1000000),
+                LogConnectionClose = Nullable false) // https://github.com/confluentinc/confluent-kafka-dotnet/issues/124#issuecomment-289727017
+        statisticsInterval |> Option.iter (fun (i : TimeSpan) -> conf.StatisticsIntervalMs <- Nullable (int i.TotalMilliseconds))
+        KafkaProducerConfig(conf, cfgs, broker, compression, acks)
 
 type KafkaProducer private (log: ILogger, producer : Producer<string, string>, topic : string) =
     let log = log.ForContext<KafkaProducer>()
@@ -369,13 +334,14 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
 [<NoComparison>]
 type KafkaConsumerConfig =
     {   conf: ConsumerConfig
+        custom: seq<KeyValuePair<string,string>>
         topics: string list
 
         (* Local Batching configuration *)
 
         minInFlightBytes : int64; maxInFlightBytes : int64
         maxBatchSize : int; maxBatchDelay : TimeSpan }
-
+    member __.Kvps = Seq.append __.conf __.custom
     /// Builds a Kafka Consumer Config suitable for KafkaConsumer.Start*
     static member Create
         (   /// Identify this consumer in logs etc
@@ -391,6 +357,8 @@ type KafkaConsumerConfig =
             ?statisticsInterval,
             /// Consumed offsets commit interval. Default 10s. (WAS 1s)
             ?offsetCommitInterval,
+            /// Misc configuration parameter to be passed to the underlying CK consumer.
+            ?custom,
 
             (* Client side batching *)
 
@@ -414,7 +382,8 @@ type KafkaConsumerConfig =
                 EnableAutoOffsetStore = Nullable false,
                 LogConnectionClose = Nullable false) // https://github.com/confluentinc/confluent-kafka-dotnet/issues/124#issuecomment-289727017
         statisticsInterval |> Option.iter (fun (i : TimeSpan) -> conf.StatisticsIntervalMs <- Nullable (int i.TotalMilliseconds))
-        {   conf = conf; topics = match Seq.toList topics with [] -> invalidArg "topics" "must be non-empty collection" | ts -> ts
+        {   conf = conf; custom = match custom with None -> Seq.empty | Some c -> List.toSeq c
+            topics = match Seq.toList topics with [] -> invalidArg "topics" "must be non-empty collection" | ts -> ts
             maxBatchSize = defaultArg maxBatchSize 1000
             maxBatchDelay = defaultArg maxBatchDelay (TimeSpan.FromMilliseconds 500.)
             minInFlightBytes = defaultArg minInFlightBytes (16L * 1024L * 1024L)
@@ -442,7 +411,7 @@ type KafkaConsumer private (consumer : Consumer<string, string>, task : Task<uni
             config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay)
 
         let cts = new CancellationTokenSource()
-        let consumer = ConsumerImpl.mkConsumer (config.conf, config.topics)
+        let consumer = ConsumerImpl.mkConsumer (config.Kvps, config.topics)
         let cfg = config.minInFlightBytes, config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay
         let task = ConsumerImpl.mkBatchedMessageConsumer log cfg cts.Token consumer partitionHandler |> Async.StartAsTask
         new KafkaConsumer(consumer, task, cts)
