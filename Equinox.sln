@@ -65,15 +65,6 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Kafka.In
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Codec", "src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj", "{65F8FC6A-FF31-43A0-B7D9-4C9CF407DEB3}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Template", "Template", "{EFE8F22C-91B6-4FE4-9D3B-45EBCD36C902}"
-	ProjectSection(SolutionItems) = preProject
-		..\dotnet-templates\equinox-projector-cosmos\README.md = ..\dotnet-templates\equinox-projector-cosmos\README.md
-	EndProjectSection
-EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Consumer", "..\dotnet-templates\equinox-projector-cosmos\Consumer\Consumer.fsproj", "{A4470E72-C798-446F-A9E1-E64942268A7C}"
-EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Projector", "..\dotnet-templates\equinox-projector-cosmos\Projector\Projector.fsproj", "{DB2A2272-89E8-4007-B036-2094CE1AB4C6}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -160,14 +151,6 @@ Global
 		{65F8FC6A-FF31-43A0-B7D9-4C9CF407DEB3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{65F8FC6A-FF31-43A0-B7D9-4C9CF407DEB3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{65F8FC6A-FF31-43A0-B7D9-4C9CF407DEB3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A4470E72-C798-446F-A9E1-E64942268A7C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A4470E72-C798-446F-A9E1-E64942268A7C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A4470E72-C798-446F-A9E1-E64942268A7C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A4470E72-C798-446F-A9E1-E64942268A7C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{DB2A2272-89E8-4007-B036-2094CE1AB4C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DB2A2272-89E8-4007-B036-2094CE1AB4C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DB2A2272-89E8-4007-B036-2094CE1AB4C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DB2A2272-89E8-4007-B036-2094CE1AB4C6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -182,8 +165,6 @@ Global
 		{1B0D4568-96FD-4083-8520-CD537C0B2FF0} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871} = {8CDE1CC3-8619-44DE-8B4D-4102CE476C35}
 		{8CDE1CC3-8619-44DE-8B4D-4102CE476C35} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
-		{A4470E72-C798-446F-A9E1-E64942268A7C} = {EFE8F22C-91B6-4FE4-9D3B-45EBCD36C902}
-		{DB2A2272-89E8-4007-B036-2094CE1AB4C6} = {EFE8F22C-91B6-4FE4-9D3B-45EBCD36C902}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {177E1E7B-E275-4FC6-AE3C-2C651ECCF71E}
