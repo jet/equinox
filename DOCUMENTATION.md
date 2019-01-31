@@ -479,7 +479,7 @@ A ChangeFeed _Processor_ consists of (per CosmosDb processor/range)
 
 The implementation in this repo uses [Microsoft’s .NET `ChangeFeedProcessor` implementation](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet), which is a proven component used for diverse purposes including as the underlying substrate for various Azure Functions wiring.
 
-See the [`prj` branch for the WIP regarding this](https://github.com/jet/equinox/pull/87).
+See the [`prj` branch for the WIP regarding this](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
 
 # Feeding to Kafka
 
@@ -489,7 +489,7 @@ The [Apache Kafka intro docs](https://kafka.apache.org/intro) provide a clear te
 
 As noted in the [Effect of ChangeFeed on Request Charges](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#effect-of-changefeed-on-request-charges), it can make sense to replicate the ChangeFeed to Kafka purely from the point of view of optimising request charges (and not needing to consider projections when considering how to scale up provisioning for load). Other benefits are mechanical sympathy based - Kafka is very often the right tool for the job in scaling out traversal of events for a variety of use cases.
 
-There is no WIP in this repo yet in this space.
+See the [`prj` branch for the WIP regarding this](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
 
 - https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
 - https://www.confluent.io/wp-content/uploads/confluent-kafka-definitive-guide-complete.pdf
