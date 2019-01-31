@@ -209,7 +209,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 1L expected res
 
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 10 // 9.84 // was 3 before introduction of multi-event batches
+        verifyRequestChargesMax 13 // 12.81 // was 3 before introduction of multi-event batches
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
