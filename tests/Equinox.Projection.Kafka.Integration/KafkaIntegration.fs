@@ -173,6 +173,10 @@ type T1(testOutputHelper) =
         test <@ ``should have consumed all expected messages`` @> // "should have consumed all expected messages"
     }
 
+// separated test type to allow the tests to run in parallel
+type T2(testOutputHelper) =
+    let log, broker = createLogger (TestOutputAdapter testOutputHelper), getTestBroker ()
+
     let [<FactIfBroker>] ``ConfluentKafka consumer should have expected exception semantics`` () = async {
         let topic = newId() // dev kafka topics are created and truncated automatically
         let groupId = newId()
@@ -184,10 +188,6 @@ type T1(testOutputHelper) =
         let! r = Async.Catch <| runConsumers log config 1 None (fun _ _ -> raise <|IndexOutOfRangeException())
         test <@ match r with Choice2Of2 (:? IndexOutOfRangeException) -> true | x -> failwithf "%A" x @>
     }
-
-// separated test type to allow the tests to run in parallel
-type T2(testOutputHelper) =
-    let log, broker = createLogger (TestOutputAdapter testOutputHelper), getTestBroker ()
 
     let [<FactIfBroker>] ``Given a topic different consumer group ids should be consuming the same message set`` () = async {
         let numMessages = 10
