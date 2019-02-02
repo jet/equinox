@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="TodosService.fs" />
+    <Compile Include="Todo.fs" />
   </ItemGroup>
 
   <ItemGroup>
