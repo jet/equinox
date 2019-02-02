@@ -3,6 +3,7 @@
 open Domain
 open Equinox.Cosmos
 open Equinox.Cosmos.Integration.Infrastructure
+open FSharp.UMX
 open Swensen.Unquote
 open System.Threading
 open System
@@ -75,7 +76,7 @@ type Tests(testOutputHelper) =
         let service = Cart.createServiceWithoutOptimizationAndMaxItems conn maxItemsPerRequest maxEventsPerBatch log
         capture.Clear() // for re-runs of the test
 
-        let cartId = Guid.NewGuid() |> CartId
+        let cartId = % Guid.NewGuid()
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 2
         let eventsPerAction = addRemoveCount * 2 - 1
@@ -110,7 +111,7 @@ type Tests(testOutputHelper) =
         let batchSize = 3
 
         let context, (sku11, sku12, sku21, sku22) = ctx
-        let cartId = Guid.NewGuid() |> CartId
+        let cartId = % Guid.NewGuid()
 
         // establish base stream state
         let service1 =
@@ -222,7 +223,7 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         // Trigger 10 events, then reload
-        let cartId = Guid.NewGuid() |> CartId
+        let cartId = % Guid.NewGuid()
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 
@@ -250,7 +251,7 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         // Trigger 10 events, then reload
-        let cartId = Guid.NewGuid() |> CartId
+        let cartId = % Guid.NewGuid()
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 

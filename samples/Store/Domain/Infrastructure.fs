@@ -1,6 +1,7 @@
 ﻿[<AutoOpen>]
 module Domain.Infrastructure
 
+open FSharp.UMX
 open Newtonsoft.Json
 open Newtonsoft.Json.Converters.FSharp
 open System
@@ -72,25 +73,11 @@ and private RequestIdJsonConverter() =
     /// Input must be a Guid.Parseable value
     override __.UnPickle input = RequestId.Parse input
 
+[<Measure>] type cartId
 /// CartId strongly typed id
-[<Sealed; JsonConverter(typeof<CartIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
-// (Internally a string for most efficient copying semantics)
-type CartId private (id : string) =
-    inherit Comparable<CartId, string>(id)
-    [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
-    member __.Value = id
-    override __.ToString () = id
-    // NB tests lean on having a ctor of this shape
-    new (guid: Guid) = CartId (guid.ToString("N"))
-    // NB for validation [and XSS] purposes we must prove it translatable to a Guid
-    static member Parse(input: string) = CartId (Guid.Parse input)
-/// Represent as a Guid.ToString("N") output externally
-and private CartIdJsonConverter() =
-    inherit JsonIsomorphism<CartId, string>()
-    /// Renders as per Guid.ToString("N")
-    override __.Pickle value = value.Value
-    /// Input must be a Guid.Parseable value
-    override __.UnPickle input = CartId.Parse input
+type CartId = Guid<cartId>
+module CartId =
+    let toStringN (value : CartId) : string = let g : Guid = %value in g.ToString("N") 
 
 /// ClientId strongly typed id
 [<Sealed; JsonConverter(typeof<ClientIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
