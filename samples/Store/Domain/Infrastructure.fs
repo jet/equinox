@@ -73,42 +73,14 @@ and private RequestIdJsonConverter() =
     /// Input must be a Guid.Parseable value
     override __.UnPickle input = RequestId.Parse input
 
-[<Measure>] type cartId
 /// CartId strongly typed id
 type CartId = Guid<cartId>
+and [<Measure>] cartId
 module CartId =
-    let toStringN (value : CartId) : string = let g : Guid = %value in g.ToString("N") 
+    let toStringN (value : CartId) : string = let g : Guid = %value in g.ToString "N"
 
 /// ClientId strongly typed id
-[<Sealed; JsonConverter(typeof<ClientIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
-// To support model binding using aspnetcore 2 FromHeader
-[<System.ComponentModel.TypeConverter(typeof<ClientIdStringConverter>)>]
-// (Internally a string for most efficient copying semantics)
-type ClientId private (id : string) =
-    inherit Comparable<ClientId, string>(id)
-    [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
-    member __.Value = id
-    override __.ToString () = id
-    // NB tests lean on having a ctor of this shape
-    new (guid: Guid) = ClientId (guid.ToString("N"))
-    // NB for validation [and XSS] purposes we must prove it translatable to a Guid
-    static member Parse(input: string) = ClientId (Guid.Parse input)
-/// Represent as a Guid.ToString("N") output externally
-and private ClientIdJsonConverter() =
-    inherit JsonIsomorphism<ClientId, string>()
-    /// Renders as per Guid.ToString("N")
-    override __.Pickle value = value.Value
-    /// Input must be a Guid.Parseable value
-    override __.UnPickle input = ClientId.Parse input
-and private ClientIdStringConverter() =
-    inherit System.ComponentModel.TypeConverter()
-    override __.CanConvertFrom(context, sourceType) =
-        sourceType = typedefof<string> || base.CanConvertFrom(context,sourceType)
-    override __.ConvertFrom(context, culture, value) =
-        match value with
-        | :? string as s -> s |> ClientId.Parse |> box
-        | _ -> base.ConvertFrom(context, culture, value)
-    override __.ConvertTo(context, culture, value, destinationType) =
-        match value with
-        | :? ClientId as value when destinationType = typedefof<string> -> value.Value :> _
-        | _ -> base.ConvertTo(context, culture, value, destinationType)
+type ClientId = Guid<clientId>
+and [<Measure>] clientId
+module ClientId =
+    let toStringN (value : ClientId) : string = let g : Guid = %value in g.ToString "N"

@@ -37,7 +37,8 @@ module IdTypes =
     [<Fact>]
     let ``ClientId has structural equality semantics`` () =
         let x = Guid.NewGuid()
-        test <@ ClientId x = ClientId x @>
+        let (x1 : ClientId, x2 : ClientId) = %x, %x
+        test <@ x1 = x2 @>
 
     [<Fact>]
     let ``RequestId has structural equality semantics`` () =
