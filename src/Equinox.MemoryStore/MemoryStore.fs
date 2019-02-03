@@ -98,9 +98,9 @@ type MemResolver<'event, 'state>(store : VolatileStore, fold, initial) =
     let resolveStream streamName = Store.Stream.create category streamName
 
     member __.Resolve = function
-        | Target.CatId (categoryName,streamId) ->
+        | Target.AggregateId (categoryName,streamId) ->
             resolveStream (mkStreamName categoryName streamId)
-        | Target.CatIdEmpty (categoryName,streamId) ->
+        | Target.AggregateIdEmpty (categoryName,streamId) ->
             let streamName = mkStreamName categoryName streamId
             Store.Stream.ofMemento (Token.ofEmpty streamName initial) (resolveStream streamName)
         | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x

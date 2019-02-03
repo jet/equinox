@@ -1,4 +1,4 @@
-/// This is not part of the Store; it's ported from https://gityyhub.com/gregoryyoung/m-r/tree/master/SimpleCQRS for fun
+/// This is not part of the Store; it's ported from https://gyyhub.com/gregoryyoung/m-r/tree/master/SimpleCQRS for fun
 module Domain.InventoryItem
 
 open System
@@ -54,8 +54,8 @@ module Commands =
             if not state.active then invalidOp "Already deactivated"
             [ Events.Deactivated ]
 
-type Handler(log, stream) =
-    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = 3)
+type Handler(log, stream, ?maxAttempts) =
+    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = defaultArg maxAttempts 3)
 
     member __.Execute command : Async<unit> =
         inner.Decide <| fun ctx ->
@@ -67,11 +67,11 @@ type Handler(log, stream) =
 type InventoryItemId = InventoryItemId of Guid
 
 type Service(log, resolveStream) =
-    let (|CatId|) (InventoryItemId id) = Equinox.Target.CatId ("InventoryItem", id.ToString("N"))
-    let (|InventoryItem|) (CatId id) = Handler(log, resolveStream id)
+    let (|AggregateId|) (InventoryItemId id) = Equinox.AggregateId ("InventoryItem", id.ToString("N"))
+    let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
 
-    member __.Execute (InventoryItem handler) command =
+    member __.Execute (Stream handler) command =
         handler.Execute command
 
-    member __.Read(InventoryItem handler) =
+    member __.Read(Stream handler) =
         handler.Read

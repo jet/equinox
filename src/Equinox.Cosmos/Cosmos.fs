@@ -927,9 +927,9 @@ type EqxResolver<'event, 'state>(store : EqxStore, codec, fold, initial, [<O; D(
                     return! category.TrySync log (token, originState) events } }
 
     member __.Resolve = function
-        | Target.CatId (categoryName,streamId) ->
+        | Target.AggregateId (categoryName,streamId) ->
             store.ResolveCollStream(categoryName, streamId) |> resolveStream
-        | Target.CatIdEmpty (categoryName,streamId) ->
+        | Target.AggregateIdEmpty (categoryName,streamId) ->
             let collStream, maybeInit = store.ResolveCollStream(categoryName, streamId)
             Store.Stream.ofMemento (Token.create collStream Position.fromKnownEmpty,initial) (resolveStream (collStream, maybeInit))
         | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x

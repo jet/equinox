@@ -14,7 +14,7 @@ let serializationSettings =
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
-type EventWithId = { id : CartId }
+type EventWithId = { id : SkuId }
 
 type EventWithOption = { age : int option }
 
@@ -33,7 +33,7 @@ type SimpleDu =
     interface IUnionContract
 
 let render = function
-    | EventA { id = id } -> sprintf """{"id":"%s"}""" id.Value
+    | EventA { id = id } -> sprintf """{"id":"%O"}""" id
     | EventB { age = None } -> sprintf "{}"
     | EventB { age = Some age } -> sprintf """{"age":%d}""" age
     | EventC { value = I { i = i } } -> sprintf """{"value":{"case":"I","i":%d}}""" i

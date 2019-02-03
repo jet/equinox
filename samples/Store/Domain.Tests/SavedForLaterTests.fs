@@ -103,7 +103,7 @@ let ``State should produce a stable output for skus with the same saved date`` (
 
     let getSimplifiedState skus =
         let state',_ = run [ Commands.Add(now, skus)]
-        [| for item in state' -> item.skuId.Value |]
+        [| for item in state' -> item.skuId |]
 
     let skusState = getSimplifiedState skus
     let shuffledSkusState = getSimplifiedState shuffledSkus

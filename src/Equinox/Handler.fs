@@ -71,10 +71,10 @@ type Handler<'event, 'state>
 /// Store-agnostic way to specify a target Stream (with optional known State) to pass to a Resolver
 [<NoComparison; NoEquality>]
 type Target =
-    /// Recommended way to specify a stream name
-    | CatId of category: string * id: string
+    /// Recommended way to specify a stream identifier; a category identifier and an aggregate identity
+    | AggregateId of category: string * id: string
     /// Resolve the stream, but stub the attempt to Load based on a strong likelihood that a stream is empty and hence it's reasonable to optimistically avoid
     /// a Load roundtrip; if that turns out not to be the case, the price is to have to do a re-run after the resync
-    | CatIdEmpty of category: string * id: string
-    /// prefer CatId
+    | AggregateIdEmpty of category: string * id: string
+    /// prefer AggregateId
     | DeprecatedRawName of streamName: string

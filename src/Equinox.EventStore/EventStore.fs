@@ -471,9 +471,9 @@ type GesResolver<'event,'state>(gateway : GesGateway, codec, fold, initial, [<O;
     let resolve = Stream.create category
 
     member __.Resolve = function
-        | Target.CatId (categoryName,streamId) ->
+        | Target.AggregateId (categoryName,streamId) ->
             resolve <| mkStreamName categoryName streamId
-        | Target.CatIdEmpty (categoryName,streamId) ->
+        | Target.AggregateIdEmpty (categoryName,streamId) ->
             let streamName = mkStreamName categoryName streamId
             Stream.ofMemento (gateway.LoadEmpty streamName,initial) <| resolve streamName
         | Target.DeprecatedRawName streamName ->
