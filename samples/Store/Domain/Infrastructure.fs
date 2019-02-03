@@ -38,48 +38,46 @@ type StringId<'TComp when 'TComp :> Comparable<'TComp, string>>(token : string) 
     inherit Comparable<'TComp,string>(token)
     override __.ToString() = token
 
+module Guid =
+    let inline toStringN (x : Guid) = x.ToString "N"
+
 /// SkuId strongly typed id
-[<Sealed; JsonConverter(typeof<SkuIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
-// (Internally a string for most efficient copying semantics)
+/// - Ensures canonical rendering without dashes via ToString + Newtonsoft.Json
+/// - Guards against XSS by only permitting initialization based on Guid.Parse
+/// - Implements comparison/equality solely to enable tests to leverage structural equality 
+[<Sealed; AutoSerializable(false); JsonConverter(typeof<SkuIdJsonConverter>)>]
 type SkuId private (id : string) =
-    inherit Comparable<SkuId, string>(id)
-    [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
-    member __.Value = id
-    override __.ToString () = id
-    new (guid: Guid) = SkuId (guid.ToString("N"))
-    // NB tests (specifically, empty) lean on having a ctor of this shape
-    new() = SkuId(Guid.NewGuid())
-    // NB for validation [and XSS] purposes we prove it translatable to a Guid
-    static member Parse(input: string) = SkuId (Guid.Parse input)
+    inherit StringId<SkuId>(id)
+    new(value : Guid) = SkuId(value.ToString "N")
+    /// Required to support empty
+    [<Obsolete>] new() = SkuId(Guid.NewGuid())
 /// Represent as a Guid.ToString("N") output externally
 and private SkuIdJsonConverter() =
     inherit JsonIsomorphism<SkuId, string>()
-    /// Renders as per Guid.ToString("N")
-    override __.Pickle value = value.Value
-    /// Input must be a Guid.Parseable value
-    override __.UnPickle input = SkuId.Parse input
-
-module Guid =
-    let toStringN (x : Guid) = x.ToString "N"
+    /// Renders as per `Guid.ToString("N")`, i.e. no dashes
+    override __.Pickle value = string value
+    /// Input must be a `Guid.Parse`able value
+    override __.UnPickle input = Guid.Parse input |> SkuId
 
 /// RequestId strongly typed id
-/// - Implements comparison/equality and default ctor to enable tests to leverage structural equality and empty
-/// - Guarantees canonical rendering in Guid.ToString("N") format without dashes via ToString and Newtonsoft.Json
+/// - Ensures canonical rendering without dashes via ToString + Newtonsoft.Json
 /// - Guards against XSS by only permitting initialization based on Guid.Parse
-[<Sealed; JsonConverter(typeof<RequestIdJsonConverter>); AutoSerializable(false)>]
+/// - Implements comparison/equality solely to enable tests to leverage structural equality 
+[<Sealed; AutoSerializable(false); JsonConverter(typeof<RequestIdJsonConverter>)>]
 type RequestId private (id : string) =
     inherit StringId<RequestId>(id)
-    new(id : Guid) = RequestId(Guid.toStringN id)
-    new() = RequestId(Guid.NewGuid())
+    new(value : Guid) = RequestId(value.ToString "N")
+    /// Required to support empty
+    [<Obsolete>] new() = RequestId(Guid.NewGuid())
 /// Represent as a Guid.ToString("N") output externally
 and private RequestIdJsonConverter() =
     inherit JsonIsomorphism<RequestId, string>()
-    /// Renders as per `Guid.ToString("N")`
+    /// Renders as per `Guid.ToString("N")`, i.e. no dashes
     override __.Pickle value = string value
     /// Input must be a `Guid.Parse`able value
     override __.UnPickle input = Guid.Parse input |> RequestId
 
-/// CartId strongly typed id
+/// CartId strongly typed id; not used for storage so rendering is not significatn
 type CartId = Guid<cartId>
 and [<Measure>] cartId
 module CartId = let toStringN (value : CartId) : string = Guid.toStringN %value
