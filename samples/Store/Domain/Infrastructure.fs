@@ -77,12 +77,17 @@ and private RequestIdJsonConverter() =
     /// Input must be a `Guid.Parse`able value
     override __.UnPickle input = Guid.Parse input |> RequestId
 
-/// CartId strongly typed id; not used for storage so rendering is not significatn
+/// CartId strongly typed id; not used for storage so rendering is not significant
 type CartId = Guid<cartId>
 and [<Measure>] cartId
 module CartId = let toStringN (value : CartId) : string = Guid.toStringN %value
 
-/// ClientId strongly typed id
+/// CartId strongly typed id; not used for storage so rendering is not significant
 type ClientId = Guid<clientId>
 and [<Measure>] clientId
 module ClientId = let toStringN (value : ClientId) : string = Guid.toStringN %value
+
+/// InventoryItemId strongly typed id
+type InventoryItemId = Guid<inventoryItemId>
+and [<Measure>] inventoryItemId
+module InventoryItemId = let toStringN (value : InventoryItemId) : string = Guid.toStringN %value

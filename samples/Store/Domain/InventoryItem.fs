@@ -64,10 +64,8 @@ type Handler(log, stream, ?maxAttempts) =
     member __.Read : Async<Folds.State> =
         inner.Query id
 
-type InventoryItemId = InventoryItemId of Guid
-
 type Service(log, resolveStream) =
-    let (|AggregateId|) (InventoryItemId id) = Equinox.AggregateId ("InventoryItem", id.ToString("N"))
+    let (|AggregateId|) (id : InventoryItemId) = Equinox.AggregateId ("InventoryItem", InventoryItemId.toStringN id)
     let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
 
     member __.Execute (Stream handler) command =
