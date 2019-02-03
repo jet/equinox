@@ -157,7 +157,7 @@ A key facility of this repo is being able to run load tests, either in process a
 
 This benchmark continually reads and writes very small events across multiple streams on .NET Full Framework
 
-    dotnet pack -c Release .\build.proj
+    dotnet pack -c Release ./build.proj
     & ./tools/Equinox.Tool/bin/Release/net461/eqx.exe run -f 2500 -C -U es
 
 ### Run EventStore benchmark on .NET Core (when provisioned)

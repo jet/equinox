@@ -1,20 +1,81 @@
-Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there!
+Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](#FAQ) and [README.md](README.md) for background info _and (**especially while we remain pre-release**), the [Roadmap](#roadmap) and excuses below_.
 
-Maxim: They say you should always release while you're still embarrassed to do so; **we are**.
-Solution: claim we've not yet released ;)
+Seriously: this is not released, it's a soft-launched open source repo at version 1.0; the 1.0 reflects (only) the fact its in production usage. There is absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now.
 
-Please refer to the [FAQ](#FAQ) and [README.md](README.md) for background info and (**especially while we remain pr-release**), the [Roadmap](#roadmap) and excuses below.
-
-----
-
-TL;DR excuses, excuses, WIP, :under-construction:
-
-Seriously: this is not released, it's a soft-launched open source repo at version 1.0; the 1.0 reflects (only) the fact its in production usage. There is absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now. _It is **not** a proper open source project yet, unfortunately_.
-
-- While [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates) does provide the option to include a full-featured [TodoBackend](https://todobackend.com) per the spec, a more complete sample application is needed; see [#57](https://github.com/jet/equinox/issues/57)
+- While [`dotnet new eqxweb -t`](https://github.com/jet/dotnet-templates) does provide the option to include a full-featured [TodoBackend](https://todobackend.com) per the spec, a more complete sample application is needed; see [#57](https://github.com/jet/equinox/issues/57)
 - there is no proper step by step tutorial showing code and stored representations interleaved (there is a low level spec-example in [the docs](DOCUMENTATION.md#Programming-Model) in the interim)
 - There is a placeholder [Roadmap](#roadmap) for now, which is really an unordered backlog.
 - As noted in the contributing section, we're simply not ready yet (we have governance models in place; this is purely a matter of conserving bandwidth, prioritising getting the system serviceable in terms of samples and documentation in advance of inviting people to evaluate)...
+
+# Glossary
+
+## Event-sourcing
+
+Highly recommended Book: _Domain Driven Design, Eric Evans, 2003_ aka 'The Blue Book'; not a leisurely read but timeless and continues to be authoritative
+
+Highly recommended Book: _Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Worked examples and a slightly differnt take on DDD.
+
+Term | Description
+-----|------------
+Aggregate | Boundary within which a set of Invariants are to be preserved
+Append | the Act of adding Events reflecting a Decision to a Stream contingent on an Optimistic Concurrency Check
+Command | Details representing intent to run a Decision process based on a Stream - may result in Events being Appended
+Decision | Application logic taking a Command and a State. Can yield a response and /or some Events to Append to the Stream in order to effect a change in accordance with the rules and Invariants of the Aggregate
+Event | Details representing the facts of something that occurred with regard to an Aggregate stored in a Stream
+Eventually Consistent | A Read Model can momentarily lag a Stream's current State as events are being Projected
+Fold | FP Term used to describe process of building State from Events
+[Idempotent](https://en.wikipedia.org/wiki/Idempotence) | Can safely be processed >1 time without adverse effects
+Invariants | Rules that an Aggregate's Fold and Decision process are trying to preserve
+Optimistic Concurrency | Locking/transaction mechanism used to ensure that Appends to a Stream maintain the Aggregate's Invariants
+Projection | Process whereby a Read Model tracks the State of Streams
+Projector | Processor tracking new Events, triggering Projection or Replication activities
+Query | Consistent read direct from Stream State 
+Read Model | Denormalized data maintained by a Projection for the purposes of providing a Read Model based on a Projection
+Replication | Emitting Events as they are written with a view to having a Consumer traverse them to derive a Read Model or drive some form of synchronization process
+State | Information inferred from a Stream
+Store | Holds a set of Streams
+Stream | Ordered sequence of Events in a Store
+
+## CosmosDb
+
+Term | Description
+-----|------------
+Change Feed | set of query patterns allowing one to run a continuous query reading documents in a Range in order of their last update
+Change Feed Processor | Library from Microsoft exposing facilities to Project from a Change Feed, maintaining Offsets per Range in the Lease Collection
+Collection | logical space in a CosmosDb holding [loosely] related documents
+CosmosDb | Microsoft Azure's managed document database
+Database | Group of collections
+Document id | Identifier used to load a document directly without a Query
+Lease Collection | Maintains a set of Offsets per Range, together with leases reflecting instances of the Change Feed Processors and thir Range assignments (aka `aux` collection)
+Partition Key | Logical key identifying a Stream (maps to a Range)
+Projector | Process running a [set of] Change Feed Processors across the Ranges of a Collection in order to perform a global synchronization within the system across Streams
+Query | Using indices to walk a set of relevant documents in a Collection, yielding Documents
+Range | Subset of the hashed key space of a collection retained as a physical partitition, can be split as part of scaling up the RUs allocated to a Collection
+Replay | The ability 
+Request Units | Request Units provisioned for CosmosDb to host a Range of a Collection
+Request Charge | Number of RUs charged for a specific action, taken from the RUs allocation for the relevant Range
+Stored Procedure | JavaScript code stored in a collection that can translate an input request to a set of actions transacted together on the server. Incurs same Request Charges for work performed
+
+## EventStore
+
+Term | Description
+-----|------------
+Category | Group of Streams bearing a common `CategoryName-<id>` stream name
+Event | json or blob representing
+EventStore | [Open source](https://eventstore.org) Event Sourcing-optimized data store and programming model
+Stream | Core abstraction presented by the API
+WrongExpectedVersion | Low level exception thrown to communicate an Optimistic Concurrency Violation
+
+## Equinox
+
+
+Term | Description
+-----|------------
+Cache | `System.Net.MemoryCache` holding State and/or Etag information for a stream with a view to reducing roundtrips and/or Request Charges
+Handler | Set of logic implementing Decisions and/or Queries against a Stream in terms of Reads and Appends
+Rolling Snapshot | Event written to an EventStore stream in order to ensure minimal roundtrips to EventStore when there is a Cache miss
+Service | Higher level logic achieving business ends, involving the Handler as and when a Stream needs to be transacted against
+Unfolds | Snapshot information, represented as Events that are stored in an appropriate storage location (outside of a Stream's actual events) to minimize Queries and the attendant Request Charges when there is a Cache miss
 
 # Programming Model
 
@@ -22,12 +83,20 @@ NB this is long and needs _lots_ of editing, having started as a placeholder in 
 
 In F#, the Equinox programming model involves (largely by convention, see [FAQ](#FAQ)), per aggregation of events on a given category of stream:
 
-* `'state`: the state required to support the Decision or Query being supported (not expected to be serializable or stored directly in a Store; can be held in a [.NET `MemoryCache`](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.caching.memorycache))
+* `'state`: the rolling state maintained to enable Decisions or Queries to be made given a `command` (not expected to be serializable or stored directly in a Store; can be held in a [.NET `MemoryCache`](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.caching.memorycache))
+* `'event`: a discriminated union representing all the possible Events from which a state can be `evolve`d (see `e`vents and `u`nfolds in the data model). Typically the mapping of the json to an `'event` `c`ase is [driven by a `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)
+
+
 * `initial: 'state`: the [implied] state of an empty stream
-* `'event`: a discriminated union representing all the possible Events from which a state be `evolve`d (see `e`vents and `u`nfolds in the data model). Typically the mapping of the json to an `'event` `c`ase is [driven by a `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)
+
+
 * `fold : 'state -> 'event seq -> 'state`: function used to fold one or more loaded (or proposed) events (real ones and/or unfolded ones) into a given running [persistent data structure](https://en.wikipedia.org/wiki/Persistent_data_structure) of type `'state`
-* `evolve: state -> 'event -> 'state` - the `folder` function from which `fold` is built, representing the application of the delta the `'event` implies for the model to the `state`
-* `interpret: 'state -> 'command -> event' list`: responsible for _deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be interpret in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles)
+* `evolve: state -> 'event -> 'state` - the `folder` function from which `fold` is built, representing the application of a single delta that the `'event` implies for the model to the `state`. _Note: `evolve` is an implemntation detail of a given Aggregate; `fold` is the function used in tests and used to parameterize the Category's storage configuration._
+
+
+* `Functions:
+
+: 'state -> 'command -> event' list`: responsible for _deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be interpret in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles)
 
 When using a Store with support for synchronous unfolds and/or snapshots, one will typically implement two further functions in order to avoid having to have every `'event` in the stream having to be loaded and processed in order to build the `'state` (versus a single cheap point read from CosmosDb to read the _tip_):
 
@@ -377,17 +446,13 @@ You'll learn a lot from building your own equivalent wrapping layer. Given the a
 
 Having said that, getting good logging, some integration tests and getting lots of off-by-one errors off your plate is nice; the point of [DDD-CQRS-ES](https://ddd-cqrs-es.slack.com/) is to get beyond toy examples to the good stuff - Domain Modelling on your actual domain.
 
-## What is the scope of Equinox; what features have been consciously omitted?
-
-While it's not intended to be complete, try the [Roadmap](#roadmap). TL;DR The current codebase does not have anything to say about projections, aside from the [`unfold`s feature](DOCUMENTATION.md#Cosmos-Storage-Model), which provides _synchronous_ projections/snapshots on CosmosDb (and the integrated in-stream Rolling Snapshots on EventStore, although if you're using EventStore heavily you won't want to ignore its strong capabilities in this space).
-
 ## What will Equinox _never_ do?
 
 Hard to say; try us, raise an Issue.
 
 ## What client languages are supported ?
 
-The main language in mind for consumption is of course F# - many would say that F# and event sourcing are a dream pairing; little direct effort has been expended polishing it to be comfortable to consume from other .NET languages - but it's definitely not ruled out, and a small bit of polish and some samples should be able to make it just as good to use from other .NET languages.
+The main language in mind for consumption is of course F# - many would say that F# and event sourcing are a dream pairing; little direct effort has been expended polishing it to be comfortable to consume from other .NET languages, the `dotnet new eqxwebcs` template represents the current state.
 
 ## You say I can use volatile memory for integration tests, could this also be used for learning how to get started building event sourcing programs with equinox? 
 
@@ -416,9 +481,6 @@ There's a skeleton one in [#56](https://github.com/jet/equinox/issues/56), but y
 
 - Extend samples and templates; see [#57](https://github.com/jet/equinox/issues/57)
 - Enable snapshots to be stored outside of the main collection in `Equinox.Cosmos` see [#61](https://github.com/jet/equinox/issues/61)
-- [`Equinox.Cosmos.Projector`](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#equinoxcosmos-projection-facility)
-    - Maybe fully wired Kafka feeding example?
-    - Maybe `dotnet new` template with batteries included Kafka projector
     
 # Things that are incomplete and/or require work
 
@@ -444,11 +506,8 @@ EventStore, and it's Store adapter is the most proven and is pretty feature rich
 - `_etag`-based consistency checks?
 - Perf tuning of `JObject` vs `UTF-8` arrays
 
-## Wouldn't it be nice - `Equinox.Projection`, `Equinox.Projector`, `Equinox.Projection.*`:
-
-- pre-built projector providing a consistent featureset, adapted to each individual Store
-
 ## Wouldn't it be nice - `Equinox.SqlStreamStore`: See [#62](https://github.com/jet/equinox/issues/62)
+
 # Projection systems
 
 See [this medium post regarding some patterns used at Jet in this space](https://medium.com/@eulerfx/scaling-event-sourcing-at-jet-9c873cac33b8) for a broad overview of the reasoning and needs addressed by a projection system.
