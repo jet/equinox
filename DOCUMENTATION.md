@@ -91,12 +91,9 @@ In F#, the Equinox programming model involves (largely by convention, see [FAQ](
 
 
 * `fold : 'state -> 'event seq -> 'state`: function used to fold one or more loaded (or proposed) events (real ones and/or unfolded ones) into a given running [persistent data structure](https://en.wikipedia.org/wiki/Persistent_data_structure) of type `'state`
-* `evolve: state -> 'event -> 'state` - the `folder` function from which `fold` is built, representing the application of a single delta that the `'event` implies for the model to the `state`. _Note: `evolve` is an implemntation detail of a given Aggregate; `fold` is the function used in tests and used to parameterize the Category's storage configuration._
+* `evolve: state -> 'event -> 'state` - the `folder` function from which `fold` is built, representing the application of a single delta that the `'event` implies for the model to the `state`. _Note: `evolve` is an implementation detail of a given Aggregate; `fold` is the function used in tests and used to parameterize the Category's storage configuration._
 
-
-* `Functions:
-
-: 'state -> 'command -> event' list`: responsible for _deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be interpret in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles)
+* `interpret: 'state -> 'command -> event' list`: responsible for _deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be interpret in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles)
 
 When using a Store with support for synchronous unfolds and/or snapshots, one will typically implement two further functions in order to avoid having to have every `'event` in the stream having to be loaded and processed in order to build the `'state` (versus a single cheap point read from CosmosDb to read the _tip_):
 
