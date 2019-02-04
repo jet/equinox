@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Validator.fs" />
     <Compile Include="KafkaIntegration.fs" />
   </ItemGroup>
 
