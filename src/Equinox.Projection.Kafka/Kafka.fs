@@ -231,19 +231,23 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         member c.StoreOffset(tpo : TopicPartitionOffset) : unit =
             c.StoreOffsets[| TopicPartitionOffset(tpo.Topic, tpo.Partition, Offset(let o = tpo.Offset in o.Value + 1L)) |]
 
-        member c.RunPoll(log : ILogger, counter : InFlightMessageCounter, onMessage: ConsumeResult<'Key,'Value> -> unit) =
-            let cts = new CancellationTokenSource()
-
+        member c.RunPoll(log : ILogger, counter : InFlightMessageCounter, cts: CancellationTokenSource, onMessage: ConsumeResult<'Key,'Value> -> unit) =
             let poll() = 
                 while not cts.IsCancellationRequested do
                     counter.AwaitThreshold()
+                    log.Information("Consumer:{name} Entering consume", c.Name)
                     try let message = c.Consume(cts.Token) // NB don't use TimeSpan overload unless you want GPFs on1.0.0-beta2
+                        log.Information("Consumer:{name} Exiting consume", c.Name)
                         if message <> null then
                             onMessage message
                     with :? ConsumeException as e -> log.Warning(e, "Consume exception")
 
-            let _ = Async.StartAsTask(async { poll() })
-            { new IDisposable with member __.Dispose() = cts.Cancel() }
+            let _ = Async.StartAsTask(async { poll() }, cancellationToken = cts.Token)
+            { new IDisposable with 
+                member __.Dispose() = 
+                    log.Information("Consumer:{name} Run poll disposing", c.Name)
+                    
+                    cts.Dispose() }
 
         member c.WithLogging(log: ILogger) =
             let d1 = c.OnLog.Subscribe(fun m ->
@@ -325,7 +329,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         use _ = consumer.OnPartitionsRevoked.Subscribe (fun ps -> for p in ps do partitionedCollection.Revoke p)
 
         // run the consumer
-        use _ = consumer.RunPoll(log, counter, (fun m -> counter.Add(getMessageSize m) ; partitionedCollection.Add(m.TopicPartition, m)))
+        use _ = consumer.RunPoll(log, counter, cts, (fun m -> counter.Add(getMessageSize m) ; partitionedCollection.Add(m.TopicPartition, m)))
 
         // await for handler faults or external cancellation
         do! Async.AwaitTaskCorrect tcs.Task
@@ -389,7 +393,7 @@ type KafkaConsumerConfig =
             minInFlightBytes = defaultArg minInFlightBytes (16L * 1024L * 1024L)
             maxInFlightBytes = defaultArg maxInFlightBytes (24L * 1024L * 1024L) }
 
-type KafkaConsumer private (consumer : Consumer<string, string>, task : Task<unit>, cts : CancellationTokenSource) =
+type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, task : Task<unit>, cts : CancellationTokenSource) =
 
     /// https://github.com/edenhill/librdkafka/wiki/Statistics
     [<CLIEvent>]
@@ -397,9 +401,13 @@ type KafkaConsumer private (consumer : Consumer<string, string>, task : Task<uni
     member __.Status = task.Status
     /// Asynchronously awaits until consumer stops or is faulted
     member __.AwaitConsumer() = Async.AwaitTaskCorrect task
-    member __.Stop() = cts.Cancel() ; task.Result
+    member c.Stop() = async {
+        log.Information("consumer:{name} stopping", consumer.Name)
+        cts.Cancel(); 
+        consumer.Close()
+        do! c.AwaitConsumer() }
 
-    interface IDisposable with member __.Dispose() = __.Stop()
+    //interface IDisposable with member __.Dispose() = __.Stop()
 
     /// Starts a kafka consumer with provider configuration and batch message handler.
     /// Batches are grouped by topic partition. Batches belonging to the same topic partition will be scheduled sequentially and monotonically,
@@ -414,7 +422,7 @@ type KafkaConsumer private (consumer : Consumer<string, string>, task : Task<uni
         let consumer = ConsumerImpl.mkConsumer (config.Kvps, config.topics)
         let cfg = config.minInFlightBytes, config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay
         let task = ConsumerImpl.mkBatchedMessageConsumer log cfg cts.Token consumer partitionHandler |> Async.StartAsTask
-        new KafkaConsumer(consumer, task, cts)
+        new KafkaConsumer(log, consumer, task, cts)
 
     /// Starts a Kafka consumer instance that schedules handlers grouped by message key. Additionally accepts a global degreeOfParallelism parameter
     /// that controls the number of handlers running concurrently across partitions for the given consumer instance.
