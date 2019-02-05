@@ -6,6 +6,7 @@ open Domain.Infrastructure
 open Equinox.Cosmos.Projection
 open Equinox.Projection.Codec
 open Equinox.Projection.Kafka
+open Equinox.Projection.Validation
 #endif
 open Equinox.Store.Infrastructure
 open Equinox.Tool.Infrastructure
@@ -314,6 +315,7 @@ let main argv =
             if pargs.Contains ForceStartFromHere then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
             let source = { database = dbName; collection = collName }
             let aux = { database = dbName; collection = auxCollName }
+            let validator = FeedValidator()
           
             let buildRangeProjector () =
                 let sw = Stopwatch.StartNew() // we'll report the warmup/connect time on the first batch
@@ -326,9 +328,15 @@ let main argv =
                     | _ -> None, id
                 let projectBatch (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
                     sw.Stop() // Stop the clock after CFP hands off to us
+                    let validator = BatchValidator(validator)
                     let toKafkaEvent (e: DocumentParser.IEvent) : Equinox.Projection.Codec.RenderedEvent =
                         { s = e.Stream; i = e.Index; c = e.EventType; t = e.TimeStamp; d = e.Data; m = e.Meta }
-                    let pt, events = (fun () -> docs |> Seq.collect DocumentParser.enumEvents |> Seq.map toKafkaEvent |> Array.ofSeq) |> Stopwatch.Time 
+                    let validate (e: DocumentParser.IEvent) =
+                        match validator.TryIngest(e.Stream, int e.Index) with
+                        | Gap -> None // We cannot emit if we have evidence that this will leave a gap
+                        | Duplicate // Just because this is a re-delivery does not mean we can drop it - the state does not get reset if we retraverse a batch
+                        | Ok | New -> toKafkaEvent e |> Some
+                    let pt, events = (fun () -> docs |> Seq.collect DocumentParser.enumEvents |> Seq.choose validate |> Array.ofSeq) |> Stopwatch.Time 
                     let! et = async {
                         match producer with
                         | None ->
@@ -340,10 +348,18 @@ let main argv =
                             return et }
                             
                     if log.IsEnabled LogEventLevel.Debug then log.Debug("Response Headers {0}", let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]])
-                    let r = ctx.FeedResponse
-                    log.Information("{range} Fetch: {token} {requestCharge:n0}RU {count} docs {l:n1}s; Parse: e {events} {p:n3}s; Emit: {e:n1}s",
+                    let s = validator.Stats
+                    let r, s = ctx.FeedResponse, validator.Stats
+                    log.Information("{range} Fetch: {token} {requestCharge:n0}RU {count} docs {l:n1}s; Parse: c {cats} s {streams} e {events} {p:n3}s; Emit: {e:n1}s",
                         ctx.PartitionKeyRangeId, r.ResponseContinuation.Trim[|'"'|], r.RequestCharge, docs.Count, float sw.ElapsedMilliseconds / 1000., 
-                        events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
+                        s.categories, s.TotalStreams, events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
+                    if s.gap <> 0 then
+                        log.Error("Feed inconsistency: gaps led to dropping of {gap} events in batch", s.gap)
+                        for KeyValue(stream,stats) in validator.Enum() do
+                            log.Error("Gap in Stream {stream}: dropped {gap} events ({fresh} consistent {ok} ok {dups} dups)", stream, stats.gap, stats.fresh, stats.ok, stats.dup)
+                    elif s.dup <> 0 then
+                        let streamsWithDupsCount = validator.Enum() |> Seq.filter (function KeyValue(_,{dup = d }) -> d <> 0) |> Seq.length
+                        log.Information("Feed at least once delivery: {dups} duplicates encountered across {streams} affected streams", s.dup, streamsWithDupsCount)
                     sw.Restart() // restart the clock as we handoff back to the CFP
                 }
                 ChangeFeedObserver.Create(log, projectBatch, disposeProducer)

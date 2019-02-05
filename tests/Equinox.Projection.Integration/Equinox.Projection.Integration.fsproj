@@ -7,14 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="KafkaIntegration.fs" />
+    <Compile Include="FeedValidatorTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Equinox.Projection.Kafka\Equinox.Projection.Kafka.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="FsCheck.xUnit" Version="2.10.8" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.0" />
     <PackageReference Include="unquote" Version="4.0" />
     <PackageReference Include="xunit" Version="2.4.0" />
