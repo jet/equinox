@@ -34,6 +34,7 @@
     <Exec Command="dotnet test tests/Equinox.EventStore.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test tests/Equinox.Cosmos.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test tests/Equinox.Projection.Kafka.Integration $(Cfg) $(TestOptions)" />
+    <Exec Command="dotnet test tests/Equinox.Projection.Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
     <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
   </Target>
