@@ -231,23 +231,27 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         member c.StoreOffset(tpo : TopicPartitionOffset) : unit =
             c.StoreOffsets[| TopicPartitionOffset(tpo.Topic, tpo.Partition, Offset(let o = tpo.Offset in o.Value + 1L)) |]
 
-        member c.RunPoll(log : ILogger, counter : InFlightMessageCounter, cts: CancellationTokenSource, onMessage: ConsumeResult<'Key,'Value> -> unit) =
-            let poll() = 
-                while not cts.IsCancellationRequested do
-                    counter.AwaitThreshold()
-                    log.Information("Consumer:{name} Entering consume", c.Name)
-                    try let message = c.Consume(cts.Token) // NB don't use TimeSpan overload unless you want GPFs on1.0.0-beta2
-                        log.Information("Consumer:{name} Exiting consume", c.Name)
-                        if message <> null then
-                            onMessage message
-                    with :? ConsumeException as e -> log.Warning(e, "Consume exception")
+        member c.RunPoll(log : ILogger, counter : InFlightMessageCounter, cancellationToken: CancellationToken , onMessage: ConsumeResult<'Key,'Value> -> unit) =
+            //let poll() = 
+            while not cancellationToken.IsCancellationRequested do
+                counter.AwaitThreshold()
+                //log.Information("Consumer:{name} Entering consume", c.Name)
+                try let message = c.Consume(cancellationToken) // NB don't use TimeSpan overload unless you want GPFs on1.0.0-beta2
+                    //log.Information("Consumer:{name} Exiting consume", c.Name)
+                    if message <> null then
+                        onMessage message
+                with 
+                    | :? ConsumeException as e -> log.Warning(e, "Consume exception")
+                    | :? System.OperationCanceledException -> log.Warning("Consumer:{name} | Consuming cancelled", c.Name)
 
-            let _ = Async.StartAsTask(async { poll() }, cancellationToken = cts.Token)
-            { new IDisposable with 
-                member __.Dispose() = 
-                    log.Information("Consumer:{name} Run poll disposing", c.Name)
+            c.Close()
+
+            //let _ = Async.StartAsTask(async { poll() }, cancellationToken = cts.Token)
+            //{ new IDisposable with 
+            //    member __.Dispose() = 
+            //        log.Information("Consumer:{name} Run poll disposing", c.Name)
                     
-                    cts.Dispose() }
+            //        cts.Dispose() }
 
         member c.WithLogging(log: ILogger) =
             let d1 = c.OnLog.Subscribe(fun m ->
@@ -277,8 +281,8 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
 
     let mkConsumer (kvps : seq<KeyValuePair<string,string>>, topics : string seq)  =
         let consumer = new Consumer<'Key, 'Value>(kvps)
-        let _ = consumer.OnPartitionsAssigned.Subscribe(fun m -> consumer.Assign m)
-        let _ = consumer.OnPartitionsRevoked.Subscribe(fun _ -> consumer.Unassign())
+        //let _ = consumer.OnPartitionsAssigned.Subscribe(fun m -> consumer.Assign m)
+        //let _ = consumer.OnPartitionsRevoked.Subscribe(fun _ -> consumer.Unassign())
         consumer.Subscribe topics
         consumer
 
@@ -329,8 +333,8 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         use _ = consumer.OnPartitionsRevoked.Subscribe (fun ps -> for p in ps do partitionedCollection.Revoke p)
 
         // run the consumer
-        use _ = consumer.RunPoll(log, counter, cts, (fun m -> counter.Add(getMessageSize m) ; partitionedCollection.Add(m.TopicPartition, m)))
-
+        do consumer.RunPoll(log, counter, cts.Token, (fun m -> counter.Add(getMessageSize m) ; partitionedCollection.Add(m.TopicPartition, m)))
+        
         // await for handler faults or external cancellation
         do! Async.AwaitTaskCorrect tcs.Task
     }
@@ -401,11 +405,9 @@ type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, 
     member __.Status = task.Status
     /// Asynchronously awaits until consumer stops or is faulted
     member __.AwaitConsumer() = Async.AwaitTaskCorrect task
-    member c.Stop() = async {
+    member c.Stop() =  
         log.Information("consumer:{name} stopping", consumer.Name)
-        cts.Cancel(); 
-        consumer.Close()
-        do! c.AwaitConsumer() }
+        cts.Cancel();  
 
     //interface IDisposable with member __.Dispose() = __.Stop()
 
