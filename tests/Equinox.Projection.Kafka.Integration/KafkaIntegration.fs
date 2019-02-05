@@ -169,7 +169,7 @@ type T1(testOutputHelper) =
             allMessages
             |> Array.groupBy (fun msg -> msg.payload.producerId)
             |> Array.map (fun (_, gp) -> gp |> Array.distinctBy (fun msg -> msg.payload.messageId))
-            |> Array.forall (fun gp -> true)//gp.Length = messagesPerProducer)
+            |> Array.forall (fun gp -> gp.Length = messagesPerProducer)
 
         test <@ ``should have consumed all expected messages`` @> // "should have consumed all expected messages"
     }
@@ -187,9 +187,6 @@ type T2(testOutputHelper) =
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
         
         let! r = Async.Catch <| runConsumers log config 1 None (fun _ _ -> raise <|IndexOutOfRangeException())
-        match r with
-        | Choice1Of2 a -> ()
-        | Choice2Of2 b -> ()
         test <@ match r with Choice2Of2 (:? IndexOutOfRangeException) -> true | x -> failwithf "%A" x @>
     }
 
