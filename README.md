@@ -64,7 +64,7 @@ The Equinox components within this repository are delivered as a series of multi
 
 ### `dotnet new` starter project templates and sample applications
 
--  [![Templates NuGet](https://img.shields.io/nuget/v/Equinox.Templates.svg)](https://www.nuget.org/packages/Equinox.Templates/) `Equinox.Templates`: (Install via `dotnet new -i Equinox.Templates && dotnet new eqxweb && dotnet new exqwebcs`) [The templates repo](https://github.com/jet/dotnet-templates) has C# and F# sample apps, see [the quickstart](quickstart) for examples of how to use it.
+-  [![Templates NuGet](https://img.shields.io/nuget/v/Equinox.Templates.svg)](https://www.nuget.org/packages/Equinox.Templates/) `Equinox.Templates`: (Install via `dotnet new -i Equinox.Templates && dotnet new eqxweb && dotnet new eqxwebcs`) [The templates repo](https://github.com/jet/dotnet-templates) has C# and F# sample apps, see [the quickstart](quickstart) for examples of how to use it.
 - [`samples/Store` (in this repo)](/samples/Store): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
 - [`samples/TodoBackend` (in this repo)](/samples/TodoBackend): Standard https://todobackend.com compliant backend
 
