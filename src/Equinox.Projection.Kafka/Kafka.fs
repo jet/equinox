@@ -246,13 +246,6 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
 
             c.Close()
 
-            //let _ = Async.StartAsTask(async { poll() }, cancellationToken = cts.Token)
-            //{ new IDisposable with 
-            //    member __.Dispose() = 
-            //        log.Information("Consumer:{name} Run poll disposing", c.Name)
-                    
-            //        cts.Dispose() }
-
         member c.WithLogging(log: ILogger) =
             let d1 = c.OnLog.Subscribe(fun m ->
                 log.Information("consumer_info|{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
