@@ -116,7 +116,7 @@ type T1(testOutputHelper) =
 
     let [<FactIfBroker>] ``ConfluentKafka producer-consumer basic roundtrip`` () = async {
         let numProducers = 10
-        let numConsumers = 4
+        let numConsumers = 10
         let messagesPerProducer = 1000
 
         let topic = newId() // dev kafka topics are created and truncated automatically
@@ -128,7 +128,7 @@ type T1(testOutputHelper) =
             let messageCount = consumedBatches |> Seq.sumBy Array.length
             // signal cancellation if consumed items reaches expected size
             if messageCount >= numProducers * messagesPerProducer then
-                do! consumer.Stop()
+                consumer.Stop()
         }
 
         // Section: run the test
@@ -187,6 +187,9 @@ type T2(testOutputHelper) =
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
         
         let! r = Async.Catch <| runConsumers log config 1 None (fun _ _ -> raise <|IndexOutOfRangeException())
+        match r with
+        | Choice1Of2 a -> ()
+        | Choice2Of2 b -> ()
         test <@ match r with Choice2Of2 (:? IndexOutOfRangeException) -> true | x -> failwithf "%A" x @>
     }
 
