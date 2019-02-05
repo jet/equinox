@@ -232,12 +232,9 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
             c.StoreOffsets[| TopicPartitionOffset(tpo.Topic, tpo.Partition, Offset(let o = tpo.Offset in o.Value + 1L)) |]
 
         member c.RunPoll(log : ILogger, counter : InFlightMessageCounter, cancellationToken: CancellationToken , onMessage: ConsumeResult<'Key,'Value> -> unit) =
-            //let poll() = 
             while not cancellationToken.IsCancellationRequested do
                 counter.AwaitThreshold()
-                //log.Information("Consumer:{name} Entering consume", c.Name)
                 try let message = c.Consume(cancellationToken) // NB don't use TimeSpan overload unless you want GPFs on1.0.0-beta2
-                    //log.Information("Consumer:{name} Exiting consume", c.Name)
                     if message <> null then
                         onMessage message
                 with 
