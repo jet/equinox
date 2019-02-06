@@ -1,4 +1,4 @@
-# Equinox [![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![release](https://img.shields.io/github/release/jet/equinox.svg)](https://github.com/jet/equinox/releases) [![NuGet](https://img.shields.io/nuget/vpre/Equinox.svg)](https://www.nuget.org/packages/Equinox/) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-blue.svg?style=popout)](DOCUMENTATION.md) ![code size](https://img.shields.io/github/languages/code-size/jet/equinox.svg) [![license](https://img.shields.io/github/license/jet/equinox.svg)](LICENSE)
+# Equinox [![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![release](https://img.shields.io/github/release/jet/equinox.svg)](https://github.com/jet/equinox/releases) [![NuGet](https://img.shields.io/nuget/vpre/Equinox.svg)](https://www.nuget.org/packages/Equinox/) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-blue.svg?style=popout)](DOCUMENTATION.md) ![code size](https://img.shields.io/github/languages/code-size/jet/equinox.svg) [![license](https://img.shields.io/github/license/jet/equinox.svg)](LICENSE) [<img src="https://img.shields.io/badge/slack-DDD--CQRS--ES%2F%23equinox-yellow.svg?logo=slack">](https://t.co/MRxpx0rLH2)
 
 Equinox provides a unified programming model for event sourced processing against diverse stream-based stores.
 
@@ -80,10 +80,6 @@ Unfortunately, in the interim, the barrier for contributions will unfortunately 
   2. how to open up an appropriate extension point in Equinox
   3. (when all else fails), add to the complexity of the system by adding API surface area or logic.
 - Naming is hard; there is definitely room for improvement. There may at some point be a set of controlled deprecations, switching to names, and then removing the old ones. However it should be noted that widespread renaming is not on the cards due to the number of downstream systems that would be affected.
-
-## Versioning
-
-The repo is versioned based on [SemVer 2.0](https://semver.org/spec/v2.0.0.html) using the tiny-but-mighty [MinVer](https://github.com/adamralph/minver) from [@adamralph](https://github.com/adamralph). [See here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
 
 ## BUILDING
 
