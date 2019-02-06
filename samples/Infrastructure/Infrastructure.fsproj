@@ -31,7 +31,6 @@
     <PackageReference Include="Destructurama.FSharp.NetCore" Version="1.0.14" Condition=" '$(TargetFramework)' != 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.0.0.1" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />
-    <PackageReference Include="Jet.JsonNet.Converters" Version="0.0.3-CI69140" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="2.1.1" />
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />

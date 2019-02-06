@@ -48,9 +48,6 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData>]
-#if NET461
-    [<Trait("KnownFailOn","Mono")>] // Likely due to net461 not having consistent json.net refs and no binding redirects
-#endif
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log, store = createLog (), createMemoryStore ()
         let service = createServiceMem log store
