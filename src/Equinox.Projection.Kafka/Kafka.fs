@@ -271,8 +271,8 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
 
     let mkConsumer (kvps : seq<KeyValuePair<string,string>>, topics : string seq)  =
         let consumer = new Consumer<'Key, 'Value>(kvps)
-        //let _ = consumer.OnPartitionsAssigned.Subscribe(fun m -> consumer.Assign m)
-        //let _ = consumer.OnPartitionsRevoked.Subscribe(fun _ -> consumer.Unassign())
+        let _ = consumer.OnPartitionsAssigned.Subscribe(fun m -> consumer.Assign m)
+        let _ = consumer.OnPartitionsRevoked.Subscribe(fun _ -> consumer.Unassign())
         consumer.Subscribe topics
         consumer
 
