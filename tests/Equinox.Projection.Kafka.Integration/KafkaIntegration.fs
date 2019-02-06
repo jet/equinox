@@ -58,7 +58,7 @@ module Helpers =
 
     type TestMessage = { producerId : int ; messageId : int }
     [<NoComparison; NoEquality>]
-    type ConsumedTestMessage = { consumerId : int ; message : KafkaConsumerMessage ; payload : TestMessage }
+    type ConsumedTestMessage = { consumerId : int ; message : KafkaMessage ; payload : TestMessage }
     type ConsumerCallback = KafkaConsumer -> ConsumedTestMessage [] -> Async<unit>
 
     let runProducers log (broker : Uri) (topic : string) (numProducers : int) (messagesPerProducer : int) = async {
@@ -84,7 +84,7 @@ module Helpers =
 
     let runConsumers log (config : KafkaConsumerConfig) (numConsumers : int) (timeout : TimeSpan option) (handler : ConsumerCallback) = async {
         let mkConsumer (consumerId : int) = async {
-            let deserialize (msg : KafkaConsumerMessage) = { consumerId = consumerId ; message = msg ; payload = JsonConvert.DeserializeObject<_> msg.Value }
+            let deserialize (msg : KafkaMessage) = { consumerId = consumerId ; message = msg ; payload = JsonConvert.DeserializeObject<_> msg.Value }
 
             // need to pass the consumer instance to the handler callback
             // do a bit of cyclic dependency fixups
@@ -137,7 +137,7 @@ type T1(testOutputHelper) =
         let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
         let consumers = runConsumers log config numConsumers None consumerCallback
 
-        do! [ producers; consumers ]
+        do! [ producers ; consumers ]
             |> Async.Parallel
             |> Async.Ignore
 
