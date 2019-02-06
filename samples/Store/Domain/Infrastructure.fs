@@ -5,7 +5,6 @@ open FSharp.UMX
 open Newtonsoft.Json
 open Newtonsoft.Json.Converters.FSharp
 open System
-open System.Runtime.Serialization
 
 #if NET461
 module Seq =
@@ -58,31 +57,26 @@ and private SkuIdJsonConverter() =
     override __.Pickle value = string value
     /// Input must be a `Guid.Parse`able value
     override __.UnPickle input = Guid.Parse input |> SkuId
+type [<Measure>] skuId
+module SkuId = let parse (value : Guid<skuId>) : SkuId = SkuId(%value)
 
-/// RequestId strongly typed id
-/// - Ensures canonical rendering without dashes via ToString + Newtonsoft.Json
-/// - Guards against XSS by only permitting initialization based on Guid.Parse
-/// - Implements comparison/equality solely to enable tests to leverage structural equality 
-[<Sealed; AutoSerializable(false); JsonConverter(typeof<RequestIdJsonConverter>)>]
-type RequestId private (id : string) =
-    inherit StringId<RequestId>(id)
-    new(value : Guid) = RequestId(value.ToString "N")
-    /// Required to support empty
-    [<Obsolete>] new() = RequestId(Guid.NewGuid())
-/// Represent as a Guid.ToString("N") output externally
-and private RequestIdJsonConverter() =
-    inherit JsonIsomorphism<RequestId, string>()
-    /// Renders as per `Guid.ToString("N")`, i.e. no dashes
-    override __.Pickle value = string value
-    /// Input must be a `Guid.Parse`able value
-    override __.UnPickle input = Guid.Parse input |> RequestId
+/// RequestId strongly typed id, represented internally as a string
+/// - Ensures canonical rendering without dashes via ToString, Newtonsoft.Json, sprintf "%s" etc
+/// - using string enables one to lean on structural equality for types embedding one
+type RequestId = string<requestId>
+and [<Measure>] requestId
+module RequestId =
+    /// - For web inputs, should guard against XSS by only permitting initialization based on Skud.parse
+    /// - For json deserialization where the saved representation is not trusted to be in canonical Guid form,
+    ///     it is recommended to bind to a Guid and then upconvert to string<requestId>
+    let parse (value : Guid<requestId>) : string<requestId> = % Guid.toStringN %value
 
-/// CartId strongly typed id; not used for storage so rendering is not significant
+/// CartId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
 type CartId = Guid<cartId>
 and [<Measure>] cartId
 module CartId = let toStringN (value : CartId) : string = Guid.toStringN %value
 
-/// CartId strongly typed id; not used for storage so rendering is not significant
+/// CartId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
 type ClientId = Guid<clientId>
 and [<Measure>] clientId
 module ClientId = let toStringN (value : ClientId) : string = Guid.toStringN %value

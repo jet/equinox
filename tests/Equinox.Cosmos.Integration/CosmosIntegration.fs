@@ -4,11 +4,12 @@ open Domain
 open Equinox.Cosmos
 open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.UMX
+open Newtonsoft.Json
 open Swensen.Unquote
 open System.Threading
 open System
 
-let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
+let serializationSettings = JsonSerializerSettings()
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 

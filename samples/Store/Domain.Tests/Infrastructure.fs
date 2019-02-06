@@ -2,15 +2,14 @@
 module Samples.Store.Domain.Tests.Infrastructure
 
 open Domain
-open FSharp.UMX
 open FsCheck
+open FSharp.UMX
 open Swensen.Unquote
 open System
 open global.Xunit
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
-    static member RequestId = Arb.generate |> Gen.map RequestId |> Arb.fromGen
 
 type DomainPropertyAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(QuietOnSuccess = true, Arbitrary=[| typeof<FsCheckGenerators> |])
@@ -47,11 +46,13 @@ module IdTypes =
     [<Fact>]
     let ``RequestId has structural equality and canonical rendering semantics`` () =
         let x = Guid.NewGuid() in let xn = Guid.toStringN x
-        let (x1 : RequestId, x2 : RequestId) = RequestId %x, RequestId %x
-        test <@ x1 = x2 && string x1 = xn @>
+        let (x1 : RequestId, x2 : RequestId) = RequestId.parse %x, RequestId.parse %x
+        test <@ x1 = x2
+                && string x1 = xn @>
 
     [<Fact>]
     let ``SkuId has structural equality and canonical rendering semantics`` () =
         let x = Guid.NewGuid() in let xn = Guid.toStringN x
-        let (x1 : SkuId, x2 : SkuId) = SkuId %x, SkuId %x
-        test <@ x1 = x2 && string x1 = xn @>
+        let (x1 : SkuId, x2 : SkuId) = SkuId.parse %x, SkuId.parse %x
+        test <@ x1 = x2
+                && string x1 = xn @>

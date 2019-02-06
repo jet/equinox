@@ -2,9 +2,9 @@
 module Samples.Store.Integration.CodecIntegration
 
 open Domain
+open FSharp.UMX
 open Swensen.Unquote
 open TypeShape.UnionContract
-open Xunit
 
 let serializationSettings =
     Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect(converters=
@@ -14,7 +14,7 @@ let serializationSettings =
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
-type EventWithId = { id : SkuId }
+type EventWithId = { id : Guid<skuId> }
 
 type EventWithOption = { age : int option }
 
