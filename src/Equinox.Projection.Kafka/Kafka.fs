@@ -25,15 +25,15 @@ module Config =
 
 // NB we deliberately wrap all types exposed by Confluent.Kafka to avoid needing to reference librdkafka everywhere
 [<NoComparison>]
-type KafkaDeliveredMessage internal (message : DeliveryReportResult<string,string>) =
+type DeliveryReport internal (message : DeliveryReportResult<string,string>) =
     member internal __.UnderlyingMessage = message
     static member TryWrap (msg : DeliveryReportResult<string,string>) =
         if msg.Error.IsError then
             let errorMsg = sprintf "Error on message topic=%s code=%O reason=%s" msg.Topic msg.Error.Code msg.Error.Reason
             Choice2Of2 (Exception errorMsg)
         else
-            Choice1Of2 (KafkaDeliveredMessage msg)
-    static member WrapOrThrow msg = match KafkaDeliveredMessage.TryWrap msg with Choice2Of2 e -> raise e | Choice1Of2 m -> m
+            Choice1Of2 (DeliveryReport msg)
+    static member WrapOrThrow msg = match DeliveryReport.TryWrap msg with Choice2Of2 e -> raise e | Choice1Of2 m -> m
     member __.Topic = message.Topic
     member __.Partition : int = let p = message.Partition in p.Value
     member __.Offset : int64 = let o = message.Offset in o.Value
@@ -42,7 +42,7 @@ type KafkaDeliveredMessage internal (message : DeliveryReportResult<string,strin
 
 // NB we deliberately wrap all types exposed by Confluent.Kafka to avoid needing to reference librdkafka everywhere
 [<NoComparison>]
-type KafkaConsumerMessage internal (message : ConsumeResult<string,string>) =
+type KafkaMessage internal (message : ConsumeResult<string,string>) =
     member internal __.UnderlyingMessage = message
     member __.Topic = message.Topic
     member __.Partition : int = let p = message.Partition in p.Value
@@ -124,15 +124,15 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
 
         let! ct = Async.CancellationToken
 
-        let tcs = new TaskCompletionSource<KafkaDeliveredMessage[]>()
+        let tcs = new TaskCompletionSource<DeliveryReport[]>()
         let numMessages = keyValueBatch.Length
-        let results = Array.zeroCreate<KafkaDeliveredMessage> numMessages
+        let results = Array.zeroCreate<DeliveryReport> numMessages
         let numCompleted = ref 0
 
         use _ = ct.Register(fun _ -> tcs.TrySetCanceled() |> ignore)
 
         let handler (m : DeliveryReportResult<string,string>) =
-            match KafkaDeliveredMessage.TryWrap m with
+            match DeliveryReport.TryWrap m with
             | Choice2Of2 e ->
                 tcs.TrySetException e |> ignore
             | Choice1Of2 m ->
@@ -161,7 +161,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         let inline len (x:string) = match x with null -> 0 | x -> sizeof<char> * x.Length
         16 + len message.Key + len message.Value |> int64
 
-    let getBatchOffset (batch : KafkaConsumerMessage[]) : TopicPartitionOffset =
+    let getBatchOffset (batch : KafkaMessage[]) : TopicPartitionOffset =
         let maxOffset = batch |> Array.maxBy (fun m -> m.Offset)
         maxOffset.UnderlyingMessage.TopicPartitionOffset
 
@@ -231,17 +231,15 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         member c.StoreOffset(tpo : TopicPartitionOffset) : unit =
             c.StoreOffsets[| TopicPartitionOffset(tpo.Topic, tpo.Partition, Offset(let o = tpo.Offset in o.Value + 1L)) |]
 
-        member c.RunPoll(log : ILogger, counter : InFlightMessageCounter, cancellationToken: CancellationToken , onMessage: ConsumeResult<'Key,'Value> -> unit) =
-            while not cancellationToken.IsCancellationRequested do
-                counter.AwaitThreshold()
-                try let message = c.Consume(cancellationToken) // NB don't use TimeSpan overload unless you want GPFs on1.0.0-beta2
-                    if message <> null then
-                        onMessage message
-                with 
-                    | :? ConsumeException as e -> log.Warning(e, "Consume exception")
-                    | :? System.OperationCanceledException -> log.Warning("Consumer:{name} | Consuming cancelled", c.Name)
-
-            c.Close()
+        member internal c.RunPoll(log : ILogger, counter : InFlightMessageCounter, cancellationToken: CancellationToken , onMessage: ConsumeResult<'Key,'Value> -> unit) =
+            try while not cancellationToken.IsCancellationRequested do
+                    counter.AwaitThreshold()
+                    try let message = c.Consume(cancellationToken) // NB don't use TimeSpan overload unless you want AVEs on1.0.0-beta2
+                        if message <> null then
+                            onMessage message
+                    with| :? ConsumeException as e -> log.Warning(e, "Consume exception")
+                        | :? System.OperationCanceledException -> log.Warning("Consumer:{name} | Consuming cancelled", c.Name)
+            finally c.Close()
 
         member c.WithLogging(log: ILogger) =
             let d1 = c.OnLog.Subscribe(fun m ->
@@ -277,7 +275,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         consumer
 
     let mkBatchedMessageConsumer (log: ILogger) (minInFlightBytes, maxInFlightBytes, maxBatchSize, maxBatchDelay)
-            (ct : CancellationToken) (consumer : Consumer<string, string>) (handler : KafkaConsumerMessage[] -> Async<unit>) = async {
+            (ct : CancellationToken) (consumer : Consumer<string, string>) (handler : KafkaMessage[] -> Async<unit>) = async {
         let tcs = new TaskCompletionSource<unit>()
         use cts = CancellationTokenSource.CreateLinkedTokenSource(ct)
         use _ = ct.Register(fun _ -> tcs.TrySetResult () |> ignore)
@@ -294,7 +292,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
             let nextBatch () =
                 let count = collection.FillBuffer(buffer, maxBatchDelay)
                 if count <> 0 then log.Information("Consuming {count}", count)
-                let batch = Array.init count (fun i -> KafkaConsumerMessage(buffer.[i]))
+                let batch = Array.init count (fun i -> KafkaMessage(buffer.[i]))
                 Array.Clear(buffer, 0, count)
                 batch
 
@@ -395,16 +393,16 @@ type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, 
     member __.Status = task.Status
     /// Asynchronously awaits until consumer stops or is faulted
     member __.AwaitConsumer() = Async.AwaitTaskCorrect task
-    member c.Stop() =  
+    member __.Stop() =  
         log.Information("consumer:{name} stopping", consumer.Name)
         cts.Cancel();  
 
-    //interface IDisposable with member __.Dispose() = __.Stop()
+    interface IDisposable with member __.Dispose() = __.Stop()
 
     /// Starts a kafka consumer with provider configuration and batch message handler.
     /// Batches are grouped by topic partition. Batches belonging to the same topic partition will be scheduled sequentially and monotonically,
     /// however batches from different partitions can be run concurrently.
-    static member Start (log : ILogger) (config : KafkaConsumerConfig) (partitionHandler : KafkaConsumerMessage[] -> Async<unit>) =
+    static member Start (log : ILogger) (config : KafkaConsumerConfig) (partitionHandler : KafkaMessage[] -> Async<unit>) =
         if List.isEmpty config.topics then invalidArg "config" "must specify at least one topic"
         log.Information("Starting Kafka consumer on broker={broker} topics={topics} groupId={groupId} " (*autoOffsetReset={autoOffsetReset}*) + "fetchMaxBytes={fetchMaxB} maxInFlightBytes={maxInFlightB} maxBatchSize={maxBatchB} maxBatchDelay={maxBatchDelay}",
             config.conf.BootstrapServers, config.topics, config.conf.GroupId, (*config.conf.AutoOffsetReset.Value,*) config.conf.FetchMaxBytes,
@@ -418,9 +416,9 @@ type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, 
 
     /// Starts a Kafka consumer instance that schedules handlers grouped by message key. Additionally accepts a global degreeOfParallelism parameter
     /// that controls the number of handlers running concurrently across partitions for the given consumer instance.
-    static member StartByKey (log: ILogger) (config : KafkaConsumerConfig) (degreeOfParallelism : int) (keyHandler : KafkaConsumerMessage [] -> Async<unit>) =
+    static member StartByKey (log: ILogger) (config : KafkaConsumerConfig) (degreeOfParallelism : int) (keyHandler : KafkaMessage [] -> Async<unit>) =
         let semaphore = new SemaphoreSlim(degreeOfParallelism)
-        let partitionHandler (messages : KafkaConsumerMessage[]) = async {
+        let partitionHandler (messages : KafkaMessage[]) = async {
             return!
                 messages
                 |> Seq.groupBy (fun m -> m.Key)
