@@ -1,10 +1,10 @@
 ﻿[<AutoOpen>]
 module Domain.Infrastructure
 
+open FSharp.UMX
 open Newtonsoft.Json
 open Newtonsoft.Json.Converters.FSharp
 open System
-open System.Runtime.Serialization
 
 #if NET461
 module Seq =
@@ -21,7 +21,7 @@ module Seq =
 /// Endows any type that inherits this class with standard .NET comparison semantics using a supplied token identifier
 [<AbstractClass>]
 type Comparable<'TComp, 'Token when 'TComp :> Comparable<'TComp, 'Token> and 'Token : comparison>(token : 'Token) =
-    member private __.Token = token // I can haz protected?
+    member private __.Token = token
     override x.Equals y = match y with :? Comparable<'TComp, 'Token> as y -> x.Token = y.Token | _ -> false
     override __.GetHashCode() = hash token
     interface IComparable with
@@ -30,98 +30,58 @@ type Comparable<'TComp, 'Token when 'TComp :> Comparable<'TComp, 'Token> and 'To
             | :? Comparable<'TComp, 'Token> as y -> compare x.Token y.Token
             | _ -> invalidArg "y" "invalid comparand"
 
+/// Endows any type that inherits this class with standard .NET comparison semantics using a supplied token identifier
+/// + treats the token as the canonical rendition for `ToString()` purposes
+[<AbstractClass>]
+type StringId<'TComp when 'TComp :> Comparable<'TComp, string>>(token : string) =
+    inherit Comparable<'TComp,string>(token)
+    override __.ToString() = token
+
+module Guid =
+    let inline toStringN (x : Guid) = x.ToString "N"
+
 /// SkuId strongly typed id
-[<Sealed; JsonConverter(typeof<SkuIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
-// (Internally a string for most efficient copying semantics)
+/// - Ensures canonical rendering without dashes via ToString + Newtonsoft.Json
+/// - Guards against XSS by only permitting initialization based on Guid.Parse
+/// - Implements comparison/equality solely to enable tests to leverage structural equality 
+[<Sealed; AutoSerializable(false); JsonConverter(typeof<SkuIdJsonConverter>)>]
 type SkuId private (id : string) =
-    inherit Comparable<SkuId, string>(id)
-    [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
-    member __.Value = id
-    override __.ToString () = id
-    new (guid: Guid) = SkuId (guid.ToString("N"))
-    // NB tests (specifically, empty) lean on having a ctor of this shape
-    new() = SkuId(Guid.NewGuid())
-    // NB for validation [and XSS] purposes we prove it translatable to a Guid
-    static member Parse(input: string) = SkuId (Guid.Parse input)
+    inherit StringId<SkuId>(id)
+    new(value : Guid) = SkuId(value.ToString "N")
+    /// Required to support empty
+    [<Obsolete>] new() = SkuId(Guid.NewGuid())
 /// Represent as a Guid.ToString("N") output externally
 and private SkuIdJsonConverter() =
     inherit JsonIsomorphism<SkuId, string>()
-    /// Renders as per Guid.ToString("N")
-    override __.Pickle value = value.Value
-    /// Input must be a Guid.Parseable value
-    override __.UnPickle input = SkuId.Parse input
+    /// Renders as per `Guid.ToString("N")`, i.e. no dashes
+    override __.Pickle value = string value
+    /// Input must be a `Guid.Parse`able value
+    override __.UnPickle input = Guid.Parse input |> SkuId
+type [<Measure>] skuId
+module SkuId = let parse (value : Guid<skuId>) : SkuId = SkuId(%value)
 
-/// RequestId strongly typed id
-[<Sealed; JsonConverter(typeof<RequestIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
-// (Internally a string for most efficient copying semantics)
-type RequestId private (id : string) =
-    inherit Comparable<RequestId, string>(id)
-    [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
-    member __.Value = id
-    override __.ToString () = id
-    new (guid: Guid) = RequestId (guid.ToString("N"))
-    // NB tests (specifically, empty) lean on having a ctor of this shape
-    new() = RequestId(Guid.NewGuid())
-    // NB for validation [and XSS] purposes we prove it translatable to a Guid
-    static member Parse(input: string) = RequestId (Guid.Parse input)
-/// Represent as a Guid.ToString("N") output externally
-and private RequestIdJsonConverter() =
-    inherit JsonIsomorphism<RequestId, string>()
-    /// Renders as per Guid.ToString("N")
-    override __.Pickle value = value.Value
-    /// Input must be a Guid.Parseable value
-    override __.UnPickle input = RequestId.Parse input
+/// RequestId strongly typed id, represented internally as a string
+/// - Ensures canonical rendering without dashes via ToString, Newtonsoft.Json, sprintf "%s" etc
+/// - using string enables one to lean on structural equality for types embedding one
+type RequestId = string<requestId>
+and [<Measure>] requestId
+module RequestId =
+    /// - For web inputs, should guard against XSS by only permitting initialization based on Skud.parse
+    /// - For json deserialization where the saved representation is not trusted to be in canonical Guid form,
+    ///     it is recommended to bind to a Guid and then upconvert to string<requestId>
+    let parse (value : Guid<requestId>) : string<requestId> = % Guid.toStringN %value
 
-/// CartId strongly typed id
-[<Sealed; JsonConverter(typeof<CartIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
-// (Internally a string for most efficient copying semantics)
-type CartId private (id : string) =
-    inherit Comparable<CartId, string>(id)
-    [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
-    member __.Value = id
-    override __.ToString () = id
-    // NB tests lean on having a ctor of this shape
-    new (guid: Guid) = CartId (guid.ToString("N"))
-    // NB for validation [and XSS] purposes we must prove it translatable to a Guid
-    static member Parse(input: string) = CartId (Guid.Parse input)
-/// Represent as a Guid.ToString("N") output externally
-and private CartIdJsonConverter() =
-    inherit JsonIsomorphism<CartId, string>()
-    /// Renders as per Guid.ToString("N")
-    override __.Pickle value = value.Value
-    /// Input must be a Guid.Parseable value
-    override __.UnPickle input = CartId.Parse input
+/// CartId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
+type CartId = Guid<cartId>
+and [<Measure>] cartId
+module CartId = let toStringN (value : CartId) : string = Guid.toStringN %value
 
-/// ClientId strongly typed id
-[<Sealed; JsonConverter(typeof<ClientIdJsonConverter>); AutoSerializable(false); StructuredFormatDisplay("{Value}")>]
-// To support model binding using aspnetcore 2 FromHeader
-[<System.ComponentModel.TypeConverter(typeof<ClientIdStringConverter>)>]
-// (Internally a string for most efficient copying semantics)
-type ClientId private (id : string) =
-    inherit Comparable<ClientId, string>(id)
-    [<IgnoreDataMember>] // Prevent swashbuckle inferring there's a "value" field
-    member __.Value = id
-    override __.ToString () = id
-    // NB tests lean on having a ctor of this shape
-    new (guid: Guid) = ClientId (guid.ToString("N"))
-    // NB for validation [and XSS] purposes we must prove it translatable to a Guid
-    static member Parse(input: string) = ClientId (Guid.Parse input)
-/// Represent as a Guid.ToString("N") output externally
-and private ClientIdJsonConverter() =
-    inherit JsonIsomorphism<ClientId, string>()
-    /// Renders as per Guid.ToString("N")
-    override __.Pickle value = value.Value
-    /// Input must be a Guid.Parseable value
-    override __.UnPickle input = ClientId.Parse input
-and private ClientIdStringConverter() =
-    inherit System.ComponentModel.TypeConverter()
-    override __.CanConvertFrom(context, sourceType) =
-        sourceType = typedefof<string> || base.CanConvertFrom(context,sourceType)
-    override __.ConvertFrom(context, culture, value) =
-        match value with
-        | :? string as s -> s |> ClientId.Parse |> box
-        | _ -> base.ConvertFrom(context, culture, value)
-    override __.ConvertTo(context, culture, value, destinationType) =
-        match value with
-        | :? ClientId as value when destinationType = typedefof<string> -> value.Value :> _
-        | _ -> base.ConvertTo(context, culture, value, destinationType)
+/// CartId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
+type ClientId = Guid<clientId>
+and [<Measure>] clientId
+module ClientId = let toStringN (value : ClientId) : string = Guid.toStringN %value
+
+/// InventoryItemId strongly typed id
+type InventoryItemId = Guid<inventoryItemId>
+and [<Measure>] inventoryItemId
+module InventoryItemId = let toStringN (value : InventoryItemId) : string = Guid.toStringN %value

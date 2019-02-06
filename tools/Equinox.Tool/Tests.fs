@@ -1,6 +1,7 @@
 ﻿module Equinox.Tool.Tests
 
 open Domain
+open FSharp.UMX
 open Infrastructure
 open Microsoft.Extensions.DependencyInjection
 open System
@@ -27,19 +28,21 @@ type TodoBackend.Events.Todo with
     static member Create(size) : TodoBackend.Events.Todo =
         { id = 0; order = 0; title = rlipsum size; completed =  false }
 
+let mkSkuId () = % Guid.NewGuid() |> SkuId.parse
+
 let executeLocal (container: ServiceProvider) test: ClientId -> Async<unit> =
     match test with
     | Favorite ->
         let service = container.GetRequiredService<Backend.Favorites.Service>()
         fun clientId -> async {
-            let sku = Guid.NewGuid() |> SkuId
+            let sku = mkSkuId ()
             do! service.Favorite(clientId,[sku])
             let! items = service.List clientId
             if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
     | SaveForLater ->
         let service = container.GetRequiredService<Backend.SavedForLater.Service>()
         fun clientId -> async {
-            let skus = [Guid.NewGuid() |> SkuId; Guid.NewGuid() |> SkuId; Guid.NewGuid() |> SkuId]
+            let skus = [mkSkuId (); mkSkuId (); mkSkuId ()]
             let! saved = service.Save(clientId,skus)
             if saved then
                 let! items = service.List clientId
@@ -66,7 +69,7 @@ let executeRemote (client: HttpClient) test =
             let session = StoreClient.Session(client, clientId)
             let client = session.Favorites
             async {
-                let sku = Guid.NewGuid() |> SkuId
+                let sku = mkSkuId ()
                 do! client.Favorite [|sku|]
                 let! items = client.List
                 if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
@@ -75,7 +78,7 @@ let executeRemote (client: HttpClient) test =
             let session = StoreClient.Session(client, clientId)
             let client = session.Saves
             async {
-                let skus = [| Guid.NewGuid() |> SkuId; Guid.NewGuid() |> SkuId; Guid.NewGuid() |> SkuId |]
+                let skus = [| mkSkuId (); mkSkuId (); mkSkuId () |]
                 let! saved = client.Save skus
                 if saved then
                     let! items = client.List

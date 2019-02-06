@@ -3,7 +3,7 @@
 open Domain
 
 type Service(log, resolveStream) =
-    let (|AggregateId|) (id: CartId) = Equinox.AggregateId ("Cart", id.Value)
+    let (|AggregateId|) (id: CartId) = Equinox.AggregateId ("Cart", CartId.toStringN id)
     let (|Stream|) (AggregateId id) = Cart.Handler(log, resolveStream id)
 
     member __.FlowAsync (Stream stream, flow, ?prepare) =

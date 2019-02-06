@@ -7,7 +7,7 @@ open Domain.Favorites.Folds
 open Swensen.Unquote
 open System
 
-let mkFavorite skuId    = Favorited { Favorited.date = DateTimeOffset.UtcNow; skuId = skuId }
+let mkFavorite skuId    = Favorited { date = DateTimeOffset.UtcNow; skuId = skuId }
 let mkUnfavorite skuId  = Unfavorited { skuId = skuId }
 
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded

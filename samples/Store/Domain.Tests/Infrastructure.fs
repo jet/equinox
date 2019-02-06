@@ -3,13 +3,13 @@ module Samples.Store.Domain.Tests.Infrastructure
 
 open Domain
 open FsCheck
+open FSharp.UMX
 open Swensen.Unquote
 open System
 open global.Xunit
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
-    static member RequestId = Arb.generate |> Gen.map RequestId |> Arb.fromGen
 
 type DomainPropertyAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(QuietOnSuccess = true, Arbitrary=[| typeof<FsCheckGenerators> |])
@@ -28,21 +28,31 @@ let knuthShuffle (array : 'a []) =
 
 module IdTypes =
     [<Fact>]
-    let ``CartId has structural equality semantics`` () =
-        let x = Guid.NewGuid()
-        test <@ CartId x = CartId x @>
+    let ``CartId has structural equality and Guid rendering semantics`` () =
+        let x = Guid.NewGuid() in let xs, xn = x.ToString(), x.ToString "N"
+        let (x1 : CartId, x2 : CartId) = %x, %x
+        test <@ x1 = x2
+                && xn = CartId.toStringN x2
+                && string x1 = xs @>
 
     [<Fact>]
-    let ``ClientId has structural equality semantics`` () =
-        let x = Guid.NewGuid()
-        test <@ ClientId x = ClientId x @>
+    let ``ClientId has structural equality and Guid rendering semantics`` () =
+        let x = Guid.NewGuid() in let xs, xn = x.ToString(), x.ToString "N"
+        let (x1 : ClientId, x2 : ClientId) = %x, %x
+        test <@ x1 = x2
+                && xn = ClientId.toStringN x2
+                && string x1 = xs @>
 
     [<Fact>]
-    let ``RequestId has structural equality semantics`` () =
-        let x = Guid.NewGuid()
-        test <@ RequestId x = RequestId x @>
+    let ``RequestId has structural equality and canonical rendering semantics`` () =
+        let x = Guid.NewGuid() in let xn = Guid.toStringN x
+        let (x1 : RequestId, x2 : RequestId) = RequestId.parse %x, RequestId.parse %x
+        test <@ x1 = x2
+                && string x1 = xn @>
 
     [<Fact>]
-    let ``SkuId has structural equality semantics`` () =
-        let x = Guid.NewGuid()
-        test <@ SkuId x = SkuId x @> 
+    let ``SkuId has structural equality and canonical rendering semantics`` () =
+        let x = Guid.NewGuid() in let xn = Guid.toStringN x
+        let (x1 : SkuId, x2 : SkuId) = SkuId.parse %x, SkuId.parse %x
+        test <@ x1 = x2
+                && string x1 = xn @>

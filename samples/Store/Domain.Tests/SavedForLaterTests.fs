@@ -3,6 +3,7 @@
 open Domain
 open Domain.SavedForLater
 open Domain.SavedForLater.Folds
+open FSharp.UMX
 open Swensen.Unquote.Assertions
 open System
 open System.Collections.Generic
@@ -25,7 +26,7 @@ let run (commands : Commands.Command list) : State * Events.Event list =
 let contains sku (state : State) = state |> Array.exists (fun s -> s.skuId = sku)
 let find sku (state : State) = state |> Array.find (fun s -> s.skuId = sku)
 
-let genSku () = SkuId(Guid.NewGuid())
+let genSku () = % Guid.NewGuid() |> SkuId.parse
 
 [<Fact>]
 let ``Adding one item to mysaves should appear in aggregate`` () =
@@ -96,7 +97,7 @@ let ``Event aggregation should carry set semantics`` (commands : Commands.Comman
 let ``State should produce a stable output for skus with the same saved date`` (skuIds : Guid []) =
     let now = DateTimeOffset.Now
 
-    let skus = Array.map SkuId skuIds
+    let skus = skuIds |> Array.map (UMX.tag >> SkuId.parse) 
     let shuffledSkus =
         let rnd = new Random()
         skus |> Array.sortBy (fun _ -> rnd.Next())

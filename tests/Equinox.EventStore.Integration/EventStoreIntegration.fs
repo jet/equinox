@@ -2,6 +2,7 @@
 
 open Equinox.EventStore
 open Equinox.Integration.Infrastructure
+open Newtonsoft.Json
 open Serilog
 open Swensen.Unquote
 open System.Threading
@@ -18,7 +19,7 @@ let connectToLocalEventStoreNode log =
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
 
-let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
+let serializationSettings = JsonSerializerSettings()
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
