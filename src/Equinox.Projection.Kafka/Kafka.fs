@@ -231,16 +231,6 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         member c.StoreOffset(tpo : TopicPartitionOffset) : unit =
             c.StoreOffsets[| TopicPartitionOffset(tpo.Topic, tpo.Partition, Offset(let o = tpo.Offset in o.Value + 1L)) |]
 
-        member internal c.RunPoll(log : ILogger, counter : InFlightMessageCounter, cancellationToken: CancellationToken , onMessage: ConsumeResult<'Key,'Value> -> unit) =
-            try while not cancellationToken.IsCancellationRequested do
-                    counter.AwaitThreshold()
-                    try let message = c.Consume(cancellationToken) // NB don't use TimeSpan overload unless you want AVEs on1.0.0-beta2
-                        if message <> null then
-                            onMessage message
-                    with| :? ConsumeException as e -> log.Warning(e, "Consume exception")
-                        | :? System.OperationCanceledException -> log.Warning("Consumer:{name} | Consuming cancelled", c.Name)
-            finally c.Close()
-
         member c.WithLogging(log: ILogger) =
             let d1 = c.OnLog.Subscribe(fun m ->
                 log.Information("consumer_info|{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
@@ -321,7 +311,17 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         use _ = consumer.OnPartitionsRevoked.Subscribe (fun ps -> for p in ps do partitionedCollection.Revoke p)
 
         // run the consumer
-        do consumer.RunPoll(log, counter, cts.Token, (fun m -> counter.Add(getMessageSize m) ; partitionedCollection.Add(m.TopicPartition, m)))
+        let ct = cts.Token
+        try while not ct.IsCancellationRequested do
+                counter.AwaitThreshold()
+                try let message = consumer.Consume(cts.Token) // NB don't use TimeSpan overload unless you want AVEs on1.0.0-beta2
+                    if message <> null then
+                        counter.Add(getMessageSize message)
+                        partitionedCollection.Add(message.TopicPartition, message)
+                with| :? ConsumeException as e -> log.Warning(e, "Consume exception")
+                    | :? System.OperationCanceledException -> log.Warning("Consumer:{name} | Consuming cancelled", consumer.Name)
+        finally
+            consumer.Close()
         
         // await for handler faults or external cancellation
         do! Async.AwaitTaskCorrect tcs.Task
