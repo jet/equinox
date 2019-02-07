@@ -71,11 +71,10 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
     | [<MainCommand; ExactlyOnce>] LeaseId of string
     | [<AltCommandLine("-s"); Unique>] Suffix of string
     | [<AltCommandLine("-i"); Unique>] ForceStartFromHere
-    | [<AltCommandLine("-b"); Unique>] ChangeFeedBatchSize of int
+    | [<AltCommandLine("-m"); Unique>] ChangeFeedBatchSize of int
     | [<AltCommandLine("-l"); Unique>] LagFreqS of float
-    | [<AltCommandLine("-v"); Unique>] ChangeFeedVerbose
-    | [<AltCommandLine("stats"); Last>] Stats of ParseResults<StatsTarget>
-    | [<AltCommandLine("kafka"); Last>] Kafka of ParseResults<KafkaTarget>
+    | [<CliPrefix(CliPrefix.None); Last>] Stats of ParseResults<StatsTarget>
+    | [<CliPrefix(CliPrefix.None); Last>] Kafka of ParseResults<KafkaTarget>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | LeaseId _ -> "Projector instance context name."
@@ -84,7 +83,6 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
             | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 1000"
             | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
 
-            | ChangeFeedVerbose -> "Request Verbose Logging from ChangeFeedProcessor. Default: off"
             | Stats _ -> "Do not emit events, only stats."
             | Kafka _ -> "Project to Kafka."
 and [<NoComparison>] KafkaTarget =
@@ -328,9 +326,9 @@ let main argv =
                     | _ -> None, id
                 let projectBatch (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
                     sw.Stop() // Stop the clock after CFP hands off to us
-                    let toKafkaEvent (e: Parse.IEvent) : Equinox.Projection.Codec.RenderedEvent =
+                    let toKafkaEvent (e: DocumentParser.IEvent) : Equinox.Projection.Codec.RenderedEvent =
                         { s = e.Stream; i = e.Index; c = e.EventType; t = e.TimeStamp; d = e.Data; m = e.Meta }
-                    let pt, events = (fun () -> docs |> Seq.collect Parse.enumEvents |> Seq.map toKafkaEvent |> Array.ofSeq) |> Stopwatch.Time 
+                    let pt, events = (fun () -> docs |> Seq.collect DocumentParser.enumEvents |> Seq.map toKafkaEvent |> Array.ofSeq) |> Stopwatch.Time 
                     let! et = async {
                         match producer with
                         | None ->
@@ -341,37 +339,33 @@ let main argv =
                             let! et,_ = producer.ProduceBatch es |> Stopwatch.Time
                             return et }
                             
-                    log.Information("Range {rangeId} Fetch: {requestCharge:n0}RU {count} docs {l:n1}s; Parse: {events} events {p:n3}s; Emit: {e:n1}s",
-                        ctx.PartitionKeyRangeId, ctx.FeedResponse.RequestCharge, docs.Count, float sw.ElapsedMilliseconds / 1000., 
+                    if log.IsEnabled LogEventLevel.Debug then log.Debug("Response Headers {0}", let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]])
+                    let r = ctx.FeedResponse
+                    log.Information("{range} Fetch: {token} {requestCharge:n0}RU {count} docs {l:n1}s; Parse: e {events} {p:n3}s; Emit: {e:n1}s",
+                        ctx.PartitionKeyRangeId, r.ResponseContinuation.Trim[|'"'|], r.RequestCharge, docs.Count, float sw.ElapsedMilliseconds / 1000., 
                         events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
-                    if log.IsEnabled LogEventLevel.Debug then
-                        let f = ctx.FeedResponse
-                        let rendered =
-                            [   "cq", box f.CollectionQuota; "csq",box f.CollectionSizeQuota; "cu",box f.CollectionUsage
-                                "csu",box f.CollectionSizeUsage
-                                "dq",box f.DatabaseQuota; "du",box f.DatabaseUsage
-                                "mrq",box f.MaxResourceQuota; "crqu", box f.CurrentResourceQuotaUsage
-                                "pq",box f.PermissionQuota; "pu",box f.PermissionUsage
-                                "_con",box f.ResponseContinuation
-                                "_st",box f.SessionToken ]
-                        let rhs = let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]]
-                        log.Debug("FeedResponse {0}, Headers {1}", rendered, rhs)
                     sw.Restart() // restart the clock as we handoff back to the CFP
                 }
-                IChangeFeedObserver.Create(log, projectBatch, disposeProducer)
+                ChangeFeedObserver.Create(log, projectBatch, disposeProducer)
 
             let run = async {
-                let! feedEventHost =
+                let maybeLogLag =
+                    match pargs.TryGetResult LagFreqS with
+                    | None -> None
+                    | Some lagLogIntervalS ->
+                        let interval = TimeSpan.FromSeconds lagLogIntervalS
+                        Some <| fun remainingWork -> async {
+                        let logLevel = if remainingWork |> Seq.exists (fun (_r,rw) -> rw <> 0L) then Events.LogEventLevel.Information else Events.LogEventLevel.Debug
+                        log.Write(logLevel, "Lags by Range {@rangeLags}", remainingWork)
+                        return! Async.Sleep(int interval.TotalMilliseconds) }
+                let! _cfp =
                     ChangeFeedProcessor.Start
                       ( log, endpointUri, masterKey, connectionPolicy, source, aux, buildRangeProjector,
                         leasePrefix = leaseId,
                         forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
                         ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
-                        ?lagMonitorInterval = (pargs.TryGetResult LagFreqS |> Option.map TimeSpan.FromSeconds))
-                do! Async.AwaitKeyboardInterrupt()
-                log.Warning("Stopping...")
-                do! feedEventHost.StopAsync() |> Async.AwaitTaskCorrect }
-            if pargs.Contains ChangeFeedVerbose then Log.Logger <- storeLog // LibLog will write to the global logger, if you let it
+                        ?reportLagAndAwaitNextEstimation = maybeLogLag)
+                do! Async.AwaitKeyboardInterrupt() }
             Async.RunSynchronously run
 #endif
         | Run rargs ->
