@@ -2,18 +2,14 @@
 
 open Argu
 open Domain.Infrastructure
-#if !NET461
 open Equinox.Cosmos.Projection
 open Equinox.Projection.Codec
 open Equinox.Projection.Kafka
 open Equinox.Projection.Validation
-#endif
 open Equinox.Store.Infrastructure
 open Equinox.Tool.Infrastructure
 open FSharp.UMX
-#if !NET461
 open Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing
-#endif
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure.Log
 open Samples.Infrastructure.Storage
@@ -34,9 +30,7 @@ type Arguments =
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
     | [<AltCommandLine("initAux"); CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
-#if !NET461
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Project of ParseResults<ProjectArguments>
-#endif
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose -> "Include low level logging regarding specific test runs."
@@ -46,9 +40,7 @@ type Arguments =
             | Run _ -> "Run a load test"
             | Init _ -> "Initialize store (presently only relevant for `cosmos`, where it creates database+collection+stored proc if not already present)."
             | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the Projector)."
-#if !NET461
             | Project _ -> "Project from store specified as the last argument, storing state in the specified `aux` Store (see initAux)."
-#endif
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     | [<AltCommandLine("-P")>] SkipStoredProc
@@ -67,7 +59,6 @@ and [<NoComparison>]InitAuxArguments =
             | Rus _ -> "Specify RU/s level to provision for the Application Collection."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
             | Cosmos _ -> "Cosmos Connection parameters."
-#if !NET461
 and [<NoComparison; RequireSubcommand>]ProjectArguments =
     | [<MainCommand; ExactlyOnce>] LeaseId of string
     | [<AltCommandLine("-s"); Unique>] Suffix of string
@@ -100,7 +91,6 @@ and [<NoComparison>] StatsTarget =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Cosmos _ -> "Cosmos Connection parameters."
-#endif
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
     interface IArgParserTemplate with
@@ -291,7 +281,6 @@ let main argv =
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
                     do! Equinox.Cosmos.Store.Sync.Initialization.createAuxCollectionIfNotExists conn.Client (dbName,collName) rus }
             | _ -> failwith "please specify a `cosmos` endpoint"
-#if !NET461
         | Project pargs ->
             let envBackstop msg key =
                 match Environment.GetEnvironmentVariable key with
@@ -378,7 +367,6 @@ let main argv =
                         ?reportLagAndAwaitNextEstimation = maybeLogLag)
                 do! Async.AwaitKeyboardInterrupt() }
             Async.RunSynchronously run
-#endif
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs

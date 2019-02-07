@@ -14,7 +14,6 @@ let [<Property>] ``Properties`` state index =
         match state' with
         | All _ -> result =! New
         | Partial _ -> result =! Ok
-        | x -> failwithf "Unexpected %A" x
     | Some (All x) ->
         match state',result with
         | All x' , Duplicate -> x' =! x

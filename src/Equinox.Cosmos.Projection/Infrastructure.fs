@@ -19,7 +19,7 @@ module Impl =
                 let inline protect k t = if Interlocked.Increment &latch = 1 then k t
                 let cts = CancellationTokenSource.CreateLinkedTokenSource(ct)
                 do cts.CancelAfter timeout
-                let _ = cts.Token.Register(fun () -> protect ek (TimeoutException("async workflow has timed out")))
+                let _ = let t = cts.Token in t.Register(fun () -> protect ek (TimeoutException("async workflow has timed out")))
                 Async.StartWithContinuations(workflow, protect sk, protect ek, protect ck, cts.Token))
         }
 
