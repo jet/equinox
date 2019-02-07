@@ -366,7 +366,7 @@ let main argv =
             let run = async {
                 let logLag (interval : TimeSpan) remainingWork = async {
                     let logLevel = if remainingWork |> Seq.exists (fun (_r,rw) -> rw <> 0L) then Events.LogEventLevel.Information else Events.LogEventLevel.Debug
-                    log.Write(logLevel, "Lags by Range {@rangeLags}", remainingWork)
+                    log.Write(logLevel, "Lags {@rangeLags} <- [Range Id, documents count] ", remainingWork)
                     return! Async.Sleep interval }
                 let maybeLogLag = pargs.TryGetResult LagFreqS |> Option.map (TimeSpan.FromSeconds >> logLag)
                 let! _cfp =
