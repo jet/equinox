@@ -87,13 +87,13 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
             | Stats _ -> "Do not emit events, only stats."
             | Kafka _ -> "Project to Kafka."
 and [<NoComparison>] KafkaTarget =
+    | [<AltCommandLine("-t"); Unique; MainCommand>] Topic of string
     | [<AltCommandLine("-b"); Unique>] Broker of string
-    | [<AltCommandLine("-t"); Unique>] Topic of string
     | [<CliPrefix(CliPrefix.None); Last>] Cosmos of ParseResults<CosmosArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Broker _ -> "Specify target broker. Default: Use $env:EQUINOX_KAFKA_BROKER"
             | Topic _ -> "Specify target topic. Default: Use $env:EQUINOX_KAFKA_TOPIC"
+            | Broker _ -> "Specify target broker. Default: Use $env:EQUINOX_KAFKA_BROKER"
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>] StatsTarget =
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
@@ -348,7 +348,6 @@ let main argv =
                             return et }
                             
                     if log.IsEnabled LogEventLevel.Debug then log.Debug("Response Headers {0}", let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]])
-                    let s = validator.Stats
                     let r, s = ctx.FeedResponse, validator.Stats
                     log.Information("{range} Fetch: {token} {requestCharge:n0}RU {count} docs {l:n1}s; Parse: c {cats} s {streams} e {events} {p:n3}s; Emit: {e:n1}s",
                         ctx.PartitionKeyRangeId, r.ResponseContinuation.Trim[|'"'|], r.RequestCharge, docs.Count, float sw.ElapsedMilliseconds / 1000., 
@@ -365,15 +364,11 @@ let main argv =
                 ChangeFeedObserver.Create(log, projectBatch, disposeProducer)
 
             let run = async {
-                let maybeLogLag =
-                    match pargs.TryGetResult LagFreqS with
-                    | None -> None
-                    | Some lagLogIntervalS ->
-                        let interval = TimeSpan.FromSeconds lagLogIntervalS
-                        Some <| fun remainingWork -> async {
-                        let logLevel = if remainingWork |> Seq.exists (fun (_r,rw) -> rw <> 0L) then Events.LogEventLevel.Information else Events.LogEventLevel.Debug
-                        log.Write(logLevel, "Lags by Range {@rangeLags}", remainingWork)
-                        return! Async.Sleep(int interval.TotalMilliseconds) }
+                let logLag (interval : TimeSpan) remainingWork = async {
+                    let logLevel = if remainingWork |> Seq.exists (fun (_r,rw) -> rw <> 0L) then Events.LogEventLevel.Information else Events.LogEventLevel.Debug
+                    log.Write(logLevel, "Lags by Range {@rangeLags}", remainingWork)
+                    return! Async.Sleep interval }
+                let maybeLogLag = pargs.TryGetResult LagFreqS |> Option.map (TimeSpan.FromSeconds >> logLag)
                 let! _cfp =
                     ChangeFeedProcessor.Start
                       ( log, endpointUri, masterKey, connectionPolicy, source, aux, buildRangeProjector,
