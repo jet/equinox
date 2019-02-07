@@ -295,27 +295,26 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Web
     ```
 
-4. **(WIP)** Use eqx tool to run a projector
+4. **(WIP)** Use `eqx` tool to run a CosmosDb ChangeFeedProcessor
 
     ```powershell
     # TEMP: need to uninstall and use --version flag while this is in beta
     dotnet tool uninstall Equinox.Tool -g
-    dotnet tool install Equinox.Tool -g --version 1.1.0-*
+    dotnet tool install Equinox.Tool -g --version 1.1.0-beta*
 
     eqx initAux -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to stash projector checkpoints within
-    # `default` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # -v for verbose ChangeFeedProcessor logging
+    # `default` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # stats specifies one only wants stats regarding items (other options include kafka to project to kafka)
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
-    eqx project default -v stats cosmos
+    eqx -v project default stats cosmos
     ```
 
-5. **(WIP)** Generate a Projector project
+5. **(WIP)** Generate a CosmosDb ChangeFeedProcessor project (without Kafka producer/consumer), using `Equinox.Cosmos.Projection`
 
     ```powershell
-
     # TEMP: need version spec while in beta
-    dotnet new -i equinox.templates::1.2.0-*
+    dotnet new -i equinox.templates::1.3.0-*
 
     # absence of -k means the projector code will be a skeleton that does no processing besides counting the events
     dotnet new eqxprojector
@@ -326,10 +325,23 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Projector -- default cosmos
     ```
 
-6. **(WIP)** Generate a pair of Kafka projector and Consumer projects
+6. **(WIP)** Use `eqx` tool to Run a CosmosDb ChangeFeedProcessor emitting to a Kafka topic
 
     ```powershell
+    $env:EQUINOX_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
 
+    # `-v` for verbose logging
+    # `default` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
+    # `-l 5` to report ChangeFeed lags every 5 seconds
+    # `kafka` specifies one wants to emit to Kafka
+    # `temp-topic` is the topic to emit to
+    # `cosmos` specifies source overrides (using defaults in step 1 in this instance)
+    eqx -v project default -l 5 kafka temp-topic cosmos
+    ```
+
+7. **(WIP)** Generate CosmosDb Kafka Projector and Consumer projects (using `Equinox.Projection.Kafka`)
+
+    ```powershell
     cat readme.md # more complete instructions regarding the code
 
     # -k requests inclusion of Apache Kafka support
@@ -345,7 +357,6 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     $env:EQUINOX_KAFKA_GROUP="group0" # or use -g
     dotnet run -p Consumer
-
     ```
 
 # FURTHER READING
