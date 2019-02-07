@@ -142,15 +142,15 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         for key,value in keyValueBatch do
             producer.BeginProduce(topic, Message<_,_>(Key=key, Value=value), deliveryHandler = handler)
         producer.Flush(ct)
-        log.Information("Produced {count}",!numCompleted)
+        log.Debug("Produced {count}",!numCompleted)
         return! Async.AwaitTaskCorrect tcs.Task }
 
     interface IDisposable with member __.Dispose() = for d in [d1;d2;producer:>_] do d.Dispose()
 
     static member Create(log : ILogger, config : KafkaProducerConfig, topic : string) =
         if String.IsNullOrEmpty topic then nullArg "topic"
-        log.Information("Starting Kafka Producer on topic={topic} broker={broker} compression={compression} acks={acks}",
-                          topic, config.Broker, config.Compression, config.Acks)
+        log.Information("Producing... {broker} / {topic} compression={compression} acks={acks}",
+                          config.Broker, topic, config.Compression, config.Acks)
         let producer = new Producer<string, string>(config.Kvps)
         new KafkaProducer(log, producer, topic)
         
@@ -241,20 +241,19 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
                 |> Seq.groupBy (fun p -> p.Topic)
                 |> Seq.map (fun (t,ps) -> t, [| for p in ps -> let p = p.Partition in p.Value |])
             let d3 = c.OnPartitionsAssigned.Subscribe(fun tps ->
-                for topic,partitions in fmtTopicPartitions tps do log.Information("consumer_partitions_assigned|{topic:l} {partitions}", topic, partitions))
+                for topic,partitions in fmtTopicPartitions tps do log.Information("Consuming... Assigned {topic:l} {partitions}", topic, partitions))
             let d4 = c.OnPartitionsRevoked.Subscribe(fun tps ->
-                for topic,partitions in fmtTopicPartitions tps do log.Information("consumer_partitions_revoked|{topic:l} {partitions}", topic, partitions))
+                for topic,partitions in fmtTopicPartitions tps do log.Information("Consuming... Revoked {topic:l} {partitions}", topic, partitions))
             let d5 = c.OnPartitionEOF.Subscribe(fun tpo ->
                 log.Verbose("consumer_partition_eof|topic={topic}|partition={partition}|offset={offset}", tpo.Topic, tpo.Partition, let o = tpo.Offset in o.Value))
             let fmtError (e : Error) = if e.IsError then sprintf " reason=%s code=%O isBrokerError=%b" e.Reason e.Code e.IsBrokerError else ""
             let fmtTopicPartitionOffsetErrors (topicPartitionOffsetErrors : seq<TopicPartitionOffsetError>) =
                 topicPartitionOffsetErrors
                 |> Seq.groupBy (fun p -> p.Topic)
-                |> Seq.map (fun (t,ps) ->
-                    let o = (ps |> Seq.map (fun p -> sprintf "%d@%O%s" (let p = p.Partition in p.Value) p.Offset (fmtError p.Error)) |> String.concat "; ")
-                    sprintf "topic=%s|offsets=[%s]" t o)
+                |> Seq.map (fun (t,ps) -> t,[for p in ps -> let pp = p.Partition in pp.Value, let o = p.Offset in if o.IsSpecial then box (string o) else box o.Value(*, fmtError p.Error*)])
+                    
             let d6 = c.OnOffsetsCommitted.Subscribe(fun cos ->
-                for fmt in fmtTopicPartitionOffsetErrors cos.Offsets do log.Information("consumer_committed_offsets|{offsets}{oe}", fmt, fmtError cos.Error))
+                for t,o in fmtTopicPartitionOffsetErrors cos.Offsets do log.Information("Consuming... Committed {topic} {@offsets}{oe}", t, o, fmtError cos.Error))
             { new IDisposable with member __.Dispose() = for d in [d1;d2;d3;d4;d5;d6] do d.Dispose() }
 
     let mkConsumer (kvps : seq<KeyValuePair<string,string>>, topics : string seq)  =
@@ -281,7 +280,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
             let buffer = Array.zeroCreate maxBatchSize
             let nextBatch () =
                 let count = collection.FillBuffer(buffer, maxBatchDelay)
-                if count <> 0 then log.Information("Consuming {count}", count)
+                if count <> 0 then log.Debug("Consuming {count}", count)
                 let batch = Array.init count (fun i -> KafkaMessage(buffer.[i]))
                 Array.Clear(buffer, 0, count)
                 batch
@@ -404,9 +403,9 @@ type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, 
     /// however batches from different partitions can be run concurrently.
     static member Start (log : ILogger) (config : KafkaConsumerConfig) (partitionHandler : KafkaMessage[] -> Async<unit>) =
         if List.isEmpty config.topics then invalidArg "config" "must specify at least one topic"
-        log.Information("Starting Kafka consumer on broker={broker} topics={topics} groupId={groupId} " (*autoOffsetReset={autoOffsetReset}*) + "fetchMaxBytes={fetchMaxB} maxInFlightBytes={maxInFlightB} maxBatchSize={maxBatchB} maxBatchDelay={maxBatchDelay}",
+        log.Information("Consuming... {broker} / {topics} / {groupId}" (*autoOffsetReset={autoOffsetReset}*) + " fetchMaxBytes={fetchMaxB} maxInFlightBytes={maxInFlightB} maxBatchSize={maxBatchB} maxBatchDelay={maxBatchDelay}s",
             config.conf.BootstrapServers, config.topics, config.conf.GroupId, (*config.conf.AutoOffsetReset.Value,*) config.conf.FetchMaxBytes,
-            config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay)
+            config.maxInFlightBytes, config.maxBatchSize, (let t = config.maxBatchDelay in t.TotalSeconds))
 
         let cts = new CancellationTokenSource()
         let consumer = ConsumerImpl.mkConsumer (config.Kvps, config.topics)

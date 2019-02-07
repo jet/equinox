@@ -33,6 +33,7 @@ type Exception with
 #nowarn "21" // re AwaitKeyboardInterrupt
 #nowarn "40" // re AwaitKeyboardInterrupt
 type Async with
+    static member Sleep(t : TimeSpan) : Async<unit> = Async.Sleep(int t.TotalMilliseconds)
     /// <summary>
     ///     Raises an exception using Async's continuation mechanism directly.
     /// </summary>

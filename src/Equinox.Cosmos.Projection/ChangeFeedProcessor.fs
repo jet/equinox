@@ -21,7 +21,7 @@ type ChangeFeedObserver() =
             member __.OpenAsync ctx = UnitTaskBuilder() {
                 log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId) }
             member __.CloseAsync (ctx, reason) = UnitTaskBuilder() {
-                log.Information("Range {partitionKeyRangeId} Closed {reason}", ctx.PartitionKeyRangeId, reason) } 
+                log.Information("Range {partitionKeyRangeId} Revoked {reason}", ctx.PartitionKeyRangeId, reason) } 
           interface IDisposable with
             member __.Dispose() =
                 match dispose with Some f -> f () | None -> () }
