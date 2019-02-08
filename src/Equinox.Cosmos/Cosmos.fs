@@ -278,19 +278,14 @@ module private DocDb =
         member __.TryReadDocument(documentId : string, ?options : Client.RequestOptions): Async<float * ReadResult<'T>> = async {
             let options = defaultArg options null
             let docLink = sprintf "%O/docs/%s" collectionUri documentId
-#if NET461
-            try let! document = async { return! client.ReadDocumentAsync<'T>(docLink, options = options) |> Async.AwaitTaskCorrect }
-#else
             let! ct = Async.CancellationToken
             try let! document = async { return! client.ReadDocumentAsync<'T>(docLink, options = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
-#endif
                 if document.StatusCode = System.Net.HttpStatusCode.NotModified then return document.RequestCharge, NotModified
                 // NB `.Document` will NRE if a IfNoneModified precondition triggers a NotModified result
                 else return document.RequestCharge, Found document.Document
-            with
-            | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.NotFound as e) -> return e.RequestCharge, NotFound
-            // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
-            | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, NotModified }
+            with DocDbException (DocDbStatusCode System.Net.HttpStatusCode.NotFound as e) -> return e.RequestCharge, NotFound
+                // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
+                | DocDbException (DocDbStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, NotModified }
 
 module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
@@ -367,15 +362,9 @@ function sync(req, expectedVersion, maxEvents) {
         let sprocLink = sprintf "%O/sprocs/%s" stream.collectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey(stream.name))
         let ev = match expectedVersion with Some ev -> Position.fromI ev | None -> Position.fromAppendAtEnd
-#if NET461
-        let! (res : Client.StoredProcedureResponse<SyncResponse>) =
-            client.ExecuteStoredProcedureAsync(sprocLink, opts, box req, box ev.index, box maxEvents) |> Async.AwaitTaskCorrect
-#else
         let! ct = Async.CancellationToken
         let! (res : Client.StoredProcedureResponse<SyncResponse>) =
             client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ev.index, box maxEvents) |> Async.AwaitTaskCorrect
-#endif
-
         let newPos = { index = res.Response.n; etag = Option.ofObj res.Response.etag }
         return res.RequestCharge, res.Response.conflicts |> function
             | null -> Result.Written newPos
@@ -608,8 +597,7 @@ module internal Tip =
         let mutable ru = 0.
         let allSlices = ResizeArray()
         let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
-        try
-            let readlog = log |> Log.prop "direction" direction
+        try let readlog = log |> Log.prop "direction" direction
             let mutable ok = true
             while ok do
                 incr responseCount

@@ -9,7 +9,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 _NB at the present time, this project does not adhere strictly to Semantic Versioning - small binary-breaking changes may occur without a change in Major at the until this notice is removed (it will be!)._
 
-## [Unreleased] - (tentatively `1.1.0`)
+## [Unreleased] - (`1.1.0-preview*`)
 
 ### Added
 
@@ -20,20 +20,21 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 ### Fixed
 
 <a name="1.0.4"></a>
-## [1.0.4] - TBA, planning 2019-02-06
+## [1.0.4] - 2019-02-08
 
 ### Changed
 
 - Rename `Equinox.CatId` to `Equinox.AggregateId` (HT @lfr for prompting the change)
-- Use [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) from @alfonsogarciacaro and @eiriktsarpalis in tests/samples [#89](https://github.com/jet/equinox/pull/89) (HT @chinwobble in [#83](https://github.com/jet/equinox/pull/83) for prompting the change)
 - Make `Newtonsoft.Json` dependency consistently `>= 11.0.2`
+- Make `Microsoft.Azure.DocumentDB` dependency consistently `>= 2.0.0` (was temporarily 1.x on `net461` to fit in with constraints of a downstream)
 - Refactor `Equinox.Cosmos` wiring to expose `EqxConnector.ConnectionPolicy`
+- Use [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) from @alfonsogarciacaro and @eiriktsarpalis in tests/samples [#89](https://github.com/jet/equinox/pull/89) (HT @chinwobble in [#83](https://github.com/jet/equinox/pull/83) for prompting the change)
 
 ### Fixed
 
-- Make `xUnit` dependency consistently `2.4.0`
 - Improve CosmosDb connection string parse error message 5b1b56bd94350ef47bd84ddbbb5b028e45fbb462
 - change from `licenseUrl` to `license` in `.nupkg`
+- Make `xUnit` dependency consistently `2.4.0`
 
 <a name="1.0.3"></a>
 ## [1.0.3] - 2019-01-19
