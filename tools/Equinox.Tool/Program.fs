@@ -2,8 +2,14 @@
 
 open Argu
 open Domain.Infrastructure
+open Equinox.Cosmos.Projection
+open Equinox.Projection.Codec
+open Equinox.Projection.Kafka
+open Equinox.Projection.Validation
+open Equinox.Store.Infrastructure
 open Equinox.Tool.Infrastructure
 open FSharp.UMX
+open Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure.Log
 open Samples.Infrastructure.Storage
@@ -12,6 +18,8 @@ open Serilog.Events
 open System
 open System.Net.Http
 open System.Threading
+open System.Collections.Generic
+open System.Diagnostics
 
 [<NoEquality; NoComparison>]
 type Arguments =
@@ -21,8 +29,8 @@ type Arguments =
     | [<AltCommandLine("-l")>] LogFile of string
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
-    | [<Hidden>] // this command is not useful unless you have access to the [presently closed-source] Equinox.Cosmos.Projector
-      [<AltCommandLine("initAux"); CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
+    | [<AltCommandLine("initAux"); CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Project of ParseResults<ProjectArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose -> "Include low level logging regarding specific test runs."
@@ -31,7 +39,8 @@ type Arguments =
             | LogFile _ -> "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ -> "Run a load test"
             | Init _ -> "Initialize store (presently only relevant for `cosmos`, where it creates database+collection+stored proc if not already present)."
-            | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the [presently closed source] Projector)."
+            | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the Projector)."
+            | Project _ -> "Project from store specified as the last argument, storing state in the specified `aux` Store (see initAux)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     | [<AltCommandLine("-P")>] SkipStoredProc
@@ -49,6 +58,38 @@ and [<NoComparison>]InitAuxArguments =
         member a.Usage = a |> function
             | Rus _ -> "Specify RU/s level to provision for the Application Collection."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
+            | Cosmos _ -> "Cosmos Connection parameters."
+and [<NoComparison; RequireSubcommand>]ProjectArguments =
+    | [<MainCommand; ExactlyOnce>] LeaseId of string
+    | [<AltCommandLine("-s"); Unique>] Suffix of string
+    | [<AltCommandLine("-i"); Unique>] ForceStartFromHere
+    | [<AltCommandLine("-m"); Unique>] ChangeFeedBatchSize of int
+    | [<AltCommandLine("-l"); Unique>] LagFreqS of float
+    | [<CliPrefix(CliPrefix.None); Last>] Stats of ParseResults<StatsTarget>
+    | [<CliPrefix(CliPrefix.None); Last>] Kafka of ParseResults<KafkaTarget>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | LeaseId _ -> "Projector instance context name."
+            | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
+            | ForceStartFromHere _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
+            | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 1000"
+            | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
+
+            | Stats _ -> "Do not emit events, only stats."
+            | Kafka _ -> "Project to Kafka."
+and [<NoComparison>] KafkaTarget =
+    | [<AltCommandLine("-t"); Unique; MainCommand>] Topic of string
+    | [<AltCommandLine("-b"); Unique>] Broker of string
+    | [<CliPrefix(CliPrefix.None); Last>] Cosmos of ParseResults<CosmosArguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Topic _ -> "Specify target topic. Default: Use $env:EQUINOX_KAFKA_TOPIC"
+            | Broker _ -> "Specify target broker. Default: Use $env:EQUINOX_KAFKA_BROKER"
+            | Cosmos _ -> "Cosmos Connection parameters."
+and [<NoComparison>] StatsTarget =
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
@@ -240,10 +281,96 @@ let main argv =
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
                     do! Equinox.Cosmos.Store.Sync.Initialization.createAuxCollectionIfNotExists conn.Client (dbName,collName) rus }
             | _ -> failwith "please specify a `cosmos` endpoint"
+        | Project pargs ->
+            let envBackstop msg key =
+                match Environment.GetEnvironmentVariable key with
+                | null -> failwithf "Please provide a %s, either as an argment or via the %s environment variable" msg key
+                | x -> x 
+            let broker, topic, storeArgs =
+                match pargs.GetSubCommand() with
+                | Kafka kargs ->
+                    let broker = match kargs.TryGetResult Broker with Some x -> x | None -> envBackstop "Broker" "EQUINOX_KAFKA_BROKER"
+                    let topic = match kargs.TryGetResult Topic with Some x -> x | None -> envBackstop "Topic" "EQUINOX_KAFKA_TOPIC"
+                    Some broker, Some topic,kargs.GetResult KafkaTarget.Cosmos
+                | Stats sargs -> None, None, sargs.GetResult StatsTarget.Cosmos
+                | x -> failwithf "Invalid subcommand %A" x
+            let storeLog = createStoreLog (storeArgs.Contains CosmosArguments.VerboseStore) verboseConsole maybeSeq
+            let (endpointUri, masterKey), dbName, collName, connectionPolicy = Cosmos.connectionPolicy (log,storeLog) storeArgs
+            pargs.TryGetResult ChangeFeedBatchSize |> Option.iter (fun bs -> log.Information("ChangeFeed BatchSize {batchSize}", bs))
+            pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
+            let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
+            let leaseId = pargs.GetResult(LeaseId)
+            log.Information("Processing using LeaseId {leaseId} in Aux coll {auxCollName}", leaseId, auxCollName)
+            if pargs.Contains ForceStartFromHere then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
+            let source = { database = dbName; collection = collName }
+            let aux = { database = dbName; collection = auxCollName }
+            let validator = FeedValidator()
+          
+            let buildRangeProjector () =
+                let sw = Stopwatch.StartNew() // we'll report the warmup/connect time on the first batch
+                let producer, disposeProducer =
+                    match broker,topic with
+                    | Some b,Some t ->
+                        let cfg = KafkaProducerConfig.Create("equinox-tool", Uri b, Confluent.Kafka.Acks.Leader, LZ4)
+                        let p = KafkaProducer.Create(log, cfg, t)
+                        Some p, (p :> IDisposable).Dispose
+                    | _ -> None, id
+                let projectBatch (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
+                    sw.Stop() // Stop the clock after CFP hands off to us
+                    let validator = BatchValidator(validator)
+                    let toKafkaEvent (e: DocumentParser.IEvent) : Equinox.Projection.Codec.RenderedEvent =
+                        { s = e.Stream; i = e.Index; c = e.EventType; t = e.TimeStamp; d = e.Data; m = e.Meta }
+                    let validate (e: DocumentParser.IEvent) =
+                        match validator.TryIngest(e.Stream, int e.Index) with
+                        | Gap -> None // We cannot emit if we have evidence that this will leave a gap
+                        | Duplicate // Just because this is a re-delivery does not mean we can drop it - the state does not get reset if we retraverse a batch
+                        | Ok | New -> toKafkaEvent e |> Some
+                    let pt, events = (fun () -> docs |> Seq.collect DocumentParser.enumEvents |> Seq.choose validate |> Array.ofSeq) |> Stopwatch.Time 
+                    let! et = async {
+                        match producer with
+                        | None ->
+                            let! et,() = ctx.CheckpointAsync() |> Async.AwaitTaskCorrect |> Stopwatch.Time
+                            return et
+                        | Some producer ->
+                            let es = [| for e in events -> e.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
+                            let! et,_ = producer.ProduceBatch es |> Stopwatch.Time
+                            return et }
+                            
+                    if log.IsEnabled LogEventLevel.Debug then log.Debug("Response Headers {0}", let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]])
+                    let r, s = ctx.FeedResponse, validator.Stats
+                    log.Information("{range} Fetch: {token} {requestCharge:n0}RU {count} docs {l:n1}s; Parse: c {cats} s {streams} e {events} {p:n3}s; Emit: {e:n1}s",
+                        ctx.PartitionKeyRangeId, r.ResponseContinuation.Trim[|'"'|], r.RequestCharge, docs.Count, float sw.ElapsedMilliseconds / 1000., 
+                        s.categories, s.TotalStreams, events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
+                    if s.gap <> 0 then
+                        log.Error("Feed inconsistency: gaps led to dropping of {gap} events in batch", s.gap)
+                        for KeyValue(stream,stats) in validator.Enum() do
+                            log.Error("Gap in Stream {stream}: dropped {gap} events ({fresh} consistent {ok} ok {dups} dups)", stream, stats.gap, stats.fresh, stats.ok, stats.dup)
+                    elif s.dup <> 0 then
+                        let streamsWithDupsCount = validator.Enum() |> Seq.filter (function KeyValue(_,{dup = d }) -> d <> 0) |> Seq.length
+                        log.Information("Feed at least once delivery: {dups} duplicates encountered across {streams} affected streams", s.dup, streamsWithDupsCount)
+                    sw.Restart() // restart the clock as we handoff back to the CFP
+                }
+                ChangeFeedObserver.Create(log, projectBatch, disposeProducer)
+
+            let run = async {
+                let logLag (interval : TimeSpan) remainingWork = async {
+                    let logLevel = if remainingWork |> Seq.exists (fun (_r,rw) -> rw <> 0L) then Events.LogEventLevel.Information else Events.LogEventLevel.Debug
+                    log.Write(logLevel, "Lags {@rangeLags} <- [Range Id, documents count] ", remainingWork)
+                    return! Async.Sleep interval }
+                let maybeLogLag = pargs.TryGetResult LagFreqS |> Option.map (TimeSpan.FromSeconds >> logLag)
+                let! _cfp =
+                    ChangeFeedProcessor.Start
+                      ( log, endpointUri, masterKey, connectionPolicy, source, aux, buildRangeProjector,
+                        leasePrefix = leaseId,
+                        forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
+                        ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
+                        ?reportLagAndAwaitNextEstimation = maybeLogLag)
+                do! Async.AwaitKeyboardInterrupt() }
+            Async.RunSynchronously run
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
-        | _ -> failwith "Please specify a valid subcommand :- init, initAux or run"
+        | _ -> failwith "Please specify a valid subcommand :- init, initAux, project or run"
         0
     with e ->
         printfn "%s" e.Message

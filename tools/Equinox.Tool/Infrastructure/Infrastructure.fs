@@ -30,13 +30,23 @@ type Exception with
         (System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture this).Throw ()
         Unchecked.defaultof<_>
 
+#nowarn "21" // re AwaitKeyboardInterrupt
+#nowarn "40" // re AwaitKeyboardInterrupt
 type Async with
+    static member Sleep(t : TimeSpan) : Async<unit> = Async.Sleep(int t.TotalMilliseconds)
     /// <summary>
     ///     Raises an exception using Async's continuation mechanism directly.
     /// </summary>
     /// <param name="exn">Exception to be raised.</param>
     static member Raise (exn : #exn) = Async.FromContinuations(fun (_,ec,_) -> ec exn)
 
+    /// Asynchronously awaits the next keyboard interrupt event
+    static member AwaitKeyboardInterrupt () : Async<unit> = 
+        Async.FromContinuations(fun (sc,_,_) ->
+            let isDisposed = ref 0
+            let rec callback _ = Tasks.Task.Run(fun () -> if Interlocked.Increment isDisposed = 1 then d.Dispose() ; sc ()) |> ignore
+            and d : IDisposable = System.Console.CancelKeyPress.Subscribe callback
+            in ())
 #if NET461
     static member Choice<'T>(workflows : seq<Async<'T option>>) : Async<'T option> = async {
         try

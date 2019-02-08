@@ -8,6 +8,7 @@
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
+    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">$(DefineConstants);NET461</DefineConstants>
 
     <PackageId>Equinox.Tool</PackageId>
     <AssemblyName>eqx</AssemblyName>
@@ -35,6 +36,9 @@
     <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Infrastructure\Infrastructure.fsproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Projection.Kafka\Equinox.Projection.Kafka.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
