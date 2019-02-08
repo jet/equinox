@@ -9,15 +9,19 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 _NB at the present time, this project does not adhere strictly to Semantic Versioning - small binary-breaking changes may occur without a change in Major at the until this notice is removed (it will be!)._
 
-## [Unreleased] - (`1.1.0-preview*`)
+## [Unreleased]
+
+### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="1.1.0-preview1"></a>
+## [1.1.0-preview1] - 2019-02-08
 
 ### Added
 
 `Equinox.Cosmos` projection facilities, see [#87](https://github.com/jet/equinox/pull/87)
-
-### Changed
-### Removed
-### Fixed
 
 <a name="1.0.4"></a>
 ## [1.0.4] - 2019-02-08
@@ -41,6 +45,7 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 
 (See release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/1.0.4...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/1.1.0-preview1...HEAD
+[1.1.0-preview1]: https://github.com/jet/equinox/compare/1.0.4...1.1.0-preview1
 [1.0.4]: https://github.com/jet/equinox/compare/1.0.3...1.0.4
 [1.0.3]: https://github.com/jet/equinox/compare/e28991d8005a2257594ac5cf5b764b76fdca7823...1.0.3

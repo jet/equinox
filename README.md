@@ -243,7 +243,7 @@ The above provisioning step provisions RUs in DocDB for the collection, which ad
     - Todo App: https://www.todobackend.com/client/index.html?https://localhost:5001/todos 
     - Run individual specs: https://www.todobackend.com/specs/index.html?https://localhost:5001/todos
 
-### Spin up a [TodoBackend](https://www.todobackend.com/) app with C# code
+### Spin up a [TodoBackend](https://www.todobackend.com/) `.csproj` ... with C# code
 
 While Equinox is implemented in F#, and F# is a great fit for writing event-sourced domain models, [the APIs are not F#-specific](https://docs.microsoft.com/en-us/dotnet/fsharp/style-guide/component-design-guidelines); there's a [C# edition of the template](https://github.com/jet/dotnet-templates/tree/master/equinox-web-csharp). The instructions are identical to the rest, but you need to use the `eqxwebcs` template instead of `eqxweb`.
 
@@ -295,14 +295,14 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Web
     ```
 
-4. **(WIP)** Use `eqx` tool to run a CosmosDb ChangeFeedProcessor
+4. **(Preview)** Use `eqx` tool to run a CosmosDb ChangeFeedProcessor
 
     ```powershell
     # TEMP: need to uninstall and use --version flag while this is in beta
     dotnet tool uninstall Equinox.Tool -g
-    dotnet tool install Equinox.Tool -g --version 1.1.0-beta*
+    dotnet tool install Equinox.Tool -g --version 1.1.0-preview*
 
-    eqx initAux -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to stash projector checkpoints within
+    eqx initAux -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to maintain consume group progress within
     # -v for verbose ChangeFeedProcessor logging
     # `default` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # stats specifies one only wants stats regarding items (other options include kafka to project to kafka)
@@ -310,11 +310,11 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx -v project default stats cosmos
     ```
 
-5. **(WIP)** Generate a CosmosDb ChangeFeedProcessor project (without Kafka producer/consumer), using `Equinox.Cosmos.Projection`
+5. **(Preview)** Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Equinox.Cosmos.Projection`
 
     ```powershell
-    # TEMP: need version spec while in beta
-    dotnet new -i equinox.templates::1.3.0-*
+    # TEMP: need version spec while in preview
+    dotnet new -i Equinox.Templates::1.3.0-*
 
     # absence of -k means the projector code will be a skeleton that does no processing besides counting the events
     dotnet new eqxprojector
@@ -325,7 +325,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Projector -- default cosmos
     ```
 
-6. **(WIP)** Use `eqx` tool to Run a CosmosDb ChangeFeedProcessor emitting to a Kafka topic
+6. **(Preview)** Use `eqx` tool to Run a CosmosDb ChangeFeedProcessor emitting to a Kafka topic
 
     ```powershell
     $env:EQUINOX_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
@@ -339,7 +339,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx -v project default -l 5 kafka temp-topic cosmos
     ```
 
-7. **(WIP)** Generate CosmosDb Kafka Projector and Consumer projects (using `Equinox.Projection.Kafka`)
+7. **(Preview)** Generate CosmosDb Kafka Projector and Consumer `.fsproj`ects (using `Equinox.Projection.Kafka`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code
@@ -347,11 +347,11 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # -k requests inclusion of Apache Kafka support
     dotnet new eqxprojector -k
 
-    # start one or more Projectors
+    # start one or more Projectors (see above for more examples/info re the Projector.fsproj)
 
     $env:EQUINOX_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
     $env:EQUINOX_KAFKA_TOPIC="topic0" # or use -t
-    dotnet run -p Projector
+    dotnet run -p Projector -- default cosmos
 
     # start one or more Consumers
 

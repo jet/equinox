@@ -206,7 +206,7 @@ Key aspects relevant to the Equinox programming model:
 
 TL;DR caching can optimize RU consumption significantly. Due to ability to mutate easily, potential to integrate rolling snapshots into core storage is provided. Providing ways to cache and snapshot matter a lot on CosmosDb, as lowest-common-demominator queries loading lots of events cost in performance and cash. The specifics of how you use the changefeed matters more than one might thing from the CosmosDb high level docs.
 
-Overview: CosmosDb has been in production for >5 years and is a mature Document database. The initial DocumentDb offering is at this point a mere projected programming model atop a generic Document data store. Its changefeed mechanism affords one a base upon which one can manage projections, but there is no directly provided mechanism which lends itself to building projections that map directly to EventStore's facilties in this regard.
+Overview: CosmosDb has been in production for >5 years and is a mature Document database. The initial DocumentDb offering is at this point a mere projected programming model atop a generic Document data store. Its changefeed mechanism affords one a base upon which one can manage projections, but there is no directly provided mechanism which lends itself to building Projections that map directly to EventStore's facilties in this regard.
 
 Key aspects relevant to the Equinox programming model:
 - CosmosDb has pervasive optimization feedback per call in the form of a Request Charge attached to each and every action. Working to optimize one's request charges per scenario is critical both in terms of the effect it has on the amount of Request Units/s one you need to preprovision (which translates directly to costs on your bill), and then live predictably within if one is not to be throttled with 429 responses. In general, the request charging structure can be considered a very strong mechanical sympathy feedback signal.
@@ -289,7 +289,7 @@ The dominant pattern is that reads request _Tip_  with an`IfNoneMatch` precondit
 - `Found` - (if there are multiple writers and/or we don't have a cached version) - for the minimal possible cost (a point read, not a query), we have all we need to establish the state:-
     `i`: a version number
     `e`: events since that version number
-    `u`: unfolded (auxiliary) events computed at the same time as the batch of events was sent (aka projections/snapshots) - (these enable us to establish the `state` without further queries or roundtrips to load and fold all preceding events)
+    `u`: unfolded (auxiliary) events computed at the same time as the batch of events was sent (aka inforamlly as snapshots) - (these enable us to establish the `state` without further queries or roundtrips to load and fold all preceding events)
 
 ## Building a state from the Storage Model and/or the Cache
 
@@ -337,7 +337,7 @@ The `sync` stored procedure takes a document as input which is almost identical 
 
 - `expectedVersion`: the position the requestor has based their [proposed] events on (no, [providing an `etag` to save on Request Charges is not possible in the Stored Proc](https://stackoverflow.com/questions/53355886/azure-cosmosdb-stored-procedure-ifmatch-predicate))
 - `e`: array of Events (see Event, above) to append iff the expectedVersion check is fulfilled
-- `u`: array of `unfold`ed events (aka snapshots, projections) that supersede items with equivalent `c`ase values  
+- `u`: array of `unfold`ed events (aka snapshots) that supersede items with equivalent `c`ase values  
 - `maxEvents`: the maximum number of events in an individual batch prior to starting a new one. For example:
     - if `e` contains 2 events, the _tip_ document's `e` has 2 documents and the `maxEvents` is `5`, the events get appended onto the tip
     - if the total length including the new `e`vents would exceed `maxEvents`, the Tip is 'renamed' (gets its `id` set to `i.toString()`) to become a batch, and the new events go into the new Tip-Batch, the _tip_ gets frozen as a `Batch`, and the new request becomes the _tip_ (as an atomic transaction on the server side)
@@ -421,7 +421,9 @@ OK, I've read the README and the tagline. I still don't know what it does! Reall
 - it helps with integration testing decision processes by
   a) staying out of your way as much as possible
   b) providing an in-memory store that implements the same interface as the EventStore and CosmosDb stores do
-- it does not [presently] run non-synchronous projections (see later in this guide for more on this)
+- There is a projection story, but it's not the last word - any 3 proper architects can come up with at least 3 wrong and 3 right ways of running those perfectly
+  a) For EventStore, you use it's projections; they're great
+  b) for CosmosDb, you use the `Equinox.Projection.*` and `Equinox.Cosmos.Projection` libraries to work off the CosmonsDb ChangeFeed using the Microsoft ChangeFeedProcessor library (and, optionally, project to/consume from Kafka using the sample app templates)
 
 ## Should I use Equinox to learn event sourcing ?
 
@@ -527,7 +529,7 @@ It should be noted that the ChangeFeed is not special-cased by CosmosDb itself i
 
 The CosmosDb ChangeFeed’s real world manifestation is a continuous query per DocumentDb Physical Partition node processor.
 
-For .NET, this is wrapped in a set of APIs presented within the standard `Microsoft.Azure.DocumentDb[.Core]` APIset (for example, the [`Sagan` library](https://github.com/jet/sagan) is built based on this).
+For .NET, this is wrapped in a set of APIs presented within the standard `Microsoft.Azure.DocumentDb[.Core]` APIset (for example, the [`Sagan` library](https://github.com/jet/sagan) is built based on this, _but there be dragons_).
 
 A ChangeFeed _Processor_ consists of (per CosmosDb processor/range)
 - a host process running somewhere that will run the query and then do something with the results before marking off progress
@@ -535,7 +537,7 @@ A ChangeFeed _Processor_ consists of (per CosmosDb processor/range)
 
 The implementation in this repo uses [Microsoft’s .NET `ChangeFeedProcessor` implementation](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet), which is a proven component used for diverse purposes including as the underlying substrate for various Azure Functions wiring.
 
-See the [`prj` branch for the WIP regarding this](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
+See the [PR that added the initial support for CosmosDb Projections](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
 
 # Feeding to Kafka
 
@@ -545,7 +547,9 @@ The [Apache Kafka intro docs](https://kafka.apache.org/intro) provide a clear te
 
 As noted in the [Effect of ChangeFeed on Request Charges](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#effect-of-changefeed-on-request-charges), it can make sense to replicate the ChangeFeed to Kafka purely from the point of view of optimising request charges (and not needing to consider projections when considering how to scale up provisioning for load). Other benefits are mechanical sympathy based - Kafka is very often the right tool for the job in scaling out traversal of events for a variety of use cases.
 
-See the [`prj` branch for the WIP regarding this](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
+See the [PR that added the initial support for CosmosDb Projections](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
+
+It should be noted that the `Equinox.Projection.Kafka` batteries included projector/consumer library targets the `Confluent.Kafka` `1.0.0-*` series (as opposed to the present table `0.11.4` thru `6` editions). There are significant breaking changes between the `0.` and `1.` releases, and there is no plan to support `0.1.x` targeting in this codebase (PR 87's history does include a passing library and tests targeting `0.11.4` for history buffs).
 
 - https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
 - https://www.confluent.io/wp-content/uploads/confluent-kafka-definitive-guide-complete.pdf
