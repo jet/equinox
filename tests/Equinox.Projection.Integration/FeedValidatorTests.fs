@@ -23,7 +23,7 @@ let [<Property>] ``Properties`` state index =
     | Some (Partial (min, pos)) ->
         match state',result with
         | All 0,Duplicate when min=0 && index = 0 -> ()
-        | All 2,Duplicate when min=1 && pos = 2 && index = 0 -> ()
+        | All x,Duplicate when min=1 && pos = x && index = 0 -> ()
         | Partial (min', pos'), Duplicate -> min' =! max min' index; pos' =! pos
         | Partial (min', pos'), Ok
         | Partial (min', pos'), New -> min' =! min; pos' =! index
