@@ -311,7 +311,7 @@ let main argv =
                 let producer, disposeProducer =
                     match broker,topic with
                     | Some b,Some t ->
-                        let cfg = KafkaProducerConfig.Create("equinox-tool", Uri b, maxInFlight = 1, compression = Config.LZ4)
+                        let cfg = KafkaProducerConfig.Create("equinox-tool", Uri b, Confluent.Kafka.Acks.Leader, LZ4)
                         let p = KafkaProducer.Create(log, cfg, t)
                         Some p, (p :> IDisposable).Dispose
                     | _ -> None, id

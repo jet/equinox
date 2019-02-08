@@ -64,7 +64,7 @@ module Helpers =
 
     let runProducers log (broker : Uri) (topic : string) (numProducers : int) (messagesPerProducer : int) = async {
         let runProducer (producerId : int) = async {
-            use producer = KafkaProducer.Create(log, KafkaProducerConfig.Create( "panther", broker), topic)
+            use producer = KafkaProducer.Create(log, KafkaProducerConfig.Create("panther", broker, Acks.Leader, maxInFlight = 10000), topic)
 
             let! results =
                 [1 .. messagesPerProducer]
@@ -102,7 +102,7 @@ module Helpers =
 
             timeout |> Option.iter consumer.StopAfter
 
-            do! consumer.AwaitConsumer()
+            do! consumer.AwaitCompletion()
         }
 
         do! Async.Parallel [for i in 1 .. numConsumers -> mkConsumer i] |> Async.Ignore
