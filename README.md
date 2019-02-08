@@ -351,12 +351,12 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     $env:EQUINOX_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
     $env:EQUINOX_KAFKA_TOPIC="topic0" # or use -t
-    dotnet run -p Projector -- default cosmos
+    dotnet run -p Projector -- default -t topic0 cosmos
 
     # start one or more Consumers
 
     $env:EQUINOX_KAFKA_GROUP="group0" # or use -g
-    dotnet run -p Consumer
+    dotnet run -p Consumer -- -t topic0 -g group0
     ```
 
 # FURTHER READING
