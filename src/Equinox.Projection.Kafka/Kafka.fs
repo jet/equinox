@@ -12,7 +12,7 @@ open System.Threading.Tasks
 /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md for documentation on the implications of specfic settings
 [<RequireQualifiedAccess>]
 module Config =
-    type Acks = Zero | One | All
+    type Acks = Zero | Leader | All
     type Compression = None | GZip | Snappy | LZ4
     let internal validateBrokerUri (u:Uri) =
         if not u.IsAbsoluteUri then invalidArg "broker" "should be of 'host:port' format"
@@ -22,33 +22,6 @@ module Config =
             else invalidArg "broker" "should be of 'host:port' format"
 
         else u.Authority
-
-// NB we deliberately wrap all types exposed by Confluent.Kafka to avoid needing to reference librdkafka everywhere
-[<NoComparison>]
-type DeliveryReport internal (message : DeliveryReportResult<string,string>) =
-    member internal __.UnderlyingMessage = message
-    static member TryWrap (msg : DeliveryReportResult<string,string>) =
-        if msg.Error.IsError then
-            let errorMsg = sprintf "Error on message topic=%s code=%O reason=%s" msg.Topic msg.Error.Code msg.Error.Reason
-            Choice2Of2 (Exception errorMsg)
-        else
-            Choice1Of2 (DeliveryReport msg)
-    static member WrapOrThrow msg = match DeliveryReport.TryWrap msg with Choice2Of2 e -> raise e | Choice1Of2 m -> m
-    member __.Topic = message.Topic
-    member __.Partition : int = let p = message.Partition in p.Value
-    member __.Offset : int64 = let o = message.Offset in o.Value
-    member __.Key : string = message.Key
-    member __.Value : string = message.Value
-
-// NB we deliberately wrap all types exposed by Confluent.Kafka to avoid needing to reference librdkafka everywhere
-[<NoComparison>]
-type KafkaMessage internal (message : ConsumeResult<string,string>) =
-    member internal __.UnderlyingMessage = message
-    member __.Topic = message.Topic
-    member __.Partition : int = let p = message.Partition in p.Value
-    member __.Offset : int64 = let o = message.Offset in o.Value
-    member __.Key : string = message.Key
-    member __.Value : string = message.Value
 
 [<NoComparison>]
 type KafkaProducerConfig(conf, cfgs, broker : Uri, compression : Config.Compression, acks : Config.Acks) =
@@ -82,7 +55,7 @@ type KafkaProducerConfig(conf, cfgs, broker : Uri, compression : Config.Compress
             ?partitioner,
             /// Misc configuration parameter to be passed to the underlying CK producer.
             ?custom) =
-        let acks = defaultArg acks Config.Acks.One
+        let acks = defaultArg acks Config.Acks.Leader
         let compression = defaultArg compression Config.Compression.None
         let compressionStr =
             match compression with
@@ -99,10 +72,10 @@ type KafkaProducerConfig(conf, cfgs, broker : Uri, compression : Config.Compress
                 ClientId = clientId, BootstrapServers = Config.validateBrokerUri broker,
                 RetryBackoffMs = Nullable (match retryBackoff with Some (t : TimeSpan) -> int t.TotalMilliseconds | None -> 1000),
                 MessageSendMaxRetries = Nullable (defaultArg retries 60),
-                Acks = Nullable (match acks with Config.Acks.One -> 1 | Config.Acks.Zero -> 0 | Config.Acks.All -> -1),
+                Acks = Nullable (match acks with Config.Acks.Leader -> Acks.Leader | Config.Acks.Zero -> Acks.None | Config.Acks.All -> Acks.All),
                 LingerMs = Nullable (match linger with Some t -> int t.TotalMilliseconds | None -> 10),
                 SocketKeepaliveEnable = Nullable (defaultArg socketKeepAlive true),
-                Partitioner = Nullable (defaultArg partitioner PartitionerType.Consistent_Random),
+                Partitioner = Nullable (defaultArg partitioner Partitioner.ConsistentRandom),
                 MaxInFlight = Nullable (defaultArg maxInFlight 1000000),
                 LogConnectionClose = Nullable false) // https://github.com/confluentinc/confluent-kafka-dotnet/issues/124#issuecomment-289727017
         statisticsInterval |> Option.iter (fun (i : TimeSpan) -> conf.StatisticsIntervalMs <- Nullable (int i.TotalMilliseconds))
@@ -110,12 +83,7 @@ type KafkaProducerConfig(conf, cfgs, broker : Uri, compression : Config.Compress
 
 type KafkaProducer private (log: ILogger, producer : Producer<string, string>, topic : string) =
     let log = log.ForContext<KafkaProducer>()
-    let d1 = producer.OnLog.Subscribe(fun m -> log.Information("{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
-    let d2 = producer.OnError.Subscribe(fun e -> log.Error("{reason} code={code} isBrokerError={isBrokerError}", e.Reason, e.Code, e.IsBrokerError))
 
-    /// https://github.com/edenhill/librdkafka/wiki/Statistics
-    [<CLIEvent>]
-    member __.OnStatistics = producer.OnStatistics
     member __.Topic = topic
 
     /// Produces a batch of supplied key/value messages. Results are returned in order of writing.  
@@ -124,18 +92,18 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
 
         let! ct = Async.CancellationToken
 
-        let tcs = new TaskCompletionSource<DeliveryReport[]>()
+        let tcs = new TaskCompletionSource<DeliveryReport<_,_>[]>()
         let numMessages = keyValueBatch.Length
-        let results = Array.zeroCreate<DeliveryReport> numMessages
+        let results = Array.zeroCreate<DeliveryReport<_,_>> numMessages
         let numCompleted = ref 0
 
         use _ = ct.Register(fun _ -> tcs.TrySetCanceled() |> ignore)
 
-        let handler (m : DeliveryReportResult<string,string>) =
-            match DeliveryReport.TryWrap m with
-            | Choice2Of2 e ->
-                tcs.TrySetException e |> ignore
-            | Choice1Of2 m ->
+        let handler (m : DeliveryReport<string,string>) =
+            if m.Error.IsError then
+                let errorMsg = exn (sprintf "Error on message topic=%s code=%O reason=%s" m.Topic m.Error.Code m.Error.Reason)
+                tcs.TrySetException errorMsg |> ignore
+            else
                 let i = Interlocked.Increment numCompleted
                 results.[i - 1] <- m
                 if i = numMessages then tcs.TrySetResult results |> ignore 
@@ -145,13 +113,17 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         log.Debug("Produced {count}",!numCompleted)
         return! Async.AwaitTaskCorrect tcs.Task }
 
-    interface IDisposable with member __.Dispose() = for d in [d1;d2;producer:>_] do d.Dispose()
+    interface IDisposable with member __.Dispose() = for d in [(*d1;d2;*)producer:>IDisposable] do d.Dispose()
 
     static member Create(log : ILogger, config : KafkaProducerConfig, topic : string) =
         if String.IsNullOrEmpty topic then nullArg "topic"
         log.Information("Producing... {broker} / {topic} compression={compression} acks={acks}",
                           config.Broker, topic, config.Compression, config.Acks)
-        let producer = new Producer<string, string>(config.Kvps)
+        let producer =
+            ProducerBuilder<string, string>(config.Kvps)
+                .SetLogHandler(fun _p m -> log.Information("{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
+                .SetErrorHandler(fun _p e -> log.Error("{reason} code={code} isBrokerError={isBrokerError}", e.Reason, e.Code, e.IsBrokerError))
+                .Build()
         new KafkaProducer(log, producer, topic)
         
  module private ConsumerImpl =
@@ -161,9 +133,9 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         let inline len (x:string) = match x with null -> 0 | x -> sizeof<char> * x.Length
         16 + len message.Key + len message.Value |> int64
 
-    let getBatchOffset (batch : KafkaMessage[]) : TopicPartitionOffset =
-        let maxOffset = batch |> Array.maxBy (fun m -> m.Offset)
-        maxOffset.UnderlyingMessage.TopicPartitionOffset
+    let getBatchOffset (batch : ConsumeResult<_,_>[]) : TopicPartitionOffset =
+        let maxOffset = batch |> Array.maxBy (fun m -> let o = m.Offset in o.Value)
+        maxOffset.TopicPartitionOffset
 
     type BlockingCollection<'T> with
         member bc.FillBuffer(buffer : 'T[], maxDelay : TimeSpan) : int =
@@ -231,46 +203,39 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
         member c.StoreOffset(tpo : TopicPartitionOffset) : unit =
             c.StoreOffsets[| TopicPartitionOffset(tpo.Topic, tpo.Partition, Offset(let o = tpo.Offset in o.Value + 1L)) |]
 
-        member c.WithLogging(log: ILogger) =
-            let d1 = c.OnLog.Subscribe(fun m ->
-                log.Information("consumer_info|{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
-            let d2 = c.OnError.Subscribe(fun e ->
-                log.Error("consumer_error| reason={reason} code={code} broker={isBrokerError}", e.Reason, e.Code, e.IsBrokerError))
-            let fmtTopicPartitions (topicPartitions : seq<TopicPartition>) =
-                topicPartitions 
-                |> Seq.groupBy (fun p -> p.Topic)
-                |> Seq.map (fun (t,ps) -> t, [| for p in ps -> let p = p.Partition in p.Value |])
-            let d3 = c.OnPartitionsAssigned.Subscribe(fun tps ->
-                for topic,partitions in fmtTopicPartitions tps do log.Information("Consuming... Assigned {topic:l} {partitions}", topic, partitions))
-            let d4 = c.OnPartitionsRevoked.Subscribe(fun tps ->
-                for topic,partitions in fmtTopicPartitions tps do log.Information("Consuming... Revoked {topic:l} {partitions}", topic, partitions))
-            let d5 = c.OnPartitionEOF.Subscribe(fun tpo ->
-                log.Verbose("consumer_partition_eof|topic={topic}|partition={partition}|offset={offset}", tpo.Topic, tpo.Partition, let o = tpo.Offset in o.Value))
-            let fmtError (e : Error) = if e.IsError then sprintf " reason=%s code=%O isBrokerError=%b" e.Reason e.Code e.IsBrokerError else ""
-            let fmtTopicPartitionOffsetErrors (topicPartitionOffsetErrors : seq<TopicPartitionOffsetError>) =
-                topicPartitionOffsetErrors
-                |> Seq.groupBy (fun p -> p.Topic)
-                |> Seq.map (fun (t,ps) -> t,[for p in ps -> let pp = p.Partition in pp.Value, let o = p.Offset in if o.IsSpecial then box (string o) else box o.Value(*, fmtError p.Error*)])
+        //member c.WithLogging(log: ILogger) =
+        //    let d1 = c.OnLog.Subscribe(fun m ->
+        //        log.Information("consumer_info|{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
+        //    let d2 = c.OnError.Subscribe(fun e ->
+        //        log.Error("consumer_error| reason={reason} code={code} broker={isBrokerError}", e.Reason, e.Code, e.IsBrokerError))
+        //    let fmtTopicPartitions (topicPartitions : seq<TopicPartition>) =
+        //        topicPartitions 
+        //        |> Seq.groupBy (fun p -> p.Topic)
+        //        |> Seq.map (fun (t,ps) -> t, [| for p in ps -> let p = p.Partition in p.Value |])
+        //    let d3 = c.OnPartitionsAssigned.Subscribe(fun tps ->
+        //        for topic,partitions in fmtTopicPartitions tps do log.Information("Consuming... Assigned {topic:l} {partitions}", topic, partitions))
+        //    let d4 = c.OnPartitionsRevoked.Subscribe(fun tps ->
+        //        for topic,partitions in fmtTopicPartitions tps do log.Information("Consuming... Revoked {topic:l} {partitions}", topic, partitions))
+        //    let d5 = c.OnPartitionEOF.Subscribe(fun tpo ->
+        //        log.Verbose("consumer_partition_eof|topic={topic}|partition={partition}|offset={offset}", tpo.Topic, tpo.Partition, let o = tpo.Offset in o.Value))
+        //    let fmtError (e : Error) = if e.IsError then sprintf " reason=%s code=%O isBrokerError=%b" e.Reason e.Code e.IsBrokerError else ""
+        //    let fmtTopicPartitionOffsetErrors (topicPartitionOffsetErrors : seq<TopicPartitionOffsetError>) =
+        //        topicPartitionOffsetErrors
+        //        |> Seq.groupBy (fun p -> p.Topic)
+        //        |> Seq.map (fun (t,ps) -> t,[for p in ps -> let pp = p.Partition in pp.Value, let o = p.Offset in if o.IsSpecial then box (string o) else box o.Value(*, fmtError p.Error*)])
                     
-            let d6 = c.OnOffsetsCommitted.Subscribe(fun cos ->
-                for t,o in fmtTopicPartitionOffsetErrors cos.Offsets do log.Information("Consuming... Committed {topic} {@offsets}{oe}", t, o, fmtError cos.Error))
-            { new IDisposable with member __.Dispose() = for d in [d1;d2;d3;d4;d5;d6] do d.Dispose() }
-
-    let mkConsumer (kvps : seq<KeyValuePair<string,string>>, topics : string seq)  =
-        let consumer = new Consumer<'Key, 'Value>(kvps)
-        let _ = consumer.OnPartitionsAssigned.Subscribe(fun m -> consumer.Assign m)
-        let _ = consumer.OnPartitionsRevoked.Subscribe(fun _ -> consumer.Unassign())
-        consumer.Subscribe topics
-        consumer
+        //    let d6 = c.OnOffsetsCommitted.Subscribe(fun cos ->
+        //        for t,o in fmtTopicPartitionOffsetErrors cos.Offsets do log.Information("Consuming... Committed {topic} {@offsets}{oe}", t, o, fmtError cos.Error))
+        //    { new IDisposable with member __.Dispose() = for d in [d1;d2;d3;d4;d5;d6] do d.Dispose() }
 
     let mkBatchedMessageConsumer (log: ILogger) (minInFlightBytes, maxInFlightBytes, maxBatchSize, maxBatchDelay)
-            (ct : CancellationToken) (consumer : Consumer<string, string>) (handler : KafkaMessage[] -> Async<unit>) = async {
+            (ct : CancellationToken) (consumer : Consumer<string, string>) (handler : ConsumeResult<_,_>[] -> Async<unit>) = async {
         let tcs = new TaskCompletionSource<unit>()
         use cts = CancellationTokenSource.CreateLinkedTokenSource(ct)
         use _ = ct.Register(fun _ -> tcs.TrySetResult () |> ignore)
 
         use _ = consumer
-        use _ = consumer.WithLogging(log)
+        //use _ = consumer.WithLogging(log)
         
         let counter = new InFlightMessageCounter(log, minInFlightBytes, maxInFlightBytes)
         let partitionedCollection = new PartitionedBlockingCollection<TopicPartition, ConsumeResult<string, string>>()
@@ -281,7 +246,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
             let nextBatch () =
                 let count = collection.FillBuffer(buffer, maxBatchDelay)
                 if count <> 0 then log.Debug("Consuming {count}", count)
-                let batch = Array.init count (fun i -> KafkaMessage(buffer.[i]))
+                let batch = Array.init count (fun i -> buffer.[i])
                 Array.Clear(buffer, 0, count)
                 batch
 
@@ -297,7 +262,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
                             consumer.StoreOffset(getBatchOffset batch)
 
                             // decrement in-flight message counter
-                            let batchSize = batch |> Array.sumBy (fun m -> getMessageSize m.UnderlyingMessage)
+                            let batchSize = batch |> Array.sumBy getMessageSize
                             counter.Add -batchSize
                     with e ->
                         tcs.TrySetException e |> ignore
@@ -307,7 +272,7 @@ type KafkaProducer private (log: ILogger, producer : Producer<string, string>, t
             Async.Start(loop(), cts.Token)
 
         use _ = partitionedCollection.OnPartitionAdded.Subscribe (fun (key,buffer) -> consumePartition key buffer)
-        use _ = consumer.OnPartitionsRevoked.Subscribe (fun ps -> for p in ps do partitionedCollection.Revoke p)
+        //use _ = consumer.OnPartitionsRevoked.Subscribe (fun ps -> for p in ps do partitionedCollection.Revoke p)
 
         // run the consumer
         let ct = cts.Token
@@ -368,7 +333,7 @@ type KafkaConsumerConfig =
         let conf =
             ConsumerConfig(
                 ClientId=clientId, BootstrapServers=Config.validateBrokerUri broker, GroupId=groupId,
-                AutoOffsetReset = Nullable (defaultArg autoOffsetReset AutoOffsetResetType.Earliest),
+                AutoOffsetReset = Nullable (defaultArg autoOffsetReset AutoOffsetReset.Earliest),
                 FetchMaxBytes = Nullable (defaultArg fetchMaxBytes 100000),
                 MessageMaxBytes = Nullable (defaultArg fetchMaxBytes 100000),
                 FetchMinBytes = Nullable (defaultArg fetchMinBytes 10),  // TODO check if sane default
@@ -386,9 +351,6 @@ type KafkaConsumerConfig =
 
 type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, task : Task<unit>, cts : CancellationTokenSource) =
 
-    /// https://github.com/edenhill/librdkafka/wiki/Statistics
-    [<CLIEvent>]
-    member __.OnStatistics = consumer.OnStatistics
     member __.Status = task.Status
     /// Asynchronously awaits until consumer stops or is faulted
     member __.AwaitConsumer() = Async.AwaitTaskCorrect task
@@ -401,23 +363,24 @@ type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, 
     /// Starts a kafka consumer with provider configuration and batch message handler.
     /// Batches are grouped by topic partition. Batches belonging to the same topic partition will be scheduled sequentially and monotonically,
     /// however batches from different partitions can be run concurrently.
-    static member Start (log : ILogger) (config : KafkaConsumerConfig) (partitionHandler : KafkaMessage[] -> Async<unit>) =
+    static member Start (log : ILogger) (config : KafkaConsumerConfig) (partitionHandler : ConsumeResult<_,_>[] -> Async<unit>) =
         if List.isEmpty config.topics then invalidArg "config" "must specify at least one topic"
         log.Information("Consuming... {broker} / {topics} / {groupId}" (*autoOffsetReset={autoOffsetReset}*) + " fetchMaxBytes={fetchMaxB} maxInFlightBytes={maxInFlightB} maxBatchSize={maxBatchB} maxBatchDelay={maxBatchDelay}s",
             config.conf.BootstrapServers, config.topics, config.conf.GroupId, (*config.conf.AutoOffsetReset.Value,*) config.conf.FetchMaxBytes,
             config.maxInFlightBytes, config.maxBatchSize, (let t = config.maxBatchDelay in t.TotalSeconds))
 
         let cts = new CancellationTokenSource()
-        let consumer = ConsumerImpl.mkConsumer (config.Kvps, config.topics)
         let cfg = config.minInFlightBytes, config.maxInFlightBytes, config.maxBatchSize, config.maxBatchDelay
+        let consumer = ConsumerBuilder<'Key, 'Value>(config.Kvps).Build()
         let task = ConsumerImpl.mkBatchedMessageConsumer log cfg cts.Token consumer partitionHandler |> Async.StartAsTask
+        consumer.Subscribe config.topics
         new KafkaConsumer(log, consumer, task, cts)
 
     /// Starts a Kafka consumer instance that schedules handlers grouped by message key. Additionally accepts a global degreeOfParallelism parameter
     /// that controls the number of handlers running concurrently across partitions for the given consumer instance.
-    static member StartByKey (log: ILogger) (config : KafkaConsumerConfig) (degreeOfParallelism : int) (keyHandler : KafkaMessage [] -> Async<unit>) =
+    static member StartByKey (log: ILogger) (config : KafkaConsumerConfig) (degreeOfParallelism : int) (keyHandler : ConsumeResult<_,_> [] -> Async<unit>) =
         let semaphore = new SemaphoreSlim(degreeOfParallelism)
-        let partitionHandler (messages : KafkaMessage[]) = async {
+        let partitionHandler (messages : ConsumeResult<_,_>[]) = async {
             return!
                 messages
                 |> Seq.groupBy (fun m -> m.Key)

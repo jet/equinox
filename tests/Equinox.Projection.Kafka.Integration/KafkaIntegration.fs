@@ -14,6 +14,7 @@ open Xunit
 [<AutoOpen>]
 [<EditorBrowsable(EditorBrowsableState.Never)>]
 module Helpers =
+    open Confluent.Kafka
 
     // Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
     // NB VS does not surface these atm, but other test runners / test reports do
@@ -58,7 +59,7 @@ module Helpers =
 
     type TestMessage = { producerId : int ; messageId : int }
     [<NoComparison; NoEquality>]
-    type ConsumedTestMessage = { consumerId : int ; message : KafkaMessage ; payload : TestMessage }
+    type ConsumedTestMessage = { consumerId : int ; message : ConsumeResult<string,string> ; payload : TestMessage }
     type ConsumerCallback = KafkaConsumer -> ConsumedTestMessage [] -> Async<unit>
 
     let runProducers log (broker : Uri) (topic : string) (numProducers : int) (messagesPerProducer : int) = async {
@@ -84,7 +85,7 @@ module Helpers =
 
     let runConsumers log (config : KafkaConsumerConfig) (numConsumers : int) (timeout : TimeSpan option) (handler : ConsumerCallback) = async {
         let mkConsumer (consumerId : int) = async {
-            let deserialize (msg : KafkaMessage) = { consumerId = consumerId ; message = msg ; payload = JsonConvert.DeserializeObject<_> msg.Value }
+            let deserialize (msg : ConsumeResult<_,_>) = { consumerId = consumerId ; message = msg ; payload = JsonConvert.DeserializeObject<_> msg.Value }
 
             // need to pass the consumer instance to the handler callback
             // do a bit of cyclic dependency fixups
@@ -300,7 +301,7 @@ type T3(testOutputHelper) =
 
         do! runConsumers log config 1 None
                 (fun c b -> async {
-                    let partition = b.[0].message.Partition
+                    let partition = let p = b.[0].message.Partition in p.Value
 
                     // check batch sizes are bounded by maxBatchSize
                     test <@ b.Length <= maxBatchSize @> // "batch sizes should never exceed maxBatchSize")
@@ -313,8 +314,8 @@ type T3(testOutputHelper) =
                     // check for message monotonicity
                     let offset = getPartitionOffset partition
                     for msg in b do
-                        Assert.True(msg.message.Offset > !offset, "offset for partition should be monotonic")
-                        offset := msg.message.Offset
+                        Assert.True((let o = msg.message.Offset in o.Value) > !offset, "offset for partition should be monotonic")
+                        offset := let o = msg.message.Offset in o.Value
 
                     do! Async.Sleep 100
 
