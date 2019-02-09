@@ -380,6 +380,72 @@ The [provisioning](provisioning) step spins up RUs in DocDB for the Collection, 
 - Kill the collection and/or database
 - Use the portal to change the allocation
 
+## FAQ
+
+### What _is_ Equinox?
+
+OK, I've read the README and the tagline. I still don't know what it does! Really, what's the TL;DR ?
+
+- it supports storing events in [EventStore](https://eventstore.org), including working with existing data you may have (that's where it got its start)
+- it includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDb account to get going
+- it provides all the necessary infrastructure to build idempotent synchronous command processing against all of the stores; your Domain code intentionally doesn't need to reference *any* Equinox modules whatsoever (although for smaller systems, you'll often group `Events`+`Fold`+`Commands`+`Handler`+`Service` in a single `module`, which implies a reference to [the core `Equinox` package](src/Equinox)).
+- following on from the previous point, you just write the unit tests without any Equinox-specific hoops to jump through; this really works very well indeed, assuming you're writing the domain code and the tests in F#. If you're working in a more verbose language, you may end up building some test helpers. We don't envisage Equinox mandating a specific pattern on the unit testing side (consistent naming such as `Events.Event`+`evolve`+`fold`+`Command`+`interpret` can help though).
+- it helps with integration testing decision processes by
+  - staying out of your way as much as possible
+  - providing an in-memory store that implements the same interface as the EventStore and CosmosDb stores do
+- There is a projection story, but it's not the last word - any 3 proper architects can come up with at least 3 wrong and 3 right ways of running those perfectly
+  - For EventStore, you use it's projections; they're great
+  - for CosmosDb, you use the `Equinox.Projection.*` and `Equinox.Cosmos.Projection` libraries to work off the CosmosDb ChangeFeed using the Microsoft ChangeFeedProcessor library (and, optionally, project to/consume from Kafka) using the sample app templates
+
+### Should I use Equinox to learn event sourcing ?
+
+You _could_. However the Equinox codebase here is not designed to be a tutorial; it's also extracted from systems with no pedagogical mission whatsoever. [FsUno.Prod](https://github.com/thinkbeforecoding/FsUno.Prod) on the other hand has this specific intention, walking though it is highly recommended. Also [EventStore](https://eventstore.org/), being a widely implemented and well-respected open source system has some excellent learning materials and documentation with a wide usage community (search for `DDD-CQRS-ES` mailing list and slack).
+
+Having said that, we'd love to see a set of tutorials written by people looking from different angles, and over time will likely do one too ... there's no reason why the answer to this question can't become "**of course!**"
+
+### Can I use it for really big projects?
+
+You can. Folks in Jet do; we also have systems where we have no plans to use it, or anything like it. That's OK; there are systems where having precise control over one's data access is critical. And (shush, don't tell anyone!) some find writing this sort of infrastructure to be a very fun design challenge that beats doing domain modelling any day ...
+
+### Can I use it for really small projects and tiny microservices?
+
+You can. Folks in Jet do; but we also have systems where we have no plans to use it, or anything like it as it would be overkill even for people familiar with Equinox.
+
+### OK, but _should_ I use Equinox for a small project ?
+
+You'll learn a lot from building your own equivalent wrapping layer. Given the array of concerns Equinox is trying to address, there's no doubt that a simpler solution is always possible if you constrain the requirements to specifics of your context with regard to a) scale b) complexity of domain c) degree to which you use or are likely to use >1 data store. You can and should feel free to grab slabs of Equinox's implementation and whack it into an `Infrastructure.fs` in your project too (note you should adhere to the rules of the [Apache 2 license](LICENSE)). If you find there's a particular piece you'd really like isolated or callable as a component and it's causing you pain as [you're using it over and over in ~ >= 3 projects](https://en.wikipedia.org/wiki/Rule_of_three_(computer_programming)), please raise an Issue though ! 
+
+Having said that, getting good logging, some integration tests and getting lots of off-by-one errors off your plate is nice; the point of [DDD-CQRS-ES](https://ddd-cqrs-es.slack.com/) is to get beyond toy examples to the good stuff - Domain Modelling on your actual domain.
+
+### What will Equinox _never_ do?
+
+Hard to say; try us, raise an Issue.
+
+### What client languages are supported ?
+
+The main language in mind for consumption is of course F# - many would say that F# and event sourcing are a dream pairing; little direct effort has been expended polishing it to be comfortable to consume from other .NET languages, the `dotnet new eqxwebcs` template represents the current state.
+
+## You say I can use volatile memory for integration tests, could this also be used for learning how to get started building event sourcing programs with equinox? 
+
+The `MemoryStore` backend is intended to implement the complete semantics of a durable store [aside from caching, which would be a pyrrhic victory if implemented like in the other Stores, though arguably it may make sense should the caching layer ever get pushed out of the Stores themselves]. The main benefit of using it is that any tests using it have zero environment dependencies. In some cases this can be very useful for demo apps or generators (rather than assuming a specific store at a specific endpoint and/or credentials, there is something to point at which does not require configuration or assumptions.). The problem of course is that it's all in-process; the minute you stop the host, your TODO list has been forgotten. In general, EventStore is a very attractive option for prototyping; the open source edition is trivial to install and has a nice UI that lets you navigate events being produced etc.
+
+### OK, so it supports CosmosDb, EventStore and might even support more in the future. I really don't intend to shift datastores. Period. Why would I take on this complexity only to get the lowest common denominator ?
+
+Yes, you have decisions to make; Equinox is not a panacea - there is no one size fits all. While the philosophy of Equinox is a) provide an opinionated store-neutral [Programming Model](DOCUMENTATION.md#Programming-Model) with a good pull toward a big [pit of success](https://blog.codinghorror.com/falling-into-the-pit-of-success/), while not closing the door to using store-specific features where relevant, having a dedicated interaction is always going to afford you more power and control.
+
+### Why do I need two caches if I have two stores?
+
+- in general, individual apps will not typically be mixing data stores in the first instance
+- see [The Rule of Three](https://en.wikipedia.org/wiki/Rule_of_three_(computer_programming)); the commonality may reveal itself better at a later point, but the cut and paste (with a cut and paste of the the associated acceptance tests) actually keeps the cache integration clearer at the individual store level for now. No, it's not set in stone ;)
+
+### Is there a guide to building the simplest possible hello world "counter" sample, that simply counts with an add and a subtract event? 
+
+There's a skeleton one in [#56](https://github.com/jet/equinox/issues/56), but your best choices are probably to look at the `Aggregate.fs` and `Todo.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates)
+
+### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
+
+😲Please raise a question-Issue, and we'll be delighted to either answer directly, or incorporate the question and answer here
+
 # FURTHER READING
 
 See [`DOCUMENTATION.md`](DOCUMENTATION.md)

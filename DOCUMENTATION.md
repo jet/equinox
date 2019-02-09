@@ -1,4 +1,4 @@
-Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](#FAQ) and [README.md](README.md) for background info _and (**especially while we remain pre-release**), the [Roadmap](#roadmap)_.
+Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ) and [README.md](README.md) for background info _and (**especially while we remain pre-release**), the [Roadmap](#roadmap)_.
 
 :frown: while the repo is open, this is **not released**, it's a soft-launched open source repo at version 1.0; the 1.0 reflects (only) the fact its in production usage. There is absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now.
 
@@ -90,7 +90,7 @@ Unfolds | Snapshot information, represented as Events that are stored in an appr
 
 NB this has lots of room for improvement, having started as a placeholder in [#50](https://github.com/jet/equinox/issues/50); **improvements are absolutely welcome, as this is intended for an audience with diverse levels of familiarity with event sourcing in general, and Equinox in particular**.
 
-In F#, independent of the Store being used, the Equinox programming model involves (largely by convention, see [FAQ](FAQ)), per aggregation of events on a given category of stream:
+In F#, independent of the Store being used, the Equinox programming model involves (largely by convention, see [FAQ](README.md#FAQ)), per aggregation of events on a given category of stream:
 
 - `'state`: the rolling state maintained to enable Decisions or Queries to be made given a `'command` (not expected to be serializable or stored directly in a Store; can be held in a [.NET `MemoryCache`](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.caching.memorycache))
 - `'event`: a discriminated union representing all the possible Events from which a state can be `evolve`d (see `e`vents and `u`nfolds in the [Storage Model](cosmos-storage-model)). Typically the mapping of the json to an `'event` `c`ase is [driven by a `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)
@@ -198,7 +198,7 @@ However, given one has a specific store (or set of stores) in mind for the event
 
 This sections enumerates key concerns feeding into how Stores in general, and specific concrete Stores bind to the [Programming Model](programming-model):
 
-#### EventStore
+### EventStore
 
 TL;DR caching not really needed, storing snapshots has many considerations in play, projections built in 
 
@@ -213,7 +213,7 @@ Key aspects relevant to the Equinox programming model:
 - While there is no generic querying facility, the APIs are designed in such a manner that it's generally possible to achieve any typically useful event access pattern needed in an optimal fashion (projections, catchup subscriptions, backward reads, caching)
 - While EventStore allows either json or binary data, its generally accepted that json (presented as UTF-8 byte arrays) is a good default for reasons of interoperability (the projections facility also strongly implies json)
 
-#### Azure CosmosDb
+### Azure CosmosDb concerns
 
 TL;DR caching can optimize RU consumption significantly. Due to the intrinsic ability to mutate easily, the potential to integrate rolling snapshots into core storage is clear. Providing ways to cache and snapshot matter a lot on CosmosDb, as lowest-common-demominator queries loading lots of events cost in performance and cash. The specifics of how you use the changefeed matters more than one might thing from the CosmosDb high level docs.
 
@@ -427,71 +427,52 @@ match res with
 | c -> failwithf "conflict %A" c
 ```
 
-# FAQ
+# Projectors
 
-## What _is_ Equinox?
+See [this medium post regarding some patterns used at Jet in this space](https://medium.com/@eulerfx/scaling-event-sourcing-at-jet-9c873cac33b8) for a broad overview of the reasons one might consider employing a projection system.
 
-OK, I've read the README and the tagline. I still don't know what it does! Really, what's the TL;DR ?
+# `Equinox.Cosmos` Projection facility
 
-- it supports storing events in [EventStore](https://eventstore.org), including working with existing data you may have (that's where it got its start)
-- it includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDb account to get going
-- it provides all the necessary infrastructure to build idempotent synchronous command processing against all of the stores; your Domain code intentionally doesn't need to reference *any* Equinox modules whatsoever (although for smaller systems, you'll often group `Events`+`Fold`+`Commands`+`Handler`+`Service` in a single `module`, which implies a reference to [the core `Equinox` package](src/Equinox)).
-- following on from the previous point, you just write the unit tests without any Equinox-specific hoops to jump through; this really works very well indeed, assuming you're writing the domain code and the tests in F#. If you're working in a more verbose language, you may end up building some test helpers. We don't envisage Equinox mandating a specific pattern on the unit testing side (consistent naming such as `Events.Event`+`evolve`+`fold`+`Command`+`interpret` can help though).
-- it helps with integration testing decision processes by
-  - staying out of your way as much as possible
-  - providing an in-memory store that implements the same interface as the EventStore and CosmosDb stores do
-- There is a projection story, but it's not the last word - any 3 proper architects can come up with at least 3 wrong and 3 right ways of running those perfectly
-  - For EventStore, you use it's projections; they're great
-  - for CosmosDb, you use the `Equinox.Projection.*` and `Equinox.Cosmos.Projection` libraries to work off the CosmosDb ChangeFeed using the Microsoft ChangeFeedProcessor library (and, optionally, project to/consume from Kafka) using the sample app templates
+ An integral part of the `Equinox.Cosmos` featureset is the ability to project events based on the [Azure DocumentDb ChangeFeed mechanism](https://docs.microsoft.com/en-us/azure/cosmos-db/change-feed). Key elements involved in realizing this are:
+- the [storage model needs to be designed in such a way that the aforementioned processor can do its job efficiently](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#cosmos-storage-model)
+- there needs to be an active ChangeFeed Processor per collection which monitors events being written, tracking the position of the most recently propagated events
 
-## Should I use Equinox to learn event sourcing ?
+In CosmosDb, every document lives within a [logical partition, which is then hosted by a variable number of processor instances entitled _physical partitions_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data) (`Equinox.Cosmos` documents pertaining to an individual stream bear the same partition key in order to ensure correct ordering guarantees for the purposes of projection). Each front end processor has responsibility for a particular subset range of the partition key space.
 
-You _could_. However the Equinox codebase here is not designed to be a tutorial; it's also extracted from systems with no pedagogical mission whatsoever. [FsUno.Prod](https://github.com/thinkbeforecoding/FsUno.Prod) on the other hand has this specific intention, walking though it is highly recommended. Also [EventStore](https://eventstore.org/), being a widely implemented and well-respected open source system has some excellent learning materials and documentation with a wide usage community (search for `DDD-CQRS-ES` mailing list and slack).
+The ChangeFeed’s real world manifestation is as a long running Processor per frontend processor that repeatedly tails a query across the set of documents being managed by a given partition host (subject to topology changes - new processors can come and go, with the assigned ranges shuffling to balance the load per processor). e.g. if you allocate 30K RU/s to a collection, it will have 3 processors, each handling 1/3 of the partition key space, and running a change feed from that is a matter of maintaining 3 continuous queries, with a continuation token each.
 
-Having said that, we'd love to see a set of tutorials written by people looking from different angles, and over time will likely do one too ... there's no reason why the answer to this question can't become "**of course!**"
+## Effect of ChangeFeed on Request Charges
 
-## Can I use it for really big projects?
+It should be noted that the ChangeFeed is not special-cased by CosmosDb itself in any meaningful way - something somewhere is going to be calling a DocumentDb API queries, paying Request Charges fo the privilege (even a tail request based on a continuation token yielding zero documents incurs a charge). Its important to consider that every event written by `Equinox.Cosmos` into the CosmosDb collection will induce an approximately equivalent cost due to the fact that a freshly inserted document will be included in the next batch propagated by the Processor (each update of a document also ‘moves’ that document from it’s present position in the change order past the the tail of the ChangeFeed). Thus each insert/update also induces an (unavoidable) request charge based on the fact that the document will be included aggregate set of touch documents being surfaced per batch transferred from the ChangeFeed (charging is per KiB or part thereof).
 
-You can. Folks in Jet do; we also have systems where we have no plans to use it, or anything like it. That's OK; there are systems where having precise control over one's data access is critical. And (shush, don't tell anyone!) some find writing this sort of infrastructure to be a very fun design challenge that beats doing domain modelling any day ...
+## Change Feed Processors
 
-## Can I use it for really small projects and tiny microservices?
+The CosmosDb ChangeFeed’s real world manifestation is a continuous query per DocumentDb Physical Partition node processor.
 
-You can. Folks in Jet do; but we also have systems where we have no plans to use it, or anything like it as it would be overkill even for people familiar with Equinox.
+For .NET, this is wrapped in a set of APIs presented within the standard `Microsoft.Azure.DocumentDb[.Core]` APIset (for example, the [`Sagan` library](https://github.com/jet/sagan) is built based on this, _but there be dragons_).
 
-## OK, but _should_ I use Equinox for a small project ?
+A ChangeFeed _Processor_ consists of (per CosmosDb processor/range)
+- a host process running somewhere that will run the query and then do something with the results before marking off progress
+- a continuous query across the set of documents that fall within the partition key range hosted by a given physical partition host
 
-You'll learn a lot from building your own equivalent wrapping layer. Given the array of concerns Equinox is trying to address, there's no doubt that a simpler solution is always possible if you constrain the requirements to specifics of your context with regard to a) scale b) complexity of domain c) degree to which you use or are likely to use >1 data store. You can and should feel free to grab slabs of Equinox's implementation and whack it into an `Infrastructure.fs` in your project too (note you should adhere to the rules of the [Apache 2 license](LICENSE)). If you find there's a particular piece you'd really like isolated or callable as a component and it's causing you pain as [you're using it over and over in ~ >= 3 projects](https://en.wikipedia.org/wiki/Rule_of_three_(computer_programming)), please raise an Issue though ! 
+The implementation in this repo uses [Microsoft’s .NET `ChangeFeedProcessor` implementation](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet), which is a proven component used for diverse purposes including as the underlying substrate for various Azure Functions wiring.
 
-Having said that, getting good logging, some integration tests and getting lots of off-by-one errors off your plate is nice; the point of [DDD-CQRS-ES](https://ddd-cqrs-es.slack.com/) is to get beyond toy examples to the good stuff - Domain Modelling on your actual domain.
+See the [PR that added the initial support for CosmosDb Projections](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
 
-## What will Equinox _never_ do?
+# Feeding to Kafka
 
-Hard to say; try us, raise an Issue.
+While [Kafka is not for Event Sourcing](https://medium.com/serialized-io/apache-kafka-is-not-for-event-sourcing-81735c3cf5c), if you have the scale to run automate the care and feeding of Kafka infrastructure, it can a great toof for the job of Replicating events and/or Rich Events in a scalable manner.
 
-## What client languages are supported ?
+The [Apache Kafka intro docs](https://kafka.apache.org/intro) provide a clear terse overview of the design and attendant benefits this brings to bear.
 
-The main language in mind for consumption is of course F# - many would say that F# and event sourcing are a dream pairing; little direct effort has been expended polishing it to be comfortable to consume from other .NET languages, the `dotnet new eqxwebcs` template represents the current state.
+As noted in the [Effect of ChangeFeed on Request Charges](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#effect-of-changefeed-on-request-charges) section, it can make sense to replicate the ChangeFeed to Kafka purely from the point of view of optimising request charges (and not needing to consider projections when considering how to scale up provisioning for load). Other benefits are mechanical sympathy based - Kafka is very often the right tool for the job in scaling out traversal of events for a variety of use cases.
 
-## You say I can use volatile memory for integration tests, could this also be used for learning how to get started building event sourcing programs with equinox? 
+See the [PR that added the initial support for CosmosDb Projections](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
 
-The `MemoryStore` backend is intended to implement the complete semantics of a durable store [aside from caching, which would be a pyrrhic victory if implemented like in the other Stores, though arguably it may make sense should the caching layer ever get pushed out of the Stores themselves]. The main benefit of using it is that any tests using it have zero environment dependencies. In some cases this can be very useful for demo apps or generators (rather than assuming a specific store at a specific endpoint and/or credentials, there is something to point at which does not require configuration or assumptions.). The problem of course is that it's all in-process; the minute you stop the host, your TODO list has been forgotten. In general, EventStore is a very attractive option for prototyping; the open source edition is trivial to install and has a nice UI that lets you navigate events being produced etc.
+It should be noted that the `Equinox.Projection.Kafka` batteries included projector/consumer library targets the `Confluent.Kafka` `1.0.0-*` series (as opposed to the present stable `0.11.4` thru `6` editions). There are significant breaking changes between the `0.` and `1.` releases, and there is no plan to support `0.1.x` targeting in this codebase (PR 87's history does include a passing library and tests targeting `0.11.4` for history buffs).
 
-## OK, so it supports CosmosDb, EventStore and might even support more in the future. I really don't intend to shift datastores. Period. Why would I take on this complexity only to get the lowest common denominator ?
-
-Yes, you have decisions to make; Equinox is not a panacea - there is no one size fits all. While the philosophy of Equinox is a) provide an opinionated store-neutral [Programming Model](DOCUMENTATION.md#Programming-Model) with a good pull toward a big [pit of success](https://blog.codinghorror.com/falling-into-the-pit-of-success/), while not closing the door to using store-specific features where relevant, having a dedicated interaction is always going to afford you more power and control.
-
-## Why do I need two caches if I have two stores?
-
-- in general, individual apps will not typically be mixing data stores in the first instance
-- see [The Rule of Three](https://en.wikipedia.org/wiki/Rule_of_three_(computer_programming)); the commonality may reveal itself better at a later point, but the cut and paste (with a cut and paste of the the associated acceptance tests) actually keeps the cache integration clearer at the individual store level for now. No, it's not set in stone ;)
-
-## Is there a guide to building the simplest possible hello world "counter" sample, that simply counts with an add and a subtract event? 
-
-There's a skeleton one in [#56](https://github.com/jet/equinox/issues/56), but your best choices are probably to look at the `Aggregate.fs` and `TodoService.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates)
-
-## OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
-
-😲Please raise a question-Issue, and we'll be delighted to either answer directly, or incorporate the question and answer here
+- https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+- https://www.confluent.io/wp-content/uploads/confluent-kafka-definitive-guide-complete.pdf
 
 # Roadmap
 
@@ -499,7 +480,7 @@ There's a skeleton one in [#56](https://github.com/jet/equinox/issues/56), but y
 
 - Extend samples and templates; see [#57](https://github.com/jet/equinox/issues/57)
 - Enable snapshots to be stored outside of the main collection in `Equinox.Cosmos` see [#61](https://github.com/jet/equinox/issues/61)
-    
+
 # Things that are incomplete and/or require work
 
 This is a very loose laundry list of items that have occurred to us to do, given infinite time. No conclusions of likelihood of starting, finishing, or even committing to adding a feature should be inferred, but most represent things that would be likely to be accepted into the codebase (please raise Issues first though ;) ).
@@ -525,50 +506,3 @@ EventStore, and it's Store adapter is the most proven and is pretty feature rich
 - Perf tuning of `JObject` vs `UTF-8` arrays
 
 ## Wouldn't it be nice - `Equinox.SqlStreamStore`: See [#62](https://github.com/jet/equinox/issues/62)
-
-# Projection systems
-
-See [this medium post regarding some patterns used at Jet in this space](https://medium.com/@eulerfx/scaling-event-sourcing-at-jet-9c873cac33b8) for a broad overview of the reasoning and needs addressed by a projection system.
-
-# `Equinox.Cosmos` Projection facility
-
- An integral part of the `Equinox.Cosmos` featureset is the ability to project events based on the [Azure DocumentDb ChangeFeed mechanism](https://docs.microsoft.com/en-us/azure/cosmos-db/change-feed). Key elements involved in realizing this are:
-- the [storage model needs to be designed in such a way that the aforementioned processor can do its job efficiently](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#cosmos-storage-model)
-- there needs to be an active ChangeFeed Processor per collection which monitors events being written, tracking the position of the most recently propagated events
-
-In CosmosDb, every document lives within a [logical partition, which is then hosted by a variable number of processor instances entitled _physical partitions_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data) (`Equinox.Cosmos` documents pertaining to an individual stream bear the same partition key in order to ensure correct ordering guarantees for the purposes of projection). Each front end processor has responsibility for a particular subset range of the partition key space.
-
-The ChangeFeed’s real world manifestation is as a long running Processor per frontend processor that repeatedly tails a query across the set of documents being managed by a given partition host (subject to topology changes - new processors can come and go, with the assigned ranges shuffling to balance the load per processor). e.g. if you allocate 30K RU/s to a collection, it will have 3 processors, each handling 1/3 of the partition key space, and running a change feed from that is a matter of maintaining 3 continuous queries, with a continuation token each.
-
-## Effect of ChangeFeed on Request Charges
-
-It should be noted that the ChangeFeed is not special-cased by CosmosDb itself in any meaningful way - something somewhere is going to be calling a DocumentDb API queries, paying Request Charges fo the privilege (even a tail request based on a continuation token yielding zero documents incurs a charge). Its important to consider that every event written by `Equinox.Cosmos` into the CosmosDb collection will induce an approximately equivalent cost due to the fact that a freshly inserted document will be included in the next batch propagated by the Processor (each update of a document also ‘moves’ that document from it’s present position in the change order past the the tail of the ChangeFeed). Thus each insert/update also induces an (unavoidable) request charge based on the fact that the document will be included aggregate set of touch documents being surfaced per batch transferred from the ChangeFeed(charging is per KiB or part thereof).
-
-## Change Feed Processors
-
-The CosmosDb ChangeFeed’s real world manifestation is a continuous query per DocumentDb Physical Partition node processor.
-
-For .NET, this is wrapped in a set of APIs presented within the standard `Microsoft.Azure.DocumentDb[.Core]` APIset (for example, the [`Sagan` library](https://github.com/jet/sagan) is built based on this, _but there be dragons_).
-
-A ChangeFeed _Processor_ consists of (per CosmosDb processor/range)
-- a host process running somewhere that will run the query and then do something with the results before marking off progress
-- a continuous query across the set of documents that fall within the partition key range hosted by a given physical partition host
-
-The implementation in this repo uses [Microsoft’s .NET `ChangeFeedProcessor` implementation](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet), which is a proven component used for diverse purposes including as the underlying substrate for various Azure Functions wiring.
-
-See the [PR that added the initial support for CosmosDb Projections](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
-
-# Feeding to Kafka
-
-While [Kafka is not for Event Sourcing](https://medium.com/serialized-io/apache-kafka-is-not-for-event-sourcing-81735c3cf5c), it’s ideal for propagating events in a scalable manner.
-
-The [Apache Kafka intro docs](https://kafka.apache.org/intro) provide a clear terse overview of the design and attendant benefits this brings to bear. 
-
-As noted in the [Effect of ChangeFeed on Request Charges](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#effect-of-changefeed-on-request-charges), it can make sense to replicate the ChangeFeed to Kafka purely from the point of view of optimising request charges (and not needing to consider projections when considering how to scale up provisioning for load). Other benefits are mechanical sympathy based - Kafka is very often the right tool for the job in scaling out traversal of events for a variety of use cases.
-
-See the [PR that added the initial support for CosmosDb Projections](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
-
-It should be noted that the `Equinox.Projection.Kafka` batteries included projector/consumer library targets the `Confluent.Kafka` `1.0.0-*` series (as opposed to the present table `0.11.4` thru `6` editions). There are significant breaking changes between the `0.` and `1.` releases, and there is no plan to support `0.1.x` targeting in this codebase (PR 87's history does include a passing library and tests targeting `0.11.4` for history buffs).
-
-- https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-- https://www.confluent.io/wp-content/uploads/confluent-kafka-definitive-guide-complete.pdf
