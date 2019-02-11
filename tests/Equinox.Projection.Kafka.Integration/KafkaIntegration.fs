@@ -135,7 +135,7 @@ type T1(testOutputHelper) =
         // Section: run the test
         let producers = runProducers log broker topic numProducers messagesPerProducer |> Async.Ignore
 
-        let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
+        let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId, statisticsInterval=(TimeSpan.FromSeconds 1.))
         let consumers = runConsumers log config numConsumers None consumerCallback
 
         do! [ producers ; consumers ]

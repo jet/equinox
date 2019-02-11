@@ -78,7 +78,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
     ```
 
-2.use the `eqx` tool to initialize the database and/or collection (using preceding env vars)
+2. use the `eqx` tool to initialize the database and/or collection (using preceding env vars)
 
     ```powershell
     dotnet tool install Equinox.Tool -g

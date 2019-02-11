@@ -12,6 +12,9 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 ## [Unreleased]
 
 ### Added
+
+- `Equinox.Projection.Kafka` consumer metrics emission, see [#94](https://github.com/jet/equinox/pull/94) @michaelliao5
+
 ### Changed
 ### Removed
 ### Fixed
@@ -21,7 +24,7 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 
 ### Added
 
-`Equinox.Cosmos` projection facilities, see [#87](https://github.com/jet/equinox/pull/87)
+- `Equinox.Cosmos` projection facilities, see [#87](https://github.com/jet/equinox/pull/87)
 
 <a name="1.0.4"></a>
 ## [1.0.4] - 2019-02-08
