@@ -295,10 +295,7 @@ type KafkaConsumerConfig = private { conf: ConsumerConfig; custom: seq<KeyValueP
                 maxInFlightBytes = defaultArg maxInFlightBytes (24L * 1024L * 1024L) } }
                 
 // Stats format: https://github.com/edenhill/librdkafka/blob/master/STATISTICS.md
-type KafkaConsumerMetrics =
-    { topic: string
-      partitions: KafkaPartitionMetrics } 
-and KafkaPartitionMetrics =
+type KafkaPartitionMetrics =
     { partition: int
       fetch_state: string
       next_offset: int64
