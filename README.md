@@ -1,6 +1,6 @@
 # Equinox [![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![release](https://img.shields.io/github/release/jet/equinox.svg)](https://github.com/jet/equinox/releases) [![NuGet](https://img.shields.io/nuget/vpre/Equinox.svg?logo=nuget)](https://www.nuget.org/packages/Equinox/) [![license](https://img.shields.io/github/license/jet/equinox.svg)](LICENSE) ![code size](https://img.shields.io/github/languages/code-size/jet/equinox.svg) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-important.svg?style=popout)](DOCUMENTATION.md) [<img src="https://img.shields.io/badge/slack-DDD--CQRS--ES%20%23equinox-yellow.svg?logo=slack">](https://t.co/MRxpx0rLH2)
 
-Provides a unified programming model for event sourced command processing and projections for stream-based stores.
+A unified programming model for event sourced command processing and projections for stream-based stores.
 
 Critically, it strives to do that while remaining a humble set of _libraries_ that _you compose_ into an architecture that fits your needs as you see fit, not a final object model/processing pipeline/Architecture that's going dictate The Best one-size-fits-all Patterns. You decide what facilities make sense for your context; Equinox covers the chosen infrastructural aspects without pulling in a cascade of dependencies from a jungle. (That's not to say we don't have plenty opinions and well polished patterns; we just try to confine the opinionated bits to [`samples`](samples) or [templates](https://github.com/jet/dotnet-templates), leaving judgement calls open to overruling as your changing (and expanding) needs dictate).
 
@@ -271,6 +271,10 @@ These facts mean that:
 - some of the code may not represent official best practice guidance that the authors would necessarily stand over (e.g., the CQRS pattern is not strictly adhered to in all circumstances; some command designs are not completely correct from an idempotency perspective)
 
 While these things can of course be perfected through PRs, this is definitely not top of the TODO list for the purposes of this repo. (We'd be delighted to place links to other samples, including cleanups / rewrites of these samples written with different testing platforms, web platforms, or DDD/CQRS/ES design flavors right here).
+
+### [m-r](https://github.com/gregoryyoung/m-r/tree/master/SimpleCQRS) port, [see samples/Store/Domain/InventoryItem.fs](samples/Store/Domain/InventoryItem.fs)
+
+For fun, there's a direct translation of the `InventoryItem` Aggregate and Command Handler from Greg Young's [`m-r`](https://github.com/gregoryyoung/m-r/tree/master/SimpleCQRS) demo project [as one could write it in F# using Equinox](https://github.com/jet/equinox/blob/master/samples/Store/Domain/InventoryItem.fs). NB any typical presentation of this example includes copious provisos and caveats about it being a toy example written almost a decade ago.
 
 ## BENCHMARKS
 
