@@ -1,4 +1,4 @@
-﻿module Equinox.Projection.Tests
+﻿module Equinox.Projection.FeedValidator.Tests
 
 open Equinox.Projection.Validation
 open FsCheck.Xunit
