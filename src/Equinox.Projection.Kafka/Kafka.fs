@@ -7,6 +7,7 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Threading
 open System.Threading.Tasks
+open Newtonsoft.Json.Linq
 
 module private Config =
     let validateBrokerUri (u:Uri) =
@@ -256,6 +257,7 @@ type KafkaConsumerConfig = private { conf: ConsumerConfig; custom: seq<KeyValueP
             ?fetchMaxBytes,
             /// Default 10B.
             ?fetchMinBytes,
+            /// Stats reporting interval for the consumer in ms. By default, the reporting is turned off.            
             ?statisticsInterval,
             /// Consumed offsets commit interval. Default 10s. (WAS 1s)
             ?offsetCommitInterval,
@@ -317,6 +319,12 @@ type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, 
             ConsumerBuilder<_,_>(config.Kvps)
                 .SetLogHandler(fun _c m -> log.Information("consumer_info|{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
                 .SetErrorHandler(fun _c e -> log.Error("Consuming... Error reason={reason} code={code} broker={isBrokerError}", e.Reason, e.Code, e.IsBrokerError))
+                .SetStatisticsHandler(fun _c json -> 
+                    let stats = JToken.Parse json
+                    let topics = stats.Item "topics"
+                    match topics with
+                    | JToken.
+                    log.Information("consumer stats reporting {stats}", json))
                 .SetRebalanceHandler(fun _c m ->
                     for topic,partitions in m.Partitions |> Seq.groupBy (fun p -> p.Topic) |> Seq.map (fun (t,ps) -> t, [| for p in ps -> let p = p.Partition in p.Value |]) do
                         if m.IsAssignment then log.Information("Consuming... Assigned {topic:l} {partitions}", topic, partitions)

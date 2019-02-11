@@ -117,7 +117,7 @@ type T1(testOutputHelper) =
 
     let [<FactIfBroker>] ``ConfluentKafka producer-consumer basic roundtrip`` () = async {
         let numProducers = 10
-        let numConsumers = 10
+        let numConsumers = 1
         let messagesPerProducer = 1000
 
         let topic = newId() // dev kafka topics are created and truncated automatically
@@ -126,16 +126,16 @@ type T1(testOutputHelper) =
         let consumedBatches = new ConcurrentBag<ConsumedTestMessage[]>()
         let consumerCallback (consumer:KafkaConsumer) batch = async {
             do consumedBatches.Add batch
-            let messageCount = consumedBatches |> Seq.sumBy Array.length
+            //let messageCount = consumedBatches |> Seq.sumBy Array.length
             // signal cancellation if consumed items reaches expected size
-            if messageCount >= numProducers * messagesPerProducer then
-                consumer.Stop()
+            //if messageCount >= numProducers * messagesPerProducer then
+                //consumer.Stop()
         }
 
         // Section: run the test
         let producers = runProducers log broker topic numProducers messagesPerProducer |> Async.Ignore
 
-        let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId)
+        let config = KafkaConsumerConfig.Create("panther", broker, [topic], groupId, statisticsInterval=(TimeSpan.FromSeconds 1.))
         let consumers = runConsumers log config numConsumers None consumerCallback
 
         do! [ producers ; consumers ]
