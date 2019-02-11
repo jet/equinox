@@ -126,10 +126,10 @@ type T1(testOutputHelper) =
         let consumedBatches = new ConcurrentBag<ConsumedTestMessage[]>()
         let consumerCallback (consumer:KafkaConsumer) batch = async {
             do consumedBatches.Add batch
-            //let messageCount = consumedBatches |> Seq.sumBy Array.length
+            let messageCount = consumedBatches |> Seq.sumBy Array.length
             // signal cancellation if consumed items reaches expected size
-            //if messageCount >= numProducers * messagesPerProducer then
-                //consumer.Stop()
+            if messageCount >= numProducers * messagesPerProducer then
+                consumer.Stop()
         }
 
         // Section: run the test

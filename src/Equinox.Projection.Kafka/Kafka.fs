@@ -293,6 +293,20 @@ type KafkaConsumerConfig = private { conf: ConsumerConfig; custom: seq<KeyValueP
                 maxBatchDelay = defaultArg maxBatchDelay (TimeSpan.FromMilliseconds 500.)
                 minInFlightBytes = defaultArg minInFlightBytes (16L * 1024L * 1024L)
                 maxInFlightBytes = defaultArg maxInFlightBytes (24L * 1024L * 1024L) } }
+                
+// Stats format: https://github.com/edenhill/librdkafka/blob/master/STATISTICS.md
+type KafkaConsumerMetrics =
+    { topic: string
+      partitions: KafkaPartitionMetrics } 
+and KafkaPartitionMetrics =
+    { partition: int
+      fetch_state: string
+      next_offset: int64
+      stored_offset: int64
+      committed_offset: int64
+      lo_offset: int64
+      hi_offset: int64
+      consumer_lag: int64 }        
 
 type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, task : Task<unit>, cts : CancellationTokenSource) =
 
@@ -320,11 +334,21 @@ type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, 
                 .SetLogHandler(fun _c m -> log.Information("consumer_info|{message} level={level} name={name} facility={facility}", m.Message, m.Level, m.Name, m.Facility))
                 .SetErrorHandler(fun _c e -> log.Error("Consuming... Error reason={reason} code={code} broker={isBrokerError}", e.Reason, e.Code, e.IsBrokerError))
                 .SetStatisticsHandler(fun _c json -> 
+                    // Stats format: https://github.com/edenhill/librdkafka/blob/master/STATISTICS.md
                     let stats = JToken.Parse json
-                    let topics = stats.Item "topics"
-                    match topics with
-                    | JToken.
-                    log.Information("consumer stats reporting {stats}", json))
+                    (stats.Item "topics").Children()
+                    |> Seq.choose(fun t -> 
+                        if t.HasValues then Some t.First else None)
+                    |> Seq.filter(fun t -> config.topics |> Seq.exists(fun top -> top = ((t.Item "topic").ToString())))
+                    |> Seq.iter (fun topicMetric ->                     
+                        let topic =( topicMetric.Item "topic").ToString()
+                        let metrics = 
+                            (topicMetric.Item "partitions").Children()
+                            |> Seq.choose(fun t -> 
+                                if t.HasValues then Some t.First else None)
+                            |> Seq.map(fun m -> m.ToObject<KafkaPartitionMetrics>())
+                            |> Seq.filter(fun m -> m.partition <> -1)                        
+                        log.Information("consumer stats reporting {topic} | {stats}", topic, metrics)))
                 .SetRebalanceHandler(fun _c m ->
                     for topic,partitions in m.Partitions |> Seq.groupBy (fun p -> p.Topic) |> Seq.map (fun (t,ps) -> t, [| for p in ps -> let p = p.Partition in p.Value |]) do
                         if m.IsAssignment then log.Information("Consuming... Assigned {topic:l} {partitions}", topic, partitions)
