@@ -48,8 +48,6 @@
     <PackageReference Include="FSharp.Core" Version="4.0.0.1" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />
 
-    <PackageReference Include="Argu" Version="5.2.0" />
-    <PackageReference Include="EventStore.Client" Version="5.0.0-rc3" />
     <PackageReference Include="MathNet.Numerics" Version="4.7.0" />
     <PackageReference Include="Microsoft.Azure.DocumentDB" Version="2.2.2" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     <PackageReference Include="Microsoft.Azure.DocumentDB.Core" Version="2.2.2" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
