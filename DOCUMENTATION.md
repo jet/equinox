@@ -1,23 +1,25 @@
-Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ) and [README.md](README.md) for background info _and (**especially while we remain pre-release**), the [Roadmap](#roadmap)_.
-
-:frown: while the repo is open, this is **not released**, it's a soft-launched open source repo at version 1.0; the 1.0 reflects (only) the fact its in production usage. There is absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now.
+Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ) and [README.md](README.md) for background info _and (**especially while we remain pre-release**), the [Roadmap](#roadmap)_. While the repo is open, this is **not released**, it's a soft-launched open source repo at version 1.0; the 1.0 reflects (only) the fact its in production usage. There is absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now.
 
 - While [`dotnet new eqxweb -t`](https://github.com/jet/dotnet-templates) does provide the option to include a full-featured [TodoBackend](https://todobackend.com) per the spec, a more complete sample application is needed; see [#57](https://github.com/jet/equinox/issues/57)
 - there is no proper step by step tutorial showing code and stored representations interleaved (there is a low level spec-example in [the docs](DOCUMENTATION.md#Programming-Model) in the interim)
 - There is a placeholder [Roadmap](#roadmap) for now, which is really an unordered backlog.
 - As noted in the [contributing section](README.md#contributing), we're simply not ready yet (we have governance models in place; this is purely a matter of conserving bandwidth, prioritising getting the system serviceable in terms of samples and documentation in advance of inviting people to evaluate)...
 
+# Background reading
+
+While there is no canonical book on doing Event Sourced Domain Modelling, there are some must read books which stand alone as timeless books in general but are also specifically relevant to the considerations involved in building a good Event-sourced model.
+
+_Domain Driven Design, Eric Evans, 2003_ aka 'The Blue Book'; not a leisurely read but timeless and continues to be authoritative
+
+_Domain Modelling Made Functional, Scott Wlaschin, 2018_; extremely well edited traversal of Domain Modelling in F# which is a pleasure to read. Does not talk about event sourcing, but is still very relevant.
+
+_Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Worked examples and a slightly different take on DDD (the appendix on Functional Event sourcing is not far from what we have around these parts; which is [not surprising given there's input from Jérémie Chassaing](https://github.com/thinkbeforecoding/FsUno.Prod))
+
+- **Your link here** - Please add materials that helped you on your journey so far here via PRs!
+
 # Glossary
 
 Event Sourcing is easier _and harder_ than you think. This document is not a tutorial, and you can and will make a mess on your first forays. This glossary attempts to map terminology from established documentation outside to terms used in this documentation.
-
-## Background reading
-
-Highly recommended Book: _Domain Driven Design, Eric Evans, 2003_ aka 'The Blue Book'; not a leisurely read but timeless and continues to be authoritative
-
-Highly recommended Book: _Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Worked examples and a slightly differnt take on DDD
-
-- **Your link here** - Please add materials that helped you on your journey so far here via PRs!
 
 ## Event-sourcing
 
@@ -34,14 +36,14 @@ Fold | FP Term used to describe process of building State from the seqence of Ev
 [Idempotent](https://en.wikipedia.org/wiki/Idempotence) | Can safely be processed >1 time without adverse effects
 Invariants | Rules that an Aggregate's Fold and Decision process are together trying to uphold
 Optimistic Concurrency Check | Locking/transaction mechanism used to ensure that Appends to a Stream maintain the Aggregate's Invariants, especially in the presence of multiple concurrent writers
-Projection | Process whereby a Read Model tracks the State of Streams - lots of ways of skinning this cat, see Read Model, Query, Query Hack, Replication
+Projection | Process whereby a Read Model tracks the State of Streams - lots of ways of skinning this cat, see Read Model, Query, Synchronous Query, Replication
 Projector | Process tracking new Events, triggering Projection or Replication activities
 Query | Eventually Consistent read from a Read Model
-Query Hack | Consistent read direct from Stream State, breaking CQRS and coupling implementation to the Events used to support the Decision process
-Read Model | Denormalized data maintained by a Projection for the purposes of providing a Read Model based on a Projection (honoring CQRS) See also Query Hack, Replication
+Synchronous Query | Consistent read direct from Stream State, breaking CQRS and coupling implementation to the Events used to support the Decision process
+Read Model | Denormalized data maintained by a Projection for the purposes of providing a Read Model based on a Projection (honoring CQRS) See also Synchronous Query, Replication
 Replication | Emitting Events pretty much directly as they are written (to support an Aggregate's Decision process) with a view to having a consumer traverse them to derive a Read Model or drive some form of synchronization process; aka Database Integration - building a Read Model or exposing Rich Events is preferred
 Rich Events | Bulding a Projector that prepares a feed of events in the Bounded Context in a form that's not simply Replication (sometimes referred to a Enriching Events)
-State | Information inferred from a Stream as part of a Decision process (or Query Hack)
+State | Information inferred from a Stream as part of a Decision process (or Synchronous Query)
 Store | Holds a set of Streams
 Stream | Ordered sequence of Events in a Store
 
@@ -100,9 +102,11 @@ In F#, independent of the Store being used, the Equinox programming model involv
 - `fold : 'state -> 'event seq -> 'state`: function used to fold one or more loaded (or proposed) events (real ones and/or unfolded ones) into a given running [persistent data structure](https://en.wikipedia.org/wiki/Persistent_data_structure) of type `'state`
 - `evolve: state -> 'event -> 'state` - the `folder` function from which `fold` is built, representing the application of a single delta that the `'event` implies for the model to the `state`. _Note: `evolve` is an implementation detail of a given Aggregate; `fold` is the function used in tests and used to parameterize the Category's storage configuration._
 
-- `interpret: 'state -> 'command -> event' list`: responsible for _Deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be reflected in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles, [see Query Hack in the Glossary](glossary))
+- `interpret: 'state -> 'command -> event' list`: responsible for _Deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be reflected in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles, [see Synchronous Query in the Glossary](glossary))
 
-When using a Store with support for synchronous unfolds and/or snapshots, one will typically implement two further functions in order to avoid having every `'event` in the stream be loaded and processed in order to build the `'state` per Decision or Query Hack (versus a single cheap point read from CosmosDb to read the _tip_):
+When using a Store with support for synchronous unfolds and/or snapshots, one will typically implement two
+further functions in order to avoid having every `'event` in the stream be loaded and processed in order to
+build the `'state` per Decision or Query  (versus a single cheap point read from CosmosDb to read the _tip_):
 
 - `isOrigin: 'event -> bool`: predicate indicating whether a given `'event` is sufficient as a starting point i.e., provides sufficient information for the `evolve` function to yield a correct `state` without any preceding event being supplied to the `evolve`/`fold` functions
 - `unfold: 'state -> 'event seq`: function used to render events representing the `'state` which facilitate short circuiting the building of `state`, i.e., `isOrigin` should be able to yield `true` when presented with this `'event`. (in some cases, the store implementation will provide a custom `AccessStrategy` where the `unfold` function should only produce a single `event`; where this is the case, typically this is referred to as `compact : 'state -> 'event`).
@@ -119,57 +123,84 @@ When running a decision process, we have the following stages:
 
      b. if there is a conflict, obtain the conflicting events [that other writers have produced] since the Position used in step 1, `fold` them into our `state`, and go back to 2 (aside: the CosmosDb stored procedure can send them back immediately at zero cost or latency, and there is [a proposal for EventStore to afford the same facility](https://github.com/EventStore/EventStore/issues/1652))
 
-4. [if it makes sense for our scenario], hold the _state_, _position_ and _etag_ in our cache. When a Decision or Query Hack is needed, do a point-read of the _tip_ and jump straight to step 2 if nothing has been modified.
+4. [if it makes sense for our scenario], hold the _state_, _position_ and _etag_ in our cache. When a Decision or Synchronous Query is needed, do a point-read of the _tip_ and jump straight to step 2 if nothing has been modified.
 
 See [Cosmos Storage Model](#cosmos-storage-model) for a more detailed discussion of the role of the Sync Stored Procedure in step 3
 
-## Example
+## Canonical example Aggregate + Handler + Service
 
-The following example is a trimmed version of [the Favorites model](samples/Store/Domain/Favorites.fs), with shortcuts for brevity, that implements all the relevant functions above:
+The following example is a minimal version of [the Favorites model](samples/Store/Domain/Favorites.fs), with shortcuts for brevity, that implements all the relevant functions above:
+
 ```fsharp
 (* Event schemas *)
 
 type Item = { id: int; name: string; added: DateTimeOffset } 
 type Event =
     | Added of Item
-    | Removed of itemId
+    | Removed of itemId: int
     | Compacted of items: Item[]
 
-(* State types *)
+(* State types/helpers *)
 
 type State = Item list // NB IRL don't mix Event and State types
-
-let contains state id = state |> List.exists (fun x -> x.id = id)
+let is id x = x.id = id
 
 (* Folding functions to build state from events *)
 
-let evolve state event =
-    match event with
+let evolve state = function
     | Compacted items -> List.ofArray items
     | Added item -> item :: state
-    | Removed id -> List.filter (not (contains state id)) 
-let fold state events = Seq.fold evolve state events 
+    | Removed id -> state |> List.filter (is id)
+let fold state = Seq.fold evolve state
 
-(* Decision Processing *)
+(* Decision Processing to translate a Command's intent to Events that would Make It So *)
 
 type Command =
     | Add of Item // IRL do not use Event records in Command types
-    | Remove itemId: int
+    | Remove of itemId: int
 
 let interpret command state =
+    let has id = state |> List.exits (is id)
     match command with
-    | Add { id=id; name=name; date=date } ->
-        if contains state id then [] else [Added {id=id; name=name; date=date}]
-    | Remove id ->
-        if contains state id then [Removed id] else []
+    | Add item -> if has item.id then [] else [Added item]
+    | Remove id -> if has id then [Removed id] else []
 
-(* Unfold Functions to allow loading efficiently without having to read all the events in a stream *)
+(* Optional: Unfold-related functions to allow establish state efficiently,
+   ideally without having to read/fold all Events in a Stream *)
 
 let unfold state =
     [Event.Compacted state]
 let isOrigin = function
     | Compacted _ -> true
     | _ -> false
+
+(* Relevant stream-level operations, 
+   i.e. infrastructural concerns that are relevant for a given Stream
+   (as dictated by the needs of the `Service`) are normally wrapped up as a `Handler`;
+   typically a Transient instance spun up in the context of a given operation being processed *)
+
+type Handler(log, stream, ?maxAttempts) =
+    let inner = Equinox.Handler(fold, log, stream, maxAttempts = defaultArg maxAttempts 3)
+    member __.Execute command : Async<unit> =
+        inner.Decide <| fun ctx ->
+            ctx.Execute (interpret command)
+    member __.Read : Async<string list> =
+        inner.Query id
+
+(* The Service then defines operations in business terms with minimal reference to Equinox terms
+   or need to talk in terms of infrastructure; typically the service is stateless and can be a Singleton *)
+
+type Service(log, resolveStream) =
+    let (|AggregateId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
+    let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
+    member __.Execute(Stream stream, command) =
+        stream.Execute command
+    member __.Favorite(Stream stream, skus) =
+        stream.Execute(Command.Favorite(DateTimeOffset.Now, skus))
+    member __.Unfavorite(Stream stream, skus) =
+        stream.Execute(Command.Unfavorite skus)
+    member __.List(Stream stream): Async<Events.Favorited []> =
+        stream.Read
 ```
 
 # Equinox Architectural Overview
