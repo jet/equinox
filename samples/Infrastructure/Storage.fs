@@ -83,9 +83,9 @@ module EventStore =
             sargs.GetResult(EsArguments.Retries,1)
         let heartbeatTimeout = sargs.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
         let concurrentOperationsLimit = sargs.GetResult(ConcurrentOperationsLimit,5000)
-        log.Information("Using EventStore targeting {host} with heartbeat: {heartbeat}, max concurrent requests: {concurrency}. " +
-            "Operation timeout: {timeout} with {retries} retries",
-            host, heartbeatTimeout, concurrentOperationsLimit, timeout, retries)
+        log.Information("Using EventStore targeting {host} with heartbeat: {heartbeat}s, max concurrent requests: {concurrency}. " +
+            "Operation timeout: {timeout}s with {retries} retries",
+            host, heartbeatTimeout.TotalSeconds, concurrentOperationsLimit, timeout.TotalSeconds, retries)
         let conn = connect storeLog (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
         let cacheStrategy =
             if cache then
