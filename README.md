@@ -48,22 +48,29 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
 1. install EventStore locally (requires admin privilege)
 
-    ```powershell
-    cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-    ```
+    - For Windows, install with Chocolatey:
+    
+      ```powershell
+      cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
+      ```
 
 	- For OSX, download the .pkg from https://eventstore.org/downloads/, click in Finder to launch the installer
 
 2. start the local EventStore instance
 
-    ```powershell
-    # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
-    & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-    ```
+    - Windows
 
-	```bash
-	/usr/local/bin/eventstored --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-	```
+      ```powershell
+      # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
+      & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+      ```
+
+    - OSX:
+
+  	  ```bash
+      # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
+      /usr/local/bin/eventstored --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+	  ```
     
 
 3. generate sample app with EventStore wiring from template and start

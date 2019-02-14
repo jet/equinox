@@ -17,14 +17,12 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 
 ### Changed
 
-- Target `EventStore.Client 5.0.0` to avail of bugfixes and single client codebase. Interoperable with 4.xx servers.
+- Target `EventStore.Client 5.*` to avail of bugfixes and single client codebase. Interoperable with `4.*` servers.
 
 ### Removed
 
 
 ### Fixed
-
-- Pin TypeShape to 6.0.1 to avoid issues with 6.1
 
 <a name="1.1.0-preview1"></a>
 ## [1.1.0-preview1] - 2019-02-08
