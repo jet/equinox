@@ -1,16 +1,16 @@
 # Equinox [![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![release](https://img.shields.io/github/release/jet/equinox.svg)](https://github.com/jet/equinox/releases) [![NuGet](https://img.shields.io/nuget/vpre/Equinox.svg?logo=nuget)](https://www.nuget.org/packages/Equinox/) [![license](https://img.shields.io/github/license/jet/equinox.svg)](LICENSE) ![code size](https://img.shields.io/github/languages/code-size/jet/equinox.svg) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-important.svg?style=popout)](DOCUMENTATION.md) [<img src="https://img.shields.io/badge/slack-DDD--CQRS--ES%20%23equinox-yellow.svg?logo=slack">](https://t.co/MRxpx0rLH2)
 
-A unified programming model for event sourced command processing and projections for stream-based stores.
+A unified programming model for event-sourced command processing and projections for stream-based stores.
 
-Critically, it strives to do that while remaining a humble set of _libraries_ that _you compose_ into an architecture that fits your needs as you see fit, not a final object model/processing pipeline/Architecture that's going dictate The Best one-size-fits-all Patterns. You decide what facilities make sense for your context; Equinox covers the chosen infrastructural aspects without pulling in a cascade of dependencies from a jungle. (That's not to say we don't have plenty opinions and well polished patterns; we just try to confine the opinionated bits to [`samples`](samples) or [templates](https://github.com/jet/dotnet-templates), leaving judgement calls open to overruling as your changing (and expanding) needs dictate).
+Strives to be that while remaining a humble set of _libraries_ that _you compose_ into an architecture that fits your apps needs, not a final Architecture/object model/processing pipeline that's going to foist a one-size-fits-all model on you. You decide what facilities make sense for your context; Equinox covers those chosen infrastructural aspects without pulling in a cascade of dependencies from a jungle. (That's not to say we don't have plenty opinions and well polished patterns; we just try to confine the impact of that to [`samples`](samples) or [templates](https://github.com/jet/dotnet-templates), leaving judgement calls open for you to adjust as your app evolves).
 
-The API designs are informed by work, discussions, talks and countless hours of hard and thoughtful work invested into many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain), the outstanding continuous work of the [EventStore](https://github.com/eventstore) founders and team and the wider [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community. It would be unfair to single out even a small number of people despite the immense credit that is due. _If you're looking to learn more about and/or discuss Event Sourcing and it's myriad benefits, tradeoffs and pitfalls as you apply it to your Domain, look no further than the thriving 2000+ member community on the [DDD-CQRS-ES Slack](https://github.com/ddd-cqrs-es/slack-community); you'll get patient and impartial world class advice 24x7 (psst there's an [#equinox channel](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) there where you can ask questions or offer feedback in advance of the docs begin sufficient to warrant declaring it _released_)._ ([invite link](https://t.co/MRxpx0rLH2))
+The design is informed by discussions, talks and countless hours of hard and thoughtful work invested into many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain), the outstanding continuous work of the [EventStore](https://github.com/eventstore) founders and team and the wider [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community. It would be unfair to single out even a small number of people despite the immense credit that is due. _If you're looking to learn more about and/or discuss Event Sourcing and it's myriad benefits, tradeoffs and pitfalls as you apply it to your Domain, look no further than the thriving 2000+ member community on the [DDD-CQRS-ES Slack](https://github.com/ddd-cqrs-es/slack-community); you'll get patient and impartial world class advice 24x7 (psst there's an [#equinox channel](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) there where you can ask questions or offer feedback)._ ([invite link](https://t.co/MRxpx0rLH2))
 
 The implementations are distilled from [`Jet.com` systems dating all the way back to 2013](http://gorodinski.com/blog/2013/02/17/domain-driven-design-with-fsharp-and-eventstore/); current supported backends are:
 
 - [EventStore](https://eventstore.org/) - this codebase itself has been in production since 2017 (see commit history), with key elements dating back to approx 2016.
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains code dating back to 2016, however [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking squash-merged in [#42](https://github.com/jet/equinox/pull/42).
-- (For integration test purposes only) Volatile in-memory store.
+- In-memory store (volatile, for integration test purposes).
 
 ## QuickStart
 
@@ -236,13 +236,13 @@ This is an Open Source Project for many reasons, with some central goals:
 
 - quality reference code (the code should be clean and easy to read; where it makes sense, components can be grabbed and cloned locally and used in altered form)
 - optimal resilience and performance (getting performance right can add huge value for some systems)
-- this code underpins non-trivial production systems (having good tests is not optional for reasons far beyone having impressive coverage stats)
+- this code underpins non-trivial production systems (having good tests is not optional for reasons far deeper than having impressive coverage stats)
 
 We'll do our best to be accomodating to PRs and issues, but please appreciate that [we emphasize decisiveness for the greater good of the project and its users](https://www.hanselman.com/blog/AlwaysBeClosingPullRequests.aspx); _new features [start with -100 points](https://blogs.msdn.microsoft.com/oldnewthing/20090928-00/?p=16573)_.
 
 Within those constraints, contributions of all kinds are welcome:
 
-- raising [Issues](https://github.com/jet/equinox/issues) including [relevant question-Issues](https://github.com/jet/equinox/issues/56) is always welcome (but we'll aim to be decisive in the interests of keeping the list navigable).
+- raising [Issues](https://github.com/jet/equinox/issues) (including [relevant question-Issues](https://github.com/jet/equinox/issues/56)) is always welcome (but we'll aim to be decisive in the interests of keeping the list navigable).
 - bugfixes with good test coverage are always welcome; in general we'll seek to move them to NuGet prerelease and then NuGet release packages with relatively short timelines (there's unfortunately not presently a MyGet feed for CI packages rigged).
 - improvements / tweaks, _subject to filing a GitHub issue outlining the work first to see if it fits a general enough need to warrant adding code to the implementation and to make sure work is not wasted or duplicated_:
 - [support for new stores](https://github.com/jet/equinox/issues/62) that can fulfill the normal test cases.
@@ -330,7 +330,7 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 ### Run EventStore benchmark on Full Framework (when [provisioned](provisioning))
 
-This benchmark continually reads and writes very small events across multiple streams on .NET Full Framework
+Continually reads and writes very small events across multiple streams on .NET Full Framework
 
     dotnet pack -c Release ./build.proj
     & ./tools/Equinox.Tool/bin/Release/net461/eqx.exe run -f 2500 -C -U es
@@ -402,10 +402,10 @@ The [provisioning](provisioning) step spins up RUs in DocDB for the Collection, 
 
 OK, I've read the README and the tagline. I still don't know what it does! Really, what's the TL;DR ?
 
-- it supports storing events in [EventStore](https://eventstore.org), including working with existing data you may have (that's where it got its start)
-- it includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDb account to get going
-- it provides all the necessary infrastructure to build idempotent synchronous command processing against all of the stores; your Domain code intentionally doesn't need to reference *any* Equinox modules whatsoever (although for smaller systems, you'll often group `Events`+`Fold`+`Commands`+`Handler`+`Service` in a single `module`, which implies a reference to [the core `Equinox` package](src/Equinox)).
-- following on from the previous point, you just write the unit tests without any Equinox-specific hoops to jump through; this really works very well indeed, assuming you're writing the domain code and the tests in F#. If you're working in a more verbose language, you may end up building some test helpers. We don't envisage Equinox mandating a specific pattern on the unit testing side (consistent naming such as `Events.Event`+`evolve`+`fold`+`Command`+`interpret` can help though).
+- supports storing events in [EventStore](https://eventstore.org), including working with existing data you may have (that's where it got its start)
+- includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDb account to get going
+- provides all the necessary infrastructure to build idempotent synchronous command processing against all of the stores; your Domain code intentionally doesn't need to reference *any* Equinox modules whatsoever (although for smaller systems, you'll often group `Events`+`Fold`+`Commands`+`Handler`+`Service` in a single `module`, which implies a reference to [the core `Equinox` package](src/Equinox)).
+- following on from the previous point: you just write the unit tests without any Equinox-specific hoops to jump through; this really works very well indeed, assuming you're writing the domain code and the tests in F#. If you're working in a more verbose language, you may end up building some test helpers. We don't envisage Equinox mandating a specific pattern on the unit testing side (consistent naming such as `Events.Event`+`evolve`+`fold`+`Command`+`interpret` can help though).
 - it helps with integration testing decision processes by
   - staying out of your way as much as possible
   - providing an in-memory store that implements the same interface as the EventStore and CosmosDb stores do
