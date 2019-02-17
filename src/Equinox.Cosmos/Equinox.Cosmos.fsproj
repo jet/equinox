@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Equinox.MemoryStore\StoreHelpers.fs" Link="StoreHelpers.fs" />
     <Compile Include="CosmosInternalJson.fs" />
     <Compile Include="..\Equinox.EventStore\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Cosmos.fs" />
