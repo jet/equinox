@@ -182,8 +182,7 @@ let isOrigin = function
 type Handler(log, stream, ?maxAttempts) =
     let inner = Equinox.Handler(fold, log, stream, maxAttempts = defaultArg maxAttempts 3)
     member __.Execute command : Async<unit> =
-        inner.Decide <| fun ctx ->
-            ctx.Execute (interpret command)
+        inner.Transact(interpret command)
     member __.Read : Async<string list> =
         inner.Query id
 

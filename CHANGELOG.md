@@ -20,7 +20,7 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 - Target `EventStore.Client 5.*` to avail of bugfixes and single client codebase. Interoperable with `4.*` servers.
 
 ### Removed
-
+- Moved internal `Stream` helpers from `Equinox` to instead be inlined into Store impls
 
 ### Fixed
 
