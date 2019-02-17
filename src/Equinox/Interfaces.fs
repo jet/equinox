@@ -49,7 +49,7 @@ type StopwatchInterval (startTicks : int64, endTicks : int64) =
 
 /// Exception yielded by after `count` attempts to complete an operation have taken place
 type OperationRetriesExceededException(count : int, innerException : exn) =
-   inherit exn(sprintf "Retry failed after %i attempts." count, innerException)
+   inherit exn(sprintf "Retries failed; aborting after %i attempts." count, innerException)
 
 /// Helper for defining backoffs within the definition of a retry policy for a store.
 module Retry =
