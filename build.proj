@@ -39,6 +39,8 @@
     <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
   </Target>
 
-  <Target Name="Build" DependsOnTargets="VSTest;Pack" />
+  <Target Name="Build" DependsOnTargets="VSTest;Pack">
+    <Exec Command="dotnet build samples/Tutorial $(Cfg)" />
+  </Target>
 
 </Project>

@@ -1,17 +1,16 @@
-Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ) and [README.md](README.md) for background info _and (**especially while we remain pre-release**), the [Roadmap](#roadmap)_. While the repo is open, this is **not released**, it's a soft-launched open source repo at version 1.0; the 1.0 reflects (only) the fact its in production usage. There is absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now.
+Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ) and [README.md](README.md) and the Issues for background info. While the repo is open, this is **not released**, it's a soft-launched open source repo marked 1.0 to reflect that its in production usage and can't undergo abritrary changes. There is absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now; here are some excuses why:
 
-- While [`dotnet new eqxweb -t`](https://github.com/jet/dotnet-templates) does provide the option to include a full-featured [TodoBackend](https://todobackend.com) per the spec, a more complete sample application is needed; see [#57](https://github.com/jet/equinox/issues/57)
-- there is no proper step by step tutorial showing code and stored representations interleaved (there is a low level spec-example in [the docs](DOCUMENTATION.md#Programming-Model) in the interim)
-- There is a placeholder [Roadmap](#roadmap) for now, which is really an unordered backlog.
 - As noted in the [contributing section](README.md#contributing), we're simply not ready yet (we have governance models in place; this is purely a matter of conserving bandwidth, prioritising getting the system serviceable in terms of samples and documentation in advance of inviting people to evaluate)...
+- While [`dotnet new eqxweb -t`](https://github.com/jet/dotnet-templates) does provide the option to include a full-featured [TodoBackend](https://todobackend.com) per the spec, a more complete sample application is needed; see [#57](https://github.com/jet/equinox/issues/57)
+- There is a placeholder [Roadmap](#roadmap) for now, which is really an unordered backlog.
 
 # Background reading
 
-While there is no canonical book on doing Event Sourced Domain Modelling, there are some must read books which stand alone as timeless books in general but are also specifically relevant to the considerations involved in building a good Event-sourced model.
+While there is no canonical book on doing event-sourced Domain Modelling, there are some must read books that stand alone as timeless books in general but are also specifically relevant to the considerations involved in building such systems:
 
 _Domain Driven Design, Eric Evans, 2003_ aka 'The Blue Book'; not a leisurely read but timeless and continues to be authoritative
 
-_Domain Modelling Made Functional, Scott Wlaschin, 2018_; extremely well edited traversal of Domain Modelling in F# which is a pleasure to read. Does not talk about event sourcing, but is still very relevant.
+_Domain Modelling Made Functional, Scott Wlaschin, 2018_; extremely well edited traversal of Domain Modelling in F# which is a pleasure to read. Does not talk specifically about event sourcing, but is still very relevant.
 
 _Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Worked examples and a slightly different take on DDD (the appendix on Functional Event sourcing is not far from what we have around these parts; which is [not surprising given there's input from Jérémie Chassaing](https://github.com/thinkbeforecoding/FsUno.Prod))
 
@@ -205,7 +204,7 @@ type Service(log, resolveStream) =
 <a name="api"></a>
 # Equinox Handler API Usage Guide
 
-The most terse walkthrough of what's involved in using Equinox to do a Synchronous Query and/or Execute a Decision process is in the [Programming Model section](#programming-model). In this section we’ll walk through how one implements common usage patterns using the Equinox Handler API in more detail (also using slightly less F# tricks!).
+The most terse walkthrough of what's involved in using Equinox to do a Synchronous Query and/or Execute a Decision process is in the [Programming Model section](#programming-model). In this section we’ll walk through how one implements common usage patterns using the Equinox Handler API in more detail.
 
 ## ES, CQRS, Event-driven architectures etc
 
@@ -219,7 +218,7 @@ There are many tradeoffs to be considered along the journey from an initial proo
 
 At a high level we have:
 - _Aggregates_ - a set of information (Entities and Value Objects) within which Invariants need to be maintained, leading us us to logically group them in order to consider them when making a Decision
-- _Events_ - Events that have been accepted into the model represent the basic Facts from which State or Projections can be derived
+- _Events_ - Events that have been accepted into the model as part of a Transaction represent the basic Facts from which State or Projections can be derived
 - _Commands_ - taking intent implied by an upstream request or other impetus (e.g., automated synchronization based on an upstream data source) driving a need to sync a system’s model to reflect that implied need (while upholding the Aggregate's Invariants). The Decision process is responsible proposing Events to be appended to the Stream representing the relevant events in the timeline of that Aggregate.
 - _State_ - the State at any point is inferred by _folding_ the events in order; this state typically feeds into the Decision with the goal of ensuring Idempotent handling (if its a retry and/or the desired state already pertained, typically one would expect the decision to be "no-op, no Events to emit")
 - _Projections_ - while most State we'll fold from the events will be dictated by what we need (in addition to a Command's arguments) to be able to make the Decision implied by the command, the same Events that are _necessary_ for Command Handling to be able to uphold the Invariants can also be used as the basis for various summaries at the single aggregate level, Rich Events exposed as notification feeds at the boundary of the Bounded Context, and/or as denormalized representations forming a [Materialized View](https://docs.microsoft.com/en-us/azure/architecture/patterns/materialized-view).
@@ -229,23 +228,37 @@ At a high level we have:
 
 ### Core elements
 
-In the code handling a given Aggregate’s Commands and Synchronous Queries, the elements you write divide into:
+In the code handling a given Aggregate’s Commands and Synchronous Queries, the code you write divide into:
 
 - Events (`codec`, `encode`, `tryDecode`, etc.)
 - State/Folds (`fold`, `evolve`)
 - Storage Model helpers (`isOrigin`,`unfold` etc)
 
-while these are not omnipresent, for the purposes of this discussion we’ll take them as givens. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.
+while these are not omnipresent, for the purposes of this discussion we’ll treat them as that. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.
 
 ### Contexts, Handlers and Services
 
-Equinox’s Command Handling consists of <300 lines including comments in https://github.com/jet/equinox/tree/master/src/Equinox  - the elements involved are:
-- [`Target` DU](https://github.com/jet/equinox/blob/master/src/Equinox/Handler.fs#L39) - used to identify the Stream pertaining to the relevant Aggregate that `resolveStream` will use to hydrate a `Handler`
-- [`type Handler`](https://github.com/jet/equinox/blob/master/src/Equinox/Handler.fs#L11) - surface API one uses to execute a `Flow` on a specific Stream
-- [`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` holding application-local State in a Handler
-- [`module Flow`](https://github.com/jet/equinox/blob/12e36643685ff4f1fb2d19a4b56b88065280eb2c/src/Equinox/Flow.fs#L31) - internal implementation of Optimistic Concurrency Control / retry loop used by Handler
+Equinox’s Command Handling consists of < 250 lines including interfaces and comments in https://github.com/jet/equinox/tree/master/src/Equinox - the elements you'll touch are in a normal application are:
+
+- [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Handler.fs#L39) - used to identify the Stream pertaining to the relevant Aggregate that `resolveStream` will use to hydrate a `Handler`
+- [`type Handler`](https://github.com/jet/equinox/blob/master/src/Equinox/Handler.fs#L11) - surface API one uses to `Transact` or `Query` against a specific Stream
+- [`module Flow`](https://github.com/jet/equinox/blob/12e36643685ff4f1fb2d19a4b56b88065280eb2c/src/Equinox/Flow.fs#L31) - internal implementation of Optimistic Concurrency Control / retry loop used by Handler. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
+- _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in some flavors of Handler__
 
 Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the few hundred lines can tell many of the thousands of words about to follow!
+
+#### Handler Members
+
+```fsharp
+type Equinox.Handler(fold, stream, log, maxAttempts) =
+    // Run interpret function with present state, retrying with Optimistic Concurrency
+    member __.Transact(interpret : State -> Event list) : Async<unit>
+    // Run decide function with present state, retrying with Optimistic Concurrency, yielding Result on exit
+    member __.Transact(decide : State -> Result*Event list) : Async<Result>
+
+    // Runs a Null Flow that simply yields a `projection` of `Context.State`
+    member __.Query(projection : State -> View) : Async<View>
+```
 
 #### Accumulator
 
@@ -264,28 +277,15 @@ type Accumulator(fold, originState) =
     member Decide(decide : State -> Result * Event list) : 'result
 ```
 
-`Accumulator` is a small optional helper class which can be useful in certain scenarios where one is applying a sequence of Commands
-
-#### Handler Members
-
-```fsharp
-type Equinox.Handler(fold, stream, log, maxAttempts) =
-    // Run interpret function with present state, retrying with Optimistic Concurrency
-    member __.Transact(interpret : State -> Event list) : Async<unit>
-    // Run decide function with present state, retrying with Optimistic Concurrency, yielding Result on exit
-    member __.Transact(decide : State -> Result*Event list) : Async<Result>
-
-    // Runs a Null Flow that simply yields a `projection` of `Context.State`
-    member __.Query(projection : State -> View) : Async<View>
-```
+`Accumulator` is a small optional helper class that can be useful in certain scenarios where one is applying a sequence of Commands. One can use it within the body of a `decide` or `interpret` function as passed to `Handler.Transact`.
 
 ### Favorites walkthrough
 
-In this example, we’ll use possibly the simplest toy example - an unbounded list of items a user has favorited (starred) in an e-commerce system.
+In this section, we’ll use possibly the simplest toy example: an unbounded list of items a user has favorited (starred) in an e-commerce system.
 
-See [samples/Tutorial/Favorites.fsx](samples/Tutorial/Favorites.fsx). It’s recommended to load this in Visual Studio and feed it into the F# Interactive REPL to observe it step by step. Here, we'll skip some steps and only discuss some aspects.
+See [samples/Tutorial/Favorites.fsx](samples/Tutorial/Favorites.fsx). It’s recommended to load this in Visual Studio and feed it into the F# Interactive REPL to observe it step by step. Here, we'll skip some steps and annotate some aspects with regard to tradeoffs that should be considered.
 
-#### `Event`s + `initial`+`fold`
+#### `Event`s + `initial`(+`evolve`)+`fold`
 
 ```fsharp
 type Event =
@@ -299,16 +299,18 @@ let evolve state = function
 let fold s xs = Seq.fold evolve s xs
 ```
 
-Events are represented as an F# Discriminated Union; see the [article on the `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) for information about how that's typically used to map to/from an Event Type/Case in an underlying Event storage system.
+Events are represented as an F# Discriminated Union; see the [article on the `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) for information about how that's typically applied to map to/from an Event Type/Case in an underlying Event storage system.
 
-The `evolve` function is responsible for computing the State implied by taking a given State and incorporating the effect that _single_ Event implies in that context and then yielding that result _without mutating either input_.
+The `evolve` function is responsible for computing the post-State that should result from taking a given State and incorporating the effect that _single_ Event implies in that context and yielding that result _without mutating either input_.
 
-While the `evolve` function operates on a `state` and a _single_ event, `fold` (named for the standard FP operation of that name) walks a chain of events, propagating the running state into each evolve invocation. It is the `fold` operation that's typically used a) in tests and b) when passing a function to an Equinox Handler to manage the behavior
+While the `evolve` function operates on a `state` and a _single_ event, `fold` (named for the standard FP operation of that name) walks a chain of events, propagating the running state into each evolve invocation. It is the `fold` operation that's typically used a) in tests and b) when passing a function to an Equinox Handler to manage the behavior.
 
-In order to fulfill the _without mutating either input_ constraint,  typically `fold` and `evolve` either clone to a new array with space for the new events, or use a [persistent data structure, such as F#'s `list`] [https://en.wikipedia.org/wiki/Persistent_data_structure,]. The reason this is necessary is that the result from `fold` can also be used for one of the following reasons:
+It should also be called out that Events represent Facts about things that have happened - an `evolve` or `fold` should not throw Exceptions or log. There should be absolutely minimal conditional logic.
 
-- computing a 'proposed' state which never materializes due to a failure to save and/or an Optimistic Concurrency failure
-- the store can sometimes take a `state` from the cache and be `fold`ing in differnent `events` when the coflicting events are supplied after having been loaded for the retry in the loop
+In order to fulfill the _without mutating either input_ constraint, typically `fold` and `evolve` either deep clone to a new mutable structure with space for the new events, or use a [persistent data structure, such as F#'s `list`] [https://en.wikipedia.org/wiki/Persistent_data_structure,]. The reason this is necessary is that the result from `fold` can also be used for one of the following reasons:
+
+- computing a 'proposed' state that never materializes due to a failure to save and/or an Optimistic Concurrency failure
+- the store can sometimes take a `state` from the cache and `fold`ing in different `events` when the conflicting events are supplied after having been loaded for the retry in the loop
 - concurrent executions against the stream may be taking place in parallel within the same process; this is permitted, Equinox makes no attempt to constrain the behavior in such a case
 
 #### `Command`s + `interpret`
@@ -323,15 +325,15 @@ let interpret command state =
     | Remove sku -> if state |> List.contains sku |> not then [] else [Removed sku]
 ```
 
-Command handling should almost invariably be implemented in an [Idempotent](https://en.wikipedia.org/wiki/Idempotence) fashion. In some cases, a blind append can be an OK way to do this, especially if one is doing simple add/removes which are not problematic if repeated. However it should be noted that
+Command handling should almost invariably be implemented in an [Idempotent](https://en.wikipedia.org/wiki/Idempotence) fashion. In some cases, a blind append can argubaly be an OK way to do this, especially if one is doing simple add/removes that are not problematic if repeated or reordered. However it should be noted that:
 
-- each write roundtrip, and ripple effects resulting form all subscriptions having to process and event are not free either. Give the cache can be used to validate whether an Event is actually necessary in the first instance, it's highly recommended to follow the structure as above and return an empty Event `list` in the case of a Command not needing to triggere events to move the model toward it's intended end-state
+- each write roundtrip (i.e. each `Transact`), and ripple effects resulting from all subscriptions having to process an event are not free either. As the cache can be used to validate whether an Event is actually necessary in the first instance, it's highly recommended to follow the convention as above and return an empty Event `list` in the case of a Command not needing to trigger events to move the model toward it's intended end-state
 - understanding the reasons for each event typically yields a more correct model and/or test suite, which pays off in more understandable code
-- under load, retries frequently bunch up, and being able to dedupicate them without hitting the store and causing a conflict can significanly reduce feedback effects that cause inordinate impacts on stability
+- under load, retries frequently bunch up, and being able to dedupicate them without hitting the store and causing a conflict can significantly reduce feedback effects that cause inordinate impacts on stability at the worst possible time
 
-It should also be noted, that when executing a Command, the `interpret` function is expected to behave statelessly; as with `fold`, multiple concurrent calls within the same process can occur
+_It should also be noted that, when executing a Command, the `interpret` function is expected to behave statelessly; as with `fold`, multiple concurrent calls within the same process can occur.__
 
-Finally another thing to point out is that, even when correct idempotent handling is in place, two writers can still produce conflicting events. In this instance Optimistic Concurrency control will cause the 'loser' to re-`interpret` the Command with an updated `state` [incorporating the conflicting events the other writer (thread/process/machine) produced] as context
+A final consideration to mention is that, even when correct idempotent handling is in place, two writers can still produce conflicting events. In this instance, the `Transact` loop's Optimistic Concurrency control will cause the 'loser' to re-`interpret` the Command with an updated `state` [incorporating the conflicting events the other writer (thread/process/machine) produced] as context
 
 #### `Handler`
 
@@ -344,24 +346,24 @@ type Handler(log, stream, ?maxAttempts) =
         inner.Query id
 ```
 
-The `Handler` type for a given Aggregate wraps the access patterns used across all Service-methods (see below). Typically these are relatively straightforward calls to an `Equinox.Handler` (see [`src/Equinox/Handler.fs`](src/Equinox/Handler.fs)), which in turn use the Optimistic Concurrency retry-loop  in [`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
+The `Handler` type for a given Aggregate establishes the access patterns used across all Service-methods (see below). Typically these are relatively straightforward calls forwarding to a `Equinox.Handler` equivalent (see [`src/Equinox/Handler.fs`](src/Equinox/Handler.fs)), which in turn use the Optimistic Concurrency retry-loop  in [`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
 
-`Read` above will do a roundtrip to the Store in order to get the most recent state (while this can be optimized by reading through the cache, each invocation will hit the store regardless). This Synchronous Read can be used to [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency); establish a state incorporating the effects of a Command invocation you know to have been completed.
+`Read` above will do a roundtrip to the Store in order to fetch the most recent state (while this can be optimized by reading through the cache, each invocation will hit the store regardless). This Synchronous Read can be used to [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency); establish a state incorporating the effects of any Command invocation you know to have been completed.
 
-`Execute` runs an Optimistic Concurrency Controlled loop in order to effect the intent of the [write-only] Command. This involves
+`Execute` runs an Optimistic Concurrency Controlled `Transact` loop in order to effect the intent of the [write-only] Command. This involves:
 
 a) establish state
 b) use `interpret` to determine what (if any) Events need to be appended
-c) submitting the events, if any, for appending
+c) submit the Events, if any, for appending
 d) retrying b+c where there's a conflict (i.e., the version of the stream that pertained in (a) has been superseded)
-e) after `maxAttempts` / `3` retries, a `MaxResyncAttemptsExceeededException` is thrown, and an upstream can retry as necessary
+e) after `maxAttempts` / `3` retries, a `MaxResyncAttemptsExceededException` is thrown, and an upstream can retry as necessary (depending on SLAs, a timeout may further constrain number of retries that can occur)
 
-Aside from reading the various documents regarding the various concerns underlying CQRS, it's important to consider that (unless you're trying to leverage the Read-your-writes gurarantee), doing reads direct from an event-sourced store is a pretty debatable thing to do - any state you surface to a caller is by definition out of date the millisecond you obtain it, so in many cases a caller might as well use an eventually-consistent version of the same state obtained via a [n eventually-consistent] Projection (see terms above).
+Aside from reading the various documents regarding the conepts underlying CQRS, it's important to consider that (unless you're trying to leverage the Read-your-writes guarantee), doing reads direct from an event-sourced store is generally not considered a best practice (the opposite, in fact). Any state you surface to a caller is by definition out of date the millisecond you obtain it, so in many cases a caller might as well use an eventually-consistent version of the same state obtained via a [n eventually-consistent] Projection (see terms above).
 
-All that said, if you're in a situation where your cache hit ratio is goig to be high and/or oyu have reason to believe the underlying Event-Streams are not going to be long, significant performance can be achieved nonetheless; just consider that taking this shortcut will impede scaling and, at worst, can result in you ending up with a model that's potentially both:
+All that said, if you're in a situation where your cache hit ratio is goig to be high and/or you have reason to believe the underlying Event-Streams are not going to be long, pretty goof performance can be achieved nonetheless; just consider that taking this shortcut _will_ impede scaling and, at worst, can result in you ending up with a model that's potentially both:
 
 - overly simplistic - you're passing up the opportunity to provide a Read Model that directly models the requirement by providing a Materialized View
-- unnecessarily complex - the increased complexity of the `fold` function and/or any output from `unfold` (and its storage cost) is a drag on one's ability to read, test, extend and generally maintain the Command Handling/Decision logic which can only live on the write side
+- unnecessarily complex - the increased complexity of the `fold` function and/or any output from `unfold` (and its storage cost) is a drag on one's ability to read, test, extend and generally maintain the Command Handling/Decision logic that can only live on the write side
 
 #### `Service`
 
@@ -388,15 +390,15 @@ type Service(log, resolveStream) =
     }
 ```
 
-While the logic in the `Service` type can arguably be melded into the `Handler` class, there are a number of reasons to split them as per the above:
+While the logic in the `Service` type can arguably be melded into the `Handler` class (and/or one might be able to inline the `Handler` into the `Service`), there are a number of reasons to split them as per the above:
 
-- while the Command pattern can help clarify a high level flow, there's no subsitute for representing actual business functions as well-named methods represting precise behaviors that can be documented and tested
+- while the Command pattern can help clarify a high level flow, there's no subsitute for representing actual business functions as well-named methods representing specific behaviors that are meaningful in the context of the application's Ubiquitous Language, can be documented and tested.
 
 - the Service separation affords one a [_seam_](http://www.informit.com/articles/article.aspx?p=359417) that faciltiates testing independently with a mocked or stubbed Handler as desired. 
 
 ### Todo[Backend] walkthrough
 
-See [the TodoBackend.com sample](README.md#TodoBackend) for reference info regarding this sample, and [the `.fsx` file from where this code is copied](samples/Tutorial/Todo.fsx). Note the design of the events springs from the nature of the TodoBackend spec; there are many aspects of the implementation that consitutute less than ideal design; please note the provisos below...
+See [the TodoBackend.com sample](README.md#TodoBackend) for reference info regarding this sample, and [the `.fsx` file from where this code is copied](samples/Tutorial/Todo.fsx). Note that the bulk if the design of the events stems from the nature of the TodoBackend spec; there are many aspects of the implementation that constitute less than ideal design; please note the provisos below...
 
 #### `Event`s
 
@@ -410,13 +412,13 @@ type Event =
     | Compacted of Todo[]
 ```
 
-The fact that we have a `Cleared` event results from the fact that such an operation exists in the spec. While one could implement this by emitting a `Deleted` event per currrently existing item, there are at least two good reasons to do model this as a first class event:-
-  i) Events should reflect user intent in its most direct form possible; if the user clicked delete all, it's not the same to implement that as a set of individual deletes which happen to have the same timestamp
-  ii) Because the `Cleared` event establishes a known state, one can have the `isOrigin` flag the event as being the furthest one needs to search backwards before starting to fold events to establish the state. This also prevents the fact that the stream gets long in terms of numbers of events from impacting the effiency of the processing
+The fact that we have a `Cleared` Event stems from the fact that the spec defines such an operation. While one could implement this by emitting a `Deleted` event per currrently existing item, there many reasons to do model this as a first class event:-
+  i) Events should reflect user intent in its most direct form possible; if the user clicked Delete All, it's not the same to implement that as a set of individual deletes that happen to be united by having timestamp with a very low number of ms of each other.
+  ii) Because the `Cleared` Event establishes a known State, one can have the `isOrigin` flag the event as being the furthest one needs to search backwards before starting to `fold` events to establish the state. This also prevents the fact that the stream gets long in terms of numbers of events from impacting the effiency of the processing
   iii) While having a `Cleared` event happens to work, it also represents a technical trick in a toy domain and should not be considered some cure-all Pattern - real Todo apps don't have a 'declare backruptcy' function. And example alternate approaches might be to represent each Todo list as it's own stream, and then have a `TodoLists` aggregate coordinating those.
 
-The `Compacted` event is used for Rolling Snapshots and/or Unfolds; For a real Todo list, using this facility may well make sense - the state can fit in a reasonable space, and the likely number of events may reach an interesting count
-  i) It should also be noted that caching may be a better answer - note `Compacted` is also an `isOrigin` event - there's no need to go back any further if you meet one.
+The `Compacted` event is used to represent Rolling Snapshots (stored in-stream) and/or Unfolds (stored in Tip document); For a real Todo list, using this facility may well make sense - the State can fit in a reasonable space, and the likely number of Events may reach an interesting enough count to justify applying such a feature
+  i) it should also be noted that Caching may be a better answer - note `Compacted` is also an `isOrigin` event - there's no need to go back any further if you meet one.
   ii) we use an Array in preference to a [F#] `list`; while there are `ListConverter`s out there (notably not in [`Jet.JsonNet.Converters`](https://github.com/jet/Jet.JsonNet.Converters)), in this case an Array is better from a GC and memory-efficiency stance, and does not need any special consideration when using `Newtonsoft.Json` to serialize.
 
 #### `State` + `initial`+`fold`
@@ -435,11 +437,10 @@ let isOrigin = function Cleared | Compacted _ -> true | _ -> false
 let compact state = Compacted (Array.ofList state.items)
 ```
 
-- for `State` we use records and `list` as the state needs to be a Persistent data structure.
+- for `State` we use records and `list`s as the state needs to be a Persistent data structure.
 - in general the `evolve` function is straightforward idiomatic F# - while there are plenty ways to improve the efficiency (primarily by implementing `fold` using mutable state), in reality this would reduce the legibility and malleability of the code.
 
 #### `Command`s + `interpret`
-
 
 ```fsharp
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
@@ -456,7 +457,7 @@ let interpret c (state : State) =
 
 - Note `Add` does not adhere to the normal idempotency constraint, being unconditional. If the spec provided an id or token to deduplicate requests, we'd track that in the `fold` and use it to rule out duplicate requests.
 - For `Update`, we can lean on structural equality in `when current <> value` to cleanly rule out redundant updates
-- The current implementation is 'good enough'. For `Clear`, we could maintain a flag about whether we've just seen a clear, or have a request identifier to deduplicate, rather than risk omitting a chance to mark the stream clear and hence leverage the `isOrigin` aspect of having the event.
+- The current implementation is 'good enough' but there's always room to argue for adding more features. For `Clear`, we could maintain a flag about whether we've just seen a clear, or have a request identifier to deduplicate, rather than risk omitting a chance to mark the stream clear and hence leverage the `isOrigin` aspect of having the event.
 
 #### `Handler`
 
@@ -466,19 +467,20 @@ type Handler(log, stream, ?maxAttempts) =
     member __.Execute command : Async<unit> =
         inner.Transact(interpret command)
     member __.Handle command : Async<Todo list> =
-        inner.Run <| fun ctx ->
+        inner.Transact(fun state ->
+            let ctx = Equinox.Context(fold, state)
             ctx.Execute (interpret command)
-            ctx.State.items
+            ctx.State.items,ctx.Accumulated) // including any events just pended
     member __.Query(projection : State -> T) : Async<T> =
         inner.Query projection
 ```
 
-- `Handle` represents a command processing flow where we (idempotently) apply a command, but then also emit the state to the caller, as dictated by the needs of the call as specified in the TodoBackend spec. This uses the `Handler.Run` helper, which accummulates an `Event list`, while making the proposed `state` incorporating the proposed events immediately.
-- While we could theoretically use Projections to service queries from an eventually consistent Read Model, this is not in aligment with the Read-you-writes expectation embodied in the tests (i.e. it would not pass the tests), and, more importantly, would not work correctly as a backend for the app. Because we have more than one query required, we make a generic `Query` method, even though a `Read` like in the Favorite example might make sense to expose too
-- The main conclusion to be drawn from the Favorites and TodoBackend `Handler` implementations is that while there can be commonality in terms of the sorts of transactions one might encapsulate in this manner, there's lots of It Depends; for instance:
-  i) the design does provide implement complete idempotency and/or follow the CQRS style
+- `Handle` represents a command processing flow where we (idempotently) apply a command, but then also emit the state to the caller, as dictated by the needs of the call as specified in the TodoBackend spec. This uses the `Accumulator` helper type, which accumulates an `Event list`, and provides a way to compute the `state` incorporating the proposed events immediately.
+- While we could theoretically use Projections to service queries from an eventually consistent Read Model, this is not in aligment with the Read-you-writes expectation embodied in the tests (i.e. it would not pass the tests), and, more importantly, would not work correctly as a backend for the app. Because we have more than one query required, we make a generic `Query` method, even though a specific `Read` method (as in the Favorite example) might make sense to expose too
+- The main conclusion to be drawn from the Favorites and TodoBackend `Handler` implementations is that while there can be commonality in terms of the sorts of transactions one might encapsulate in this manner, there's lots of It Depends factors; for instance:
+  i) the design doesnt provide complete idempotency and/or follow the CQRS style
   ii) the fact that this is a toy system with lots of artificaial constraints and/or simplifications when compared to aspects that might present in a more complete implementation.
-- While it may be hard to see the need/value of a `Handler`, focusing on the access patterns has proven a worthwhile pattern in a medium sized system.
+- While it may be hard to see the need/value of a `Handler`, specifically encapsulating the access patterns have proven worthwhile in a medium sized system.
 
 #### `Service`
 
@@ -499,6 +501,7 @@ type Service(log, resolveStream) =
         let! updated = stream.Handle(Command.Update item)
         return List.find (fun x -> x.id = item.id) updated }
 ```
+
 - the `AggregateId` and `Stream` Active Patterns provide succinct ways to map an incoming `clientId` (which is not a `string` in the real implementation but instead an id using [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive manner.
 
 # Equinox Architectural Overview
