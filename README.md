@@ -2,7 +2,7 @@
 
 A unified programming model for event-sourced command processing and projections for stream-based stores.
 
-Strives to be that while remaining a humble set of _libraries_ that _you compose_ into an architecture that fits your apps needs, not a final Architecture/object model/processing pipeline that's going to foist a one-size-fits-all model on you. You decide what facilities make sense for your context; Equinox covers those chosen infrastructural aspects without pulling in a cascade of dependencies from a jungle. (That's not to say we don't have plenty opinions and well polished patterns; we just try to confine the impact of that to [`samples`](samples) or [templates](https://github.com/jet/dotnet-templates), leaving judgement calls open for you to adjust as your app evolves).
+Strives to be that while remaining a humble set of _libraries_ that _you compose_ into an architecture that fits your apps needs, not a final Architecture/object model/processing pipeline that's going to foist a one-size-fits-all model on you. You decide what facilities make sense for your context; Equinox covers those chosen infrastructural aspects without pulling in a cascade of dependencies from a jungle. (That's not to say we don't have plenty opinions and well polished patterns; we just try to confine the impact of that to [`samples`](/samples) or [templates](https://github.com/jet/dotnet-templates), leaving judgement calls open for you to adjust as your app evolves).
 
 The design is informed by discussions, talks and countless hours of hard and thoughtful work invested into many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain), the outstanding continuous work of the [EventStore](https://github.com/eventstore) founders and team and the wider [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community. It would be unfair to single out even a small number of people despite the immense credit that is due. _If you're looking to learn more about and/or discuss Event Sourcing and it's myriad benefits, tradeoffs and pitfalls as you apply it to your Domain, look no further than the thriving 2000+ member community on the [DDD-CQRS-ES Slack](https://github.com/ddd-cqrs-es/slack-community); you'll get patient and impartial world class advice 24x7 (psst there's an [#equinox channel](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) there where you can ask questions or offer feedback)._ ([invite link](https://t.co/MRxpx0rLH2))
 
@@ -54,7 +54,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
       cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
       ```
 
-	- For OSX, download the .pkg from https://eventstore.org/downloads/, click in Finder to launch the installer
+	- For OSX, download the `.pkg` from https://eventstore.org/downloads/, click in Finder to launch the installer
 
 2. start the local EventStore instance
 
@@ -201,8 +201,8 @@ The components within this repository are delivered as a series of multi-targete
 
 ### Core libraries
 
-- [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/) `Equinox.Handler`: Store-agnostic decision flow runner that manages the optimistic concurrency protocol. (depends on `Serilog` (but no specific Serilog sinks, i.e. you configure to emit to `NLog` etc))
-- [![Codec NuGet](https://img.shields.io/nuget/v/Equinox.Codec.svg)](https://www.nuget.org/packages/Equinox.Codec/) `Equinox.Codec`: [a scheme for the serializing Events modelled as an F# Discriminated Union](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) (depends on `TypeShape`, `Newtonsoft.Json >=  11.0.2` but can support any serializer) with the following capabilities:
+- [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/) `Equinox[.Handler]`: Store-agnostic decision flow runner that manages the optimistic concurrency protocol. ([depends](https://www.fuget.org/packages/Equinox) on `Serilog` (but no specific Serilog sinks, i.e. you configure to emit to `NLog` etc))
+- [![Codec NuGet](https://img.shields.io/nuget/v/Equinox.Codec.svg)](https://www.nuget.org/packages/Equinox.Codec/) `Equinox.Codec`: [a scheme for the serializing Events modelled as an F# Discriminated Union](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) ([depends](https://www.fuget.org/packages/Equinox.Codec) on `TypeShape 6.*`, `Newtonsoft.Json >= 11.0.2` but can support any serializer) with the following capabilities:
   - independent of any specific serializer
   - allows tagging of F# Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
 
@@ -227,6 +227,7 @@ The components within this repository are delivered as a series of multi-targete
 - [![Templates NuGet](https://img.shields.io/nuget/v/Equinox.Templates.svg)](https://www.nuget.org/packages/Equinox.Templates/) `Equinox.Templates`: [The templates repo](https://github.com/jet/dotnet-templates) has C# and F# sample apps. (Install via `dotnet new -i Equinox.Templates && dotnet new eqx --list`). See [the quickstart](quickstart) for examples of how to use it.
 - [`samples/Store` (in this repo)](/samples/Store): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
 - [`samples/TodoBackend` (in this repo)](/samples/TodoBackend): Standard https://todobackend.com compliant backend
+- [`samples/Tutorial` (in this repo)](/samples/Tutorial): Annotated `.fsx` files with sample Aggregate impls
 
 ## CONTRIBUTING
 
@@ -263,7 +264,9 @@ The `samples/` folder contains various further examples (some of the templates a
 - acting as [Consumer Driven Contracts](https://martinfowler.com/articles/consumerDrivenContracts.html) to validate new and pin existing API designs.
 - providing outline (not official and complete) guidance as to things that are valid to do in an application consuming Equinox components.
 - to validate that each specific Storage implementation can fulfill the needs of each of the example Services/Aggregates/Applications. (_unfortunately this concern makes a lot of the DI wiring more complex than a real application should be; it's definitely a non-goal for every Equinox app to be able to switch between backends, even though that's very much possible to achieve._)
+- provide sample scripts referenced in the Tutorial
 
+<a name="TodoBackend"></a>
 ### [TODOBACKEND, see samples/TodoBackend](/samples/TodoBackend)
 
 The repo contains a vanilla ASP.NET Core 2.1 implemention of [the well-known TodoBackend Spec](https://www.todobackend.com). **NB the implementation is largely dictated by spec; no architectural guidance expressed or implied ;)**. It can be run via:
@@ -287,6 +290,8 @@ While these things can of course be perfected through PRs, this is definitely no
 ### [m-r](https://github.com/gregoryyoung/m-r/tree/master/SimpleCQRS) port, [see samples/Store/Domain/InventoryItem.fs](samples/Store/Domain/InventoryItem.fs)
 
 For fun, there's a direct translation of the `InventoryItem` Aggregate and Command Handler from Greg Young's [`m-r`](https://github.com/gregoryyoung/m-r/tree/master/SimpleCQRS) demo project [as one could write it in F# using Equinox](https://github.com/jet/equinox/blob/master/samples/Store/Domain/InventoryItem.fs). NB any typical presentation of this example includes copious provisos and caveats about it being a toy example written almost a decade ago.
+
+### [`samples/Tutorial` (in this repo)](/samples/Tutorial): Annotated `.fsx` files with sample aggregate implementations
 
 ## BENCHMARKS
 
@@ -355,6 +360,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
     eqx run -t saveforlater -f 200 web
 
 ### run CosmosDb benchmark (when provisioned)
+
     $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
     $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
@@ -456,7 +462,7 @@ Yes, you have decisions to make; Equinox is not a panacea - there is no one size
 
 ### Is there a guide to building the simplest possible hello world "counter" sample, that simply counts with an add and a subtract event? 
 
-There's a skeleton one in [#56](https://github.com/jet/equinox/issues/56), but your best choices are probably to look at the `Aggregate.fs` and `Todo.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates)
+See the [Handler API Guide in DOCUMENTATION.md](DOCUMENTATION.md#api). An alternate way is to look at the `Todo.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates) in the [QuickStart](#quickstart).
 
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 

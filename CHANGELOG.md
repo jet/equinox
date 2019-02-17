@@ -14,6 +14,7 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 ### Added
 
 - `Equinox.Projection.Kafka` consumer metrics emission, see [#94](https://github.com/jet/equinox/pull/94) @michaelliao5
+- Add `samples/Tutorial` with `.fsx` files (see also related docs)
 
 ### Changed
 
