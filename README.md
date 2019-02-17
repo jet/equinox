@@ -264,6 +264,7 @@ The `samples/` folder contains various further examples (some of the templates a
 - providing outline (not official and complete) guidance as to things that are valid to do in an application consuming Equinox components.
 - to validate that each specific Storage implementation can fulfill the needs of each of the example Services/Aggregates/Applications. (_unfortunately this concern makes a lot of the DI wiring more complex than a real application should be; it's definitely a non-goal for every Equinox app to be able to switch between backends, even though that's very much possible to achieve._)
 
+<a name="TodoBackend"></a>
 ### [TODOBACKEND, see samples/TodoBackend](/samples/TodoBackend)
 
 The repo contains a vanilla ASP.NET Core 2.1 implemention of [the well-known TodoBackend Spec](https://www.todobackend.com). **NB the implementation is largely dictated by spec; no architectural guidance expressed or implied ;)**. It can be run via:
@@ -456,7 +457,7 @@ Yes, you have decisions to make; Equinox is not a panacea - there is no one size
 
 ### Is there a guide to building the simplest possible hello world "counter" sample, that simply counts with an add and a subtract event? 
 
-There's a skeleton one in [#56](https://github.com/jet/equinox/issues/56), but your best choices are probably to look at the `Aggregate.fs` and `Todo.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates)
+See the [Handler API Guide in DOCUMENTATION.md](DOCUMENTATION.md#api). An alternate way is to look at the `Todo.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates) in the [QuickStart](#quickstart).
 
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 

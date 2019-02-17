@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.27110.0
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.28531.58
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox", "src\Equinox\Equinox.fsproj", "{54CD058F-5B0A-4564-B732-1F6301E120AC}"
 EndProject
@@ -66,6 +66,8 @@ EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Codec", "src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj", "{65F8FC6A-FF31-43A0-B7D9-4C9CF407DEB3}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Tests", "tests\Equinox.Projection.Tests\Equinox.Projection.Tests.fsproj", "{047F782D-DC37-4599-8FA0-F9B4D4C09C7B}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Tutorial", "samples\Tutorial\Tutorial.fsproj", "{D82AAB2E-7264-421A-A893-63A37E5F08B6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -157,6 +159,10 @@ Global
 		{047F782D-DC37-4599-8FA0-F9B4D4C09C7B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{047F782D-DC37-4599-8FA0-F9B4D4C09C7B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{047F782D-DC37-4599-8FA0-F9B4D4C09C7B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D82AAB2E-7264-421A-A893-63A37E5F08B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D82AAB2E-7264-421A-A893-63A37E5F08B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D82AAB2E-7264-421A-A893-63A37E5F08B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D82AAB2E-7264-421A-A893-63A37E5F08B6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -171,6 +177,7 @@ Global
 		{1B0D4568-96FD-4083-8520-CD537C0B2FF0} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871} = {8CDE1CC3-8619-44DE-8B4D-4102CE476C35}
 		{8CDE1CC3-8619-44DE-8B4D-4102CE476C35} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
+		{D82AAB2E-7264-421A-A893-63A37E5F08B6} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {177E1E7B-E275-4FC6-AE3C-2C651ECCF71E}
