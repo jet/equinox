@@ -78,12 +78,14 @@ module Commands =
                 | _ -> () ]
 
 type Handler(log, stream) =
-    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = 3)
+    let inner = Equinox.Handler(log, stream, maxAttempts = 3)
     member __.FlowAsync(flow, ?prepare) =
-        inner.DecideAsync <| fun ctx -> async {
-            let execute = Commands.interpret >> ctx.Execute
+        inner.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
-            return flow ctx execute }
+            let ctx = Equinox.Accumulator(Folds.fold,state)
+            let execute = Commands.interpret >> ctx.Execute
+            let res = flow ctx execute
+            return res,ctx.Accumulated })
     member __.Execute command =
         __.FlowAsync(fun _ctx execute -> execute command)
     member __.Read : Async<Folds.State> =

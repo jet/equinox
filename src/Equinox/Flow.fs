@@ -70,25 +70,10 @@ module internal Flow =
         /// Commence, processing based on the incoming state
         loop 1
 
-    let private execAsync stream log f = async {
+    let transact (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) (stream, log) decide : Async<'result> = async {
         let! syncState = load log stream
-        return! f syncState }
+        return! run log (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) syncState decide }
 
-    let decide (createContext,extractEvents) (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) (stream, log, flow) : Async<'result> =
-        let runAsync state = async {
-            let context = createContext state
-            let result = flow context
-            return result, extractEvents context }
-        let runWithSyncState syncState = run log (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) syncState runAsync
-        execAsync stream log runWithSyncState
-
-    let decideAsync (createContext,extractEvents) (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) (stream, log, flowAsync) : Async<'result> =
-        let runAsync state = async {
-            let context = createContext state
-            let! result = flowAsync context
-            return result, extractEvents context }
-        let runWithSyncState syncState = run log (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) syncState runAsync
-        execAsync stream log runWithSyncState
-
-    let query(stream : IStream<'event, 'state>, log : ILogger, project: SyncState<'event,'state> -> 'result): Async<'result> =
-        execAsync stream log (fun syncState -> async { return project syncState })
+    let query (stream : IStream<'event, 'state>, log : ILogger, project: SyncState<'event,'state> -> 'result) : Async<'result> = async {
+        let! syncState = load log stream
+        return project syncState }

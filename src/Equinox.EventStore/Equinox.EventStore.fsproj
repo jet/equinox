@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Equinox.MemoryStore\StoreHelpers.fs" Link="StoreHelpers.fs" />
     <Compile Include="Infrastructure.fs" />
     <Compile Include="EventStore.fs" />
   </ItemGroup>

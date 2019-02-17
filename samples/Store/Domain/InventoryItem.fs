@@ -55,12 +55,10 @@ module Commands =
             [ Events.Deactivated ]
 
 type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = defaultArg maxAttempts 3)
+    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 3)
 
     member __.Execute command : Async<unit> =
-        inner.Decide <| fun ctx ->
-            let execute = Commands.interpret >> ctx.Execute
-            execute command
+        inner.Transact(Commands.interpret command)
     member __.Read : Async<Folds.State> =
         inner.Query id
 
