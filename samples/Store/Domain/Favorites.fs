@@ -55,9 +55,8 @@ module Commands =
             [ Events.Unfavorited { skuId = skuId } ]
 
 type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = defaultArg maxAttempts 2)
+    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 2)
     member __.Execute command : Async<unit> =
-        inner.Decide <| fun ctx ->
-            ctx.Execute (Commands.interpret command)
+        inner.Transact(Commands.interpret command)
     member __.Read : Async<Events.Favorited []> =
         inner.Query id

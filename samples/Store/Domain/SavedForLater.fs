@@ -103,20 +103,17 @@ module Commands =
             else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
 
 type Handler(log, stream, maxSavedItems, maxAttempts) =
-    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = maxAttempts)
-    let decide (ctx : Equinox.Context<_,_>) command =
-        ctx.Decide (Commands.decide maxSavedItems command)
+    let inner = Equinox.Handler(log, stream, maxAttempts = maxAttempts)
 
     member __.Remove (resolve : ((SkuId->bool) -> Async<Commands.Command>)) : Async<unit> =
-        inner.DecideAsync <| fun ctx -> async {
-            let contents = seq { for item in ctx.State -> item.skuId } |> set
+        inner.TransactAsync(fun (state : Folds.State) -> async {
+            let contents = seq { for item in state -> item.skuId } |> set
             let! cmd = resolve contents.Contains
-            return cmd |> decide ctx }
-        |> Async.Ignore
+            let _, events = Commands.decide maxSavedItems cmd state
+            return (),events } )
 
     member __.Execute command : Async<bool> =
-        inner.Decide <| fun fctx ->
-            decide fctx command
+        inner.Transact(Commands.decide maxSavedItems command)
 
     member __.Read : Async<Events.Item[]> =
         inner.Query id

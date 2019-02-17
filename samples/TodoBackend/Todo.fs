@@ -42,14 +42,14 @@ module Commands =
         | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
 type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = defaultArg maxAttempts 2)
+    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 2)
     member __.Execute command : Async<unit> =
-        inner.Decide <| fun ctx ->
-            ctx.Execute (Commands.interpret command)
+        inner.Transact(Commands.interpret command)
     member __.Handle command : Async<Todo list> =
-        inner.Decide <| fun ctx ->
+        inner.Transact(fun state ->
+            let ctx = Equinox.Accumulator(Folds.fold, state)
             ctx.Execute (Commands.interpret command)
-            ctx.State.items
+            ctx.State.items,ctx.Accumulated)
     member __.Query(projection : Folds.State -> 't) : Async<'t> =
         inner.Query projection
 

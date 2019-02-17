@@ -13,6 +13,7 @@
     <Compile Include="Interfaces.fs" />
     <Compile Include="Flow.fs" />
     <Compile Include="Handler.fs" />
+    <Compile Include="Accumulator.fs" />
   </ItemGroup>
 
   <ItemGroup>

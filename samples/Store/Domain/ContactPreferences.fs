@@ -31,10 +31,9 @@ module Commands =
             [ Events.Updated value ]
 
 type Handler(log, stream) =
-    let inner = Equinox.Handler(Folds.fold, log, stream, maxAttempts = 3)
+    let inner = Equinox.Handler(log, stream, maxAttempts = 3)
     member __.Update email value : Async<unit> =
-        inner.Decide <| fun ctx ->
-            let execute = Commands.interpret >> ctx.Execute
-            execute <| Update { email = email; preferences = value }
+        let command = Update { email = email; preferences = value }
+        inner.Transact(Commands.interpret command)
     member __.Read : Async<Folds.State> =
         inner.Query id
