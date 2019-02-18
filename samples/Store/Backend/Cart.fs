@@ -5,7 +5,7 @@ open Domain.Cart
 
 type Service(log, resolveStream) =
     let (|AggregateId|) (id: CartId) = Equinox.AggregateId ("Cart", CartId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Handler(log, resolveStream id, maxAttempts = 3)
+    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, maxAttempts = 3)
         
     let flowAsync (Stream stream) (flow, prepare) =
         stream.TransactAsync(fun state -> async {

@@ -82,9 +82,7 @@ WrongExpectedVersion | Low level exception thrown to communicate an Optimistic C
 Term | Description
 -----|------------
 Cache | `System.Net.MemoryCache` holding State and/or `etag` information for a Stream with a view to reducing roundtrips, latency and/or Request Charges
-Handler | Set of logic implementing Decisions and/or Queries against a Stream in terms of Reads and Appends
 Rolling Snapshot | Event written to an EventStore stream in order to ensure minimal roundtrips to EventStore when there is a Cache miss
-Service | Higher level logic achieving business ends, involving the Handler as and when a Stream needs to be transacted against
 Unfolds | Snapshot information, represented as Events that are stored in an appropriate storage location (outside of a Stream's actual events) to minimize Queries and the attendant Request Charges when there is a Cache miss
 
 # Programming Model
@@ -126,7 +124,7 @@ When running a decision process, we have the following stages:
 
 See [Cosmos Storage Model](#cosmos-storage-model) for a more detailed discussion of the role of the Sync Stored Procedure in step 3
 
-## Canonical example Aggregate + Handler + Service
+## Canonical example Aggregate + Service
 
 The following example is a minimal version of [the Favorites model](samples/Store/Domain/Favorites.fs), with shortcuts for brevity, that implements all the relevant functions above:
 
@@ -173,38 +171,31 @@ let isOrigin = function
     | Compacted _ -> true
     | _ -> false
 
-(* Relevant stream-level operations, 
-   i.e. infrastructural concerns that are relevant for a given Stream
-   (as dictated by the needs of the `Service`) are normally wrapped up as a `Handler`;
-   typically a Transient instance spun up in the context of a given operation being processed *)
-
-type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(fold, log, stream, maxAttempts = defaultArg maxAttempts 3)
-    member __.Execute command : Async<unit> =
-        inner.Transact(interpret command)
-    member __.Read : Async<string list> =
-        inner.Query id
-
-(* The Service then defines operations in business terms with minimal reference to Equinox terms
+(* The Service defines operations in business terms with minimal reference to Equinox terms
    or need to talk in terms of infrastructure; typically the service is stateless and can be a Singleton *)
 
-type Service(log, resolveStream) =
+type Service(log, resolveStream, ?maxAttempts) =
     let (|AggregateId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
-    member __.Execute(Stream stream, command) =
-        stream.Execute command
-    member __.Favorite(Stream stream, skus) =
-        stream.Execute(Command.Favorite(DateTimeOffset.Now, skus))
-    member __.Unfavorite(Stream stream, skus) =
-        stream.Execute(Command.Unfavorite skus)
-    member __.List(Stream stream): Async<Events.Favorited []> =
-        stream.Read
+    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+    let execute (Stream stream) command : Async<unit> =
+        stream.Transact(interpret command)
+    let read (Stream stream) : Async<string list> =
+        stream.Query id
+
+    member __.Execute(clientId, command) =
+        execute clientId command
+    member __.Favorite(clientId, skus) =
+        execute clientId (Command.Favorite(DateTimeOffset.Now, skus))
+    member __.Unfavorite(clientId, skus) =
+        execute clientId (Command.Unfavorite skus)
+    member __.List clientId : Async<Events.Favorited []> =
+        read clientId
 ```
 
 <a name="api"></a>
-# Equinox Handler API Usage Guide
+# Equinox API Usage Guide
 
-The most terse walkthrough of what's involved in using Equinox to do a Synchronous Query and/or Execute a Decision process is in the [Programming Model section](#programming-model). In this section we’ll walk through how one implements common usage patterns using the Equinox Handler API in more detail.
+The most terse walkthrough of what's involved in using Equinox to do a Synchronous Query and/or Execute a Decision process is in the [Programming Model section](#programming-model). In this section we’ll walk through how one implements common usage patterns using the Equinox `Stream` API in more detail.
 
 ## ES, CQRS, Event-driven architectures etc
 
@@ -236,21 +227,21 @@ In the code handling a given Aggregate’s Commands and Synchronous Queries, the
 
 while these are not omnipresent, for the purposes of this discussion we’ll treat them as that. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.
 
-### Contexts, Handlers and Services
+### Flows, Streams and Accumulators
 
 Equinox’s Command Handling consists of < 250 lines including interfaces and comments in https://github.com/jet/equinox/tree/master/src/Equinox - the elements you'll touch are in a normal application are:
 
-- [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Handler.fs#L39) - used to identify the Stream pertaining to the relevant Aggregate that `resolveStream` will use to hydrate a `Handler`
-- [`type Handler`](https://github.com/jet/equinox/blob/master/src/Equinox/Handler.fs#L11) - surface API one uses to `Transact` or `Query` against a specific Stream
-- [`module Flow`](https://github.com/jet/equinox/blob/12e36643685ff4f1fb2d19a4b56b88065280eb2c/src/Equinox/Flow.fs#L31) - internal implementation of Optimistic Concurrency Control / retry loop used by Handler. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
+- [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L39) - used to identify the Stream pertaining to the relevant Aggregate that `resolveStream` will use to hydrate a `Stream`
+- [`type Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Handler.fs#L11) - surface API one uses to `Transact` or `Query` against a specific stream
+- [`module Flow`](https://github.com/jet/equinox/blob/12e36643685ff4f1fb2d19a4b56b88065280eb2c/src/Equinox/Flow.fs#L31) - internal implementation of Optimistic Concurrency Control / retry loop used by `Stream`. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
 - _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in some flavors of Handler__
 
 Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the few hundred lines can tell many of the thousands of words about to follow!
 
-#### Handler Members
+#### Stream Members
 
 ```fsharp
-type Equinox.Handler(fold, stream, log, maxAttempts) =
+type Equinox.Stream(stream, log, maxAttempts) =
     // Run interpret function with present state, retrying with Optimistic Concurrency
     member __.Transact(interpret : State -> Event list) : Async<unit>
     // Run decide function with present state, retrying with Optimistic Concurrency, yielding Result on exit
@@ -277,7 +268,7 @@ type Accumulator(fold, originState) =
     member Decide(decide : State -> Result * Event list) : 'result
 ```
 
-`Accumulator` is a small optional helper class that can be useful in certain scenarios where one is applying a sequence of Commands. One can use it within the body of a `decide` or `interpret` function as passed to `Handler.Transact`.
+`Accumulator` is a small optional helper class that can be useful in certain scenarios where one is applying a sequence of Commands. One can use it within the body of a `decide` or `interpret` function as passed to `Stream.Transact`.
 
 ### Favorites walkthrough
 
@@ -303,7 +294,7 @@ Events are represented as an F# Discriminated Union; see the [article on the `Un
 
 The `evolve` function is responsible for computing the post-State that should result from taking a given State and incorporating the effect that _single_ Event implies in that context and yielding that result _without mutating either input_.
 
-While the `evolve` function operates on a `state` and a _single_ event, `fold` (named for the standard FP operation of that name) walks a chain of events, propagating the running state into each evolve invocation. It is the `fold` operation that's typically used a) in tests and b) when passing a function to an Equinox Handler to manage the behavior.
+While the `evolve` function operates on a `state` and a _single_ event, `fold` (named for the standard FP operation of that name) walks a chain of events, propagating the running state into each `evolve` invocation. It is the `fold` operation that's typically used a) in tests and b) when passing a function to an Equinox `StreamBuilder` to manage the behavior.
 
 It should also be called out that Events represent Facts about things that have happened - an `evolve` or `fold` should not throw Exceptions or log. There should be absolutely minimal conditional logic.
 
@@ -335,18 +326,25 @@ _It should also be noted that, when executing a Command, the `interpret` functio
 
 A final consideration to mention is that, even when correct idempotent handling is in place, two writers can still produce conflicting events. In this instance, the `Transact` loop's Optimistic Concurrency control will cause the 'loser' to re-`interpret` the Command with an updated `state` [incorporating the conflicting events the other writer (thread/process/machine) produced] as context
 
-#### `Handler`
+#### `Stream` usage
 
 ```fsharp
-type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(fold, log, stream, maxAttempts = defaultArg maxAttempts 3)
-    member __.Execute command : Async<unit> =
-        inner.Transact(interpret command)
-    member __.Read : Async<string list> =
+type Stream(log, stream, ?maxAttempts) =
+    let inner = Equinox.Handler(fold, log, stream, maxAttempts = )
+
+    let streamHandlerFor (clientId: string) =
+        let aggregateId = Equinox.AggregateId("Favorites", clientId)
+        let stream = resolveStream aggregateId
+        Equinox.Stream(log, stream, defaultArg maxAttempts 3)
+    let execute clientId command : Async<unit> =
+        let stream = streamFor clientId
+        stream.Transact(interpret command)
+    let read clientId : Async<string list> =
+        let stream = streamFor clientId
         inner.Query id
 ```
 
-The `Handler` type for a given Aggregate establishes the access patterns used across all Service-methods (see below). Typically these are relatively straightforward calls forwarding to a `Equinox.Handler` equivalent (see [`src/Equinox/Handler.fs`](src/Equinox/Handler.fs)), which in turn use the Optimistic Concurrency retry-loop  in [`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
+The `Stream` helpers in a given Aggregate establish the access patterns used across when Service methods access streams (see below). Typically these are relatively straightforward calls forwarding to a `Equinox.Stream` equivalent (see [`src/Equinox/Stream.fs`](src/Equinox/Stream.fs)), which in turn use the Optimistic Concurrency retry-loop  in [`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent state (while this can be optimized by reading through the cache, each invocation will hit the store regardless). This Synchronous Read can be used to [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency); establish a state incorporating the effects of any Command invocation you know to have been completed.
 
@@ -365,29 +363,15 @@ All that said, if you're in a situation where your cache hit ratio is goig to be
 - overly simplistic - you're passing up the opportunity to provide a Read Model that directly models the requirement by providing a Materialized View
 - unnecessarily complex - the increased complexity of the `fold` function and/or any output from `unfold` (and its storage cost) is a drag on one's ability to read, test, extend and generally maintain the Command Handling/Decision logic that can only live on the write side
 
-#### `Service`
+#### `Service` members
 
 ```fsharp
-type Service(log, resolveStream) =
-    let streamHandlerFor (clientId: string) =
-        let aggregateId = Equinox.AggregateId("Favorites", clientId)
-        let stream = resolveStream aggregateId
-        Handler(log, stream)
-
-    member __.Favorite(clientId, sku) = async {
-        let stream = streamHandlerFor clientId
-        return! stream.Execute(Add sku)
-    }
-
-    member __.Unfavorite(clientId, skus) = async {
-        let stream = streamHandlerFor clientId
-        return! stream.Execute(Remove skus)
-    }
-
-    member __.List(clientId): Async<string list> = async {
-        let stream = streamHandlerFor clientId
-        return! stream.Read ()
-    }
+    member __.Favorite(clientId, sku) =
+        execute clientId (Add sku)
+    member __.Unfavorite(clientId, skus) =
+        execute clientId (Remove skus)
+    member __.List clientId : Async<string list> =
+        stream.Read clientId
 ```
 
 While the logic in the `Service` type can arguably be melded into the `Handler` class (and/or one might be able to inline the `Handler` into the `Service`), there are a number of reasons to split them as per the above:
@@ -459,49 +443,43 @@ let interpret c (state : State) =
 - For `Update`, we can lean on structural equality in `when current <> value` to cleanly rule out redundant updates
 - The current implementation is 'good enough' but there's always room to argue for adding more features. For `Clear`, we could maintain a flag about whether we've just seen a clear, or have a request identifier to deduplicate, rather than risk omitting a chance to mark the stream clear and hence leverage the `isOrigin` aspect of having the event.
 
-#### `Handler`
+#### `Service`
 
 ```fsharp
-type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(fold, log, stream, maxAttempts = defaultArg maxAttempts 3)
-    member __.Execute command : Async<unit> =
-        inner.Transact(interpret command)
-    member __.Handle command : Async<Todo list> =
-        inner.Transact(fun state ->
+type Service(log, resolveStream, ?maxAttempts) =
+    let (|AggregateId|) (id : string) = Equinox.AggregateId("Todos", id)
+    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+
+    let execute (Stream stream) command : Async<unit> =
+        stream.Transact(interpret command)
+    let handle (Stream stream) command : Async<Todo list> =
+        stream.Transact(fun state ->
             let ctx = Equinox.Context(fold, state)
             ctx.Execute (interpret command)
             ctx.State.items,ctx.Accumulated) // including any events just pended
-    member __.Query(projection : State -> T) : Async<T> =
-        inner.Query projection
+    let query (Stream stream) (projection : State -> T) : Async<T> =
+        stream.Query projection
+
+    member __.List clientId : Async<Todo seq> =
+        query clientId (fun s -> s.items |> Seq.ofList)
+    member __.TryGet(clientId, id) =
+        query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
+    member __.Execute(clientId, command) : Async<unit> =
+        execute clientId command
+    member __.Create(clientId, template: Todo) : Async<Todo> = async {
+        let! updated = handle clientId (Command.Add template)
+        return List.head updated }
+    member __.Patch(clientId, item: Todo) : Async<Todo> = async {
+        let! updated = handle clientId (Command.Update item)
+        return List.find (fun x -> x.id = item.id) updated }
 ```
 
-- `Handle` represents a command processing flow where we (idempotently) apply a command, but then also emit the state to the caller, as dictated by the needs of the call as specified in the TodoBackend spec. This uses the `Accumulator` helper type, which accumulates an `Event list`, and provides a way to compute the `state` incorporating the proposed events immediately.
-- While we could theoretically use Projections to service queries from an eventually consistent Read Model, this is not in aligment with the Read-you-writes expectation embodied in the tests (i.e. it would not pass the tests), and, more importantly, would not work correctly as a backend for the app. Because we have more than one query required, we make a generic `Query` method, even though a specific `Read` method (as in the Favorite example) might make sense to expose too
+- `handle` represents a command processing flow where we (idempotently) apply a command, but then also emit the state to the caller, as dictated by the needs of the call as specified in the TodoBackend spec. This uses the `Accumulator` helper type, which accumulates an `Event list`, and provides a way to compute the `state` incorporating the proposed events immediately.
+- While we could theoretically use Projections to service queries from an eventually consistent Read Model, this is not in aligment with the Read-you-writes expectation embodied in the tests (i.e. it would not pass the tests), and, more importantly, would not work correctly as a backend for the app. Because we have more than one query required, we make a generic `query` method, even though a specific `read` method (as in the Favorite example) might make sense to expose too
 - The main conclusion to be drawn from the Favorites and TodoBackend `Handler` implementations is that while there can be commonality in terms of the sorts of transactions one might encapsulate in this manner, there's lots of It Depends factors; for instance:
   i) the design doesnt provide complete idempotency and/or follow the CQRS style
   ii) the fact that this is a toy system with lots of artificaial constraints and/or simplifications when compared to aspects that might present in a more complete implementation.
 - While it may be hard to see the need/value of a `Handler`, specifically encapsulating the access patterns have proven worthwhile in a medium sized system.
-
-#### `Service`
-
-```fsharp
-type Service(log, resolveStream) =
-    let (|AggregateId|) (id : string) = Equinox.AggregateId("Todos", id)
-    let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
-    member __.List(Stream stream) : Async<Todo seq> =
-        stream.Query (fun s -> s.items |> Seq.ofList)
-    member __.TryGet(Stream stream, id) =
-        stream.Query (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
-    member __.Execute(Stream stream, command) : Async<unit> =
-        stream.Execute command
-    member __.Create(Stream stream, template: Todo) : Async<Todo> = async {
-        let! updated = stream.Handle(Command.Add template)
-        return List.head updated }
-    member __.Patch(Stream stream, item: Todo) : Async<Todo> = async {
-        let! updated = stream.Handle(Command.Update item)
-        return List.find (fun x -> x.id = item.id) updated }
-```
-
 - the `AggregateId` and `Stream` Active Patterns provide succinct ways to map an incoming `clientId` (which is not a `string` in the real implementation but instead an id using [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive manner.
 
 # Equinox Architectural Overview

@@ -7,7 +7,7 @@ open System
 type Service(handlerLog, resolveStream, maxSavedItems : int, ?maxAttempts) =
     do if maxSavedItems < 0 then invalidArg "maxSavedItems" "must be non-negative value."
     let (|AggregateId|) (id: ClientId) = Equinox.AggregateId("SavedForLater", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Handler(handlerLog, resolveStream id, defaultArg maxAttempts 3)
+    let (|Stream|) (AggregateId id) = Equinox.Stream(handlerLog, resolveStream id, defaultArg maxAttempts 3)
     let read (Stream stream) : Async<Events.Item[]> =
         stream.Query id
     let execute (Stream stream) command : Async<bool> =

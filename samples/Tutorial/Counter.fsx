@@ -47,16 +47,15 @@ let decide command state =
         if state = i then [] else [Cleared i]
 
 type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(log, stream, defaultArg maxAttempts 3)
-    member __.Execute command : Async<unit> =
-        inner.Transact(decide command)
-    member __.Read : Async<int> =
-        inner.Query id
+    let inner = Equinox.Stream(log, stream, defaultArg maxAttempts 3)
 
-type Service(log, resolveStream) =
+type Service(log, resolveStream, ?maxAttempts) =
     let (|AggregateId|) (id : string) = Equinox.AggregateId("Counter", id)
-    let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
-    member __.Execute(Stream stream, command) : Async<unit> =
-        stream.Execute command
-    member __.Read(Stream stream) : Async<int> =
-        stream.Read 
+    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+    let execute (Stream stream) command : Async<unit> = stream.Transact(decide command)
+    let read (Stream stream) : Async<int> = stream.Query id
+
+    member __.Execute(instanceId, command) : Async<unit> =
+        execute instanceId command
+    member __.Read instanceId : Async<int> =
+        read instanceId 

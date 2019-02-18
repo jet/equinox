@@ -5,9 +5,6 @@
 #r "bin/Debug/netstandard2.0/Equinox.dll"
 #r "bin/Debug/netstandard2.0/Equinox.MemoryStore.dll"
 
-module List =
-    let contains x = List.exists ((=) x)
-
 (*
  * EVENTS
  *)
@@ -59,15 +56,15 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
 //val _removeBAgainEffect : Event list = []
 
 (*
- * HANDLER API
+ * STREAM API
  *)
 
-(* Equinox.Handler provides low level functions against a Stream given
+(* Equinox.Stream provides low level functions against an IStream given
     a) a log to send metrics and store roundtrip info to
     b) a maximum number of attempts to make if we clash with a conflicting write *)
 
 type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 2)
+    let inner = Equinox.Stream(log, stream, maxAttempts = defaultArg maxAttempts 2)
     member __.Execute command : Async<unit> =
         inner.Transact(interpret command)
     member __.Read : Async<string list> =

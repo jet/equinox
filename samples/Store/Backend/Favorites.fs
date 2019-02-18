@@ -6,7 +6,7 @@ open System
 
 type Service(log, resolveStream, ?maxAttempts) =
     let (|AggregateId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Handler(log, resolveStream id, defaultArg maxAttempts 2)
+    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 2)
     let execute (Stream stream) command : Async<unit> =
         stream.Transact(Commands.interpret command)
     let read (Stream stream) : Async<Events.Favorited []> =
