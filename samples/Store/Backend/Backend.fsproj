@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="InventoryItem.fs" />
     <Compile Include="Cart.fs" />
     <Compile Include="ContactPreferences.fs" />
     <Compile Include="Favorites.fs" />

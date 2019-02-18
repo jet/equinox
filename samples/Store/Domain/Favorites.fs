@@ -53,10 +53,3 @@ module Commands =
         | Unfavorite skuId ->
             if doesntHave skuId then [] else
             [ Events.Unfavorited { skuId = skuId } ]
-
-type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 2)
-    member __.Execute command : Async<unit> =
-        inner.Transact(Commands.interpret command)
-    member __.Read : Async<Events.Favorited []> =
-        inner.Query id

@@ -75,18 +75,4 @@ module Commands =
                 match waived with
                 | Some waived when itemExistsWithDifferentWaiveStatus skuId waived ->
                      yield Events.ItemWaiveReturnsChanged { context = c; skuId = skuId; waived = waived }
-                | _ -> () ]
-
-type Handler(log, stream) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = 3)
-    member __.FlowAsync(flow, ?prepare) =
-        inner.TransactAsync(fun state -> async {
-            match prepare with None -> () | Some prep -> do! prep
-            let ctx = Equinox.Accumulator(Folds.fold,state)
-            let execute = Commands.interpret >> ctx.Execute
-            let res = flow ctx execute
-            return res,ctx.Accumulated })
-    member __.Execute command =
-        __.FlowAsync(fun _ctx execute -> execute command)
-    member __.Read : Async<Folds.State> =
-        inner.Query id
+                | _ -> () ] 

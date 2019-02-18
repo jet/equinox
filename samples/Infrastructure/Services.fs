@@ -36,7 +36,7 @@ type ServiceBuilder(storageConfig, handlerLog) =
         let codec = genCodec<Domain.SavedForLater.Events.Event>()
         let fold, initial = Domain.SavedForLater.Folds.fold, Domain.SavedForLater.Folds.initial
         let snapshot = Domain.SavedForLater.Folds.isOrigin,Domain.SavedForLater.Folds.compact
-        Backend.SavedForLater.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot), maxSavedItems=50, maxAttempts=3)
+        Backend.SavedForLater.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot), maxSavedItems=50)
 
      member __.CreateTodosService() =
         let codec = genCodec<TodoBackend.Events.Event>()

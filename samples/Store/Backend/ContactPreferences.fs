@@ -1,11 +1,16 @@
 ﻿module Backend.ContactPreferences
 
-type Service(log, resolveStream) =
-    let (|AggregateId|) (email: string) = Equinox.AggregateId ("ContactPreferences", email) // TODO hash >> base64
-    let (|Stream|) (AggregateId id) = Domain.ContactPreferences.Handler(log, resolveStream id)
+open Domain.ContactPreferences
 
-    member __.Update (Stream stream as email) value =
-        stream.Update email value
+type Service(log, resolveStream, ?maxAttempts) =
+    let (|AggregateId|) (email: string) = Equinox.AggregateId ("ContactPreferences", email) // TODO hash >> base64
+    let (|Stream|) (AggregateId id) = Equinox.Handler(log, resolveStream id, defaultArg maxAttempts 3)
+    let update (Stream stream as email) value : Async<unit> =
+        let command = Update { email = email; preferences = value }
+        stream.Transact(Commands.interpret command)
+
+    member __.Update email value =
+        update email value
 
     member __.Read(Stream stream) =
-        stream.Read
+        stream.Query id

@@ -41,37 +41,33 @@ module Commands =
         | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted id] else []
         | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
-type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 2)
-    member __.Execute command : Async<unit> =
-        inner.Transact(Commands.interpret command)
-    member __.Handle command : Async<Todo list> =
-        inner.Transact(fun state ->
-            let ctx = Equinox.Accumulator(Folds.fold, state)
-            ctx.Execute (Commands.interpret command)
-            ctx.State.items,ctx.Accumulated)
-    member __.Query(projection : Folds.State -> 't) : Async<'t> =
-        inner.Query projection
-
-type Service(handlerLog, resolve) =
+type Service(log, resolveStream, ?maxAttempts) =
     // The TodoBackend spec does not dictate having multiple lists, tentants or clients
     // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
     let (|AggregateId|) (id : ClientId) = Equinox.AggregateId("Todos", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Handler(handlerLog, resolve id)
+    let (|Stream|) (AggregateId id) = Equinox.Handler(log, resolveStream id, maxAttempts = defaultArg maxAttempts 2)
 
-    member __.List(Stream stream) : Async<Todo seq> =
-        stream.Query (fun s -> s.items |> Seq.ofList)
+    let execute (Stream stream) command = stream.Transact(Commands.interpret command)
+    let query (Stream stream) projection = stream.Query projection
+    let handle (Stream stream) command =
+        stream.Transact(fun state ->
+            let ctx = Equinox.Accumulator(Folds.fold, state)
+            ctx.Execute (Commands.interpret command)
+            ctx.State.items,ctx.Accumulated)
 
-    member __.TryGet(Stream stream, id) =
-        stream.Query (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
+    member __.List(clientId) : Async<Todo seq> =
+        query clientId (fun s -> s.items |> Seq.ofList)
 
-    member __.Execute(Stream stream, command) : Async<unit> =
-        stream.Execute command
+    member __.TryGet(clientId, id) =
+        query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
 
-    member __.Create(Stream stream, template: Todo) : Async<Todo> = async {
-        let! state' = stream.Handle(Command.Add template)
+    member __.Execute(clientId, command) : Async<unit> =
+        execute clientId command
+
+    member __.Create(clientId, template: Todo) : Async<Todo> = async {
+        let! state' = handle clientId (Command.Add template)
         return List.head state' }
 
-    member __.Patch(Stream stream, item: Todo) : Async<Todo> = async {
-        let! state' = stream.Handle(Command.Update item)
+    member __.Patch(clientId, item: Todo) : Async<Todo> = async {
+        let! state' = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }

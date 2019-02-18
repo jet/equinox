@@ -1,16 +1,29 @@
 ﻿module Backend.Cart
 
 open Domain
+open Domain.Cart
 
 type Service(log, resolveStream) =
     let (|AggregateId|) (id: CartId) = Equinox.AggregateId ("Cart", CartId.toStringN id)
-    let (|Stream|) (AggregateId id) = Cart.Handler(log, resolveStream id)
+    let (|Stream|) (AggregateId id) = Equinox.Handler(log, resolveStream id, maxAttempts = 3)
+        
+    let flowAsync (Stream stream) (flow, prepare) =
+        stream.TransactAsync(fun state -> async {
+            match prepare with None -> () | Some prep -> do! prep
+            let ctx = Equinox.Accumulator(Folds.fold,state)
+            let execute = Commands.interpret >> ctx.Execute
+            let res = flow ctx execute
+            return res,ctx.Accumulated })
+    let read (Stream stream) : Async<Folds.State> =
+        stream.Query id
+    let execute clientId command =
+        flowAsync clientId ((fun _ctx execute -> execute command), None)
 
-    member __.FlowAsync (Stream stream, flow, ?prepare) =
-        stream.FlowAsync(flow, ?prepare = prepare)
+    member __.FlowAsync(clientId, flow, ?prepare) =
+        flowAsync clientId (flow, prepare)
 
-    member __.Execute (Stream stream) command =
-        stream.Execute command
+    member __.Execute(clientId, command) =
+        execute clientId command
 
-    member __.Read (Stream stream) =
-        stream.Read
+    member __.Read clientId =
+        read clientId

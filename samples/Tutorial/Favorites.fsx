@@ -63,9 +63,8 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
  *)
 
 (* Equinox.Handler provides low level functions against a Stream given
-    a) the fold function so it can maintain the state as we did above
-    b) a log to send metrics and store roundtrip info to
-    c) a maximum number of attempts to make if we clash with a conflicting write *)
+    a) a log to send metrics and store roundtrip info to
+    b) a maximum number of attempts to make if we clash with a conflicting write *)
 
 type Handler(log, stream, ?maxAttempts) =
     let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 2)
