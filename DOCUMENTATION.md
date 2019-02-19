@@ -231,9 +231,9 @@ while these are not omnipresent, for the purposes of this discussion we’ll tre
 
 Equinox’s Command Handling consists of < 250 lines including interfaces and comments in https://github.com/jet/equinox/tree/master/src/Equinox - the elements you'll touch are in a normal application are:
 
+- [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs#L36) - internal implementation of Optimistic Concurrency Control / retry loop used by `Stream`. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
+- [`type Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L11) - surface API one uses to `Transact` or `Query` against a specific stream
 - [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L39) - used to identify the Stream pertaining to the relevant Aggregate that `resolveStream` will use to hydrate a `Stream`
-- [`type Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Handler.fs#L11) - surface API one uses to `Transact` or `Query` against a specific stream
-- [`module Flow`](https://github.com/jet/equinox/blob/12e36643685ff4f1fb2d19a4b56b88065280eb2c/src/Equinox/Flow.fs#L31) - internal implementation of Optimistic Concurrency Control / retry loop used by `Stream`. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
 - _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in some flavors of Handler__
 
 Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the few hundred lines can tell many of the thousands of words about to follow!
