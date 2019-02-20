@@ -15,7 +15,7 @@ let decide cmd state: bool * Events.Event list =
     Commands.decide Int32.MaxValue cmd state
 let interpret cmd state: Events.Event list =
     decide cmd state |> snd
-let run (commands : Commands.Command list) : State * Events.Event list =
+let run (commands : Command list) : State * Events.Event list =
     let folder (s,eAcc) c =
         let events = interpret c s
         fold s events, eAcc @ events
@@ -31,14 +31,14 @@ let genSku () = % Guid.NewGuid() |> SkuId.parse
 [<Fact>]
 let ``Adding one item to mysaves should appear in aggregate`` () =
     let sku = genSku()
-    let state',_ = run [ Commands.Add(DateTimeOffset.Now, [|sku|]) ]
+    let state',_ = run [ Add(DateTimeOffset.Now, [|sku|]) ]
     test <@ state'.Length = 1
             && (state' |> contains sku) @>
 
 [<Fact>]
 let ``Adding two items to mysaves should appear in aggregate`` () =
     let sku1, sku2 = genSku(), genSku()
-    let state',_ = run [ Commands.Add(DateTimeOffset.Now, [|sku1; sku2|])]
+    let state',_ = run [ Add(DateTimeOffset.Now, [|sku1; sku2|])]
     test <@ state'.Length = 2
             && (state' |> contains sku1)
             && (state' |> contains sku2) @>
@@ -47,7 +47,7 @@ let ``Adding two items to mysaves should appear in aggregate`` () =
 let ``Added items should record date of addition`` () =
     let sku1, sku2 = genSku(), genSku()
     let date = DateTimeOffset.Now
-    let state',_ = run [ Commands.Add(date, [|sku1; sku2|])]
+    let state',_ = run [ Add(date, [|sku1; sku2|])]
     test <@ state'.Length = 2
             && date = (state' |> find sku1).dateSaved
             && date = (state' |> find sku2).dateSaved @>
@@ -62,13 +62,13 @@ let ``Adding the same sku many times should surface the most recent date`` (date
 
     let sku = genSku()
     let folder s d =
-        let c = Commands.Add(d,[|sku|])
+        let c = Add (d,[|sku|])
         interpret c s |> fold s
     let state' = dates |> Array.fold folder initial
     test <@ ({ skuId = sku; dateSaved = mostRecentDate } : Events.Item) = Array.exactlyOne state' @>
 
 [<DomainProperty>]
-let ``Commands that push saves above the limit should fail to process`` (state : State) (command : Commands.Command) =
+let ``Commands that push saves above the limit should fail to process`` (state : State) (command : Command) =
     let maxItems = state.Length
     let result = Commands.decide maxItems command state
     test <@ match result with
@@ -76,7 +76,7 @@ let ``Commands that push saves above the limit should fail to process`` (state :
             | false, _ -> true @>
 
 [<DomainProperty>]
-let ``Event aggregation should carry set semantics`` (commands : Commands.Command list) =
+let ``Event aggregation should carry set semantics`` (commands : Command list) =
     // fold over events using regular set semantics and compare outcomes
     let evolveSet (state : HashSet<SkuId>) (event : Events.Event) =
         match event with
@@ -103,7 +103,7 @@ let ``State should produce a stable output for skus with the same saved date`` (
         skus |> Array.sortBy (fun _ -> rnd.Next())
 
     let getSimplifiedState skus =
-        let state',_ = run [ Commands.Add(now, skus)]
+        let state',_ = run [ Add(now, skus)]
         [| for item in state' -> item.skuId |]
 
     let skusState = getSimplifiedState skus
@@ -116,12 +116,12 @@ module Specification =
     let mkMerged items = [ Events.Merged { items = items } ]
 
     /// Processing should allow for any given Command to be retried at will, without avoidable side-effects
-    let verifyIdempotency (command: Commands.Command) state =
+    let verifyIdempotency (command: Command) state =
         // Establish a state where the command should not trigger an event
         let eventsToEstablish: Events.Event list = command |> function
-            | Commands.Add (d,skus) ->      mkAppendDated d skus
-            | Commands.Merge items ->       mkMerged items
-            | Commands.Remove _ ->          []
+            | Add (d,skus) ->      mkAppendDated d skus
+            | Merge items ->       mkMerged items
+            | Remove _ ->          []
         let state = fold state eventsToEstablish
         let events = interpret command state
         // Assert we decided nothing needs to happen
@@ -136,25 +136,25 @@ module Specification =
     let verify variant command originState =
         let initialEvents: Events.Event list =
             match command, variant with
-            | Commands.Remove skus, Choice1Of2 randomSkus ->            mkAppend <| Array.append skus randomSkus
-            | Commands.Remove (TakeHalf skus), Choice2Of2 randomSkus -> mkAppend <| Array.append skus randomSkus
-            | Commands.Add (d,_skus), Choice1Of2 randomSkus ->          mkAppendDated d randomSkus
-            | Commands.Add (d,TakeHalf skus), Choice2Of2 moreSkus ->    mkAppendDated d skus @ mkAppendDated (let n = DateTimeOffset.Now in n.AddDays -1.) moreSkus
-            | Commands.Merge items, Choice1Of2 randomSkus ->            mkAppend randomSkus @ mkMerged items
-            | Commands.Merge (TakeHalf items), Choice2Of2 randomSkus -> mkAppend randomSkus @ mkMerged items
+            | Remove skus, Choice1Of2 randomSkus ->            mkAppend <| Array.append skus randomSkus
+            | Remove (TakeHalf skus), Choice2Of2 randomSkus -> mkAppend <| Array.append skus randomSkus
+            | Add (d,_skus), Choice1Of2 randomSkus ->          mkAppendDated d randomSkus
+            | Add (d,TakeHalf skus), Choice2Of2 moreSkus ->    mkAppendDated d skus @ mkAppendDated (let n = DateTimeOffset.Now in n.AddDays -1.) moreSkus
+            | Merge items, Choice1Of2 randomSkus ->            mkAppend randomSkus @ mkMerged items
+            | Merge (TakeHalf items), Choice2Of2 randomSkus -> mkAppend randomSkus @ mkMerged items
         let state = fold originState initialEvents
         let events = interpret command state
         let state' = fold state events
         match command, events with
         // Remove command that resulted in no action
-        | Commands.Remove requested,    [] ->
+        | Remove requested,    [] ->
             let original, remaining = state |> asSkus |> set, state' |> asSkus |> set
             // Verify there definitely wasn't anything to do
             test <@ requested |> Seq.forall (not << original.Contains) @>
             // Verify there still isn't anything to do
             test <@ requested |> Seq.forall (not << remaining.Contains) @>
         // A removal event should be optimal, with no redundant skus
-        | Commands.Remove requested,    [ Events.Removed { skus = removed } ] ->
+        | Remove requested,    [ Events.Removed { skus = removed } ] ->
             let original, remaining = state |> asSkus |> set, state' |> asSkus
             let requested, removed = set requested, set removed
             // Verify the request maps to the event correctly
@@ -163,7 +163,7 @@ module Specification =
             // Verify there's nothing let to do
             test <@ remaining |> Seq.forall (not << requested.Contains) @>
         // Any append event should reflect only variances from the current content
-        | Commands.Add (date,skus),  events ->
+        | Add (date,skus),  events ->
             let original, updated = state |> asSkus, state' |> asSkuToState
             // Verify the request maps to the event (or absence thereof) correctly
             match events with
@@ -177,7 +177,7 @@ module Specification =
             test <@ original |> Seq.forall updated.ContainsKey
                     && skus |> Seq.forall (updatedIsSameOrNewerThan date) @>
         // Any merge event should onl reflect variances from current contet
-        | Commands.Merge donorState,    events ->
+        | Merge donorState,    events ->
             let original, updated = state |> asSkuToState, state' |> asSkuToState
             // Verify the request maps to the event (or absence thereof) correctly
             match events with
@@ -198,6 +198,6 @@ module Specification =
         | c,e -> failwithf "Invalid result - Command %A yielded Events %A in State %A" c e state
 
     [<DomainProperty>]
-    let ``Command -> Event -> State flows`` variant (cmd: Commands.Command) (state : State) =
+    let ``Command -> Event -> State flows`` variant (cmd: Command) (state : State) =
         //verifyIdempotency cmd state
         verify variant cmd state

@@ -1,17 +1,16 @@
 ﻿namespace Equinox
 
-type OAttribute = System.Runtime.InteropServices.OptionalAttribute
-type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
+open System.Runtime.InteropServices
 
-// Exception yielded by Handler.Transact* after `count` attempts have yielded conflicts at the point of syncing with the Store
+// Exception yielded by Stream.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
 type MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Concurrency violation; aborting after %i attempts." count)
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
-type Handler<'event, 'state>
+type Stream<'event, 'state>
     (   log, stream : Store.IStream<'event, 'state>, maxAttempts : int,
-        [<O;D(null)>]?mkAttemptsExhaustedException,
-        [<O;D(null)>]?resyncPolicy) =
+        [<Optional; DefaultParameterValue(null)>]?mkAttemptsExhaustedException,
+        [<Optional; DefaultParameterValue(null)>]?resyncPolicy) =
     let transact f =
         let resyncPolicy = defaultArg resyncPolicy (fun _log _attemptNumber f -> async { return! f })
         let throwMaxResyncsExhaustedException attempts = MaxResyncsExhaustedException attempts
@@ -30,7 +29,8 @@ type Handler<'event, 'state>
 
     /// Project from the folded `State` without executing a decision flow as `Decide` does
     member __.Query(projection : 'state -> 'view) : Async<'view> = Flow.query(stream, log, fun syncState -> projection syncState.State)
-    /// Low Level helper to allow one to obtain a reference to a stream and state pair (including the position) in order to pass it as a continuation within the application
+
+    /// Low-level helper to allow one to obtain a reference to a stream and state pair (including the position) in order to pass it as a continuation within the application
     /// Such a memento is then held within the application and passed in lieue of a StreamId to the StreamResolver in order to avoid having to reload state
     member __.CreateMemento(): Async<Store.StreamToken * 'state> = Flow.query(stream, log, fun syncState -> syncState.Memento)
 

@@ -56,7 +56,7 @@ let defaultBatchSize = 500
 type StorageConfig =
     | Memory of Equinox.MemoryStore.VolatileStore
     | Es of Equinox.EventStore.GesGateway * Equinox.EventStore.CachingStrategy option * unfolds: bool
-    | Cosmos of Equinox.Cosmos.EqxGateway * Equinox.Cosmos.CachingStrategy option * unfolds: bool * databaseId: string * collectionId: string
+    | Cosmos of Equinox.Cosmos.CosmosGateway * Equinox.Cosmos.CachingStrategy option * unfolds: bool * databaseId: string * collectionId: string
 
 module MemoryStore =
     let config () =
@@ -83,9 +83,8 @@ module EventStore =
             sargs.GetResult(EsArguments.Retries,1)
         let heartbeatTimeout = sargs.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
         let concurrentOperationsLimit = sargs.GetResult(ConcurrentOperationsLimit,5000)
-        log.Information("Using EventStore targeting {host} with heartbeat: {heartbeat}s, max concurrent requests: {concurrency}. " +
-            "Operation timeout: {timeout}s with {retries} retries",
-            host, heartbeatTimeout.TotalSeconds, concurrentOperationsLimit, timeout.TotalSeconds, retries)
+        log.Information("EventStore {host} heartbeat: {heartbeat}s timeout: {timeout}s concurrent reqs: {concurrency} retries {retries}",
+            host, heartbeatTimeout.TotalSeconds, timeout.TotalSeconds, concurrentOperationsLimit, retries)
         let conn = connect storeLog (host, heartbeatTimeout, concurrentOperationsLimit) creds operationThrottling |> Async.RunSynchronously
         let cacheStrategy =
             if cache then
@@ -101,7 +100,7 @@ module EventStore =
 module Cosmos =
     open Equinox.Cosmos
 
-    let private createGateway connection (maxItems,maxEvents) = EqxGateway(connection, EqxBatchingPolicy(defaultMaxItems=maxItems, maxEventsPerSlice=maxEvents))
+    let private createGateway connection (maxItems,maxEvents) = CosmosGateway(connection, CosmosBatchingPolicy(defaultMaxItems=maxItems, maxEventsPerSlice=maxEvents))
     let private ctx (log: ILogger, storeLog: ILogger) (sargs : ParseResults<CosmosArguments>) =
         let read key = Environment.GetEnvironmentVariable key |> Option.ofObj
         let (Discovery.UriAndKey (endpointUri,_)) as discovery =
@@ -113,9 +112,9 @@ module Cosmos =
         let mode = sargs.GetResult(ConnectionMode,ConnectionMode.DirectTcp)
         let retries = sargs.GetResult(Retries, 1)
         let maxRetryWaitTime = sargs.GetResult(RetriesWaitTime, 5)
-        log.Information("Using CosmosDb {mode} {connection} Database {database} Collection: {collection}. ", mode, endpointUri, dbName, collName)
+        log.Information("CosmosDb {mode} {connection} Database {database} Collection {collection}", mode, endpointUri, dbName, collName)
         log.Information("CosmosDb timeout: {timeout}s, {retries} retries; Throttling maxRetryWaitTime {maxRetryWaitTime}", timeout.TotalSeconds, retries, maxRetryWaitTime)
-        let c = EqxConnector(log=storeLog, mode=mode, requestTimeout=timeout, maxRetryAttemptsOnThrottledRequests=retries, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
+        let c = CosmosConnector(log=storeLog, mode=mode, requestTimeout=timeout, maxRetryAttemptsOnThrottledRequests=retries, maxRetryWaitTimeInSeconds=maxRetryWaitTime)
         discovery, dbName, collName, c
     let connectionPolicy (log, storeLog) (sargs : ParseResults<CosmosArguments>) =
         let (Discovery.UriAndKey (endpointUri, masterKey)), dbName, collName, connector = ctx (log, storeLog) sargs

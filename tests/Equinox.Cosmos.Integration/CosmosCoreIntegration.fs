@@ -30,7 +30,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit conn defaultBatchSize =
-        EqxContext(conn,collections,log,?defaultMaxItems=defaultBatchSize,maxEventsPerSlice=10)
+        CosmosContext(conn,collections,log,?defaultMaxItems=defaultBatchSize,maxEventsPerSlice=10)
     let mkContext conn = mkContextWithItemLimit conn None
 
     let verifyRequestChargesMax rus =

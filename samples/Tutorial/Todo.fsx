@@ -39,33 +39,29 @@ let interpret c (state : State) =
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted id] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
-type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 3)
-
-    member __.Execute command : Async<unit> =
-        inner.Transact(interpret command)
-    member __.Handle command : Async<Todo list> =
-        inner.Transact(fun state ->
+type Service(log, resolveStream, ?maxAttempts) =
+    let (|AggregateId|) (id : string) = Equinox.AggregateId("Todos", id)
+    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+    let execute (Stream stream) command : Async<unit> =
+        stream.Transact(interpret command)
+    let handle (Stream stream) command : Async<Todo list> =
+        stream.Transact(fun state ->
             let ctx = Equinox.Accumulator(fold, state)
             ctx.Execute (interpret command)
             ctx.State.items,ctx.Accumulated)
-    member __.Query(projection : State -> 't) : Async<'t> =
-        inner.Query projection
-
-type Service(log, resolveStream) =
-    let (|AggregateId|) (id : string) = Equinox.AggregateId("Todos", id)
-    let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
-    member __.List(Stream stream) : Async<Todo seq> =
-        stream.Query (fun s -> s.items |> Seq.ofList)
-    member __.TryGet(Stream stream, id) =
-        stream.Query (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
-    member __.Execute(Stream stream, command) : Async<unit> =
-        stream.Execute command
-    member __.Create(Stream stream, template: Todo) : Async<Todo> = async {
-        let! state' = stream.Handle(Command.Add template)
+    let query (Stream stream) (projection : State -> 't) : Async<'t> =
+        stream.Query projection
+    member __.List clientId : Async<Todo seq> =
+        query clientId (fun s -> s.items |> Seq.ofList)
+    member __.TryGet(clientId, id) =
+        query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
+    member __.Execute(clientId, command) : Async<unit> =
+        execute clientId command
+    member __.Create(clientId, template: Todo) : Async<Todo> = async {
+        let! state' = handle clientId (Command.Add template)
         return List.head state' }
-    member __.Patch(Stream stream, item: Todo) : Async<Todo> = async {
-        let! state' = stream.Handle(Command.Update item)
+    member __.Patch(clientId, item: Todo) : Async<Todo> = async {
+        let! state' = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }
 
 (*
@@ -88,12 +84,12 @@ fold oneItem [Cleared]
 //                  nextId = 1;}
 
 open Serilog
-let log = LoggerConfiguration().WriteTo.Console(Serilog.Events.LogEventLevel.Debug).CreateLogger()
+let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
 
-let resolveStream = Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve
+let resolveStream = Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve
 
 let service = Service(log, resolveStream)
 

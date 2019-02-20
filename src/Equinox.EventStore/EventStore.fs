@@ -479,9 +479,9 @@ type GesResolver<'event,'state>(gateway : GesGateway, codec, fold, initial, [<O;
         | Target.DeprecatedRawName streamName ->
             resolve streamName
 
-    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Handler.CreateMemento]
+    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack token as streamToken, state) =
-            Stream.ofMemento (streamToken,state) <| resolve token.stream.name
+        Stream.ofMemento (streamToken,state) <| resolve token.stream.name
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with

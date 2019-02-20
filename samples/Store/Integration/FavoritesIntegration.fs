@@ -14,16 +14,16 @@ let snapshot = Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.compact
 
 let createMemoryStore () =
     new VolatileStore()
-let createServiceMem log store =
-    Backend.Favorites.Service(log, MemResolver(store, fold, initial).Resolve)
+let createServiceMemory log store =
+    Backend.Favorites.Service(log, MemoryResolver(store, fold, initial).Resolve)
 
 let codec = genCodec<Domain.Favorites.Events.Event>()
 let createServiceGes gateway log =
     let resolveStream = GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
-let createServiceEqx gateway log =
-    let resolveStream = EqxResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
+let createServiceCosmos gateway log =
+    let resolveStream = CosmosResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =
@@ -43,7 +43,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
-        let service = let log = createLog () in createServiceMem log store
+        let service = let log = createLog () in createServiceMemory log store
         do! act service args
     }
 
@@ -60,7 +60,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Cosmos, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createEqxStore conn defaultBatchSize
-        let service = createServiceEqx gateway log
+        let gateway = createCosmosStore conn defaultBatchSize
+        let service = createServiceCosmos gateway log
         do! act service args
     }

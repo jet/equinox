@@ -4,18 +4,22 @@ open Domain
 open Domain.Favorites
 open System
 
-type Service(log, resolveStream) =
+type Service(log, resolveStream, ?maxAttempts) =
     let (|AggregateId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
+    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 2)
+    let execute (Stream stream) command : Async<unit> =
+        stream.Transact(Commands.interpret command)
+    let read (Stream stream) : Async<Events.Favorited []> =
+        stream.Query id
 
-    member __.Execute(Stream stream, command) =
-        stream.Execute command
+    member __.Execute(clientId, command) =
+        execute clientId command
 
-    member __.Favorite(Stream stream, skus) =
-        stream.Execute(Command.Favorite(DateTimeOffset.Now, skus))
+    member __.Favorite(clientId, skus) =
+        execute clientId (Command.Favorite(DateTimeOffset.Now, skus))
 
-    member __.Unfavorite(Stream stream, skus) =
-        stream.Execute(Command.Unfavorite skus)
+    member __.Unfavorite(clientId, skus) =
+        execute clientId (Command.Unfavorite skus)
 
-    member __.List(Stream stream): Async<Events.Favorited []> =
-        stream.Read
+    member __.List clientId : Async<Events.Favorited []> =
+        read clientId 

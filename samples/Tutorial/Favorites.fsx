@@ -5,9 +5,6 @@
 #r "bin/Debug/netstandard2.0/Equinox.dll"
 #r "bin/Debug/netstandard2.0/Equinox.MemoryStore.dll"
 
-module List =
-    let contains x = List.exists ((=) x)
-
 (*
  * EVENTS
  *)
@@ -59,27 +56,27 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
 //val _removeBAgainEffect : Event list = []
 
 (*
- * HANDLER API
+ * STREAM API
  *)
 
-(* Equinox.Handler provides low level functions against a Stream given
-    a) the fold function so it can maintain the state as we did above
-    b) a log to send metrics and store roundtrip info to
-    c) a maximum number of attempts to make if we clash with a conflicting write *)
+(* Equinox.Stream provides low level functions against an IStream given
+    a) a log to send metrics and store roundtrip info to
+    b) a maximum number of attempts to make if we clash with a conflicting write *)
 
+// Example of wrapping Stream to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
 type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 2)
+    let inner = Equinox.Stream(log, stream, maxAttempts = defaultArg maxAttempts 2)
     member __.Execute command : Async<unit> =
         inner.Transact(interpret command)
     member __.Read : Async<string list> =
         inner.Query id
 
-(* When we Execute a command, Equinox.Handler will use `fold` and `interpret` to Decide whether Events need to be written
+(* When we Execute a command, Equinox.Stream will use `fold` and `interpret` to Decide whether Events need to be written
     Normally, we'll let failures percolate via exceptions, but not return a result (i.e. we don't say "your command caused 1 event") *)
 
 // For now, write logs to the Console (in practice we'd connect it to a concrete log sink)
 open Serilog
-let log = LoggerConfiguration().WriteTo.Console(Serilog.Events.LogEventLevel.Debug).CreateLogger()
+let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
 // related streams are termed a Category; Each client will have it's own Stream.
 let categoryName = "Favorites"
@@ -90,7 +87,7 @@ let store = Equinox.MemoryStore.VolatileStore()
 
 // Each store has a Resolver which provides an IStream instance which binds to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
-let stream streamName = Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve(streamName)
+let stream streamName = Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve(streamName)
 
 // We hand the streamId to the resolver
 let clientAStream = stream clientAFavoritesStreamId
@@ -117,6 +114,7 @@ handler.Read |> Async.RunSynchronously
     No, this is not doing CQRS! *)
 
 type Service(log, resolveStream) =
+    (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
     let streamHandlerFor (clientId: string) =
         let aggregateId = Equinox.AggregateId("Favorites", clientId)
         let stream = resolveStream aggregateId
@@ -134,7 +132,7 @@ type Service(log, resolveStream) =
         let stream = streamHandlerFor clientId
         stream.Read
 
-let resolveStream = Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve
+let resolveStream = Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve
 
 let service = Service(log, resolveStream)
 

@@ -52,22 +52,4 @@ module Commands =
             [ Events.CheckedIn count ]
         | Deactivate ->
             if not state.active then invalidOp "Already deactivated"
-            [ Events.Deactivated ]
-
-type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = defaultArg maxAttempts 3)
-
-    member __.Execute command : Async<unit> =
-        inner.Transact(Commands.interpret command)
-    member __.Read : Async<Folds.State> =
-        inner.Query id
-
-type Service(log, resolveStream) =
-    let (|AggregateId|) (id : InventoryItemId) = Equinox.AggregateId ("InventoryItem", InventoryItemId.toStringN id)
-    let (|Stream|) (AggregateId id) = Handler(log, resolveStream id)
-
-    member __.Execute (Stream handler) command =
-        handler.Execute command
-
-    member __.Read(Stream handler) =
-        handler.Read
+            [ Events.Deactivated ] 

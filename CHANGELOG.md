@@ -15,14 +15,19 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 
 - `Equinox.Projection.Kafka` consumer metrics emission, see [#94](https://github.com/jet/equinox/pull/94) @michaelliao5
 - Add `samples/Tutorial` with `.fsx` files (see also related docs)
+- Overloads to reduce need to use `CosmosCollections` @jakzale
 
 ### Changed
 
 - Target `EventStore.Client 5.*` to avail of bugfixes and single client codebase. Interoperable with `4.*` servers
-- Replace stateful `Context` API as primary Handler API with `Transact`; Compatible `Accumulator` remains to facilitate porting [#97](https://github.com/jet/equinox/pull/97)
+- Replace stateful `Context` API as primary Handler API with `Transact`; Compatible `Accumulator` remains to facilitate porting [#97](https://github.com/jet/equinox/pull/97) @eiriktsarpalis
+- Replace `Handler` with `Stream`
+- Replace `Equinox.Cosmos.Eqx*` with `Cosmos*` @jakzale
+- Replace `Equinox.MemoryStore.Mem*` with `Memory*`
 
 ### Removed
-- Moved internal `Stream` helpers from `Equinox` to instead be inlined into Store impls [#97](https://github.com/jet/equinox/pull/97)
+- Moved internal `Stream` helpers from `Equinox` to instead be inlined into Store impls [#97](https://github.com/jet/equinox/pull/97) @eiriktsarpalis
+- De-emphasized `Handler` in sample aggregates @jakzale
 
 ### Fixed
 
@@ -41,7 +46,7 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 - Rename `Equinox.CatId` to `Equinox.AggregateId` (HT @lfr for prompting the change)
 - Make `Newtonsoft.Json` dependency consistently `>= 11.0.2`
 - Make `Microsoft.Azure.DocumentDB` dependency consistently `>= 2.0.0` (was temporarily 1.x on `net461` to fit in with constraints of a downstream)
-- Refactor `Equinox.Cosmos` wiring to expose `EqxConnector.ConnectionPolicy`
+- Refactor `Equinox.Cosmos` wiring to expose `CosmosConnector.ConnectionPolicy`
 - Use [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) from @alfonsogarciacaro and @eiriktsarpalis in tests/samples [#89](https://github.com/jet/equinox/pull/89) (HT @chinwobble in [#83](https://github.com/jet/equinox/pull/83) for prompting the change)
 
 ### Fixed

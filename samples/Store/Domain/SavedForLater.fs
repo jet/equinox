@@ -64,12 +64,12 @@ module Folds =
     let isOrigin = function Compacted _ -> true | _ -> false
     let compact state = Events.Compacted { items = state }
 
-module Commands =
-    type Command =
-        | Merge of merges : Events.Item []
-        | Remove of skuIds : SkuId []
-        | Add of dateSaved : DateTimeOffset * skuIds : SkuId []
+type Command =
+    | Merge of merges : Events.Item []
+    | Remove of skuIds : SkuId []
+    | Add of dateSaved : DateTimeOffset * skuIds : SkuId []
 
+module Commands =
     type private Index(state : Events.Item seq) =
         let index = Dictionary<_,_>()
         do for i in state do do index.[i.skuId] <- i
@@ -100,20 +100,4 @@ module Commands =
             let index = Index state
             let net = skus |> Array.filter (index.DoesNotAlreadyContainSameOrMoreRecent dateSaved)
             if Array.isEmpty net then true, []
-            else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
-
-type Handler(log, stream, maxSavedItems, maxAttempts) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = maxAttempts)
-
-    member __.Remove (resolve : ((SkuId->bool) -> Async<Commands.Command>)) : Async<unit> =
-        inner.TransactAsync(fun (state : Folds.State) -> async {
-            let contents = seq { for item in state -> item.skuId } |> set
-            let! cmd = resolve contents.Contains
-            let _, events = Commands.decide maxSavedItems cmd state
-            return (),events } )
-
-    member __.Execute command : Async<bool> =
-        inner.Transact(Commands.decide maxSavedItems command)
-
-    member __.Read : Async<Events.Item[]> =
-        inner.Query id
+            else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ] 

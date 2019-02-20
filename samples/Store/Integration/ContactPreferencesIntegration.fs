@@ -13,8 +13,8 @@ let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferen
 
 let createMemoryStore () =
     new VolatileStore()
-let createServiceMem log store =
-    Backend.ContactPreferences.Service(log, MemResolver(store, fold, initial).Resolve)
+let createServiceMemory log store =
+    Backend.ContactPreferences.Service(log, MemoryResolver(store, fold, initial).Resolve)
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
@@ -22,10 +22,10 @@ let resolveStreamGesWithOptimizedStorageSemantics gateway =
 let resolveStreamGesWithoutAccessStrategy gateway =
     GesResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
-let resolveStreamEqxWithKnownEventTypeSemantics gateway =
-    EqxResolver(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Resolve
-let resolveStreamEqxWithoutCustomAccessStrategy gateway =
-    EqxResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
+let resolveStreamCosmosWithKnownEventTypeSemantics gateway =
+    CosmosResolver(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Resolve
+let resolveStreamCosmosWithoutCustomAccessStrategy gateway =
+    CosmosResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -40,7 +40,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let service = let log, store = createLog (), createMemoryStore () in createServiceMem log store
+        let service = let log, store = createLog (), createMemoryStore () in createServiceMemory log store
         do! act service args
     }
 
@@ -64,12 +64,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveStreamEqxWithoutCustomAccessStrategy
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosStore resolveStreamCosmosWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createEqxStore resolveStreamEqxWithKnownEventTypeSemantics
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosStore resolveStreamCosmosWithKnownEventTypeSemantics
         do! act service args
     }

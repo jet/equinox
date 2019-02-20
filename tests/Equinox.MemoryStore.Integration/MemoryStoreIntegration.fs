@@ -6,8 +6,8 @@ open Equinox.MemoryStore
 let createMemoryStore () =
     new VolatileStore()
 
-let createServiceMem log store =
-    Backend.Cart.Service(log, MemResolver(store, Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Resolve)
+let createServiceMemory log store =
+    Backend.Cart.Service(log, MemoryResolver(store, Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Resolve)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -19,7 +19,7 @@ type Tests(testOutputHelper) =
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
-        let service = let log = createLog () in createServiceMem log store
+        let service = let log = createLog () in createServiceMemory log store
         let flow (ctx: Equinox.Accumulator<_,_>) execute =
             Domain.Cart.AddItem args |> execute
             ctx.State

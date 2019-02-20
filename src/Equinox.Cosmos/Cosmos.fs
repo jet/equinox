@@ -659,14 +659,14 @@ open System
 open System.Collections.Concurrent
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type EqxConnection(client: Microsoft.Azure.Documents.Client.DocumentClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type CosmosConnection(client: Microsoft.Azure.Documents.Client.DocumentClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.Client = client
     member __.TipRetryPolicy = readRetryPolicy
     member __.QueryRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
 
 /// Defines the policies in force regarding how to a) split up calls b) limit the number of events per slice
-type EqxBatchingPolicy
+type CosmosBatchingPolicy
     (   // Max items to request in query response. Defaults to 10.
         [<O; D(null)>]?defaultMaxItems : int,
         // Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default to using `defaultMaxItems`
@@ -683,7 +683,7 @@ type EqxBatchingPolicy
     /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events
     member __.MaxEventsPerSlice = defaultArg maxEventsPerSlice 10
 
-type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
+type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
     let (|FromUnfold|_|) (tryDecode: #IEvent -> 'event option) (isOrigin: 'event -> bool) (xs:#IEvent[]) : Option<'event[]> =
         match Array.tryFindIndexBack (tryDecode >> Option.exists isOrigin) xs with
         | None -> None
@@ -695,7 +695,7 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
     member __.Read log stream direction startPos (tryDecode,isOrigin) : Async<Store.StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos (tryDecode,isOrigin)
         return Token.create stream pos, events }
-    member __.ReadLazy (batching: EqxBatchingPolicy) log stream direction startPos (tryDecode,isOrigin) : AsyncSeq<'event[]> =
+    member __.ReadLazy (batching: CosmosBatchingPolicy) log stream direction startPos (tryDecode,isOrigin) : AsyncSeq<'event[]> =
         Query.walkLazy log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos (tryDecode,isOrigin)
     member __.LoadFromUnfoldsOrRollingSnapshots log (stream,maybePos) (tryDecode,isOrigin): Async<Store.StreamToken * 'event[]> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy conn.Client stream maybePos
@@ -727,7 +727,7 @@ type EqxGateway(conn : EqxConnection, batching : EqxBatchingPolicy) =
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
-type private Category<'event, 'state>(gateway : EqxGateway, codec : UnionCodec.IUnionEncoder<'event, byte[]>) =
+type private Category<'event, 'state>(gateway : CosmosGateway, codec : UnionCodec.IUnionEncoder<'event, byte[]>) =
     let tryDecode (x: #IEvent) = codec.TryDecode { caseName = x.EventType; payload = x.Data }
     let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: IIndexedEvent seq) : 'state = Seq.choose tryDecode events |> fold initial
     member __.Load includeUnfolds collectionStream fold initial isOrigin (log : ILogger): Async<Store.StreamToken * 'state> = async {
@@ -836,7 +836,7 @@ type private Folder<'event, 'state>
             | Store.SyncResult.Written (token',state') ->     return Store.SyncResult.Written (token',state') }
 
 /// Holds Database/Collection pair, coordinating initialization activities
-type private EqxCollection(databaseId, collectionId, ?initCollection : Uri -> Async<unit>) =
+type private CosmosCollection(databaseId, collectionId, ?initCollection : Uri -> Async<unit>) =
     let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId)
     let initGuard = initCollection |> Option.map (fun init -> AsyncCacheCell<unit>(init collectionUri))
 
@@ -844,24 +844,27 @@ type private EqxCollection(databaseId, collectionId, ?initCollection : Uri -> As
     member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type EqxCollections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
+type CosmosCollections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
     // Index of database*collection -> Initialization Context
-    let collections = ConcurrentDictionary<string*string, EqxCollection>()
+    let collections = ConcurrentDictionary<string*string, CosmosCollection>()
     new (databaseId, collectionId) =
         // TOCONSIDER - this works to support the Core.Events APIs
         let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        EqxCollections(fun categoryName streamId -> databaseId, collectionId, genStreamName categoryName streamId)
+        CosmosCollections(fun categoryName streamId -> databaseId, collectionId, genStreamName categoryName streamId)
 
     member internal __.Resolve(categoryName, id, init) : CollectionStream * (unit -> Async<unit>) option =
         let databaseId, collectionId, streamName = categoryAndIdToDatabaseCollectionAndStream categoryName id
         let init = match disableInitialization with Some true -> None | _ -> Some init
 
-        let coll = collections.GetOrAdd((databaseId,collectionId), fun (db,coll) -> EqxCollection(db, coll, ?initCollection = init))
+        let coll = collections.GetOrAdd((databaseId,collectionId), fun (db,coll) -> CosmosCollection(db, coll, ?initCollection = init))
         { collectionUri = coll.CollectionUri; name = streamName },coll.InitializationGate
 
-/// Pairs a Gateway, defining the retry policies for CosmosDb with an EqxCollections defining mappings from (category,id) to (database,collection,streamName)
-type EqxStore(gateway: EqxGateway, collections: EqxCollections, [<O; D(null)>]?resolverLog) =
-    let init = gateway.CreateSyncStoredProcIfNotExists resolverLog
+/// Pairs a Gateway, defining the retry policies for CosmosDb with a Collections map defining mappings from (category,id) to (database,collection,streamName)
+type CosmosStore(gateway: CosmosGateway, collections: CosmosCollections, [<O; D(null)>] ?log) =
+    let init = gateway.CreateSyncStoredProcIfNotExists log
+    new(gateway: CosmosGateway, databaseId: string, collectionId: string, [<O; D(null)>]?log) =
+        CosmosStore(gateway, CosmosCollections(databaseId, collectionId), ?log = log)
+
     member __.Gateway = gateway
     member __.Collections = collections
     member internal __.ResolveCollStream(categoryName, id) : CollectionStream * (unit -> Async<unit>) option =
@@ -885,7 +888,7 @@ type AccessStrategy<'event,'state> =
     /// Trust every event type as being an origin
     | AnyKnownEventType
 
-type EqxResolver<'event, 'state>(store : EqxStore, codec, fold, initial, [<O; D(null)>]?access, [<O; D(null)>]?caching) =
+type CosmosResolver<'event, 'state>(store : CosmosStore, codec, fold, initial, [<O; D(null)>]?access, [<O; D(null)>]?caching) =
     let readCacheOption =
         match caching with
         | None -> None
@@ -948,7 +951,7 @@ type ConnectionMode =
     | DirectHttps
 
 open Microsoft.Azure.Documents
-type EqxConnector
+type CosmosConnector
     (   /// Timeout to apply to individual reads/write roundtrips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
@@ -998,7 +1001,7 @@ type EqxConnector
                 match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
             let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
             let client = new Client.DocumentClient(uri, key, connPolicy, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
-            log.ForContext("Uri", uri).Information("EqxCosmos connecting to Cosmos with Connection Name {connectionName}", sanitizedName)
+            log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
             return client }
 
@@ -1008,9 +1011,9 @@ type EqxConnector
     member __.ConnectionPolicy : Client.ConnectionPolicy = connPolicy
 
     /// Yields a DocDbConnection configured per the specified strategy
-    member __.Connect(name, discovery : Discovery) : Async<EqxConnection> = async {
+    member __.Connect(name, discovery : Discovery) : Async<CosmosConnection> = async {
         let! conn = connect(name, discovery)
-        return EqxConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
+        return CosmosConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
 namespace Equinox.Cosmos.Core
 
@@ -1027,11 +1030,11 @@ type AppendResult<'t> =
     | ConflictUnknown of index: 't
 
 /// Encapsulates the core facilites Equinox.Cosmos offers for operating directly on Events in Streams.
-type EqxContext
+type CosmosContext
     (   /// Connection to CosmosDb with DocumentDb Transient Read and Write Retry policies
-        conn : EqxConnection,
+        conn : CosmosConnection,
         /// Database + Collection selector
-        collections: EqxCollections,
+        collections: CosmosCollections,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by maxEventsPerSlice).
@@ -1045,8 +1048,8 @@ type EqxContext
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
     let maxEventsPerSlice = defaultArg maxEventsPerSlice 1
-    let batching = EqxBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems, maxEventsPerSlice=maxEventsPerSlice)
-    let gateway = EqxGateway(conn, batching)
+    let batching = CosmosBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems, maxEventsPerSlice=maxEventsPerSlice)
+    let gateway = CosmosGateway(conn, batching)
 
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
@@ -1065,7 +1068,7 @@ type EqxContext
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
         let direction = defaultArg direction Direction.Forward
         let batchSize = defaultArg batchSize batching.MaxItems * maxEventsPerSlice
-        let batching = EqxBatchingPolicy(if batchSize < maxEventsPerSlice then 1 else batchSize/maxEventsPerSlice)
+        let batching = CosmosBatchingPolicy(if batchSize < maxEventsPerSlice then 1 else batchSize/maxEventsPerSlice)
         gateway.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
@@ -1097,7 +1100,7 @@ type EqxContext
         __.GetInternal((stream, position), ?maxCount=maxCount, ?direction=direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
-    /// Callers should implement appropriate idempotent handling, or use Equinox.Handler for that purpose
+    /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
     member __.Sync(stream : CollectionStream, position, events: IEvent[]) : Async<AppendResult<Position>> = async {
         // Writes go through the stored proc, which we need to provision per-collection
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
@@ -1113,7 +1116,7 @@ type EqxContext
         | InternalSyncResult.ConflictUnknown (Token.Unpack (_,pos)) -> return AppendResult.ConflictUnknown pos }
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
-    /// NB Should be used sparingly; Equinox.Handler enables building equivalent equivalent idempotent handling with minimal code.
+    /// NB Should be used sparingly; Equinox.Stream enables building equivalent equivalent idempotent handling with minimal code.
     member __.NonIdempotentAppend(stream, events: IEvent[]) : Async<Position> = async {
         let! res = __.Sync(stream, Position.fromAppendAtEnd, events)
         match res with
@@ -1126,7 +1129,7 @@ type EventData() =
     static member FromUtf8Bytes(eventType,data,?meta) : IEvent = EventData.Create(eventType, data, defaultArg meta null) :> IEvent
 
 /// Api as defined in the Equinox Specification
-/// Note the EqxContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's WipBatch
+/// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's WipBatch
 module Events =
     let private (|PositionIndex|) (x: Position) = x.index
     let private stripSyncResult (f: Async<AppendResult<Position>>): Async<AppendResult<int64>> = async {
@@ -1152,43 +1155,43 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: EqxContext) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
+    let getAll (ctx: CosmosContext) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: EqxContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
+    let get (ctx: CosmosContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: EqxContext) (streamName: string) (index: int64) (events: IEvent[]): Async<AppendResult<int64>> =
+    let append (ctx: CosmosContext) (streamName: string) (index: int64) (events: IEvent[]): Async<AppendResult<int64>> =
         ctx.Sync(ctx.CreateStream streamName, Position.fromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx: EqxContext) (streamName: string) (events: IEvent[]): Async<int64> =
+    let appendAtEnd (ctx: CosmosContext) (streamName: string) (events: IEvent[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.CreateStream streamName, events) |> stripPosition
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
+    let getAllBackwards (ctx: CosmosContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: EqxContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
+    let getBackwards (ctx: CosmosContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position
-    let getNextIndex (ctx: EqxContext) (streamName: string) : Async<int64> =
+    let getNextIndex (ctx: CosmosContext) (streamName: string) : Async<int64> =
         ctx.Sync(ctx.CreateStream streamName) |> stripPosition

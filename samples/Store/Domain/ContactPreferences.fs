@@ -28,12 +28,4 @@ module Commands =
         match command with
         | Update ({ preferences = preferences } as value) ->
             if state = preferences then [] else
-            [ Events.Updated value ]
-
-type Handler(log, stream) =
-    let inner = Equinox.Handler(log, stream, maxAttempts = 3)
-    member __.Update email value : Async<unit> =
-        let command = Update { email = email; preferences = value }
-        inner.Transact(Commands.interpret command)
-    member __.Read : Async<Folds.State> =
-        inner.Query id
+            [ Events.Updated value ] 

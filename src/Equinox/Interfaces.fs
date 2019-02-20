@@ -1,5 +1,5 @@
 ﻿/// Internal data stuctures. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implemening a Store or a decorator thereof.
-/// i.e., if you're seeking to undertand the core deliverables of the Equinox library, that's in Handler.fs, not here
+/// i.e., if you're seeking to understand the core deliverables of the Equinox library, that's in Stream.fs, not here
 namespace Equinox.Store
 
 open Serilog
