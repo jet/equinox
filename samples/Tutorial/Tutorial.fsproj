@@ -8,10 +8,14 @@
   <ItemGroup>
     <None Include="Favorites.fsx" />
     <None Include="Counter.fsx" />
+    <None Include="Cosmos.fsx" />
     <None Include="Todo.fsx" />
+    <None Include="Cosmos.fsx" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Equinox.Codec\Equinox.Codec.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>
