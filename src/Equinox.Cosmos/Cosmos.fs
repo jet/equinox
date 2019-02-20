@@ -1100,7 +1100,7 @@ type CosmosContext
         __.GetInternal((stream, position), ?maxCount=maxCount, ?direction=direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
-    /// Callers should implement appropriate idempotent handling, or use Equinox.Handler for that purpose
+    /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
     member __.Sync(stream : CollectionStream, position, events: IEvent[]) : Async<AppendResult<Position>> = async {
         // Writes go through the stored proc, which we need to provision per-collection
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
@@ -1116,7 +1116,7 @@ type CosmosContext
         | InternalSyncResult.ConflictUnknown (Token.Unpack (_,pos)) -> return AppendResult.ConflictUnknown pos }
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
-    /// NB Should be used sparingly; Equinox.Handler enables building equivalent equivalent idempotent handling with minimal code.
+    /// NB Should be used sparingly; Equinox.Stream enables building equivalent equivalent idempotent handling with minimal code.
     member __.NonIdempotentAppend(stream, events: IEvent[]) : Async<Position> = async {
         let! res = __.Sync(stream, Position.fromAppendAtEnd, events)
         match res with

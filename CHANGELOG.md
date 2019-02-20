@@ -15,14 +15,19 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 
 - `Equinox.Projection.Kafka` consumer metrics emission, see [#94](https://github.com/jet/equinox/pull/94) @michaelliao5
 - Add `samples/Tutorial` with `.fsx` files (see also related docs)
+- Overloads to reduce need to use `CosmosCollections`, 
 
 ### Changed
 
 - Target `EventStore.Client 5.*` to avail of bugfixes and single client codebase. Interoperable with `4.*` servers
 - Replace stateful `Context` API as primary Handler API with `Transact`; Compatible `Accumulator` remains to facilitate porting [#97](https://github.com/jet/equinox/pull/97)
+- Replace `Handler` with `Stream`
+- Replace `Equinox.Cosmos.Eqx*` with `Cosmos*`
+- Replace `Equinox.MemoryStore.Mem*` with `Memory*`
 
 ### Removed
 - Moved internal `Stream` helpers from `Equinox` to instead be inlined into Store impls [#97](https://github.com/jet/equinox/pull/97)
+- De-emphasized `Handler` in sample aggregates
 
 ### Fixed
 

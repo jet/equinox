@@ -105,6 +105,6 @@ type MemoryResolver<'event, 'state>(store : VolatileStore, fold, initial) =
             Store.Stream.ofMemento (Token.ofEmpty streamName initial) (resolveStream streamName)
         | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x
 
-    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Handler.CreateMemento]
+    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken,state) =
         Store.Stream.ofMemento (streamToken,state) (resolveStream stream.streamName)

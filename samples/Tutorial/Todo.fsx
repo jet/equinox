@@ -84,7 +84,7 @@ fold oneItem [Cleared]
 //                  nextId = 1;}
 
 open Serilog
-let log = LoggerConfiguration().WriteTo.Console(Serilog.Events.LogEventLevel.Debug).CreateLogger()
+let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
