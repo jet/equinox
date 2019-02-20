@@ -28,7 +28,9 @@ type Event =
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
-let evolve s = function
+let evolve s (e : Event) = 
+    printfn "%A" e
+    match e with
     | Added item -> { s with items = item :: s.items; nextId = s.nextId + 1 }
     | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
     | Deleted id -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
@@ -116,7 +118,7 @@ module TodosCategory =
 
 let service = Service(log, TodosCategory.resolve)
 
-let client = "ClientB"
+let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }
 service.Create(client, item) |> Async.RunSynchronously
 //val it : Todo = {id = 0;
@@ -144,7 +146,22 @@ service.TryGet(client, 3) |> Async.RunSynchronously
 
 let itemH = { id = 1; order = 0; title = "Feed horse"; completed = false }
 service.Patch(client, itemH) |> Async.RunSynchronously
+//[05:49:33 INF] EqxCosmos Tip 302 116ms rc=1
+//Updated {id = 1;
+//         order = 0;
+//         title = "Feed horse";
+//         completed = false;}Updated {id = 1;
+//         order = 0;
+//         title = "Feed horse";
+//         completed = false;}[05:49:33 INF] EqxCosmos Sync 1+1 534ms rc=14.1
 //val it : Todo = {id = 1;
 //                 order = 0;
 //                 title = "Feed horse";
-//                 completed = false;} 
+//                 completed = false;}
+service.Execute(client, Delete 1) |> Async.RunSynchronously 
+//[05:47:18 INF] EqxCosmos Tip 302 224ms rc=1
+//Deleted 1[05:47:19 INF] EqxCosmos Sync 1+1 230ms rc=13.91
+//val it : unit = ()
+service.List(client) |> Async.RunSynchronously
+//[05:47:22 INF] EqxCosmos Tip 302 119ms rc=1
+//val it : seq<Todo> = []
