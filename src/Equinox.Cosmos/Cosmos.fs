@@ -14,7 +14,8 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 
         /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
-        d: byte[] // required
+        [<JsonProperty(Required=Required.AllowNull)>]
+        d: byte[] // Required, but can be null so Nullary cases can work
 
         /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]

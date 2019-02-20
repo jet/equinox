@@ -30,6 +30,9 @@ type SimpleDu =
     | EventA of EventWithId
     | EventB of EventWithOption
     | EventC of EventWithUnion
+    | EventD
+    | EventE of int
+    | EventF of string
     interface IUnionContract
 
 let render = function
@@ -39,12 +42,15 @@ let render = function
     | EventC { value = I { i = i } } -> sprintf """{"value":{"case":"I","i":%d}}""" i
     | EventC { value = S { maybeI = None } } -> sprintf """{"value":{"case":"S"}}"""
     | EventC { value = S { maybeI = Some i } } -> sprintf """{"value":{"case":"S","maybeI":%d}}""" i
+    | EventD -> null
+    | EventE i -> string i
+    | EventF s ->  Newtonsoft.Json.JsonConvert.SerializeObject s
 
 let codec = genCodec<SimpleDu>()
 
 [<AutoData(MaxTest=100)>]
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =
     let serialized = codec.Encode x
-    render x =! System.Text.Encoding.UTF8.GetString(serialized.payload)
+    render x =! if serialized.payload = null then null else System.Text.Encoding.UTF8.GetString(serialized.payload)
     let deserialized = codec.TryDecode serialized |> Option.get
     deserialized =! x
