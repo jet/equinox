@@ -12,6 +12,14 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="1.1.0-preview2"></a>
+## [1.1.0-preview2] - 2019-02-20
+
+### Added
 
 - `Equinox.Projection.Kafka` consumer metrics emission, see [#94](https://github.com/jet/equinox/pull/94) @michaelliao5
 - Add `samples/Tutorial` with `.fsx` files (see also related docs)
@@ -29,8 +37,6 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 ### Removed
 - Moved internal `Stream` helpers from `Equinox` to instead be inlined into Store impls [#97](https://github.com/jet/equinox/pull/97) @eiriktsarpalis
 - De-emphasized `Handler` in sample aggregates @jakzale
-
-### Fixed
 
 <a name="1.1.0-preview1"></a>
 ## [1.1.0-preview1] - 2019-02-08
@@ -61,7 +67,8 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 
 (See release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/1.1.0-preview1...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/1.1.0-preview2...HEAD
+[1.1.0-beta1]: https://github.com/jet/equinox/compare/1.1.0-preview1...1.1.0-preview2
 [1.1.0-preview1]: https://github.com/jet/equinox/compare/1.0.4...1.1.0-preview1
 [1.0.4]: https://github.com/jet/equinox/compare/1.0.3...1.0.4
 [1.0.3]: https://github.com/jet/equinox/compare/e28991d8005a2257594ac5cf5b764b76fdca7823...1.0.3
