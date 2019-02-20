@@ -20,6 +20,7 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 ### Changed
 
 - Target `EventStore.Client 5.*` to avail of bugfixes and single client codebase. Interoperable with `4.*` servers
+- Updated to `"Microsoft.SourceLink.GitHub" Version="1.0.0-beta2-18618-05"`
 - Replace stateful `Context` API as primary Handler API with `Transact`; Compatible `Accumulator` remains to facilitate porting [#97](https://github.com/jet/equinox/pull/97) @eiriktsarpalis
 - Replace `Handler` with `Stream`
 - Replace `Equinox.Cosmos.Eqx*` with `Cosmos*` @jakzale
