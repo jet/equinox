@@ -8,8 +8,8 @@
   <ItemGroup>
     <None Include="Favorites.fsx" />
     <None Include="Counter.fsx" />
-    <None Include="Todo.fsx" />
     <None Include="Cosmos.fsx" />
+    <None Include="Todo.fsx" />
   </ItemGroup>
 
   <ItemGroup>

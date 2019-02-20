@@ -1,9 +1,18 @@
 ﻿// Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
+#r "netstandard"
 #r "bin/Debug/netstandard2.0/Serilog.dll"
 #r "bin/Debug/netstandard2.0/Serilog.Sinks.Console.dll"
+#r "bin/Debug/netstandard2.0/Newtonsoft.Json.dll"
+#r "bin/Debug/netstandard2.0/TypeShape.dll"
 #r "bin/Debug/netstandard2.0/Equinox.dll"
-#r "bin/Debug/netstandard2.0/Equinox.MemoryStore.dll"
+#r "bin/Debug/netstandard2.0/Equinox.Codec.dll"
+#r "bin/Debug/netstandard2.0/FSharp.Control.AsyncSeq.dll"
+#r "bin/Debug/netstandard2.0/Microsoft.Azure.DocumentDb.Core.dll"
+#r "bin/Debug/netstandard2.0/Equinox.Cosmos.dll"
+
+open Equinox.Cosmos
+open System
 
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
@@ -15,6 +24,7 @@ type Event =
     | Deleted   of int
     | Cleared
     | Compacted of Todo[]
+    interface TypeShape.UnionContract.IUnionContract
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
@@ -58,11 +68,13 @@ type Service(log, resolveStream, ?maxAttempts) =
     member __.Execute(clientId, command) : Async<unit> =
         execute clientId command
     member __.Create(clientId, template: Todo) : Async<Todo> = async {
-        let! state' = handle clientId (Command.Add template)
+        let! state' = handle clientId (Add template)
         return List.head state' }
     member __.Patch(clientId, item: Todo) : Async<Todo> = async {
-        let! state' = handle clientId (Command.Update item)
+        let! state' = handle clientId (Update item)
         return List.find (fun x -> x.id = item.id) state' }
+    member __.Clear clientId : Async<unit> =
+        execute clientId Clear
 
 (*
  * EXERCISE THE SERVICE
@@ -86,12 +98,23 @@ fold oneItem [Cleared]
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
-// For test purposes, we use the in-memory store
-let store = Equinox.MemoryStore.VolatileStore()
+module Store =
+    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
-let resolveStream = Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve
+    let connector = CosmosConnector(requestTimeout=TimeSpan.FromSeconds 5., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=5, log=log)
+    let conn = connector.Connect("equinox-tutorial", Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
+    let gateway = CosmosGateway(conn, CosmosBatchingPolicy())
 
-let service = Service(log, resolveStream)
+    let store = CosmosStore(gateway, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_COLLECTION")
+    let cache = Caching.Cache("equinox-tutorial", 20)
+    let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+
+module TodosCategory = 
+    let codec = Equinox.UnionCodec.JsonUtf8.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
+    let access = Equinox.Cosmos.AccessStrategy.Snapshot (isOrigin,compact)
+    let resolve = CosmosResolver(Store.store, codec, fold, initial, access=access, caching=Store.cacheStrategy).Resolve
+
+let service = Service(log, TodosCategory.resolve)
 
 let client = "ClientB"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }
