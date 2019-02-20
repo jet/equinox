@@ -705,18 +705,18 @@ let outputLog = LoggerConfiguration().WriteTo.NLog().CreateLogger()
 let gatewayLog = outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
 // When starting the app, we connect (once)
-let connector : Equinox.Cosmos.EqxConnector =
-    EqxConnector(
+let connector : Equinox.Cosmos.CosmosConnector =
+    CosmosConnector(
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnThrottledRequests = 1,
         maxRetryWaitTimeInSeconds = 3,
-        log=gatewayLog)
+        log = gatewayLog)
 let cnx = connector.Connect("Application.CommandProcessor", Discovery.FromConnectionString connectionString) |> Async.RunSynchronously
 
 // If storing in a single collection, one specifies the db and collection
 // alternately use the overload which defers the mapping until the stream one is writing to becomes clear
-let coll = EqxCollections("databaseName","collectionName")
-let eqxCtx = EqxContext(cnx, coll, gatewayLog)
+let coll = CosmosCollections("databaseName", "collectionName")
+let ctx = CosmosContext(cnx, coll, gatewayLog)
 
 //
 // Write an event
@@ -728,7 +728,7 @@ let eventData = EventData.fromT(eventType, eventJson) |> Array.singleton
 
 let! res =
     Events.append
-        eqxCtx
+        ctx
         streamName 
         expectedSequenceNumber 
         eventData

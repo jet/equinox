@@ -123,8 +123,8 @@ type Tests() =
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createEqxStore conn batchSize
-        let service = Backend.Cart.Service(log, CartIntegration.resolveEqxStreamWithProjection gateway)
+        let gateway = createCosmosStore conn batchSize
+        let service = Backend.Cart.Service(log, CartIntegration.resolveCosmosStreamWithProjection gateway)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount context cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200

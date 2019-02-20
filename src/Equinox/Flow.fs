@@ -1,4 +1,4 @@
-﻿/// Internal implementation of the Store agnostic load + run/render. See Handler.fs for App-facing APIs.
+﻿/// Internal implementation of the Store agnostic load + run/render. See Stream.fs for App-facing APIs.
 module internal Equinox.Flow
 
 open Equinox.Store

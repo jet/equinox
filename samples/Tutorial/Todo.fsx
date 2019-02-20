@@ -89,7 +89,7 @@ let log = LoggerConfiguration().WriteTo.Console(Serilog.Events.LogEventLevel.Deb
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
 
-let resolveStream = Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve
+let resolveStream = Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve
 
 let service = Service(log, resolveStream)
 

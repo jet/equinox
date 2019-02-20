@@ -86,7 +86,7 @@ let store = Equinox.MemoryStore.VolatileStore()
 
 // Each store has a Resolver which provides an IStream instance which binds to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
-let stream streamName = Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve(streamName)
+let stream streamName = Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve(streamName)
 
 // We hand the streamId to the resolver
 let clientAStream = stream clientAFavoritesStreamId
@@ -130,7 +130,7 @@ type Service(log, resolveStream) =
         let stream = streamHandlerFor clientId
         stream.Read
 
-let resolveStream = Equinox.MemoryStore.MemResolver(store, fold, initial).Resolve
+let resolveStream = Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve
 
 let service = Service(log, resolveStream)
 

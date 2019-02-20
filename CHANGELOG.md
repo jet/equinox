@@ -41,7 +41,7 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 - Rename `Equinox.CatId` to `Equinox.AggregateId` (HT @lfr for prompting the change)
 - Make `Newtonsoft.Json` dependency consistently `>= 11.0.2`
 - Make `Microsoft.Azure.DocumentDB` dependency consistently `>= 2.0.0` (was temporarily 1.x on `net461` to fit in with constraints of a downstream)
-- Refactor `Equinox.Cosmos` wiring to expose `EqxConnector.ConnectionPolicy`
+- Refactor `Equinox.Cosmos` wiring to expose `CosmosConnector.ConnectionPolicy`
 - Use [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) from @alfonsogarciacaro and @eiriktsarpalis in tests/samples [#89](https://github.com/jet/equinox/pull/89) (HT @chinwobble in [#83](https://github.com/jet/equinox/pull/83) for prompting the change)
 
 ### Fixed

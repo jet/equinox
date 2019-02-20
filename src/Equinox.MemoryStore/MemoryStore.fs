@@ -6,7 +6,7 @@ namespace Equinox.MemoryStore
 open Equinox
 open Serilog
 
-/// Equivalent to GetEventStore in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
+/// Equivalent to GetEventStore's in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
 exception private WrongVersionException of streamName: string * expected: int * value: obj
 
 /// Internal result used to reflect the outcome of syncing with the entry in the inner ConcurrentDictionary
@@ -92,7 +92,7 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
                 return Store.SyncResult.Conflict resync
             | ConcurrentArraySyncResult.Written events -> return Store.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
-type MemResolver<'event, 'state>(store : VolatileStore, fold, initial) =
+type MemoryResolver<'event, 'state>(store : VolatileStore, fold, initial) =
     let category = MemoryCategory<'event,'state>(store, fold, initial)
     let mkStreamName categoryName streamId = sprintf "%s-%s" categoryName streamId
     let resolveStream streamName = Store.Stream.create category streamName
