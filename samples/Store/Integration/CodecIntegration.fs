@@ -14,7 +14,7 @@ let serializationSettings =
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
     Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
 
-type EventWithId = { id : Guid<skuId> }
+type EventWithId = { id : CartId } // where CartId uses FSharp.UMX
 
 type EventWithOption = { age : int option }
 

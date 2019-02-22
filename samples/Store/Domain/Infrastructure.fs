@@ -57,8 +57,6 @@ and private SkuIdJsonConverter() =
     override __.Pickle value = string value
     /// Input must be a `Guid.Parse`able value
     override __.UnPickle input = Guid.Parse input |> SkuId
-type [<Measure>] skuId
-module SkuId = let parse (value : Guid<skuId>) : SkuId = SkuId(%value)
 
 /// RequestId strongly typed id, represented internally as a string
 /// - Ensures canonical rendering without dashes via ToString, Newtonsoft.Json, sprintf "%s" etc

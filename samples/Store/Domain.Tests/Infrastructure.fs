@@ -52,7 +52,8 @@ module IdTypes =
 
     [<Fact>]
     let ``SkuId has structural equality and canonical rendering semantics`` () =
-        let x = Guid.NewGuid() in let xn = Guid.toStringN x
-        let (x1 : SkuId, x2 : SkuId) = SkuId.parse %x, SkuId.parse %x
+        let x = Guid.NewGuid()
+        let xn = Guid.toStringN x
+        let (x1 : SkuId, x2 : SkuId) = SkuId x, SkuId x
         test <@ x1 = x2
                 && string x1 = xn @>

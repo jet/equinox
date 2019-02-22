@@ -28,7 +28,7 @@ type TodoBackend.Events.Todo with
     static member Create(size) : TodoBackend.Events.Todo =
         { id = 0; order = 0; title = rlipsum size; completed =  false }
 
-let mkSkuId () = % Guid.NewGuid() |> SkuId.parse
+let mkSkuId () = Guid.NewGuid() |> SkuId
 
 let executeLocal (container: ServiceProvider) test: ClientId -> Async<unit> =
     match test with
