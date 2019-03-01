@@ -57,6 +57,18 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 29 // observed 28.61 // was 11
     }
 
+    // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds updote mechanisms
+    // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        let ctx = mkContext conn
+
+        let index = 0L
+        let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
+        test <@ match res with Choice2Of2 ((:? ArgumentException) as ex) -> ex.Message.StartsWith "Cannot write empty events batch." | x -> failwithf "%A" x @>
+    }
+
     let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
     let stringOfUtf8 (x: byte[]) = Encoding.UTF8.GetString(x)
     let xmlDiff (x: string) (y: string) =

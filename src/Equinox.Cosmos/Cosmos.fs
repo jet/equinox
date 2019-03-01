@@ -722,6 +722,7 @@ type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
     member __.CreateSyncStoredProcIfNotExists log = 
         Sync.Initialization.createSyncStoredProcIfNotExists log conn.Client
     member __.Sync log stream (expectedVersion, batch: Tip): Async<InternalSyncResult> = async {
+        if Array.isEmpty batch.e then invalidArg "batch" "Cannot write empty events batch."
         let! wr = Sync.batch log conn.WriteRetryPolicy conn.Client stream (expectedVersion,batch,batching.MaxItems)
         match wr with
         | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (Token.create stream pos',events)

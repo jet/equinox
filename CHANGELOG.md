@@ -16,6 +16,8 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 ### Removed
 ### Fixed
 
+- Add Writing empty event list guard for `Equinox.Cosmos` [#105](https://github.com/jet/equinox/issues/105)
+
 <a name="1.1.0-preview2"></a>
 ## [1.1.0-preview2] - 2019-02-20
 
