@@ -1,14 +1,14 @@
 namespace Equinox.Projection.Kafka
 
 open Confluent.Kafka
+open Newtonsoft.Json.Linq
+open Newtonsoft.Json
 open Serilog
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Threading
 open System.Threading.Tasks
-open Newtonsoft.Json.Linq
-open Newtonsoft.Json
 
 module private Config =
     let validateBrokerUri (u:Uri) =
@@ -297,8 +297,7 @@ type KafkaConsumerConfig = private { conf: ConsumerConfig; custom: seq<KeyValueP
                 
 // Stats format: https://github.com/edenhill/librdkafka/blob/master/STATISTICS.md
 type KafkaPartitionMetrics =
-    { 
-        partition: int
+    {   partition: int
         [<JsonProperty("fetch_state")>]
         fetchState: string
         [<JsonProperty("next_offset")>]
@@ -312,7 +311,7 @@ type KafkaPartitionMetrics =
         [<JsonProperty("hi_offset")>]
         hiOffset: int64
         [<JsonProperty("consumer_lag")>]
-        consumerLag: int64  }        
+        consumerLag: int64 }        
 
 type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, task : Task<unit>, cts : CancellationTokenSource) =
 
@@ -342,25 +341,21 @@ type KafkaConsumer private (log : ILogger, consumer : Consumer<string, string>, 
                 .SetStatisticsHandler(fun _c json -> 
                     // Stats format: https://github.com/edenhill/librdkafka/blob/master/STATISTICS.md
                     let stats = JToken.Parse json
-                    (stats.Item "topics").Children()
-                    |> Seq.filter(fun t -> 
-                        t.HasValues && config.topics |> Seq.exists(fun top -> top = ((t.First.Item "topic").ToString())))
-                    |> Seq.iter (fun topicMetric ->    
-                        let topicMetric = topicMetric.First
-                        let topic =( topicMetric.Item "topic").ToString()
-                        let metrics = 
-                            (topicMetric.Item "partitions").Children()
-                            |> Seq.choose(fun t -> 
-                                if t.HasValues then Some (t.First.ToObject<KafkaPartitionMetrics>()) else None)
-                            |> Seq.filter(fun m -> m.partition <> -1)                        
-                        log.Information("consumer stats reporting topic:{topic} | {@stats}", topic, metrics)))
+                    for t in stats.Item("topics").Children() do
+                        if t.HasValues && config.topics |> Seq.exists (fun ct -> ct = t.First.Item("topic").ToString()) then
+                            let topic, partitions = let tm = t.First in tm.Item("topic").ToString(), tm.Item("partitions").Children()
+                            let metrics = seq {
+                                for tm in partitions do
+                                    if tm.HasValues then
+                                        let kpm = tm.First.ToObject<KafkaPartitionMetrics>()
+                                        if kpm.partition <> -1 then
+                                            yield kpm }                
+                            log.Information("Consuming... Stats {topic:l} | {@stats}", topic, metrics))
                 .SetRebalanceHandler(fun _c m ->
                     for topic,partitions in m.Partitions |> Seq.groupBy (fun p -> p.Topic) |> Seq.map (fun (t,ps) -> t, [| for p in ps -> let p = p.Partition in p.Value |]) do
                         if m.IsAssignment then log.Information("Consuming... Assigned {topic:l} {partitions}", topic, partitions)
                         else log.Information("Consuming... Revoked {topic:l} {partitions}", topic, partitions)
                     if m.IsRevocation then m.Partitions |> Seq.iter partitionedCollection.Revoke)
-                //let d5 = c.OnPartitionEOF.Subscribe(fun tpo ->
-                //    log.Verbose("consumer_partition_eof|topic={topic}|partition={partition}|offset={offset}", tpo.Topic, tpo.Partition, let o = tpo.Offset in o.Value))
                 .SetOffsetsCommittedHandler(fun _c cos ->
                     for t,ps in cos.Offsets |> Seq.groupBy (fun p -> p.Topic) do
                         let o = [for p in ps -> let pp = p.Partition in pp.Value, let o = p.Offset in if o.IsSpecial then box (string o) else box o.Value(*, fmtError p.Error*)]
