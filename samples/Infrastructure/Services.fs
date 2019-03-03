@@ -4,11 +4,11 @@ open Microsoft.Extensions.DependencyInjection
 open System
 
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
+let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() = Equinox.Codec.JsonUtf8.Create<'Union>(serializationSettings)
 
 type StreamResolver(storage) =
     member __.Resolve
-        (   codec : Equinox.UnionCodec.IUnionEncoder<'event,byte[]>,
+        (   codec : Equinox.Codec.IUnionEncoder<'event,byte[]>,
             fold: ('state -> 'event seq -> 'state),
             initial: 'state,
             snapshot: (('event -> bool) * ('state -> 'event))) =

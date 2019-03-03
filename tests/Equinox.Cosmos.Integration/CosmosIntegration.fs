@@ -11,7 +11,7 @@ open System
 
 let serializationSettings = JsonSerializerSettings()
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
+    Equinox.Codec.JsonUtf8.Create<'Union>(serializationSettings)
 
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial

@@ -12,7 +12,7 @@ let serializationSettings =
             Newtonsoft.Json.Converters.FSharp.OptionConverter() |])
 
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Equinox.UnionCodec.JsonUtf8.Create<'Union>(serializationSettings)
+    Equinox.Codec.JsonUtf8.Create<'Union>(serializationSettings)
 
 type EventWithId = { id : CartId } // where CartId uses FSharp.UMX
 
@@ -51,6 +51,6 @@ let codec = genCodec<SimpleDu>()
 [<AutoData(MaxTest=100)>]
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =
     let serialized = codec.Encode x
-    render x =! if serialized.payload = null then null else System.Text.Encoding.UTF8.GetString(serialized.payload)
+    render x =! if serialized.Data = null then null else System.Text.Encoding.UTF8.GetString(serialized.Data)
     let deserialized = codec.TryDecode serialized |> Option.get
     deserialized =! x

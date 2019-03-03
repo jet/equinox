@@ -112,7 +112,7 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory = 
-    let codec = Equinox.UnionCodec.JsonUtf8.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
+    let codec = Equinox.Codec.JsonUtf8.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
     let access = Equinox.Cosmos.AccessStrategy.Snapshot (isOrigin,compact)
     let resolve = CosmosResolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
 

@@ -201,13 +201,16 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
-    let encodedEventOfResolvedEvent (x : ResolvedEvent) : UnionCodec.EncodedUnion<byte[]> =
-        { caseName = x.Event.EventType; payload = x.Event.Data }
-    let private eventDataOfEncodedEvent (x : UnionCodec.EncodedUnion<byte[]>) =
-        EventData(Guid.NewGuid(), x.caseName, (*isJson*) true, x.payload, [||])
-    let encodeEvents (codec : UnionCodec.IUnionEncoder<'event,byte[]>) (xs : 'event seq) : EventData[] =
+    let encodedEventOfResolvedEvent (x : ResolvedEvent) : Equinox.Codec.IEvent<byte[]> =
+        { new Equinox.Codec.IEvent<_> with
+            member __.EventType = x.Event.EventType
+            member __.Data = x.Event.Data
+            member __.Meta = x.Event.Metadata }
+    let private eventDataOfEncodedEvent (x : Codec.IEvent<byte[]>) =
+        EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
+    let encodeEvents (codec : Codec.IUnionEncoder<'event,byte[]>) (xs : 'event seq) : EventData[] =
         xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
-    let decodeKnownEvents (codec : UnionCodec.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
+    let decodeKnownEvents (codec : Codec.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
         xs |> Seq.map encodedEventOfResolvedEvent |> Seq.choose codec.TryDecode
 
 type Stream = { name: string }
@@ -319,7 +322,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
  /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state>(gateway : GesGateway, codec : UnionCodec.IUnionEncoder<'event,byte[]>, ?access : AccessStrategy<'event,'state>) =
+type private Category<'event, 'state>(gateway : GesGateway, codec : Codec.IUnionEncoder<'event,byte[]>, ?access : AccessStrategy<'event,'state>) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let compactionPredicate =
         match access with

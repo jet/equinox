@@ -4,6 +4,7 @@ open Equinox.Cosmos
 open Equinox.Cosmos.Core
 open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.Control
+open Equinox.Codec // Shadow FSharp.Control.IEvent
 open Newtonsoft.Json.Linq
 open Swensen.Unquote
 open Serilog
@@ -91,7 +92,7 @@ type Tests(testOutputHelper) =
         return TestEvents.Create(0,6)
     }
 
-    let verifyCorrectEventsEx direction baseIndex (expected: Store.IEvent []) (xs: Store.IIndexedEvent[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: IEvent<_>[]) (xs: IIndexedEvent<_>[]) =
         let xs, baseIndex =
             if direction = Equinox.Cosmos.Store.Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
