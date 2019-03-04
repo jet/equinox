@@ -61,7 +61,7 @@ module Store =
 
 module FavoritesCategory = 
     let codec = Equinox.UnionCodec.JsonUtf8.Create<Favorites.Event>(Newtonsoft.Json.JsonSerializerSettings())
-    let resolve = CosmosResolver(Store.store, codec, Favorites.fold, Favorites.initial, caching=Store.cacheStrategy).Resolve
+    let resolve = CosmosResolver(Store.store, codec, Favorites.fold, Favorites.initial, Store.cacheStrategy).Resolve
 
 let service = Favorites.Service(Log.log, FavoritesCategory.resolve)
 

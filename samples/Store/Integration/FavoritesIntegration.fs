@@ -23,7 +23,7 @@ let createServiceGes gateway log =
     Backend.Favorites.Service(log, resolveStream)
 
 let createServiceCosmos gateway log =
-    let resolveStream = CosmosResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
+    let resolveStream = CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =

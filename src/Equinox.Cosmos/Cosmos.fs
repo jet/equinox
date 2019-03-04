@@ -874,6 +874,13 @@ type CosmosStore(gateway: CosmosGateway, collections: CosmosCollections, [<O; D(
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
+    /// Do not apply any caching strategy for this Stream.
+    /// NB opting not to leverage caching when using CosmosDb can have significant implications for the scalability
+    ///   of your application, both in terms of latency and running costs.
+    /// While the cost of a cache miss can be ameliorated to varying degrees by employing an appropriate `AccessStrategy`
+    ///   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
+    ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDb instances.
+    | NoCaching
     /// Retain a single 'state per streamName, together with the associated etag
     /// NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     /// track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in tip
@@ -890,11 +897,11 @@ type AccessStrategy<'event,'state> =
     /// Trust every event type as being an origin
     | AnyKnownEventType
 
-type CosmosResolver<'event, 'state>(store : CosmosStore, codec, fold, initial, [<O; D(null)>]?access, [<O; D(null)>]?caching) =
+type CosmosResolver<'event, 'state>(store : CosmosStore, codec, fold, initial, caching, [<O; D(null)>]?access) =
     let readCacheOption =
         match caching with
-        | None -> None
-        | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
+        | CachingStrategy.NoCaching -> None
+        | CachingStrategy.SlidingWindow(cache, _) -> Some(cache, null)
     let isOrigin, projectOption =
         match access with
         | None -> (fun _ -> false), None
@@ -905,8 +912,8 @@ type CosmosResolver<'event, 'state>(store : CosmosStore, codec, fold, initial, [
     let folder = Folder<'event, 'state>(cosmosCat, fold, initial, isOrigin, ?unfold=projectOption, ?readCache = readCacheOption)
     let category : Store.ICategory<_,_,CollectionStream> =
         match caching with
-        | None -> folder :> _
-        | Some (CachingStrategy.SlidingWindow(cache, window)) ->
+        | CachingStrategy.NoCaching -> folder :> _
+        | CachingStrategy.SlidingWindow(cache, window) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
     let resolveStream (streamId, maybeCollectionInitializationGate) =

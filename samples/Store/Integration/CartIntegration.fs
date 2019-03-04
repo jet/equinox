@@ -24,9 +24,9 @@ let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
 
 let resolveCosmosStreamWithProjection gateway =
-    CosmosResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
+    CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    CosmosResolver(gateway, codec, fold, initial).Resolve
+    CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching).Resolve
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->

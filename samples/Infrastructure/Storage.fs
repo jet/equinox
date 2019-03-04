@@ -56,7 +56,7 @@ let defaultBatchSize = 500
 type StorageConfig =
     | Memory of Equinox.MemoryStore.VolatileStore
     | Es of Equinox.EventStore.GesGateway * Equinox.EventStore.CachingStrategy option * unfolds: bool
-    | Cosmos of Equinox.Cosmos.CosmosGateway * Equinox.Cosmos.CachingStrategy option * unfolds: bool * databaseId: string * collectionId: string
+    | Cosmos of Equinox.Cosmos.CosmosGateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * collectionId: string
 
 module MemoryStore =
     let config () =
@@ -129,6 +129,6 @@ module Cosmos =
         let cacheStrategy =
             if cache then
                 let c = Caching.Cache("equinox-tool", sizeMb = 50)
-                CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
-            else None
+                CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.)
+            else CachingStrategy.NoCaching
         StorageConfig.Cosmos (createGateway conn (defaultBatchSize,pageSize), cacheStrategy, unfolds, dbName, collName)
