@@ -200,7 +200,7 @@ module Log =
         | SyncResync of Measurement
         | SyncConflict of Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
-    let propData name (events: #Equinox.Codec.IEvent<_> seq) (log : ILogger) =
+    let propData name (events: #Equinox.Codec.IEvent<byte[]> seq) (log : ILogger) =
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (System.Text.Encoding.UTF8.GetString e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let propEvents = propData "events"
