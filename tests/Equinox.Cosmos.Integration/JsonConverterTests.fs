@@ -13,7 +13,7 @@ type Union =
     | B of Embedded
     interface TypeShape.UnionContract.IUnionContract
 
-let mkUnionEncoder () = Equinox.Codec.JsonUtf8.Create<Union>(JsonSerializerSettings())
+let mkUnionEncoder () = Equinox.Codec.JsonNet.JsonUtf8.Create<Union>(JsonSerializerSettings())
 
 type VerbatimUtf8Tests() =
     let unionEncoder = mkUnionEncoder ()
@@ -58,6 +58,6 @@ type Base64ZipUtf8Tests() =
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
         let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
-        let d = Equinox.Codec.EventData.Create(des.c, des.d)
+        let d = Equinox.Codec.Core.EventData.Create(des.c, des.d)
         let decoded = unionEncoder.TryDecode d |> Option.get
         test <@ value = decoded @>

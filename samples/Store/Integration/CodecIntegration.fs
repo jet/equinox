@@ -12,7 +12,7 @@ let serializationSettings =
             Newtonsoft.Json.Converters.FSharp.OptionConverter() |])
 
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Equinox.Codec.JsonUtf8.Create<'Union>(serializationSettings)
+    Equinox.Codec.JsonNet.JsonUtf8.Create<'Union>(serializationSettings)
 
 type EventWithId = { id : CartId } // where CartId uses FSharp.UMX
 

@@ -1,10 +1,10 @@
 ﻿module Equinox.Cosmos.Integration.CoreIntegration
 
-open Equinox.Cosmos
 open Equinox.Cosmos.Core
 open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.Control
 open Equinox.Codec // Shadow FSharp.Control.IEvent
+open Equinox.Codec.Core
 open Newtonsoft.Json.Linq
 open Swensen.Unquote
 open Serilog
