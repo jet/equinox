@@ -25,7 +25,8 @@ type JsonUtf8 =
     ///    using the supplied pair of <c>encode</c> and <c>tryDecode</code> functions. </summary>
     /// <param name="encode">Maps a 'Union to an Event Type Name with UTF-8 arrays representing the `Data` and `Metadata`.</param>
     /// <param name="tryDecode">Attempts to map from an Event Type Name and UTF-8 arrays representing the `Data` and `Metadata` to a 'Union case, or None if not mappable.</param>
-    static member Create<'Union>(encode : 'Union -> string * byte[] * byte[], tryDecode : string * byte[] * byte[] -> 'Union option)
+    // Leaving this private until someone actually asks for this (IME, while many systems have some code touching the metadata, it tends to fall into disuse)
+    static member private Create<'Union>(encode : 'Union -> string * byte[] * byte[], tryDecode : string * byte[] * byte[] -> 'Union option)
         : IUnionEncoder<'Union,byte[]> =
         { new IUnionEncoder<'Union, byte[]> with
             member __.Encode e =
@@ -50,9 +51,9 @@ type JsonUtf8 =
 
 namespace Equinox.Codec.Core
 
-// TODO this should really be in .Core; only reason it isnt is that fsc is liking the fight more than me atm
 /// Represents a Domain Event or Unfold, together with it's Index in the event sequence
-// Included here to enable extraction of this ancillary information in the corner cases where this coupling is unavoidable
+// Included here to enable extraction of this ancillary information (by downcasting IEvent in one's IUnionEncoder.TryDecode implementation)
+// in the corner cases where this coupling is absolutely definitely better than all other approaches
 type IIndexedEvent<'Format> =
     inherit Equinox.Codec.IEvent<'Format>
     /// The index into the event sequence of this event
@@ -61,7 +62,8 @@ type IIndexedEvent<'Format> =
     abstract member IsUnfold: bool
 
 /// An Event about to be written, see IEvent for further information
-// Storage implementations couple to IEvent - this is included to facilitate unofirmity across the .Core per-Store programming models
+// Storage implementations couple to IEvent - this is included to facilitate eventual consistency across the .Core per-Store programming models
+// (at the time of writing, Equinox.Cosmos.Core is the only such API)
 type EventData<'Format> =
     { eventType : string; data : 'Format; meta : 'Format }
     interface Equinox.Codec.IEvent<'Format> with member __.EventType = __.eventType member __.Data = __.data member __.Meta = __.meta
@@ -108,14 +110,14 @@ type JsonUtf8 =
             [<Optional;DefaultParameterValue(null)>]?requireRecordFields,
             [<Optional;DefaultParameterValue(null)>]?allowNullaryCases)
         : Equinox.Codec.IUnionEncoder<'Union,byte[]> =
-        let unionCodec =
+        let dataCodec =
             TypeShape.UnionContract.UnionContractEncoder.Create<'Union,byte[]>(
                 new Utf8BytesUnionEncoder(settings),
                 ?requireRecordFields=requireRecordFields,
                 ?allowNullaryCases=allowNullaryCases)
         { new Equinox.Codec.IUnionEncoder<'Union,byte[]> with
             member __.Encode value =
-                let enc = unionCodec.Encode value
+                let enc = dataCodec.Encode value
                 Equinox.Codec.Core.EventData.Create(enc.CaseName, enc.Payload) :> _
             member __.TryDecode encoded =
-                unionCodec.TryDecode { CaseName = encoded.EventType; Payload = encoded.Data } }
+                dataCodec.TryDecode { CaseName = encoded.EventType; Payload = encoded.Data } }
