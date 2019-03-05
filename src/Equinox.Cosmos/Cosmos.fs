@@ -3,6 +3,8 @@
 open Newtonsoft.Json
 open System
 
+type IIndexedEvent = Equinox.Codec.Core.IIndexedEvent<byte[]>
+
 /// A single Domain Event from the array held in a Batch
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     Event =
@@ -107,29 +109,6 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 type [<NoComparison>]
     Position = { index: int64; etag: string option }
 
-/// Common form for either a Domain Event or an Unfolded Event
-type IEvent =
-    /// The Event Type, used to drive deserialization
-    abstract member EventType : string
-    /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
-    abstract member Data : byte[]
-    /// Optional metadata (null, or same as d, not written if missing)
-    abstract member Meta : byte[]
-
-/// Represents a Domain Event or Unfold, together with it's Index in the event sequence
-type IIndexedEvent =
-    inherit IEvent
-    /// The index into the event sequence of this event
-    abstract member Index : int64
-    /// Indicates this is not a Domain Event, but actually an Unfolded Event based on the state inferred from the events up to `Index`
-    abstract member IsUnfold: bool
-
-/// An Event about to be written, see IEvent for further information
-type EventData =
-    { eventType : string; data : byte[]; meta : byte[] }
-    interface IEvent with member __.EventType = __.eventType member __.Data = __.data member __.Meta = __.meta
-    static member Create(eventType, data, ?meta) = { eventType = eventType; data = data; meta = defaultArg meta null}
-
 module internal Position =
     /// NB very inefficient compared to FromDocument or using one already returned to you
     let fromI (i: int64) = { index = i; etag = None }
@@ -221,7 +200,7 @@ module Log =
         | SyncResync of Measurement
         | SyncConflict of Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
-    let propData name (events: #IEvent seq) (log : ILogger) =
+    let propData name (events: #Equinox.Codec.IEvent<byte[]> seq) (log : ILogger) =
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (System.Text.Encoding.UTF8.GetString e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let propEvents = propData "events"
@@ -244,7 +223,7 @@ module Log =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
-    let (|EventLen|) (x: #IEvent) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
+    let (|EventLen|) (x: #Equinox.Codec.IEvent<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
 open Microsoft.Azure.Documents
@@ -402,11 +381,11 @@ function sync(req, expectedVersion, maxEvents) {
     let batch (log : ILogger) retryPolicy client pk batch: Async<Result> =
         let call = logged client pk batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
-    let mkBatch (stream: CollectionStream) (events: IEvent[]) unfolds: Tip =
+    let mkBatch (stream: CollectionStream) (events: Equinox.Codec.IEvent<_>[]) unfolds: Tip =
         {   p = stream.name; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = [| for e in events -> { t = DateTimeOffset.UtcNow; c = e.EventType; d = e.Data; m = e.Meta } |]
             u = Array.ofSeq unfolds }
-    let mkUnfold baseIndex (unfolds: IEvent seq) : Unfold seq =
+    let mkUnfold baseIndex (unfolds: Equinox.Codec.IEvent<_> seq) : Unfold seq =
         unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta } : Unfold)
 
     module Initialization =
@@ -528,7 +507,7 @@ module internal Tip =
                 yield! loop (batchCount + 1) }
         loop 0
 
-    let private logQuery direction batchSize streamName interval (responsesCount, events : IIndexedEvent []) n (ru: float) (log : ILogger) =
+    let private logQuery direction batchSize streamName interval (responsesCount, events : IIndexedEvent[]) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Event.Query (direction, responsesCount, reqMetric)
@@ -644,7 +623,7 @@ module Token =
 [<AutoOpen>]
 module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type InternalSyncResult = Written of Equinox.Store.StreamToken | ConflictUnknown of Equinox.Store.StreamToken | Conflict of Equinox.Store.StreamToken * IIndexedEvent[]
+    type InternalSyncResult = Written of StreamToken | ConflictUnknown of StreamToken | Conflict of StreamToken * IIndexedEvent[]
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of Equinox.Store.StreamToken * 'event[]
@@ -685,7 +664,7 @@ type CosmosBatchingPolicy
     member __.MaxEventsPerSlice = defaultArg maxEventsPerSlice 10
 
 type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
-    let (|FromUnfold|_|) (tryDecode: #IEvent -> 'event option) (isOrigin: 'event -> bool) (xs:#IEvent[]) : Option<'event[]> =
+    let (|FromUnfold|_|) (tryDecode: #Equinox.Codec.IEvent<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#Equinox.Codec.IEvent<_>[]) : Option<'event[]> =
         match Array.tryFindIndexBack (tryDecode >> Option.exists isOrigin) xs with
         | None -> None
         | Some index -> xs |> Seq.skip index |> Seq.choose tryDecode |> Array.ofSeq |> Some
@@ -729,23 +708,21 @@ type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
-type private Category<'event, 'state>(gateway : CosmosGateway, codec : UnionCodec.IUnionEncoder<'event, byte[]>) =
-    let tryDecode (x: #IEvent) = codec.TryDecode { caseName = x.EventType; payload = x.Data }
-    let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: IIndexedEvent seq) : 'state = Seq.choose tryDecode events |> fold initial
+type private Category<'event, 'state>(gateway : CosmosGateway, codec : Codec.IUnionEncoder<'event, byte[]>) =
+    let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: IIndexedEvent seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
     member __.Load includeUnfolds collectionStream fold initial isOrigin (log : ILogger): Async<Store.StreamToken * 'state> = async {
         let! token, events =
-            if not includeUnfolds then gateway.LoadBackwardsStopping log collectionStream (tryDecode,isOrigin)
-            else gateway.LoadFromUnfoldsOrRollingSnapshots log (collectionStream,None) (tryDecode,isOrigin)
+            if not includeUnfolds then gateway.LoadBackwardsStopping log collectionStream (codec.TryDecode,isOrigin)
+            else gateway.LoadFromUnfoldsOrRollingSnapshots log (collectionStream,None) (codec.TryDecode,isOrigin)
         return token, fold initial events }
     member __.LoadFromToken (Token.Unpack streamPos, state: 'state as current) fold isOrigin (log : ILogger): Async<Store.StreamToken * 'state> = async {
-        let! res = gateway.LoadFromToken(log, streamPos, (tryDecode,isOrigin))
+        let! res = gateway.LoadFromToken(log, streamPos, (codec.TryDecode,isOrigin))
         match res with
         | LoadFromTokenResult.Unchanged -> return current
         | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
     member __.Sync(Token.Unpack (stream,pos), state as current, expectedVersion, events, unfold, fold, isOrigin, log): Async<Store.SyncResult<'state>> = async {
-        let encodeEvent (x : 'event) : IEvent = let e = codec.Encode x in EventData.Create(e.caseName,e.payload) :> _
         let state' = fold state (Seq.ofList events)
-        let eventsEncoded, projectionsEncoded = Seq.map encodeEvent events |> Array.ofSeq, Seq.map encodeEvent (unfold state' events)
+        let eventsEncoded, projectionsEncoded = Seq.map codec.Encode events |> Array.ofSeq, Seq.map codec.Encode (unfold state' events)
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkUnfold baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
@@ -1026,10 +1003,10 @@ type CosmosConnector
 
 namespace Equinox.Cosmos.Core
 
-open Equinox.Store.Infrastructure
 open Equinox.Cosmos
 open Equinox.Cosmos.Store
 open FSharp.Control
+open Equinox.Codec // must shadow Control.IEvent
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]
@@ -1038,6 +1015,9 @@ type AppendResult<'t> =
     | Conflict of index: 't * conflictingEvents: IIndexedEvent[]
     | ConflictUnknown of index: 't
 
+type OAttribute = System.Runtime.InteropServices.OptionalAttribute
+type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
+    
 /// Encapsulates the core facilites Equinox.Cosmos offers for operating directly on Events in Streams.
 type CosmosContext
     (   /// Connection to CosmosDb with DocumentDb Transient Read and Write Retry policies
@@ -1110,7 +1090,7 @@ type CosmosContext
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
-    member __.Sync(stream : CollectionStream, position, events: IEvent[]) : Async<AppendResult<Position>> = async {
+    member __.Sync(stream : CollectionStream, position, events: IEvent<_>[]) : Async<AppendResult<Position>> = async {
         // Writes go through the stored proc, which we need to provision per-collection
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
         //   to move this about before we reach a final destination in any case
@@ -1126,7 +1106,7 @@ type CosmosContext
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Stream enables building equivalent equivalent idempotent handling with minimal code.
-    member __.NonIdempotentAppend(stream, events: IEvent[]) : Async<Position> = async {
+    member __.NonIdempotentAppend(stream, events: IEvent<_>[]) : Async<Position> = async {
         let! res = __.Sync(stream, Position.fromAppendAtEnd, events)
         match res with
         | AppendResult.Ok token -> return token
@@ -1135,7 +1115,7 @@ type CosmosContext
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
     /// Creates an Event record, suitable for supplying to Append et al
-    static member FromUtf8Bytes(eventType,data,?meta) : IEvent = EventData.Create(eventType, data, defaultArg meta null) :> IEvent
+    static member FromUtf8Bytes(eventType, data, ?meta) : IEvent<_> = Core.EventData.Create(eventType, data, ?meta=meta) :> _
 
 /// Api as defined in the Equinox Specification
 /// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's WipBatch
@@ -1177,14 +1157,14 @@ module Events =
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: CosmosContext) (streamName: string) (index: int64) (events: IEvent[]): Async<AppendResult<int64>> =
+    let append (ctx: CosmosContext) (streamName: string) (index: int64) (events: IEvent<_>[]): Async<AppendResult<int64>> =
         ctx.Sync(ctx.CreateStream streamName, Position.fromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx: CosmosContext) (streamName: string) (events: IEvent[]): Async<int64> =
+    let appendAtEnd (ctx: CosmosContext) (streamName: string) (events: IEvent<_>[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.CreateStream streamName, events) |> stripPosition
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,

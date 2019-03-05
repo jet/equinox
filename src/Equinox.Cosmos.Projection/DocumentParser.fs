@@ -13,7 +13,7 @@ module DocumentParser =
     /// Determines whether this document represents an index page [and hence should not be expected to contain any events]
     let isIndex (d : Document) = d.Id = "-1"
     type IEvent =
-        inherit Equinox.Cosmos.Store.IIndexedEvent
+        inherit Equinox.Codec.Core.IIndexedEvent<byte[]>
             abstract member Stream : string
             abstract member TimeStamp : DateTimeOffset
     /// Infers whether the document represents a valid Event-Batch

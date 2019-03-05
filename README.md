@@ -173,7 +173,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 - Designed not to invade application code; Domain tests can be written directly against your models without any need to involve or understand Equinox assemblies or constructs as part of writing those tests.
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and with baseline and specific tests per Storage system and a comprehensive test and benchmarking story
-- Encoding of events via `Equinox.UnionCodec` provides for pluggable encoding of events based on either:
+- Encoding of events via `Equinox.Codec` provides for pluggable encoding of events based on either:
   - a [versionable convention-based approach](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)  (using `Typeshape`'s `UnionContractEncoder` under the covers), providing for serializer-agnostic schema evolution with minimal boilerplate
   - an explicitly coded pair of `encode` and `tryDecode` functions for when you need to customize
 - Independent of the store used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / Request Charges by maintaining the folded state, without necessitating making the Domain Model folded state serializable
@@ -203,8 +203,8 @@ The components within this repository are delivered as a series of multi-targete
 
 - [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/) `Equinox[.Stream]`: Store-agnostic decision flow runner that manages the optimistic concurrency protocol. ([depends](https://www.fuget.org/packages/Equinox) on `Serilog` (but no specific Serilog sinks, i.e. you configure to emit to `NLog` etc))
 - [![Codec NuGet](https://img.shields.io/nuget/v/Equinox.Codec.svg)](https://www.nuget.org/packages/Equinox.Codec/) `Equinox.Codec`: [a scheme for the serializing Events modelled as an F# Discriminated Union](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) ([depends](https://www.fuget.org/packages/Equinox.Codec) on `TypeShape 6.*`, `Newtonsoft.Json >= 11.0.2` but can support any serializer) with the following capabilities:
-  - independent of any specific serializer
-  - allows tagging of F# Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
+  - `Equinox.Codec.JsonNet.JsonUtf8`: allows tagging of F# Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
+  - `Equinox.Codec.JsonUtf8`: independent of any specific serializer; enables plugging in a serializer and/or Union Encoder of your choice
 
 ### Store libraries
 

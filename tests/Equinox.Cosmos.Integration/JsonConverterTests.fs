@@ -13,7 +13,7 @@ type Union =
     | B of Embedded
     interface TypeShape.UnionContract.IUnionContract
 
-let mkUnionEncoder () = Equinox.UnionCodec.JsonUtf8.Create<Union>(JsonSerializerSettings())
+let mkUnionEncoder () = Equinox.Codec.JsonNet.JsonUtf8.Create<Union>(JsonSerializerSettings())
 
 type VerbatimUtf8Tests() =
     let unionEncoder = mkUnionEncoder ()
@@ -23,7 +23,7 @@ type VerbatimUtf8Tests() =
         let encoded = unionEncoder.Encode(A { embed = "\"" })
         let e : Store.Batch =
             {   p = "streamName"; id = string 0; i = -1L; n = -1L; _etag = null
-                e = [| { t = DateTimeOffset.MinValue; c = encoded.caseName; d = encoded.payload; m = null } |] }
+                e = [| { t = DateTimeOffset.MinValue; c = encoded.EventType; d = encoded.Data; m = null } |] }
         let res = JsonConvert.SerializeObject(e)
         test <@ res.Contains """"d":{"embed":"\""}""" @>
 
@@ -35,8 +35,8 @@ type Base64ZipUtf8Tests() =
         let encoded = unionEncoder.Encode(A { embed = String('x',5000) })
         let e : Store.Unfold =
             {   i = 42L
-                c = encoded.caseName
-                d = encoded.payload
+                c = encoded.EventType
+                d = encoded.Data
                 m = null }
         let res = JsonConvert.SerializeObject e
         test <@ res.Contains("\"d\":\"") && res.Length < 100 @>
@@ -52,12 +52,12 @@ type Base64ZipUtf8Tests() =
         let encoded = unionEncoder.Encode value
         let e : Store.Unfold =
             {   i = 42L
-                c = encoded.caseName
-                d = encoded.payload
+                c = encoded.EventType
+                d = encoded.Data
                 m = null }
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
         let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
-        let d : Equinox.UnionCodec.EncodedUnion<_> = { caseName = des.c; payload = des.d }
+        let d = Equinox.Codec.Core.EventData.Create(des.c, des.d)
         let decoded = unionEncoder.TryDecode d |> Option.get
         test <@ value = decoded @>

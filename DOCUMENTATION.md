@@ -687,7 +687,7 @@ The higher level APIs (i.e. not `Core`), as demonstrated by the `dotnet new` tem
 
 ```fsharp
 
-open Equinox.Cosmos.Core.Events
+open Equinox.Cosmos.Core
 // open MyCodecs.Json // example of using specific codec which can yield UTF-8 byte arrays from a type using `Json.toBytes` via Fleece or similar
 
 type EventData with
@@ -783,14 +783,11 @@ It should be noted that the `Equinox.Projection.Kafka` batteries included projec
 
 # Roadmap
 
-# Very likely to happen and/or people looking at it:
-
-- Extend samples and templates; see [#57](https://github.com/jet/equinox/issues/57)
-- Enable snapshots to be stored outside of the main collection in `Equinox.Cosmos` see [#61](https://github.com/jet/equinox/issues/61)
-
 # Things that are incomplete and/or require work
 
 This is a very loose laundry list of items that have occurred to us to do, given infinite time. No conclusions of likelihood of starting, finishing, or even committing to adding a feature should be inferred, but most represent things that would be likely to be accepted into the codebase (please raise Issues first though ;) ).
+
+- Extend samples and templates; see [#57](https://github.com/jet/equinox/issues/57)
 
 ## Wouldn't it be nice - `Equinox.EventStore`:
 
@@ -807,6 +804,7 @@ EventStore, and it's Store adapter is the most proven and is pretty feature rich
 
 ## Wouldn't it be nice - `Equinox.Cosmos`:
 
+- Enable snapshots to be stored outside of the main collection in `Equinox.Cosmos` see [#61](https://github.com/jet/equinox/issues/61)
 - Multiple writers support for `u`nfolds (at present a `sync` completely replaces the unfolds in the Tip; this will be extended by having the stored proc maintain the union of the unfolds in play (both for semi-related services and for blue/green deploy scenarios); TBD how we decide when a union that's no longer in use gets removed)
 - performance improvements in loading logic
 - `_etag`-based consistency checks?
