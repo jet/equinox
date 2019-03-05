@@ -18,7 +18,7 @@ let createServiceMemory log store =
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
-    GesResolver(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Resolve
+    GesResolver(gateway 1, codec, fold, initial, access = AccessStrategy.EventsAreState).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
     GesResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 

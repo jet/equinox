@@ -19,7 +19,7 @@ let createServiceMemory log store =
 let codec = Equinox.EventStore.Integration.EventStoreIntegration.genCodec<Domain.Cart.Events.Event>()
 
 let resolveGesStreamWithRollingSnapshots gateway =
-    GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
+    GesResolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
 

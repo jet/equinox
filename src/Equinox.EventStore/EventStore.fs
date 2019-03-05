@@ -445,7 +445,12 @@ type CachingStrategy =
     /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
-type GesResolver<'event,'state>(gateway : GesGateway, codec, fold, initial, [<O; D(null)>]?access, [<O; D(null)>]?caching) =
+type GesResolver<'event,'state>
+    (   gateway : GesGateway, codec, fold, initial,
+        /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
+        /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
+        [<O; D(null)>]?caching,
+        [<O; D(null)>]?access) =
     do  match access with
         | Some (AccessStrategy.EventsAreState) when Option.isSome caching ->
             "Equinox.EventStore does not support (and it would make things _less_ efficient even if it did)"
