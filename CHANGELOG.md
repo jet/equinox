@@ -2,9 +2,8 @@
 
 The repo is versioned based on [SemVer 2.0](https://semver.org/spec/v2.0.0.html) using the tiny-but-mighty [MinVer](https://github.com/adamralph/minver) from [@adamralph](https://github.com/adamralph). [See here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The `Unreleased` section name is replaced by the expected version of next release. A stable version's log contains all changes between that version and the previous stable version (can duplicate the prereleases logs).
 
 _NB at the present time, this project does not adhere strictly to Semantic Versioning - small binary-breaking changes may occur without a change in Major at the until this notice is removed (it will be!)._
@@ -13,6 +12,10 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 
 ### Added
 ### Changed
+
+- Make `caching` non-optional in CosmosStreamResolver; add `NoCaching` cache mode for `Equinox.Cosmos` [#104](https://github.com/jet/equinox/issues/104) @jakzale
+- Reorder `caching` and `access` in `GesStreamResolver` to match `CosmosStreamResolver` [#107](https://github.com/jet/equinox/issues/107)
+
 ### Removed
 ### Fixed
 
