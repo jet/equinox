@@ -11,10 +11,14 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 ## [Unreleased]
 
 ### Added
+
+- Provide capability to access `Metadata` and `EventNumber`/`Index` re [#102](https://github.com/jet/equinox/issues/102)
+
 ### Changed
 
-- Make `caching` non-optional in CosmosStreamResolver; add `NoCaching` cache mode for `Equinox.Cosmos` [#104](https://github.com/jet/equinox/issues/104) @jakzale
+- Make `caching` non-optional in `CosmosStreamResolver`; add `NoCaching` cache mode for `Equinox.Cosmos` [#104](https://github.com/jet/equinox/issues/104) @jakzale
 - Reorder `caching` and `access` in `GesStreamResolver` to match `CosmosStreamResolver` [#107](https://github.com/jet/equinox/issues/107)
+- Renamespaced and separated `Equinox.Codec` APIs to separate `Newtonsoft.Json` and custom `encode`/`tryDecode` approaches [#102](https://github.com/jet/equinox/issues/102) (in preparation for [#79](https://github.com/jet/equinox/issues/79))
 
 ### Removed
 ### Fixed
