@@ -30,14 +30,14 @@ module Cart =
     let createServiceWithoutOptimization log gateway =
         Backend.Cart.Service(log, GesResolver(gateway, codec, fold, initial).Resolve)
     let createServiceWithCompaction log gateway =
-        let resolveStream = GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
+        let resolveStream = GesResolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, GesResolver(gateway, codec, fold, initial, caching = sliding20m).Resolve)
+        Backend.Cart.Service(log, GesResolver(gateway, codec, fold, initial, sliding20m).Resolve)
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot, sliding20m).Resolve)
+        Backend.Cart.Service(log, GesResolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
@@ -46,7 +46,7 @@ module ContactPreferences =
         let gateway = createGesGateway connection defaultBatchSize
         Backend.ContactPreferences.Service(log, GesResolver(gateway, codec, fold, initial).Resolve)
     let createService log connection =
-        let resolveStream = GesResolver(createGesGateway connection 1, codec, fold, initial, AccessStrategy.EventsAreState).Resolve
+        let resolveStream = GesResolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.EventsAreState).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

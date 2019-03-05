@@ -18,14 +18,14 @@ let createServiceMemory log store =
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
-    GesResolver(gateway 1, codec, fold, initial, AccessStrategy.EventsAreState).Resolve
+    GesResolver(gateway 1, codec, fold, initial, access = AccessStrategy.EventsAreState).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
     GesResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 let resolveStreamCosmosWithKnownEventTypeSemantics gateway =
-    CosmosResolver(gateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Resolve
+    CosmosResolver(gateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.AnyKnownEventType).Resolve
 let resolveStreamCosmosWithoutCustomAccessStrategy gateway =
-    CosmosResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
+    CosmosResolver(gateway defaultBatchSize, codec, fold, initial, CachingStrategy.NoCaching).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

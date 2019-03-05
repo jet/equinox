@@ -19,21 +19,21 @@ module Cart =
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosStore connection batchSize
-        let resolveStream = CosmosResolver(store, codec, fold, initial).Resolve
+        let resolveStream = CosmosResolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithoutOptimizationAndMaxItems connection batchSize maxEventsPerSlice log =
         let store = createCosmosStoreWithMaxEventsPerSlice connection batchSize maxEventsPerSlice
-        let resolveStream = CosmosResolver(store, codec, fold, initial).Resolve
+        let resolveStream = CosmosResolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve
         Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
     let createServiceWithProjection connection batchSize log =
         let store = createCosmosStore connection batchSize
-        let resolveStream = CosmosResolver(store, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
+        let resolveStream = CosmosResolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithProjectionAndCaching connection batchSize log cache =
         let store = createCosmosStore connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream = CosmosResolver(store, codec, fold, initial, AccessStrategy.Snapshot snapshot, sliding20m).Resolve
+        let resolveStream = CosmosResolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
@@ -41,10 +41,10 @@ module ContactPreferences =
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolveStream = CosmosResolver(gateway, codec, fold, initial).Resolve
+        let resolveStream = CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService createGateway log =
-        let resolveStream = CosmosResolver(createGateway 1, codec, fold, initial, AccessStrategy.AnyKnownEventType).Resolve
+        let resolveStream = CosmosResolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.AnyKnownEventType).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

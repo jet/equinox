@@ -19,11 +19,11 @@ let createServiceMemory log store =
 
 let codec = genCodec<Domain.Favorites.Events.Event>()
 let createServiceGes gateway log =
-    let resolveStream = GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
+    let resolveStream = GesResolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
 let createServiceCosmos gateway log =
-    let resolveStream = CosmosResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
+    let resolveStream = CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =

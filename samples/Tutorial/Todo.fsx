@@ -114,7 +114,7 @@ module Store =
 module TodosCategory = 
     let codec = Equinox.UnionCodec.JsonUtf8.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
     let access = Equinox.Cosmos.AccessStrategy.Snapshot (isOrigin,compact)
-    let resolve = CosmosResolver(Store.store, codec, fold, initial, access=access, caching=Store.cacheStrategy).Resolve
+    let resolve = CosmosResolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
 
 let service = Service(log, TodosCategory.resolve)
 

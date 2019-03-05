@@ -19,14 +19,14 @@ let createServiceMemory log store =
 let codec = Equinox.EventStore.Integration.EventStoreIntegration.genCodec<Domain.Cart.Events.Event>()
 
 let resolveGesStreamWithRollingSnapshots gateway =
-    GesResolver(gateway, codec, fold, initial, AccessStrategy.RollingSnapshots snapshot).Resolve
+    GesResolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     GesResolver(gateway, codec, fold, initial).Resolve
 
 let resolveCosmosStreamWithProjection gateway =
-    CosmosResolver(gateway, codec, fold, initial, AccessStrategy.Snapshot snapshot).Resolve
+    CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    CosmosResolver(gateway, codec, fold, initial).Resolve
+    CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching).Resolve
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->

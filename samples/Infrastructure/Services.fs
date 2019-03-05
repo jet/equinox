@@ -15,13 +15,13 @@ type StreamResolver(storage) =
         match storage with
         | Storage.StorageConfig.Memory store ->
             Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve
-        | Storage.StorageConfig.Es (gateway, cache, unfolds) ->
+        | Storage.StorageConfig.Es (gateway, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot |> Some else None
-            Equinox.EventStore.GesResolver<'event,'state>(gateway, codec, fold, initial, ?access = accessStrategy, ?caching = cache).Resolve
-        | Storage.StorageConfig.Cosmos (gateway, cache, unfolds, databaseId, collectionId) ->
+            Equinox.EventStore.GesResolver<'event,'state>(gateway, codec, fold, initial, ?caching = caching, ?access = accessStrategy).Resolve
+        | Storage.StorageConfig.Cosmos (gateway, caching, unfolds, databaseId, collectionId) ->
             let store = Equinox.Cosmos.CosmosStore(gateway, databaseId, collectionId)
             let accessStrategy = if unfolds then Equinox.Cosmos.AccessStrategy.Snapshot snapshot |> Some else None
-            Equinox.Cosmos.CosmosResolver<'event,'state>(store, codec, fold, initial, ?access = accessStrategy, ?caching = cache).Resolve
+            Equinox.Cosmos.CosmosResolver<'event,'state>(store, codec, fold, initial, caching, ?access = accessStrategy).Resolve
 
 type ServiceBuilder(storageConfig, handlerLog) =
      let resolver = StreamResolver(storageConfig)
