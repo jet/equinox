@@ -1,15 +1,16 @@
 ﻿// Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #r "netstandard"
-#r "bin/Debug/netstandard2.0/Serilog.dll"
-#r "bin/Debug/netstandard2.0/Serilog.Sinks.Console.dll"
-#r "bin/Debug/netstandard2.0/Newtonsoft.Json.dll"
-#r "bin/Debug/netstandard2.0/TypeShape.dll"
-#r "bin/Debug/netstandard2.0/Equinox.dll"
-#r "bin/Debug/netstandard2.0/Equinox.Codec.dll"
-#r "bin/Debug/netstandard2.0/FSharp.Control.AsyncSeq.dll"
-#r "bin/Debug/netstandard2.0/Microsoft.Azure.DocumentDb.Core.dll"
-#r "bin/Debug/netstandard2.0/Equinox.Cosmos.dll"
+#I "bin/Debug/netstandard2.0/"
+#r "Serilog.dll"
+#r "Serilog.Sinks.Console.dll"
+#r "Newtonsoft.Json.dll"
+#r "TypeShape.dll"
+#r "Equinox.dll"
+#r "Equinox.Codec.dll"
+#r "FSharp.Control.AsyncSeq.dll"
+#r "Microsoft.Azure.DocumentDb.Core.dll"
+#r "Equinox.Cosmos.dll"
 
 open Equinox.Cosmos
 open System
@@ -18,27 +19,28 @@ open System
    This tutorial stresses different aspects *)
 
 type Todo = { id: int; order: int; title: string; completed: bool }
+type DeletedInfo = { id: int }
+type CompactedInfo = { items: Todo[] }
 type Event =
     | Added     of Todo
     | Updated   of Todo
-    | Deleted   of int
+    | Deleted   of DeletedInfo
     | Cleared
-    | Compacted of Todo[]
+    | Compacted of CompactedInfo
     interface TypeShape.UnionContract.IUnionContract
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
 let evolve s (e : Event) = 
-    printfn "%A" e
     match e with
     | Added item -> { s with items = item :: s.items; nextId = s.nextId + 1 }
     | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
-    | Deleted id -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
+    | Deleted { id=id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
-    | Compacted items -> { s with items = List.ofArray items }
+    | Compacted { items=items } -> { s with items = List.ofArray items }
 let fold state = Seq.fold evolve state
 let isOrigin = function Cleared | Compacted _ -> true | _ -> false
-let compact state = Compacted (Array.ofList state.items)
+let compact state = Compacted { items = Array.ofList state.items }
 
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
 let interpret c (state : State) =
@@ -48,7 +50,7 @@ let interpret c (state : State) =
         match state.items |> List.tryFind (function { id = id } -> id = value.id) with
         | Some current when current <> value -> [Updated value]
         | _ -> []
-    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted id] else []
+    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted { id=id }] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
 type Service(log, resolveStream, ?maxAttempts) =
@@ -112,7 +114,7 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory = 
-    let codec = Equinox.Codec.JsonUtf8.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
+    let codec = Equinox.Codec.JsonNet.JsonUtf8.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
     let access = Equinox.Cosmos.AccessStrategy.Snapshot (isOrigin,compact)
     let resolve = CosmosResolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
 

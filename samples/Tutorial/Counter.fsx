@@ -1,9 +1,10 @@
 ﻿// Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#r "bin/Debug/netstandard2.0/Serilog.dll"
-#r "bin/Debug/netstandard2.0/Serilog.Sinks.Console.dll"
-#r "bin/Debug/netstandard2.0/Equinox.dll"
-#r "bin/Debug/netstandard2.0/Equinox.MemoryStore.dll"
+#I "bin/Debug/netstandard2.0/"
+#r "Serilog.dll"
+#r "Serilog.Sinks.Console.dll"
+#r "Equinox.dll"
+#r "Equinox.MemoryStore.dll"
 
 // Contributed by @voronoipotato
 
@@ -13,7 +14,7 @@
 type Event = 
     | Incremented
     | Decremented
-    | Cleared of int 
+    | Cleared of int // NOTE int payload will need to be wrapped in a record if using .Cosmos and/or .EventSore
 (* A counter going up might clear to 0, 
    but a counter going down might clear to 100. *)
 

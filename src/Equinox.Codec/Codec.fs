@@ -103,17 +103,15 @@ type JsonUtf8 =
     ///     The Union must be tagged with `interface TypeShape.UnionContract.IUnionContract` to signify this scheme applies.
     ///     See https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs for example usage.</summary>
     /// <param name="settings">Configuration to be used by the underlying <c>Newtonsoft.Json</c> Serializer when encoding/decoding.</param>
-    /// <param name="requireRecordFields">Fail encoder generation if union cases contain fields that are not F# records. Defaults to <c>false</c>.</param>
     /// <param name="allowNullaryCases">Fail encoder generation if union contains nullary cases. Defaults to <c>true</c>.</param>
     static member Create<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>
         (   settings,
-            [<Optional;DefaultParameterValue(null)>]?requireRecordFields,
             [<Optional;DefaultParameterValue(null)>]?allowNullaryCases)
         : Equinox.Codec.IUnionEncoder<'Union,byte[]> =
         let dataCodec =
             TypeShape.UnionContract.UnionContractEncoder.Create<'Union,byte[]>(
                 new Utf8BytesUnionEncoder(settings),
-                ?requireRecordFields=requireRecordFields,
+                requireRecordFields=true, // See JsonConverterTests - roundtripping correctly to UTF-8 with Json.net is painful so for now we lock up the dragons
                 ?allowNullaryCases=allowNullaryCases)
         { new Equinox.Codec.IUnionEncoder<'Union,byte[]> with
             member __.Encode value =

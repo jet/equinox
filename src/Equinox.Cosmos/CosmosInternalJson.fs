@@ -6,19 +6,21 @@ open Newtonsoft.Json
 /// Manages injecting prepared json into the data being submitted to DocDb as-is, on the basis we can trust it to be valid json as DocDb will need it to be
 type VerbatimUtf8JsonConverter() =
     inherit JsonConverter()
-
+    
+    static let enc = System.Text.Encoding.UTF8
+    
     override __.ReadJson(reader, _, _, _) =
-        let token = JToken.Load(reader)
-        if token.Type = JTokenType.Object then token.ToString() |> System.Text.Encoding.UTF8.GetBytes |> box
-        else Array.empty<byte> |> box
+        let token = JToken.Load reader
+        if token = null then null
+        else token |> string |> enc.GetBytes |> box
 
     override __.CanConvert(objectType) =
         typeof<byte[]>.Equals(objectType)
 
     override __.WriteJson(writer, value, serializer) =
         let array = value :?> byte[]
-        if array = null || Array.length array = 0 then serializer.Serialize(writer, null)
-        else writer.WriteRawValue(System.Text.Encoding.UTF8.GetString(array))
+        if array = null then serializer.Serialize(writer, null)
+        else writer.WriteRawValue(enc.GetString(array))
 
 open System.IO
 open System.IO.Compression

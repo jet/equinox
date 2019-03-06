@@ -31,8 +31,9 @@ type SimpleDu =
     | EventB of EventWithOption
     | EventC of EventWithUnion
     | EventD
-    | EventE of int
-    | EventF of string
+    // See JsonConverterTests for why these are ruled out atm
+    //| EventE of int // works but disabled due to Strings and DateTimes not working
+    //| EventF of string // has wierd semantics, particularly when used with a VerbatimJsonConverter in Equinox.Cosmos
     interface IUnionContract
 
 let render = function
@@ -43,8 +44,8 @@ let render = function
     | EventC { value = S { maybeI = None } } -> sprintf """{"value":{"case":"S"}}"""
     | EventC { value = S { maybeI = Some i } } -> sprintf """{"value":{"case":"S","maybeI":%d}}""" i
     | EventD -> null
-    | EventE i -> string i
-    | EventF s ->  Newtonsoft.Json.JsonConvert.SerializeObject s
+    //| EventE i -> string i
+    //| EventF s ->  Newtonsoft.Json.JsonConvert.SerializeObject s
 
 let codec = genCodec<SimpleDu>()
 

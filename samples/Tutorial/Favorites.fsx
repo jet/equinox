@@ -1,9 +1,10 @@
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#r "bin/Debug/netstandard2.0/Serilog.dll"
-#r "bin/Debug/netstandard2.0/Serilog.Sinks.Console.dll"
-#r "bin/Debug/netstandard2.0/Equinox.dll"
-#r "bin/Debug/netstandard2.0/Equinox.MemoryStore.dll"
+#I "bin/Debug/netstandard2.0/"
+#r "Serilog.dll"
+#r "Serilog.Sinks.Console.dll"
+#r "Equinox.dll"
+#r "Equinox.MemoryStore.dll"
 
 (*
  * EVENTS
@@ -11,8 +12,11 @@
 
 (* Define the events that will be saved in the Stream *)
 
+// Note using strings and DateTimes etc as Event payloads is not supported for .Cosmos or .EventStore using the UnionCodec support
+// i.e. typically records are used for the Event Payloads even in cases where you feel you'll only ever have a single primitive value
+
 type Event =
-    | Added of string
+    | Added of string  
     | Removed of string
 
 let initial : string list = []

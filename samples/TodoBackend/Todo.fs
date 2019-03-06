@@ -6,12 +6,14 @@ open Domain
 [<AutoOpen>]
 module Events =
     type Todo = { id: int; order: int; title: string; completed: bool }
+    type DeletedInfo = { id: int }
+    type CompactedInfo = { items: Todo[] }
     type Event =
         | Added     of Todo
         | Updated   of Todo
-        | Deleted   of int
+        | Deleted   of DeletedInfo
         | Cleared
-        | Compacted of Todo[]
+        | Compacted of CompactedInfo
         interface TypeShape.UnionContract.IUnionContract
 
 module Folds =
@@ -21,12 +23,12 @@ module Folds =
         match e with
         | Added item -> { s with items = item :: s.items; nextId = s.nextId + 1 }
         | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
-        | Deleted id -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
+        | Deleted { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
         | Cleared -> { s with items = [] }
-        | Compacted items -> { s with items = List.ofArray items }
+        | Compacted { items = items } -> { s with items = List.ofArray items }
     let fold state = Seq.fold evolve state
     let isOrigin = function Events.Cleared | Events.Compacted _ -> true | _ -> false
-    let compact state = Compacted (Array.ofList state.items)
+    let compact state = Compacted { items = Array.ofList state.items }
 
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
 
@@ -38,7 +40,7 @@ module Commands =
             match state.items |> List.tryFind (function { id = id } -> id = value.id) with
             | Some current when current <> value -> [Updated value]
             | _ -> []
-        | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted id] else []
+        | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted {id=id}] else []
         | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
 type Service(log, resolveStream, ?maxAttempts) =
