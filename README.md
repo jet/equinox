@@ -114,7 +114,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx initAux -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to maintain consumer group progress within
     # -v for verbose ChangeFeedProcessor logging
     # `projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
-    # stats specifies one only wants stats regarding items (other options include kafka to project to kafka)
+    # stats specifies one only wants stats regarding items (other options include `kafka` to project to Kafka)
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
     eqx -v project projector1 stats cosmos
     ```
@@ -148,7 +148,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx -v project projector3 -l 5 kafka temp-topic cosmos
     ```
 
-7. **(Preview)** Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Equinox.Projection.Kafka`)
+7. **(Preview)** Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Jet.ConfluentKafka.FSharp` v `1.0.0`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code
@@ -215,8 +215,8 @@ The components within this repository are delivered as a series of multi-targete
 ### Projection libraries
 
 - [![Cosmos.Projection NuGet](https://img.shields.io/nuget/v/Equinox.Cosmos.Projection.svg)](https://www.nuget.org/packages/Equinox.Cosmos.Projection/) `Equinox.Cosmos.Projection`: Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous natched query loop per CosmosDb Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.Cosmos` for processing or forwarding). Used in the [`eqx project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new eqx projector` to generate a sample app](quickstart) using it. ([depends](https://www.fuget.org/packages/Equinox.Cosmos.Projection) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
-- [![Projection.Kafka NuGet](https://img.shields.io/nuget/v/Equinox.Projection.Kafka.svg)](https://www.nuget.org/packages/Equinox.Projection.Kafka/) `Equinox.Projection.Kafka`: Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`eqx project kafka`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new eqx projector -k` to generate a sample app](quickstart) using it. ([depends](https://www.fuget.org/packages/Equinox.Projection.Kafka) on `Confluent.Kafka >= 1.0.0-beta3`, `Serilog`)
 - [![Projection.Codec NuGet](https://img.shields.io/nuget/v/Equinox.Projection.Codec.svg)](https://www.nuget.org/packages/Equinox.Projection.Codec/) `Equinox.Projection.Codec`: Provides a standard `RenderedEvent` that can be used as a default format when projecting events via e.g. `Equinox.Projection.Kafka`. Also provides a `FeedValidator` that can be used to validate when duplicate events and/or gaps observed in the sequences of events (see [`eqx project stats` and `kafka`](dotnet-tool-provisioning--benchmarking-tool)). ([depends](https://www.fuget.org/packages/Equinox.Projection.Codec) on `Newtonsoft.Json >= 11.0.2`)
+- _Related, maintained in separate repo_ [![Jet.ConfluentKafka.FSharp NuGet](https://img.shields.io/nuget/vpre/Jet.ConfluentKafka.FSharp.svg)](https://www.nuget.org/packages/Jet.ConfluentKafka.FSharp/) `Jet.ConfluentKafka.FSharp`: Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`eqx project kafka`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new eqx projector -k` to generate a sample app](quickstart) using it.
 
 ### `dotnet tool` provisioning / benchmarking tool
 

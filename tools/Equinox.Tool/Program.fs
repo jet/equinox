@@ -4,7 +4,7 @@ open Argu
 open Domain.Infrastructure
 open Equinox.Cosmos.Projection
 open Equinox.Projection.Codec
-open Equinox.Projection.Kafka
+open Jet.ConfluentKafka.FSharp
 open Equinox.Projection.Validation
 open Equinox.Store.Infrastructure
 open Equinox.Tool.Infrastructure

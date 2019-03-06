@@ -4,7 +4,7 @@
     <Company>Jet.com</Company>
     <Description>Composable high performance event sourcing componentry</Description>
     <PackageProjectUrl>https://github.com/jet/equinox</PackageProjectUrl>
-    <PackageTags>fsharp unionencoder eventsourcing eventstore typeshape</PackageTags>
+    <PackageTags>fsharp unionencoder eventsourcing eventstore cosmosdb typeshape</PackageTags>
     <PackageLicense>Apache-2.0</PackageLicense>
     <Copyright>Copyright © 2016-9</Copyright>
 
@@ -33,5 +33,4 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-
 </Project>

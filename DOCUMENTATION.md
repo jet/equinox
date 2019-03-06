@@ -589,7 +589,7 @@ In an Event Sourced system, we typically distinguish between the following basic
 
 - _Snapshots_ - A snapshot is an intentionally roundtrippable version of a State, that can be saved and restored. Typically one would do this to save the (latency, roundtrips, RUs, deserialization and folding) cost of loading all the Events in a long running sequence of Events to re-establish the State. The [EventStore folks have a great walkthrough on Rolling Snapshots](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html).
 
-- Projections - the term projection is *heavily* overloaded, meaning anything from the proceeds of a SELECT statement, the result of a `map` operation, an EventStore projection, an event being propagated via Kafka (no, further examples are not required!).
+- Projections - the term projection is *heavily* overloaded, meaning anything from the proceeds of a SELECT statement, the result of a `map` operation, an EventStore projection to an event being propagated via Kafka (no, further examples are not required!).
 
 .... and:
 
@@ -772,11 +772,9 @@ While [Kafka is not for Event Sourcing](https://medium.com/serialized-io/apache-
 
 The [Apache Kafka intro docs](https://kafka.apache.org/intro) provide a clear terse overview of the design and attendant benefits this brings to bear.
 
-As noted in the [Effect of ChangeFeed on Request Charges](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#effect-of-changefeed-on-request-charges) section, it can make sense to replicate the ChangeFeed to Kafka purely from the point of view of optimising request charges (and not needing to consider projections when considering how to scale up provisioning for load). Other benefits are mechanical sympathy based - Kafka is very often the right tool for the job in scaling out traversal of events for a variety of use cases.
+As noted in the [Effect of ChangeFeed on Request Charges](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#effect-of-changefeed-on-request-charges) section, it can make sense to replicate a subset of the ChangeFeed to a Kafka topic (both for projections being consumed within a Bounded Context and for cases where you are generating a Pubished Notification Event) purely from the point of view of optimising request charges (and not needing to consider projections when considering how to scale up provisioning for load). Other benefits are mechanical sympathy based - Kafka is often the right tool for the job in scaling out traversal of events for a variety of use cases given one has sufficient traffic to warrant the complexity.
 
 See the [PR that added the initial support for CosmosDb Projections](https://github.com/jet/equinox/pull/87) and [the QuickStart](README.md#quickstart) for instructions.
-
-It should be noted that the `Equinox.Projection.Kafka` batteries included projector/consumer library targets the `Confluent.Kafka` `1.0.0-*` series (as opposed to the present stable `0.11.4` thru `6` editions). There are significant breaking changes between the `0.` and `1.` releases, and there is no plan to support `0.1.x` targeting in this codebase (PR 87's history does include a passing library and tests targeting `0.11.4` for history buffs).
 
 - https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
 - https://www.confluent.io/wp-content/uploads/confluent-kafka-definitive-guide-complete.pdf
