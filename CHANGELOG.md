@@ -6,9 +6,15 @@ All notable changes to this project will be documented in this file. The format 
 
 The `Unreleased` section name is replaced by the expected version of next release. A stable version's log contains all changes between that version and the previous stable version (can duplicate the prereleases logs).
 
-_NB at the present time, this project does not adhere strictly to Semantic Versioning - small binary-breaking changes may occur without a change in Major at the until this notice is removed (it will be!)._
-
 ## [Unreleased]
+
+### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0-preview1"></a>
+## [2.0.0-preview1] - 2019-05-07
 
 ### Added
 
@@ -22,12 +28,12 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 
 ### Removed
 
-- Extracted `Equinox.Projection.Kafka` and its integration tests to become [`Jet.ConfluentKafka.FSharp` v `1.0.0-preview1`](https://github.com/jet/Jet.ConfluentKafka.FSharp/tree/v1); retargeted `Equinox.Tool` to use same.
+- Extract `Equinox.Projection.Kafka` and its integration tests to become [`Jet.ConfluentKafka.FSharp` v `1.0.0-preview1`](https://github.com/jet/Jet.ConfluentKafka.FSharp/tree/v1); retargeted `Equinox.Tool` to use same.
 
 ### Fixed
 
 - Add Writing empty event list guard for `Equinox.Cosmos` [#105](https://github.com/jet/equinox/issues/105)
-- Disabled support for non-record Event payloads in `Equinox.Codec` [#103](https://github.com/jet/equinox/issues/103)
+- Disable support for non-record Event payloads in `Equinox.Codec` [#103](https://github.com/jet/equinox/issues/103)
 
 <a name="1.1.0-preview2"></a>
 ## [1.1.0-preview2] - 2019-02-20
@@ -78,10 +84,11 @@ _NB at the present time, this project does not adhere strictly to Semantic Versi
 <a name="1.0.3"></a>
 ## [1.0.3] - 2019-01-19
 
-(See release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
+(For information pertaiing to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/1.1.0-preview2...HEAD
-[1.1.0-beta1]: https://github.com/jet/equinox/compare/1.1.0-preview1...1.1.0-preview2
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview1...HEAD
+[2.0.0-preview1]: https://github.com/jet/equinox/compare/1.1.0-preview2...2.0.0-preview1
+[1.1.0-preview2]: https://github.com/jet/equinox/compare/1.1.0-preview1...1.1.0-preview2
 [1.1.0-preview1]: https://github.com/jet/equinox/compare/1.0.4...1.1.0-preview1
 [1.0.4]: https://github.com/jet/equinox/compare/1.0.3...1.0.4
 [1.0.3]: https://github.com/jet/equinox/compare/e28991d8005a2257594ac5cf5b764b76fdca7823...1.0.3

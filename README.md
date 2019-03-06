@@ -104,12 +104,12 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Web
     ```
 
-4. **(Preview)** Use `eqx` tool to run a CosmosDb ChangeFeedProcessor
+4. (**`2.0.0-preview*`**) Use `eqx` tool to run a CosmosDb ChangeFeedProcessor
 
     ```powershell
     # TEMP: need to uninstall and use --version flag while this is in beta
     dotnet tool uninstall Equinox.Tool -g
-    dotnet tool install Equinox.Tool -g --version 1.1.0-preview*
+    dotnet tool install Equinox.Tool -g --version 2.0.0-preview*
 
     eqx initAux -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to maintain consumer group progress within
     # -v for verbose ChangeFeedProcessor logging
@@ -119,7 +119,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx -v project projector1 stats cosmos
     ```
 
-5. **(Preview)** Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Equinox.Cosmos.Projection`
+5. (**`2.0.0-preview*`**) Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Equinox.Cosmos.Projection`
 
     ```powershell
     # TEMP INSTRUCTIONS WHILE IN PREVIEW: NB need version `::*` spec while in preview
@@ -134,7 +134,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Projector -- projector2 cosmos
     ```
 
-6. **(Preview)** Use `eqx` tool to Run a [CosmosDb ChangeFeedProcessor](DOCUMENTATION.md#change-feed-processors), [emitting to a Kafka topic](DOCUMENTATION.md#feeding-to-kafka)
+6. (**`2.0.0-preview*`**) Use `eqx` tool to Run a [CosmosDb ChangeFeedProcessor](DOCUMENTATION.md#change-feed-processors), [emitting to a Kafka topic](DOCUMENTATION.md#feeding-to-kafka)
 
     ```powershell
     $env:EQUINOX_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
@@ -148,7 +148,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx -v project projector3 -l 5 kafka temp-topic cosmos
     ```
 
-7. **(Preview)** Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Jet.ConfluentKafka.FSharp` v `1.0.0`)
+7. (**`2.0.0-preview*`**) Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Jet.ConfluentKafka.FSharp` v `1.0.0`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code
