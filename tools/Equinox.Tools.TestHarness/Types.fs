@@ -1,4 +1,4 @@
-﻿namespace Equinox.Tool.Infrastructure
+﻿namespace Equinox.Tools.TestHarness
 
 open System
 open System.Net

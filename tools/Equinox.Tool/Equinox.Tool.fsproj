@@ -20,10 +20,6 @@
   <ItemGroup>
     <Compile Include="Infrastructure\Infrastructure.fs" />
     <Compile Include="Infrastructure\HttpHelpers.fs" />
-    <Compile Include="Infrastructure\Types.fs" />
-    <Compile Include="Infrastructure\Aggregate.fs" />
-    <Compile Include="Infrastructure\LoadTestRunner.fs" />
-    <Compile Include="Infrastructure\LocalLoadTestRunner.fs" />
     <Compile Include="StoreClient.fs" />
     <Compile Include="TodoClient.fs" />
     <Compile Include="Tests.fs" />
@@ -38,6 +34,7 @@
     <ProjectReference Include="..\..\samples\Infrastructure\Infrastructure.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj" />
+    <ProjectReference Include="..\Equinox.Tools.TestHarness\Equinox.Tools.TestHarness.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -135,6 +135,8 @@ let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     c.CreateLogger() :> ILogger
 
 module LoadTest =
+    open Equinox.Tools.TestHarness
+
     let private runLoadTest log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
         let mutable idx = -1L
         let selectClient () =
