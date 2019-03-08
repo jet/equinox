@@ -6,7 +6,6 @@ open Microsoft.AspNetCore.Hosting
 open Microsoft.AspNetCore.Mvc
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure
-open Samples.Infrastructure.Storage
 open Serilog
 open Serilog.Events
 
@@ -16,9 +15,9 @@ type Arguments =
     | [<AltCommandLine("-S")>] LocalSeq
     | [<AltCommandLine("-C")>] Cached
     | [<AltCommandLine("-U")>] Unfolds
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<MemArguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Es of ParseResults<EsArguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<CosmosArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<Storage.MemoryStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Es of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | VerboseConsole -> "Include low level Domain and Store logging in screen output."
@@ -46,23 +45,24 @@ type Startup() =
             let c = match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
             c.CreateLogger() :> ILogger
 
-        let storeConfig, storeLog : StorageConfig * ILogger =
+        let storeConfig, storeLog : Storage.StorageConfig * ILogger =
             let options = args.GetResults Cached @ args.GetResults Unfolds
             let cache, unfolds = options |> List.contains Cached, options |> List.contains Unfolds
+            let defaultBatchSize = 500
             let log = Log.ForContext<App>()
 
             match args.TryGetSubCommand() with
             | Some (Es sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains EsArguments.VerboseStore
+                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
                 log.Information("EventStore Storage options: {options:l}", options)
-                EventStore.config (log,storeLog) (cache, unfolds) sargs, storeLog
+                Storage.EventStore.config (log,storeLog) (cache, unfolds, defaultBatchSize) sargs, storeLog
             | Some (Cosmos sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains CosmosArguments.VerboseStore
+                let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("CosmosDb Storage options: {options:l}", options)
-                Cosmos.config (log,storeLog) (cache, unfolds) sargs, storeLog
+                Storage.Cosmos.config (log,storeLog) (cache, unfolds, defaultBatchSize) (Storage.Cosmos.Info sargs), storeLog
             | _  | Some (Memory _) ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
-                MemoryStore.config (), log
+                Storage.MemoryStore.config (), log
         Services.register(services, storeConfig, storeLog)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
