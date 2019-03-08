@@ -1,4 +1,4 @@
-Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ) and [README.md](README.md) and the Issues for background info. While the repo is open, this is **not released**, it's a soft-launched open source repo marked 1.0 to reflect that its in production usage and can't undergo abritrary changes. There is absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now; here are some excuses why:
+Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ), [README.md](README.md) and the Issues for background info on what's outstanding. While the repo is open, this is **not released**, it's a soft-launched open source repo marked > 1.0 to reflect that its in production usage and thus can't undergo random rewrites, but it's still early days. There's absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now; here are some excuses why:
 
 - As noted in the [contributing section](README.md#contributing), we're simply not ready yet (we have governance models in place; this is purely a matter of conserving bandwidth, prioritising getting the system serviceable in terms of samples and documentation in advance of inviting people to evaluate)...
 - While [`dotnet new eqxweb -t`](https://github.com/jet/dotnet-templates) does provide the option to include a full-featured [TodoBackend](https://todobackend.com) per the spec, a more complete sample application is needed; see [#57](https://github.com/jet/equinox/issues/57)
@@ -783,11 +783,16 @@ See the [PR that added the initial support for CosmosDb Projections](https://git
 
 # Things that are incomplete and/or require work
 
-This is a very loose laundry list of items that have occurred to us to do, given infinite time. No conclusions of likelihood of starting, finishing, or even committing to adding a feature should be inferred, but most represent things that would be likely to be accepted into the codebase (please raise Issues first though ;) ).
+This is a very loose laundry list of items that have occurred to us to do, given infinite time. No conclusions of likelihood of starting, finishing, or even committing to adding a feature should be inferred, but most represent things that would be likely to be accepted into the codebase (please [read and] raise Issues first though ;) ).
 
 - Extend samples and templates; see [#57](https://github.com/jet/equinox/issues/57)
 
-## Wouldn't it be nice - `Equinox.EventStore`:
+## Wouldn't it be nice - `Equinox`
+
+- While the plan is to support linux and MacOS, there are skipped tests wrt Mono etc. In terms of non-Windows developer experience, there's plenty scope for improvement.
+- Performance tuning for non-store-specific logic; no perf tuning has been done to date (though some of the Store/Domain implementations do show perf-optimized fold implementation techniques). While in general the work is I/O bound, there are definitely opportunities to use `System.IO.Pipelines` etc, and the `MemoryStore` and CLI gives a good testbed to drive this improvement.
+
+## Wouldn't it be nice - `Equinox.EventStore`
 
 EventStore, and it's Store adapter is the most proven and is pretty feature rich relative to the need of consumers to date. Some things remain though:
 
@@ -795,17 +800,19 @@ EventStore, and it's Store adapter is the most proven and is pretty feature rich
 - Get conflict handling as efficient and predictable as for `Equinox.Cosmos` https://github.com/jet/equinox/issues/28
 - provide for snapshots to be stored out of the stream, and loaded in a customizable manner in a manner analogous to [the proposed comparable `Equinox.Cosmos` facility](https://github.com/jet/equinox/issues/61).
 
-## Wouldn't it be nice - `Equinox`:
+## Wouldn't it be nice - `Equinox.Cosmos`
 
-- While the plan is to support linux and MacOS, there are skipped tests wrt Mono etc. In terms of non-Windows developer experience, there's plenty scope for improvement.
-- Performance tuning for non-store-specific logic; no perf tuning has been done to date (though some of the Store/Domain implementations do show perf-optimized fold implementation techniques). While in general the work is I/O bound, there are definitely opportunities to use `System.IO.Pipelines` etc, and the `MemoryStore` and CLI gives a good testbed to drive this improvement.
-
-## Wouldn't it be nice - `Equinox.Cosmos`:
-
-- Enable snapshots to be stored outside of the main collection in `Equinox.Cosmos` see [#61](https://github.com/jet/equinox/issues/61)
-- Multiple writers support for `u`nfolds (at present a `sync` completely replaces the unfolds in the Tip; this will be extended by having the stored proc maintain the union of the unfolds in play (both for semi-related services and for blue/green deploy scenarios); TBD how we decide when a union that's no longer in use gets removed)
+- Enable snapshots to be stored outside of the main collection in `Equinox.Cosmos` [#61](https://github.com/jet/equinox/issues/61)
+- Multiple writers support for `u`nfolds (at present a `sync` completely replaces the unfolds in the Tip; this will be extended by having the stored proc maintain the union of the unfolds in play (both for semi-related services and for blue/green deploy scenarios); TBD how we decide when a union that's no longer in use gets removed) [#108](https://github.com/jet/equinox/issues/108)
+- performance, efficiency and concurrency improvements based on [`tip-isa-batch`](https://github.com/jet/equinox/tree/tip-isa-batch) schema generalization [#109](https://github.com/jet/equinox/issues/109)
 - performance improvements in loading logic
 - `_etag`-based consistency checks?
-- Perf tuning of `JObject` vs `UTF-8` arrays
+- Perf tuning of `JObject` vs `UTF-8` arrays and/or using a different serializer [#79](https://github.com/jet/equinox/issues/79)
 
-## Wouldn't it be nice - `Equinox.SqlStreamStore`: See [#62](https://github.com/jet/equinox/issues/62)
+## Wouldn't it be nice - `Equinox.SqlStreamStore`
+
+- See [#62](https://github.com/jet/equinox/issues/62)
+
+## Wouldn't it be nice - `Equinox.DynamoDb`
+
+- See [#76](https://github.com/jet/equinox/issues/76)
