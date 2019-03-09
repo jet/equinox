@@ -25,6 +25,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Make `caching` non-optional in `CosmosStreamResolver`; add `NoCaching` cache mode for `Equinox.Cosmos` [#104](https://github.com/jet/equinox/issues/104) @jakzale
 - Reorder `caching` and `access` in `GesStreamResolver` to match `CosmosStreamResolver` [#107](https://github.com/jet/equinox/issues/107)
 - Renamespaced and separated `Equinox.Codec` APIs to separate `Newtonsoft.Json` and custom `encode`/`tryDecode` approaches [#102](https://github.com/jet/equinox/issues/102) (in preparation for [#79](https://github.com/jet/equinox/issues/79))
+- Uses MinVer 1.0.0 [internally] to compute package versions (was `rc.1`, `beta.4` along the way)
 
 ### Removed
 
