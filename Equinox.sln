@@ -59,7 +59,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Todo", "Todo", "{8CDE1CC3-8
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cosmos.Projection", "src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj", "{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Codec", "src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj", "{65F8FC6A-FF31-43A0-B7D9-4C9CF407DEB3}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection", "src\Equinox.Projection\Equinox.Projection.fsproj", "{65F8FC6A-FF31-43A0-B7D9-4C9CF407DEB3}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Tests", "tests\Equinox.Projection.Tests\Equinox.Projection.Tests.fsproj", "{047F782D-DC37-4599-8FA0-F9B4D4C09C7B}"
 EndProject

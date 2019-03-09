@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Projection\Equinox.Projection.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
