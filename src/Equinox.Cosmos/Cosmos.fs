@@ -34,7 +34,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 
         /// DocDb-mandated unique row key; needs to be unique within any partition it is maintained; must be string
         /// At the present time, one can't perform an ORDER BY on this field, hence we also have i shadowing it
-        /// NB WipBatch uses a well known value here while it's actively 'open'
+        /// NB Tip uses a well known value here while it's actively 'open'
         id: string // "{index}"
 
         /// When we read, we need to capture the value so we can retain it for caching purposes
@@ -653,15 +653,15 @@ type CosmosBatchingPolicy
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
         /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxSlices`. Default: unlimited.
         [<O; D(null)>]?maxRequests,
-        /// Maximum number of events to accumualte within the `WipBatch` before switching to a new one when adding Events. Defaults to 10.
-        [<O; D(null)>]?maxEventsPerSlice) =
+        /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events. Defaults to 10.
+        [<O; D(null)>]?maxTipEvents) =
     let getdefaultMaxItems = defaultArg getDefaultMaxItems (fun () -> defaultArg defaultMaxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
     member __.MaxItems = getdefaultMaxItems ()
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
-    /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events
-    member __.MaxEventsPerSlice = defaultArg maxEventsPerSlice 10
+    /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events. Defaults to 10.
+    member __.MaxTipEvents = defaultArg maxTipEvents 10
 
 type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
     let (|FromUnfold|_|) (tryDecode: #Equinox.Codec.IEvent<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#Equinox.Codec.IEvent<_>[]) : Option<'event[]> =
@@ -1007,6 +1007,7 @@ open Equinox.Cosmos
 open Equinox.Cosmos.Store
 open FSharp.Control
 open Equinox.Codec // must shadow Control.IEvent
+open System.Runtime.InteropServices
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]
@@ -1015,9 +1016,6 @@ type AppendResult<'t> =
     | Conflict of index: 't * conflictingEvents: IIndexedEvent[]
     | ConflictUnknown of index: 't
 
-type OAttribute = System.Runtime.InteropServices.OptionalAttribute
-type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
-    
 /// Encapsulates the core facilites Equinox.Cosmos offers for operating directly on Events in Streams.
 type CosmosContext
     (   /// Connection to CosmosDb with DocumentDb Transient Read and Write Retry policies
@@ -1026,18 +1024,18 @@ type CosmosContext
         collections: CosmosCollections,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
-        /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by maxEventsPerSlice).
+        /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by a) average batch size when appending events b) `maxTipEvents`).
         /// Defaults to 10
-        [<O; D(null)>]?defaultMaxItems,
+        [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
         /// Alternate way of specifying defaultMaxItems which facilitates reading it from a cached dynamic configuration
-        [<O; D(null)>]?getDefaultMaxItems,
-        /// Threshold defining the number of events a slice is allowed to hold before switching to a new Batch is triggered.
+        [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems,
+        /// Threshold defining the number of events the `Tip` is allowed to hold before switching to a new Batch is triggered.
         /// Defaults to 1
-        [<O; D(null)>]?maxEventsPerSlice) =
+        [<Optional; DefaultParameterValue(null)>]?maxTipEvents) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let maxEventsPerSlice = defaultArg maxEventsPerSlice 1
-    let batching = CosmosBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems, maxEventsPerSlice=maxEventsPerSlice)
+    let maxTipEvents = defaultArg maxTipEvents 1
+    let batching = CosmosBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems, maxTipEvents=maxTipEvents)
     let gateway = CosmosGateway(conn, batching)
 
     let maxCountPredicate count =
@@ -1056,8 +1054,8 @@ type CosmosContext
 
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
         let direction = defaultArg direction Direction.Forward
-        let batchSize = defaultArg batchSize batching.MaxItems * maxEventsPerSlice
-        let batching = CosmosBatchingPolicy(if batchSize < maxEventsPerSlice then 1 else batchSize/maxEventsPerSlice)
+        let batchSize = defaultArg batchSize batching.MaxItems * maxTipEvents
+        let batching = CosmosBatchingPolicy(if batchSize < maxTipEvents then 1 else batchSize/maxTipEvents)
         gateway.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
@@ -1118,7 +1116,7 @@ type EventData() =
     static member FromUtf8Bytes(eventType, data, ?meta) : IEvent<_> = Core.EventData.Create(eventType, data, ?meta=meta) :> _
 
 /// Api as defined in the Equinox Specification
-/// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's WipBatch
+/// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
 module Events =
     let private (|PositionIndex|) (x: Position) = x.index
     let private stripSyncResult (f: Async<AppendResult<Position>>): Async<AppendResult<int64>> = async {
