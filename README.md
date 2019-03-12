@@ -293,6 +293,10 @@ For fun, there's a direct translation of the `InventoryItem` Aggregate and Comma
 
 ### [`samples/Tutorial` (in this repo)](/samples/Tutorial): Annotated `.fsx` files with sample aggregate implementations
 
+### @ameier38's Tutorial
+
+[Andrew Meier](https://andrewcmeier.com) has written a very complete tutorial modeling a business domain using Equinox and Event Store; includes Dockerized Suave API, test suite using Expecto, build automation using FAKE, and CI using Codefresh; see [the repo](https://github.com/ameier38/equinox-tutorial) and its [overview blog post](https://andrewcmeier.com/bi-temporal-event-sourcing).
+
 ## BENCHMARKS
 
 A key facility of this repo is being able to run load tests, either in process against a nominated store, or via HTTP to a nominated instance of `samples/Web` ASP.NET Core host app. The following test suites are implemented at present:
