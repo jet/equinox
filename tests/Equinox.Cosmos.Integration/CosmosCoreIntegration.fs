@@ -31,7 +31,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit conn defaultBatchSize =
-        CosmosContext(conn,collections,log,?defaultMaxItems=defaultBatchSize,maxEventsPerSlice=10)
+        CosmosContext(conn,collections,log,?defaultMaxItems=defaultBatchSize)
     let mkContext conn = mkContextWithItemLimit conn None
 
     let verifyRequestChargesMax rus =
@@ -47,7 +47,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 14 // 13.73 // WAS 10
+        verifyRequestChargesMax 15 // 14.18 // WAS 10
         // Clear the counters
         capture.Clear()
 

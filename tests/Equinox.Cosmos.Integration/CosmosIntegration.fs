@@ -21,10 +21,6 @@ module Cart =
         let store = createCosmosStore connection batchSize
         let resolveStream = CosmosResolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve
         Backend.Cart.Service(log, resolveStream)
-    let createServiceWithoutOptimizationAndMaxItems connection batchSize maxEventsPerSlice log =
-        let store = createCosmosStoreWithMaxEventsPerSlice connection batchSize maxEventsPerSlice
-        let resolveStream = CosmosResolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve
-        Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
     let createServiceWithProjection connection batchSize log =
         let store = createCosmosStore connection batchSize
@@ -74,7 +70,7 @@ type Tests(testOutputHelper) =
 
         let maxItemsPerRequest = 2
         let maxEventsPerBatch = 3
-        let service = Cart.createServiceWithoutOptimizationAndMaxItems conn maxItemsPerRequest maxEventsPerBatch log
+        let service = Cart.createServiceWithoutOptimization conn maxItemsPerRequest log
         capture.Clear() // for re-runs of the test
 
         let cartId = % Guid.NewGuid()

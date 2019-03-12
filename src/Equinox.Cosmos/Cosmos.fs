@@ -652,16 +652,12 @@ type CosmosBatchingPolicy
         // Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default to using `defaultMaxItems`
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
         /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxSlices`. Default: unlimited.
-        [<O; D(null)>]?maxRequests,
-        /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events. Defaults to 10.
-        [<O; D(null)>]?maxTipEvents) =
-    let getdefaultMaxItems = defaultArg getDefaultMaxItems (fun () -> defaultArg defaultMaxItems 10)
+        [<O; D(null)>]?maxRequests) =
+    let getDefaultMaxItems = defaultArg getDefaultMaxItems (fun () -> defaultArg defaultMaxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
-    member __.MaxItems = getdefaultMaxItems ()
+    member __.MaxItems = getDefaultMaxItems ()
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
-    /// Maximum number of events to accumulate within the `Tip` before switching to a new one when adding Events. Defaults to 10.
-    member __.MaxTipEvents = defaultArg maxTipEvents 10
 
 type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
     let (|FromUnfold|_|) (tryDecode: #Equinox.Codec.IEvent<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#Equinox.Codec.IEvent<_>[]) : Option<'event[]> =
@@ -1024,18 +1020,14 @@ type CosmosContext
         collections: CosmosCollections,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
-        /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by a) average batch size when appending events b) `maxTipEvents`).
+        /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
         /// Defaults to 10
         [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
         /// Alternate way of specifying defaultMaxItems which facilitates reading it from a cached dynamic configuration
-        [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems,
-        /// Threshold defining the number of events the `Tip` is allowed to hold before switching to a new Batch is triggered.
-        /// Defaults to 1
-        [<Optional; DefaultParameterValue(null)>]?maxTipEvents) =
+        [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let maxTipEvents = defaultArg maxTipEvents 1
-    let batching = CosmosBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems, maxTipEvents=maxTipEvents)
+    let batching = CosmosBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems)
     let gateway = CosmosGateway(conn, batching)
 
     let maxCountPredicate count =
@@ -1054,8 +1046,7 @@ type CosmosContext
 
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
         let direction = defaultArg direction Direction.Forward
-        let batchSize = defaultArg batchSize batching.MaxItems * maxTipEvents
-        let batching = CosmosBatchingPolicy(if batchSize < maxTipEvents then 1 else batchSize/maxTipEvents)
+        let batching = CosmosBatchingPolicy(defaultArg batchSize batching.MaxItems)
         gateway.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {

@@ -262,7 +262,7 @@ let main argv =
             match iargs.TryGetSubCommand() with
             | Some (InitArguments.Cosmos sargs) ->
                 let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-                let dbName, collName, (_pageSize: int), conn = Storage.Cosmos.connect (log,storeLog) (Storage.Cosmos.Info sargs)
+                let dbName, collName, conn = Storage.Cosmos.connect (log,storeLog) (Storage.Cosmos.Info sargs)
                 log.Information("Configuring CosmosDb Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
                 Async.RunSynchronously <| async {
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
@@ -276,7 +276,7 @@ let main argv =
             match iargs.TryGetSubCommand() with
             | Some (InitAuxArguments.Cosmos sargs) ->
                 let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-                let dbName, collName, (_pageSize: int), conn = Storage.Cosmos.connect (log,storeLog) (Storage.Cosmos.Info sargs)
+                let dbName, collName, conn = Storage.Cosmos.connect (log,storeLog) (Storage.Cosmos.Info sargs)
                 let collName = collName + iargs.GetResult(InitAuxArguments.Suffix,"-aux")
                 log.Information("Configuring CosmosDb Aux Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
                 Async.RunSynchronously <| async {

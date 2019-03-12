@@ -35,7 +35,6 @@ module Cosmos =
         | [<AltCommandLine("-s")>] Connection of string
         | [<AltCommandLine("-d")>] Database of string
         | [<AltCommandLine("-c")>] Collection of string
-        | [<AltCommandLine("-a")>] PageSize of int
         interface IArgParserTemplate with
             member a.Usage =
                 match a with
@@ -47,7 +46,6 @@ module Cosmos =
                 | ConnectionMode _ ->   "override the connection mode (default: DirectTcp)."
                 | Database _ ->         "specify a database name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
                 | Collection _ ->       "specify a collection name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_COLLECTION, test)."
-                | PageSize _ ->         "specify maximum number of events to record on a page before switching to a new one (default: 1)"
     type Info(args : ParseResults<Arguments>) =
         member __.Connection =  match args.TryGetResult Connection  with Some x -> x | None -> envBackstop "Connection" "EQUINOX_COSMOS_CONNECTION"
         member __.Database =    match args.TryGetResult Database    with Some x -> x | None -> envBackstop "Database"   "EQUINOX_COSMOS_DATABASE"
@@ -57,7 +55,6 @@ module Cosmos =
         member __.Mode = args.GetResult(ConnectionMode,Equinox.Cosmos.ConnectionMode.DirectTcp)
         member __.Retries = args.GetResult(Retries,1)
         member __.MaxRetryWaitTime = args.GetResult(RetriesWaitTime, 5)
-        member __.PageSize = args.GetResult(PageSize,1)
 
     /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
     /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
@@ -66,7 +63,7 @@ module Cosmos =
     open Equinox.Cosmos
     open Serilog
 
-    let private createGateway connection (maxItems,maxEvents) = CosmosGateway(connection, CosmosBatchingPolicy(defaultMaxItems=maxItems, maxEventsPerSlice=maxEvents))
+    let private createGateway connection maxItems = CosmosGateway(connection, CosmosBatchingPolicy(defaultMaxItems=maxItems))
     let private ctx (log: ILogger, storeLog: ILogger) (a : Info) =
         let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection|> Discovery.FromConnectionString
         log.Information("CosmosDb {mode} {connection} Database {database} Collection {collection}",
@@ -77,20 +74,18 @@ module Cosmos =
         discovery, a.Database, a.Collection, c
     let connect (log : ILogger, storeLog) info =
         let discovery, dbName, collName, connector = ctx (log,storeLog) info
-        let pageSize = info.PageSize
-        log.Information("CosmosDb MaxItems {maxItems} MaxEventsPerSlice {pageSize}", pageSize)
-        dbName, collName, pageSize, connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
+        dbName, collName, connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
     let connectionPolicy (log, storeLog) info =
         let (Discovery.UriAndKey (endpointUri, masterKey)), dbName, collName, connector = ctx (log, storeLog) info
         (endpointUri, masterKey), dbName, collName, connector.ConnectionPolicy
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
-        let dbName, collName, pageSize, conn = connect (log, storeLog) info
+        let dbName, collName, conn = connect (log, storeLog) info
         let cacheStrategy =
             if cache then
                 let c = Caching.Cache("equinox-tool", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.)
             else CachingStrategy.NoCaching
-        StorageConfig.Cosmos (createGateway conn (batchSize,pageSize), cacheStrategy, unfolds, dbName, collName)
+        StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dbName, collName)
 
     open Serilog.Events
     open Equinox.Cosmos.Store
