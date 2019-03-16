@@ -76,6 +76,45 @@ type VerbatimUtf8Tests() =
     //    let decoded = sEncoder.TryDecode encoded |> Option.get
     //    test <@ x = decoded @> 
 
+type VerbatimUtf8JsonTests() =
+    let unionEncoder = Equinox.Codec.Utf8Json.JsonUtf8.Create<Union>()
+
+    [<Fact>]
+    let ``encodes correctly`` () =
+        let encoded = unionEncoder.Encode(A { embed = "\"" })
+        let e : Store.Batch =
+            {   p = "streamName"; id = string 0; i = -1L; n = -1L; _etag = null
+                e = [| { t = DateTimeOffset.MinValue; c = encoded.EventType; d = encoded.Data; m = null } |] }
+        let res = Utf8Json.JsonSerializer.Serialize(e) |> System.Text.Encoding.UTF8.GetString
+        test <@ res.Contains """"d":{"embed":"\""}""" @>
+
+    let uEncoder = Equinox.Codec.Utf8Json.JsonUtf8.Create<U>()
+
+    let [<Property(MaxTest=1000)>] ``roundtrips diverse bodies correctly`` (x: U) =
+        let encoded = uEncoder.Encode x
+        let e : Store.Batch =
+            {   p = "streamName"; id = string 0; i = -1L; n = -1L; _etag = null
+                e = [| { t = DateTimeOffset.MinValue; c = encoded.EventType; d = encoded.Data; m = null } |] }
+        let ser = Utf8Json.JsonSerializer.Serialize e
+        let des = Utf8Json.JsonSerializer.Deserialize<Store.Batch> ser
+        let loaded = Equinox.Codec.Core.EventData.Create(des.e.[0].c,des.e.[0].d)
+        let decoded = uEncoder.TryDecode loaded |> Option.get
+        x =! decoded
+
+    let [<Fact>] ``Equinox.Codec.Utf8Json.JsonUtf8 does not fall prey to Date-strings being mutilated`` () =
+        let x = ES { embed = "2016-03-31T07:02:00+07:00" }
+        let encoded = uEncoder.Encode x
+        let decoded = uEncoder.TryDecode encoded |> Option.get
+        test <@ x = decoded @> 
+
+    // NB while this aspect works, we don't support it as it gets messy when you then use the VerbatimUtf8Converter
+    let sEncoder = Equinox.Codec.Utf8Json.JsonUtf8.Create<US>()
+    let [<Theory; InlineData ""; InlineData null>] ``Equinox.Codec.Utf8Json.JsonUtf8 can roundtrip strings`` (value: string)  =
+        let x = SS value
+        let encoded = sEncoder.Encode x
+        let decoded = sEncoder.TryDecode encoded |> Option.get
+        test <@ x = decoded @> 
+
 type Base64ZipUtf8Tests() =
     let unionEncoder = mkUnionEncoder ()
 

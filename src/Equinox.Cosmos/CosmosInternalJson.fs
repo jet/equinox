@@ -2,6 +2,7 @@
 
 open Newtonsoft.Json.Linq
 open Newtonsoft.Json
+open Utf8Json
 
 /// Manages injecting prepared json into the data being submitted to DocDb as-is, on the basis we can trust it to be valid json as DocDb will need it to be
 type VerbatimUtf8JsonConverter() =
@@ -21,7 +22,51 @@ type VerbatimUtf8JsonConverter() =
         let array = value :?> byte[]
         if array = null then serializer.Serialize(writer, null)
         else writer.WriteRawValue(enc.GetString(array))
-
+        
+    interface IJsonFormatter<byte[]> with
+    
+        member __.Serialize(writer, value, formatterResolver) =
+            if value = null then writer.WriteNull()
+            else
+                writer.WriteRaw value
+                printfn ""
+        
+        //This is very convoluted way of escaping non-escaped strings from verbatim UTF8 string as byte array
+        member __.Deserialize(reader, formatterResolver) =
+            if reader.ReadIsNull() then null else
+                
+            let startToken = reader.GetCurrentJsonToken()
+            let block = reader.ReadNextBlockSegment()
+            let mutable negativeOffset = 0
+            
+            let tokensDontMatch struct (startTok, endToken) =
+                match struct (startTok, endToken) with
+                | struct (JsonToken.BeginObject, JsonToken.EndObject)
+                | struct (JsonToken.BeginArray, JsonToken.EndArray)
+                | struct (JsonToken.String, JsonToken.String)
+                | struct (JsonToken.True, JsonToken.True)
+                | struct (JsonToken.False, JsonToken.False)
+                | struct (JsonToken.Null, JsonToken.Null)
+                | struct (JsonToken.Number, JsonToken.Number) -> false
+                | _ -> true
+            
+            let mutable lastToken = reader.GetCurrentJsonToken()
+            let mutable negativeOffset = 0
+            while tokensDontMatch struct (startToken, lastToken) do
+                reader.AdvanceOffset -1
+                negativeOffset <- negativeOffset - 1
+                lastToken <- reader.GetCurrentJsonToken()
+            
+            if negativeOffset <> 0 then
+                negativeOffset <- negativeOffset + 1
+                reader.AdvanceOffset 1
+            
+            let array = Array.zeroCreate (block.Count + negativeOffset)
+            
+            for i = block.Offset to block.Offset + block.Count - 1 + negativeOffset do
+                array.[i-block.Offset] <- block.Array.[i]
+            array
+            
 open System.IO
 open System.IO.Compression
 
@@ -55,3 +100,4 @@ type Base64ZipUtf8JsonConverter() =
     override __.WriteJson(writer, value, serializer) =
         let pickled = value |> unbox |> pickle
         serializer.Serialize(writer, pickled)
+       

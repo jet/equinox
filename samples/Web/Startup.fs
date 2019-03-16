@@ -14,6 +14,7 @@ type Arguments =
     | [<AltCommandLine("-vc")>] VerboseConsole
     | [<AltCommandLine("-S")>] LocalSeq
     | [<AltCommandLine("-C")>] Cached
+    | [<AltCommandLine("--utf8json")>] Utf8Json
     | [<AltCommandLine("-U")>] Unfolds
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<Storage.MemoryStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Es of ParseResults<Storage.EventStore.Arguments>
@@ -23,6 +24,7 @@ type Arguments =
             | VerboseConsole -> "Include low level Domain and Store logging in screen output."
             | LocalSeq -> "configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | Cached -> "employ a 50MB cache."
+            | Utf8Json -> "switch to Utf8Json serializer (default: Newtonsoft.Json)"
             | Unfolds -> "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
             | Memory _ -> "specify In-Memory Volatile Store (Default store)."
             | Es _ -> "specify storage in EventStore (--help for options)."
@@ -37,6 +39,7 @@ type Startup() =
         services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1) |> ignore
 
         let verboseConsole = args.Contains VerboseConsole
+        let utf8Json = args.Contains Utf8Json
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
         let createStoreLog verboseStore =
             let c = LoggerConfiguration().Destructure.FSharpTypes()
@@ -63,7 +66,7 @@ type Startup() =
             | _  | Some (Memory _) ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 Storage.MemoryStore.config (), log
-        Services.register(services, storeConfig, storeLog)
+        Services.register(services, storeConfig, storeLog, utf8Json)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
     static member Configure(app: IApplicationBuilder, env: IHostingEnvironment) : unit =

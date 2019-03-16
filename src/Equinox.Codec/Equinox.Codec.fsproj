@@ -21,6 +21,8 @@
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="TypeShape" Version="6.*" />
+    <PackageReference Include="Utf8Json" Version="1.3.7" />
+    <PackageReference Include="Utf8Json.FSharpExtensions" Version="0.1.0" />
   </ItemGroup>
 
 </Project>

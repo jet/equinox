@@ -107,6 +107,7 @@ and [<NoComparison>]
     | [<AltCommandLine("-d")>] DurationM of float
     | [<AltCommandLine("-e")>] ErrorCutoff of int64
     | [<AltCommandLine("-i")>] ReportIntervalS of int
+    | [<AltCommandLine("--utf8json")>] Utf8Json
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<Storage.MemoryStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Es of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
@@ -122,6 +123,7 @@ and [<NoComparison>]
             | DurationM _ -> "specify a run duration in minutes (default: 30)."
             | ErrorCutoff _ -> "specify an error cutoff; test ends when exceeded (default: 10000)."
             | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
+            | Utf8Json -> "switch to Utf8Json serializer (default: Newtonsoft.Json)"
             | Memory _ -> "target in-process Transient Memory Store (Default if not other target specified)."
             | Es _ -> "Run transactions in-process against EventStore."
             | Cosmos _ -> "Run transactions in-process against CosmosDb."
@@ -140,6 +142,7 @@ and TestInfo(args: ParseResults<TestArguments>) =
         | [] -> TimeSpan.FromSeconds 10.|> Seq.singleton
         | intervals -> seq { for i in intervals -> TimeSpan.FromSeconds(float i) }
         |> fun intervals -> [| yield __.Duration; yield! intervals |]
+    member __.Utf8Json = __.Options |> List.contains Utf8Json
     member __.ConfigureStore(log : ILogger, createStoreLog) = 
         match args.TryGetSubCommand() with
         | Some (Es sargs) ->
@@ -217,7 +220,7 @@ module LoadTest =
                 decorateWithLogger (log,verbose) execForClient
             | Some storeConfig, _ ->
                 let services = ServiceCollection()
-                Samples.Infrastructure.Services.register(services, storeConfig, storeLog)
+                Samples.Infrastructure.Services.register(services, storeConfig, storeLog, a.Utf8Json)
                 let container = services.BuildServiceProvider()
                 let execForClient = Tests.executeLocal container test
                 decorateWithLogger (log, verbose) execForClient

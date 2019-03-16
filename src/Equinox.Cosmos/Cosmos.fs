@@ -2,6 +2,8 @@
 
 open Newtonsoft.Json
 open System
+open Utf8Json
+open System.Runtime.Serialization
 
 type IIndexedEvent = Equinox.Codec.Core.IIndexedEvent<byte[]>
 
@@ -17,11 +19,17 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.AllowNull)>]
+        
+        [<JsonFormatter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+        [<DataMember(IsRequired = true, EmitDefaultValue = true)>]
         d: byte[] // Required, but can be null so Nullary cases can work
 
         /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+        
+        [<JsonFormatter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+        [<DataMember(IsRequired = false, EmitDefaultValue = false)>]
         m: byte[] } // optional
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
@@ -41,6 +49,8 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// NB this is not relevant to fill in when we pass it to the writing stored procedure
         /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
         [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
+        
+        [<DataMember(IsRequired = false, EmitDefaultValue = false)>]
         _etag: string
 
         /// base 'i' value for the Events held herein
@@ -67,11 +77,15 @@ type Unfold =
 
         /// Event body - Json -> UTF-8 -> Deflate -> Base64
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
+        [<JsonFormatter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
         d: byte[] // required
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+        
+        [<JsonFormatter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
+        [<DataMember(IsRequired = false, EmitDefaultValue = false)>]
         m: byte[] } // optional
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
@@ -89,6 +103,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// NB this is not relevant to fill in when we pass it to the writing stored procedure
         /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
         [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
+        [<DataMember(IsRequired = false, EmitDefaultValue = false)>]
         _etag: string
 
         /// base 'i' value for the Events held herein
