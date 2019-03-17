@@ -90,7 +90,7 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
 module FavoritesCategory = 
-    let codec = Equinox.Codec.JsonNet.JsonUtf8.Create<Favorites.Event>(Newtonsoft.Json.JsonSerializerSettings())
+    let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Favorites.Event>(Newtonsoft.Json.JsonSerializerSettings())
     let resolve = CosmosResolver(Store.store, codec, Favorites.fold, Favorites.initial, Store.cacheStrategy).Resolve
 
 let service = Favorites.Service(Log.log, FavoritesCategory.resolve)

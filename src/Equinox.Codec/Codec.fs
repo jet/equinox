@@ -17,8 +17,8 @@ type IUnionEncoder<'Union, 'Format> =
     abstract TryDecode   : encoded:IEvent<'Format> -> 'Union option
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply
-/// i.e., with using conventions / Type Shapes / Reflection or specific Json processing libraries - see Equinox.Codec.JsonNet for batteries-included Coding/Decoding
-type JsonUtf8 =
+/// i.e., with using conventions / Type Shapes / Reflection or specific Json processing libraries - see Equinox.Codec.NewtonsoftJson.Json for batteries-included Coding/Decoding
+type Custom() =
 
     /// <summary>
     ///    Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
@@ -47,7 +47,7 @@ type JsonUtf8 =
         : IUnionEncoder<'Union,byte[]> =
         let encode' value = let c, d = encode value in c, d, null
         let tryDecode' (et,d,_md) = tryDecode (et, d)
-        JsonUtf8.Create(encode', tryDecode')
+        Custom.Create(encode', tryDecode')
 
 namespace Equinox.Codec.Core
 
@@ -70,14 +70,14 @@ type EventData<'Format> =
 type EventData =
     static member Create(eventType, data, ?meta) = { eventType = eventType; data = data; meta = defaultArg meta null}
 
-namespace Equinox.Codec.JsonNet
+namespace Equinox.Codec.NewtonsoftJson
 
 open Newtonsoft.Json
 open System.IO
 open System.Runtime.InteropServices
 
 /// Newtonsoft.Json implementation of TypeShape.UnionContractEncoder's IEncoder that encodes direct to a UTF-8 Buffer
-type Utf8BytesUnionEncoder(settings : JsonSerializerSettings) =
+type BytesEncoder(settings : JsonSerializerSettings) =
     let serializer = JsonSerializer.Create(settings)
     interface TypeShape.UnionContract.IEncoder<byte[]> with
         member __.Empty = Unchecked.defaultof<_>
@@ -92,8 +92,8 @@ type Utf8BytesUnionEncoder(settings : JsonSerializerSettings) =
             serializer.Deserialize<'T>(jsonReader)
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply using `Newtonsoft.Json` and 
-/// TypeShape.UnionContract.UnionContractEncoder - if you need full control and/or have have your own codecs, see Equinox.Codec.JsonUtf8 instead
-type JsonUtf8 =
+/// `TypeShape.UnionContract.UnionContractEncoder` - if you need full control and/or have have your own codecs, see `Equinox.Codec.Custom.Create` instead
+type Json =
 
     /// <summary>
     ///     Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
@@ -110,12 +110,12 @@ type JsonUtf8 =
         : Equinox.Codec.IUnionEncoder<'Union,byte[]> =
         let dataCodec =
             TypeShape.UnionContract.UnionContractEncoder.Create<'Union,byte[]>(
-                new Utf8BytesUnionEncoder(settings),
-                requireRecordFields=true, // See JsonConverterTests - roundtripping correctly to UTF-8 with Json.net is painful so for now we lock up the dragons
+                new BytesEncoder(settings),
+                requireRecordFields=true, // See JsonConverterTests - roundtripping UTF-8 correctly with Json.net is painful so for now we lock up the dragons
                 ?allowNullaryCases=allowNullaryCases)
         { new Equinox.Codec.IUnionEncoder<'Union,byte[]> with
             member __.Encode value =
                 let enc = dataCodec.Encode value
                 Equinox.Codec.Core.EventData.Create(enc.CaseName, enc.Payload) :> _
             member __.TryDecode encoded =
-                dataCodec.TryDecode { CaseName = encoded.EventType; Payload = encoded.Data } }
+                dataCodec.TryDecode { CaseName = encoded.EventType; Payload = encoded.Data } } 
