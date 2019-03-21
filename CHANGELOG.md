@@ -14,6 +14,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Uses MinVer 1.0.0 [internally] to compute package versions (was `rc.1`, `beta.4` along the way)
 - Rename `Equinox.Projection.Codec` to `Equinox.Projection` (no code changes)
 - Remove `maxEventsPerSlice`/`maxTipEvents` pending [#109](https://github.com/jet/equinox/issues/109)
+- Renamespaced and separated `Equinox.Codec` to `Equinox.Codec.NewtonsoftJson` and `Equinox.Codec.Custom` (in preparation for [#113](https://github.com/jet/equinox/issues/113)) HT @szer
 
 ### Removed
 ### Fixed

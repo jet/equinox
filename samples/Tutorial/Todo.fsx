@@ -114,7 +114,7 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory = 
-    let codec = Equinox.Codec.JsonNet.JsonUtf8.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
+    let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
     let access = Equinox.Cosmos.AccessStrategy.Snapshot (isOrigin,compact)
     let resolve = CosmosResolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
 
@@ -166,4 +166,4 @@ service.Execute(client, Delete 1) |> Async.RunSynchronously
 //val it : unit = ()
 service.List(client) |> Async.RunSynchronously
 //[05:47:22 INF] EqxCosmos Tip 302 119ms rc=1
-//val it : seq<Todo> = []
+//val it : seq<Todo> = [] 
