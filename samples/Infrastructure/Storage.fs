@@ -47,12 +47,12 @@ module Cosmos =
                 | Database _ ->         "specify a database name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
                 | Collection _ ->       "specify a collection name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_COLLECTION, test)."
     type Info(args : ParseResults<Arguments>) =
+        member __.Mode = args.GetResult(ConnectionMode,Equinox.Cosmos.ConnectionMode.DirectTcp)
         member __.Connection =  match args.TryGetResult Connection  with Some x -> x | None -> envBackstop "Connection" "EQUINOX_COSMOS_CONNECTION"
         member __.Database =    match args.TryGetResult Database    with Some x -> x | None -> envBackstop "Database"   "EQUINOX_COSMOS_DATABASE"
         member __.Collection =  match args.TryGetResult Collection  with Some x -> x | None -> envBackstop "Collection" "EQUINOX_COSMOS_COLLECTION"
 
         member __.Timeout = args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
-        member __.Mode = args.GetResult(ConnectionMode,Equinox.Cosmos.ConnectionMode.DirectTcp)
         member __.Retries = args.GetResult(Retries,1)
         member __.MaxRetryWaitTime = args.GetResult(RetriesWaitTime, 5)
 
@@ -64,22 +64,16 @@ module Cosmos =
     open Serilog
 
     let private createGateway connection maxItems = CosmosGateway(connection, CosmosBatchingPolicy(defaultMaxItems=maxItems))
-    let private ctx (log: ILogger, storeLog: ILogger) (a : Info) =
+    let connection (log: ILogger, storeLog: ILogger) (a : Info) =
         let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection|> Discovery.FromConnectionString
         log.Information("CosmosDb {mode} {connection} Database {database} Collection {collection}",
             a.Mode, endpointUri, a.Database, a.Collection)
-        log.Information("CosmosDb timeout: {timeout}s, {retries} retries; Throttling maxRetryWaitTime {maxRetryWaitTime}",
+        log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, a.MaxRetryWaitTime)
-        let c = CosmosConnector(log=storeLog, mode=a.Mode, requestTimeout=a.Timeout, maxRetryAttemptsOnThrottledRequests=a.Retries, maxRetryWaitTimeInSeconds=a.MaxRetryWaitTime)
-        discovery, a.Database, a.Collection, c
-    let connect (log : ILogger, storeLog) info =
-        let discovery, dbName, collName, connector = ctx (log,storeLog) info
-        dbName, collName, connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
-    let connectionPolicy (log, storeLog) info =
-        let (Discovery.UriAndKey (endpointUri, masterKey)), dbName, collName, connector = ctx (log, storeLog) info
-        (endpointUri, masterKey), dbName, collName, connector.ConnectionPolicy
+        discovery, a.Database, a.Collection, CosmosConnector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
-        let dbName, collName, conn = connect (log, storeLog) info
+        let discovery, dbName, collName, connector = connection (log, storeLog) info
+        let conn = connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
         let cacheStrategy =
             if cache then
                 let c = Caching.Cache("equinox-tool", sizeMb = 50)

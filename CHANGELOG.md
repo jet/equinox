@@ -9,14 +9,19 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Cosmos.Projection.ChangeFeedProcessor`: Support management of an `aux` collection in account other than the one being read from by adding `auxAccountKey` param [#115](https://github.com/jet/equinox/issues/115)
+
 ### Changed
 
 - Uses MinVer 1.0.0 [internally] to compute package versions (was `rc.1`, `beta.4` along the way)
-- Rename `Equinox.Projection.Codec` to `Equinox.Projection` (no code changes)
-- Remove `maxEventsPerSlice`/`maxTipEvents` pending [#109](https://github.com/jet/equinox/issues/109)
-- Renamespaced and separated `Equinox.Codec` to `Equinox.Codec.NewtonsoftJson` and `Equinox.Codec.Custom` (in preparation for [#113](https://github.com/jet/equinox/issues/113)) HT @szer
+- Rename `Equinox.Projection.Codec` NuGet to `Equinox.Projection` (no code changes)
+- Renamespace and separate `Equinox.Codec` to `Equinox.Codec.NewtonsoftJson` and `Equinox.Codec.Custom` (in preparation for [#113](https://github.com/jet/equinox/issues/113)) HT @szer
 
 ### Removed
+
+- Remove `maxEventsPerSlice`/`maxTipEvents` pending [#109](https://github.com/jet/equinox/issues/109)
+
 ### Fixed
 
 <a name="2.0.0-preview1"></a>
