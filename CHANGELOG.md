@@ -7,6 +7,14 @@ All notable changes to this project will be documented in this file. The format 
 The `Unreleased` section name is replaced by the expected version of next release. A stable version's log contains all changes between that version and the previous stable version (can duplicate the prereleases logs).
 
 ## [Unreleased]
+### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-preview2"></a>
+## [2.0.0-preview2] - 2019-03-23
 
 ### Added
 
@@ -15,18 +23,16 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- Uses MinVer 1.0.0 [internally] to compute package versions (was `rc.1`, `beta.4` along the way)
 - Rename `Equinox.Projection.Codec` NuGet to `Equinox.Projection` (no code changes)
 - Renamespace and separate `Equinox.Codec` to `Equinox.Codec.NewtonsoftJson` and `Equinox.Codec.Custom` (in preparation for [#113](https://github.com/jet/equinox/issues/113)) HT @szer
+- Uses MinVer 1.0.0 [internally] to compute package versions (was `rc.1`, `beta.4` along the way)
 
 ### Removed
 
 - Remove `maxEventsPerSlice`/`maxTipEvents` pending [#109](https://github.com/jet/equinox/issues/109)
 
-### Fixed
-
 <a name="2.0.0-preview1"></a>
-## [2.0.0-preview1] - 2019-05-07
+## [2.0.0-preview1] - 2019-03-07
 
 ### Added
 
@@ -96,9 +102,10 @@ The `Unreleased` section name is replaced by the expected version of next releas
 <a name="1.0.3"></a>
 ## [1.0.3] - 2019-01-19
 
-(For information pertaiing to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
+(For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview1...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview2...HEAD
+[2.0.0-preview2]: https://github.com/jet/equinox/compare/2.0.0-preview1...2.0.0-preview2
 [2.0.0-preview1]: https://github.com/jet/equinox/compare/1.1.0-preview2...2.0.0-preview1
 [1.1.0-preview2]: https://github.com/jet/equinox/compare/1.1.0-preview1...1.1.0-preview2
 [1.1.0-preview1]: https://github.com/jet/equinox/compare/1.0.4...1.1.0-preview1
