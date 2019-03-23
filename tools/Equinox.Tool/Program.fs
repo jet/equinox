@@ -324,7 +324,7 @@ let main argv =
                     sw.Stop() // Stop the clock after CFP hands off to us
                     let validator = BatchValidator(validator)
                     let toKafkaEvent (e: DocumentParser.IEvent) : Equinox.Projection.Codec.RenderedEvent =
-                        { s = e.Stream; i = e.Index; c = e.EventType; t = e.TimeStamp; d = e.Data; m = e.Meta }
+                        { s = e.Stream; i = e.Index; c = e.EventType; t = e.Timestamp; d = e.Data; m = e.Meta }
                     let validate (e: DocumentParser.IEvent) =
                         match validator.TryIngest(e.Stream, int e.Index) with
                         | Gap -> None // We cannot emit if we have evidence that this will leave a gap

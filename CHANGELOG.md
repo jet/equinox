@@ -10,7 +10,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `Cosmos.Projection.ChangeFeedProcessor`: Support management of an `aux` collection in account other than the one being read from by adding `auxAccountKey` param [#115](https://github.com/jet/equinox/issues/115)
+- `Cosmos.Projection.ChangeFeedProcessor`: Support management of an `aux` collection in account other than the one being read from by adding `auxAccountKey` param [#115](https://github.com/jet/equinox/pull/115)
+- Support ETL scenarios by enabling the event creation `Timestamp` to be [read and] written by supplying it in `Equinox.Codec.IEvent` [#116](https://github.com/jet/equinox/issues/116)
 
 ### Changed
 

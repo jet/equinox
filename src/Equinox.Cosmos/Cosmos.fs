@@ -141,7 +141,8 @@ type internal Enum() =
                 member __.IsUnfold = false
                 member __.EventType = x.c
                 member __.Data = x.d
-                member __.Meta = x.m })
+                member __.Meta = x.m
+                member __.Timestamp = x.t })
     static member Events(i: int64, e: Event[], startPos : Position option, direction) = seq {
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         let isValidGivenStartPos i =
@@ -159,7 +160,8 @@ type internal Enum() =
                         member __.IsUnfold = false
                         member __.EventType = x.c
                         member __.Data = x.d
-                        member __.Meta = x.m } }
+                        member __.Meta = x.m
+                        member __.Timestamp = x.t } }
     static member internal Events(b: Batch, startPos, direction) =
         Enum.Events(b.i, b.e, startPos, direction)
         |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
@@ -169,7 +171,8 @@ type internal Enum() =
             member __.IsUnfold = true
             member __.EventType = x.c
             member __.Data = x.d
-            member __.Meta = x.m } }
+            member __.Meta = x.m
+            member __.Timestamp = DateTimeOffset.MinValue } }
     static member EventsAndUnfolds(x: Tip): IIndexedEvent seq =
         Enum.Events x
         |> Seq.append (Enum.Unfolds x.u)
@@ -383,7 +386,7 @@ function sync(req, expectedVersion, maxEvents) {
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
     let mkBatch (stream: CollectionStream) (events: Equinox.Codec.IEvent<_>[]) unfolds: Tip =
         {   p = stream.name; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
-            e = [| for e in events -> { t = DateTimeOffset.UtcNow; c = e.EventType; d = e.Data; m = e.Meta } |]
+            e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta } |]
             u = Array.ofSeq unfolds }
     let mkUnfold baseIndex (unfolds: Equinox.Codec.IEvent<_> seq) : Unfold seq =
         unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta } : Unfold)
@@ -976,7 +979,7 @@ type CosmosConnector
     let connect
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name,
-            discovery  : Discovery) : Async<Client.DocumentClient> =
+            discovery : Discovery) : Async<Client.DocumentClient> =
         let connect (uri: Uri, key: string) = async {
             let name = String.concat ";" <| seq {
                 yield name
