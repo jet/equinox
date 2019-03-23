@@ -10,7 +10,7 @@ open Serilog
 open System
 open System.Collections.Generic
 
-type ChangeFeedObserver() =
+type ChangeFeedObserver =
     static member Create(log: ILogger, onChange : IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>, ?dispose: unit -> unit) =
         { new IChangeFeedObserver with
             member __.ProcessChangesAsync(ctx, docs, ct) = (UnitTaskBuilder ct) {
@@ -30,19 +30,21 @@ type ChangeFeedObserverFactory =
     static member FromFunction (f : unit -> #IChangeFeedObserver) =
         { new IChangeFeedObserverFactory with member __.CreateObserver () = f () :> _ }
 
-type CosmosCollection = { database: string; collection: string }
+type CosmosCollectionId = { database: string; collection: string }
 
 /// Wraps the [Azure CosmosDb ChangeFeedProcessor library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet)
 type ChangeFeedProcessor =
     static member Start
-        (   log : ILogger, endpoint : Uri, accountKey : string, connectionPolicy : ConnectionPolicy, source : CosmosCollection,
+        (   log : ILogger, discovery: Equinox.Cosmos.Discovery, connectionPolicy : ConnectionPolicy, source : CosmosCollectionId,
             /// The aux, non-partitioned collection holding the partition leases.
             // Aux coll should always read from the write region to keep the number of write conflicts to minimum when the sdk
             // updates the leases. Since the non-write region(s) might lag behind due to us using non-strong consistency, during
-            // failover we are likely to reprocess some messages, but that's okay since we are idempotent.
-            aux : CosmosCollection,
+            // failover we are likely to reprocess some messages, but that's okay since processing has to be idempotent in any case
+            aux : CosmosCollectionId,
             createObserver : unit -> IChangeFeedObserver,
             ?leaseOwnerId : string,
+            /// Used to specify an endpoint/account key for the aux collection, where that varies from that of the source collection. Default: use `discovery`
+            ?auxDiscovery : Equinox.Cosmos.Discovery,
             /// Identifier to disambiguate multiple independent feed processor positions (akin to a 'consumer group')
             ?leasePrefix : string,
             /// (NB Only applies if this is the first time this leasePrefix is presented)
@@ -72,7 +74,7 @@ type ChangeFeedProcessor =
         let leaseTtl = defaultArg leaseTtl (TimeSpan.FromSeconds 10.)
 
         let inline s (x : TimeSpan) = x.TotalSeconds
-        log.Information("Processing Lease acquireS={leaseAcquireIntervalS:n0} ttlS={ttlS:n0} renewS={renewS:n0} feedPollDelayS={feedPollDelayS:n0}",
+        log.Information("Processing Lease acquire {leaseAcquireIntervalS:n0}s ttl {ttlS:n0}s renew {renewS:n0}s feedPollDelay {feedPollDelayS:n0}s",
             s leaseAcquireInterval, s leaseTtl, s leaseRenewInterval, s feedPollDelay)
 
         let builder =
@@ -83,11 +85,12 @@ type ChangeFeedProcessor =
                     LeaseAcquireInterval = leaseAcquireInterval, LeaseExpirationInterval = leaseTtl, LeaseRenewInterval = leaseRenewInterval,
                     FeedPollDelay = feedPollDelay)
             leasePrefix |> Option.iter (fun lp -> feedProcessorOptions.LeasePrefix <- lp + ":")
-            let mk d c = DocumentCollectionInfo(Uri = endpoint, DatabaseName = d, CollectionName = c, MasterKey = accountKey, ConnectionPolicy = connectionPolicy)
+            let mk (Equinox.Cosmos.Discovery.UriAndKey (u,k)) d c =
+                DocumentCollectionInfo(Uri = u, DatabaseName = d, CollectionName = c, MasterKey = k, ConnectionPolicy = connectionPolicy)
             ChangeFeedProcessorBuilder()
                 .WithHostName(leaseOwnerId)
-                .WithFeedCollection(mk source.database source.collection)
-                .WithLeaseCollection(mk aux.database aux.collection)
+                .WithFeedCollection(mk discovery source.database source.collection)
+                .WithLeaseCollection(mk (defaultArg auxDiscovery discovery) aux.database aux.collection)
                 .WithProcessorOptions(feedProcessorOptions)
         match reportLagAndAwaitNextEstimation with
         | None -> ()

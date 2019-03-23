@@ -263,9 +263,10 @@ let main argv =
             match iargs.TryGetSubCommand() with
             | Some (InitArguments.Cosmos sargs) ->
                 let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-                let dbName, collName, conn = Storage.Cosmos.connect (log,storeLog) (Storage.Cosmos.Info sargs)
+                let discovery, dbName, collName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
                 log.Information("Configuring CosmosDb Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
                 Async.RunSynchronously <| async {
+                    let! conn = connector.Connect("equinox-tool", discovery)
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
                     do! Equinox.Cosmos.Store.Sync.Initialization.createBatchAndTipCollectionIfNotExists conn.Client (dbName,collName) rus
                     let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(dbName,collName)
@@ -277,10 +278,11 @@ let main argv =
             match iargs.TryGetSubCommand() with
             | Some (InitAuxArguments.Cosmos sargs) ->
                 let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-                let dbName, collName, conn = Storage.Cosmos.connect (log,storeLog) (Storage.Cosmos.Info sargs)
+                let discovery, dbName, collName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
                 let collName = collName + iargs.GetResult(InitAuxArguments.Suffix,"-aux")
                 log.Information("Configuring CosmosDb Aux Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
                 Async.RunSynchronously <| async {
+                    let! conn = connector.Connect("equinox-tool", discovery)
                     do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
                     do! Equinox.Cosmos.Store.Sync.Initialization.createAuxCollectionIfNotExists conn.Client (dbName,collName) rus }
             | _ -> failwith "please specify a `cosmos` endpoint"
@@ -298,7 +300,7 @@ let main argv =
                 | Stats sargs -> None, None, sargs.GetResult StatsTarget.Cosmos
                 | x -> failwithf "Invalid subcommand %A" x
             let storeLog = createStoreLog (storeArgs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-            let (endpointUri, masterKey), dbName, collName, connectionPolicy = Storage.Cosmos.connectionPolicy (log,storeLog) (Storage.Cosmos.Info storeArgs)
+            let discovery, dbName, collName, connector = Storage.Cosmos.connection (log, storeLog) (Storage.Cosmos.Info storeArgs)
             pargs.TryGetResult ChangeFeedBatchSize |> Option.iter (fun bs -> log.Information("ChangeFeed BatchSize {batchSize}", bs))
             pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
             let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
@@ -363,7 +365,7 @@ let main argv =
                 let maybeLogLag = pargs.TryGetResult LagFreqS |> Option.map (TimeSpan.FromSeconds >> logLag)
                 let! _cfp =
                     ChangeFeedProcessor.Start
-                      ( log, endpointUri, masterKey, connectionPolicy, source, aux, buildRangeProjector,
+                      ( log, discovery, connector.ConnectionPolicy, source, aux, buildRangeProjector,
                         leasePrefix = leaseId,
                         forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
                         ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
