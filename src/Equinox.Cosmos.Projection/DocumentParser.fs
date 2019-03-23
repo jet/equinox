@@ -15,7 +15,6 @@ module DocumentParser =
     type IEvent =
         inherit Equinox.Codec.Core.IIndexedEvent<byte[]>
             abstract member Stream : string
-            abstract member TimeStamp : DateTimeOffset
     /// Infers whether the document represents a valid Event-Batch
     let enumEvents (d : Document) = seq {
         if not (isIndex d)
@@ -29,5 +28,5 @@ module DocumentParser =
                       member __.EventType = x.c
                       member __.Data = x.d
                       member __.Meta = x.m
-                      member __.TimeStamp = x.t
+                      member __.Timestamp = x.t
                       member __.Stream = batch.p } ) }

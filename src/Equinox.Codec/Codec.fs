@@ -8,6 +8,12 @@ type IEvent<'Format> =
     abstract member Data : 'Format
     /// Optional metadata (null, or same as Data, not written if missing)
     abstract member Meta : 'Format
+    /// The Event's Creation Time (as defined by the writer, i.e. in a mirror, this is intended to reflect the original time)
+    /// <remarks>
+    /// - For EventStore, this value is not honored when writing; the server applies an authoritative timestamp when accepting the write.
+    /// - For Cosmos, the value is not exposed where the event `IsUnfold`.
+    /// </remarks>
+    abstract member Timestamp : System.DateTimeOffset
 
 /// Defines a contract interpreter for a Discriminated Union representing a set of events borne by a stream
 type IUnionEncoder<'Union, 'Format> =
@@ -18,7 +24,7 @@ type IUnionEncoder<'Union, 'Format> =
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply
 /// i.e., with using conventions / Type Shapes / Reflection or specific Json processing libraries - see Equinox.Codec.NewtonsoftJson.Json for batteries-included Coding/Decoding
-type Custom() =
+type Custom =
 
     /// <summary>
     ///    Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
@@ -31,10 +37,12 @@ type Custom() =
         { new IUnionEncoder<'Union, byte[]> with
             member __.Encode e =
                 let eventType, payload, metadata = encode e
+                let timestamp = System.DateTimeOffset.UtcNow
                 { new IEvent<_> with
                     member __.EventType = eventType
                     member __.Data = payload
-                    member __.Meta = metadata }
+                    member __.Meta = metadata
+                    member __.Timestamp = timestamp }
             member __.TryDecode ee =
                 tryDecode (ee.EventType, ee.Data, ee.Meta) }
 
@@ -51,6 +59,8 @@ type Custom() =
 
 namespace Equinox.Codec.Core
 
+open System
+
 /// Represents a Domain Event or Unfold, together with it's Index in the event sequence
 // Included here to enable extraction of this ancillary information (by downcasting IEvent in one's IUnionEncoder.TryDecode implementation)
 // in the corner cases where this coupling is absolutely definitely better than all other approaches
@@ -62,13 +72,20 @@ type IIndexedEvent<'Format> =
     abstract member IsUnfold: bool
 
 /// An Event about to be written, see IEvent for further information
-// Storage implementations couple to IEvent - this is included to facilitate eventual consistency across the .Core per-Store programming models
-// (at the time of writing, Equinox.Cosmos.Core is the only such API)
 type EventData<'Format> =
-    { eventType : string; data : 'Format; meta : 'Format }
-    interface Equinox.Codec.IEvent<'Format> with member __.EventType = __.eventType member __.Data = __.data member __.Meta = __.meta
+    { eventType : string; data : 'Format; meta : 'Format; timestamp: DateTimeOffset }
+    interface Equinox.Codec.IEvent<'Format> with
+        member __.EventType = __.eventType
+        member __.Data = __.data
+        member __.Meta = __.meta
+        member __.Timestamp = __.timestamp
+
 type EventData =
-    static member Create(eventType, data, ?meta) = { eventType = eventType; data = data; meta = defaultArg meta null}
+    static member Create(eventType, data, ?meta, ?timestamp) =
+        {   eventType = eventType
+            data = data
+            meta = defaultArg meta null
+            timestamp = match timestamp with Some ts -> ts | None -> DateTimeOffset.UtcNow }
 
 namespace Equinox.Codec.NewtonsoftJson
 
