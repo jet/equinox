@@ -122,8 +122,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 5. (**`2.0.0-preview*`**) Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Equinox.Cosmos.Projection`
 
     ```powershell
-    # TEMP INSTRUCTIONS WHILE IN PREVIEW: NB need version `::*` spec while in preview
-    dotnet new -i Equinox.Templates::1.3.0-*
+    dotnet new -i Equinox.Templates
 
     # note the absence of -k means the projector code will be a skeleton that does no processing besides counting the events
     dotnet new eqxprojector

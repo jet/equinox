@@ -7,10 +7,13 @@ All notable changes to this project will be documented in this file. The format 
 The `Unreleased` section name is replaced by the expected version of next release. A stable version's log contains all changes between that version and the previous stable version (can duplicate the prereleases logs).
 
 ## [Unreleased]
+
 ### Added
 ### Changed
 ### Removed
 ### Fixed
+
+- (Not actually fixed yet, RELEASE BLOCKER) Rendering to Kafka, Cosmos using `dotnet new eqxsync`, `dotnet new eqxprojector` yields invalid json when `Meta` is `[||]` [#18](https://github.com/jet/equinox/issues/118)
 
 <a name="2.0.0"></a>
 <a name="2.0.0-preview2"></a>
