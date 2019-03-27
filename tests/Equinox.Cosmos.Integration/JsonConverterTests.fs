@@ -76,6 +76,30 @@ type VerbatimUtf8Tests() =
     //    let decoded = sEncoder.TryDecode encoded |> Option.get
     //    test <@ x = decoded @> 
 
+module VerbatimeUtf8NullHandling =
+    type [<NoEquality; NoComparison>] EventHolderWithAndWithoutRequired =
+        {   /// Event body, as UTF-8 encoded json ready to be injected directly into the Json being rendered
+            [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+            d: byte[] // required
+
+            /// Optional metadata, as UTF-8 encoded json, ready to emit directly (entire field is not written if value is null)
+            [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+            [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+            m: byte[] }
+
+    let values : obj[][] =
+        [|  [| null |]
+            [| [||] |]
+            [| System.Text.Encoding.UTF8.GetBytes "{}" |] |]
+
+    [<Theory; MemberData "values">]
+    let ``roundtrips nulls and empties consistently`` value =
+        let e : EventHolderWithAndWithoutRequired = { d = value; m = value }
+        let ser = JsonConvert.SerializeObject(e)
+        let des = JsonConvert.DeserializeObject<EventHolderWithAndWithoutRequired>(ser)
+        test <@ ((e.m = null || e.m.Length = 0) && (des.m = null)) || System.Linq.Enumerable.SequenceEqual(e.m, des.m) @>
+        test <@ ((e.d = null || e.d.Length = 0) && (des.d = null)) || System.Linq.Enumerable.SequenceEqual(e.d, des.d) @>
+
 type Base64ZipUtf8Tests() =
     let unionEncoder = mkUnionEncoder ()
 

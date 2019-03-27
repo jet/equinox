@@ -2,7 +2,6 @@
 module Samples.Store.Integration.CodecIntegration
 
 open Domain
-open FSharp.UMX
 open Swensen.Unquote
 open TypeShape.UnionContract
 

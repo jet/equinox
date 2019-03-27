@@ -13,7 +13,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
-- (Not actually fixed yet, RELEASE BLOCKER) Rendering to Kafka, Cosmos using `dotnet new eqxsync`, `dotnet new eqxprojector` yields invalid json when `Meta` is `[||]` [#18](https://github.com/jet/equinox/issues/118)
+<a name="2.0.0"></a>
+<a name="2.0.0-preview3"></a>
+## [2.0.0-preview3] - 2019-03-27
+
+### Fixed
+
+- Reading `null` from Equinox.Cosmos and then writing that to Kafka yielded invalid json [#18](https://github.com/jet/equinox/issues/118)
 
 <a name="2.0.0"></a>
 <a name="2.0.0-preview2"></a>
@@ -107,7 +113,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview2...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview3...HEAD
+[2.0.0-preview3]: https://github.com/jet/equinox/compare/2.0.0-preview2...2.0.0-preview3
 [2.0.0-preview2]: https://github.com/jet/equinox/compare/2.0.0-preview1...2.0.0-preview2
 [2.0.0-preview1]: https://github.com/jet/equinox/compare/1.1.0-preview2...2.0.0-preview1
 [1.1.0-preview2]: https://github.com/jet/equinox/compare/1.1.0-preview1...1.1.0-preview2

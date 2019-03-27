@@ -11,7 +11,7 @@ type VerbatimUtf8JsonConverter() =
     
     override __.ReadJson(reader, _, _, _) =
         let token = JToken.Load reader
-        if token = null then null
+        if token.Type = JTokenType.Null then null
         else token |> string |> enc.GetBytes |> box
 
     override __.CanConvert(objectType) =
@@ -19,7 +19,7 @@ type VerbatimUtf8JsonConverter() =
 
     override __.WriteJson(writer, value, serializer) =
         let array = value :?> byte[]
-        if array = null then serializer.Serialize(writer, null)
+        if array = null || array.Length = 0 then serializer.Serialize(writer, null)
         else writer.WriteRawValue(enc.GetString(array))
 
 open System.IO
