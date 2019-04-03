@@ -12,6 +12,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc2` in `eqx` tool
+- Removed special casing of `Tip` batches from `Equinox.Cosmos.Projection` in preparation for transparent integration of [#110](https://github.com/jet/equinox/pull/110) without necessitating updating of projectors and related systems
 
 ### Removed
 ### Fixed
