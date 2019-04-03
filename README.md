@@ -94,7 +94,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     ```powershell
     dotnet tool install Equinox.Tool -g
-    eqx init cosmos # generates a database+collection, adds optimized indexes
+    eqx init -ru 400 cosmos # generates a database+collection, adds optimized indexes
     ```
 
 3. generate sample app from template, with CosmosDb wiring
