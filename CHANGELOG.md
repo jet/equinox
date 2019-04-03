@@ -9,6 +9,10 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- Added database-level RU-provisioning support (i.e., `eqx init`'s `-D` switch) [#120](https://github.com/jet/equinox/issues/120)
+- Implemented ability to amend RU allocations where database/collection already exists [#112](https://github.com/jet/equinox/issues/112)
+
 ### Changed
 
 - Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc2` in `eqx` tool

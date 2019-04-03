@@ -38,16 +38,27 @@ type Arguments =
             | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | LogFile _ -> "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ -> "Run a load test"
-            | Init _ -> "Initialize store (presently only relevant for `cosmos`, where it creates database+collection+stored proc if not already present)."
+            | Init _ -> "Initialize Store/Collection (presently only relevant for `cosmos`; also handles adjusting RU/s provisioning adjustment)."
             | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the Projector)."
             | Project _ -> "Project from store specified as the last argument, storing state in the specified `aux` Store (see initAux)."
 and [<NoComparison>]InitArguments =
+    | [<AltCommandLine("-ru"); Mandatory>] Rus of int
+    | [<AltCommandLine("-D")>] Shared
+    | [<AltCommandLine("-P")>] SkipStoredProc
+    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Rus _ -> "Specify RU/s level to provision for the Collection."
+            | Shared -> "Use Database-level RU allocations (Default: Use Container-level allocation)."
+            | SkipStoredProc -> "Inhibit creation of stored procedure in cited Collection."
+            | Cosmos _ -> "Cosmos Connection parameters."
+and [<NoComparison>]InitDbArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     | [<AltCommandLine("-P")>] SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ -> "Specify RU/s level to provision for the Application Collection."
+            | Rus _ -> "Specify RU/s level to provision for the Database."
             | SkipStoredProc -> "Inhibit creation of stored procedure in cited Collection."
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]InitAuxArguments =
@@ -56,7 +67,7 @@ and [<NoComparison>]InitAuxArguments =
     | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ -> "Specify RU/s level to provision for the Application Collection."
+            | Rus _ -> "Specify RU/s level to provision for the Aux Collection."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison; RequireSubcommand>]ProjectArguments =
@@ -247,6 +258,32 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
 
+module CosmosInit =
+    open Equinox.Cosmos.Store.Sync.Initialization
+    let containerAndOrDb (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitArguments>) = async {
+        match iargs.TryGetSubCommand() with
+        | Some (InitArguments.Cosmos sargs) -> 
+            let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
+            let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database rus else Provisioning.Container rus
+            let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
+            let discovery, dbName, collName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
+            let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
+            log.Information("Provisioning `Equinox.Cosmos` Store Collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
+            let! conn = connector.Connect("equinox-tool", discovery)
+            do! init log conn.Client (dbName,collName) mode skipStoredProc
+        | _ -> failwith "please specify a `cosmos` endpoint" }
+    let aux (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitAuxArguments>) = async {
+        match iargs.TryGetSubCommand() with
+        | Some (InitAuxArguments.Cosmos sargs) ->
+            let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
+            let discovery, dbName, baseCollName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
+            let auxCollName = let collSuffix = iargs.GetResult(InitAuxArguments.Suffix,"-aux") in baseCollName + collSuffix
+            let rus = iargs.GetResult(InitAuxArguments.Rus)
+            log.Information("Provisioning Lease/`aux` Collection {collName} for {rus:n0} RU/s", auxCollName, rus)
+            let! conn = connector.Connect("equinox-tool", discovery)
+            do! initAux conn.Client (dbName,auxCollName) rus
+        | _ -> failwith "please specify a `cosmos` endpoint" }
+
 [<EntryPoint>]
 let main argv =
     let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
@@ -258,34 +295,8 @@ let main argv =
         let verbose = args.Contains Verbose
         let log = createDomainLog verbose verboseConsole maybeSeq
         match args.GetSubCommand() with
-        | Init iargs ->
-            let rus = iargs.GetResult(InitArguments.Rus)
-            match iargs.TryGetSubCommand() with
-            | Some (InitArguments.Cosmos sargs) ->
-                let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-                let discovery, dbName, collName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
-                log.Information("Configuring CosmosDb Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
-                Async.RunSynchronously <| async {
-                    let! conn = connector.Connect("equinox-tool", discovery)
-                    do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
-                    do! Equinox.Cosmos.Store.Sync.Initialization.createBatchAndTipCollectionIfNotExists conn.Client (dbName,collName) rus
-                    let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(dbName,collName)
-                    if not (iargs.Contains SkipStoredProc) then
-                        do! Equinox.Cosmos.Store.Sync.Initialization.createSyncStoredProcIfNotExists (Some (upcast log)) conn.Client collectionUri }
-            | _ -> failwith "please specify a `cosmos` endpoint"
-        | InitAux iargs ->
-            let rus = iargs.GetResult(InitAuxArguments.Rus)
-            match iargs.TryGetSubCommand() with
-            | Some (InitAuxArguments.Cosmos sargs) ->
-                let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-                let discovery, dbName, collName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
-                let collName = collName + iargs.GetResult(InitAuxArguments.Suffix,"-aux")
-                log.Information("Configuring CosmosDb Aux Collection {collName} with Throughput Provision: {rus:n0} RU/s", collName, rus)
-                Async.RunSynchronously <| async {
-                    let! conn = connector.Connect("equinox-tool", discovery)
-                    do! Equinox.Cosmos.Store.Sync.Initialization.createDatabaseIfNotExists conn.Client dbName
-                    do! Equinox.Cosmos.Store.Sync.Initialization.createAuxCollectionIfNotExists conn.Client (dbName,collName) rus }
-            | _ -> failwith "please specify a `cosmos` endpoint"
+        | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
+        | InitAux iargs -> CosmosInit.aux (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
         | Project pargs ->
             let envBackstop msg key =
                 match Environment.GetEnvironmentVariable key with
