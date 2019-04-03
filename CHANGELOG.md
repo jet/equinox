@@ -9,6 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-preview4"></a>
+## [2.0.0-preview4] - 2019-04-03
+
+### Added
 
 - Added database-level RU-provisioning support (i.e., `eqx init`'s `-D` switch) [#120](https://github.com/jet/equinox/issues/120)
 - Implemented ability to amend RU allocations where database/collection already exists [#112](https://github.com/jet/equinox/issues/112)
@@ -18,10 +27,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc2` in `eqx` tool
 - Removed special casing of `Tip` batches from `Equinox.Cosmos.Projection` in preparation for transparent integration of [#110](https://github.com/jet/equinox/pull/110) without necessitating updating of projectors and related systems [#119](https://github.com/jet/equinox/pull/119)
 
-### Removed
-### Fixed
-
-<a name="2.0.0"></a>
 <a name="2.0.0-preview3"></a>
 ## [2.0.0-preview3] - 2019-03-27
 
@@ -29,7 +34,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - Reading `null` from Equinox.Cosmos and then writing that to Kafka yielded invalid json [#18](https://github.com/jet/equinox/issues/118)
 
-<a name="2.0.0"></a>
 <a name="2.0.0-preview2"></a>
 ## [2.0.0-preview2] - 2019-03-23
 
@@ -121,7 +125,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview3...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview4...HEAD
+[2.0.0-preview4]: https://github.com/jet/equinox/compare/2.0.0-preview3...2.0.0-preview4
 [2.0.0-preview3]: https://github.com/jet/equinox/compare/2.0.0-preview2...2.0.0-preview3
 [2.0.0-preview2]: https://github.com/jet/equinox/compare/2.0.0-preview1...2.0.0-preview2
 [2.0.0-preview1]: https://github.com/jet/equinox/compare/1.1.0-preview2...2.0.0-preview1
