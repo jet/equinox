@@ -10,8 +10,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- Implemented changing of RU allocations [#112](https://github.com/jet/equinox/issues/112)
-- Added database-level RU-provisioning support [#120](https://github.com/jet/equinox/issues/120)
+- Added database-level RU-provisioning support (i.e., `eqx init`'s `-D` switch) [#120](https://github.com/jet/equinox/issues/120)
+- Implemented ability to amend RU allocations where database/collection already exists [#112](https://github.com/jet/equinox/issues/112)
 
 ### Changed
 

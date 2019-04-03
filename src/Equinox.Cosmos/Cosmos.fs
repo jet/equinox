@@ -395,26 +395,31 @@ function sync(req, expectedVersion, maxEvents) {
         open System.Collections.ObjectModel
         open System.Linq
         type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int
-        let private createDatabaseIfNotExists (client:Client.DocumentClient) dbName mode = async {
+        let adjustOffer (client:Client.DocumentClient) resourceLink rus = async {
+            let offer = client.CreateOfferQuery().Where(fun r -> r.ResourceLink = resourceLink).AsEnumerable().Single()
+            let! _ = client.ReplaceOfferAsync(OfferV2(offer,rus)) |> Async.AwaitTaskCorrect in () }
+        let private createDatabaseIfNotExists (client:Client.DocumentClient) dbName maybeRus =
+            let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
+            maybeRus |> Option.iter (fun rus -> opts.OfferThroughput <- Nullable rus)
+            client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect
+        let private createOrProvisionDatabase (client:Client.DocumentClient) dbName mode = async {
             match mode with
             | Provisioning.Database rus ->
-                let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session, OfferThroughput = Nullable rus)
-                let! db = client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect
-                let offer = client.CreateOfferQuery().Where(fun r -> r.ResourceLink = db.Resource.SelfLink).AsEnumerable().Single();
-                let! _ = client.ReplaceOfferAsync(OfferV2(offer,rus)) |> Async.AwaitTaskCorrect in ()
+                let! db = createDatabaseIfNotExists client dbName (Some rus)
+                do! adjustOffer client db.Resource.SelfLink rus
             | Provisioning.Container _ ->
-                let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
-                let! _ = client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect in () }
-        let private createCollectionIfNotExists (client: Client.DocumentClient) (dbName, def: DocumentCollection) mode = async {
+                let! _ = createDatabaseIfNotExists client dbName None in () }
+        let private createCollIfNotExists (client:Client.DocumentClient) dbName (def: DocumentCollection) maybeRus =
             let dbUri = Client.UriFactory.CreateDatabaseUri dbName
+            let opts = match maybeRus with None -> Client.RequestOptions() | Some rus -> Client.RequestOptions(OfferThroughput=Nullable rus)
+            client.CreateDocumentCollectionIfNotExistsAsync(dbUri, def, opts) |> Async.AwaitTaskCorrect
+        let private createOrProvisionCollection (client: Client.DocumentClient) (dbName, def: DocumentCollection) mode = async {
             match mode with
             | Provisioning.Database _ ->
-                let! _ = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, def) |> Async.AwaitTaskCorrect in ()
+                let! _ = createCollIfNotExists client dbName def None in ()
             | Provisioning.Container rus ->
-                let opts = Client.RequestOptions(OfferThroughput=Nullable rus)
-                let! coll = client.CreateDocumentCollectionIfNotExistsAsync(dbUri, def, opts) |> Async.AwaitTaskCorrect
-                let offer = client.CreateOfferQuery().Where(fun r -> r.ResourceLink = coll.Resource.SelfLink).AsEnumerable().Single();
-                let! _ = client.ReplaceOfferAsync(OfferV2(offer,rus)) |> Async.AwaitTaskCorrect in () }
+                let! coll = createCollIfNotExists client dbName def (Some rus) in ()
+                do! adjustOffer client coll.Resource.SelfLink rus }
         let private createStoredProcIfNotExists (client: IDocumentClient) (collectionUri: Uri) (name, body): Async<float> = async {
             try let! r = client.CreateStoredProcedureAsync(collectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
@@ -431,7 +436,7 @@ function sync(req, expectedVersion, maxEvents) {
             def.IndexingPolicy.ExcludedPaths <- Collection [|ExcludedPath(Path="/*")|]
             // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
             def.IndexingPolicy.IncludedPaths <- Collection [| for k in Batch.IndexedFields -> IncludedPath(Path=sprintf "/%s/?" k) |]
-            createCollectionIfNotExists client (dbName, def) mode
+            createOrProvisionCollection client (dbName, def) mode
         let createSyncStoredProcIfNotExists (log: ILogger option) client collUri = async {
             let! t, ru = createStoredProcIfNotExists client collUri (sprocName,sprocBody) |> Stopwatch.Time
             match log with
@@ -443,15 +448,17 @@ function sync(req, expectedVersion, maxEvents) {
             def.IndexingPolicy.IndexingMode <- IndexingMode.Lazy
             // Expire Projector documentId to Kafka offsets mapping records after one year
             def.DefaultTimeToLive <- Nullable (365 * 60 * 60 * 24)
-            createCollectionIfNotExists client (dbName,def) mode
+            createOrProvisionCollection client (dbName,def) mode
         let init log (client: Client.DocumentClient) (dbName,collName) mode skipStoredProc = async {
-            do! createDatabaseIfNotExists client dbName mode
+            do! createOrProvisionDatabase client dbName mode
             do! createBatchAndTipCollectionIfNotExists client (dbName,collName) mode
             let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(dbName,collName)
             if not skipStoredProc then
                 do! createSyncStoredProcIfNotExists (Some log) client collectionUri }
-        let initAux (client: Client.DocumentClient) (dbName,collName) mode = async {
-            do! createDatabaseIfNotExists client dbName mode 
+        let initAux (client: Client.DocumentClient) (dbName,collName) rus = async {
+            // Hardwired for now (not sure if CFP can store in a Database-allocated as it would need to be supplying partion keys)
+            let mode = Provisioning.Container rus
+            do! createOrProvisionDatabase client dbName mode 
             do! createAuxCollectionIfNotExists client (dbName,collName) mode }
 
 module internal Tip =
