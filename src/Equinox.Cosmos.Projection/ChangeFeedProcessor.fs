@@ -13,18 +13,20 @@ open System.Collections.Generic
 type ChangeFeedObserver =
     static member Create(log: ILogger, onChange : IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>, ?dispose: unit -> unit) =
         { new IChangeFeedObserver with
+            member __.OpenAsync ctx = UnitTaskBuilder() {
+                log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId) }
             member __.ProcessChangesAsync(ctx, docs, ct) = (UnitTaskBuilder ct) {
                 try do! onChange ctx docs
                 with e ->
                     log.Warning(e, "Range {partitionKeyRangeId} Handler Threw", ctx.PartitionKeyRangeId)
                     do! Async.Raise e }
-            member __.OpenAsync ctx = UnitTaskBuilder() {
-                log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId) }
             member __.CloseAsync (ctx, reason) = UnitTaskBuilder() {
                 log.Information("Range {partitionKeyRangeId} Revoked {reason}", ctx.PartitionKeyRangeId, reason) } 
           interface IDisposable with
             member __.Dispose() =
-                match dispose with Some f -> f () | None -> () }
+                match dispose with
+                | Some f -> f ()
+                | None -> () }
 
 type ChangeFeedObserverFactory =
     static member FromFunction (f : unit -> #IChangeFeedObserver) =
@@ -84,6 +86,12 @@ type ChangeFeedProcessor =
                     MaxItemCount = Nullable cfBatchSize,
                     LeaseAcquireInterval = leaseAcquireInterval, LeaseExpirationInterval = leaseTtl, LeaseRenewInterval = leaseRenewInterval,
                     FeedPollDelay = feedPollDelay)
+            // As of CFP 2.2.5, the default behavior does not afford any useful characteristics when the processing is erroring:-
+            // a) progress gets written regardless of whether the handler completes with an Exception or not
+            // b) no retries happen while the processing is online
+            // ... as a result the checkpointing logic is turned off.
+            // NB for lag reporting to work correctly, it is of course still important that the writing take place, and that it be written via the CFP lib
+            feedProcessorOptions.CheckpointFrequency.ExplicitCheckpoint <- true
             leasePrefix |> Option.iter (fun lp -> feedProcessorOptions.LeasePrefix <- lp + ":")
             let mk (Equinox.Cosmos.Discovery.UriAndKey (u,k)) d c =
                 DocumentCollectionInfo(Uri = u, DatabaseName = d, CollectionName = c, MasterKey = k, ConnectionPolicy = connectionPolicy)
