@@ -10,21 +10,39 @@ open Serilog
 open System
 open System.Collections.Generic
 
+/// Provides F#-friendly wrapping to compose a ChangeFeedObserver from functions
 type ChangeFeedObserver =
-    static member Create(log: ILogger, onChange : IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>, ?dispose: unit -> unit) =
+    static member Create
+      ( /// Base logger context; will be decorated with a `partitionKeyRangeId` property when passed to `assign` and `processBatch`
+        log: ILogger,
+        /// Callback responsible for accepting a set of documents, the `ctx` argument enables one to checkpoint up to the end of the batch passed
+        /// NB emitting an exception will not trigger a retry, and no progress writing will take place without explicit calls to `ctx.CheckpointAsync`
+        processBatch : ILogger -> IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>,
+        /// Callback triggered when a lease is won and the observer is being spun up (0 or more `processBatch` calls will follow)
+        ?assign: ILogger -> unit,
+        /// Callback triggered when a lease is revoked and the observer about to be `Dispose`d
+        ?revoke: ILogger -> unit,
+        /// Function called when this Observer is being destroyed due to the revocation of a lease (triggered after `revoke`)
+        ?dispose: unit -> unit) =
+        let mutable log = log
         { new IChangeFeedObserver with
+            member __.OpenAsync ctx = UnitTaskBuilder() {
+                log <- log.ForContext("partitionKeyRangeId",ctx.PartitionKeyRangeId)
+                log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId)
+                assign |> Option.iter (fun f -> f log) }
             member __.ProcessChangesAsync(ctx, docs, ct) = (UnitTaskBuilder ct) {
-                try do! onChange ctx docs
+                try do! processBatch log ctx docs
                 with e ->
                     log.Warning(e, "Range {partitionKeyRangeId} Handler Threw", ctx.PartitionKeyRangeId)
                     do! Async.Raise e }
-            member __.OpenAsync ctx = UnitTaskBuilder() {
-                log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId) }
             member __.CloseAsync (ctx, reason) = UnitTaskBuilder() {
-                log.Information("Range {partitionKeyRangeId} Revoked {reason}", ctx.PartitionKeyRangeId, reason) } 
+                log.Information("Range {partitionKeyRangeId} Revoked {reason}", ctx.PartitionKeyRangeId, reason)
+                revoke |> Option.iter (fun f -> f log) } 
           interface IDisposable with
             member __.Dispose() =
-                match dispose with Some f -> f () | None -> () }
+                match dispose with
+                | Some f -> f ()
+                | None -> () }
 
 type ChangeFeedObserverFactory =
     static member FromFunction (f : unit -> #IChangeFeedObserver) =
@@ -32,7 +50,7 @@ type ChangeFeedObserverFactory =
 
 type CosmosCollectionId = { database: string; collection: string }
 
-/// Wraps the [Azure CosmosDb ChangeFeedProcessor library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet)
+//// Wraps the [Azure CosmosDb ChangeFeedProcessor library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet)
 type ChangeFeedProcessor =
     static member Start
         (   log : ILogger, discovery: Equinox.Cosmos.Discovery, connectionPolicy : ConnectionPolicy, source : CosmosCollectionId,
@@ -84,6 +102,12 @@ type ChangeFeedProcessor =
                     MaxItemCount = Nullable cfBatchSize,
                     LeaseAcquireInterval = leaseAcquireInterval, LeaseExpirationInterval = leaseTtl, LeaseRenewInterval = leaseRenewInterval,
                     FeedPollDelay = feedPollDelay)
+            // As of CFP 2.2.5, the default behavior does not afford any useful characteristics when the processing is erroring:-
+            // a) progress gets written regardless of whether the handler completes with an Exception or not
+            // b) no retries happen while the processing is online
+            // ... as a result the checkpointing logic is turned off.
+            // NB for lag reporting to work correctly, it is of course still important that the writing take place, and that it be written via the CFP lib
+            feedProcessorOptions.CheckpointFrequency.ExplicitCheckpoint <- true
             leasePrefix |> Option.iter (fun lp -> feedProcessorOptions.LeasePrefix <- lp + ":")
             let mk (Equinox.Cosmos.Discovery.UriAndKey (u,k)) d c =
                 DocumentCollectionInfo(Uri = u, DatabaseName = d, CollectionName = c, MasterKey = k, ConnectionPolicy = connectionPolicy)

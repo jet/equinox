@@ -14,6 +14,21 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Fixed
 
 <a name="2.0.0"></a>
+<a name="2.0.0-preview5"></a>
+## [2.0.0-preview5] - 2019-04-12
+
+### Added
+
+- exposed `assign` and `revoke` extensibility points in `ChangeFeedObserver` builder [#119](https://github.com/jet/equinox/pull/119)
+
+### Changed
+
+- switched ChangeFeedProcessor checkpointing to be _explicit_ (was automatic) based on requirements of [`equinox-sync` template PR #19](https://github.com/jet/dotnet-templates/pull/19) [#119](https://github.com/jet/equinox/pull/119)
+
+### Fixed
+
+- Added `partitionRangeId` context to `ChangeFeedObserver` logging [#119](https://github.com/jet/equinox/pull/119)
+
 <a name="2.0.0-preview4"></a>
 ## [2.0.0-preview4] - 2019-04-03
 

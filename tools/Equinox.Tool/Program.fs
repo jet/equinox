@@ -331,7 +331,7 @@ let main argv =
                         let p = KafkaProducer.Create(log, cfg, t)
                         Some p, (p :> IDisposable).Dispose
                     | _ -> None, id
-                let projectBatch (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
+                let projectBatch (log : ILogger) (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
                     sw.Stop() // Stop the clock after CFP hands off to us
                     let validator = BatchValidator(validator)
                     let toKafkaEvent (e: DocumentParser.IEvent) : Equinox.Projection.Codec.RenderedEvent =
@@ -349,7 +349,9 @@ let main argv =
                             return et
                         | Some producer ->
                             let es = [| for e in events -> e.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
-                            let! et,_ = producer.ProduceBatch es |> Stopwatch.Time
+                            let! et,() = async {
+                                let! _ = producer.ProduceBatch es
+                                do! ctx.CheckpointAsync() |> Async.AwaitTaskCorrect } |> Stopwatch.Time 
                             return et }
                             
                     if log.IsEnabled LogEventLevel.Debug then log.Debug("Response Headers {0}", let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]])
@@ -366,7 +368,7 @@ let main argv =
                         log.Information("Feed at least once delivery: {dups} duplicates encountered across {streams} affected streams", s.dup, streamsWithDupsCount)
                     sw.Restart() // restart the clock as we handoff back to the CFP
                 }
-                ChangeFeedObserver.Create(log, projectBatch, disposeProducer)
+                ChangeFeedObserver.Create(log, projectBatch, dispose = disposeProducer)
 
             let run = async {
                 let logLag (interval : TimeSpan) remainingWork = async {
