@@ -140,7 +140,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview4...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview5...HEAD
+[2.0.0-preview5]: https://github.com/jet/equinox/compare/2.0.0-preview4...2.0.0-preview5
 [2.0.0-preview4]: https://github.com/jet/equinox/compare/2.0.0-preview3...2.0.0-preview4
 [2.0.0-preview3]: https://github.com/jet/equinox/compare/2.0.0-preview2...2.0.0-preview3
 [2.0.0-preview2]: https://github.com/jet/equinox/compare/2.0.0-preview1...2.0.0-preview2
