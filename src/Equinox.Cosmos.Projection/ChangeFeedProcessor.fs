@@ -11,12 +11,14 @@ open System
 open System.Collections.Generic
 
 type ChangeFeedObserver =
-    static member Create(log: ILogger, onChange : IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>, ?dispose: unit -> unit) =
+    static member Create(log: ILogger, onChange : ILogger -> IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>, ?dispose: unit -> unit) =
+        let mutable log = log
         { new IChangeFeedObserver with
             member __.OpenAsync ctx = UnitTaskBuilder() {
+                log <- log.ForContext("partitionKeyRangeId",ctx.PartitionKeyRangeId)
                 log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId) }
             member __.ProcessChangesAsync(ctx, docs, ct) = (UnitTaskBuilder ct) {
-                try do! onChange ctx docs
+                try do! onChange log ctx docs
                 with e ->
                     log.Warning(e, "Range {partitionKeyRangeId} Handler Threw", ctx.PartitionKeyRangeId)
                     do! Async.Raise e }

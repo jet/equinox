@@ -331,7 +331,7 @@ let main argv =
                         let p = KafkaProducer.Create(log, cfg, t)
                         Some p, (p :> IDisposable).Dispose
                     | _ -> None, id
-                let projectBatch (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
+                let projectBatch (log : ILogger) (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
                     sw.Stop() // Stop the clock after CFP hands off to us
                     let validator = BatchValidator(validator)
                     let toKafkaEvent (e: DocumentParser.IEvent) : Equinox.Projection.Codec.RenderedEvent =
@@ -368,7 +368,7 @@ let main argv =
                         log.Information("Feed at least once delivery: {dups} duplicates encountered across {streams} affected streams", s.dup, streamsWithDupsCount)
                     sw.Restart() // restart the clock as we handoff back to the CFP
                 }
-                ChangeFeedObserver.Create(log, projectBatch, disposeProducer)
+                ChangeFeedObserver.Create(log, projectBatch, dispose = disposeProducer)
 
             let run = async {
                 let logLag (interval : TimeSpan) remainingWork = async {
