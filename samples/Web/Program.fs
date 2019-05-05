@@ -4,7 +4,6 @@ open Argu
 open Microsoft.AspNetCore
 open Microsoft.AspNetCore.Hosting
 open Microsoft.Extensions.DependencyInjection
-open Samples.Infrastructure.Log
 open Serilog
 
 module Program =
@@ -29,7 +28,7 @@ module Program =
                     .Enrich.FromLogContext()
                     .WriteTo.Console()
                     // TOCONSIDER log and reset every minute or something ?
-                    .WriteTo.Sink(RuCounterSink())
+                    .WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.RuCounters.RuCounterSink())
             let c =
                 let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
                 match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
