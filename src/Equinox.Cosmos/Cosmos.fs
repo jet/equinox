@@ -229,6 +229,8 @@ module Log =
     let (|EventLen|) (x: #Equinox.Codec.IEvent<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
+    /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
+    /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
     module InternalMetrics =
 
         module RuCounters =
