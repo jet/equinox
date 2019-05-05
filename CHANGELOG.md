@@ -11,6 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 ### Changed
 
+- [re]Introduced `Equinox.Projection.Codec` to house Codec-specific aspects of the shared projection presently in `Equinox.Projection`
 - `ChangeFeedObserver`: Made `assign` and `revoke` extensibility points in builder `async` [#124](https://github.com/jet/equinox/pull/124)
 - `ChangeFeedObserver`: Renamed `ChangeFeedObserver`'s `processBatch` to `ingest` and documented role of `IChangeFeedObserverContext.Checkpoint` in more detail [#124](https://github.com/jet/equinox/pull/124)
 - Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc6` in `eqx` tool
