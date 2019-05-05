@@ -334,10 +334,10 @@ let main argv =
                 let projectBatch (log : ILogger) (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
                     sw.Stop() // Stop the clock after CFP hands off to us
                     let validator = BatchValidator(validator)
-                    let toKafkaEvent (e: DocumentParser.IEvent) : Equinox.Projection.Codec.RenderedEvent =
-                        { s = e.Stream; i = e.Index; c = e.EventType; t = e.Timestamp; d = e.Data; m = e.Meta }
-                    let validate (e: DocumentParser.IEvent) =
-                        match validator.TryIngest(e.Stream, int e.Index) with
+                    let toKafkaEvent (e: Equinox.Projection.StreamItem) : Equinox.Projection.Codec.RenderedEvent =
+                        { s = e.stream; i = e.index; c = e.event.EventType; t = e.event.Timestamp; d = e.event.Data; m = e.event.Meta }
+                    let validate (e: Equinox.Projection.StreamItem) =
+                        match validator.TryIngest(e.stream, int e.index) with
                         | Gap -> None // We cannot emit if we have evidence that this will leave a gap
                         | Duplicate // Just because this is a re-delivery does not mean we can drop it - the state does not get reset if we retraverse a batch
                         | Ok | New -> toKafkaEvent e |> Some

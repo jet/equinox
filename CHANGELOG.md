@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Added Equinox.Projection.StreamItem` as canonical representation of a raw item from a feed in Projections
+
 ### Changed
 
 - [re]Introduced `Equinox.Projection.Codec` to house Codec-specific aspects of the shared projection presently in `Equinox.Projection`
