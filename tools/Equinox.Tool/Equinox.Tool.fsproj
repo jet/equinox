@@ -33,6 +33,7 @@
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\samples\Infrastructure\Infrastructure.fsproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.Projection\Equinox.Projection.fsproj" />
     <ProjectReference Include="..\Equinox.Tools.TestHarness\Equinox.Tools.TestHarness.fsproj" />
   </ItemGroup>

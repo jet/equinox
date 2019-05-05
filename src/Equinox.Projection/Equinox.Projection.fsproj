@@ -10,19 +10,25 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Equinox.Cosmos\CosmosInternalJson.fs" Link="CosmosInternalJson.fs" />
-    <Compile Include="RenderedEvent.fs" />
+    <Compile Include="Projection.fs" />
     <Compile Include="FeedValidator.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0-beta2-18618-05" PrivateAssets="All"/>
+    <ProjectReference Include="..\Equinox.Codec\Equinox.Codec.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0-beta2-18618-05" PrivateAssets="All" />
     <PackageReference Include="MinVer" Version="1.0.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
-    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Equinox.Codec\Equinox.Codec.fsproj" />
   </ItemGroup>
 
 </Project>

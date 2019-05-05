@@ -23,6 +23,7 @@
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.Projection $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.Projection.Codec $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack tools/Equinox.Tools.TestHarness $(Cfg) $(PackOptions)" />
     <Exec Command='dotnet publish tools/Equinox.Tool $(Cfg) -f net461 -o "$(RepoDir)/bin/equinox-tool/net461" ' />
     <Exec Command="dotnet pack tools/Equinox.Tool $(Cfg) $(PackOptions) /p:PackAsTool=true" />

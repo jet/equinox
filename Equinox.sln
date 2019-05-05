@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.28307.329
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.28729.10
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox", "src\Equinox\Equinox.fsproj", "{54CD058F-5B0A-4564-B732-1F6301E120AC}"
 EndProject
@@ -66,6 +66,8 @@ EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Tutorial", "samples\Tutorial\Tutorial.fsproj", "{D82AAB2E-7264-421A-A893-63A37E5F08B6}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Tools.TestHarness", "tools\Equinox.Tools.TestHarness\Equinox.Tools.TestHarness.fsproj", "{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Projection.Codec", "src\Equinox.Projection.Codec\Equinox.Projection.Codec.fsproj", "{01C9B0E9-4777-4FCD-A30C-DED0DAFCF621}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -157,6 +159,10 @@ Global
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Release|Any CPU.Build.0 = Release|Any CPU
+		{01C9B0E9-4777-4FCD-A30C-DED0DAFCF621}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{01C9B0E9-4777-4FCD-A30C-DED0DAFCF621}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{01C9B0E9-4777-4FCD-A30C-DED0DAFCF621}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{01C9B0E9-4777-4FCD-A30C-DED0DAFCF621}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
