@@ -345,13 +345,13 @@ let main argv =
                     let! et = async {
                         match producer with
                         | None ->
-                            let! et,() = ctx.CheckpointAsync() |> Async.AwaitTaskCorrect |> Stopwatch.Time
+                            let! et,() = ctx.Checkpoint() |> Stopwatch.Time
                             return et
                         | Some producer ->
                             let es = [| for e in events -> e.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
                             let! et,() = async {
                                 let! _ = producer.ProduceBatch es
-                                do! ctx.CheckpointAsync() |> Async.AwaitTaskCorrect } |> Stopwatch.Time 
+                                do! ctx.Checkpoint() } |> Stopwatch.Time 
                             return et }
                             
                     if log.IsEnabled LogEventLevel.Debug then log.Debug("Response Headers {0}", let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]])
