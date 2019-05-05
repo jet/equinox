@@ -11,7 +11,6 @@
   <ItemGroup>
     <Compile Include="Storage.fs" />
     <Compile Include="Services.fs" />
-    <Compile Include="Log.fs" />
   </ItemGroup>
 
   <ItemGroup>

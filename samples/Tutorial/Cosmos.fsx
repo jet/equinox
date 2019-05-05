@@ -51,32 +51,15 @@ module Favorites =
 module Log =
     open Serilog
     open Serilog.Events
-    open Samples.Infrastructure.Log
     let verbose = true // false will remove lots of noise
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(RuCounterSink())
+        let c = c.WriteTo.Sink(Store.Log.InternalMetrics.RuCounters.RuCounterSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
-
-    let dumpStats () =
-        let stats =
-          [ "Read", RuCounterSink.Read
-            "Write", RuCounterSink.Write
-            "Resync", RuCounterSink.Resync ]
-        let mutable totalCount, totalRc, totalMs = 0L, 0., 0L
-        let logActivity name count rc lat =
-            log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
-                name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
-        for name, stat in stats do
-            let ru = float stat.rux100 / 100.
-            totalCount <- totalCount + stat.count
-            totalRc <- totalRc + ru
-            totalMs <- totalMs + stat.ms
-            logActivity name stat.count ru stat.ms
-        logActivity "TOTAL" totalCount totalRc totalMs
+    let dumpMetrics () = Store.Log.InternalMetrics.dump log
 
 module Store =
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
@@ -103,4 +86,4 @@ service.List(client) |> Async.RunSynchronously
 service.Unfavorite(client, "b") |> Async.RunSynchronously 
 service.List(client) |> Async.RunSynchronously 
 
-Log.dumpStats()
+Log.dumpMetrics ()
