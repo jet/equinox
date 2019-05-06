@@ -9,6 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-preview6"></a>
+## [2.0.0-preview6] - 2019-05-06
+
+### Added
 
 - Added `Equinox.Projection` state management: `StreamState`/`StreamStates`  [#128](https://github.com/jet/equinox/pull/128)
 - Added `Equinox.Projection` pipeline: `Progress`/`Scheduling`/`Projector`/Ingestion`/`Ingester` [#128](https://github.com/jet/equinox/pull/128)
@@ -22,10 +31,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `ChangeFeedObserver`: Renamed `ChangeFeedObserver`'s `processBatch` to `ingest` and documented role of `IChangeFeedObserverContext.Checkpoint` in more detail [#124](https://github.com/jet/equinox/pull/124)
 - Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc6` in `eqx` tool
 
-### Removed
-### Fixed
-
-<a name="2.0.0"></a>
 <a name="2.0.0-preview5"></a>
 ## [2.0.0-preview5] - 2019-04-12
 
@@ -152,7 +157,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview5...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview6...HEAD
+[2.0.0-preview6]: https://github.com/jet/equinox/compare/2.0.0-preview5...2.0.0-preview6
 [2.0.0-preview5]: https://github.com/jet/equinox/compare/2.0.0-preview4...2.0.0-preview5
 [2.0.0-preview4]: https://github.com/jet/equinox/compare/2.0.0-preview3...2.0.0-preview4
 [2.0.0-preview3]: https://github.com/jet/equinox/compare/2.0.0-preview2...2.0.0-preview3
