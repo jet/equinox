@@ -68,12 +68,13 @@ and [<NoComparison>]InitAuxArguments =
         member a.Usage = a |> function
             | Rus _ -> "Specify RU/s level to provision for the Aux Collection."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
+
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison; RequireSubcommand>]ProjectArguments =
     | [<MainCommand; ExactlyOnce>] LeaseId of string
     | [<AltCommandLine("-s"); Unique>] Suffix of string
-    | [<AltCommandLine("-i"); Unique>] ForceStartFromHere
-    | [<AltCommandLine("-m"); Unique>] ChangeFeedBatchSize of int
+    | [<AltCommandLine("-f"); Unique>] ForceStartFromHere
+    | [<AltCommandLine("-m"); Unique>] MaxDocuments of int
     | [<AltCommandLine("-l"); Unique>] LagFreqS of float
     | [<CliPrefix(CliPrefix.None); Last>] Stats of ParseResults<StatsTarget>
     | [<CliPrefix(CliPrefix.None); Last>] Kafka of ParseResults<KafkaTarget>
@@ -82,7 +83,7 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
             | LeaseId _ -> "Projector instance context name."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
             | ForceStartFromHere _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
-            | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 1000"
+            | MaxDocuments _ -> "Maximum item count to supply to Changefeed Api when querying. Default: Unlimited"
             | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
 
             | Stats _ -> "Do not emit events, only stats."
@@ -313,7 +314,7 @@ let main argv =
                 | x -> failwithf "Invalid subcommand %A" x
             let storeLog = createStoreLog (storeArgs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
             let discovery, dbName, collName, connector = Storage.Cosmos.connection (log, storeLog) (Storage.Cosmos.Info storeArgs)
-            pargs.TryGetResult ChangeFeedBatchSize |> Option.iter (fun bs -> log.Information("ChangeFeed BatchSize {batchSize}", bs))
+            pargs.TryGetResult MaxDocuments |> Option.iter (fun bs -> log.Information("ChangeFeed BatchSize {batchSize}", bs))
             pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
             let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
             let leaseId = pargs.GetResult(LeaseId)
@@ -380,7 +381,7 @@ let main argv =
                       ( log, discovery, connector.ConnectionPolicy, source, aux, buildRangeProjector,
                         leasePrefix = leaseId,
                         forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
-                        ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
+                        ?maxDocuments = pargs.TryGetResult MaxDocuments,
                         ?reportLagAndAwaitNextEstimation = maybeLogLag)
                 do! Async.AwaitKeyboardInterrupt() }
             Async.RunSynchronously run
