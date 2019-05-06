@@ -26,3 +26,7 @@ module Codec =
             [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
             [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
             m: byte[] }
+
+    module RenderedEvent =
+        let ofStreamItem (x: Equinox.Projection.StreamItem) : RenderedEvent =
+            { s = x.stream; i = x.index; c = x.event.EventType; t = x.event.Timestamp; d = x.event.Data; m = x.event.Meta }
