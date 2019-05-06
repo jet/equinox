@@ -29,6 +29,8 @@ type ChangeFeedObserver =
         /// - triggering marking of progress via an invocation of `ctx.Checkpoint()` (can be immediate, but can also be deferred and performed asynchronously)
         /// NB emitting an exception will not trigger a retry, and no progress writing will take place without explicit calls to `ctx.CheckpointAsync`
         ingest : ILogger -> IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>,
+        /// Called when this Observer is being created (triggered before `assign`)
+        ?init: unit -> unit,
         /// Called when a lease is won and the observer is being spun up (0 or more `processBatch` calls will follow)
         ?assign: ILogger -> Async<unit>,
         /// Called when a lease is revoked [and the observer is about to be `Dispose`d]
@@ -40,6 +42,9 @@ type ChangeFeedObserver =
             member __.OpenAsync ctx = UnitTaskBuilder() {
                 log <- log.ForContext("partitionKeyRangeId",ctx.PartitionKeyRangeId)
                 log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId)
+                match init with
+                | Some f -> f ()
+                | None -> ()
                 match assign with
                 | Some f -> do! f log
                 | None -> () }
