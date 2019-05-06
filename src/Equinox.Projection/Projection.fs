@@ -40,6 +40,7 @@ module private Helpers =
         member __.CurrentCapacity = inner.CurrentCount
 
 module Progress =
+
     type [<NoComparison; NoEquality>] internal BatchState = { markCompleted: unit -> unit; streamToRequiredIndex : Dictionary<string,int64> }
 
     type State<'Pos>() =
@@ -256,6 +257,7 @@ module Scheduling =
             cts.Cancel()
 
 type Projector =
+
     static member Start(log, maxPendingBatches, maxActiveBatches, project : StreamSpan -> Async<int>, ?statsInterval) =
         let project (_maybeWritePos, batch) = async {
             try let! count = project batch
@@ -479,6 +481,7 @@ module Ingestion =
         member __.Stop() = cts.Cancel()
 
 type Ingester =
+
     /// Starts an Ingester that will submit up to `maxSubmissions` items at a time to the `scheduler`, blocking on Submits when more than `maxRead` batches have yet to complete processing 
     static member Start<'R>(log, scheduler, maxRead, maxSubmissions, ?statsInterval) =
         let singleSeriesIndex = 0

@@ -10,8 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `Added Equinox.Cosmos.Store.Log.Metrics.dump` as a placeholder stats mechanism [#126](https://github.com/jet/equinox/pull/126)
-- `Added Equinox.Projection.StreamItem` as canonical representation of a raw item from a feed in Projections [#125](https://github.com/jet/equinox/pull/125)
+- Added `Equinox.Projection` utility impls: `State`/`Progress`/`Scheduling`/`Projector`/Ingestion`/`Ingester` [#128](https://github.com/jet/equinox/pull/128)
+- Added `Equinox.Cosmos.Store.Log.Metrics.dump` as a placeholder stats mechanism [#126](https://github.com/jet/equinox/pull/126)
+- Added `Equinox.Projection.StreamItem` as canonical representation of a raw item from a feed in Projections [#125](https://github.com/jet/equinox/pull/125)
 
 ### Changed
 
