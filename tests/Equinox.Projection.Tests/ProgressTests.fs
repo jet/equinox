@@ -24,7 +24,7 @@ let [<Fact>] ``Marking Progress removes batches and triggers the callbacks`` () 
     let complete () = callbacks <- callbacks + 1
     sut.AppendBatch(complete, mkDictionary ["a",1L; "b",2L])
     sut.MarkStreamProgress("a",1L) |> ignore
-    sut.MarkStreamProgress("b",1L) |> ignore
+    sut.MarkStreamProgress("3",1L) |> ignore
     1 =! callbacks
 
 let [<Fact>] ``Marking progress is not persistent`` () =
