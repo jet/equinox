@@ -7,11 +7,14 @@
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <GenerateDocumentationFile Condition=" '$(Configuration)' == 'Release' ">true</GenerateDocumentationFile>
+    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">$(DefineConstants);NET461</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Projection.fs" />
     <Compile Include="FeedValidator.fs" />
+    <Compile Include="Infrastructure.fs" />
+    <Compile Include="State.fs" />
+    <Compile Include="Projection.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,6 +28,7 @@
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
+    <PackageReference Include="Serilog" Version="2.7.1" />
   </ItemGroup>
 
   <ItemGroup>
