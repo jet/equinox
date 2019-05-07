@@ -88,7 +88,7 @@ type ChangeFeedProcessor =
             /// (NB Only applies if this is the first time this leasePrefix is presented)
             /// Specify `true` to request starting of projection from the present write position.
             /// Default: false (projecting all events from start beforehand)
-            ?forceSkipExistingEvents : bool,
+            ?startFromTail : bool,
             /// Frequency to check for partitions without a processor. Default 1s
             ?leaseAcquireInterval : TimeSpan,
             /// Frequency to renew leases held by processors under our control. Default 3s
@@ -116,7 +116,7 @@ type ChangeFeedProcessor =
         let builder =
             let feedProcessorOptions = 
                 ChangeFeedProcessorOptions(
-                    StartFromBeginning = not (defaultArg forceSkipExistingEvents false),
+                    StartFromBeginning = not (defaultArg startFromTail false),
                     LeaseAcquireInterval = leaseAcquireInterval, LeaseExpirationInterval = leaseTtl, LeaseRenewInterval = leaseRenewInterval,
                     FeedPollDelay = feedPollDelay)
             // As of CFP 2.2.5, the default behavior does not afford any useful characteristics when the processing is erroring:-

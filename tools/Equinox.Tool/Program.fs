@@ -73,8 +73,8 @@ and [<NoComparison>]InitAuxArguments =
 and [<NoComparison; RequireSubcommand>]ProjectArguments =
     | [<MainCommand; ExactlyOnce>] LeaseId of string
     | [<AltCommandLine("-s"); Unique>] Suffix of string
-    | [<AltCommandLine("-f"); Unique>] ForceStartFromHere
-    | [<AltCommandLine("-m"); Unique>] MaxDocuments of int
+    | [<AltCommandLine("-z"); Unique>] FromTail
+    | [<AltCommandLine("-md"); Unique>] MaxDocuments of int
     | [<AltCommandLine("-l"); Unique>] LagFreqS of float
     | [<CliPrefix(CliPrefix.None); Last>] Stats of ParseResults<StatsTarget>
     | [<CliPrefix(CliPrefix.None); Last>] Kafka of ParseResults<KafkaTarget>
@@ -82,7 +82,7 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
         member a.Usage = a |> function
             | LeaseId _ -> "Projector instance context name."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
-            | ForceStartFromHere _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
+            | FromTail _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
             | MaxDocuments _ -> "Maximum item count to supply to Changefeed Api when querying. Default: Unlimited"
             | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
 
@@ -314,12 +314,12 @@ let main argv =
                 | x -> failwithf "Invalid subcommand %A" x
             let storeLog = createStoreLog (storeArgs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
             let discovery, dbName, collName, connector = Storage.Cosmos.connection (log, storeLog) (Storage.Cosmos.Info storeArgs)
-            pargs.TryGetResult MaxDocuments |> Option.iter (fun bs -> log.Information("ChangeFeed BatchSize {batchSize}", bs))
+            pargs.TryGetResult MaxDocuments |> Option.iter (fun bs -> log.Information("Requesting ChangeFeed Maximum Document Count {changeFeedMaxItemCount}", bs))
             pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
             let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
             let leaseId = pargs.GetResult(LeaseId)
             log.Information("Processing using LeaseId {leaseId} in Aux coll {auxCollName}", leaseId, auxCollName)
-            if pargs.Contains ForceStartFromHere then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
+            if pargs.Contains FromTail then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
             let source = { database = dbName; collection = collName }
             let aux = { database = dbName; collection = auxCollName }
             let validator = FeedValidator()
@@ -380,7 +380,7 @@ let main argv =
                     ChangeFeedProcessor.Start
                       ( log, discovery, connector.ConnectionPolicy, source, aux, buildRangeProjector,
                         leasePrefix = leaseId,
-                        forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
+                        startFromTail = pargs.Contains FromTail,
                         ?maxDocuments = pargs.TryGetResult MaxDocuments,
                         ?reportLagAndAwaitNextEstimation = maybeLogLag)
                 do! Async.AwaitKeyboardInterrupt() }
