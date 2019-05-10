@@ -29,6 +29,8 @@ type ChangeFeedObserver =
         /// - triggering marking of progress via an invocation of `ctx.Checkpoint()` (can be immediate, but can also be deferred and performed asynchronously)
         /// NB emitting an exception will not trigger a retry, and no progress writing will take place without explicit calls to `ctx.CheckpointAsync`
         ingest : ILogger -> IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>,
+        /// Called when this Observer is being created (triggered before `assign`)
+        ?init: unit -> unit,
         /// Called when a lease is won and the observer is being spun up (0 or more `processBatch` calls will follow)
         ?assign: ILogger -> Async<unit>,
         /// Called when a lease is revoked [and the observer is about to be `Dispose`d]
@@ -40,6 +42,9 @@ type ChangeFeedObserver =
             member __.OpenAsync ctx = UnitTaskBuilder() {
                 log <- log.ForContext("partitionKeyRangeId",ctx.PartitionKeyRangeId)
                 log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId)
+                match init with
+                | Some f -> f ()
+                | None -> ()
                 match assign with
                 | Some f -> do! f log
                 | None -> () }
@@ -83,10 +88,7 @@ type ChangeFeedProcessor =
             /// (NB Only applies if this is the first time this leasePrefix is presented)
             /// Specify `true` to request starting of projection from the present write position.
             /// Default: false (projecting all events from start beforehand)
-            ?forceSkipExistingEvents : bool,
-            /// Limit on items to take in a batch when querying for changes (in addition to 4MB response size limit). Default 1000
-            /// NB While a larger limit may deliver better throughput, it's important to balance that .concern with the risk of throttling
-            ?cfBatchSize : int, 
+            ?startFromTail : bool,
             /// Frequency to check for partitions without a processor. Default 1s
             ?leaseAcquireInterval : TimeSpan,
             /// Frequency to renew leases held by processors under our control. Default 3s
@@ -95,12 +97,13 @@ type ChangeFeedProcessor =
             ?leaseTtl : TimeSpan,
             /// Delay before re-polling a partitition after backlog has been drained
             ?feedPollDelay : TimeSpan,
+            /// Limit on items to take in a batch when querying for changes (in addition to 4MB response size limit). Default Unlimited
+            ?maxDocuments : int, 
             /// Continuously fed per-partion lag information until parent Async completes
             /// callback should Async.Sleep until next update is desired
             ?reportLagAndAwaitNextEstimation) = async {
 
         let leaseOwnerId = defaultArg leaseOwnerId (ChangeFeedProcessor.mkLeaseOwnerIdForProcess())
-        let cfBatchSize = defaultArg cfBatchSize 1000
         let feedPollDelay = defaultArg feedPollDelay (TimeSpan.FromSeconds 1.)
         let leaseAcquireInterval = defaultArg leaseAcquireInterval (TimeSpan.FromSeconds 1.)
         let leaseRenewInterval = defaultArg leaseRenewInterval (TimeSpan.FromSeconds 3.)
@@ -113,8 +116,7 @@ type ChangeFeedProcessor =
         let builder =
             let feedProcessorOptions = 
                 ChangeFeedProcessorOptions(
-                    StartFromBeginning = not (defaultArg forceSkipExistingEvents false),
-                    MaxItemCount = Nullable cfBatchSize,
+                    StartFromBeginning = not (defaultArg startFromTail false),
                     LeaseAcquireInterval = leaseAcquireInterval, LeaseExpirationInterval = leaseTtl, LeaseRenewInterval = leaseRenewInterval,
                     FeedPollDelay = feedPollDelay)
             // As of CFP 2.2.5, the default behavior does not afford any useful characteristics when the processing is erroring:-
@@ -124,6 +126,8 @@ type ChangeFeedProcessor =
             // NB for lag reporting to work correctly, it is of course still important that the writing take place, and that it be written via the CFP lib
             feedProcessorOptions.CheckpointFrequency.ExplicitCheckpoint <- true
             leasePrefix |> Option.iter (fun lp -> feedProcessorOptions.LeasePrefix <- lp + ":")
+            // Max Items is not emphasized as a control mechanism as it can only be used meaningfully when events are highly regular in size
+            maxDocuments |> Option.iter (fun mi -> feedProcessorOptions.MaxItemCount <- Nullable mi)
             let mk (Equinox.Cosmos.Discovery.UriAndKey (u,k)) d c =
                 DocumentCollectionInfo(Uri = u, DatabaseName = d, CollectionName = c, MasterKey = k, ConnectionPolicy = connectionPolicy)
             ChangeFeedProcessorBuilder()

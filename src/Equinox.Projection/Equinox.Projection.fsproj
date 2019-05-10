@@ -13,7 +13,6 @@
   <ItemGroup>
     <Compile Include="FeedValidator.fs" />
     <Compile Include="Infrastructure.fs" />
-    <Compile Include="State.fs" />
     <Compile Include="Projection.fs" />
   </ItemGroup>
 
@@ -29,10 +28,6 @@
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
     <PackageReference Include="Serilog" Version="2.7.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Equinox.Codec\Equinox.Codec.fsproj" />
   </ItemGroup>
 
 </Project>

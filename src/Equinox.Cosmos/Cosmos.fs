@@ -265,12 +265,12 @@ module Log =
                 static member val Read = RuCounter.Create() with get, set
                 static member val Write = RuCounter.Create() with get, set
                 static member val Resync = RuCounter.Create() with get, set
-                static member Reset() =
+                static member Restart() =
                     RuCounterSink.Read <- RuCounter.Create()
                     RuCounterSink.Write <- RuCounter.Create()
                     RuCounterSink.Resync <- RuCounter.Create()
                     let span = epoch.Elapsed
-                    epoch.Reset()
+                    epoch.Restart()
                     span
                 interface Serilog.Core.ILogEventSink with
                     member __.Emit logEvent = logEvent |> function
@@ -298,7 +298,7 @@ module Log =
                 totalMs <- totalMs + stat.ms
                 logActivity name stat.count ru stat.ms
             // Yes, there's a minor race here between the use of the values and the reset
-            let duration = RuCounters.RuCounterSink.Reset()
+            let duration = RuCounters.RuCounterSink.Restart()
             logActivity "TOTAL" totalCount totalRc totalMs
             let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
             let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)

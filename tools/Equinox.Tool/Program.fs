@@ -68,12 +68,13 @@ and [<NoComparison>]InitAuxArguments =
         member a.Usage = a |> function
             | Rus _ -> "Specify RU/s level to provision for the Aux Collection."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
+
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison; RequireSubcommand>]ProjectArguments =
     | [<MainCommand; ExactlyOnce>] LeaseId of string
     | [<AltCommandLine("-s"); Unique>] Suffix of string
-    | [<AltCommandLine("-i"); Unique>] ForceStartFromHere
-    | [<AltCommandLine("-m"); Unique>] ChangeFeedBatchSize of int
+    | [<AltCommandLine("-z"); Unique>] FromTail
+    | [<AltCommandLine("-md"); Unique>] MaxDocuments of int
     | [<AltCommandLine("-l"); Unique>] LagFreqS of float
     | [<CliPrefix(CliPrefix.None); Last>] Stats of ParseResults<StatsTarget>
     | [<CliPrefix(CliPrefix.None); Last>] Kafka of ParseResults<KafkaTarget>
@@ -81,8 +82,8 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
         member a.Usage = a |> function
             | LeaseId _ -> "Projector instance context name."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
-            | ForceStartFromHere _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
-            | ChangeFeedBatchSize _ -> "Maximum item count to supply to Changefeed Api when querying. Default: 1000"
+            | FromTail _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
+            | MaxDocuments _ -> "Maximum item count to supply to Changefeed Api when querying. Default: Unlimited"
             | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
 
             | Stats _ -> "Do not emit events, only stats."
@@ -238,7 +239,7 @@ module LoadTest =
         log.Information( "Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
-        let _ = Equinox.Cosmos.Store.Log.InternalMetrics.RuCounters.RuCounterSink.Reset() 
+        let _ = Equinox.Cosmos.Store.Log.InternalMetrics.RuCounters.RuCounterSink.Restart() 
         let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
 
         let resultFile = createResultLog reportFilename
@@ -313,12 +314,12 @@ let main argv =
                 | x -> failwithf "Invalid subcommand %A" x
             let storeLog = createStoreLog (storeArgs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
             let discovery, dbName, collName, connector = Storage.Cosmos.connection (log, storeLog) (Storage.Cosmos.Info storeArgs)
-            pargs.TryGetResult ChangeFeedBatchSize |> Option.iter (fun bs -> log.Information("ChangeFeed BatchSize {batchSize}", bs))
+            pargs.TryGetResult MaxDocuments |> Option.iter (fun bs -> log.Information("Requesting ChangeFeed Maximum Document Count {changeFeedMaxItemCount}", bs))
             pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
             let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
             let leaseId = pargs.GetResult(LeaseId)
             log.Information("Processing using LeaseId {leaseId} in Aux coll {auxCollName}", leaseId, auxCollName)
-            if pargs.Contains ForceStartFromHere then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
+            if pargs.Contains FromTail then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
             let source = { database = dbName; collection = collName }
             let aux = { database = dbName; collection = auxCollName }
             let validator = FeedValidator()
@@ -335,13 +336,11 @@ let main argv =
                 let projectBatch (log : ILogger) (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
                     sw.Stop() // Stop the clock after CFP hands off to us
                     let validator = BatchValidator(validator)
-                    let toKafkaEvent (e: Equinox.Projection.StreamItem) : Equinox.Projection.Codec.RenderedEvent =
-                        { s = e.stream; i = e.index; c = e.event.EventType; t = e.event.Timestamp; d = e.event.Data; m = e.event.Meta }
                     let validate (e: Equinox.Projection.StreamItem) =
                         match validator.TryIngest(e.stream, int e.index) with
                         | Gap -> None // We cannot emit if we have evidence that this will leave a gap
                         | Duplicate // Just because this is a re-delivery does not mean we can drop it - the state does not get reset if we retraverse a batch
-                        | Ok | New -> toKafkaEvent e |> Some
+                        | Ok | New -> RenderedEvent.ofStreamItem e |> Some
                     let pt, events = (fun () -> docs |> Seq.collect DocumentParser.enumEvents |> Seq.choose validate |> Array.ofSeq) |> Stopwatch.Time 
                     let! et = async {
                         match producer with
@@ -381,8 +380,8 @@ let main argv =
                     ChangeFeedProcessor.Start
                       ( log, discovery, connector.ConnectionPolicy, source, aux, buildRangeProjector,
                         leasePrefix = leaseId,
-                        forceSkipExistingEvents = pargs.Contains ForceStartFromHere,
-                        ?cfBatchSize = pargs.TryGetResult ChangeFeedBatchSize,
+                        startFromTail = pargs.Contains FromTail,
+                        ?maxDocuments = pargs.TryGetResult MaxDocuments,
                         ?reportLagAndAwaitNextEstimation = maybeLogLag)
                 do! Async.AwaitKeyboardInterrupt() }
             Async.RunSynchronously run

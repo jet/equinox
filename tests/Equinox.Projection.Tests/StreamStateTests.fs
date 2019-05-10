@@ -1,13 +1,13 @@
-﻿module CosmosIngesterTests
+﻿module StreamStateTests
 
-open Equinox.Projection.State
+open Equinox.Projection.Buffer
 open Swensen.Unquote
 open Xunit
 
 let canonicalTime = System.DateTimeOffset.UtcNow
 let mk p c : Span = { index = p; events = [| for x in 0..c-1 -> Equinox.Codec.Core.EventData.Create(p + int64 x |> string, null, timestamp=canonicalTime) |] }
-let mergeSpans = StreamState.Span.merge
-let trimSpans = StreamState.Span.trim
+let mergeSpans = Span.merge
+let trimSpans = Span.trim
 
 let [<Fact>] ``nothing`` () =
     let r = mergeSpans 0L [ mk 0L 0; mk 0L 0 ]
