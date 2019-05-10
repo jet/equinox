@@ -25,7 +25,7 @@ module private Impl =
     let arrayBytes (x:byte[]) = if x = null then 0 else x.Length
     let inline eventSize (x : Equinox.Codec.IEvent<_>) = arrayBytes x.Data + arrayBytes x.Meta + x.EventType.Length + 16
     let mb x = float x / 1024. / 1024.
-    let category (streamName : string) = streamName.Split([|'-'|],2).[0]
+    let category (streamName : string) = streamName.Split([|'-';'_'|],2).[0]
     let expiredMs ms =
         let timer = Stopwatch.StartNew()
         fun () ->
