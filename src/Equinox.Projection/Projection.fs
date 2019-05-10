@@ -7,14 +7,92 @@ open System.Collections.Generic
 open System.Diagnostics
 open System.Threading
 
-module State =
+/// Item from a reader as supplied to the `IIngester`
+type [<NoComparison>] StreamItem = { stream: string; index: int64; event: Equinox.Codec.IEvent<byte[]> }
 
+/// Core interface for projection system, representing the complete contract a feed consumer uses to deliver batches of work for projection
+type IIngester =
+    /// Passes a (lazy) batch of items into the Ingestion Engine; the batch will be materialized out of band and submitted to the Projection engine for scheduling
+    /// Admission is Async in order that the Projector and Ingester can together contrive to force backpressure on the producer of the batches
+    /// Returns dynamic position in the queue at time of posting, together with current max number of items permissible
+    abstract member Submit: progressEpoch: int64 * markCompleted: Async<unit> * items: StreamItem seq -> Async<int*int>
+    /// Requests immediate cancellation of 
+    abstract member Stop: unit -> unit
+
+[<AutoOpen>]
+module private Impl =
+    let (|NNA|) xs = if xs = null then Array.empty else xs
     let arrayBytes (x:byte[]) = if x = null then 0 else x.Length
     let inline eventSize (x : Equinox.Codec.IEvent<_>) = arrayBytes x.Data + arrayBytes x.Meta + x.EventType.Length + 16
     let mb x = float x / 1024. / 1024.
     let category (streamName : string) = streamName.Split([|'-'|],2).[0]
+    let expiredMs ms =
+        let timer = Stopwatch.StartNew()
+        fun () ->
+            let due = timer.ElapsedMilliseconds > ms
+            if due then timer.Restart()
+            due
+    type Sem(max) =
+        let inner = new SemaphoreSlim(max)
+        member __.Release(?count) = match defaultArg count 1 with 0 -> () | x -> inner.Release x |> ignore
+        member __.State = max-inner.CurrentCount,max 
+        /// Wait infinitely to get the semaphore
+        member __.Await() = inner.Await() |> Async.Ignore
+        /// Wait for the specified timeout to acquire (or return false instantly)
+        member __.TryAwait(?timeout) = inner.Await(defaultArg timeout TimeSpan.Zero)
+        member __.HasCapacity = inner.CurrentCount > 0
+        member __.CurrentCapacity = inner.CurrentCount
+    /// Gathers stats relating to how many items of a given category have been observed
+    type CatStats() =
+        let cats = Dictionary<string,int64>()
+        member __.Ingest(cat,?weight) = 
+            let weight = defaultArg weight 1L
+            match cats.TryGetValue cat with
+            | true, catCount -> cats.[cat] <- catCount + weight
+            | false, _ -> cats.[cat] <- weight
+        member __.Any = cats.Count <> 0
+        member __.Clear() = cats.Clear()
+#if NET461
+        member __.StatsDescending = cats |> Seq.map (|KeyValue|) |> Seq.sortBy (fun (_,s) -> -s)
+#else
+        member __.StatsDescending = cats |> Seq.map (|KeyValue|) |> Seq.sortByDescending snd
+#endif
+
+module Buffer =
 
     type [<NoComparison>] Span = { index: int64; events: Equinox.Codec.IEvent<byte[]>[] }
+    module Span =
+        let (|End|) (x : Span) = x.index + if x.events = null then 0L else x.events.LongLength
+        let trim min : Span -> Span = function
+            | x when x.index >= min -> x // don't adjust if min not within
+            | End n when n < min -> { index = min; events = [||] } // throw away if before min
+#if NET461
+            | x -> { index = min; events = x.events |> Seq.skip (min - x.index |> int) |> Seq.toArray }
+#else
+            | x -> { index = min; events = x.events |> Array.skip (min - x.index |> int) }  // slice
+#endif
+        let merge min (xs : Span seq) =
+            let xs =
+                seq { for x in xs -> { x with events = (|NNA|) x.events } }
+                |> Seq.map (trim min)
+                |> Seq.filter (fun x -> x.events.Length <> 0)
+                |> Seq.sortBy (fun x -> x.index)
+            let buffer = ResizeArray()
+            let mutable curr = None
+            for x in xs do
+                match curr, x with
+                // Not overlapping, no data buffered -> buffer
+                | None, _ ->
+                    curr <- Some x
+                // Gap
+                | Some (End nextIndex as c), x when x.index > nextIndex ->
+                    buffer.Add c
+                    curr <- Some x
+                // Overlapping, join
+                | Some (End nextIndex as c), x  ->
+                    curr <- Some { c with events = Array.append c.events (trim nextIndex x).events }
+            curr |> Option.iter buffer.Add
+            if buffer.Count = 0 then null else buffer.ToArray()
     type [<NoComparison>] StreamSpan = { stream: string; span: Span }
     type [<NoComparison>] StreamState = { isMalformed: bool; write: int64 option; queue: Span[] } with
         member __.Size =
@@ -27,42 +105,7 @@ module State =
                 | Some w, Some { index = i } -> i = w
                 | None, _ -> true
                 | _ -> false
-
     module StreamState =
-        let (|NNA|) xs = if xs = null then Array.empty else xs
-        module Span =
-            let (|End|) (x : Span) = x.index + if x.events = null then 0L else x.events.LongLength
-            let trim min = function
-                | x when x.index >= min -> x // don't adjust if min not within
-                | End n when n < min -> { index = min; events = [||] } // throw away if before min
-    #if NET461
-                | x -> { index = min; events = x.events |> Seq.skip (min - x.index |> int) |> Seq.toArray }
-    #else
-                | x -> { index = min; events = x.events |> Array.skip (min - x.index |> int) }  // slice
-    #endif
-            let merge min (xs : Span seq) =
-                let xs =
-                    seq { for x in xs -> { x with events = (|NNA|) x.events } }
-                    |> Seq.map (trim min)
-                    |> Seq.filter (fun x -> x.events.Length <> 0)
-                    |> Seq.sortBy (fun x -> x.index)
-                let buffer = ResizeArray()
-                let mutable curr = None
-                for x in xs do
-                    match curr, x with
-                    // Not overlapping, no data buffered -> buffer
-                    | None, _ ->
-                        curr <- Some x
-                    // Gap
-                    | Some (End nextIndex as c), x when x.index > nextIndex ->
-                        buffer.Add c
-                        curr <- Some x
-                    // Overlapping, join
-                    | Some (End nextIndex as c), x  ->
-                        curr <- Some { c with events = Array.append c.events (trim nextIndex x).events }
-                curr |> Option.iter buffer.Add
-                if buffer.Count = 0 then null else buffer.ToArray()
-
         let inline optionCombine f (r1: int64 option) (r2: int64 option) =
             match r1, r2 with
             | Some x, Some y -> f x y |> Some
@@ -72,22 +115,6 @@ module State =
             let writePos = optionCombine max s1.write s2.write
             let items = let (NNA q1, NNA q2) = s1.queue, s2.queue in Seq.append q1 q2
             { write = writePos; queue = Span.merge (defaultArg writePos 0L) items; isMalformed = s1.isMalformed || s2.isMalformed }
-
-    /// Gathers stats relating to how many items of a given category have been observed
-    type CatStats() =
-        let cats = Dictionary<string,int64>()
-        member __.Ingest(cat,?weight) = 
-            let weight = defaultArg weight 1L
-            match cats.TryGetValue cat with
-            | true, catCount -> cats.[cat] <- catCount + weight
-            | false, _ -> cats.[cat] <- weight
-        member __.Any = cats.Count <> 0
-        member __.Clear() = cats.Clear()
-    #if NET461
-        member __.StatsDescending = cats |> Seq.map (|KeyValue|) |> Seq.sortBy (fun (_,s) -> -s)
-    #else
-        member __.StatsDescending = cats |> Seq.map (|KeyValue|) |> Seq.sortByDescending snd
-    #endif
 
     type StreamStates() =
         let mutable streams = Set.empty 
@@ -175,39 +202,6 @@ module State =
             if unprefixedStreams.Any then log.Information("Waiting Streams, KB {@missingStreams}", Seq.truncate 3 unprefixedStreams.StatsDescending)
             if malformedStreams.Any then log.Information("Malformed Streams, MB {@malformedStreams}", malformedStreams.StatsDescending)
 
-open State
-
-/// Item from a reader as supplied to the `IIngester`
-type [<NoComparison>] StreamItem = { stream: string; index: int64; event: Equinox.Codec.IEvent<byte[]> }
-
-/// Core interface for projection system, representing the complete contract a feed consumer uses to deliver batches of work for projection
-type IIngester =
-    /// Passes a (lazy) batch of items into the Ingestion Engine; the batch will be materialized out of band and submitted to the Projection engine for scheduling
-    /// Admission is Async in order that the Projector and Ingester can together contrive to force backpressure on the producer of the batches
-    /// Returns dynamic position in the queue at time of posting, together with current max number of items permissible
-    abstract member Submit: progressEpoch: int64 * markCompleted: Async<unit> * items: StreamItem seq -> Async<int*int>
-    /// Requests immediate cancellation of 
-    abstract member Stop: unit -> unit
-
-[<AutoOpen>]
-module private Helpers =
-    let expiredMs ms =
-        let timer = Stopwatch.StartNew()
-        fun () ->
-            let due = timer.ElapsedMilliseconds > ms
-            if due then timer.Restart()
-            due
-    type Sem(max) =
-        let inner = new SemaphoreSlim(max)
-        member __.Release(?count) = match defaultArg count 1 with 0 -> () | x -> inner.Release x |> ignore
-        member __.State = max-inner.CurrentCount,max 
-        /// Wait infinitely to get the semaphore
-        member __.Await() = inner.Await() |> Async.Ignore
-        /// Wait for the specified timeout to acquire (or return false instantly)
-        member __.TryAwait(?timeout) = inner.Await(defaultArg timeout TimeSpan.Zero)
-        member __.HasCapacity = inner.CurrentCount > 0
-        member __.CurrentCapacity = inner.CurrentCount
-
 module Progress =
 
     type [<NoComparison; NoEquality>] internal BatchState = { markCompleted: unit -> unit; streamToRequiredIndex : Dictionary<string,int64> }
@@ -272,7 +266,7 @@ module Scheduling =
         /// Stats per submitted batch for stats listeners to aggregate
         | Added of streams: int * skip: int * events: int
         /// Submit new data pertaining to a stream that has commenced processing
-        | AddActive of KeyValuePair<string,StreamState>[]
+        | AddActive of KeyValuePair<string,Buffer.StreamState>[]
         /// Result of processing on stream - result (with basic stats) or the `exn` encountered
         | Result of stream: string * outcome: Choice<'R,exn>
        
@@ -296,13 +290,13 @@ module Scheduling =
                 incr resultCompleted
             | Result (_stream, Choice2Of2 _) ->
                 incr resultExn
-        member __.TryDump(wasFull,capacity,(used,max),streams : StreamStates) =
+        member __.TryDump(wasFull,capacity,(used,max),dumpStreams) =
             incr cycles
             if wasFull then incr filled
             if statsDue () then
                 dumpStats capacity (used,max)
                 __.DumpExtraStats()
-                streams.Dump log
+                dumpStreams log
         /// Allows an ingester or projector to wire in custom stats (typically based on data gathered in a `Handle` override)
         abstract DumpExtraStats : unit -> unit
         default __.DumpExtraStats () = ()
@@ -335,18 +329,18 @@ module Scheduling =
     /// b) triggers synchronous callbacks as batches complete; writing of progress is managed asynchronously by the TrancheEngine(s)
     /// c) submits work to the supplied Dispatcher (which it triggers pumping of)
     /// d) periodically reports state (with hooks for ingestion engines to report same)
-    type Engine<'R>(maxPendingBatches, dispatcher : Dispatcher<_>, project : int64 option * StreamSpan -> Async<Choice<'R,exn>>, interpretProgress) =
+    type Engine<'R>(maxPendingBatches, dispatcher : Dispatcher<_>, project : int64 option * Buffer.StreamSpan -> Async<Choice<'R,exn>>, interpretProgress) =
         let sleepIntervalMs = 1
         let cts = new CancellationTokenSource()
         let batches = Sem maxPendingBatches
         let work = ConcurrentQueue<InternalMessage<'R>>()
-        let streams = StreamStates()
+        let streams = Buffer.StreamStates()
         let progressState = Progress.State()
 
         member private __.Pump(stats : Stats<'R>) = async {
             use _ = dispatcher.Result.Subscribe(Result >> work.Enqueue)
             Async.Start(dispatcher.Pump(), cts.Token)
-            let validVsSkip (streamState : StreamState) (item : StreamItem) =
+            let validVsSkip (streamState : Buffer.StreamState) (item : StreamItem) =
                 match streamState.write, item.index + 1L with
                 | Some cw, required when cw >= required -> 0, 1
                 | _ -> 1, 0
@@ -395,13 +389,13 @@ module Scheduling =
                     let potential = streams.Pending(progressState.InScheduledOrder streams.QueueWeight)
                     let xs = potential.GetEnumerator()
                     while xs.MoveNext() && addsBeingAccepted do
-                        let (_,{stream = s} : StreamSpan) as item = xs.Current
+                        let (_,{stream = s} : Buffer.StreamSpan) as item = xs.Current
                         let! succeeded = dispatcher.TryAdd(async { let! r = project item in return s, r })
                         if succeeded then streams.MarkBusy s
                         idle <- idle && not succeeded // any add makes it not idle
                         addsBeingAccepted <- succeeded
                 // 3. Periodically emit status info
-                stats.TryDump(not addsBeingAccepted,capacity,dispatcher.State,streams)
+                stats.TryDump(not addsBeingAccepted,capacity,dispatcher.State,streams.Dump)
                 // 4. Do a minimal sleep so we don't run completely hot when empty
                 if idle then do! Async.Sleep sleepIntervalMs }
         static member Start<'R>(stats, maxPendingBatches, processorDop, project, interpretProgress) =
@@ -427,7 +421,7 @@ module Scheduling =
 
 type Projector =
 
-    static member Start(log, maxPendingBatches, maxActiveBatches, project : StreamSpan -> Async<int>, ?statsInterval) =
+    static member Start(log, maxPendingBatches, maxActiveBatches, project : Buffer.StreamSpan -> Async<int>, ?statsInterval) =
         let project (_maybeWritePos, batch) = async {
             try let! count = project batch
                 return Choice1Of2 (batch.span.index + int64 count)
@@ -447,13 +441,13 @@ module Ingestion =
         | EndOfSeries of seriesIndex: int
 
     type private Streams() =
-        let states = Dictionary<string, StreamState>()
-        let merge stream (state : StreamState) =
+        let states = Dictionary<string, Buffer.StreamState>()
+        let merge stream (state : Buffer.StreamState) =
             match states.TryGetValue stream with
             | false, _ ->
                 states.Add(stream, state)
             | true, current ->
-                let updated = StreamState.combine current state
+                let updated = Buffer.StreamState.combine current state
                 states.[stream] <- updated
 
         member __.Merge(items : StreamItem seq) =
