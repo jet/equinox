@@ -13,7 +13,6 @@
   <ItemGroup>
     <Compile Include="FeedValidator.fs" />
     <Compile Include="Infrastructure.fs" />
-    <Compile Include="State.fs" />
     <Compile Include="Projection.fs" />
   </ItemGroup>
 
