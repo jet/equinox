@@ -163,8 +163,8 @@ type StreamStates() =
                 readyB <- readyB + sz
         log.Information("Streams Synced {synced:n0} Active {busy:n0}/{busyMb:n1}MB Ready {ready:n0}/{readyMb:n1}MB Waiting {waiting}/{waitingMb:n1}MB Malformed {malformed}/{malformedMb:n1}MB",
             synced, busyCount, mb busyB, ready, mb readyB, unprefixed, mb unprefixedB, malformed, mb malformedB)
-        if busyCats.Any then log.Information("Active Categories, events {busyCats}", Seq.truncate 5 busyCats.StatsDescending)
-        if readyCats.Any then log.Information("Ready Categories, events {readyCats}", Seq.truncate 5 readyCats.StatsDescending)
-        if readyCats.Any then log.Information("Ready Streams, KB {readyStreams}", Seq.truncate 5 readyStreams.StatsDescending)
-        if unprefixedStreams.Any then log.Information("Waiting Streams, KB {missingStreams}", Seq.truncate 3 unprefixedStreams.StatsDescending)
-        if malformedStreams.Any then log.Information("Malformed Streams, MB {malformedStreams}", malformedStreams.StatsDescending)
+        if busyCats.Any then log.Information("Active Categories, events {@busyCats}", Seq.truncate 5 busyCats.StatsDescending)
+        if readyCats.Any then log.Information("Ready Categories, events {@readyCats}", Seq.truncate 5 readyCats.StatsDescending)
+        if readyCats.Any then log.Information("Ready Streams, KB {@readyStreams}", Seq.truncate 5 readyStreams.StatsDescending)
+        if unprefixedStreams.Any then log.Information("Waiting Streams, KB {@missingStreams}", Seq.truncate 3 unprefixedStreams.StatsDescending)
+        if malformedStreams.Any then log.Information("Malformed Streams, MB {@malformedStreams}", malformedStreams.StatsDescending)

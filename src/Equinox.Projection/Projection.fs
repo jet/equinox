@@ -306,8 +306,8 @@ module Ingestion =
                 waiting <- waiting + 1
                 waitingB <- waitingB + sz
             if waiting <> 0 then log.Information("Streams Waiting {busy:n0}/{busyMb:n1}MB ", waiting, mb waitingB)
-            if waitingCats.Any then log.Information("Waiting Categories, events {readyCats}", Seq.truncate 5 waitingCats.StatsDescending)
-            if waitingCats.Any then log.Information("Waiting Streams, KB {readyStreams}", Seq.truncate 5 waitingStreams.StatsDescending)
+            if waitingCats.Any then log.Information("Waiting Categories, events {@readyCats}", Seq.truncate 5 waitingCats.StatsDescending)
+            if waitingCats.Any then log.Information("Waiting Streams, KB {@readyStreams}", Seq.truncate 5 waitingStreams.StatsDescending)
 
     type private Stats(log : ILogger, maxPendingBatches, statsInterval : TimeSpan) =
         let mutable pendingBatchCount, validatedEpoch, comittedEpoch : int * int64 option * int64 option = 0, None, None
