@@ -58,6 +58,60 @@ module private Impl =
         member __.StatsDescending = cats |> Seq.map (|KeyValue|) |> Seq.sortByDescending snd
 #endif
 
+module Progress =
+
+    type [<NoComparison; NoEquality>] internal BatchState = { markCompleted: unit -> unit; streamToRequiredIndex : Dictionary<string,int64> }
+
+    type State<'Pos>() =
+        let pending = Queue<_>()
+        let trim () =
+            while pending.Count <> 0 && pending.Peek().streamToRequiredIndex.Count = 0 do
+                let batch = pending.Dequeue()
+                batch.markCompleted()
+        member __.AppendBatch(markCompleted, reqs : Dictionary<string,int64>) =
+            pending.Enqueue { markCompleted = markCompleted; streamToRequiredIndex = reqs }
+            trim ()
+        member __.MarkStreamProgress(stream, index) =
+            for x in pending do
+                match x.streamToRequiredIndex.TryGetValue stream with
+                | true, requiredIndex when requiredIndex <= index -> x.streamToRequiredIndex.Remove stream |> ignore
+                | _, _ -> ()
+            trim ()
+        member __.InScheduledOrder getStreamWeight =
+            let raw = seq {
+                let streams = HashSet()
+                let mutable batch = 0
+                for x in pending do
+                    batch <- batch + 1
+                    for s in x.streamToRequiredIndex.Keys do
+                        if streams.Add s then
+                            yield s,(batch,getStreamWeight s) }
+            raw |> Seq.sortBy (fun (_s,(b,l)) -> b,-l) |> Seq.map fst
+
+    /// Manages writing of progress
+    /// - Each write attempt is always of the newest token (each update is assumed to also count for all preceding ones)
+    /// - retries until success or a new item is posted
+    type Writer<'Res when 'Res: equality>() =
+        let pumpSleepMs = 100
+        let due = expiredMs 5000L
+        let mutable committedEpoch = None
+        let mutable validatedPos = None
+        let result = Event<Choice<'Res,exn>>()
+        [<CLIEvent>] member __.Result = result.Publish
+        member __.Post(version,f) =
+            Volatile.Write(&validatedPos,Some (version,f))
+        member __.CommittedEpoch = Volatile.Read(&committedEpoch)
+        member __.Pump() = async {
+            let! ct = Async.CancellationToken
+            while not ct.IsCancellationRequested do
+                match Volatile.Read &validatedPos with
+                | Some (v,f) when Volatile.Read(&committedEpoch) <> Some v && due () ->
+                    try do! f
+                        Volatile.Write(&committedEpoch, Some v)
+                        result.Trigger (Choice1Of2 v)
+                    with e -> result.Trigger (Choice2Of2 e)
+                | _ -> do! Async.Sleep pumpSleepMs }
+
 module Buffer =
 
     type [<NoComparison>] Span = { index: int64; events: Equinox.Codec.IEvent<byte[]>[] }
@@ -201,60 +255,6 @@ module Buffer =
             if readyCats.Any then log.Information("Ready Streams, KB {@readyStreams}", Seq.truncate 5 readyStreams.StatsDescending)
             if unprefixedStreams.Any then log.Information("Waiting Streams, KB {@missingStreams}", Seq.truncate 3 unprefixedStreams.StatsDescending)
             if malformedStreams.Any then log.Information("Malformed Streams, MB {@malformedStreams}", malformedStreams.StatsDescending)
-
-module Progress =
-
-    type [<NoComparison; NoEquality>] internal BatchState = { markCompleted: unit -> unit; streamToRequiredIndex : Dictionary<string,int64> }
-
-    type State<'Pos>() =
-        let pending = Queue<_>()
-        let trim () =
-            while pending.Count <> 0 && pending.Peek().streamToRequiredIndex.Count = 0 do
-                let batch = pending.Dequeue()
-                batch.markCompleted()
-        member __.AppendBatch(markCompleted, reqs : Dictionary<string,int64>) =
-            pending.Enqueue { markCompleted = markCompleted; streamToRequiredIndex = reqs }
-            trim ()
-        member __.MarkStreamProgress(stream, index) =
-            for x in pending do
-                match x.streamToRequiredIndex.TryGetValue stream with
-                | true, requiredIndex when requiredIndex <= index -> x.streamToRequiredIndex.Remove stream |> ignore
-                | _, _ -> ()
-            trim ()
-        member __.InScheduledOrder getStreamWeight =
-            let raw = seq {
-                let streams = HashSet()
-                let mutable batch = 0
-                for x in pending do
-                    batch <- batch + 1
-                    for s in x.streamToRequiredIndex.Keys do
-                        if streams.Add s then
-                            yield s,(batch,getStreamWeight s) }
-            raw |> Seq.sortBy (fun (_s,(b,l)) -> b,-l) |> Seq.map fst
-
-    /// Manages writing of progress
-    /// - Each write attempt is always of the newest token (each update is assumed to also count for all preceding ones)
-    /// - retries until success or a new item is posted
-    type Writer<'Res when 'Res: equality>() =
-        let pumpSleepMs = 100
-        let due = expiredMs 5000L
-        let mutable committedEpoch = None
-        let mutable validatedPos = None
-        let result = Event<Choice<'Res,exn>>()
-        [<CLIEvent>] member __.Result = result.Publish
-        member __.Post(version,f) =
-            Volatile.Write(&validatedPos,Some (version,f))
-        member __.CommittedEpoch = Volatile.Read(&committedEpoch)
-        member __.Pump() = async {
-            let! ct = Async.CancellationToken
-            while not ct.IsCancellationRequested do
-                match Volatile.Read &validatedPos with
-                | Some (v,f) when Volatile.Read(&committedEpoch) <> Some v && due () ->
-                    try do! f
-                        Volatile.Write(&committedEpoch, Some v)
-                        result.Trigger (Choice1Of2 v)
-                    with e -> result.Trigger (Choice2Of2 e)
-                | _ -> do! Async.Sleep pumpSleepMs }
 
 module Scheduling =
 
