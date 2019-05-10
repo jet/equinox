@@ -239,7 +239,7 @@ module LoadTest =
         log.Information( "Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
-        let _ = Equinox.Cosmos.Store.Log.InternalMetrics.RuCounters.RuCounterSink.Reset() 
+        let _ = Equinox.Cosmos.Store.Log.InternalMetrics.RuCounters.RuCounterSink.Restart() 
         let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
 
         let resultFile = createResultLog reportFilename
