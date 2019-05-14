@@ -47,6 +47,11 @@ module private Impl =
             let due = timer.ElapsedMilliseconds > ms
             if due then timer.Restart()
             due
+    let inline accStopwatch (f : unit -> 't) at =
+        let sw = Stopwatch.StartNew()
+        let r = f ()
+        at sw.Elapsed
+        r
     type Sem(max) =
         let inner = new SemaphoreSlim(max)
         member __.Release(?count) = match defaultArg count 1 with 0 -> () | x -> inner.Release x |> ignore
@@ -55,7 +60,13 @@ module private Impl =
         member __.Await() = inner.Await() |> Async.Ignore
         /// Wait for the specified timeout to acquire (or return false instantly)
         member __.TryAwait(?timeout) = inner.Await(defaultArg timeout TimeSpan.Zero)
+        /// Dont use without profiling proving it helps as it doesnt help correctness or legibility
+        member __.TryWaitWithoutCancellationForPerf() = inner.Wait(0)
+        /// Only use where you're interested in intenionally busywaiting on a thread - i.e. when you have proven its critical
+        member __.SpinWaitWithoutCancellationForPerf() = inner.Wait(Timeout.Infinite) |> ignore
         member __.HasCapacity = inner.CurrentCount > 0
+
+#nowarn "52" // see tmp.Sort
 
 module Progress =
 
@@ -77,15 +88,16 @@ module Progress =
                 | _, _ -> ()
             trim ()
         member __.InScheduledOrder getStreamWeight =
-            let raw = seq {
-                let streams = HashSet()
-                let mutable batch = 0
-                for x in pending do
-                    batch <- batch + 1
-                    for s in x.streamToRequiredIndex.Keys do
-                        if streams.Add s then
-                            yield s,(batch,getStreamWeight s) }
-            raw |> Seq.sortBy (fun (_s,(b,l)) -> b,-l) |> Seq.map fst
+            let streams = HashSet()
+            let tmp = ResizeArray(16384)
+            let mutable batch = 0
+            for x in pending do
+                batch <- batch + 1
+                for s in x.streamToRequiredIndex.Keys do
+                    if streams.Add s then
+                        tmp.Add(struct (s,struct (batch,-getStreamWeight s)))
+            tmp.Sort(fun (struct(_,_a)) (struct(_,_b)) -> _a.CompareTo(_b))
+            tmp |> Seq.map (fun (struct(s,_)) -> s)
 
     /// Manages writing of progress
     /// - Each write attempt is always of the newest token (each update is assumed to also count for all preceding ones)
@@ -159,7 +171,7 @@ module Buffer =
                 | None, _ -> true
                 | _ -> false
     module StreamState =
-        let inline optionCombine f (r1: int64 option) (r2: int64 option) =
+        let inline optionCombine f (r1: 'a option) (r2: 'a option) =
             match r1, r2 with
             | Some x, Some y -> f x y |> Some
             | None, None -> None
@@ -169,18 +181,49 @@ module Buffer =
             let items = let (NNA q1, NNA q2) = s1.queue, s2.queue in Seq.append q1 q2
             { write = writePos; queue = Span.merge (defaultArg writePos 0L) items; isMalformed = s1.isMalformed || s2.isMalformed }
 
+    type Streams() =
+        let states = Dictionary<string, StreamState>()
+        let merge stream (state : StreamState) =
+            match states.TryGetValue stream with
+            | false, _ ->
+                states.Add(stream, state)
+            | true, current ->
+                let updated = StreamState.combine current state
+                states.[stream] <- updated
+
+        member __.StreamCount = states.Count
+        member __.Items : seq<KeyValuePair<string,StreamState>>= states :> _
+
+        member __.Merge(items : StreamItem seq) =
+            for item in items do
+                merge item.stream { isMalformed = false; write = None; queue = [| { index = item.index; events = [| item.event |] } |] }
+        member __.Merge(other: Streams) =
+            for x in other.Items do
+                merge x.Key x.Value
+
+        member __.Dump(categorize, log : ILogger) =
+            let mutable waiting, waitingB = 0, 0L
+            let waitingCats, waitingStreams = CatStats(), CatStats()
+            for KeyValue (stream,state) in states do
+                let sz = int64 state.Size
+                waitingCats.Ingest(categorize stream)
+                waitingStreams.Ingest(sprintf "%s@%dx%d" stream (defaultArg state.write 0L) state.queue.[0].events.Length, (sz + 512L) / 1024L)
+                waiting <- waiting + 1
+                waitingB <- waitingB + sz
+            if waiting <> 0 then log.Information("Streams Waiting {busy:n0}/{busyMb:n1}MB ", waiting, mb waitingB)
+            if waitingCats.Any then log.Information("Waiting Categories, events {@readyCats}", Seq.truncate 5 waitingCats.StatsDescending)
+            if waitingCats.Any then log.Information("Waiting Streams, KB {@readyStreams}", Seq.truncate 5 waitingStreams.StatsDescending)
+
 module Scheduling =
 
     open Buffer
 
     type StreamStates() =
-        let mutable streams = Set.empty 
         let states = Dictionary<string, StreamState>()
         let update stream (state : StreamState) =
             match states.TryGetValue stream with
             | false, _ ->
                 states.Add(stream, state)
-                streams <- streams.Add stream
                 stream, state
             | true, current ->
                 let updated = StreamState.combine current state
@@ -188,6 +231,9 @@ module Scheduling =
                 stream, updated
         let updateWritePos stream isMalformed pos span = update stream { isMalformed = isMalformed; write = pos; queue = span }
         let markCompleted stream index = updateWritePos stream false (Some index) null |> ignore
+        let mergeBuffered (buffer : Buffer.Streams) =
+            for x in buffer.Items do
+                update x.Key x.Value |> ignore
 
         let busy = HashSet<string>()
         let pending trySlipstreamed (requestedOrder : string seq) = seq {
@@ -209,8 +255,7 @@ module Scheduling =
         // This enables the (potentially multiple) Ingesters to determine streams (for which they potentially have successor events) that are in play
         // Ingesters then supply these 'preview events' in advance of the processing being scheduled
         // This enables the projection logic to roll future work into the current work in the interests of medium term throughput
-        member __.All = streams
-        member __.InternalMerge(stream, state) = update stream state |> ignore
+        member __.InternalMerge buffer = mergeBuffered buffer
         member __.InternalUpdate stream pos queue = update stream { isMalformed = false; write = Some pos; queue = queue }
         member __.Add(stream, index, event, ?isMalformed) =
             updateWritePos stream (defaultArg isMalformed false) None [| { index = index; events = [| event |] } |]
@@ -265,30 +310,34 @@ module Scheduling =
     /// Messages used internally by projector, including synthetic ones for the purposes of the `Stats` listeners
     [<NoComparison; NoEquality>]
     type InternalMessage<'R> =
-        /// Submit new data pertaining to a stream that has commenced processing
-        | Merge of KeyValuePair<string,StreamState>[]
+        /// Periodic submission of events as they are read, grouped by stream for efficient merging into the StreamState
+        | Merge of Streams
         /// Stats per submitted batch for stats listeners to aggregate
         | Added of streams: int * skip: int * events: int
         /// Result of processing on stream - result (with basic stats) or the `exn` encountered
         | Result of stream: string * outcome: Choice<'R,exn>
-
-    type BufferState = Idle | Full | Slipstreaming
+       
+    type BufferState = Idle | Busy | Full | Slipstreaming
     /// Gathers stats pertaining to the core projection/ingestion activity
     type Stats<'R>(log : ILogger, statsInterval : TimeSpan, stateInterval : TimeSpan) =
         let states, fullCycles, cycles, resultCompleted, resultExn = CatStats(), ref 0, ref 0, ref 0, ref 0
         let merges, mergedStreams, batchesPended, streamsPended, eventsSkipped, eventsPended = ref 0, ref 0, ref 0, ref 0, ref 0, ref 0
         let statsDue, stateDue = expiredMs (int64 statsInterval.TotalMilliseconds), expiredMs (int64 stateInterval.TotalMilliseconds)
-        let dumpStats (used,maxDop) pendingCount =
+        let mutable dt,ft,it,st,mt = TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero
+        let dumpStats (used,maxDop) (waitingBatches,pendingMerges) =
+            log.Information("Timing Merge {mt:n1}s Ingest {it:n1}s Fill {ft:n1}s Drain {dt:n1}s Stats {st:n1}s",
+                mt.TotalSeconds,it.TotalSeconds,ft.TotalSeconds,dt.TotalSeconds,st.TotalSeconds)
+            dt <- TimeSpan.Zero; ft <- TimeSpan.Zero; it <- TimeSpan.Zero; st <- TimeSpan.Zero; mt <- TimeSpan.Zero
             log.Information("Cycles {cycles}/{fullCycles} {@states} Projecting {busy}/{processors} Completed {completed} Exceptions {exns}",
                 !cycles, !fullCycles, states.StatsDescending, used, maxDop, !resultCompleted, !resultExn)
             cycles := 0; fullCycles := 0; states.Clear(); resultCompleted := 0; resultExn:= 0
-            log.Information("Batches Pending {pending} Started {batches} ({streams:n0}s {events:n0}-{skipped:n0}e) Merged {merges}b {mergedStreams}s",
-                pendingCount, !batchesPended, !streamsPended, !eventsSkipped + !eventsPended, !eventsSkipped, !merges, !mergedStreams)
+            log.Information("Batches Waiting {batchesWaiting} Started {batches} ({streams:n0}s {events:n0}-{skipped:n0}e) Merged {merges}/{pendingMerges} {mergedStreams}s",
+                waitingBatches, !batchesPended, !streamsPended, !eventsSkipped + !eventsPended, !eventsSkipped, !merges, pendingMerges, !mergedStreams)
             batchesPended := 0; streamsPended := 0; eventsSkipped := 0; eventsPended := 0; merges := 0; mergedStreams := 0
         abstract member Handle : InternalMessage<'R> -> unit
         default __.Handle msg = msg |> function
-            | Merge items ->
-                mergedStreams := !mergedStreams + items.Length
+            | Merge buffer ->
+                mergedStreams := !mergedStreams + buffer.StreamCount
                 incr merges
             | Added (streams, skipped, events) ->
                 incr batchesPended
@@ -304,9 +353,15 @@ module Scheduling =
             if statsDue () then
                 dumpStats (used,max) pendingCount
                 __.DumpExtraStats()
-        member __.TryDumpState(state,dump) =
+        member __.TryDumpState(state,dump,(_dt,_ft,_mt,_it,_st)) =
+            dt <- dt + _dt
+            ft <- ft + _ft
+            mt <- mt + _mt
+            it <- it + _it
+            st <- st + _st
             incr fullCycles
             states.Ingest(string state)
+            
             let due = stateDue ()
             if due then
                 dump log
@@ -328,11 +383,8 @@ module Scheduling =
         [<CLIEvent>] member __.Result = result.Publish
         member __.HasCapacity = dop.HasCapacity
         member __.State = dop.State
-        member __.TryAdd(item,?timeout) = async {
-            let! got = dop.TryAwait(?timeout=timeout)
-            if got then
-                work.Add(item)
-            return got }
+        member __.TryAdd(item) =
+            if dop.TryWaitWithoutCancellationForPerf() then work.Add(item); true else false
         member __.Pump () = async {
             let! ct = Async.CancellationToken
             for item in work.GetConsumingEnumerable ct do
@@ -342,25 +394,49 @@ module Scheduling =
     /// b) triggers synchronous callbacks as batches complete; writing of progress is managed asynchronously by the TrancheEngine(s)
     /// c) submits work to the supplied Dispatcher (which it triggers pumping of)
     /// d) periodically reports state (with hooks for ingestion engines to report same)
-    type Engine<'R>(dispatcher : Dispatcher<_>, project : int64 option * StreamSpan -> Async<Choice<'R,exn>>, interpretProgress, dumpStreams) =
+    type Engine<'R>(dispatcher : Dispatcher<_>, project : int64 option * StreamSpan -> Async<Choice<'R,exn>>, interpretProgress, dumpStreams, ?maxBatches) =
         let sleepIntervalMs = 1
+        let maxBatches = defaultArg maxBatches 16 
         let cts = new CancellationTokenSource()
-        let work = ConcurrentStack<InternalMessage<'R>>() // dont need so complexity of Queue is unwarranted and usage is cross thread so Bag is not better
+        let work = ConcurrentStack<InternalMessage<'R>>() // dont need them ordered so Queue is unwarranted; usage is cross-thread so Bag is not better
         let pending = ConcurrentQueue<_*StreamItem[]>() // Queue as need ordering
         let streams = StreamStates()
         let progressState = Progress.State()
 
+        // Arguably could be a bag, which would be more efficient, but sequencing in order of submission yields cheaper merges
+        let streamsPending = ConcurrentQueue<Streams>() // pulled from `work` and kept aside for processing at the right time as they are encountered
+        let mutable streamsMerged : Streams option = None
+        let slipstreamsCoalescing = Sem(1)
+        let tryGetStream () = match streamsPending.TryDequeue() with true,x -> Some x | false,_-> None
+        // We periodically process streamwise submissions of events from Ingesters in advance of them entering the processing queue as pending batches
+        // This allows events that are not yet a requirement for a given batch to complete to be included in work before it becomes due, smoothing throughput
+        let continuouslyCompactStreamMerges () = async {
+            let! ct = Async.CancellationToken
+            while not ct.IsCancellationRequested do
+                do! slipstreamsCoalescing.Await()
+                streamsMerged <- (streamsMerged,tryGetStream()) ||> StreamState.optionCombine (fun x y -> x.Merge y; x)
+                slipstreamsCoalescing.Release()
+                do! Async.Sleep 1 } // ms // needs to be long enough for ingestStreamMerges to be able to grab
+        let ingestStreamMerges () =
+            slipstreamsCoalescing.SpinWaitWithoutCancellationForPerf()
+            match streamsMerged with
+            | None -> ()
+            | Some ready ->
+                streamsMerged <- None
+                streams.InternalMerge ready
+            slipstreamsCoalescing.Release()
+        // ingest information to be gleaned from processing the results into `streams`
         static let workLocalBuffer = Array.zeroCreate 1024
         let tryDrainResults feedStats =
             let mutable worked, more = false, true
             while more do
                 let c = work.TryPopRange(workLocalBuffer)
-                if c = 0 && work.IsEmpty then more <- false else worked <- true
+                if c = 0 then more <- false else worked <- true
                 for i in 0..c-1 do
                     let x = workLocalBuffer.[i]
                     match x with
-                    | Added _  -> () // Only processed in Stats (and actually never enters this queue)
-                    | Merge events -> for e in events do streams.InternalMerge(e.Key,e.Value)
+                    | Added _ -> () // Only processed in Stats (and actually never enters this queue)
+                    | Merge buffer -> streamsPending.Enqueue buffer // put aside as a) they can be done more efficiently in bulk b) we only want to pay the tax at the right time
                     | Result (stream,res) ->
                         match interpretProgress streams stream res with
                         | None -> streams.MarkFailed stream
@@ -369,18 +445,20 @@ module Scheduling =
                             streams.MarkCompleted(stream,index)
                     feedStats x
             worked
-        let tryFillDispatcher includeSlipstreamed = async {
+        // On ech iteration, we try to fill the in-flight queue, taking the oldest and/or heaviest streams first
+        let tryFillDispatcher includeSlipstreamed =
             let mutable hasCapacity, dispatched = dispatcher.HasCapacity, false
             if hasCapacity then
                 let potential = streams.Pending(includeSlipstreamed, progressState.InScheduledOrder streams.QueueWeight)
                 let xs = potential.GetEnumerator()
                 while xs.MoveNext() && hasCapacity do
                     let (_,{stream = s} : StreamSpan) as item = xs.Current
-                    let! succeeded = dispatcher.TryAdd(async { let! r = project item in return s, r })
+                    let succeeded = dispatcher.TryAdd(async { let! r = project item in return s, r })
                     if succeeded then streams.MarkBusy s
                     dispatched <- dispatched || succeeded // if we added any request, we also don't sleep
                     hasCapacity <- succeeded
-            return hasCapacity, dispatched }
+            hasCapacity, dispatched
+        // Take an incoming batch of events, correlating it against our known stream state to yield a set of remaining work
         let ingestPendingBatch feedStats (markCompleted, items : StreamItem seq) = 
             let inline validVsSkip (streamState : StreamState) (item : StreamItem) =
                 match streamState.write, item.index + 1L with
@@ -402,28 +480,52 @@ module Scheduling =
         member private __.Pump(stats : Stats<'R>) = async {
             use _ = dispatcher.Result.Subscribe(Result >> work.Push)
             Async.Start(dispatcher.Pump(), cts.Token)
+            Async.Start(continuouslyCompactStreamMerges (), cts.Token)
             while not cts.IsCancellationRequested do
-                let mutable idle, dispatcherState, finished = true, Idle, false
-                while not finished do
+                let mutable idle, dispatcherState, remaining = true, Idle, 16
+                let mutable dt,ft,mt,it,st = TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero
+                while remaining <> 0 do
+                    remaining <- remaining - 1
                     // 1. propagate write write outcomes to buffer (can mark batches completed etc)
-                    let processedResults = tryDrainResults stats.Handle
+                    let processedResults = (fun () -> tryDrainResults stats.Handle) |> accStopwatch <| fun x -> dt <- dt + x
                     // 2. top up provisioning of writers queue
-                    let! hasCapacity, dispatched = tryFillDispatcher (dispatcherState = Slipstreaming)
+                    let hasCapacity, dispatched = (fun () -> tryFillDispatcher (dispatcherState = Slipstreaming)) |> accStopwatch <| fun x -> ft <- ft + x
                     idle <- idle && not processedResults && not dispatched
                     match dispatcherState with
-                    | Idle when hasCapacity -> // need to bring more work into the pool as we can't fill the work queue
-                        match pending.TryDequeue() with
-                        | true, batch ->                    ingestPendingBatch stats.Handle batch
-                        | false,_ ->                        dispatcherState <- Slipstreaming // TODO preload extra spans from active submitters
-                    | Idle ->                               dispatcherState <- Full; finished <- true
-                    | Slipstreaming ->                      finished <- true
-                    | _ -> ()
+                    | Idle when not hasCapacity ->
+                        // If we've achieved full state, spin around the loop to dump stats and ingest reader data
+                        dispatcherState <- Full
+                        remaining <- 0
+                    | Idle when remaining = 0 ->
+                        dispatcherState <- Busy
+                    | Idle -> // need to bring more work into the pool as we can't fill the work queue from what we have
+                        // If we're going to fill the write queue with random work, we should bring all read events into the state first
+                        // If we're going to bring in lots of batches, that's more efficient when the streamwise merges are carried out first
+                        let mutable more, batchesTaken = true, 0
+                        ingestStreamMerges |> accStopwatch <| fun t -> mt <- mt + t
+                        while more do
+                            match pending.TryDequeue() with
+                            | true, batch ->
+                                (fun () -> ingestPendingBatch stats.Handle batch) |> accStopwatch <| fun t -> it <- it + t
+                                batchesTaken <- batchesTaken + 1
+                                more <- batchesTaken < maxBatches
+                            | false,_ when batchesTaken <> 0 ->
+                                more <- false
+                            | false,_ when batchesTaken = 0 ->
+                                dispatcherState <- Slipstreaming
+                                more <- false
+                            | false,_ -> ()
+                    | Slipstreaming -> // only do one round of slipstreaming
+                        remaining <- 0
+                    | Busy | Full -> failwith "Not handled here"
                     // This loop can take a long time; attempt logging of stats per iteration
-                    stats.DumpStats(dispatcher.State,pending.Count)
+                    (fun () -> stats.DumpStats(dispatcher.State,(pending.Count,streamsPending.Count))) |> accStopwatch <| fun t -> st <- st + t
+                // Do another ingest before a) reporting state to give best picture b) going to sleep in order to get work out of the way
+                ingestStreamMerges |> accStopwatch <| fun t -> mt <- mt + t
                 // 3. Record completion state once per full iteration; dumping streams is expensive so needs to be done infrequently
-                if not (stats.TryDumpState(dispatcherState,dumpStreams streams)) && not idle then
+                if not (stats.TryDumpState(dispatcherState,dumpStreams streams,(dt,ft,mt,it,st))) && not idle then
                     // 4. Do a minimal sleep so we don't run completely hot when empty (unless we did something non-trivial)
-                    do! Async.Sleep sleepIntervalMs }
+                    Thread.Sleep sleepIntervalMs } // Not Async.Sleep so we don't give up the thread
 
         static member Start<'R>(stats, projectorDop, project, interpretProgress, dumpStreams) =
             let dispatcher = Dispatcher(projectorDop)
@@ -437,10 +539,8 @@ module Scheduling =
         member __.Submit(markCompleted: (unit -> unit), items: StreamItem[]) =
             pending.Enqueue (markCompleted, items)
 
-        member __.AddOpenStreamData(events) =
+        member __.SubmitStreamBuffers(events) =
             work.Push <| Merge events
-
-        member __.AllStreams = streams.All
 
         member __.Stop() =
             cts.Cancel()
@@ -467,38 +567,6 @@ module Ingestion =
         | Batch of seriesIndex: int * epoch: int64 * markCompleted: Async<unit> * items: StreamItem seq
         //| StreamSegment of span: StreamSpan
         | EndOfSeries of seriesIndex: int
-
-    type private Streams() =
-        let states = Dictionary<string, Buffer.StreamState>()
-        let merge stream (state : Buffer.StreamState) =
-            match states.TryGetValue stream with
-            | false, _ ->
-                states.Add(stream, state)
-            | true, current ->
-                let updated = Buffer.StreamState.combine current state
-                states.[stream] <- updated
-
-        member __.Merge(items : StreamItem seq) =
-            for item in items do
-                merge item.stream { isMalformed = false; write = None; queue = [| { index = item.index; events = [| item.event |] } |] }
-
-        member __.Take(processingContains) =
-            let forward = [| for x in states do if processingContains x.Key then yield x |]
-            for x in forward do states.Remove x.Key |> ignore
-            forward
-
-        member __.Dump(categorize, log : ILogger) =
-            let mutable waiting, waitingB = 0, 0L
-            let waitingCats, waitingStreams = CatStats(), CatStats()
-            for KeyValue (stream,state) in states do
-                let sz = int64 state.Size
-                waitingCats.Ingest(categorize stream)
-                waitingStreams.Ingest(sprintf "%s@%dx%d" stream (defaultArg state.write 0L) state.queue.[0].events.Length, (sz + 512L) / 1024L)
-                waiting <- waiting + 1
-                waitingB <- waitingB + sz
-            if waiting <> 0 then log.Information("Streams Waiting {busy:n0}/{busyMb:n1}MB ", waiting, mb waitingB)
-            if waitingCats.Any then log.Information("Waiting Categories, events {@readyCats}", Seq.truncate 5 waitingCats.StatsDescending)
-            if waitingCats.Any then log.Information("Waiting Streams, KB {@readyStreams}", Seq.truncate 5 waitingStreams.StatsDescending)
 
     type private Stats(log : ILogger, maxPendingBatches, categorize, statsInterval : TimeSpan) =
         let mutable pendingBatchCount, validatedEpoch, comittedEpoch : int * int64 option * int64 option = 0, None, None
@@ -544,7 +612,7 @@ module Ingestion =
             pendingBatchCount <- pendingBatches
         member __.HandleCommitted epoch = 
             comittedEpoch <- epoch
-        member __.TryDump((available,maxDop),streams : Streams,readingAhead,ready) =
+        member __.TryDump((available,maxDop),streams : Buffer.Streams,readingAhead,ready) =
             incr cycles
             if statsDue () then
                 dumpStats (available,maxDop) (readingAhead,ready)
@@ -573,7 +641,8 @@ module Ingestion =
         let work = ConcurrentQueue<InternalMessage>() // Queue as need ordering semantically
         let readMax = new Sem(maxRead)
         let submissionsMax = new Sem(maxSubmissions)
-        let streams = Streams()
+        let mutable streams = Buffer.Streams()
+        let grabAccumulatedStreams () = let t = streams in streams <- Buffer.Streams(); t
         let stats = Stats(log, maxRead, categorize, statsInterval)
         let pending = Queue<_>()
         let readingAhead, ready = Dictionary<int,ResizeArray<_>>(), Dictionary<int,ResizeArray<_>>()
@@ -630,7 +699,7 @@ module Ingestion =
         member private __.Pump() = async {
             use _ = progressWriter.Result.Subscribe(ProgressResult >> work.Enqueue)
             Async.Start(progressWriter.Pump(), cts.Token)
-            let presubmitInterval = expiredMs (1000L*10L)
+            let presubmitInterval = expiredMs (4000L*2L)
             while not cts.IsCancellationRequested do
                 try let mutable itemLimit = 4096
                     while itemLimit > 0 do
@@ -641,10 +710,10 @@ module Ingestion =
                     stats.HandleValidated(Option.map fst validatedPos, fst submissionsMax.State)
                     validatedPos |> Option.iter progressWriter.Post
                     stats.HandleCommitted progressWriter.CommittedEpoch
-                    // 2. Forward content for any active streams into processor immediately
+                    // 2. Forward info grouped by streams into processor in small batches
                     if presubmitInterval () then
-                        let relevantBufferedStreams = streams.Take(fun x -> true (*scheduler.AllStreams.Contains*))
-                        scheduler.AddOpenStreamData(relevantBufferedStreams)
+                        grabAccumulatedStreams () |> scheduler.SubmitStreamBuffers
+
                     // 3. Submit to ingester until read queue, tranche limit or ingester limit exhausted
                     while pending.Count <> 0 && submissionsMax.HasCapacity do
                         // mark off a write as being in progress (there is a race if there are multiple Ingesters, but thats good)
