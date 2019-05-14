@@ -2,17 +2,8 @@
 module Equinox.Projection.Infrastructure
 
 open System
-open System.Collections.Concurrent
 open System.Threading
 open System.Threading.Tasks
-
-module ConcurrentQueue =
-    let drain handle (xs : ConcurrentQueue<_>) = 
-        let rec aux () =
-            match xs.TryDequeue() with
-            | false, _ -> ()
-            | true, x -> handle x; aux ()
-        aux ()
 
 #if NET461
 module Array =

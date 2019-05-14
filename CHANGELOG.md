@@ -11,6 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 ### Changed
 
+- `Equinox.Projection` performance work based on [`dotnet new eqxsync` template](https://github.com/jet/dotnet-templates/pull/16) [#130](https://github.com/jet/equinox/pull/130)
 - Reorganized `Equinox.Projection` to be a single-file concern [#129](https://github.com/jet/equinox/pull/129)
 
 ### Removed
