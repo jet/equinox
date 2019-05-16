@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- Replace flat single-item `Equinox.Projection.Codec.RenderedEvent` with `RenderedSpan` to match incoming Projection enhancements [#131](https://github.com/jet/equinox/pull/131)
+
 ### Removed
 ### Fixed
 
