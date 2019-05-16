@@ -340,7 +340,7 @@ let main argv =
                         match validator.TryIngest(e.stream, int e.index) with
                         | Gap -> None // We cannot emit if we have evidence that this will leave a gap
                         | Duplicate // Just because this is a re-delivery does not mean we can drop it - the state does not get reset if we retraverse a batch
-                        | Ok | New -> RenderedEvent.ofStreamItem e |> Some
+                        | Ok | New -> RenderedSpan.ofStreamSpan e.stream e.index (Seq.singleton e.event) |> Some
                     let pt, events = (fun () -> docs |> Seq.collect DocumentParser.enumEvents |> Seq.choose validate |> Array.ofSeq) |> Stopwatch.Time 
                     let! et = async {
                         match producer with
