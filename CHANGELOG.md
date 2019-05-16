@@ -10,14 +10,18 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
-
-- Replace flat single-item `Equinox.Projection.Codec.RenderedEvent` with `RenderedSpan` to match incoming Projection enhancements [#131](https://github.com/jet/equinox/pull/131)
-- `Equinox.Projection` performance and interface extraction work via [`dotnet new eqxsync` template](https://github.com/jet/dotnet-templates/pull/16) [#132](https://github.com/jet/equinox/pull/132)
-
 ### Removed
 ### Fixed
 
 <a name="2.0.0"></a>
+<a name="2.0.0-preview8"></a>
+## [2.0.0-preview8] - 2019-05-16
+
+### Changed
+
+- Replace flat single-item `Equinox.Projection.Codec.RenderedEvent` with `RenderedSpan` to match incoming Projection enhancements [#131](https://github.com/jet/equinox/pull/131)
+- `Equinox.Projection` performance and interface extraction work via [`dotnet new eqxsync` template](https://github.com/jet/dotnet-templates/pull/16) [#132](https://github.com/jet/equinox/pull/132)
+
 <a name="2.0.0-preview7"></a>
 ## [2.0.0-preview7] - 2019-05-14
 
@@ -169,7 +173,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview7...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview8...HEAD
+[2.0.0-preview8]: https://github.com/jet/equinox/compare/2.0.0-preview7...2.0.0-preview8
 [2.0.0-preview7]: https://github.com/jet/equinox/compare/2.0.0-preview6...2.0.0-preview7
 [2.0.0-preview6]: https://github.com/jet/equinox/compare/2.0.0-preview5...2.0.0-preview6
 [2.0.0-preview5]: https://github.com/jet/equinox/compare/2.0.0-preview4...2.0.0-preview5
