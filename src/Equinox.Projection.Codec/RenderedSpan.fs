@@ -25,7 +25,7 @@ type [<NoEquality; NoComparison>] RenderedSpan =
     {   /// Stream Name
         s: string
 
-        /// base 'i' value for the Events held herein
+        /// base 'i' value for the Events held herein, reflecting the index associated with the first event in the span
         i: int64
 
         /// The Events comprising this span
@@ -34,7 +34,7 @@ type [<NoEquality; NoComparison>] RenderedSpan =
 /// Helpers for mapping to/from `Equinox.Codec` types
 module RenderedSpan =
     let ofStreamSpan (stream : string) (index : int64) (events : seq<Equinox.Codec.IEvent<byte[]>>) : RenderedSpan =
-        {   s = stream;
+        {   s = stream
             i = index
             e = [| for x in events -> { c = x.EventType; t = x.Timestamp; d = x.Data; m = x.Meta } |] }
     let enumEvents (span : RenderedSpan) : seq<Equinox.Codec.IEvent<byte[]>> = seq {
