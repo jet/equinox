@@ -10,6 +10,7 @@ module Array =
     let tryHead (array : 'T[]) =
         if array.Length = 0 then None
         else Some array.[0]
+    let takeWhile p = Seq.takeWhile p >> Array.ofSeq
 
 module Option = 
     let toNullable option = match option with None -> System.Nullable() | Some v -> System.Nullable(v)
