@@ -12,6 +12,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - Replace flat single-item `Equinox.Projection.Codec.RenderedEvent` with `RenderedSpan` to match incoming Projection enhancements [#131](https://github.com/jet/equinox/pull/131)
+- `Equinox.Projection` performance and interface extraction work via [`dotnet new eqxsync` template](https://github.com/jet/dotnet-templates/pull/16) [#132](https://github.com/jet/equinox/pull/132)
 
 ### Removed
 ### Fixed
@@ -168,7 +169,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview6...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview7...HEAD
+[2.0.0-preview7]: https://github.com/jet/equinox/compare/2.0.0-preview6...2.0.0-preview7
 [2.0.0-preview6]: https://github.com/jet/equinox/compare/2.0.0-preview5...2.0.0-preview6
 [2.0.0-preview5]: https://github.com/jet/equinox/compare/2.0.0-preview4...2.0.0-preview5
 [2.0.0-preview4]: https://github.com/jet/equinox/compare/2.0.0-preview3...2.0.0-preview4
