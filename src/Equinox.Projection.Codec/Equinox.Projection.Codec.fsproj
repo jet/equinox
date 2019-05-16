@@ -11,11 +11,11 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox.Cosmos\CosmosInternalJson.fs" Link="CosmosInternalJson.fs" />
-    <Compile Include="RenderedEvent.fs" />
+    <Compile Include="RenderedSpan.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Equinox.Projection\Equinox.Projection.fsproj" />
+    <ProjectReference Include="..\Equinox.Codec\Equinox.Codec.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
