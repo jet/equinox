@@ -28,7 +28,7 @@ type Arguments =
     | [<AltCommandLine("-l")>] LogFile of string
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
-    | [<AltCommandLine("initAux"); CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Project of ParseResults<ProjectArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
