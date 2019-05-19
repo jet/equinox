@@ -11,7 +11,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="FeedValidator.fs" />
     <Compile Include="Infrastructure.fs" />
     <Compile Include="Projection.fs" />
   </ItemGroup>

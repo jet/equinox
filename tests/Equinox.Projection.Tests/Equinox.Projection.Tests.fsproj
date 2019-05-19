@@ -7,7 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="FeedValidatorTests.fs" />
     <Compile Include="ProgressTests.fs" />
     <Compile Include="StreamStateTests.fs" />
   </ItemGroup>
