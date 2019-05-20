@@ -10,7 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `Equinox.EventStore.GesGateway.Sync` API including adding `ConflictUnknown.actualVersion` to Result type for [`dotnet new eqxsync` template `EventStoreSink` impl](https://github.com/jet/dotnet-templates/pull/23) [#133](https://github.com/jet/equinox/pull/133)
+- `Equinox.EventStore.GesGateway.Sync` API including adding `actualVersion` to `ConflictUnknown` Result DU case for [`dotnet new eqxsync` template `EventStoreSink` impl](https://github.com/jet/dotnet-templates/pull/23) [#133](https://github.com/jet/equinox/pull/133)
 
 ### Changed
 
