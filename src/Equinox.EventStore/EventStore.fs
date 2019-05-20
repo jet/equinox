@@ -200,12 +200,9 @@ module private Read =
 
 module UnionEncoderAdapters =
     let encodedEventOfResolvedEvent (x : ResolvedEvent) : Equinox.Codec.IEvent<byte[]> =
-        { new Equinox.Codec.IEvent<_> with
-            member __.EventType = x.Event.EventType
-            member __.Data = x.Event.Data
-            member __.Meta = x.Event.Metadata 
-            // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
-            member __.Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(x.Event.CreatedEpoch) }
+        // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
+        let ts = DateTimeOffset.FromUnixTimeMilliseconds(x.Event.CreatedEpoch)
+        Equinox.Codec.Core.EventData.Create(x.Event.EventType, x.Event.Data, x.Event.Metadata, ts) :> _
     let private eventDataOfEncodedEvent (x : Codec.IEvent<byte[]>) =
         EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
     let encode (xs : Codec.IEvent<byte[]> []) : EventData[] = Array.map eventDataOfEncodedEvent xs
