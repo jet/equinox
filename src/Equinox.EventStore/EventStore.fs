@@ -53,7 +53,7 @@ module Log =
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict
+type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict of actualVersion: int64
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
@@ -63,8 +63,9 @@ module private Write =
             let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
-            log.Information(ex, "Ges TrySync WrongExpectedVersionException writing {EventTypes}", [| for x in events -> x.Type |])
-            return EsSyncResult.Conflict }
+            log.Information(ex, "Ges TrySync WrongExpectedVersionException writing {EventTypes}, actual {ActualVersion}",
+                [| for x in events -> x.Type |], ex.ActualVersion)
+            return EsSyncResult.Conflict (let v = ex.ActualVersion in v.Value) }
     let eventDataBytes events =
         let eventDataLen (x : EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
         events |> Array.sumBy eventDataLen
@@ -78,10 +79,10 @@ module private Write =
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result, reqMetric with
-            | EsSyncResult.Conflict, m -> log, Log.WriteConflict m
+            | EsSyncResult.Conflict actualVersion, m ->
+                log |> Log.prop "actualVersion" actualVersion, Log.WriteConflict m
             | EsSyncResult.Written x, m ->
-                log |> Log.prop "nextExpectedVersion" x.NextExpectedVersion |> Log.prop "logPosition" x.LogPosition,
-                Log.WriteSuccess m
+                log |> Log.prop "nextExpectedVersion" x.NextExpectedVersion |> Log.prop "logPosition" x.LogPosition, Log.WriteSuccess m
         (resultLog |> Log.event evt).Information("Ges{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
@@ -207,6 +208,7 @@ module UnionEncoderAdapters =
             member __.Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(x.Event.CreatedEpoch) }
     let private eventDataOfEncodedEvent (x : Codec.IEvent<byte[]>) =
         EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
+    let encode (xs : Codec.IEvent<byte[]> []) : EventData[] = Array.map eventDataOfEncodedEvent xs
     let encodeEvents (codec : Codec.IUnionEncoder<'event,byte[]>) (xs : 'event seq) : EventData[] =
         xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
     let decodeKnownEvents (codec : Codec.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
@@ -263,7 +265,7 @@ type GesBatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountL
     member __.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
-type GatewaySyncResult = Written of Store.StreamToken | Conflict
+type GatewaySyncResult = Written of Store.StreamToken | ConflictUnknown of Store.StreamToken
 
 type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
     let isResolvedEventEventType (tryDecode,predicate) (x:ResolvedEvent) = predicate (tryDecode (x.Event.Data))
@@ -298,7 +300,8 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
         let streamVersion = token.pos.streamVersion
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection token.stream.name streamVersion encodedEvents
         match wr with
-        | EsSyncResult.Conflict -> return GatewaySyncResult.Conflict
+        | EsSyncResult.Conflict actualVersion ->
+            return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting token.stream.name actualVersion)
         | EsSyncResult.Written wr ->
 
         let version' = wr.NextExpectedVersion
@@ -311,6 +314,16 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
                 | Some compactionEventIndex ->
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
+    member __.Sync(log, streamName, streamVersion, events: Codec.IEvent<byte[]>[]) : Async<GatewaySyncResult> = async {
+        let encodedEvents : EventData[] = UnionEncoderAdapters.encode events
+        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
+        match wr with
+        | EsSyncResult.Conflict actualVersion ->
+            return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting streamName actualVersion)
+        | EsSyncResult.Written wr ->
+            let version' = wr.NextExpectedVersion
+            let token = Token.ofNonCompacting streamName version'
+            return GatewaySyncResult.Written token }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
@@ -359,7 +372,7 @@ type private Category<'event, 'state>(gateway : GesGateway, codec : Codec.IUnion
         let encodedEvents : EventData[] = UnionEncoderAdapters.encodeEvents codec events
         let! syncRes = gateway.TrySync log streamToken (events,encodedEvents) compactionPredicate
         match syncRes with
-        | GatewaySyncResult.Conflict ->
+        | GatewaySyncResult.ConflictUnknown _ ->
             return Store.SyncResult.Conflict  (load fold state (gateway.LoadFromToken true stream.name log streamToken (tryDecode,compactionPredicate)))
         | GatewaySyncResult.Written token' ->
             return Store.SyncResult.Written   (token', fold state (Seq.ofList events)) }
