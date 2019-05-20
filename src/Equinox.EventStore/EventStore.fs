@@ -82,9 +82,8 @@ module private Write =
             | EsSyncResult.Written x, m ->
                 log |> Log.prop "nextExpectedVersion" x.NextExpectedVersion |> Log.prop "logPosition" x.LogPosition,
                 Log.WriteSuccess m
-        // TODO drop expectedVersion when consumption no longer requires that literal; ditto stream when literal formatting no longer required
-        (resultLog |> Log.event evt).Information("Ges{action:l} stream={stream} count={count} expectedVersion={expectedVersion} conflict={conflict}",
-            "Write", streamName, events.Length, version, match evt with Log.WriteConflict _ -> true | _ -> false)
+        (resultLog |> Log.event evt).Information("Ges{action:l} count={count} conflict={conflict}",
+            "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
     let writeEvents (log : ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> =
@@ -106,10 +105,8 @@ module private Read =
         let reqMetric : Log.Measurement ={ stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice (direction, reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice.Events
-        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            // TODO drop sliceLength, totalPayloadSize when consumption no longer requires that literal; ditto stream when literal formatting no longer required
-            "Ges{action:l} stream={stream} count={count} version={version} sliceLength={sliceLength} totalPayloadSize={totalPayloadSize}",
-            "Read", streamName, count, slice.LastEventNumber, batchSize, bytes)
+        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Ges{action:l} count={count} version={version}",
+            "Read", count, slice.LastEventNumber)
         return slice }
     let private readBatches (log : ILogger) (readSlice : int64 -> ILogger -> Async<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int64)
