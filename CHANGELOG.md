@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Equinox.EventStore.GesGateway.Sync` API including adding `ConflictUnknown.actualVersion` to Result type for [`dotnet new eqxsync` template `EventStoreSink` impl](https://github.com/jet/dotnet-templates/pull/23) [#133](https://github.com/jet/equinox/pull/133)
+
 ### Changed
 
 - Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc10` in `eqx` tool
