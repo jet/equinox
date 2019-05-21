@@ -519,10 +519,9 @@ function sync(req, expectedVersion, maxEvents) {
             | Some log -> log.Information("Created stored procedure {sprocId} in {ms}ms rc={ru}", sprocName, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
         let private createAuxCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) mode : Async<unit> =
             let def = DocumentCollection(Id = collName)
-            // for now, we are leaving the default IndexingPolicy mode wrt fields to index and in which manner as default: autoindexing all fields
-            def.IndexingPolicy.IndexingMode <- IndexingMode.Lazy
-            // Expire Projector documentId to Kafka offsets mapping records after one year
-            def.DefaultTimeToLive <- Nullable (365 * 60 * 60 * 24)
+            // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
+            def.IndexingPolicy.Automatic <- false
+            def.IndexingPolicy.IndexingMode <- IndexingMode.None
             createOrProvisionCollection client (dbName,def) mode
         let init log (client: Client.DocumentClient) (dbName,collName) mode skipStoredProc = async {
             do! createOrProvisionDatabase client dbName mode
