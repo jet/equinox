@@ -233,7 +233,7 @@ module Log =
     /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
     module InternalMetrics =
 
-        module RuCounters =
+        module Stats =
             let inline (|Stats|) ({ interval = i; ru = ru }: Measurement) = ru, let e = i.Elapsed in int64 e.TotalMilliseconds
 
             let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|) = function
@@ -253,53 +253,54 @@ module Log =
                 match logEvent.Properties.TryGetValue("cosmosEvt") with
                 | true, SerilogScalar (:? Event as e) -> Some e
                 | _ -> None
-            type RuCounter =
+            type Counter =
                 { mutable rux100: int64; mutable count: int64; mutable ms: int64 }
                 static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
                 member __.Ingest (ru, ms) =
                     System.Threading.Interlocked.Increment(&__.count) |> ignore
                     System.Threading.Interlocked.Add(&__.rux100, int64 (ru*100.)) |> ignore
                     System.Threading.Interlocked.Add(&__.ms, ms) |> ignore
-            type RuCounterSink() =
+            type LogSink() =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
-                static member val Read = RuCounter.Create() with get, set
-                static member val Write = RuCounter.Create() with get, set
-                static member val Resync = RuCounter.Create() with get, set
+                static member val Read = Counter.Create() with get, set
+                static member val Write = Counter.Create() with get, set
+                static member val Resync = Counter.Create() with get, set
                 static member Restart() =
-                    RuCounterSink.Read <- RuCounter.Create()
-                    RuCounterSink.Write <- RuCounter.Create()
-                    RuCounterSink.Resync <- RuCounter.Create()
+                    LogSink.Read <- Counter.Create()
+                    LogSink.Write <- Counter.Create()
+                    LogSink.Resync <- Counter.Create()
                     let span = epoch.Elapsed
                     epoch.Restart()
                     span
                 interface Serilog.Core.ILogEventSink with
                     member __.Emit logEvent = logEvent |> function
-                        | CosmosMetric (CosmosReadRc stats) -> RuCounterSink.Read.Ingest stats
-                        | CosmosMetric (CosmosWriteRc stats) -> RuCounterSink.Write.Ingest stats
-                        | CosmosMetric (CosmosResyncRc stats) -> RuCounterSink.Resync.Ingest stats
+                        | CosmosMetric (CosmosReadRc stats) -> LogSink.Read.Ingest stats
+                        | CosmosMetric (CosmosWriteRc stats) -> LogSink.Write.Ingest stats
+                        | CosmosMetric (CosmosResyncRc stats) -> LogSink.Resync.Ingest stats
                         | _ -> ()
 
-        /// Relies on feeding of metrics from Log through to RuCounterSink
-        /// Use RuCounters.RuCounterSink.Reset() to reset the start point (and stats) where relevant
+        /// Relies on feeding of metrics from Log through to Stats.LogSink
+        /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
         let dump (log: Serilog.ILogger) =
             let stats =
-              [ "Read", RuCounters.RuCounterSink.Read
-                "Write", RuCounters.RuCounterSink.Write
-                "Resync", RuCounters.RuCounterSink.Resync ]
-            let mutable totalCount, totalRc, totalMs = 0L, 0., 0L
+              [ "Read", Stats.LogSink.Read
+                "Write", Stats.LogSink.Write
+                "Resync", Stats.LogSink.Resync ]
+            let mutable rows, totalCount, totalRc, totalMs = 0, 0L, 0., 0L
             let logActivity name count rc lat =
-                if count <> 0L then
-                    log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
-                        name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
+                log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
+                    name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
             for name, stat in stats do
-                let ru = float stat.rux100 / 100.
-                totalCount <- totalCount + stat.count
-                totalRc <- totalRc + ru
-                totalMs <- totalMs + stat.ms
-                logActivity name stat.count ru stat.ms
+                if stat.count <> 0L then    
+                    let ru = float stat.rux100 / 100.
+                    totalCount <- totalCount + stat.count
+                    totalRc <- totalRc + ru
+                    totalMs <- totalMs + stat.ms
+                    logActivity name stat.count ru stat.ms
+                    rows <- rows + 1
             // Yes, there's a minor race here between the use of the values and the reset
-            let duration = RuCounters.RuCounterSink.Restart()
-            logActivity "TOTAL" totalCount totalRc totalMs
+            let duration = Stats.LogSink.Restart()
+            if rows > 1 then logActivity "TOTAL" totalCount totalRc totalMs
             let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
             let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d) 
