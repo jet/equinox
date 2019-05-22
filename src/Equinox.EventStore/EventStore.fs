@@ -52,6 +52,75 @@ module Log =
             retryPolicy withLoggingContextWrapping
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
 
+    /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
+    /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
+    module InternalMetrics =
+
+        module Counters =
+            let inline (|Stats|) ({ interval = i }: Measurement) = let e = i.Elapsed in int64 e.TotalMilliseconds
+
+            let (|Read|Write|Resync|Aggregate|) = function
+                | Slice (_,(Stats s)) -> Read s
+                | WriteSuccess (Stats s) -> Write s
+                | WriteConflict (Stats s) -> Resync s
+                // slices are rolled up into batches so be sure not to double-count
+                | Batch (_,_,(Stats s)) -> Aggregate s
+            let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
+                | (:? ScalarValue as x) -> Some x.Value
+                | _ -> None
+            let (|CosmosMetric|_|) (logEvent : LogEvent) : Event option =
+                match logEvent.Properties.TryGetValue("esEvt") with
+                | true, SerilogScalar (:? Event as e) -> Some e
+                | _ -> None
+            type Counter =
+                { mutable count: int64; mutable ms: int64 }
+                static member Create() = { count = 0L; ms = 0L }
+                member __.Ingest(ms) =
+                    System.Threading.Interlocked.Increment(&__.count) |> ignore
+                    System.Threading.Interlocked.Add(&__.ms, ms) |> ignore
+            type CounterSink() =
+                static let epoch = System.Diagnostics.Stopwatch.StartNew()
+                static member val Read = Counter.Create() with get, set
+                static member val Write = Counter.Create() with get, set
+                static member val Resync = Counter.Create() with get, set
+                static member Restart() =
+                    CounterSink.Read <- Counter.Create()
+                    CounterSink.Write <- Counter.Create()
+                    CounterSink.Resync <- Counter.Create()
+                    let span = epoch.Elapsed
+                    epoch.Restart()
+                    span
+                interface Serilog.Core.ILogEventSink with
+                    member __.Emit logEvent = logEvent |> function
+                        | CosmosMetric (Read stats) -> CounterSink.Read.Ingest stats
+                        | CosmosMetric (Write stats) -> CounterSink.Write.Ingest stats
+                        | CosmosMetric (Resync stats) -> CounterSink.Resync.Ingest stats
+                        | CosmosMetric (Aggregate _) -> ()
+                        | _ -> ()
+
+        /// Relies on feeding of metrics from Log through to RuCounterSink
+        /// Use RuCounters.RuCounterSink.Reset() to reset the start point (and stats) where relevant
+        let dump (log: Serilog.ILogger) =
+            let stats =
+              [ "Read", Counters.CounterSink.Read
+                "Write", Counters.CounterSink.Write
+                "Resync", Counters.CounterSink.Resync ]
+            let mutable totalCount, totalMs = 0L, 0L
+            let logActivity name count lat =
+                if count <> 0L then
+                    log.Information("{name}: {count:n0} requests; Average latency: {lat:n0}ms",
+                        name, count, (if count = 0L then Double.NaN else float lat/float count))
+            for name, stat in stats do
+                totalCount <- totalCount + stat.count
+                totalMs <- totalMs + stat.ms
+                logActivity name stat.count stat.ms
+            // Yes, there's a minor race here between the use of the values and the reset
+            let duration = Counters.CounterSink.Restart()
+            logActivity "TOTAL" totalCount totalMs
+            let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+            let logPeriodicRate name count = log.Information("rp{name} {count:n0}", name, count)
+            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
+
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict of actualVersion: int64
 
