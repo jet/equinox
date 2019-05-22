@@ -328,7 +328,7 @@ let main argv =
                     match broker,topic with
                     | Some b,Some t ->
                         let cfg = KafkaProducerConfig.Create("equinox-tool", Uri b, Confluent.Kafka.Acks.Leader, Confluent.Kafka.CompressionType.Lz4)
-                        let p = KafkaProducer.Create(log, cfg, t)
+                        let p = BatchedProducer.CreateWithConfigOverrides(log, cfg, t)
                         Some p, (p :> IDisposable).Dispose
                     | _ -> None, id
                 let projectBatch (log : ILogger) (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {

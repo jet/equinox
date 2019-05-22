@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc10` in `eqx` tool
+
 ### Removed
 ### Fixed
 
