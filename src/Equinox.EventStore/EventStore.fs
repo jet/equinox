@@ -577,7 +577,7 @@ type GesConnector
             match node with
             | NodePreference.Master -> s.PerformOnMasterOnly()  // explicitly use ES default of requiring master, use default Node preference of Master
             | NodePreference.PreferMaster -> s.PerformOnAnyNode() // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
-            | NodePreference.PreferSlave -> s.PerformOnAnyNode().PreferRandomNode() // override default PerformOnMasterOnly(), override Master Node preference
+            | NodePreference.PreferSlave -> s.PerformOnAnyNode().PreferSlaveNode() // override default PerformOnMasterOnly(), override Master Node preference
             | NodePreference.Random -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
         |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
