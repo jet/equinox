@@ -513,6 +513,17 @@ type Logger =
         | CustomNormal logger -> b.UseCustomLogger(logger)
 
 [<RequireQualifiedAccess; NoComparison>]
+type NodePreference =
+    /// Track master via gossip, writes direct, reads should immediately reflect writes, resync without backoff (highest load on master, good write perf)
+    | Master
+    /// Take the first connection that comes along, ideally a master, but do not track master changes
+    | PreferMaster
+    /// Prefer slave node, writes normally need forwarding, often can't read writes, resync requires backoff (kindest to master, writes and resyncs expensive)
+    | PreferSlave
+    /// Take random node, writes may need forwarding, sometimes can't read writes, resync requires backoff (balanced load on master, balanced write perf)
+    | Random
+
+[<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     // Allow Uri-based connection definition (discovery://, tcp:// or
     | Uri of Uri
@@ -524,32 +535,25 @@ type Discovery =
     | GossipDnsCustomPort of clusterDns : string * managerPortOverride : int
 
 module private Discovery =
-    let buildDns (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
-        ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering() |> f |> fun s -> s.Build()
-    let buildSeeded (f : GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
-        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering() |> f |> fun s -> s.Build()
+    let buildDns np (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
+        ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering()
+        |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferSlaveNode() | _ -> s
+        |> f |> fun s -> s.Build()
+    let buildSeeded np (f : GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
+        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering()
+        |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferSlaveNode() | _ -> s
+        |> f |> fun s -> s.Build()
     let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
     let inline configureSeeded (seedEndpoints : System.Net.IPEndPoint []) (x : GossipSeedClusterSettingsBuilder) =
         x.SetGossipSeedEndPoints(seedEndpoints)
     // converts a Discovery mode to a ClusterSettings or a Uri as appropriate
-    let (|DiscoverViaUri|DiscoverViaGossip|) : Discovery -> Choice<Uri,ClusterSettings> = function
-        | Discovery.Uri uri ->                          DiscoverViaUri    uri
-        | Discovery.GossipSeeded seedEndpoints ->       DiscoverViaGossip (buildSeeded  (configureSeeded seedEndpoints))
-        | Discovery.GossipDns clusterDns ->             DiscoverViaGossip (buildDns     (configureDns clusterDns None))
-        | Discovery.GossipDnsCustomPort (dns, port) ->  DiscoverViaGossip (buildDns     (configureDns dns (Some port)))
-
-[<RequireQualifiedAccess; NoComparison>]
-type NodePreference =
-    /// Track master via gossip, writes direct, reads should immediately reflect writes, resync without backoff (highest load on master, good write perf)
-    | Master
-    /// Take the first connection that comes along, ideally a master, but do not track master changes
-    | PreferMaster
-    /// Prefer slave node, writes normally need forwarding, often can't read writes, resync requires backoff (kindest to master, writes and resyncs expensive)
-    | PreferSlave
-    /// Take random node, writes may need forwarding, sometimes can't read writes, resync requires backoff (balanced load on master, balanced write perf)
-    | Random
+    let (|DiscoverViaUri|DiscoverViaGossip|) : Discovery * NodePreference -> Choice<Uri,ClusterSettings> = function
+        | (Discovery.Uri uri), _ ->                         DiscoverViaUri    uri
+        | (Discovery.GossipSeeded seedEndpoints), np ->     DiscoverViaGossip (buildSeeded np   (configureSeeded seedEndpoints))
+        | (Discovery.GossipDns clusterDns), np ->           DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
+        | (Discovery.GossipDnsCustomPort (dns, port)), np ->DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
 
 // see https://github.com/EventStore/EventStore/issues/1652
 [<RequireQualifiedAccess; NoComparison>]
@@ -577,6 +581,8 @@ type GesConnector
             match node with
             | NodePreference.Master -> s.PerformOnMasterOnly()  // explicitly use ES default of requiring master, use default Node preference of Master
             | NodePreference.PreferMaster -> s.PerformOnAnyNode() // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
+            // NB .PreferSlaveNode/.PreferRandomNode setting is ignored if using EventStoreConneciton.Create(ConnectionSettings, ClusterSettings) overload but
+            // this code is necessary for cases where people are using the discover:// and related URI schemes
             | NodePreference.PreferSlave -> s.PerformOnAnyNode().PreferSlaveNode() // override default PerformOnMasterOnly(), override Master Node preference
             | NodePreference.Random -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
         |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
@@ -597,9 +603,14 @@ type GesConnector
             match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
         let sanitizedName = name.Replace('\'','_').Replace(':','_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
         let conn =
-            match discovery with
-            | Discovery.DiscoverViaUri uri -> EventStoreConnection.Create(connSettings clusterNodePreference, uri, sanitizedName)
-            | Discovery.DiscoverViaGossip clusterSettings -> EventStoreConnection.Create(connSettings clusterNodePreference, clusterSettings, sanitizedName)
+            match discovery, clusterNodePreference with
+            | Discovery.DiscoverViaUri uri ->
+                // This overload picks up the discovery settings via ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode
+                EventStoreConnection.Create(connSettings clusterNodePreference, uri, sanitizedName)
+            | Discovery.DiscoverViaGossip clusterSettings ->
+                // NB This overload's implementation ignores the calls to ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode and
+                // requires equivalent ones on the GossipSeedClusterSettingsBuilder or ClusterSettingsBuilder
+                EventStoreConnection.Create(connSettings clusterNodePreference, clusterSettings, sanitizedName)
         do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
         return conn }
 
