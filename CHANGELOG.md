@@ -17,6 +17,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `Equinox.EventStore`: Fixed `PreferSlave` bug for `Discovery.Uri` mode [#135](https://github.com/jet/equinox/pull/135)
+- `Equinox.EventStore`: Fixed `PreferSlave` and `Random` modes for gossip-based `Discovery` modes [#135](https://github.com/jet/equinox/pull/135) [@asetda](https://github.com/asetda)
+
 <a name="2.0.0"></a>
 <a name="2.0.0-preview8"></a>
 ## [2.0.0-preview8] - 2019-05-16
