@@ -525,9 +525,9 @@ type Discovery =
 
 module private Discovery =
     let buildDns (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
-        ClusterSettings.Create().DiscoverClusterViaDns().SetMaxDiscoverAttempts(Int32.MaxValue) |> f |> fun s -> s.Build()
+        ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering() |> f |> fun s -> s.Build()
     let buildSeeded (f : GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
-        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().SetMaxDiscoverAttempts(Int32.MaxValue) |> f |> fun s -> s.Build()
+        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering() |> f |> fun s -> s.Build()
     let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
@@ -616,4 +616,4 @@ type GesConnector
             let! masterInParallel = Async.StartChild (__.Connect(name + "-TwinW", discovery, NodePreference.Master))
             let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
             let! master = masterInParallel
-            return GesConnection(readConnection=slave, writeConnection=master,?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
+            return GesConnection(readConnection=slave, writeConnection=master, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
