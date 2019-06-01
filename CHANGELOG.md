@@ -15,7 +15,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc10` in `eqx` tool
+- Targeted `Jet.ConfluentKafka.FSharp` v `1.0.0-rc12` in `eqx` tool
 - `Equinox.Tool`: Switched `IndexingMode` to `Automatic=false,IndexingMode=None`, remove `DefaultTimeToLive` from `aux` collections [#134](https://github.com/jet/equinox/pull/134)
 - `Equinox.Cosmos.Projection`: Tidy `assign` and `init`, signatures; provided mechanism to inhibit logging [#137](https://github.com/jet/equinox/pull/137)
 

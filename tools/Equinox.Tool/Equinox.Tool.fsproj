@@ -45,7 +45,7 @@
     <PackageReference Include="FSharp.Core" Version="4.0.0.1" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />
 
-    <PackageReference Include="Jet.ConfluentKafka.FSharp" Version="1.0.0-rc10" />
+    <PackageReference Include="Jet.ConfluentKafka.FSharp" Version="1.0.0-rc12" />
     <PackageReference Include="MathNet.Numerics" Version="4.7.0" />
     <PackageReference Include="Microsoft.Azure.DocumentDB" Version="2.2.2" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     <PackageReference Include="Microsoft.Azure.DocumentDB.Core" Version="2.2.2" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
