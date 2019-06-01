@@ -15,6 +15,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.Tool`: Switched `IndexingMode` to `Automatic=false,IndexingMode=None`, remove `DefaultTimeToLive` from `aux` collections [#134](https://github.com/jet/equinox/pull/134)
 
 ### Removed
+
+- `Equinox.Projection` logic - Projection management logic now lives in the `Propulsion` libraries (`StreamItem` is the sole remaining item in the `Equinox.Projection` library).
+
 ### Fixed
 
 - `Equinox.EventStore`: Fixed `PreferSlave` bug for `Discovery.Uri` mode [#135](https://github.com/jet/equinox/pull/135)
