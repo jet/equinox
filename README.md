@@ -140,7 +140,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     # `-v` for verbose logging
     # `projector3` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently
-    # `-l 5` to report ChangeFeed lags every 5 seconds
+    # `-l 5` to report ChangeFeed lags every 5 minutes
     # `kafka` specifies one wants to emit to Kafka
     # `temp-topic` is the topic to emit to
     # `cosmos` specifies source overrides (using defaults in step 1 in this instance)

@@ -9,6 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-preview9"></a>
+## [2.0.0-preview9] - 2019-06-01
+
+### Added
 
 - `Equinox.EventStore.GesGateway.Sync` API including adding `actualVersion` to `ConflictUnknown` Result DU case for [`dotnet new eqxsync` template `EventStoreSink` impl](https://github.com/jet/dotnet-templates/pull/23) [#133](https://github.com/jet/equinox/pull/133)
 - `Equinox.EventStore` `Stats` for consistency with CosmosDb equivalent [#133](https://github.com/jet/equinox/pull/133)
@@ -28,7 +37,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.EventStore`: Fixed `PreferSlave` bug for `Discovery.Uri` mode [#135](https://github.com/jet/equinox/pull/135)
 - `Equinox.EventStore`: Fixed `PreferSlave` and `Random` modes for gossip-based `Discovery` modes [#135](https://github.com/jet/equinox/pull/135) [@asetda](https://github.com/asetda)
 
-<a name="2.0.0"></a>
 <a name="2.0.0-preview8"></a>
 ## [2.0.0-preview8] - 2019-05-16
 
@@ -188,7 +196,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview8...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview9...HEAD
+[2.0.0-preview9]: https://github.com/jet/equinox/compare/2.0.0-preview8...2.0.0-preview9
 [2.0.0-preview8]: https://github.com/jet/equinox/compare/2.0.0-preview7...2.0.0-preview8
 [2.0.0-preview7]: https://github.com/jet/equinox/compare/2.0.0-preview6...2.0.0-preview7
 [2.0.0-preview6]: https://github.com/jet/equinox/compare/2.0.0-preview5...2.0.0-preview6
