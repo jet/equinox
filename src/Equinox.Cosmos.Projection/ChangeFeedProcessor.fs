@@ -21,19 +21,19 @@ module IChangeFeedObserverContextExtensions =
 /// Provides F#-friendly wrapping to compose a ChangeFeedObserver from functions
 type ChangeFeedObserver =
     static member Create
-      ( /// Base logger context; will be decorated with a `partitionKeyRangeId` property when passed to `assign` and `processBatch`
+      ( /// Base logger context; will be decorated with a `partitionKeyRangeId` property when passed to `assign`, `init` and `processBatch`
         log: ILogger,
         /// Callback responsible for
-        /// - handling ingestion of a batch of documents (potenially offloading work to another control path)
+        /// - handling ingestion of a batch of documents (potentially offloading work to another control path)
         /// - ceding control as soon as commencement of the next batch retrieval is desired
         /// - triggering marking of progress via an invocation of `ctx.Checkpoint()` (can be immediate, but can also be deferred and performed asynchronously)
         /// NB emitting an exception will not trigger a retry, and no progress writing will take place without explicit calls to `ctx.CheckpointAsync`
         ingest : ILogger -> IChangeFeedObserverContext -> IReadOnlyList<Document> -> Async<unit>,
         /// Called when this Observer is being created (triggered before `assign`)
-        ?init: unit -> unit,
-        /// Called when a lease is won and the observer is being spun up (0 or more `processBatch` calls will follow)
-        ?assign: ILogger -> Async<unit>,
-        /// Called when a lease is revoked [and the observer is about to be `Dispose`d]
+        ?init: ILogger -> int -> unit,
+        /// Called when a lease is won and the observer is being spun up (0 or more `processBatch` calls will follow). Overriding inhibits default logging.
+        ?assign: ILogger -> int -> Async<unit>,
+        /// Called when a lease is revoked [and the observer is about to be `Dispose`d], overriding inhibits default logging.
         ?revoke: ILogger -> Async<unit>,
         /// Called when this Observer is being destroyed due to the revocation of a lease (triggered after `revoke`)
         ?dispose: unit -> unit) =
@@ -41,23 +41,22 @@ type ChangeFeedObserver =
         { new IChangeFeedObserver with
             member __.OpenAsync ctx = UnitTaskBuilder() {
                 log <- log.ForContext("partitionKeyRangeId",ctx.PartitionKeyRangeId)
-                log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId)
+                let rangeId = int ctx.PartitionKeyRangeId
                 match init with
-                | Some f -> f ()
-                | None -> ()
+                | Some f -> f log rangeId
+                | None ->  ()
                 match assign with
-                | Some f -> do! f log
-                | None -> () }
+                | Some f -> return! f log rangeId
+                | None -> log.Information("Range {partitionKeyRangeId} Assigned", ctx.PartitionKeyRangeId) }
             member __.ProcessChangesAsync(ctx, docs, ct) = (UnitTaskBuilder ct) {
                 try do! ingest log ctx docs
                 with e ->
-                    log.Warning(e, "Range {partitionKeyRangeId} Handler Threw", ctx.PartitionKeyRangeId)
+                    log.Error(e, "Range {partitionKeyRangeId} Handler Threw", ctx.PartitionKeyRangeId)
                     do! Async.Raise e }
             member __.CloseAsync (ctx, reason) = UnitTaskBuilder() {
-                log.Information("Range {partitionKeyRangeId} Revoked {reason}", ctx.PartitionKeyRangeId, reason)
                 match revoke with
-                | Some f -> do! f log
-                | None -> () } 
+                | Some f -> return! f log
+                | None -> log.Information("Range {partitionKeyRangeId} Revoked {reason}", ctx.PartitionKeyRangeId, reason) } 
           interface IDisposable with
             member __.Dispose() =
                 match dispose with
