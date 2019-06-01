@@ -52,8 +52,78 @@ module Log =
             retryPolicy withLoggingContextWrapping
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
 
+    /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
+    /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
+    module InternalMetrics =
+
+        module Stats =
+            let inline (|Stats|) ({ interval = i }: Measurement) = let e = i.Elapsed in int64 e.TotalMilliseconds
+
+            let (|Read|Write|Resync|Rollup|) = function
+                | Slice (_,(Stats s)) -> Read s
+                | WriteSuccess (Stats s) -> Write s
+                | WriteConflict (Stats s) -> Resync s
+                // slices are rolled up into batches so be sure not to double-count
+                | Batch (_,_,(Stats s)) -> Rollup s
+            let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
+                | (:? ScalarValue as x) -> Some x.Value
+                | _ -> None
+            let (|CosmosMetric|_|) (logEvent : LogEvent) : Event option =
+                match logEvent.Properties.TryGetValue("esEvt") with
+                | true, SerilogScalar (:? Event as e) -> Some e
+                | _ -> None
+            type Counter =
+                { mutable count: int64; mutable ms: int64 }
+                static member Create() = { count = 0L; ms = 0L }
+                member __.Ingest(ms) =
+                    System.Threading.Interlocked.Increment(&__.count) |> ignore
+                    System.Threading.Interlocked.Add(&__.ms, ms) |> ignore
+            type LogSink() =
+                static let epoch = System.Diagnostics.Stopwatch.StartNew()
+                static member val Read = Counter.Create() with get, set
+                static member val Write = Counter.Create() with get, set
+                static member val Resync = Counter.Create() with get, set
+                static member Restart() =
+                    LogSink.Read <- Counter.Create()
+                    LogSink.Write <- Counter.Create()
+                    LogSink.Resync <- Counter.Create()
+                    let span = epoch.Elapsed
+                    epoch.Restart()
+                    span
+                interface Serilog.Core.ILogEventSink with
+                    member __.Emit logEvent = logEvent |> function
+                        | CosmosMetric (Read stats) -> LogSink.Read.Ingest stats
+                        | CosmosMetric (Write stats) -> LogSink.Write.Ingest stats
+                        | CosmosMetric (Resync stats) -> LogSink.Resync.Ingest stats
+                        | CosmosMetric (Rollup _) -> ()
+                        | _ -> ()
+
+        /// Relies on feeding of metrics from Log through to Stats.LogSink
+        /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
+        let dump (log: Serilog.ILogger) =
+            let stats =
+              [ "Read", Stats.LogSink.Read
+                "Write", Stats.LogSink.Write
+                "Resync", Stats.LogSink.Resync ]
+            let logActivity name count lat =
+                log.Information("{name}: {count:n0} requests; Average latency: {lat:n0}ms",
+                    name, count, (if count = 0L then Double.NaN else float lat/float count))
+            let mutable rows, totalCount, totalMs = 0, 0L, 0L
+            for name, stat in stats do
+                if stat.count <> 0L then    
+                    totalCount <- totalCount + stat.count
+                    totalMs <- totalMs + stat.ms
+                    logActivity name stat.count stat.ms
+                    rows <- rows + 1
+            // Yes, there's a minor race here between the use of the values and the reset
+            let duration = Stats.LogSink.Restart()
+            if rows > 1 then logActivity "TOTAL" totalCount totalMs
+            let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+            let logPeriodicRate name count = log.Information("rp{name} {count:n0}", name, count)
+            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
+
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict
+type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict of actualVersion: int64
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
@@ -63,8 +133,9 @@ module private Write =
             let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
-            log.Information(ex, "Ges TrySync WrongExpectedVersionException writing {EventTypes}", [| for x in events -> x.Type |])
-            return EsSyncResult.Conflict }
+            log.Information(ex, "Ges TrySync WrongExpectedVersionException writing {EventTypes}, actual {ActualVersion}",
+                [| for x in events -> x.Type |], ex.ActualVersion)
+            return EsSyncResult.Conflict (let v = ex.ActualVersion in v.Value) }
     let eventDataBytes events =
         let eventDataLen (x : EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
         events |> Array.sumBy eventDataLen
@@ -78,10 +149,10 @@ module private Write =
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result, reqMetric with
-            | EsSyncResult.Conflict, m -> log, Log.WriteConflict m
+            | EsSyncResult.Conflict actualVersion, m ->
+                log |> Log.prop "actualVersion" actualVersion, Log.WriteConflict m
             | EsSyncResult.Written x, m ->
-                log |> Log.prop "nextExpectedVersion" x.NextExpectedVersion |> Log.prop "logPosition" x.LogPosition,
-                Log.WriteSuccess m
+                log |> Log.prop "nextExpectedVersion" x.NextExpectedVersion |> Log.prop "logPosition" x.LogPosition, Log.WriteSuccess m
         (resultLog |> Log.event evt).Information("Ges{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
@@ -199,14 +270,12 @@ module private Read =
 
 module UnionEncoderAdapters =
     let encodedEventOfResolvedEvent (x : ResolvedEvent) : Equinox.Codec.IEvent<byte[]> =
-        { new Equinox.Codec.IEvent<_> with
-            member __.EventType = x.Event.EventType
-            member __.Data = x.Event.Data
-            member __.Meta = x.Event.Metadata 
-            // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
-            member __.Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(x.Event.CreatedEpoch) }
+        // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
+        let ts = DateTimeOffset.FromUnixTimeMilliseconds(x.Event.CreatedEpoch)
+        Equinox.Codec.Core.EventData.Create(x.Event.EventType, x.Event.Data, x.Event.Metadata, ts) :> _
     let private eventDataOfEncodedEvent (x : Codec.IEvent<byte[]>) =
         EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
+    let encode (xs : Codec.IEvent<byte[]> []) : EventData[] = Array.map eventDataOfEncodedEvent xs
     let encodeEvents (codec : Codec.IUnionEncoder<'event,byte[]>) (xs : 'event seq) : EventData[] =
         xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
     let decodeKnownEvents (codec : Codec.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
@@ -263,7 +332,7 @@ type GesBatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountL
     member __.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
-type GatewaySyncResult = Written of Store.StreamToken | Conflict
+type GatewaySyncResult = Written of Store.StreamToken | ConflictUnknown of Store.StreamToken
 
 type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
     let isResolvedEventEventType (tryDecode,predicate) (x:ResolvedEvent) = predicate (tryDecode (x.Event.Data))
@@ -298,7 +367,8 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
         let streamVersion = token.pos.streamVersion
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection token.stream.name streamVersion encodedEvents
         match wr with
-        | EsSyncResult.Conflict -> return GatewaySyncResult.Conflict
+        | EsSyncResult.Conflict actualVersion ->
+            return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting token.stream.name actualVersion)
         | EsSyncResult.Written wr ->
 
         let version' = wr.NextExpectedVersion
@@ -311,6 +381,16 @@ type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
                 | Some compactionEventIndex ->
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
+    member __.Sync(log, streamName, streamVersion, events: Codec.IEvent<byte[]>[]) : Async<GatewaySyncResult> = async {
+        let encodedEvents : EventData[] = UnionEncoderAdapters.encode events
+        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
+        match wr with
+        | EsSyncResult.Conflict actualVersion ->
+            return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting streamName actualVersion)
+        | EsSyncResult.Written wr ->
+            let version' = wr.NextExpectedVersion
+            let token = Token.ofNonCompacting streamName version'
+            return GatewaySyncResult.Written token }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
@@ -359,7 +439,7 @@ type private Category<'event, 'state>(gateway : GesGateway, codec : Codec.IUnion
         let encodedEvents : EventData[] = UnionEncoderAdapters.encodeEvents codec events
         let! syncRes = gateway.TrySync log streamToken (events,encodedEvents) compactionPredicate
         match syncRes with
-        | GatewaySyncResult.Conflict ->
+        | GatewaySyncResult.ConflictUnknown _ ->
             return Store.SyncResult.Conflict  (load fold state (gateway.LoadFromToken true stream.name log streamToken (tryDecode,compactionPredicate)))
         | GatewaySyncResult.Written token' ->
             return Store.SyncResult.Written   (token', fold state (Seq.ofList events)) }
