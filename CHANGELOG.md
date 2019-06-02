@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- TypeShape dependency in codec now `7.*` (was `6.*`)
+
 ### Removed
 ### Fixed
 
