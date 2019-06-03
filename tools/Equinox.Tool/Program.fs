@@ -3,7 +3,6 @@
 open Argu
 open Domain.Infrastructure
 open Jet.ConfluentKafka.FSharp
-open Equinox.Cosmos.Projection
 open Equinox.Store.Infrastructure
 open Equinox.Tool.Infrastructure
 open FSharp.UMX
@@ -11,6 +10,7 @@ open Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure
 open Serilog
+open Propulsion.Cosmos
 open Propulsion.Streams
 open Propulsion.Kafka.Codec
 open Serilog.Events

@@ -57,8 +57,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{8F3E
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Todo", "Todo", "{8CDE1CC3-8619-44DE-8B4D-4102CE476C35}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cosmos.Projection", "src\Equinox.Cosmos.Projection\Equinox.Cosmos.Projection.fsproj", "{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}"
-EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Tutorial", "samples\Tutorial\Tutorial.fsproj", "{D82AAB2E-7264-421A-A893-63A37E5F08B6}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Tools.TestHarness", "tools\Equinox.Tools.TestHarness\Equinox.Tools.TestHarness.fsproj", "{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}"
@@ -133,10 +131,6 @@ Global
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D4641679-9C2B-4B4C-ABA9-B2EC1CB1D79D}.Release|Any CPU.Build.0 = Release|Any CPU
 		{D82AAB2E-7264-421A-A893-63A37E5F08B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{D82AAB2E-7264-421A-A893-63A37E5F08B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D82AAB2E-7264-421A-A893-63A37E5F08B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
