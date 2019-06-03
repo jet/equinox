@@ -119,7 +119,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx -v project projector1 stats cosmos
     ```
 
-5. (**`2.0.0-preview*`**) Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Equinox.Cosmos.Projection`
+5. Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion`
 
     ```powershell
     dotnet new -i Equinox.Templates
@@ -147,7 +147,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx -v project projector3 -l 5 kafka temp-topic cosmos
     ```
 
-7. (**`2.0.0-preview*`**) Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Jet.ConfluentKafka.FSharp` v `1.0.0`)
+7. Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code
@@ -213,11 +213,11 @@ The components within this repository are delivered as a series of multi-targete
 
 ### Projection libraries
 
-- `Equinox.Cosmos.Projection` [![Cosmos.Projection NuGet](https://img.shields.io/nuget/v/Equinox.Cosmos.Projection.svg)](https://www.nuget.org/packages/Equinox.Cosmos.Projection/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous natched query loop per CosmosDb Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.Cosmos` for processing or forwarding). Used in the [`eqx project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new eqxprojector` to generate a sample app](quickstart) using it. ([depends](https://www.fuget.org/packages/Equinox.Cosmos.Projection) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
-- `Equinox.Projection` [![Projection NuGet](https://img.shields.io/nuget/v/Equinox.Projection.svg)](https://www.nuget.org/packages/Equinox.Projection/): defined a canonical `StreamItem` used to interop with `Propulsion` in processing pipelines for the `eqxprojector` and `eqxsync` templates in the [templates repo](https://github.com/jet/dotnet-templates). ([depends](https://www.fuget.org/packages/Equinox.Projection) on `Serilog`)
-- `Equinox.Projection.Codec` [![Projection Codec NuGet](https://img.shields.io/nuget/v/Equinox.Projection.Codec.svg)](https://www.nuget.org/packages/Equinox.Projection.Codec/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new eqxprojector -k`. ([depends](https://www.fuget.org/packages/Equinox.Projection.Codec) on `Newtonsoft.Json >= 11.0.2`, `Equinox.Codec`)
-- _Related, maintained in separate repo_ `Jet.ConfluentKafka.FSharp` [![Jet.ConfluentKafka.FSharp NuGet](https://img.shields.io/nuget/vpre/Jet.ConfluentKafka.FSharp.svg)](https://www.nuget.org/packages/Jet.ConfluentKafka.FSharp/): Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`eqx project kafka`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new eqxprojector -k` to generate a sample app](quickstart) using it.
-- _Related, maintained in separate repo_ `Propulsion` [![Propulsion NuGet](https://img.shields.io/nuget/v/Propulsion.svg)](https://www.nuget.org/packages/Propulsion/): Contains `Ingestion`, `Streams`, `Progress` and `Parallel` mocules that gets composed into the processing pipelines for the `eqxprojector` and `eqxsync` templates in the [templates repo](https://github.com/jet/dotnet-templates). ([depends](https://www.fuget.org/packages/Propulsion) on `Serilog`)
+- `Jet.ConfluentKafka.FSharp` [![Jet.ConfluentKafka.FSharp NuGet](https://img.shields.io/nuget/vpre/Jet.ConfluentKafka.FSharp.svg)](https://www.nuget.org/packages/Jet.ConfluentKafka.FSharp/): Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`eqx project kafka`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new eqxprojector -k` to generate a sample app](quickstart) using it (see the `BatchedAsync` and `BatchedSync` modules in `Examples.fs`).
+- `Propulsion` [![Propulsion NuGet](https://img.shields.io/nuget/vpre/Propulsion.svg)](https://www.nuget.org/packages/Propulsion/): defines a canonical `Propulsion.Streams.StreamEvent` used to interop with `Propulsion`.* in processing pipelines for the `eqxprojector` and `eqxsync` templates in the [templates repo](https://github.com/jet/dotnet-templates), together with the `Ingestion`, `Streams`, `Progress` and `Parallel` modules that get composed into those processing pipelines. ([depends](https://www.fuget.org/packages/Propulsion) on `Serilog`)
+- `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/vpre/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDb Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.Cosmos` for processing or forwarding). Used in the [`eqx project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new eqxprojector` to generate a sample app](quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
+- `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/vpre/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`eqx project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new eqxsync -e` to generate a sample app](quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
+- `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/vpre/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new eqxprojector -k`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `Jet.ConfluentKafka.FSharp`)
 
 ### `dotnet tool` provisioning / benchmarking tool
 

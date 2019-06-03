@@ -2,9 +2,8 @@
 
 open Argu
 open Domain.Infrastructure
-open Equinox.Cosmos.Projection
-open Equinox.Projection.Codec
 open Jet.ConfluentKafka.FSharp
+open Equinox.Cosmos.Projection
 open Equinox.Store.Infrastructure
 open Equinox.Tool.Infrastructure
 open FSharp.UMX
@@ -12,6 +11,8 @@ open Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure
 open Serilog
+open Propulsion.Streams
+open Propulsion.Kafka.Codec
 open Serilog.Events
 open System
 open System.Net.Http
@@ -74,7 +75,7 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
     | [<AltCommandLine("-s"); Unique>] Suffix of string
     | [<AltCommandLine("-z"); Unique>] FromTail
     | [<AltCommandLine("-md"); Unique>] MaxDocuments of int
-    | [<AltCommandLine("-l"); Unique>] LagFreqS of float
+    | [<AltCommandLine("-l"); Unique>] LagFreqM of float
     | [<CliPrefix(CliPrefix.None); Last>] Stats of ParseResults<StatsTarget>
     | [<CliPrefix(CliPrefix.None); Last>] Kafka of ParseResults<KafkaTarget>
     interface IArgParserTemplate with
@@ -83,7 +84,7 @@ and [<NoComparison; RequireSubcommand>]ProjectArguments =
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
             | FromTail _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
             | MaxDocuments _ -> "Maximum item count to supply to Changefeed Api when querying. Default: Unlimited"
-            | LagFreqS _ -> "Specify frequency to dump lag stats. Default: off"
+            | LagFreqM _ -> "Specify frequency to dump lag stats. Default: off"
 
             | Stats _ -> "Do not emit events, only stats."
             | Kafka _ -> "Project to Kafka."
@@ -319,7 +320,7 @@ let main argv =
             let storeLog = createStoreLog (storeArgs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
             let discovery, dbName, collName, connector = Storage.Cosmos.connection (log, storeLog) (Storage.Cosmos.Info storeArgs)
             pargs.TryGetResult MaxDocuments |> Option.iter (fun bs -> log.Information("Requesting ChangeFeed Maximum Document Count {changeFeedMaxItemCount}", bs))
-            pargs.TryGetResult LagFreqS |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}s intervals", s))
+            pargs.TryGetResult LagFreqM |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}m intervals", s))
             let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
             let leaseId = pargs.GetResult(LeaseId)
             log.Information("Processing using LeaseId {leaseId} in Aux coll {auxCollName}", leaseId, auxCollName)
@@ -338,7 +339,7 @@ let main argv =
                     | _ -> None, id
                 let projectBatch (log : ILogger) (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
                     sw.Stop() // Stop the clock after CFP hands off to us
-                    let render (e: Equinox.Projection.StreamItem) = RenderedSpan.ofStreamSpan e.stream e.index (Seq.singleton e.event)
+                    let render (e: StreamEvent<_>) = RenderedSpan.ofStreamSpan e.stream { StreamSpan.index = e.index; events=[| e.event |] }
                     let pt, events = (fun () -> docs |> Seq.collect DocumentParser.enumEvents |> Seq.map render |> Array.ofSeq) |> Stopwatch.Time 
                     let! et = async {
                         match producer with
@@ -365,8 +366,8 @@ let main argv =
                 let logLag (interval : TimeSpan) remainingWork = async {
                     let logLevel = if remainingWork |> Seq.exists (fun (_r,rw) -> rw <> 0L) then Events.LogEventLevel.Information else Events.LogEventLevel.Debug
                     log.Write(logLevel, "Lags {@rangeLags} <- [Range Id, documents count] ", remainingWork)
-                    return! Async.Sleep interval }
-                let maybeLogLag = pargs.TryGetResult LagFreqS |> Option.map (TimeSpan.FromSeconds >> logLag)
+                    return! Async.Sleep(int interval.TotalMilliseconds) }
+                let maybeLogLag = pargs.TryGetResult LagFreqM |> Option.map (TimeSpan.FromMinutes >> logLag)
                 let! _cfp =
                     ChangeFeedProcessor.Start
                       ( log, discovery, connector.ConnectionPolicy, source, aux, buildRangeProjector,

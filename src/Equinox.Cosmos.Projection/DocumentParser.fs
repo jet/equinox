@@ -15,7 +15,7 @@ module DocumentParser =
         && d.GetPropertyValue "n" <> null && d.GetPropertyValue "e" <> null
     /// Maps fields in an Event within an Equinox.Cosmos V1+ Event (in a Batch or Tip) to the interface defined by the default Codec
     let (|CodecEvent|) (x: Equinox.Cosmos.Store.Event) =
-        { new Equinox.Codec.IEvent<_> with
+        { new Propulsion.Streams.IEvent<byte[]> with
             member __.EventType = x.c
             member __.Data = x.d
             member __.Meta = x.m
@@ -26,8 +26,8 @@ module DocumentParser =
     // This is intentional in the name of forward compatibility for projectors - enabling us to upgrade the data format without necessitating
     //   updates of all projectors (even if there can potentially be significant at-least-once-ness to the delivery)
     let enumEquinoxCosmosEvents (batch : Equinox.Cosmos.Store.Batch) =
-        batch.e |> Seq.mapi (fun offset (CodecEvent x) -> { stream = batch.p; index = batch.i + int64 offset; event = x } : Equinox.Projection.StreamItem)
+        batch.e |> Seq.mapi (fun offset (CodecEvent x) -> { stream = batch.p; index = batch.i + int64 offset; event = x } : Propulsion.Streams.StreamEvent<byte[]>)
     /// Collects all events with a Document [typically obtained via the CosmosDb ChangeFeed] that potentially represents an Equinox.Cosmos event-batch
-    let enumEvents (d : Document) : Equinox.Projection.StreamItem seq =
+    let enumEvents (d : Document) : Propulsion.Streams.StreamEvent<byte[]> seq =
         if isEquinoxBatch d then d.Cast<Equinox.Cosmos.Store.Batch>() |> enumEquinoxCosmosEvents
         else Seq.empty

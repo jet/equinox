@@ -11,9 +11,16 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 ### Changed
 
-- TypeShape dependency in codec now `7.*` (was `6.*`)
+- `TypeShape` dependency in `Equinox.Codec` now `7.*` (was `6.*`)
+- `Equinox.Tool` now depends on `Propulsion.Kafka` v `>= 1.0.1`
+- `Equinox.Cosmos.Projection` is only an internal dependency of the `Equinox.Tool`
 
 ### Removed
+
+- `Equinox.Projection` has moved to `Propulsion`
+- `Equinox.Projection.Codec` has moved to `Propulsion.Kafka`
+- `Equinox.Cosmos.Projection` is now maintained in/as `Propulsion.Cosmos`
+
 ### Fixed
 
 <a name="2.0.0"></a>

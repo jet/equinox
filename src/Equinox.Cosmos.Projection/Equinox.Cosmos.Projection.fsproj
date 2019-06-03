@@ -10,14 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Infrastructure.fs" />
     <Compile Include="DocumentParser.fs" />
+    <Compile Include="Infrastructure.fs" />
     <Compile Include="ChangeFeedProcessor.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Equinox.Cosmos/Equinox.Cosmos.fsproj" />
-    <ProjectReference Include="../Equinox.Projection/Equinox.Projection.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,6 +27,7 @@
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
     <PackageReference Include="Microsoft.Azure.DocumentDB.ChangeFeedProcessor" Version="2.2.5" />
+    <PackageReference Include="Propulsion" Version="1.0.1-rc1" />
   </ItemGroup>
 
 </Project>
