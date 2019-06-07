@@ -443,7 +443,7 @@ function sync(req, expectedVersion, maxEvents) {
         let! t, (ru,result) = run client stream (expectedVersion, req, maxEvents) |> Stopwatch.Time
         let resultLog =
             let mkMetric ru : Log.Measurement = { stream = stream.name; interval = t; bytes = bytes; count = count; ru = ru }
-            let logConflict () = writeLog.Information("EqxCosmos Sync: Conflict writing {eventTypes}", [| for x in req.e -> x.c |])
+            let logConflict () = writeLog.Information("EqxCosmos Sync: Conflict writing {eventTypes}", Seq.truncate 5 (seq { for x in req.e -> x.c }))
             match result with
             | Result.Written pos ->
                 log |> Log.event (Log.SyncSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" pos

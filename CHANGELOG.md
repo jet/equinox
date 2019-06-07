@@ -23,6 +23,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
+- `EqxCosmos Sync: Conflict writing {eventTypes}` message now trims to max 5 items
+
 <a name="2.0.0"></a>
 <a name="2.0.0-preview9"></a>
 ## [2.0.0-preview9] - 2019-06-01
