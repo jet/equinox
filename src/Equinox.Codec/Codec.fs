@@ -120,7 +120,7 @@ type BytesEncoder(settings : JsonSerializerSettings) =
                 serializer.Serialize(jsonWriter, value, typeof<'T>))
             ms.ToArray()
         member __.Decode(json : byte[]) =
-            use ms = new MemoryStream(json)
+            use ms = new MemoryStream(json,writable=false)
             use jsonReader = new JsonTextReader(new StreamReader(ms), ArrayPool = CharBuffersPool.instance)
             serializer.Deserialize<'T>(jsonReader)
 
