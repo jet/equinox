@@ -105,7 +105,7 @@ module private CharBuffersPool =
 // http://www.philosophicalgeek.com/2015/02/06/announcing-microsoft-io-recycablememorystream/
 module private BytesEncoderBufferMemoryStreamManager =
     let streamManager = Microsoft.IO.RecyclableMemoryStreamManager()
-    let get () = streamManager.GetStream()
+    let get () = streamManager.GetStream("bytesEncoder")
 
 /// Newtonsoft.Json implementation of TypeShape.UnionContractEncoder's IEncoder that encodes direct to a UTF-8 Buffer
 type BytesEncoder(settings : JsonSerializerSettings) =
@@ -115,7 +115,8 @@ type BytesEncoder(settings : JsonSerializerSettings) =
         member __.Empty = Unchecked.defaultof<_>
         member __.Encode (value : 'T) =
             use ms = BytesEncoderBufferMemoryStreamManager.get ()
-            (   use jsonWriter = new JsonTextWriter(new StreamWriter(ms,utf8NoBom,1024,leaveOpen=true), ArrayPool = CharBuffersPool.instance)
+            (   let sw = new StreamWriter(ms, utf8NoBom, 1024, leaveOpen=true) // same middle args as efault impl
+                use jsonWriter = new JsonTextWriter(sw, ArrayPool = CharBuffersPool.instance)
                 serializer.Serialize(jsonWriter, value, typeof<'T>))
             ms.ToArray()
         member __.Decode(json : byte[]) =
