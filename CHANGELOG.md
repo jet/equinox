@@ -11,7 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
  - `Equinox.Codec` now uses `System.Buffers.ArrayPool` to reduce allocations when encoding/decoding union objects using json.net [#140](https://github.com/jet/equinox/pull/140)
-- `Equinox.Codec` now used a `RecyclableMemoryStreamManager` to reduce allocations wrt `MemoryStream` objects when encoding/decoding union objects using json.net [#139](https://github.com/jet/equinox/pull/139)
+- `Equinox.Codec` now uses `RecyclableMemoryStreamManager` to reduce allocations wrt `MemoryStream` objects when encoding union objects using json.net [#139](https://github.com/jet/equinox/pull/139)
 
 ### Changed
 
