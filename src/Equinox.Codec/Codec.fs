@@ -94,6 +94,7 @@ open System.IO
 open System.Runtime.InteropServices
 
 /// Reuse interim buffers when coding/encoding
+// https://stackoverflow.com/questions/55812343/newtonsoft-json-net-jsontextreader-garbage-collector-intensive
 module private CharBuffersPool =
     let private inner = System.Buffers.ArrayPool<char>.Shared
     let instance =
