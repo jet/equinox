@@ -105,10 +105,12 @@ module private CharBuffersPool =
 /// Newtonsoft.Json implementation of TypeShape.UnionContractEncoder's IEncoder that encodes direct to a UTF-8 Buffer
 type BytesEncoder(settings : JsonSerializerSettings) =
     let serializer = JsonSerializer.Create(settings)
+    // http://www.philosophicalgeek.com/2015/02/06/announcing-microsoft-io-recycablememorystream/
+    static let streamManager = Microsoft.IO.RecyclableMemoryStreamManager()
     interface TypeShape.UnionContract.IEncoder<byte[]> with
         member __.Empty = Unchecked.defaultof<_>
         member __.Encode (value : 'T) =
-            use ms = new MemoryStream()
+            use ms = streamManager.GetStream()
             (   use jsonWriter = new JsonTextWriter(new StreamWriter(ms), ArrayPool = CharBuffersPool.instance)
                 serializer.Serialize(jsonWriter, value, typeof<'T>))
             ms.ToArray()
