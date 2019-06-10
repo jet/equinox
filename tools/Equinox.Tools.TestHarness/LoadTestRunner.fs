@@ -135,11 +135,11 @@ module private LocalLoadTestImpl =
                     |> Async.ParallelThrottled (max (throughput / 10) 1)
                     |> Async.Ignore
 
-                do! allocatorLoop (n + 1L)
+                return! allocatorLoop (n + 1L)
 
             else
                 do! Async.Sleep 100
-                do! allocatorLoop (n + 1L)
+                return! allocatorLoop (n + 1L)
         }
 
         let _ = Async.StartAsTask(allocatorLoop 1L, cancellationToken = cts.Token)

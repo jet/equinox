@@ -277,7 +277,7 @@ module CosmosInit =
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
             log.Information("Provisioning `Equinox.Cosmos` Store Collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
             let! conn = connector.Connect("equinox-tool", discovery)
-            do! init log conn.Client (dbName,collName) mode skipStoredProc
+            return! init log conn.Client (dbName,collName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
     let aux (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitAuxArguments>) = async {
         match iargs.TryGetSubCommand() with
@@ -288,7 +288,7 @@ module CosmosInit =
             let rus = iargs.GetResult(InitAuxArguments.Rus)
             log.Information("Provisioning Lease/`aux` Collection {collName} for {rus:n0} RU/s", auxCollName, rus)
             let! conn = connector.Connect("equinox-tool", discovery)
-            do! initAux conn.Client (dbName,auxCollName) rus
+            return! initAux conn.Client (dbName,auxCollName) rus
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 [<EntryPoint>]
@@ -350,7 +350,7 @@ let main argv =
                             let es = [| for e in events -> e.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
                             let! et,() = async {
                                 let! _ = producer.ProduceBatch es
-                                do! ctx.Checkpoint() } |> Stopwatch.Time 
+                                return! ctx.Checkpoint() } |> Stopwatch.Time 
                             return et }
                             
                     if log.IsEnabled LogEventLevel.Debug then log.Debug("Response Headers {0}", let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]])
@@ -375,7 +375,7 @@ let main argv =
                         startFromTail = pargs.Contains FromTail,
                         ?maxDocuments = pargs.TryGetResult MaxDocuments,
                         ?reportLagAndAwaitNextEstimation = maybeLogLag)
-                do! Async.AwaitKeyboardInterrupt() }
+                return! Async.AwaitKeyboardInterrupt() }
             Async.RunSynchronously run
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName

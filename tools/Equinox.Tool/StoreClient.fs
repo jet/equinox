@@ -19,7 +19,7 @@ type FavoritesClient(session: Session) =
     member __.Favorite(skus: SkuId[]) = async {
         let request = HttpReq.post () |> HttpReq.withPath "api/favorites" |> HttpReq.withJsonNet skus
         let! response = session.Send request
-        do! response.EnsureStatusCode(HttpStatusCode.NoContent)
+        return! response.EnsureStatusCode(HttpStatusCode.NoContent)
     }
 
     member __.List = async {

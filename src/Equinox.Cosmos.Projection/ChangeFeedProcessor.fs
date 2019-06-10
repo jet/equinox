@@ -16,7 +16,7 @@ module IChangeFeedObserverContextExtensions =
     type Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing.IChangeFeedObserverContext with
         /// Triggers `CheckpointAsync()`; Mark the the full series up to and including this batch as having been confirmed consumed.
         member __.Checkpoint() = async {
-            do! __.CheckpointAsync() |> Async.AwaitTaskCorrect }
+            return! __.CheckpointAsync() |> Async.AwaitTaskCorrect }
 
 /// Provides F#-friendly wrapping to compose a ChangeFeedObserver from functions
 type ChangeFeedObserver =

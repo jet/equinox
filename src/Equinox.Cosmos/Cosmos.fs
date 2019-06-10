@@ -482,7 +482,7 @@ function sync(req, expectedVersion, maxEvents) {
             match mode with
             | Provisioning.Database rus ->
                 let! db = createDatabaseIfNotExists client dbName (Some rus)
-                do! adjustOffer client db.Resource.SelfLink rus
+                return! adjustOffer client db.Resource.SelfLink rus
             | Provisioning.Container _ ->
                 let! _ = createDatabaseIfNotExists client dbName None in () }
         let private createCollIfNotExists (client:Client.DocumentClient) dbName (def: DocumentCollection) maybeRus =
@@ -495,7 +495,7 @@ function sync(req, expectedVersion, maxEvents) {
                 let! _ = createCollIfNotExists client dbName def None in ()
             | Provisioning.Container rus ->
                 let! coll = createCollIfNotExists client dbName def (Some rus) in ()
-                do! adjustOffer client coll.Resource.SelfLink rus }
+                return! adjustOffer client coll.Resource.SelfLink rus }
         let private createStoredProcIfNotExists (client: IDocumentClient) (collectionUri: Uri) (name, body): Async<float> = async {
             try let! r = client.CreateStoredProcedureAsync(collectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
@@ -534,7 +534,7 @@ function sync(req, expectedVersion, maxEvents) {
             // Hardwired for now (not sure if CFP can store in a Database-allocated as it would need to be supplying partion keys)
             let mode = Provisioning.Container rus
             do! createOrProvisionDatabase client dbName mode 
-            do! createAuxCollectionIfNotExists client (dbName,collName) mode }
+            return! createAuxCollectionIfNotExists client (dbName,collName) mode }
 
 module internal Tip =
     let private get (client: Client.DocumentClient) (stream: CollectionStream, maybePos: Position option) =
