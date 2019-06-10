@@ -93,6 +93,14 @@ open Newtonsoft.Json
 open System.IO
 open System.Runtime.InteropServices
 
+/// Reuse interim buffers when coding/encoding
+module private CharBuffersPool =
+    let private inner = System.Buffers.ArrayPool<char>.Shared
+    let instance =
+        { new IArrayPool<char> with
+            member __.Rent minLen = inner.Rent minLen
+            member __.Return x = inner.Return x }
+
 /// Newtonsoft.Json implementation of TypeShape.UnionContractEncoder's IEncoder that encodes direct to a UTF-8 Buffer
 type BytesEncoder(settings : JsonSerializerSettings) =
     let serializer = JsonSerializer.Create(settings)
@@ -100,12 +108,12 @@ type BytesEncoder(settings : JsonSerializerSettings) =
         member __.Empty = Unchecked.defaultof<_>
         member __.Encode (value : 'T) =
             use ms = new MemoryStream()
-            (   use jsonWriter = new JsonTextWriter(new StreamWriter(ms))
+            (   use jsonWriter = new JsonTextWriter(new StreamWriter(ms), ArrayPool = CharBuffersPool.instance)
                 serializer.Serialize(jsonWriter, value, typeof<'T>))
             ms.ToArray()
         member __.Decode(json : byte[]) =
             use ms = new MemoryStream(json)
-            use jsonReader = new JsonTextReader(new StreamReader(ms))
+            use jsonReader = new JsonTextReader(new StreamReader(ms), ArrayPool = CharBuffersPool.instance)
             serializer.Deserialize<'T>(jsonReader)
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply using `Newtonsoft.Json` and 
