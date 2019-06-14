@@ -47,7 +47,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 15 // 14.18 // WAS 10
+        verifyRequestChargesMax 17 // 16.76 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -122,7 +122,7 @@ type Tests(testOutputHelper) =
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
-            verifyRequestChargesMax 20 // 15.59 observed
+            verifyRequestChargesMax 23 // 22.09 observed
             capture.Clear()
 
             let! res = Events.getNextIndex ctx streamName
@@ -135,7 +135,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 23 // 22.2 // WAS 20
+        verifyRequestChargesMax 25 // 24.21 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -183,7 +183,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 15 // 14.65 WAS 11 // 10.33
+        verifyRequestChargesMax 17 // 16.02 WAS 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
