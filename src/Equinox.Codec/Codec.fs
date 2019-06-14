@@ -104,27 +104,34 @@ module private CharBuffersPool =
 
 // http://www.philosophicalgeek.com/2015/02/06/announcing-microsoft-io-recycablememorystream/
 module private Utf8BytesEncoder =
-    let utf8NoBom = new System.Text.UTF8Encoding(false, true)
+    let private streamManager = Microsoft.IO.RecyclableMemoryStreamManager()
+    let rentStream () = streamManager.GetStream("bytesEncoder")
+    let wrapAsStream json =
+        // This is the most efficient way of approaching this without using Spans etc.
+        // RecyclableMemoryStreamManager does not have any wins to provide us
+        new MemoryStream(json,writable=false)
+    let makeJsonReader(ms : MemoryStream) =
+        new JsonTextReader(new StreamReader(ms), ArrayPool = CharBuffersPool.instance)
+    let private utf8NoBom = new System.Text.UTF8Encoding(false, true)
     let makeJsonWriter ms =
+        // We need to `leaveOpen` in order to allow .Dispose of the `.rentStream`'d to return it
         let sw = new StreamWriter(ms, utf8NoBom, 1024, leaveOpen=true) // same middle args as StreamWriter default ctor 
         new JsonTextWriter(sw, ArrayPool = CharBuffersPool.instance)
-    let streamManager = Microsoft.IO.RecyclableMemoryStreamManager()
-    let rentStream () = streamManager.GetStream("bytesEncoder")
 
 /// Newtonsoft.Json implementation of TypeShape.UnionContractEncoder's IEncoder that encodes direct to a UTF-8 Buffer
 type BytesEncoder(settings : JsonSerializerSettings) =
     let serializer = JsonSerializer.Create(settings)
-    static let utf8NoBom = new System.Text.UTF8Encoding(false, true)
     interface TypeShape.UnionContract.IEncoder<byte[]> with
         member __.Empty = Unchecked.defaultof<_>
         member __.Encode (value : 'T) =
             use ms = Utf8BytesEncoder.rentStream ()
             (   use jsonWriter = Utf8BytesEncoder.makeJsonWriter ms
                 serializer.Serialize(jsonWriter, value, typeof<'T>))
+            // TOCONSIDER as noted in the comments on RecyclableMemoryStream.ToArray, ideally we'd be continuing the rental and passing out a Span
             ms.ToArray()
         member __.Decode(json : byte[]) =
-            use ms = new MemoryStream(json,writable=false)
-            use jsonReader = new JsonTextReader(new StreamReader(ms), ArrayPool = CharBuffersPool.instance)
+            use ms = Utf8BytesEncoder.wrapAsStream json 
+            use jsonReader = Utf8BytesEncoder.makeJsonReader ms
             serializer.Deserialize<'T>(jsonReader)
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply using `Newtonsoft.Json` and 
