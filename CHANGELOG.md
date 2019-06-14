@@ -9,6 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-rc1"></a>
+## [2.0.0-rc1] - 2019-06-14
+
+### Added
 
  - `Equinox.Codec` now uses `System.Buffers.ArrayPool` to reduce allocations when encoding/decoding union objects using json.net [#140](https://github.com/jet/equinox/pull/140)
 - `Equinox.Codec` now uses `RecyclableMemoryStreamManager` to reduce allocations wrt `MemoryStream` objects when encoding union objects using json.net [#139](https://github.com/jet/equinox/pull/139)
@@ -26,13 +35,12 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - `Equinox.Projection` has moved to `Propulsion`
 - `Equinox.Projection.Codec` has moved to `Propulsion.Kafka`
-- `Equinox.Cosmos.Projection` is now maintained in/as `Propulsion.Cosmos`
+- `Equinox.Cosmos.Projection` is now maintained in/as `Propulsion.Cosmos` (it's still in the repo for now, pending resolution of [PR #138](https://github.com/jet/equinox/pull/138) and [`Propulsion` issue #6](https://github.com/jet/propulsion/issues/6))
 
 ### Fixed
 
 - `EqxCosmos Sync: Conflict writing {eventTypes}` message now trims to max 5 items
 
-<a name="2.0.0"></a>
 <a name="2.0.0-preview9"></a>
 ## [2.0.0-preview9] - 2019-06-01
 
@@ -215,7 +223,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-preview9...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc1...HEAD
+[2.0.0-rc1]: https://github.com/jet/equinox/compare/2.0.0-preview9...2.0.0-rc1
 [2.0.0-preview9]: https://github.com/jet/equinox/compare/2.0.0-preview8...2.0.0-preview9
 [2.0.0-preview8]: https://github.com/jet/equinox/compare/2.0.0-preview7...2.0.0-preview8
 [2.0.0-preview7]: https://github.com/jet/equinox/compare/2.0.0-preview6...2.0.0-preview7
