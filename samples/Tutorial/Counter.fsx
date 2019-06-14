@@ -66,7 +66,7 @@ type Service(log, resolveStream, ?maxAttempts) =
         read instanceId 
 
 let store = Equinox.MemoryStore.VolatileStore()
-let resolve = Equinox.MemoryStore.MemoryResolver(store, fold, initial).Resolve
+let resolve = Equinox.MemoryStore.Resolver(store, fold, initial).Resolve
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let service = Service(log, resolve, maxAttempts=3)

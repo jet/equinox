@@ -13,7 +13,6 @@
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.Cosmos.dll"
-#load "../Infrastructure/Log.fs"
 
 open Equinox.Cosmos
 open System
@@ -55,7 +54,7 @@ module Log =
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(Store.Log.InternalMetrics.RuCounters.RuCounterSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Store.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
@@ -64,17 +63,17 @@ module Log =
 module Store =
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
-    let connector = CosmosConnector(requestTimeout=TimeSpan.FromSeconds 5., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=5, log=Log.log)
+    let connector = Connector(requestTimeout=TimeSpan.FromSeconds 5., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=5, log=Log.log)
     let conn = connector.Connect("equinox-tutorial", Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
-    let gateway = CosmosGateway(conn, CosmosBatchingPolicy())
+    let gateway = Gateway(conn, BatchingPolicy())
 
-    let store = CosmosStore(gateway, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_COLLECTION")
+    let context = Context(gateway, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_COLLECTION")
     let cache = Caching.Cache("equinox-tutorial", 20)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
 module FavoritesCategory = 
     let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Favorites.Event>(Newtonsoft.Json.JsonSerializerSettings())
-    let resolve = CosmosResolver(Store.store, codec, Favorites.fold, Favorites.initial, Store.cacheStrategy).Resolve
+    let resolve = Resolver(Store.context, codec, Favorites.fold, Favorites.initial, Store.cacheStrategy).Resolve
 
 let service = Favorites.Service(Log.log, FavoritesCategory.resolve)
 
