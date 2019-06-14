@@ -73,7 +73,7 @@ module private Token =
     let ofEventArrayAndKnownState streamName fold (state: 'state) (events: 'event array) = tokenOfArray streamName events, fold state events
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
-type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
+type Category<'event, 'state>(store : VolatileStore, fold, initial) =
     interface Store.ICategory<'event, 'state, string> with
         member __.Load streamName (log : ILogger) = async {
             match store.TryLoad<'event> streamName log with
@@ -92,8 +92,8 @@ type MemoryCategory<'event, 'state>(store : VolatileStore, fold, initial) =
                 return Store.SyncResult.Conflict resync
             | ConcurrentArraySyncResult.Written events -> return Store.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
-type MemoryResolver<'event, 'state>(store : VolatileStore, fold, initial) =
-    let category = MemoryCategory<'event,'state>(store, fold, initial)
+type Resolver<'event, 'state>(store : VolatileStore, fold, initial) =
+    let category = Category<'event,'state>(store, fold, initial)
     let mkStreamName categoryName streamId = sprintf "%s-%s" categoryName streamId
     let resolveStream streamName = Store.Stream.create category streamName
 

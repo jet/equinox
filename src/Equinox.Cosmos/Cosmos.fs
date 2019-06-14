@@ -749,14 +749,14 @@ open System
 open System.Collections.Concurrent
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type CosmosConnection(client: Microsoft.Azure.Documents.Client.DocumentClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type Connection(client: Microsoft.Azure.Documents.Client.DocumentClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.Client = client
     member __.TipRetryPolicy = readRetryPolicy
     member __.QueryRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
 
 /// Defines the policies in force regarding how to a) split up calls b) limit the number of events per slice
-type CosmosBatchingPolicy
+type BatchingPolicy
     (   // Max items to request in query response. Defaults to 10.
         [<O; D(null)>]?defaultMaxItems : int,
         // Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default to using `defaultMaxItems`
@@ -769,7 +769,7 @@ type CosmosBatchingPolicy
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
 
-type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
+type Gateway(conn : Connection, batching : BatchingPolicy) =
     let (|FromUnfold|_|) (tryDecode: #Equinox.Codec.IEvent<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#Equinox.Codec.IEvent<_>[]) : Option<'event[]> =
         match Array.tryFindIndexBack (tryDecode >> Option.exists isOrigin) xs with
         | None -> None
@@ -781,7 +781,7 @@ type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
     member __.Read log stream direction startPos (tryDecode,isOrigin) : Async<Store.StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos (tryDecode,isOrigin)
         return Token.create stream pos, events }
-    member __.ReadLazy (batching: CosmosBatchingPolicy) log stream direction startPos (tryDecode,isOrigin) : AsyncSeq<'event[]> =
+    member __.ReadLazy (batching: BatchingPolicy) log stream direction startPos (tryDecode,isOrigin) : AsyncSeq<'event[]> =
         Query.walkLazy log conn.Client conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction stream startPos (tryDecode,isOrigin)
     member __.LoadFromUnfoldsOrRollingSnapshots log (stream,maybePos) (tryDecode,isOrigin): Async<Store.StreamToken * 'event[]> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy conn.Client stream maybePos
@@ -814,7 +814,7 @@ type CosmosGateway(conn : CosmosConnection, batching : CosmosBatchingPolicy) =
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
-type private Category<'event, 'state>(gateway : CosmosGateway, codec : Codec.IUnionEncoder<'event, byte[]>) =
+type private Category<'event, 'state>(gateway : Gateway, codec : Codec.IUnionEncoder<'event, byte[]>) =
     let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: IIndexedEvent seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
     member __.Load includeUnfolds collectionStream fold initial isOrigin (log : ILogger): Async<Store.StreamToken * 'state> = async {
         let! token, events =
@@ -921,7 +921,7 @@ type private Folder<'event, 'state>
             | Store.SyncResult.Written (token',state') ->     return Store.SyncResult.Written (token',state') }
 
 /// Holds Database/Collection pair, coordinating initialization activities
-type private CosmosCollection(databaseId, collectionId, ?initCollection : Uri -> Async<unit>) =
+type private Collection(databaseId, collectionId, ?initCollection : Uri -> Async<unit>) =
     let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId)
     let initGuard = initCollection |> Option.map (fun init -> AsyncCacheCell<unit>(init collectionUri))
 
@@ -929,26 +929,26 @@ type private CosmosCollection(databaseId, collectionId, ?initCollection : Uri ->
     member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type CosmosCollections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
+type Collections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
     // Index of database*collection -> Initialization Context
-    let collections = ConcurrentDictionary<string*string, CosmosCollection>()
+    let collections = ConcurrentDictionary<string*string, Collection>()
     new (databaseId, collectionId) =
         // TOCONSIDER - this works to support the Core.Events APIs
         let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        CosmosCollections(fun categoryName streamId -> databaseId, collectionId, genStreamName categoryName streamId)
+        Collections(fun categoryName streamId -> databaseId, collectionId, genStreamName categoryName streamId)
 
     member internal __.Resolve(categoryName, id, init) : CollectionStream * (unit -> Async<unit>) option =
         let databaseId, collectionId, streamName = categoryAndIdToDatabaseCollectionAndStream categoryName id
         let init = match disableInitialization with Some true -> None | _ -> Some init
 
-        let coll = collections.GetOrAdd((databaseId,collectionId), fun (db,coll) -> CosmosCollection(db, coll, ?initCollection = init))
+        let coll = collections.GetOrAdd((databaseId,collectionId), fun (db,coll) -> Collection(db, coll, ?initCollection = init))
         { collectionUri = coll.CollectionUri; name = streamName },coll.InitializationGate
 
 /// Pairs a Gateway, defining the retry policies for CosmosDb with a Collections map defining mappings from (category,id) to (database,collection,streamName)
-type CosmosStore(gateway: CosmosGateway, collections: CosmosCollections, [<O; D(null)>] ?log) =
+type Context(gateway: Gateway, collections: Collections, [<O; D(null)>] ?log) =
     let init = gateway.CreateSyncStoredProcIfNotExists log
-    new(gateway: CosmosGateway, databaseId: string, collectionId: string, [<O; D(null)>]?log) =
-        CosmosStore(gateway, CosmosCollections(databaseId, collectionId), ?log = log)
+    new(gateway: Gateway, databaseId: string, collectionId: string, [<O; D(null)>]?log) =
+        Context(gateway, Collections(databaseId, collectionId), ?log = log)
 
     member __.Gateway = gateway
     member __.Collections = collections
@@ -980,7 +980,7 @@ type AccessStrategy<'event,'state> =
     /// Trust every event type as being an origin
     | AnyKnownEventType
 
-type CosmosResolver<'event, 'state>(store : CosmosStore, codec, fold, initial, caching, [<O; D(null)>]?access) =
+type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, [<O; D(null)>]?access) =
     let readCacheOption =
         match caching with
         | CachingStrategy.NoCaching -> None
@@ -991,7 +991,7 @@ type CosmosResolver<'event, 'state>(store : CosmosStore, codec, fold, initial, c
         | Some (AccessStrategy.Unfolded (isOrigin, unfold)) -> isOrigin, Some (fun state _events -> unfold state)
         | Some (AccessStrategy.Snapshot (isValid,generate)) -> isValid, Some (fun state _events -> seq [generate state])
         | Some (AccessStrategy.AnyKnownEventType) ->           (fun _ -> true), Some (fun _ events -> Seq.last events |> Seq.singleton)
-    let cosmosCat = Category<'event, 'state>(store.Gateway, codec)
+    let cosmosCat = Category<'event, 'state>(context.Gateway, codec)
     let folder = Folder<'event, 'state>(cosmosCat, fold, initial, isOrigin, ?unfold=projectOption, ?readCache = readCacheOption)
     let category : Store.ICategory<_,_,CollectionStream> =
         match caching with
@@ -1011,9 +1011,9 @@ type CosmosResolver<'event, 'state>(store : CosmosStore, codec, fold, initial, c
 
     member __.Resolve = function
         | Target.AggregateId (categoryName,streamId) ->
-            store.ResolveCollStream(categoryName, streamId) |> resolveStream
+            context.ResolveCollStream(categoryName, streamId) |> resolveStream
         | Target.AggregateIdEmpty (categoryName,streamId) ->
-            let collStream, maybeInit = store.ResolveCollStream(categoryName, streamId)
+            let collStream, maybeInit = context.ResolveCollStream(categoryName, streamId)
             Store.Stream.ofMemento (Token.create collStream Position.fromKnownEmpty,initial) (resolveStream (collStream, maybeInit))
         | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x
 
@@ -1034,6 +1034,7 @@ type Discovery =
             UriAndKey (Uri uri, key)
         | _ -> invalidArg "connectionString" "unrecognized connection string format; must be `AccountEndpoint=https://...;AccountKey=...=;`"
 
+[<RequireQualifiedAccess>]
 type ConnectionMode =
     /// Default mode, uses Https - inefficient as uses a double hop
     | Gateway
@@ -1043,7 +1044,7 @@ type ConnectionMode =
     | DirectHttps
 
 open Microsoft.Azure.Documents
-type CosmosConnector
+type Connector
     (   /// Timeout to apply to individual reads/write roundtrips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
@@ -1071,9 +1072,9 @@ type CosmosConnector
     let connPolicy =
         let cp = Client.ConnectionPolicy.Default
         match mode with
-        | None | Some Gateway -> cp.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
-        | Some DirectHttps -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Https // Https is default when using Direct
-        | Some DirectTcp -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Tcp
+        | None | Some ConnectionMode.Gateway -> cp.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
+        | Some ConnectionMode.DirectHttps -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Https // Https is default when using Direct
+        | Some ConnectionMode.DirectTcp -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Tcp
         cp.RetryOptions <-
             Client.RetryOptions(
                 MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
@@ -1103,9 +1104,9 @@ type CosmosConnector
     member __.ConnectionPolicy : Client.ConnectionPolicy = connPolicy
 
     /// Yields a DocDbConnection configured per the specified strategy
-    member __.Connect(name, discovery : Discovery) : Async<CosmosConnection> = async {
+    member __.Connect(name, discovery : Discovery) : Async<Connection> = async {
         let! conn = connect(name, discovery)
-        return CosmosConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
+        return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
 namespace Equinox.Cosmos.Core
 
@@ -1123,11 +1124,11 @@ type AppendResult<'t> =
     | ConflictUnknown of index: 't
 
 /// Encapsulates the core facilites Equinox.Cosmos offers for operating directly on Events in Streams.
-type CosmosContext
+type Context
     (   /// Connection to CosmosDb with DocumentDb Transient Read and Write Retry policies
-        conn : CosmosConnection,
+        conn : Connection,
         /// Database + Collection selector
-        collections: CosmosCollections,
+        collections: Collections,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
@@ -1137,8 +1138,8 @@ type CosmosContext
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let batching = CosmosBatchingPolicy(getDefaultMaxItems=getDefaultMaxItems)
-    let gateway = CosmosGateway(conn, batching)
+    let batching = BatchingPolicy(getDefaultMaxItems=getDefaultMaxItems)
+    let gateway = Gateway(conn, batching)
 
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
@@ -1156,7 +1157,7 @@ type CosmosContext
 
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
         let direction = defaultArg direction Direction.Forward
-        let batching = CosmosBatchingPolicy(defaultArg batchSize batching.MaxItems)
+        let batching = BatchingPolicy(defaultArg batchSize batching.MaxItems)
         gateway.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
@@ -1243,43 +1244,43 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: CosmosContext) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
+    let getAll (ctx: Context) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: CosmosContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
+    let get (ctx: Context) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: CosmosContext) (streamName: string) (index: int64) (events: IEvent<_>[]): Async<AppendResult<int64>> =
+    let append (ctx: Context) (streamName: string) (index: int64) (events: IEvent<_>[]): Async<AppendResult<int64>> =
         ctx.Sync(ctx.CreateStream streamName, Position.fromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx: CosmosContext) (streamName: string) (events: IEvent<_>[]): Async<int64> =
+    let appendAtEnd (ctx: Context) (streamName: string) (events: IEvent<_>[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.CreateStream streamName, events) |> stripPosition
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: CosmosContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
+    let getAllBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<IIndexedEvent[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: CosmosContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
+    let getBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position
-    let getNextIndex (ctx: CosmosContext) (streamName: string) : Async<int64> =
+    let getNextIndex (ctx: Context) (streamName: string) : Async<int64> =
         ctx.Sync(ctx.CreateStream streamName) |> stripPosition

@@ -320,21 +320,21 @@ module Token =
         let currentVersion, newVersion = current.pos.streamVersion, x.pos.streamVersion
         newVersion > currentVersion
 
-type GesConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type Connection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.ReadConnection = readConnection
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteConnection = defaultArg writeConnection readConnection
     member __.WriteRetryPolicy = writeRetryPolicy
 
-type GesBatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountLimit) =
-    new (maxBatchSize) = GesBatchingPolicy(fun () -> maxBatchSize)
+type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountLimit) =
+    new (maxBatchSize) = BatchingPolicy(fun () -> maxBatchSize)
     member __.BatchSize = getMaxBatchSize()
     member __.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of Store.StreamToken | ConflictUnknown of Store.StreamToken
 
-type GesGateway(conn : GesConnection, batching : GesBatchingPolicy) =
+type Context(conn : Connection, batching : BatchingPolicy) =
     let isResolvedEventEventType (tryDecode,predicate) (x:ResolvedEvent) = predicate (tryDecode (x.Event.Data))
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     member __.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
@@ -401,7 +401,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
  /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state>(gateway : GesGateway, codec : Codec.IUnionEncoder<'event,byte[]>, ?access : AccessStrategy<'event,'state>) =
+type private Category<'event, 'state>(context : Context, codec : Codec.IUnionEncoder<'event,byte[]>, ?access : AccessStrategy<'event,'state>) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let compactionPredicate =
         match access with
@@ -413,8 +413,8 @@ type private Category<'event, 'state>(gateway : GesGateway, codec : Codec.IUnion
         | None | Some AccessStrategy.EventsAreState -> fun _ -> true
         | Some (AccessStrategy.RollingSnapshots (isValid,_)) -> isValid
     let loadAlgorithm load streamName initial log =
-        let batched = load initial (gateway.LoadBatched streamName log (tryDecode,None))
-        let compacted = load initial (gateway.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode,isOrigin))
+        let batched = load initial (context.LoadBatched streamName log (tryDecode,None))
+        let compacted = load initial (context.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode,isOrigin))
         match access with
         | None -> batched
         | Some AccessStrategy.EventsAreState
@@ -425,7 +425,7 @@ type private Category<'event, 'state>(gateway : GesGateway, codec : Codec.IUnion
     member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (streamName : string) (log : ILogger) : Async<Store.StreamToken * 'state> =
         loadAlgorithm (load fold) streamName initial log
     member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) (streamName : string) token (log : ILogger) : Async<Store.StreamToken * 'state> =
-        (load fold) state (gateway.LoadFromToken false streamName log token (tryDecode,compactionPredicate))
+        (load fold) state (context.LoadFromToken false streamName log token (tryDecode,compactionPredicate))
     member __.TrySync (fold: 'state -> 'event seq -> 'state) (log : ILogger)
             ((Token.StreamPos (stream,pos) as streamToken), state : 'state)
             (events : 'event list) : Async<Store.SyncResult<'state>> = async {
@@ -437,10 +437,10 @@ type private Category<'event, 'state>(gateway : GesGateway, codec : Codec.IUnion
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
 
         let encodedEvents : EventData[] = UnionEncoderAdapters.encodeEvents codec events
-        let! syncRes = gateway.TrySync log streamToken (events,encodedEvents) compactionPredicate
+        let! syncRes = context.TrySync log streamToken (events,encodedEvents) compactionPredicate
         match syncRes with
         | GatewaySyncResult.ConflictUnknown _ ->
-            return Store.SyncResult.Conflict  (load fold state (gateway.LoadFromToken true stream.name log streamToken (tryDecode,compactionPredicate)))
+            return Store.SyncResult.Conflict  (load fold state (context.LoadFromToken true stream.name log streamToken (tryDecode,compactionPredicate)))
         | GatewaySyncResult.Written token' ->
             return Store.SyncResult.Written   (token', fold state (Seq.ofList events)) }
 
@@ -527,8 +527,8 @@ type CachingStrategy =
     /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
     | SlidingWindowPrefixed of Caching.Cache * window: TimeSpan * prefix: string
 
-type GesResolver<'event,'state>
-    (   gateway : GesGateway, codec, fold, initial,
+type Resolver<'event,'state>
+    (   context : Context, codec, fold, initial,
         /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>]?caching,
@@ -540,7 +540,7 @@ type GesResolver<'event,'state>
             |> invalidOp
         | _ -> ()
 
-    let inner = Category<'event, 'state>(gateway, codec, ?access = access)
+    let inner = Category<'event, 'state>(context, codec, ?access = access)
     let readCacheOption =
         match caching with
         | None -> None
@@ -562,7 +562,7 @@ type GesResolver<'event,'state>
             resolve <| mkStreamName categoryName streamId
         | Target.AggregateIdEmpty (categoryName,streamId) ->
             let streamName = mkStreamName categoryName streamId
-            Stream.ofMemento (gateway.LoadEmpty streamName,initial) <| resolve streamName
+            Stream.ofMemento (context.LoadEmpty streamName,initial) <| resolve streamName
         | Target.DeprecatedRawName streamName ->
             resolve streamName
 
@@ -643,7 +643,7 @@ type ConnectionStrategy =
     /// Single connection, with resync backoffs appropriate to the NodePreference
     | ClusterSingle of NodePreference
 
-type GesConnector
+type Connector
     (   username, password, reqTimeout: TimeSpan, reqRetries: int,
         [<O; D(null)>]?log : Logger, [<O; D(null)>]?heartbeatTimeout: TimeSpan, [<O; D(null)>]?concurrentOperationsLimit,
         [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy,
@@ -694,17 +694,17 @@ type GesConnector
         do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
         return conn }
 
-    /// Yields a GesConnection (which may internally be twin connections) configured per the specified strategy
+    /// Yields a Connection (which may internally be twin connections) configured per the specified strategy
     member __.Establish
         (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
             name,
-            discovery : Discovery, strategy : ConnectionStrategy) : Async<GesConnection> = async {
+            discovery : Discovery, strategy : ConnectionStrategy) : Async<Connection> = async {
         match strategy with
         | ConnectionStrategy.ClusterSingle nodePreference ->
             let! conn = __.Connect(name, discovery, nodePreference)
-            return GesConnection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
+            return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
         | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
             let! masterInParallel = Async.StartChild (__.Connect(name + "-TwinW", discovery, NodePreference.Master))
             let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
             let! master = masterInParallel
-            return GesConnection(readConnection=slave, writeConnection=master, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
+            return Connection(readConnection=slave, writeConnection=master, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }

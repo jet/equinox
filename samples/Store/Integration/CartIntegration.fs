@@ -1,6 +1,6 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
-open Equinox.Cosmos
+open Equinox
 open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
@@ -14,19 +14,19 @@ let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
 let createMemoryStore () =
     new VolatileStore ()
 let createServiceMemory log store =
-    Backend.Cart.Service(log, MemoryResolver(store, fold, initial).Resolve)
+    Backend.Cart.Service(log, Resolver(store, fold, initial).Resolve)
 
 let codec = Equinox.EventStore.Integration.EventStoreIntegration.genCodec<Domain.Cart.Events.Event>()
 
 let resolveGesStreamWithRollingSnapshots gateway =
-    GesResolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
+    EventStore.Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
-    GesResolver(gateway, codec, fold, initial).Resolve
+    EventStore.Resolver(gateway, codec, fold, initial).Resolve
 
 let resolveCosmosStreamWithProjection gateway =
-    CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
+    Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching).Resolve
+    Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).Resolve
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, fun _ctx execute ->
@@ -73,12 +73,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosStore resolveCosmosStreamWithoutCustomAccessStrategy
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveCosmosStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with With Projection`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosStore resolveCosmosStreamWithProjection
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveCosmosStreamWithProjection
         do! act service args
     }

@@ -11,7 +11,7 @@ module Option =
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
 /// - Create a local Equinox via dotnet run cli/Equinox.cli -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_COLLECTION provision -ru 10000
 let private connectToCosmos (log: Serilog.ILogger) name discovery =
-    CosmosConnector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
+    Connector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
        .Connect(name, discovery)
 let private read env = Environment.GetEnvironmentVariable env |> Option.ofObj
 let (|Default|) def name = (read name),def ||> defaultArg
@@ -28,10 +28,10 @@ let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) =
 let defaultBatchSize = 500
 
 let collections =
-    CosmosCollections(
+    Collections(
         read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test",
         read "EQUINOX_COSMOS_COLLECTION" |> Option.defaultValue "equinox-test")
 
-let createCosmosStore connection batchSize =
-    let gateway = CosmosGateway(connection, CosmosBatchingPolicy(defaultMaxItems=batchSize))
-    CosmosStore(gateway, collections)
+let createCosmosContext connection batchSize =
+    let gateway = Gateway(connection, BatchingPolicy(defaultMaxItems=batchSize))
+    Context(gateway, collections)

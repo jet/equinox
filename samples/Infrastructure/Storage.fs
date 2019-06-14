@@ -8,8 +8,8 @@ exception MissingArg of string
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type StorageConfig =
     | Memory of Equinox.MemoryStore.VolatileStore
-    | Es of Equinox.EventStore.GesGateway * Equinox.EventStore.CachingStrategy option * unfolds: bool
-    | Cosmos of Equinox.Cosmos.CosmosGateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * collectionId: string
+    | Es of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
+    | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * collectionId: string
     
 module MemoryStore =
     type [<NoEquality; NoComparison>] Arguments =
@@ -63,14 +63,14 @@ module Cosmos =
     open Equinox.Cosmos
     open Serilog
 
-    let private createGateway connection maxItems = CosmosGateway(connection, CosmosBatchingPolicy(defaultMaxItems=maxItems))
+    let private createGateway connection maxItems = Gateway(connection, BatchingPolicy(defaultMaxItems=maxItems))
     let connection (log: ILogger, storeLog: ILogger) (a : Info) =
         let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection|> Discovery.FromConnectionString
         log.Information("CosmosDb {mode} {connection} Database {database} Collection {collection}",
             a.Mode, endpointUri, a.Database, a.Collection)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, a.MaxRetryWaitTime)
-        discovery, a.Database, a.Collection, CosmosConnector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
+        discovery, a.Database, a.Collection, Connector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
         let discovery, dbName, collName, connector = connection (log, storeLog) info
         let conn = connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
@@ -119,12 +119,12 @@ module EventStore =
     open Serilog
 
     let private connect (log: ILogger) (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
-        GesConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
+        Connector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
                 heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
                 log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
             .Establish("equinox-tool", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
-    let private createGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
+    let private createGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) (args : ParseResults<Arguments>) =
         let a = Info(args)
         let (timeout, retries) as operationThrottling = a.Timeout, a.Retries
