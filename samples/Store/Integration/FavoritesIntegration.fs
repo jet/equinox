@@ -1,9 +1,7 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
-open Equinox.Cosmos
+open Equinox
 open Equinox.Cosmos.Integration
-open Equinox.EventStore
-open Equinox.MemoryStore
 open Swensen.Unquote
 open Xunit
 
@@ -13,17 +11,17 @@ let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
 let snapshot = Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.compact
 
 let createMemoryStore () =
-    new VolatileStore()
+    new MemoryStore.VolatileStore()
 let createServiceMemory log store =
-    Backend.Favorites.Service(log, MemoryResolver(store, fold, initial).Resolve)
+    Backend.Favorites.Service(log, MemoryStore.Resolver(store, fold, initial).Resolve)
 
 let codec = genCodec<Domain.Favorites.Events.Event>()
 let createServiceGes gateway log =
-    let resolveStream = GesResolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
+    let resolveStream = EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
 let createServiceCosmos gateway log =
-    let resolveStream = CosmosResolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
+    let resolveStream = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
 type Tests(testOutputHelper) =
@@ -60,7 +58,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Cosmos, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createCosmosStore conn defaultBatchSize
+        let gateway = createCosmosContext conn defaultBatchSize
         let service = createServiceCosmos gateway log
         do! act service args
     }

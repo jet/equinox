@@ -14,10 +14,10 @@ open System
 ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 /// (For this specific suite only, omitting the args will also work as the Gossip-related ports are irrelevant, but other tests would fail)
 let connectToLocalEventStoreNode log =
-    GesConnector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
+    Connector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
         .Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"),ConnectionStrategy.ClusterSingle NodePreference.Master)
 let defaultBatchSize = 500
-let createGesGateway connection batchSize = GesGateway(connection, GesBatchingPolicy(maxBatchSize = batchSize))
+let createGesGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
 
 let serializationSettings = JsonSerializerSettings()
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
@@ -28,25 +28,25 @@ module Cart =
     let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
     let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization log gateway =
-        Backend.Cart.Service(log, GesResolver(gateway, codec, fold, initial).Resolve)
+        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial).Resolve)
     let createServiceWithCompaction log gateway =
-        let resolveStream = GesResolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
+        let resolveStream = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, GesResolver(gateway, codec, fold, initial, sliding20m).Resolve)
+        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial, sliding20m).Resolve)
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, GesResolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve)
+        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
     let codec = genCodec<Domain.ContactPreferences.Events.Event>()
     let createServiceWithoutOptimization log connection =
         let gateway = createGesGateway connection defaultBatchSize
-        Backend.ContactPreferences.Service(log, GesResolver(gateway, codec, fold, initial).Resolve)
+        Backend.ContactPreferences.Service(log, Resolver(gateway, codec, fold, initial).Resolve)
     let createService log connection =
-        let resolveStream = GesResolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.EventsAreState).Resolve
+        let resolveStream = Resolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.EventsAreState).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

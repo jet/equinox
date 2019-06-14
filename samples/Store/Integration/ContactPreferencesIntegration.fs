@@ -1,9 +1,7 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
-open Equinox.Cosmos
+open Equinox
 open Equinox.Cosmos.Integration
-open Equinox.EventStore
-open Equinox.MemoryStore
 open Swensen.Unquote
 open Xunit
 
@@ -12,20 +10,20 @@ open Xunit
 let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
 
 let createMemoryStore () =
-    new VolatileStore()
+    new MemoryStore.VolatileStore()
 let createServiceMemory log store =
-    Backend.ContactPreferences.Service(log, MemoryResolver(store, fold, initial).Resolve)
+    Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, fold, initial).Resolve)
 
 let codec = genCodec<Domain.ContactPreferences.Events.Event>()
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
-    GesResolver(gateway 1, codec, fold, initial, access = AccessStrategy.EventsAreState).Resolve
+    EventStore.Resolver(gateway 1, codec, fold, initial, access = EventStore.AccessStrategy.EventsAreState).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
-    GesResolver(gateway defaultBatchSize, codec, fold, initial).Resolve
+    EventStore.Resolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 let resolveStreamCosmosWithKnownEventTypeSemantics gateway =
-    CosmosResolver(gateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.AnyKnownEventType).Resolve
+    Cosmos.Resolver(gateway 1, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.AnyKnownEventType).Resolve
 let resolveStreamCosmosWithoutCustomAccessStrategy gateway =
-    CosmosResolver(gateway defaultBatchSize, codec, fold, initial, CachingStrategy.NoCaching).Resolve
+    Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -64,12 +62,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosStore resolveStreamCosmosWithoutCustomAccessStrategy
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosStore resolveStreamCosmosWithKnownEventTypeSemantics
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosWithKnownEventTypeSemantics
         do! act service args
     }

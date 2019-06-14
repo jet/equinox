@@ -14,6 +14,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `TypeShape` dependency in `Equinox.Codec` now `7.*` (was `6.*`)
 - `Equinox.Tool` now depends on `Propulsion.Kafka` v `>= 1.0.1`
 - `Equinox.Cosmos.Projection` is only an internal dependency of the `Equinox.Tool`
+- `Equinox.Cosmos`: Top level `CosmosStore` is now called `Context` for consistency [#140](https://github.com/jet/equinox/pull/141)
+- `Equinox.EventStore`: Top level `GesGateway` is now called `Context` for consistency [#140](https://github.com/jet/equinox/pull/141)
+- Builders etc. in `Equinox.Cosmos`, `Equinox.EventStore` and `Equinox.MemoryStore` no longer have disambiguating `Cosmos`, `Ges` and `Memory` prefixes [#140](https://github.com/jet/equinox/pull/141)
 
 ### Removed
 
