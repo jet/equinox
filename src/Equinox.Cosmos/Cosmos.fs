@@ -500,11 +500,12 @@ function sync(req, expectedVersion, maxEvents) {
             try let! r = client.CreateStoredProcedureAsync(collectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
             with DocDbException ((DocDbStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
-        let private createBatchAndTipCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) mode : Async<unit> =
+        let private mkPartitionKeyDefinition partionKeyFieldName = 
             let pkd = PartitionKeyDefinition()
-            pkd.Paths.Add(sprintf "/%s" Batch.PartitionKeyField)
-            let def = DocumentCollection(Id = collName, PartitionKey = pkd)
-
+            pkd.Paths.Add(sprintf "/%s" partionKeyFieldName)
+            pkd
+        let private createBatchAndTipCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) mode : Async<unit> =
+            let def = DocumentCollection(Id = collName, PartitionKey = mkPartitionKeyDefinition Batch.PartitionKeyField)
             def.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
             def.IndexingPolicy.Automatic <- true
             // Can either do a blacklist or a whitelist
@@ -519,7 +520,7 @@ function sync(req, expectedVersion, maxEvents) {
             | None -> ()
             | Some log -> log.Information("Created stored procedure {sprocId} in {ms}ms rc={ru}", sprocName, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
         let private createAuxCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) mode : Async<unit> =
-            let def = DocumentCollection(Id = collName)
+            let def = DocumentCollection(Id = collName, PartitionKey = mkPartitionKeyDefinition "id")
             // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
             def.IndexingPolicy.Automatic <- false
             def.IndexingPolicy.IndexingMode <- IndexingMode.None
