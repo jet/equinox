@@ -500,12 +500,14 @@ function sync(req, expectedVersion, maxEvents) {
             try let! r = client.CreateStoredProcedureAsync(collectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
             with DocDbException ((DocDbStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
-        let private mkPartitionKeyDefinition partionKeyFieldName = 
+        let private mkDocumentCollectection idFieldName partionKeyFieldName = 
+            // While the v2 SDK and earlier portal versions admitted 'fixed' collections where no Partition Key is defined, we follow the recent policy
+            // simplification of having a convention of always defining a partion key
             let pkd = PartitionKeyDefinition()
             pkd.Paths.Add(sprintf "/%s" partionKeyFieldName)
-            pkd
+            DocumentCollection(Id = idFieldName, PartitionKey = pkd)
         let private createBatchAndTipCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) mode : Async<unit> =
-            let def = DocumentCollection(Id = collName, PartitionKey = mkPartitionKeyDefinition Batch.PartitionKeyField)
+            let def = mkDocumentCollectection collName Batch.PartitionKeyField
             def.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
             def.IndexingPolicy.Automatic <- true
             // Can either do a blacklist or a whitelist
@@ -520,7 +522,7 @@ function sync(req, expectedVersion, maxEvents) {
             | None -> ()
             | Some log -> log.Information("Created stored procedure {sprocId} in {ms}ms rc={ru}", sprocName, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
         let private createAuxCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) mode : Async<unit> =
-            let def = DocumentCollection(Id = collName, PartitionKey = mkPartitionKeyDefinition "id")
+            let def = mkDocumentCollectection collName "id" // while defining a partition key of "/id" is not strictly necessary, we follow the convention
             // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
             def.IndexingPolicy.Automatic <- false
             def.IndexingPolicy.IndexingMode <- IndexingMode.None
