@@ -240,7 +240,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 4. (**`2.0.0-rc*`**) Use `eqx` tool to run a CosmosDb ChangeFeedProcessor
 
     ```powershell
-    # TEMP: need to uninstall and use --version flag while this is in beta
+    # TEMP: need to uninstall and use --version flag while this is in RC
     dotnet tool uninstall Equinox.Tool -g
     dotnet tool install Equinox.Tool -g --version 2.0.0-rc*
 

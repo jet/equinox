@@ -10,13 +10,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
-
-- `eqx initAux` now sets Partion Key to `/id` as recommended for new aux collections  [#142](https://github.com/jet/equinox/pull/142)
-
 ### Removed
 ### Fixed
 
 <a name="2.0.0"></a>
+<a name="2.0.0-rc2"></a>
+## [2.0.0-rc2] - 2019-06-14
+
+### Changed
+
+- `eqx initAux` now sets Partition Key to `/id` as recommended for new `aux` collections [#142](https://github.com/jet/equinox/pull/142)
+
 <a name="2.0.0-rc1"></a>
 ## [2.0.0-rc1] - 2019-06-14
 
@@ -226,7 +230,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc1...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc2...HEAD
+[2.0.0-rc2]: https://github.com/jet/equinox/compare/2.0.0-preview1...2.0.0-rc2
 [2.0.0-rc1]: https://github.com/jet/equinox/compare/2.0.0-preview9...2.0.0-rc1
 [2.0.0-preview9]: https://github.com/jet/equinox/compare/2.0.0-preview8...2.0.0-preview9
 [2.0.0-preview8]: https://github.com/jet/equinox/compare/2.0.0-preview7...2.0.0-preview8
