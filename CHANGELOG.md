@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- `eqx initAux` now sets Partion Key to `/id` as recommended for new aux collections  [#142](https://github.com/jet/equinox/pull/142)
+
 ### Removed
 ### Fixed
 
