@@ -15,7 +15,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 <a name="2.0.0"></a>
 <a name="2.0.0-rc2"></a>
-## [2.0.0-rc2] - 2019-06-14
+## [2.0.0-rc2] - 2019-07-01
 
 ### Changed
 
