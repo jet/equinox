@@ -277,8 +277,8 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     # start one or more Projectors (see above for more examples/info re the Projector.fsproj)
 
-    $env:EQUINOX_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
-    $env:EQUINOX_KAFKA_TOPIC="topic0" # or use -t
+    $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
+    $env:PROPULSION_KAFKA_TOPIC="topic0" # or use -t
     dotnet run -- projector4 -t topic0 cosmos
 
     # generate a consumer app
@@ -286,7 +286,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet new proConsumer
 
     # start one or more Consumers
-    $env:EQUINOX_KAFKA_GROUP="consumer1" # or use -g
+    $env:PROPULSION_KAFKA_GROUP="consumer1" # or use -g
     dotnet run -- -t topic0 -g consumer1
     ```
 
