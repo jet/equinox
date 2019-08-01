@@ -44,7 +44,6 @@
 
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
-    <PackageReference Include="System.Reactive" Version="4.1.2" />
   </ItemGroup>
 
   <!-- bundle the net461 exe inside the .net core tool package -->
