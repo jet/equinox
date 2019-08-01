@@ -11,6 +11,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 ### Changed
 ### Removed
+
+- `eqx project` - `ChangeFeedProcessor` and Kafka support - All projection management logic now lives in the `Propulsion` libraries [#138](https://github.com/jet/equinox/pull/138)
+
 ### Fixed
 
 <a name="2.0.0"></a>

@@ -2,23 +2,15 @@
 
 open Argu
 open Domain.Infrastructure
-open Jet.ConfluentKafka.FSharp
-open Equinox.Cosmos.Projection
-open Equinox.Store.Infrastructure
 open Equinox.Tool.Infrastructure
 open FSharp.UMX
-open Microsoft.Azure.Documents.ChangeFeedProcessor.FeedProcessing
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure
 open Serilog
-open Propulsion.Streams
-open Propulsion.Kafka.Codec
 open Serilog.Events
 open System
 open System.Net.Http
 open System.Threading
-open System.Collections.Generic
-open System.Diagnostics
 
 [<NoEquality; NoComparison>]
 type Arguments =
@@ -29,7 +21,6 @@ type Arguments =
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Project of ParseResults<ProjectArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose -> "Include low level logging regarding specific test runs."
@@ -39,7 +30,6 @@ type Arguments =
             | Run _ -> "Run a load test"
             | Init _ -> "Initialize Store/Collection (presently only relevant for `cosmos`; also handles adjusting RU/s provisioning adjustment)."
             | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the Projector)."
-            | Project _ -> "Project from store specified as the last argument, storing state in the specified `aux` Store (see initAux)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     | [<AltCommandLine("-D")>] Shared
@@ -69,38 +59,6 @@ and [<NoComparison>]InitAuxArguments =
             | Rus _ -> "Specify RU/s level to provision for the Aux Collection."
             | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
 
-            | Cosmos _ -> "Cosmos Connection parameters."
-and [<NoComparison; RequireSubcommand>]ProjectArguments =
-    | [<MainCommand; ExactlyOnce>] LeaseId of string
-    | [<AltCommandLine("-s"); Unique>] Suffix of string
-    | [<AltCommandLine("-z"); Unique>] FromTail
-    | [<AltCommandLine("-md"); Unique>] MaxDocuments of int
-    | [<AltCommandLine("-l"); Unique>] LagFreqM of float
-    | [<CliPrefix(CliPrefix.None); Last>] Stats of ParseResults<StatsTarget>
-    | [<CliPrefix(CliPrefix.None); Last>] Kafka of ParseResults<KafkaTarget>
-    interface IArgParserTemplate with
-        member a.Usage = a |> function
-            | LeaseId _ -> "Projector instance context name."
-            | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
-            | FromTail _ -> "(iff `suffix` represents a fresh projection) - force starting from present Position. Default: Ensure each and every event is projected from the start."
-            | MaxDocuments _ -> "Maximum item count to supply to Changefeed Api when querying. Default: Unlimited"
-            | LagFreqM _ -> "Specify frequency to dump lag stats. Default: off"
-
-            | Stats _ -> "Do not emit events, only stats."
-            | Kafka _ -> "Project to Kafka."
-and [<NoComparison>] KafkaTarget =
-    | [<AltCommandLine("-t"); Unique; MainCommand>] Topic of string
-    | [<AltCommandLine("-b"); Unique>] Broker of string
-    | [<CliPrefix(CliPrefix.None); Last>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
-    interface IArgParserTemplate with
-        member a.Usage = a |> function
-            | Topic _ -> "Specify target topic. Default: Use $env:EQUINOX_KAFKA_TOPIC"
-            | Broker _ -> "Specify target broker. Default: Use $env:EQUINOX_KAFKA_BROKER"
-            | Cosmos _ -> "Cosmos Connection parameters."
-and [<NoComparison>] StatsTarget =
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
-    interface IArgParserTemplate with
-        member a.Usage = a |> function
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
@@ -304,79 +262,6 @@ let main argv =
         match args.GetSubCommand() with
         | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
         | InitAux iargs -> CosmosInit.aux (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
-        | Project pargs ->
-            let envBackstop msg key =
-                match Environment.GetEnvironmentVariable key with
-                | null -> failwithf "Please provide a %s, either as an argment or via the %s environment variable" msg key
-                | x -> x 
-            let broker, topic, storeArgs =
-                match pargs.GetSubCommand() with
-                | Kafka kargs ->
-                    let broker = match kargs.TryGetResult Broker with Some x -> x | None -> envBackstop "Broker" "EQUINOX_KAFKA_BROKER"
-                    let topic = match kargs.TryGetResult Topic with Some x -> x | None -> envBackstop "Topic" "EQUINOX_KAFKA_TOPIC"
-                    Some broker, Some topic,kargs.GetResult KafkaTarget.Cosmos
-                | Stats sargs -> None, None, sargs.GetResult StatsTarget.Cosmos
-                | x -> failwithf "Invalid subcommand %A" x
-            let storeLog = createStoreLog (storeArgs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-            let discovery, dbName, collName, connector = Storage.Cosmos.connection (log, storeLog) (Storage.Cosmos.Info storeArgs)
-            pargs.TryGetResult MaxDocuments |> Option.iter (fun bs -> log.Information("Requesting ChangeFeed Maximum Document Count {changeFeedMaxItemCount}", bs))
-            pargs.TryGetResult LagFreqM |> Option.iter (fun s -> log.Information("Dumping lag stats at {lagS:n0}m intervals", s))
-            let auxCollName = collName + pargs.GetResult(ProjectArguments.Suffix,"-aux")
-            let leaseId = pargs.GetResult(LeaseId)
-            log.Information("Processing using LeaseId {leaseId} in Aux coll {auxCollName}", leaseId, auxCollName)
-            if pargs.Contains FromTail then log.Warning("(If new projection prefix) Skipping projection of all existing events.")
-            let source = { database = dbName; collection = collName }
-            let aux = { database = dbName; collection = auxCollName }
-
-            let buildRangeProjector () =
-                let sw = Stopwatch.StartNew() // we'll report the warmup/connect time on the first batch
-                let producer, disposeProducer =
-                    match broker,topic with
-                    | Some b,Some t ->
-                        let cfg = KafkaProducerConfig.Create("equinox-tool", Uri b, Confluent.Kafka.Acks.Leader, Confluent.Kafka.CompressionType.Lz4)
-                        let p = BatchedProducer.CreateWithConfigOverrides(log, cfg, t)
-                        Some p, (p :> IDisposable).Dispose
-                    | _ -> None, id
-                let projectBatch (log : ILogger) (ctx : IChangeFeedObserverContext) (docs : IReadOnlyList<Microsoft.Azure.Documents.Document>) = async {
-                    sw.Stop() // Stop the clock after CFP hands off to us
-                    let render (e: StreamEvent<_>) = RenderedSpan.ofStreamSpan e.stream { StreamSpan.index = e.index; events=[| e.event |] }
-                    let pt, events = (fun () -> docs |> Seq.collect DocumentParser.enumEvents |> Seq.map render |> Array.ofSeq) |> Stopwatch.Time 
-                    let! et = async {
-                        match producer with
-                        | None ->
-                            let! et,() = ctx.Checkpoint() |> Stopwatch.Time
-                            return et
-                        | Some producer ->
-                            let es = [| for e in events -> e.s, Newtonsoft.Json.JsonConvert.SerializeObject e |]
-                            let! et,() = async {
-                                let! _ = producer.ProduceBatch es
-                                return! ctx.Checkpoint() } |> Stopwatch.Time 
-                            return et }
-                            
-                    if log.IsEnabled LogEventLevel.Debug then log.Debug("Response Headers {0}", let hs = ctx.FeedResponse.ResponseHeaders in [for h in hs -> h, hs.[h]])
-                    let r = ctx.FeedResponse
-                    log.Information("{range} Fetch: {token} {requestCharge:n0}RU {count} docs {l:n1}s; Parse: s {streams} e {events} {p:n3}s; Emit: {e:n1}s",
-                        ctx.PartitionKeyRangeId, r.ResponseContinuation.Trim[|'"'|], r.RequestCharge, docs.Count, float sw.ElapsedMilliseconds / 1000., 
-                        events.Length, (let e = pt.Elapsed in e.TotalSeconds), (let e = et.Elapsed in e.TotalSeconds))
-                    sw.Restart() // restart the clock as we handoff back to the CFP
-                }
-                ChangeFeedObserver.Create(log, projectBatch, dispose = disposeProducer)
-
-            let run = async {
-                let logLag (interval : TimeSpan) remainingWork = async {
-                    let logLevel = if remainingWork |> Seq.exists (fun (_r,rw) -> rw <> 0L) then Events.LogEventLevel.Information else Events.LogEventLevel.Debug
-                    log.Write(logLevel, "Lags {@rangeLags} <- [Range Id, documents count] ", remainingWork)
-                    return! Async.Sleep(int interval.TotalMilliseconds) }
-                let maybeLogLag = pargs.TryGetResult LagFreqM |> Option.map (TimeSpan.FromMinutes >> logLag)
-                let! _cfp =
-                    ChangeFeedProcessor.Start
-                      ( log, discovery, connector.ConnectionPolicy, source, aux, buildRangeProjector,
-                        leasePrefix = leaseId,
-                        startFromTail = pargs.Contains FromTail,
-                        ?maxDocuments = pargs.TryGetResult MaxDocuments,
-                        ?reportLagAndAwaitNextEstimation = maybeLogLag)
-                return! Async.AwaitKeyboardInterrupt() }
-            Async.RunSynchronously run
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs

@@ -33,7 +33,6 @@
     <PackageReference Include="Microsoft.Azure.DocumentDB.Core" Version="2.0.0" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
     <PackageReference Include="System.Runtime.Caching" Version="4.5.0" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
     <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
-    <PackageReference Include="Serilog" Version="2.7.1" />
   </ItemGroup>
 
 </Project>
