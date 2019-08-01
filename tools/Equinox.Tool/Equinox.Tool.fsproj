@@ -42,12 +42,6 @@
     <PackageReference Include="FSharp.Core" Version="4.0.0.1" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netcoreapp2.1' " />
 
-    <PackageReference Include="Propulsion.Kafka" Version="1.0.1-rc1" />
-    <PackageReference Include="Propulsion.Cosmos" Version="1.0.1-rc1" />
-    <PackageReference Include="MathNet.Numerics" Version="4.7.0" />
-    <PackageReference Include="Microsoft.Azure.DocumentDB" Version="2.2.2" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
-    <PackageReference Include="Microsoft.Azure.DocumentDB.Core" Version="2.2.2" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
-    <PackageReference Include="Microsoft.Azure.DocumentDB.ChangeFeedProcessor" Version="2.2.6" />
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
     <PackageReference Include="System.Reactive" Version="4.1.2" />

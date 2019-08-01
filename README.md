@@ -266,21 +266,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -- projector2 cosmos
     ```
 
-6. (**`2.0.0-rc*`**) Use `eqx` tool to Run a [CosmosDb ChangeFeedProcessor](DOCUMENTATION.md#change-feed-processors), [emitting to a Kafka topic](DOCUMENTATION.md#feeding-to-kafka)
-
-    ```powershell
-    $env:EQUINOX_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
-
-    # `-v` for verbose logging
-    # `projector3` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently
-    # `-l 5` to report ChangeFeed lags every 5 minutes
-    # `kafka` specifies one wants to emit to Kafka
-    # `temp-topic` is the topic to emit to
-    # `cosmos` specifies source overrides (using defaults in step 1 in this instance)
-    eqx -v project projector3 -l 5 kafka temp-topic cosmos
-    ```
-
-7. Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
+6. Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code
@@ -320,7 +306,7 @@ A key facility of this repo is being able to run load tests, either in process a
 
 ## BUILDING
 
-Please note the [QuickStart](quickstart) is probably the best way to gain an overview - these instructions are intended to illustrated various facilities of the build script for people making changes. 
+Please note the [QuickStart](quickstart) is probably the best way to gain an overview - these instructions are intended to illustrated various facilities of the build script for people making changes.
 
 ### build and run
 
