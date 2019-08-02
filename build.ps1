@@ -7,7 +7,6 @@ param(
 	[Alias("cd")][string] $cosmosDatabase=$env:EQUINOX_COSMOS_DATABASE,
 	[Alias("cc")][string] $cosmosCollection=$env:EQUINOX_COSMOS_COLLECTION,
 	[Alias("scp")][switch][bool] $skipProvisionCosmos=$skipCosmos -or -not $cosmosServer -or -not $cosmosDatabase -or -not $cosmosCollection,
-	[Alias("ca")][switch][bool] $cosmosProvisionAux,
 	[Alias("scd")][switch][bool] $skipDeprovisionCosmos=$skipProvisionCosmos,
 	[string] $additionalMsBuildArgs="-t:Build"
 )
@@ -40,10 +39,6 @@ if ($skipCosmos) {
 	# -P: inhibit creation of stored proc (everything in the repo should work without it due to auto-provisioning)
 	cliCosmos @("init", "-ru", "400", "-P")
 	$deprovisionCosmos=$true
-	if ($cosmosProvisionAux) {
-		warn "Provisioning cosmos aux collection for projector..."
-		cliCosmos @("initAux", "-ru", "400")
-	}
 }
 $env:EQUINOX_INTEGRATION_SKIP_COSMOS=[string]$skipCosmos
 

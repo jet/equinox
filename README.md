@@ -204,7 +204,6 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
       # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
       /usr/local/bin/eventstored --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 	  ```
-    
 
 3. generate sample app with EventStore wiring from template and start
 
@@ -237,19 +236,19 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Web
     ```
 
-4. (**`2.0.0-rc*`**) Use `eqx` tool to run a CosmosDb ChangeFeedProcessor
+4. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor
 
     ```powershell
     # TEMP: need to uninstall and use --version flag while this is in RC
-    dotnet tool uninstall Equinox.Tool -g
-    dotnet tool install Equinox.Tool -g --version 2.0.0-rc*
+    dotnet tool uninstall Propulsion.Tool -g
+    dotnet tool install Propulsion.Tool -g --version 1.0.1-rc*
 
-    eqx initAux -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to maintain consumer group progress within
+    propulsion init -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to maintain consumer group progress within
     # -v for verbose ChangeFeedProcessor logging
     # `projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # stats specifies one only wants stats regarding items (other options include `kafka` to project to Kafka)
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
-    eqx -v project projector1 stats cosmos
+    propulsion -v project projector1 stats cosmos
     ```
 
 5. Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
@@ -266,7 +265,20 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -- projector2 cosmos
     ```
 
-6. Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
+6. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
+
+     ```powershell	
+    $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b	
+     # `-v` for verbose logging	
+    # `projector3` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently	
+    # `-l 5` to report ChangeFeed lags every 5 minutes	
+    # `kafka` specifies one wants to emit to Kafka	
+    # `temp-topic` is the topic to emit to	
+    # `cosmos` specifies source overrides (using defaults in step 1 in this instance)	
+    propulsion -v project projector3 -l 5 kafka temp-topic cosmos	
+    ```	
+
+ 7. Generate CosmosDb [Kafka Projector and Consumer](DOCUMENTATION.md#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code

@@ -20,7 +20,6 @@ type Arguments =
     | [<AltCommandLine("-l")>] LogFile of string
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] InitAux of ParseResults<InitAuxArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose -> "Include low level logging regarding specific test runs."
@@ -29,7 +28,6 @@ type Arguments =
             | LogFile _ -> "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ -> "Run a load test"
             | Init _ -> "Initialize Store/Collection (presently only relevant for `cosmos`; also handles adjusting RU/s provisioning adjustment)."
-            | InitAux _ -> "Initialize auxilliary store (presently only relevant for `cosmos`, when you intend to run the Projector)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     | [<AltCommandLine("-D")>] Shared
@@ -49,16 +47,6 @@ and [<NoComparison>]InitDbArguments =
         member a.Usage = a |> function
             | Rus _ -> "Specify RU/s level to provision for the Database."
             | SkipStoredProc -> "Inhibit creation of stored procedure in cited Collection."
-            | Cosmos _ -> "Cosmos Connection parameters."
-and [<NoComparison>]InitAuxArguments =
-    | [<AltCommandLine("-ru"); Mandatory>] Rus of int
-    | [<AltCommandLine("-s")>] Suffix of string
-    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
-    interface IArgParserTemplate with
-        member a.Usage = a |> function
-            | Rus _ -> "Specify RU/s level to provision for the Aux Collection."
-            | Suffix _ -> "Specify Collection Name suffix (default: `-aux`)."
-
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
@@ -237,17 +225,6 @@ module CosmosInit =
             let! conn = connector.Connect("equinox-tool", discovery)
             return! init log conn.Client (dbName,collName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
-    let aux (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitAuxArguments>) = async {
-        match iargs.TryGetSubCommand() with
-        | Some (InitAuxArguments.Cosmos sargs) ->
-            let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-            let discovery, dbName, baseCollName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
-            let auxCollName = let collSuffix = iargs.GetResult(InitAuxArguments.Suffix,"-aux") in baseCollName + collSuffix
-            let rus = iargs.GetResult(InitAuxArguments.Rus)
-            log.Information("Provisioning Lease/`aux` Collection {collName} for {rus:n0} RU/s", auxCollName, rus)
-            let! conn = connector.Connect("equinox-tool", discovery)
-            return! initAux conn.Client (dbName,auxCollName) rus
-        | _ -> failwith "please specify a `cosmos` endpoint" }
 
 [<EntryPoint>]
 let main argv =
@@ -261,11 +238,10 @@ let main argv =
         let log = createDomainLog verbose verboseConsole maybeSeq
         match args.GetSubCommand() with
         | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
-        | InitAux iargs -> CosmosInit.aux (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
-        | _ -> failwith "Please specify a valid subcommand :- init, initAux, project or run"
+        | _ -> failwith "Please specify a valid subcommand :- init or run"
         0
     with :? Argu.ArguParseException as e -> eprintfn "%s" e.Message; 1
         | Storage.MissingArg msg -> eprintfn "%s" msg; 1
