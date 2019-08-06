@@ -13,12 +13,6 @@ param(
 
 $args=@("/v:$verbosity","/fl","/bl",$additionalMsBuildArgs)
 
-# when using mono to compile net461 stuff, point to relevant reference assemblies
-if ([Environment]::OSVersion.Platform -eq "Unix") {
-	$env:FrameworkPathOverride="$(Split-Path $(which mono))/../lib/mono/4.6.1-api/"
-	write-host "Using Mono Reference Assemblies at: $env:FrameworkPathOverride"
-}
-
 function warn ($msg) { Write-Host "$msg" -BackgroundColor DarkGreen }
 
 # Yes, this leaves the value set on exit, but I want to keep the script legible

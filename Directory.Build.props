@@ -28,6 +28,10 @@
   <PropertyGroup>
     <ThisDirAbsolute>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</ThisDirAbsolute>
   </PropertyGroup>
+  <PropertyGroup Condition=" '$(IsOSX)' == 'true' ">
+    <!-- This works given an install of Mono 6.0 is in place -->
+    <FrameworkPathOverride>/Library/Frameworks/Mono.framework/Versions/Current/Commands/../lib/mono/4.6.1-api</FrameworkPathOverride>
+  </PropertyGroup>
   <ItemGroup>
     <Content Include="$(ThisDirAbsolute)tests/xunit.runner.json" Condition=" '$(OS)' != 'Windows_NT' AND '$(IsTestProject)' != 'false'">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
