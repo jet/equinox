@@ -23,14 +23,12 @@
     <!-- supress NU5105 triggered by trailing dotted elements such as .43 and .2 in e.g.: pr.43-rc1.2: The package version '<X>' uses SemVer 2.0.0 or components of SemVer 1.0.0 that are not supported on legacy clients. Change the package version to a SemVer 1.0.0 string. If the version contains a release label it must start with a letter. This message can be ignored if the package is not intended for older clients. -->
     <NoWarn>$(NoWarn);FS2003;NU5105</NoWarn>
   </PropertyGroup>
-
+  <ItemGroup> <!-- net461 ref assemblies https://stackoverflow.com/a/57384175/11635 -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0-preview.2" PrivateAssets="All" />
+  </ItemGroup>
   <!-- Workaround for https://github.com/xunit/xunit/issues/1357 -->
   <PropertyGroup>
     <ThisDirAbsolute>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</ThisDirAbsolute>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(IsOSX)' == 'true' ">
-    <!-- This works given an install of Mono 6.0 is in place -->
-    <FrameworkPathOverride>/Library/Frameworks/Mono.framework/Versions/Current/Commands/../lib/mono/4.6.1-api</FrameworkPathOverride>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="$(ThisDirAbsolute)tests/xunit.runner.json" Condition=" '$(OS)' != 'Windows_NT' AND '$(IsTestProject)' != 'false'">
