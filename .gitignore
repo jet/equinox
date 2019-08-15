@@ -1,5 +1,9 @@
 # User-specific files
 
+# macOS
+
+.DS_Store
+
 # Cli logs
 eqx.log
 
