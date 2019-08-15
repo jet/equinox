@@ -105,18 +105,18 @@ let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 module Store =
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
-    let connector = CosmosConnector(requestTimeout=TimeSpan.FromSeconds 5., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=5, log=log)
+    let connector = Connector(requestTimeout=TimeSpan.FromSeconds 5., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=5, log=log)
     let conn = connector.Connect("equinox-tutorial", Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
-    let gateway = CosmosGateway(conn, CosmosBatchingPolicy())
+    let gateway = Gateway(conn, BatchingPolicy())
 
-    let store = CosmosStore(gateway, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_COLLECTION")
+    let store = Context(gateway, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_COLLECTION")
     let cache = Caching.Cache("equinox-tutorial", 20)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory = 
     let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
-    let access = Equinox.Cosmos.AccessStrategy.Snapshot (isOrigin,compact)
-    let resolve = CosmosResolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
+    let access = AccessStrategy.Snapshot (isOrigin,compact)
+    let resolve = Resolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
 
 let service = Service(log, TodosCategory.resolve)
 
