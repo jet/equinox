@@ -1,4 +1,4 @@
-<Project ToolsVersion="15.0">
+<Project>
 
   <Import Project="Directory.Build.props" />
 
@@ -11,8 +11,6 @@
     <PackOptions>/p:BUILD_ID=$(BUILD_ID) $(PrOption) -o $(ThisDirAbsolute)bin/nupkg</PackOptions>
     
     <TestOptions>--logger:trx</TestOptions>
-    <!-- disable known test failures on mono -->
-    <TestOptions Condition=" '$(OS)' != 'Windows_NT' " >$(TestOptions) --filter KnownFailOn!=Mono</TestOptions>
   </PropertyGroup>
 
   <Target Name="Pack">
@@ -22,18 +20,12 @@
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack tools/Equinox.Tools.TestHarness $(Cfg) $(PackOptions)" />
-    <Exec Command='dotnet publish tools/Equinox.Tool $(Cfg) -f net461 -o "$(RepoDir)/bin/equinox-tool/net461" ' />
+    <Exec Command='dotnet publish tools/Equinox.Tool $(Cfg) -f net461 -o "$(ThisDirAbsolute)/bin/equinox-tool/net461" ' />
     <Exec Command="dotnet pack tools/Equinox.Tool $(Cfg) $(PackOptions) /p:PackAsTool=true" />
   </Target>
 
-  <!-- tests hangs on osx -->
-  <Target Name="VSTest" Condition=" '$(IsOSX)' != 'true' " >
-    <Exec Command="dotnet test tests/Equinox.MemoryStore.Integration $(Cfg) $(TestOptions)" />
-    <!--Hangs on CI atm-->
-    <Exec Command="dotnet test tests/Equinox.EventStore.Integration $(Cfg) $(TestOptions)" Condition=" '$(OS)' == 'Windows_NT' "/>
-    <Exec Command="dotnet test tests/Equinox.Cosmos.Integration $(Cfg) $(TestOptions)" />
-    <Exec Command="dotnet test samples/Store/Integration $(Cfg) $(TestOptions)" />
-    <Exec Command="dotnet test samples/Store/Domain.Tests $(Cfg) $(TestOptions)" />
+  <Target Name="VSTest">
+    <Exec Command="dotnet test Equinox.sln $(Cfg) $(TestOptions)" />
   </Target>
 
   <Target Name="Build" DependsOnTargets="VSTest;Pack">

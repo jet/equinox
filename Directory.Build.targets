@@ -1,4 +1,4 @@
-<Project ToolsVersion="15.0">
+<Project>
   <Target Name="ComputePackageVersion" AfterTargets="MinVer" Condition=" '$(BUILD_PR)' != '' AND '$(BUILD_PR)' != '%24(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)' ">
     <PropertyGroup>
       <PackageVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch)-pr.$(BUILD_PR)</PackageVersion>

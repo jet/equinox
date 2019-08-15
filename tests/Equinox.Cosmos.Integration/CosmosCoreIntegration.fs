@@ -47,7 +47,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 17 // 16.76 // WAS 10
+        verifyRequestChargesMax 31 // 30.44 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -55,7 +55,7 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesMax 29 // observed 28.61 // was 11
+        verifyRequestChargesMax 40 // observed 38.95 // was 11
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds updote mechanisms
@@ -122,7 +122,7 @@ type Tests(testOutputHelper) =
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
-            verifyRequestChargesMax 23 // 22.09 observed
+            verifyRequestChargesMax 44 // 43.58 observed
             capture.Clear()
 
             let! res = Events.getNextIndex ctx streamName
@@ -135,7 +135,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 25 // 24.21 // WAS 20
+        verifyRequestChargesMax 46 // 45.91 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -150,7 +150,7 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 300 // 278 observed
+        verifyRequestChargesMax 441 // 440 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -183,7 +183,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 17 // 16.02 WAS 11 // 10.33
+        verifyRequestChargesMax 30 // 29.68 WAS 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
@@ -226,7 +226,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``get (in 2 batches)`` (TestStream streamName) = Async.RunSynchronously <| async {
+    let ``get in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContextWithItemLimit conn (Some 1)
 
@@ -284,7 +284,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``getBackwards (2 batches)`` (TestStream streamName) = Async.RunSynchronously <| async {
+    let ``getBackwards in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContextWithItemLimit conn (Some 1)
 

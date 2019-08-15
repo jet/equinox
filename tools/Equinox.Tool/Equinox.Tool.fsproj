@@ -53,7 +53,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition=" '$(PackAsTool)' == 'true' ">
-    <Content Include="$(RepoDir)/bin/equinox-tool/net461/*">
+    <Content Include="$(ThisDirAbsolute)/bin/equinox-tool/net461/*">
       <Pack>true</Pack>
       <PackagePath>tools\net461\any\%(Filename)%(Extension)</PackagePath>
       <Visible>true</Visible>
