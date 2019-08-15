@@ -4,6 +4,7 @@
     <TargetFrameworks>netcoreapp2.1;net461</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
+    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
   </PropertyGroup>
 
   <ItemGroup>

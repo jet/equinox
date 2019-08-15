@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <TargetFrameworks>netcoreapp2.1;net461</TargetFrameworks>
-    <OutputType>Library</OutputType>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
+    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">NET461</DefineConstants>
   </PropertyGroup>
 
