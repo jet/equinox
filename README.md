@@ -81,7 +81,7 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 
 Where it makes sense, raise GitHub issues for any questions so others can benefit from the discussion, or follow the links to [the DDD-CQRS-ES #equinox Slack channel](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) above for quick discussions.
 
-This is an Open Source Project for many reasons, with some central goals:
+This is an Open Source project for many reasons, with some central goals:
 
 - quality reference code (the code should be clean and easy to read; where it makes sense, components can be grabbed and cloned locally and used in altered form)
 - optimal resilience and performance (getting performance right can add huge value for some systems)
@@ -187,7 +187,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
       cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
       ```
 
-	- For OSX, download the `.pkg` from https://eventstore.org/downloads/, click in Finder to launch the installer
+	- For OSX, install with `brew cask install eventstore` 
 
 2. start the local EventStore instance
 
@@ -202,7 +202,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
   	  ```bash
       # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
-      /usr/local/bin/eventstored --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+      eventstore --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 	  ```
 
 3. generate sample app with EventStore wiring from template and start
