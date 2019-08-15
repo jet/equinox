@@ -1035,7 +1035,7 @@ type ConnectionMode =
     /// Default mode, uses Https - inefficient as uses a double hop
     | Gateway
     /// Most efficient, but requires direct connectivity
-    | DirectTcp
+    | Direct
     // More efficient than Gateway, but suboptimal
     | DirectHttps
 
@@ -1069,7 +1069,7 @@ type Connector
         match mode with
         | None | Some ConnectionMode.Gateway -> cp.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
         | Some ConnectionMode.DirectHttps -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Https // Https is default when using Direct
-        | Some ConnectionMode.DirectTcp -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Tcp
+        | Some ConnectionMode.Direct -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Tcp
         cp.RetryOptions <-
             Client.RetryOptions(
                 MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
@@ -1095,8 +1095,8 @@ type Connector
 
         match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
 
-    /// Connection policy (for ChangeFeed)
-    member __.ConnectionPolicy : Client.ConnectionPolicy = clientOptions
+    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connection as configured
+    member __.ClientOptions : Client.ConnectionPolicy = clientOptions
 
     /// Yields a DocDbConnection configured per the specified strategy
     member __.Connect(name, discovery : Discovery) : Async<Connection> = async {
