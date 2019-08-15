@@ -85,7 +85,7 @@ type Tests(testOutputHelper) =
                 | 1 -> 1 // it does cost a single trip to determine there are 0 items
                 | i -> ceil(float (i-1) * float eventsPerAction / float maxItemsPerRequest / float maxEventsPerBatch) |> int
             test <@ List.replicate expectedBatchesOf2Items EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 44 // 43.54
+            verifyRequestChargesMax 46 // 44.32
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`

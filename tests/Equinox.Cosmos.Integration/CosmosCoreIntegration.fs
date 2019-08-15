@@ -47,7 +47,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 31 // 30.44 // WAS 10
+        verifyRequestChargesMax 35 // 31.3 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -122,7 +122,7 @@ type Tests(testOutputHelper) =
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
-            verifyRequestChargesMax 44 // 43.58 observed
+            verifyRequestChargesMax 46 // 44.07 observed
             capture.Clear()
 
             let! res = Events.getNextIndex ctx streamName
@@ -150,12 +150,12 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 441 // 440 observed
+        verifyRequestChargesMax 300 // 251.39 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
-        verifyRequestChargesMax 50 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
+        verifyRequestChargesMax 45 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
         capture.Clear()
 
         let! _pos = ctx.Sync(stream,pos)
@@ -183,7 +183,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 30 // 29.68 WAS 11 // 10.33
+        verifyRequestChargesMax 32 // 30.42 WAS 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
