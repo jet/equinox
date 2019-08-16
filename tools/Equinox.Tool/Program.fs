@@ -223,8 +223,7 @@ module CosmosInit =
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
             let! conn = connector.Connect("equinox-tool", discovery)
-            let container = Equinox.Cosmos.Store.Container(conn.Client,dName,cName)
-            return! init log container (dName,cName) mode skipStoredProc
+            return! init log conn.Client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 [<EntryPoint>]
