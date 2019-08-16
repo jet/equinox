@@ -526,9 +526,9 @@ function sync(req, expectedVersion, maxEvents) {
             def.IndexingPolicy.IndexingMode <- IndexingMode.None
             createOrProvisionContainer client (dName,def) mode
         let init log (client : Client.DocumentClient) (dName,cName) mode skipStoredProc = async {
+            do! createOrProvisionDatabase client dName mode
+            do! createBatchAndTipContainerIfNotExists client (dName,cName) mode
             let container = Container(client,dName,cName)
-            do! createOrProvisionDatabase container.Client dName mode
-            do! createBatchAndTipContainerIfNotExists container.Client (dName,cName) mode
             if not skipStoredProc then
                 do! createSyncStoredProcIfNotExists (Some log) container }
         let initAux (client: Client.DocumentClient) (dName,cName) rus = async {
