@@ -42,5 +42,5 @@ type Target =
     /// Resolve the stream, but stub the attempt to Load based on a strong likelihood that a stream is empty and hence it's reasonable to optimistically avoid
     /// a Load roundtrip; if that turns out not to be the case, the price is to have to do a re-run after the resync
     | AggregateIdEmpty of category: string * id: string
-    /// prefer AggregateId
-    | DeprecatedRawName of streamName: string
+    /// Specify the full stream name. NB use of AggregateId is recommended for simplicity and consistency.
+    | StreamName of streamName: string

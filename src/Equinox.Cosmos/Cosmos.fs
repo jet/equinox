@@ -1011,7 +1011,7 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | Target.AggregateIdEmpty (categoryName,streamId) ->
             let containerStream, maybeInit = context.ResolveContainerStream(categoryName, streamId)
             Store.Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream, maybeInit))
-        | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x
+        | Target.StreamName _ as x -> failwithf "Stream name not supported: %A" x
 
     member __.FromMemento(Token.Unpack (container,stream,_pos) as streamToken,state) =
         let skipInitialization = None

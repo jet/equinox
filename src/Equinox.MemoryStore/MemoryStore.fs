@@ -103,7 +103,7 @@ type Resolver<'event, 'state>(store : VolatileStore, fold, initial) =
         | Target.AggregateIdEmpty (categoryName,streamId) ->
             let streamName = mkStreamName categoryName streamId
             Store.Stream.ofMemento (Token.ofEmpty streamName initial) (resolveStream streamName)
-        | Target.DeprecatedRawName _ as x -> failwithf "Stream name not supported: %A" x
+        | Target.StreamName _ as x -> failwithf "Stream name not supported: %A" x
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken,state) =

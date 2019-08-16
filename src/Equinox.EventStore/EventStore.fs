@@ -563,7 +563,7 @@ type Resolver<'event,'state>
         | Target.AggregateIdEmpty (categoryName,streamId) ->
             let streamName = mkStreamName categoryName streamId
             Stream.ofMemento (context.LoadEmpty streamName,initial) <| resolve streamName
-        | Target.DeprecatedRawName streamName ->
+        | Target.StreamName streamName ->
             resolve streamName
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
