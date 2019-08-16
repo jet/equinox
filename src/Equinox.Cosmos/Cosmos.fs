@@ -504,21 +504,23 @@ function sync(req, expIndex, expEtag) {
                 let! _ = createDatabaseIfNotExists client dName None in () }
         let private createContainerIfNotExists (d:Database) (cp:ContainerProperties) maybeRus = async {
             let! ct = Async.CancellationToken
-            let! _ = d.CreateContainerIfNotExistsAsync(cp, throughput=Option.toNullable maybeRus, cancellationToken=ct) |> Async.AwaitTaskCorrect in () }
+            let! c = d.CreateContainerIfNotExistsAsync(cp, throughput=Option.toNullable maybeRus, cancellationToken=ct) |> Async.AwaitTaskCorrect
+            return c.Container }
         let private createOrProvisionContainer (d:Database) (cp:ContainerProperties) mode = async {
             match mode with
             | Provisioning.Database _ ->
-                do! createContainerIfNotExists d cp None
+                return! createContainerIfNotExists d cp None
             | Provisioning.Container rus ->
-                do! createContainerIfNotExists d cp (Some rus)
-                return! adjustOfferD d rus }
+                let! c = createContainerIfNotExists d cp (Some rus)
+                do! adjustOfferD d rus
+                return c }
         let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
             try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id=name, body=body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
             with CosmosException ((CosmosStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
         let private mkContainerProperties containerName partitionKeyFieldName =
             ContainerProperties(id = containerName, partitionKeyPath = sprintf "/%s" partitionKeyFieldName)
-        let private createBatchAndTipCollectionIfNotExists (client: CosmosClient) (dName,cName) mode : Async<unit> =
+        let private createBatchAndTipContainerIfNotExists (client: CosmosClient) (dName,cName) mode : Async<Container> =
             let def = mkContainerProperties cName Batch.PartitionKeyField
             def.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
             def.IndexingPolicy.Automatic <- true
@@ -533,7 +535,7 @@ function sync(req, expIndex, expEtag) {
             match log with
             | None -> ()
             | Some log -> log.Information("Created stored procedure {sprocId} in {ms}ms rc={ru}", sprocName, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
-        let private createAuxContainerIfNotExists (client: CosmosClient) (dName,cName) mode : Async<unit> =
+        let private createAuxContainerIfNotExists (client: CosmosClient) (dName,cName) mode : Async<Container> =
             let def = mkContainerProperties cName "id" // as per Cosmos team, Partition Key must be "/id"
             // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
             def.IndexingPolicy.Automatic <- false
@@ -541,8 +543,7 @@ function sync(req, expIndex, expEtag) {
             createOrProvisionContainer (client.GetDatabase dName) def mode
         let init log (client: CosmosClient) (dName,cName) mode skipStoredProc = async {
             do! createOrProvisionDatabase client dName mode
-            do! createBatchAndTipCollectionIfNotExists client (dName,cName) mode
-            let container = client.GetContainer(dName,cName)
+            let! container = createBatchAndTipContainerIfNotExists client (dName,cName) mode
             if not skipStoredProc then
                 do! createSyncStoredProcIfNotExists (Some log) container }
         let initAux (client: CosmosClient) (dName,cName) rus = async {
@@ -612,7 +613,7 @@ module internal Tip =
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         return events, maybePosition, ru }
 
-    let private run (log : ILogger) (readSlice: FeedIterator<Batch> -> ILogger -> Async<IIndexedEvent[] * Position option * float>)
+    let private run (log : ILogger) (readSlice: FeedIterator<Batch> -> ILogger -> Async<ITimelineEvent<byte[]>[] * Position option * float>)
             (maxPermittedBatchReads: int option)
             (query: FeedIterator<Batch>)
         : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> =
