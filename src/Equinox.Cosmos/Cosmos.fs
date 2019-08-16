@@ -30,7 +30,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     Batch =
-    {   /// DocDb-mandated Partition Key, must be maintained within the document
+    {   /// CosmosDB-mandated Partition Key, must be maintained within the document
         /// Not actually required if running in single partition mode, but for simplicity, we always write it
         [<JsonProperty(Required=Required.Default)>] // Not requested in queries
         p: string // "{streamName}"
@@ -125,7 +125,7 @@ module internal Position =
         else fromI (1L + Seq.max (seq { for x in xs -> x.Index }))
     /// Create Position from Tip record context (facilitating 1 RU reads)
     let fromTip (x: Tip) = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
-    /// If we encounter the tip (id=-1) doc, we're interested in its etag so we can re-sync for 1 RU
+    /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
     let tryFromBatch (x: Batch) =
         if x.id <> Tip.WellKnownDocumentId then None
         else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
@@ -550,11 +550,11 @@ module internal Tip =
             (log 0 0 Log.TipNotModified).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 302, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.NotFound ->
             (log 0 0 Log.TipNotFound).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
-        | ReadResult.Found doc ->
+        | ReadResult.Found tip ->
             let log =
-                let (Log.BatchLen bytes), count = Enum.Unfolds doc.u, doc.u.Length
+                let (Log.BatchLen bytes), count = Enum.Unfolds tip.u, tip.u.Length
                 log bytes count Log.Tip
-            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataUnfolds doc.u |> Log.prop "etag" doc._etag
+            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataUnfolds tip.u |> Log.prop "etag" tip._etag
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * IIndexedEvent[]
@@ -564,7 +564,7 @@ module internal Tip =
         match res with
         | ReadResult.NotModified -> return Result.NotModified
         | ReadResult.NotFound -> return Result.NotFound
-        | ReadResult.Found doc -> return Result.Found (Position.fromTip doc, Enum.EventsAndUnfolds doc |> Array.ofSeq) }
+        | ReadResult.Found tip -> return Result.Found (Position.fromTip tip, Enum.EventsAndUnfolds tip |> Array.ofSeq) }
 
  module internal Query =
     open Microsoft.Azure.Documents.Linq
