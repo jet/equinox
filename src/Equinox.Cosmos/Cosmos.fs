@@ -867,7 +867,7 @@ module Caching =
             | x -> failwithf "TryGet Incompatible cache entry %A" x
 
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: Store.ICategory<'event, 'state, Store.Container*string>, tee : string -> Store.StreamToken * 'state -> unit) =
+    type CategoryTee<'event, 'state>(inner: Store.ICategory<'event, 'state, Container*string>, tee : string -> Store.StreamToken * 'state -> unit) =
         let intercept streamName tokenAndState =
             tee streamName tokenAndState
             tokenAndState
@@ -1065,18 +1065,18 @@ type Connector
     do if log = null then nullArg "log"
 
     let clientOptions =
-        let cp = Client.ConnectionPolicy.Default
+        let co = Client.ConnectionPolicy.Default
         match mode with
-        | None | Some ConnectionMode.Gateway -> cp.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
-        | Some ConnectionMode.DirectHttps -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Https // Https is default when using Direct
-        | Some ConnectionMode.Direct -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Tcp
-        cp.RetryOptions <-
+        | None | Some ConnectionMode.Gateway -> co.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
+        | Some ConnectionMode.DirectHttps -> co.ConnectionMode <- Client.ConnectionMode.Direct; co.ConnectionProtocol <- Client.Protocol.Https // Https is default when using Direct
+        | Some ConnectionMode.Direct -> co.ConnectionMode <- Client.ConnectionMode.Direct; co.ConnectionProtocol <- Client.Protocol.Tcp
+        co.RetryOptions <-
             Client.RetryOptions(
                 MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
                 MaxRetryWaitTimeInSeconds = maxRetryWaitTimeInSeconds)
-        cp.RequestTimeout <- requestTimeout
-        cp.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
-        cp
+        co.RequestTimeout <- requestTimeout
+        co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
+        co
 
     /// Yields an CosmosClient configured and Connect()ed to a given DocDB collection per the requested `discovery` strategy
     let connect
