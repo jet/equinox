@@ -9,7 +9,7 @@ exception MissingArg of string
 type StorageConfig =
     | Memory of Equinox.MemoryStore.VolatileStore
     | Es of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
-    | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * collectionId: string
+    | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
     
 module MemoryStore =
     type [<NoEquality; NoComparison>] Arguments =
@@ -44,8 +44,8 @@ module Cosmos =
                 | RetriesWaitTime _ ->  "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
                 | Connection _ ->       "specify a connection string for a Cosmos account (defaults: envvar:EQUINOX_COSMOS_CONNECTION, Cosmos Emulator)."
                 | ConnectionMode _ ->   "override the connection mode (default: Direct)."
-                | Database _ ->         "specify a database name for Cosmos store (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
-                | Container _ ->        "specify a container name for Cosmos store (defaults: envvar:EQUINOX_COSMOS_CONTAINER, test)."
+                | Database _ ->         "specify a database name for store (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
+                | Container _ ->        "specify a container name for store (defaults: envvar:EQUINOX_COSMOS_CONTAINER, test)."
     type Info(args : ParseResults<Arguments>) =
         member __.Mode = args.GetResult(ConnectionMode,Equinox.Cosmos.ConnectionMode.Direct)
         member __.Connection =  match args.TryGetResult Connection  with Some x -> x | None -> envBackstop "Connection" "EQUINOX_COSMOS_CONNECTION"
@@ -72,14 +72,14 @@ module Cosmos =
             (let t = a.Timeout in t.TotalSeconds), a.Retries, a.MaxRetryWaitTime)
         discovery, a.Database, a.Container, Connector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
-        let discovery, dbName, collName, connector = connection (log, storeLog) info
+        let discovery, dName, cName, connector = connection (log, storeLog) info
         let conn = connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
         let cacheStrategy =
             if cache then
                 let c = Caching.Cache("equinox-tool", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.)
             else CachingStrategy.NoCaching
-        StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dbName, collName)
+        StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dName, cName)
 
 /// To establish a local node to run the tests against:
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows

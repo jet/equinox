@@ -54,7 +54,7 @@ Change Feed | set of query patterns allowing one to run a continuous query readi
 Change Feed Processor | Library from Microsoft exposing facilities to Project from a Change Feed, maintaining Offsets per Physical Partition (Range) in the Lease Container
 Container | logical space in a CosmosDb holding [loosely] related Items (aka Documents). Items bear logical Partition Keys. Formerly aka Collection.
 CosmosDb | Microsoft Azure's managed document database system
-Database | Group of collections
+Database | Group of Containers
 DocumentDb | Original offering of CosmosDb, now entitled the SQL Query Model, `Microsoft.Azure.DocumentDb.Client[.Core]`
 Document id | Identifier used to load a document (Item) directly without a Query
 Lease Container | Container, outside of the storage Container (to avoid feedback effects) that maintains a set of Offsets per Range, together with leases reflecting instances of the Change Feed Processors and their Range assignments (aka `aux` container)

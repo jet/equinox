@@ -302,8 +302,8 @@ module Log =
             let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d) 
 
-type Container(client : Client.DocumentClient, databaseId, collectionId) =
-    let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId)
+type Container(client : Client.DocumentClient, databaseId, containerId) =
+    let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, containerId)
     member __.Client = client
     member __.CollectionUri = collectionUri
 
@@ -333,7 +333,7 @@ module private DocDb =
         | Null -> None
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
     type Container with
-        member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : Client.RequestOptions): Async<float * ReadResult<'T>> = async {
+        member container.TryReadItem(documentId : string, ?options : Client.RequestOptions): Async<float * ReadResult<'T>> = async {
             let options = defaultArg options null
             let docLink = sprintf "%O/docs/%s" container.CollectionUri documentId
             let! ct = Async.CancellationToken
@@ -504,8 +504,8 @@ function sync(req, expectedVersion, maxEvents) {
             let pkd = PartitionKeyDefinition()
             pkd.Paths.Add(sprintf "/%s" partionKeyFieldName)
             DocumentCollection(Id = idFieldName, PartitionKey = pkd)
-        let private createBatchAndTipContainerIfNotExists (client: Client.DocumentClient) (dbName,collName) mode : Async<unit> =
-            let def = mkContainerProperties collName Batch.PartitionKeyField
+        let private createBatchAndTipContainerIfNotExists (client: Client.DocumentClient) (dName,cName) mode : Async<unit> =
+            let def = mkContainerProperties cName Batch.PartitionKeyField
             def.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
             def.IndexingPolicy.Automatic <- true
             // Can either do a blacklist or a whitelist
@@ -513,34 +513,34 @@ function sync(req, expectedVersion, maxEvents) {
             def.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
             // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
             for k in Batch.IndexedFields do def.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
-            createOrProvisionContainer client (dbName, def) mode
+            createOrProvisionContainer client (dName, def) mode
         let createSyncStoredProcIfNotExists (log: ILogger option) container = async {
             let! t, ru = createStoredProcIfNotExists container (sprocName,sprocBody) |> Stopwatch.Time
             match log with
             | None -> ()
             | Some log -> log.Information("Created stored procedure {sprocId} in {ms}ms rc={ru}", sprocName, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
-        let private createAuxContainerIfNotExists client (dbName,collName) mode : Async<unit> =
-            let def = mkContainerProperties collName "id" // as per Cosmos team, Partition Key must be "/id"
+        let private createAuxContainerIfNotExists client (dName,cName) mode : Async<unit> =
+            let def = mkContainerProperties cName "id" // as per Cosmos team, Partition Key must be "/id"
             // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
             def.IndexingPolicy.Automatic <- false
             def.IndexingPolicy.IndexingMode <- IndexingMode.None
-            createOrProvisionContainer client (dbName,def) mode
-        let init log (container : Container) (dbName,collName) mode skipStoredProc = async {
-            do! createOrProvisionDatabase container.Client dbName mode
-            do! createBatchAndTipContainerIfNotExists container.Client (dbName,collName) mode
+            createOrProvisionContainer client (dName,def) mode
+        let init log (container : Container) (dName,cName) mode skipStoredProc = async {
+            do! createOrProvisionDatabase container.Client dName mode
+            do! createBatchAndTipContainerIfNotExists container.Client (dName,cName) mode
             if not skipStoredProc then
                 do! createSyncStoredProcIfNotExists (Some log) container }
-        let initAux (client: Client.DocumentClient) (dbName,collName) rus = async {
+        let initAux (client: Client.DocumentClient) (dName,cName) rus = async {
             // Hardwired for now (not sure if CFP can store in a Database-allocated as it would need to be supplying partion keys)
             let mode = Provisioning.Container rus
-            do! createOrProvisionDatabase client dbName mode 
-            return! createAuxContainerIfNotExists client (dbName,collName) mode }
+            do! createOrProvisionDatabase client dName mode 
+            return! createAuxContainerIfNotExists client (dName,cName) mode }
 
 module internal Tip =
     let private get (container : Container, stream : string) (maybePos: Position option) =
         let ac = match maybePos with Some { etag=Some etag } -> Client.AccessCondition(Type=Client.AccessConditionType.IfNoneMatch, Condition=etag) | _ -> null
-        let ro = Client.RequestOptions(PartitionKey=PartitionKey(stream), AccessCondition = ac)
-        container.TryReadItem(PartitionKey stream, Tip.WellKnownDocumentId, ro)
+        let ro = Client.RequestOptions(PartitionKey=PartitionKey stream, AccessCondition = ac)
+        container.TryReadItem(Tip.WellKnownDocumentId, ro)
     let private loggedGet (get : Container * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
         let! t, (ru, res : ReadResult<Tip>) = get (container,stream) maybePos |> Stopwatch.Time
@@ -927,24 +927,24 @@ type private ContainerWrapper(container : Container, ?initContainer : Container 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
 type Containers(categoryAndIdToDatabaseContainerAndStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
     // Index of database*collection -> Initialization Context
-    let collections = ConcurrentDictionary<string*string, ContainerWrapper>()
-    new (databaseId, collectionId) =
+    let wrappers = ConcurrentDictionary<string*string, ContainerWrapper>()
+    new (databaseId, containerId) =
         // TOCONSIDER - this works to support the Core.Events APIs
         let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        Containers(fun categoryName streamId -> databaseId, collectionId, genStreamName categoryName streamId)
+        Containers(fun categoryName streamId -> databaseId, containerId, genStreamName categoryName streamId)
 
     member internal __.Resolve(client, categoryName, id, init) : (Container*string) * (unit -> Async<unit>) option =
         let databaseId, containerName, streamName = categoryAndIdToDatabaseContainerAndStream categoryName id
         let init = match disableInitialization with Some true -> None | _ -> Some init
         let mkWrapped (db,containerName) = ContainerWrapper(Container(client,db,containerName), ?initContainer = init)
-        let wrapped = collections.GetOrAdd((databaseId,containerName), mkWrapped)
+        let wrapped = wrappers.GetOrAdd((databaseId,containerName), mkWrapped)
         (wrapped.Container,streamName),wrapped.InitializationGate
 
-/// Pairs a Gateway, defining the retry policies for CosmosDb with a Containers map defining mappings from (category,id) to (database,collection,streamName)
+/// Pairs a Gateway, defining the retry policies for CosmosDb with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type Context(gateway: Gateway, containers: Containers, [<O; D(null)>] ?log) =
     let init = gateway.CreateSyncStoredProcIfNotExists log
-    new(gateway: Gateway, databaseId: string, collectionId: string, [<O; D(null)>]?log) =
-        Context(gateway, Containers(databaseId, collectionId), ?log = log)
+    new(gateway: Gateway, databaseId: string, containerId: string, [<O; D(null)>]?log) =
+        Context(gateway, Containers(databaseId, containerId), ?log = log)
 
     member __.Gateway = gateway
     member __.Containers = containers
@@ -1095,7 +1095,7 @@ type Connector
 
         match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
 
-    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connection as configured
+    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
     member __.ClientOptions : Client.ConnectionPolicy = clientOptions
 
     /// Yields a DocDbConnection configured per the specified strategy

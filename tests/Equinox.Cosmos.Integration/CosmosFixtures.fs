@@ -27,11 +27,11 @@ let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) =
 
 let defaultBatchSize = 500
 
-let collections =
+let containers =
     Containers(
         read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test",
         read "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test")
 
 let createCosmosContext connection batchSize =
     let gateway = Gateway(connection, BatchingPolicy(defaultMaxItems=batchSize))
-    Context(gateway, collections)
+    Context(gateway, containers)
