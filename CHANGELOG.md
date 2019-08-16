@@ -13,7 +13,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - Updated README.md to refer to `propulsion init` and `propulsion project` (formerly `eqx` `initAux` and `project`) (jet/propulsion#17)[https://github.com/jet/propulsion/pull/17]
 - `eqx project` now uses environment variables `PROPULSION_KAFKA_`* instead of `EQUINOX_`* [#143](https://github.com/jet/equinox/pull/143)
-- `Equinox.Cosmos` now uses `Container` in preference to `Collection`, in alignment with the `Microsoft.Azure.Cosmos` SDK's standardized naming [#149](https://github.com/jet/equinox/pull/149)
+- `Equinox.Cosmos` now uses `Container` in preference to `Collection`, in alignment with the `Microsoft.Azure.Cosmos` SDK's standardized naming, _and other minor changes, see PR for details_ [#149](https://github.com/jet/equinox/pull/149)
+- `EQUINOX_COSMOS_COLLECTION` environment variable argument for `eqx` tool is now `EQUINOX_COSMOS_CONTAINER` [#143](https://github.com/jet/equinox/pull/143)
 - renamed `Equinox.DeprecatedRawName` -> `StreamName` [#150](https://github.com/jet/equinox/pull/150)
 
 ### Removed
