@@ -183,7 +183,7 @@ type IRetryPolicy = abstract member Execute: (int -> Async<'T>) -> Async<'T>
 
 module Log =
     [<NoEquality; NoComparison>]
-    type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int; ru: float }
+    type Measurement = { stream : string; interval: StopwatchInterval; bytes: int; count: int; ru: float }
     [<NoEquality; NoComparison>]
     type Event =
         /// Individual read request for the Tip
@@ -415,7 +415,7 @@ function sync(req, expectedVersion, maxEvents) {
         | Conflict of Position * events: IIndexedEvent[]
         | ConflictUnknown of Position
 
-    let private run (container : Container, stream: string) (expectedVersion: int64 option, req: Tip, maxEvents: int)
+    let private run (container : Container, stream : string) (expectedVersion: int64 option, req: Tip, maxEvents: int)
         : Async<float*Result> = async {
         let sprocLink = sprintf "%O/sprocs/%s" container.CollectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey stream)
@@ -537,7 +537,7 @@ function sync(req, expectedVersion, maxEvents) {
             return! createAuxContainerIfNotExists client (dbName,collName) mode }
 
 module internal Tip =
-    let private get (container : Container, stream: string) (maybePos: Position option) =
+    let private get (container : Container, stream : string) (maybePos: Position option) =
         let ac = match maybePos with Some { etag=Some etag } -> Client.AccessCondition(Type=Client.AccessConditionType.IfNoneMatch, Condition=etag) | _ -> null
         let ro = Client.RequestOptions(PartitionKey=PartitionKey(stream), AccessCondition = ac)
         container.TryReadItem(PartitionKey stream, Tip.WellKnownDocumentId, ro)
@@ -569,7 +569,7 @@ module internal Tip =
  module internal Query =
     open Microsoft.Azure.Documents.Linq
     open FSharp.Control
-    let private mkQuery (container : Container, stream: string) maxItems (direction: Direction) startPos =
+    let private mkQuery (container : Container, stream : string) maxItems (direction: Direction) startPos =
         let query =
             let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.id!=\"%s\"" Tip.WellKnownDocumentId
             let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
