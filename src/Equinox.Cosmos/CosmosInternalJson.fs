@@ -3,7 +3,7 @@
 open Newtonsoft.Json.Linq
 open Newtonsoft.Json
 
-/// Manages injecting prepared json into the data being submitted to DocDb as-is, on the basis we can trust it to be valid json as DocDb will need it to be
+/// Manages injecting prepared json into the data being submitted to CosmosDB as-is, on the basis we can trust it to be valid json as CosmosDB will need it to be
 type VerbatimUtf8JsonConverter() =
     inherit JsonConverter()
     

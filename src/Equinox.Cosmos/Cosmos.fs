@@ -17,7 +17,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// The Case (Event Type); used to drive deserialization
         c: string // required
 
-        /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
+        /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for CosmosDB
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.AllowNull)>]
         d: byte[] // Required, but can be null so Nullary cases can work
@@ -35,7 +35,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         [<JsonProperty(Required=Required.Default)>] // Not requested in queries
         p: string // "{streamName}"
 
-        /// DocDb-mandated unique row key; needs to be unique within any partition it is maintained; must be string
+        /// CosmosDB-mandated unique row key; needs to be unique within any partition it is maintained; must be string
         /// At the present time, one can't perform an ORDER BY on this field, hence we also have i shadowing it
         /// NB Tip uses a well known value here while it's actively 'open'
         id: string // "{index}"
@@ -1020,7 +1020,7 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     | UriAndKey of databaseUri:Uri * key:string
-    /// Implements connection string parsing logic curiously missing from the DocDb SDK
+    /// Implements connection string parsing logic curiously missing from the CosmosDB SDK
     static member FromConnectionString (connectionString: string) =
         match connectionString with
         | _ when String.IsNullOrWhiteSpace connectionString -> nullArg "connectionString"
@@ -1120,7 +1120,7 @@ type AppendResult<'t> =
 
 /// Encapsulates the core facilites Equinox.Cosmos offers for operating directly on Events in Streams.
 type Context
-    (   /// Connection to CosmosDb with DocumentDb Transient Read and Write Retry policies
+    (   /// Connection to CosmosDb, includes defined Transient Read and Write Retry policies
         conn : Connection,
         /// Container selector, mapping Stream Categories to Containers
         containers : Containers,
