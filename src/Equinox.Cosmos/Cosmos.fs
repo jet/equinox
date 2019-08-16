@@ -345,10 +345,12 @@ module private MicrosoftAzureCosmosWrappers =
             let! ct = Async.CancellationToken
             // TODO use TryReadItemStreamAsync to avoid the exception https://github.com/Azure/azure-cosmos-dotnet-v3/issues/692#issuecomment-521936888
             try let! item = async { return! container.ReadItemAsync(documentId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
-                if item.StatusCode = System.Net.HttpStatusCode.NotModified then return item.RequestCharge, NotModified
+                // if item.StatusCode = System.Net.HttpStatusCode.NotModified then return item.RequestCharge, NotModified
                 // NB `.Document` will NRE if a IfNoneModified precondition triggers a NotModified result
-                else return item.RequestCharge, Found item.Resource
+                // else
+                return item.RequestCharge, Found item.Resource
             with CosmosException (CosmosStatusCode System.Net.HttpStatusCode.NotFound as e) -> return e.RequestCharge, NotFound
+                | CosmosException (CosmosStatusCode System.Net.HttpStatusCode.NotModified as e) -> return e.RequestCharge, NotModified
                 // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
                 | CosmosException (CosmosStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, NotModified }
 
@@ -499,7 +501,7 @@ function sync(req, expIndex, expEtag) {
             match mode with
             | Provisioning.Database rus ->
                 let! db = createDatabaseIfNotExists client dName (Some rus)
-                return! adjustOfferD db rus
+                do! adjustOfferD db rus
             | Provisioning.Container _ ->
                 let! _ = createDatabaseIfNotExists client dName None in () }
         let private createContainerIfNotExists (d:Database) (cp:ContainerProperties) maybeRus = async {
@@ -512,7 +514,7 @@ function sync(req, expIndex, expEtag) {
                 return! createContainerIfNotExists d cp None
             | Provisioning.Container rus ->
                 let! c = createContainerIfNotExists d cp (Some rus)
-                do! adjustOfferD d rus
+                do! adjustOfferC c rus
                 return c }
         let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
             try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id=name, body=body)) |> Async.AwaitTaskCorrect
