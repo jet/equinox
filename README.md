@@ -219,7 +219,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     ```powershell
     $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
-    $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
+    $env:EQUINOX_COSMOS_CONTAINER="equinox-test"
     ```
 
 2. use the `eqx` tool to initialize the database and/or collection (using preceding env vars)
@@ -372,12 +372,12 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
     $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
-    $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
+    $env:EQUINOX_COSMOS_CONTAINER="equinox-test"
 
     tools/Equinox.Tool/bin/Release/net461/eqx run `
-      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
     dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- run `
-      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ## PROVISIONING
 
@@ -393,7 +393,7 @@ For EventStore, the tests assume a running local instance configured as follows 
 ### Provisioning CosmosDb (when not using -sc)
 
     dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- init -ru 1000 `
-        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ## DEPROVISIONING
 
@@ -406,7 +406,7 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 
 ### Deprovisioning CosmosDb
 
-The [provisioning](provisioning) step spins up RUs in DocDB for the Collection, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the collection or reset teh RU provision dpwn to the lowest possible value)*.
+The [provisioning](provisioning) step spins up RUs in CosmosDB for the Container, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the collection or reset teh RU provision dpwn to the lowest possible value)*.
 
 - Kill the collection and/or database
 - Use the portal to change the allocation

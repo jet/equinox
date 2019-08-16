@@ -51,19 +51,19 @@ Stream | Ordered sequence of Events in a Store
 Term | Description
 -----|------------
 Change Feed | set of query patterns allowing one to run a continuous query reading documents in a Range in order of their last update
-Change Feed Processor | Library from Microsoft exposing facilities to Project from a Change Feed, maintaining Offsets per Physical Partition (Range) in the Lease Collection
-Collection | logical space in a CosmosDb holding [loosely] related documents. Documents bear logical Partition Keys
+Change Feed Processor | Library from Microsoft exposing facilities to Project from a Change Feed, maintaining Offsets per Physical Partition (Range) in the Lease Container
+Container | logical space in a CosmosDb holding [loosely] related documents. Documents bear logical Partition Keys. Formerly aka Collection.
 CosmosDb | Microsoft Azure's managed document database system
 Database | Group of collections
 DocumentDb | Original offering of CosmosDb, now entitled the SQL Query Model, `Microsoft.Azure.DocumentDb.Client[.Core]`
 Document id | Identifier used to load a document directly without a Query
-Lease Collection | Collection, outside of the storage collection (to avoid feedback effects) that maintains a set of Offsets per Range, together with leases reflecting instances of the Change Feed Processors and their Range assignments (aka `aux` collection)
+Lease Container | Container, outside of the storage Container (to avoid feedback effects) that maintains a set of Offsets per Range, together with leases reflecting instances of the Change Feed Processors and their Range assignments (aka `aux` container)
 Partition Key | Logical key identifying a Stream (maps to a Range)
-Projector | Process running a [set of] Change Feed Processors across the Ranges of a Collection in order to perform a global synchronization within the system across Streams
-Query | Using indices to walk a set of relevant documents in a Collection, yielding Documents
-Range | Subset of the hashed key space of a collection held as a physical partitition, can be split as part of scaling up the RUs allocated to a Collection
+Projector | Process running a [set of] Change Feed Processors across the Ranges of a Container in order to perform a global synchronization within the system across Streams
+Query | Using indices to walk a set of relevant documents in a Container, yielding Documents
+Range | Subset of the hashed key space of a collection held as a physical partition, can be split as part of scaling up the RUs allocated to a Container
 Replay | The ability to re-run the processing of the Change Feed from the oldest document forward at will
-Request Units | Virtual units representing max query processor capacity per second provisioned within CosmosDb to host a Range of a Collection
+Request Units | Virtual units representing max query processor capacity per second provisioned within CosmosDb to host a Range of a Container
 Request Charge | Number of RUs charged for a specific action, taken from the RUs allocation for the relevant Range
 Stored Procedure | JavaScript code stored in a collection that can translate an input request to a set of actions to be transacted as a group within CosmosDb. Incurs equuivalent Request Charges for work performed; can chain to a continuation internally after a read or write.
 
@@ -702,8 +702,8 @@ let outputLog = LoggerConfiguration().WriteTo.NLog().CreateLogger()
 let gatewayLog = outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
 // When starting the app, we connect (once)
-let connector : Equinox.Cosmos.CosmosConnector =
-    CosmosConnector(
+let connector : Equinox.Cosmos.Connector =
+    Connector(
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnThrottledRequests = 1,
         maxRetryWaitTimeInSeconds = 3,
@@ -711,9 +711,9 @@ let connector : Equinox.Cosmos.CosmosConnector =
 let cnx = connector.Connect("Application.CommandProcessor", Discovery.FromConnectionString connectionString) |> Async.RunSynchronously
 
 // If storing in a single collection, one specifies the db and collection
-// alternately use the overload which defers the mapping until the stream one is writing to becomes clear
-let coll = CosmosCollections("databaseName", "collectionName")
-let ctx = CosmosContext(cnx, coll, gatewayLog)
+// alternately use the overload that defers the mapping until the stream one is writing to becomes clear
+let containerMap = Containers("databaseName", "containerName")
+let ctx = Context(cnx, containerMap, gatewayLog)
 
 //
 // Write an event
