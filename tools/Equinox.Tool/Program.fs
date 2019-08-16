@@ -334,11 +334,10 @@ module SqlInit =
         | _ -> failwith "please specify a `ms`,`my` or `pg` endpoint" }
 
 module CosmosStats =
-    type Equinox.Cosmos.Store.Container with
+    type Microsoft.Azure.Cosmos.Container with
         // NB DO NOT CONSIDER PROMULGATING THIS HACK
-        member container.QueryValue<'T>(sqlQuery : string, ?options) =
-            let options = defaultArg options null
-            let query : seq<'T> = container.Client.CreateDocumentQuery<'T>(container.CollectionUri, sqlExpression = sqlQuery, feedOptions = options) :> _
+        member container.QueryValue<'T>(sqlQuery : string) =
+            let query : seq<'T> = failwith "TODO" //container.ReadItemAsync(sqlQuery) :> _
             query |> Seq.exactlyOne
     let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
@@ -347,7 +346,7 @@ module CosmosStats =
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
             let! _storeLog,conn,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
-            let container = Equinox.Cosmos.Store.Container(conn.Client,dName,cName)
+            let container = conn.Client.GetDatabase(dName).GetContainer(cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
@@ -355,7 +354,7 @@ module CosmosStats =
             log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name,sql) -> async {
                     log.Debug("Running query: {sql}", sql)
-                    let res = container.QueryValue<int>(sql, Microsoft.Azure.Documents.Client.FeedOptions(EnableCrossPartitionQuery=true))
+                    let res = container.QueryValue<int>(sql)
                     log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.ParallelThrottled 1 // TOCONSIDER replace with Async.Sequence when using new enough FSharp.Core
                 |> Async.Ignore
