@@ -367,13 +367,13 @@ function sync(req, expectation) {
     const tipDocId = collection.getAltLink() + "/docs/" + req.id;
     const isAccepted = collection.readDocument(tipDocId, {}, function (err, current) {
         // Verify we dont have a conflicting write
-        if (expectedVersion === -1) {
+        if (exp.index === -1) {
             // For Any mode, we always do an append operation
             executeUpsert(current);
-        } else if (!current && expectation.index !== 0) {
-            // If there is no Tip page, the writer has no possible reason for writing at an index other than zero
+        } else if (!current && ((exp.index===-2 && exp.etag !== null) || exp.index !== 0)) {
+            // If there is no Tip page, the writer has no possible reason for writing at an index other than zero, and an etag exp must be fulfilled
             response.setBody({ etag: null, n: 0, conflicts: [] });
-        } else if (current && expectation.index !== current.n) {
+        } else if (current && !((exp.index===-2 && exp.etag === current._etag) || exp.index === current.n)) {
             response.setBody({ etag: current._etag, n: current.n, conflicts: [] });
         } else {
             executeUpsert(current);
@@ -400,13 +400,16 @@ function sync(req, expectation) {
             const tipAccepted = collection.replaceDocument(current._self, tip, { etag: current._etag }, callback);
             if (!tipAccepted) throw new Error("Unable to replace Tip.");
         }
-        // For now, always do an Insert, as Change Feed mechanism does not yet afford us a way to
-        // a) guarantee an item per write (multiple consecutive updates can be 'squashed')
-        // b) with metadata sufficient for us to determine the items added (only etags, no way to convey i/n in feed item)
-        const i = tip.n - req.e.length;
-        const batch = { p: tip.p, id: i.toString(), i: i, n: tip.n, e: req.e };
-        const batchAccepted = collection.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
-        if (!batchAccepted) throw new Error("Unable to insert Batch.");
+        // if there's only a state update involved, we don't do an event-batch write (if we did, they'd trigger uniqueness violations)
+        if (req.e.length) {
+            // For now, always do an Insert, as Change Feed mechanism does not yet afford us a way to
+            // a) guarantee an item per write (multiple consecutive updates can be 'squashed')
+            // b) with metadata sufficient for us to determine the items added (only etags, no way to convey i/n in feed item)
+            const i = tip.n - req.e.length;
+            const batch = { p: tip.p, id: i.toString(), i: i, n: tip.n, e: req.e };
+            const batchAccepted = collection.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
+            if (!batchAccepted) throw new Error("Unable to insert Batch.");
+        }
     }
 }"""
 
