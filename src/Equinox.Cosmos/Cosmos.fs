@@ -119,7 +119,7 @@ module internal Position =
     let fromKnownEmpty = fromI 0L
     /// Just Do It mode
     let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
-    let fromEtag (value : string) = { fromAppendAtEnd with etag = Some value }
+    let fromEtag (value : string) = { fromI -2L with etag = Some value }
     /// NB very inefficient compared to FromDocument or using one already returned to you
     let fromMaxIndex (xs: IIndexedEvent[]) =
         if Array.isEmpty xs then fromKnownEmpty
@@ -353,11 +353,12 @@ module Sync =
     let [<Literal>] private sprocName = "EquinoxNoTipEvents2"  // NB need to renumber for any breaking change
     let [<Literal>] private sprocBody = """
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
-// 1 perform expectedVersion verification (can request inhibiting of check by supplying -1)
+// 1 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index) 
 // 2a Verify no current Tip; if so - incoming req.e and defines the `n`ext position / unfolds
 // 2b If we already have a tip, move position forward, replace unfolds
 // 3 insert a new document containing the events as part of the same batch of work
-function sync(req, expectation) {
+// 3a in some cases, there are only changes to the `u`nfolds and no `e`vents, in which case no write should happen
+function sync(req, exp) {
     if (!req) throw new Error("Missing req argument");
     const collection = getContext().getCollection();
     const collectionLink = collection.getSelfLink();
@@ -374,6 +375,8 @@ function sync(req, expectation) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero, and an etag exp must be fulfilled
             response.setBody({ etag: null, n: 0, conflicts: [] });
         } else if (current && !((exp.index===-2 && exp.etag === current._etag) || exp.index === current.n)) {
+            // if a consistency check arg has been supplied and does not match, surface the confloctoing values
+            // TODO we
             response.setBody({ etag: current._etag, n: current.n, conflicts: [] });
         } else {
             executeUpsert(current);
@@ -568,7 +571,7 @@ module internal Tip =
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * IIndexedEvent[]
-    /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.NotModified
+    /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.UnChanged
     let tryLoad (log : ILogger) retryPolicy containerStream (maybePos: Position option): Async<Result> = async {
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log
         match res with
@@ -814,7 +817,7 @@ type Gateway(conn : Connection, batching : BatchingPolicy) =
     member __.CreateSyncStoredProcIfNotExists log container = 
         Sync.Initialization.createSyncStoredProcIfNotExists log container
     member __.Sync log containerStream (exp, batch: Tip): Async<InternalSyncResult> = async {
-        if Array.isEmpty batch.e then invalidArg "batch" "Cannot write empty events batch."
+        if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
         let! wr = Sync.batch log conn.WriteRetryPolicy containerStream (exp,batch)
         match wr with
         | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (Token.create containerStream pos',events)

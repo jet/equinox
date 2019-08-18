@@ -67,7 +67,7 @@ type Tests(testOutputHelper) =
 
         let index = 0L
         let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
-        test <@ match res with Choice2Of2 ((:? ArgumentException) as ex) -> ex.Message.StartsWith "Cannot write empty events batch." | x -> failwithf "%A" x @>
+        test <@ match res with Choice2Of2 ((:? InvalidOperationException) as ex) -> ex.Message.StartsWith "Must write either events or unfolds." | x -> failwithf "%A" x @>
     }
 
     let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
