@@ -119,6 +119,7 @@ module internal Position =
     let fromKnownEmpty = fromI 0L
     /// Just Do It mode
     let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
+    let fromEtag (value : string) = { fromAppendAtEnd with etag = Some value }
     /// NB very inefficient compared to FromDocument or using one already returned to you
     let fromMaxIndex (xs: IIndexedEvent[]) =
         if Array.isEmpty xs then fromKnownEmpty
@@ -349,15 +350,14 @@ module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
     type SyncResponse = { etag: string; n: int64; conflicts: Event[] }
-    let [<Literal>] private sprocName = "EquinoxNoTipEvents"  // NB need to rename/number for any breaking change
+    let [<Literal>] private sprocName = "EquinoxNoTipEvents2"  // NB need to renumber for any breaking change
     let [<Literal>] private sprocBody = """
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
 // 1 perform expectedVersion verification (can request inhibiting of check by supplying -1)
 // 2a Verify no current Tip; if so - incoming req.e and defines the `n`ext position / unfolds
 // 2b If we already have a tip, move position forward, replace unfolds
 // 3 insert a new document containing the events as part of the same batch of work
-// 3a in some cases, there are only changes to the `u`nfolds and no `e`vents, in which case no write should happen
-function sync(req, expectedVersion) {
+function sync(req, expectation) {
     if (!req) throw new Error("Missing req argument");
     const collection = getContext().getCollection();
     const collectionLink = collection.getSelfLink();
@@ -370,10 +370,10 @@ function sync(req, expectedVersion) {
         if (expectedVersion === -1) {
             // For Any mode, we always do an append operation
             executeUpsert(current);
-        } else if (!current && expectedVersion !== 0) {
+        } else if (!current && expectation.index !== 0) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero
             response.setBody({ etag: null, n: 0, conflicts: [] });
-        } else if (current && expectedVersion !== current.n) {
+        } else if (current && expectation.index !== current.n) {
             response.setBody({ etag: current._etag, n: current.n, conflicts: [] });
         } else {
             executeUpsert(current);
@@ -416,21 +416,21 @@ function sync(req, expectedVersion) {
         | Conflict of Position * events: IIndexedEvent[]
         | ConflictUnknown of Position
 
-    type [<RequireQualifiedAccess>] Exp = Version of int64 | Any
+    type [<RequireQualifiedAccess>] Exp = Version of int64 | Etag of string | Any
     let private run (container : Container, stream : string) (exp, req: Tip)
         : Async<float*Result> = async {
         let sprocLink = sprintf "%O/sprocs/%s" container.CollectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey stream)
-        let ep = match exp with Exp.Version ev -> Position.fromI ev | Exp.Any -> Position.fromAppendAtEnd
+        let ep = match exp with Exp.Version ev -> Position.fromI ev | Exp.Etag et -> Position.fromEtag et | Exp.Any -> Position.fromAppendAtEnd
         let! ct = Async.CancellationToken
         let! (res : Client.StoredProcedureResponse<SyncResponse>) =
-            container.Client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ep.index) |> Async.AwaitTaskCorrect
+            container.Client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ep) |> Async.AwaitTaskCorrect
         let newPos = { index = res.Response.n; etag = Option.ofObj res.Response.etag }
         return res.RequestCharge, res.Response.conflicts |> function
             | null -> Result.Written newPos
             | [||] when newPos.index = 0L -> Result.Conflict (newPos, Array.empty)
             | [||] -> Result.ConflictUnknown newPos
-            | xs  -> Result.Conflict (newPos, Enum.Events(ep.index, xs, None, Direction.Forward) |> Array.ofSeq) }
+            | xs -> Result.Conflict (newPos, Enum.Events(ep.index, xs, None, Direction.Forward) |> Array.ofSeq) }
 
     let private logged (container,stream) (exp : Exp, req: Tip) (log : ILogger)
         : Async<Result> = async {
@@ -442,6 +442,7 @@ function sync(req, expectedVersion) {
             log |> Log.prop "stream" stream
                 |> Log.prop "count" req.e.Length |> Log.prop "ucount" req.u.Length
                 |> match exp with
+                    | Exp.Etag et ->     Log.prop "expectedEtag" et
                     | Exp.Version ev ->  Log.prop "expectedVersion" ev
                     | Exp.Any ->         Log.prop "expectedVersion" -1
         let! t, (ru,result) = run (container,stream) (exp, req) |> Stopwatch.Time
@@ -833,8 +834,11 @@ type private Category<'event, 'state>(gateway : Gateway, codec : Codec.IUnionEnc
         let state' = fold state (Seq.ofList events)
         let exp,events,eventsEncoded,projectionsEncoded =
             match mapUnfolds with
-            | Choice1Of2 () ->     Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.empty
-            | Choice2Of2 unfold -> Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.map codec.Encode (unfold events state')
+            | Choice1Of3 () ->     Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.empty
+            | Choice2Of3 unfold -> Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.map codec.Encode (unfold events state')
+            | Choice3Of3 reinterpret ->
+                let events', unfolds = reinterpret events state'
+                Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map codec.Encode events' |> Array.ofSeq, Seq.map codec.Encode unfolds 
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkUnfold baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
@@ -906,9 +910,9 @@ module Caching =
 type private Folder<'event, 'state>
     (   category: Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state,
         isOrigin: 'event -> bool,
-        mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq)>,
+        mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event seq)>,
         ?readCache) =
-    let inspectUnfolds = match mapUnfolds with Choice1Of2 () -> false | _ -> true
+    let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     interface Store.ICategory<'event, 'state, Container*string> with
         member __.Load containerStream (log : ILogger): Async<Store.StreamToken * 'state> =
             let batched = category.Load inspectUnfolds containerStream fold initial isOrigin log
@@ -984,6 +988,8 @@ type AccessStrategy<'event,'state> =
     | Snapshot of isValid: ('event -> bool) * generate: ('state -> 'event)
     /// Treat every known event type in the Union as being an Origin event
     | AnyKnownEventType
+    /// Allow produced events to be transmuted to unfolds with writes contingent on _etag rather than the normal Expected Version OCC strategy
+    | RollingUnfolds of isOrigin: ('event -> bool) * reinterpret: ('event list -> 'state -> 'event list*'event seq)
 
 type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, [<O; D(null)>]?access) =
     let readCacheOption =
@@ -992,10 +998,11 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | CachingStrategy.SlidingWindow(cache, _) -> Some(cache, null)
     let isOrigin, mapUnfolds =
         match access with
-        | None ->                                                      (fun _ -> false), Choice1Of2 ()
-        | Some (AccessStrategy.Unfolded (isOrigin, unfold)) ->         isOrigin,         Choice2Of2 (fun _ state -> unfold state)
-        | Some (AccessStrategy.Snapshot (isValid,generate)) ->         isValid,          Choice2Of2 (fun _ state -> generate state |> Seq.singleton)
-        | Some (AccessStrategy.AnyKnownEventType) ->                   (fun _ -> true),  Choice2Of2 (fun events _ -> Seq.last events |> Seq.singleton)
+        | None ->                                                        (fun _ -> false), Choice1Of3 ()
+        | Some (AccessStrategy.Unfolded (isOrigin, unfold)) ->           isOrigin,         Choice2Of3 (fun _ state -> unfold state)
+        | Some (AccessStrategy.Snapshot (isValid,generate)) ->           isValid,          Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
+        | Some (AccessStrategy.AnyKnownEventType) ->                     (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
+        | Some (AccessStrategy.RollingUnfolds (isOrigin,reinterpret)) -> isOrigin,         Choice3Of3 reinterpret
     let cosmosCat = Category<'event, 'state>(context.Gateway, codec)
     let folder = Folder<'event, 'state>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
     let category : Store.ICategory<_,_,Container*string> =
