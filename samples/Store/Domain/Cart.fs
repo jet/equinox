@@ -42,6 +42,8 @@ module Folds =
     let fold state = Seq.fold evolve state
     let isOrigin = function Events.Compacted _ -> true | _ -> false
     let compact = State.toSnapshot >> Events.Compacted
+    /// This transmute impl a) removes events - we're not interested in storing the events b) packs the post-state into a Compacted unfold-event
+    let transmute _events state = [],[compact state]
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
     | AddItem               of Context * SkuId * quantity: int

@@ -842,8 +842,8 @@ type private Category<'event, 'state>(gateway : Gateway, codec : Codec.IUnionEnc
             match mapUnfolds with
             | Choice1Of3 () ->     Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.empty
             | Choice2Of3 unfold -> Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.map codec.Encode (unfold events state')
-            | Choice3Of3 reinterpret ->
-                let events', unfolds = reinterpret events state'
+            | Choice3Of3 transmute ->
+                let events', unfolds = transmute events state'
                 Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map codec.Encode events' |> Array.ofSeq, Seq.map codec.Encode unfolds 
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkUnfold baseIndex projectionsEncoded
@@ -916,7 +916,7 @@ module Caching =
 type private Folder<'event, 'state>
     (   category: Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state,
         isOrigin: 'event -> bool,
-        mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event seq)>,
+        mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     interface Store.ICategory<'event, 'state, Container*string> with
@@ -994,8 +994,9 @@ type AccessStrategy<'event,'state> =
     | Snapshot of isValid: ('event -> bool) * generate: ('state -> 'event)
     /// Treat every known event type in the Union as being an Origin event
     | AnyKnownEventType
-    /// Allow produced events to be transmuted to unfolds with writes contingent on _etag rather than the normal Expected Version OCC strategy
-    | RollingUnfolds of isOrigin: ('event -> bool) * reinterpret: ('event list -> 'state -> 'event list*'event seq)
+    /// Allow produced events to be transmuted to unfolds.
+    /// In this mode, Optimistic Concurrency Control OCC is based on the _etag (rather than the normal Expected Version strategy)
+    | RollingUnfolds of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
 type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, [<O; D(null)>]?access) =
     let readCacheOption =
