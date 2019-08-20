@@ -24,6 +24,11 @@ let createServiceCosmos gateway log =
     let resolveStream = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
+let createServiceCosmosRollingUnfolds gateway log =
+    let access = Cosmos.AccessStrategy.RollingUnfolds(Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.transmute)
+    let resolveStream = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
+    Backend.Favorites.Service(log, resolveStream)
+
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput
@@ -60,5 +65,14 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let gateway = createCosmosContext conn defaultBatchSize
         let service = createServiceCosmos gateway log
+        do! act service args
+    }
+    
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = Async.RunSynchronously <| async {
+        let log = createLog ()
+        let! conn = connectToSpecifiedCosmosOrSimulator log
+        let gateway = createCosmosContext conn defaultBatchSize
+        let service = createServiceCosmosRollingUnfolds gateway log
         do! act service args
     }

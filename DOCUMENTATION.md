@@ -65,7 +65,7 @@ Range | Subset of the hashed key space of a collection held as a physical partit
 Replay | The ability to re-run the processing of the Change Feed from the oldest Item (document) forward at will
 Request Units | Virtual units representing max query processor capacity per second provisioned within CosmosDb to host a Range of a Container
 Request Charge | Number of RUs charged for a specific action, taken from the RUs allocation for the relevant Range
-Stored Procedure | JavaScript code stored in a collection that can translate an input request to a set of actions to be transacted as a group within CosmosDb. Incurs equuivalent Request Charges for work performed; can chain to a continuation internally after a read or write.
+Stored Procedure | JavaScript code stored in a collection that can translate an input request to a set of actions to be transacted as a group within CosmosDb. Incurs equivalent Request Charges for work performed; can chain to a continuation internally after a read or write.
 
 ## EventStore
 
@@ -744,7 +744,6 @@ This is a very loose laundry list of items that have occurred to us to do, given
 
 ## Wouldn't it be nice - `Equinox`
 
-- While the plan is to support linux and MacOS, there are skipped tests wrt Mono etc. In terms of non-Windows developer experience, there's plenty scope for improvement.
 - Performance tuning for non-store-specific logic; no perf tuning has been done to date (though some of the Store/Domain implementations do show perf-optimized fold implementation techniques). While in general the work is I/O bound, there are definitely opportunities to use `System.IO.Pipelines` etc, and the `MemoryStore` and CLI gives a good testbed to drive this improvement.
 
 ## Wouldn't it be nice - `Equinox.EventStore`
@@ -761,7 +760,6 @@ EventStore, and it's Store adapter is the most proven and is pretty feature rich
 - Multiple writers support for `u`nfolds (at present a `sync` completely replaces the unfolds in the Tip; this will be extended by having the stored proc maintain the union of the unfolds in play (both for semi-related services and for blue/green deploy scenarios); TBD how we decide when a union that's no longer in use gets removed) [#108](https://github.com/jet/equinox/issues/108)
 - performance, efficiency and concurrency improvements based on [`tip-isa-batch`](https://github.com/jet/equinox/tree/tip-isa-batch) schema generalization [#109](https://github.com/jet/equinox/issues/109)
 - performance improvements in loading logic
-- `_etag`-based consistency checks?
 - Perf tuning of `JObject` vs `UTF-8` arrays and/or using a different serializer [#79](https://github.com/jet/equinox/issues/79)
 
 ## Wouldn't it be nice - `Equinox.SqlStreamStore`

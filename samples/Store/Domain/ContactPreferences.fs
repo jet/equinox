@@ -19,6 +19,10 @@ module Folds =
         | Events.Updated { preferences = value } -> value
     let fold (state: State) (events: seq<Events.Event>) : State =
         Seq.tryLast events |> Option.fold evolve state
+    let isOrigin _ = true
+    /// When using AccessStrategy.RollingUnfolds, the events become unfolds, but the logic remains identical
+    let transmute events _state =
+        [],events
 
 type Command =
     | Update of Events.Value

@@ -24,6 +24,9 @@ let resolveStreamCosmosWithKnownEventTypeSemantics gateway =
     Cosmos.Resolver(gateway 1, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.AnyKnownEventType).Resolve
 let resolveStreamCosmosWithoutCustomAccessStrategy gateway =
     Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).Resolve
+let resolveStreamCosmosRollingUnfolds gateway =
+    let access = Cosmos.AccessStrategy.RollingUnfolds(Domain.ContactPreferences.Folds.isOrigin, Domain.ContactPreferences.Folds.transmute)
+    Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -69,5 +72,11 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosWithKnownEventTypeSemantics
+        do! act service args
+    }
+    
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosRollingUnfolds
         do! act service args
     }
