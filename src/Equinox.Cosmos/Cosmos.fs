@@ -350,7 +350,7 @@ module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
     type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
-    let [<Literal>] private sprocName = "EquinoxRollingUnfolds"  // NB need to rename/number for any breaking change
+    let [<Literal>] private sprocName = "EquinoxRollingUnfolds3"  // NB need to rename/number for any breaking change
     let [<Literal>] private sprocBody = """
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
 // 1 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index) 
@@ -358,7 +358,7 @@ module Sync =
 // 2b If we already have a tip, move position forward, replace unfolds
 // 3 insert a new document containing the events as part of the same batch of work
 // 3a in some cases, there are only changes to the `u`nfolds and no `e`vents, in which case no write should happen
-function sync(req, exp) {
+function sync(req, expIndex, expEtag) {
     if (!req) throw new Error("Missing req argument");
     const collection = getContext().getCollection();
     const collectionLink = collection.getSelfLink();
@@ -368,13 +368,13 @@ function sync(req, exp) {
     const tipDocId = collection.getAltLink() + "/docs/" + req.id;
     const isAccepted = collection.readDocument(tipDocId, {}, function (err, current) {
         // Verify we dont have a conflicting write
-        if (exp.index === -1) {
+        if (expIndex === -1) {
             // For Any mode, we always do an append operation
             executeUpsert(current);
-        } else if (!current && ((exp.index === -2 && exp.etag !== null) || exp.index > 0)) {
+        } else if (!current && ((expIndex === -2 && expEtag !== null) || expIndex > 0)) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero, and an etag exp must be fulfilled
             response.setBody({ etag: null, n: 0, conflicts: [] });
-        } else if (current && ((exp.index === -2 && exp.etag !== current._etag) || (exp.index !== -2 && exp.index !== current.n))) {
+        } else if (current && ((expIndex === -2 && expEtag !== current._etag) || (expIndex !== -2 && expIndex !== current.n))) {
             // if we're working based on etags, the `u`nfolds very likely to bear relevant info as state-bearing unfolds
             // if there are no `u`nfolds, we need to be careful not to yield `conflicts: null`, as that signals a successful write (see below)
             response.setBody({ etag: current._etag, n: current.n, conflicts: current.u || [] });
@@ -430,8 +430,7 @@ function sync(req, exp) {
         let ep = match exp with Exp.Version ev -> Position.fromI ev | Exp.Etag et -> Position.fromEtag et | Exp.Any -> Position.fromAppendAtEnd
         let! ct = Async.CancellationToken
         let! (res : Client.StoredProcedureResponse<SyncResponse>) =
-            let renderableEp = {| etag = defaultArg ep.etag null; index = ep.index |} // can't use an Option as no relevant converter in play
-            container.Client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box renderableEp) |> Async.AwaitTaskCorrect
+            container.Client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ep.index, box (Option.toObj ep.etag)) |> Async.AwaitTaskCorrect
         let newPos = { index = res.Response.n; etag = Option.ofObj res.Response.etag }
         return res.RequestCharge, res.Response.conflicts |> function
             | null -> Result.Written newPos
