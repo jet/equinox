@@ -308,7 +308,7 @@ A key facility of this repo is being able to run load tests, either in process a
 
 - `Favorite` - Simulate a very enthusiastic user that favorites something once per second
   - the test generates an ever-growing state that can only be managed efficiently if you apply either caching, snapshotting or both
-  - NB due to being unbounded, even `RollingSnapshots` `Unfolded` (event `RollingUnfolds`) will eventually hit the Store's limits (4MB/event for EventStore, 3MB/Item (document) for CosmosDB)
+  - NB due to being unbounded, `RollingSnapshots`, `Snapshot`, `Unfolded` etc. (even `RollingUnfolds`) will eventually hit the Store's limits (4MB/event for EventStore, 3MB/Item (document) for CosmosDB)
 - `SaveForLater` - Simulate a happy shopper that saves 3 items per second, and empties the Save For Later list whenever it is full (when it hits 50 items)
   - Snapshotting helps a lot
   - Caching is not as essential as it is for the `Favorite` test (as long as you have either caching or snapshotting, that is)
