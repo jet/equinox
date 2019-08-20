@@ -37,6 +37,8 @@ module Folds =
         s.AsState()
     let isOrigin = function Events.Compacted _ -> true | _ -> false
     let compact state = Events.Compacted { net = state }
+    /// This transmute impl a) removes events - we're not interested in storing the events b) packs the post-state into a Compacted unfold-event
+    let transmute _events state = [],[compact state]
 
 type Command =
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
