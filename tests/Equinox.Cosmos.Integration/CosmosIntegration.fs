@@ -115,7 +115,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` ctx initialState = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` withOptimizations ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
         let! conn = connectToSpecifiedCosmosOrSimulator log1
@@ -126,7 +126,9 @@ type Tests(testOutputHelper) =
         let cartId = % Guid.NewGuid()
 
         // establish base stream state
-        let service1 = Cart.createServiceWithEmptyUnfolds conn batchSize log1
+        let service1 =
+            if withOptimizations then Cart.createServiceWithSnapshotStrategy conn batchSize log1
+            else Cart.createServiceWithSnapshotStrategy conn batchSize log1
         let! maybeInitialSku =
             let (streamEmpty, skuId) = initialState
             async {
@@ -160,7 +162,7 @@ type Tests(testOutputHelper) =
             do! s4 }
         let log2, capture2 = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
         use _flush = log2
-        let service2 = Cart.createServiceWithEmptyUnfolds conn batchSize log2
+        let service2 = Cart.createServiceWithSnapshotStrategy conn batchSize log2
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
@@ -185,7 +187,7 @@ type Tests(testOutputHelper) =
         test <@ maybeInitialSku |> Option.forall (fun (skuId, quantity) -> has skuId quantity)
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
-        // Intended conflicts arose
+       // Intended conflicts pertained
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
 #if EVENTS_IN_TIP
         test <@ let c2 = List.choose conflict capture2.ExternalCalls
@@ -330,7 +332,7 @@ type Tests(testOutputHelper) =
 #endif
     }
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` context skuId = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10

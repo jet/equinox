@@ -349,8 +349,8 @@ module private DocDb =
 module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
-    type SyncResponse = { etag: string; n: int64; conflicts: Event[] }
-    let [<Literal>] private sprocName = "EquinoxNoTipEvents2"  // NB need to renumber for any breaking change
+    type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
+    let [<Literal>] private sprocName = "EquinoxRollingUnfolds"  // NB need to rename/number for any breaking change
     let [<Literal>] private sprocBody = """
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
 // 1 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index) 
@@ -371,13 +371,13 @@ function sync(req, exp) {
         if (exp.index === -1) {
             // For Any mode, we always do an append operation
             executeUpsert(current);
-        } else if (!current && ((exp.index===-2 && exp.etag !== null) || exp.index !== 0)) {
+        } else if (!current && ((exp.index === -2 && exp.etag !== null) || exp.index > 0)) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero, and an etag exp must be fulfilled
             response.setBody({ etag: null, n: 0, conflicts: [] });
-        } else if (current && !((exp.index===-2 && exp.etag === current._etag) || exp.index === current.n)) {
-            // if a consistency check arg has been supplied and does not match, surface the confloctoing values
-            // TODO we
-            response.setBody({ etag: current._etag, n: current.n, conflicts: [] });
+        } else if (current && ((exp.index === -2 && exp.etag !== current._etag) || (exp.index !== -2 && exp.index !== current.n))) {
+            // if we're working based on etags, the `u`nfolds very likely to bear relevant info as state-bearing unfolds
+            // if there are no `u`nfolds, we need to be careful not to yield `conflicts: null`, as that signals a successful write (see below)
+            response.setBody({ etag: current._etag, n: current.n, conflicts: current.u || [] });
         } else {
             executeUpsert(current);
         }
@@ -430,13 +430,14 @@ function sync(req, exp) {
         let ep = match exp with Exp.Version ev -> Position.fromI ev | Exp.Etag et -> Position.fromEtag et | Exp.Any -> Position.fromAppendAtEnd
         let! ct = Async.CancellationToken
         let! (res : Client.StoredProcedureResponse<SyncResponse>) =
-            container.Client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box ep) |> Async.AwaitTaskCorrect
+            let renderableEp = {| etag = defaultArg ep.etag null; index = ep.index |} // can't use an Option as no relevant converter in play
+            container.Client.ExecuteStoredProcedureAsync(sprocLink, opts, ct, box req, box renderableEp) |> Async.AwaitTaskCorrect
         let newPos = { index = res.Response.n; etag = Option.ofObj res.Response.etag }
         return res.RequestCharge, res.Response.conflicts |> function
             | null -> Result.Written newPos
             | [||] when newPos.index = 0L -> Result.Conflict (newPos, Array.empty)
             | [||] -> Result.ConflictUnknown newPos
-            | xs -> Result.Conflict (newPos, Enum.Events(ep.index, xs, None, Direction.Forward) |> Array.ofSeq) }
+            | xs -> Result.Conflict (newPos, Enum.Unfolds xs |> Array.ofSeq) }
 
     let private logged (container,stream) (exp : Exp, req: Tip) (log : ILogger)
         : Async<Result> = async {
@@ -571,7 +572,7 @@ module internal Tip =
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * IIndexedEvent[]
-    /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.UnChanged
+    /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.NotModified
     let tryLoad (log : ILogger) retryPolicy containerStream (maybePos: Position option): Async<Result> = async {
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log
         match res with
@@ -1009,7 +1010,7 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | Some (AccessStrategy.Unfolded (isOrigin, unfold)) ->           isOrigin,         Choice2Of3 (fun _ state -> unfold state)
         | Some (AccessStrategy.Snapshot (isValid,generate)) ->           isValid,          Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
         | Some (AccessStrategy.AnyKnownEventType) ->                     (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
-        | Some (AccessStrategy.RollingUnfolds (isOrigin,reinterpret)) -> isOrigin,         Choice3Of3 reinterpret
+        | Some (AccessStrategy.RollingUnfolds (isOrigin,transmute)) -> isOrigin,         Choice3Of3 transmute
     let cosmosCat = Category<'event, 'state>(context.Gateway, codec)
     let folder = Folder<'event, 'state>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
     let category : Store.ICategory<_,_,Container*string> =
