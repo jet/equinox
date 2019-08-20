@@ -22,11 +22,17 @@ module Cart =
         let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve
         Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
-    let createServiceWithProjection connection batchSize log =
+    /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
+    let createServiceWithEmptyUnfolds connection batchSize log =
+        let store = createCosmosContext connection batchSize
+        let unfArgs = Domain.Cart.Folds.isOrigin, fun _ -> Seq.empty
+        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unfolded unfArgs).Resolve
+        Backend.Cart.Service(log, resolveStream)
+    let createServiceWithSnapshotStrategy connection batchSize log =
         let store = createCosmosContext connection batchSize
         let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
         Backend.Cart.Service(log, resolveStream)
-    let createServiceWithProjectionAndCaching connection batchSize log cache =
+    let createServiceWithSnapshotStrategyAndCaching connection batchSize log cache =
         let store = createCosmosContext connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         let resolveStream = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve
@@ -65,7 +71,7 @@ type Tests(testOutputHelper) =
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly batching the reads [without using the Index for reads]`` context skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` context skuId = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
 
         let maxItemsPerRequest = 2
@@ -100,7 +106,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` withOptimizations ctx initialState = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
         let! conn = connectToSpecifiedCosmosOrSimulator log1
@@ -111,9 +117,7 @@ type Tests(testOutputHelper) =
         let cartId = % Guid.NewGuid()
 
         // establish base stream state
-        let service1 =
-            if withOptimizations then Cart.createServiceWithProjection conn batchSize log1
-            else Cart.createServiceWithProjection conn batchSize log1
+        let service1 = Cart.createServiceWithEmptyUnfolds conn batchSize log1
         let! maybeInitialSku =
             let (streamEmpty, skuId) = initialState
             async {
@@ -147,7 +151,7 @@ type Tests(testOutputHelper) =
             do! s4 }
         let log2, capture2 = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
         use _flush = log2
-        let service2 = Cart.createServiceWithProjection conn batchSize log2
+        let service2 = Cart.createServiceWithEmptyUnfolds conn batchSize log2
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
@@ -172,7 +176,7 @@ type Tests(testOutputHelper) =
         test <@ maybeInitialSku |> Option.forall (fun (skuId, quantity) -> has skuId quantity)
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
-       // Intended conflicts pertained
+        // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
 #if EVENTS_IN_TIP
         test <@ let c2 = List.choose conflict capture2.ExternalCalls
@@ -211,11 +215,11 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
     }
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, using Projection to avoid queries`` context skuId = Async.RunSynchronously <| async {
+     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` context skuId = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
-        let createServiceIndexed () = Cart.createServiceWithProjection conn batchSize log
+        let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy conn batchSize log
         let service1, service2 = createServiceIndexed (), createServiceIndexed ()
         capture.Clear()
 
@@ -239,11 +243,11 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly using Projection and Cache to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
         let cache = Caching.Cache("cart", sizeMb = 50)
-        let createServiceCached () = Cart.createServiceWithProjectionAndCaching conn batchSize log cache
+        let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching conn batchSize log cache
         let service1, service2 = createServiceCached (), createServiceCached ()
         capture.Clear()
 
