@@ -38,6 +38,7 @@ The implementations are distilled from [`Jet.com` systems dating all the way bac
   - no additional roundtrips to the store needed at either the Load or Sync points in the flow
 
   It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
+- **`Equinox.Cosmos` `RollingUnfolds` 'non-event-sourced' mode**: Uses 'Tip with Unfolds' encoding to avoid having to write events at all - this allows one to build, reason about and test your aggregates in the normal manner, but prevent events from being persisted. This enables one to benefit from the caching and consistency management mechanisms without having to represent every change as an event. Search for `transmute` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in the `dotnet-templates` Consumption templates.
 
 ## Components
 
