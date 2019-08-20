@@ -13,6 +13,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - Updated README.md to refer to `propulsion init` and `propulsion project` (formerly `eqx` `initAux` and `project`) (jet/propulsion#17)[https://github.com/jet/propulsion/pull/17]
 - `eqx project` now uses environment variables `PROPULSION_KAFKA_`* instead of `EQUINOX_`* [#143](https://github.com/jet/equinox/pull/143)
+- renamed `Equinox.DeprecatedRawName` -> `StreamName` [#150](https://github.com/jet/equinox/pull/150)
 
 ### Removed
 
@@ -42,9 +43,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `TypeShape` dependency in `Equinox.Codec` now `7.*` (was `6.*`)
 - `Equinox.Tool` now depends on `Propulsion.Kafka` v `>= 1.0.1`
 - `Equinox.Cosmos.Projection` is only an internal dependency of the `Equinox.Tool`
-- `Equinox.Cosmos`: Top level `CosmosStore` is now called `Context` for consistency [#140](https://github.com/jet/equinox/pull/141)
-- `Equinox.EventStore`: Top level `GesGateway` is now called `Context` for consistency [#140](https://github.com/jet/equinox/pull/141)
-- Builders etc. in `Equinox.Cosmos`, `Equinox.EventStore` and `Equinox.MemoryStore` no longer have disambiguating `Cosmos`, `Ges` and `Memory` prefixes [#140](https://github.com/jet/equinox/pull/141)
+- `Equinox.Cosmos`: Top level `CosmosStore` is now called `Context` for consistency [#140](https://github.com/jet/equinox/pull/140)
+- `Equinox.EventStore`: Top level `GesGateway` is now called `Context` for consistency [#140](https://github.com/jet/equinox/pull/140)
+- Builders etc. in `Equinox.Cosmos`, `Equinox.EventStore` and `Equinox.MemoryStore` no longer have disambiguating `Cosmos`, `Ges` and `Memory` prefixes [#140](https://github.com/jet/equinox/pull/140)
 
 ### Removed
 
