@@ -9,15 +9,24 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-rc3"></a>
+## [2.0.0-rc3] - 2019-08-20
+
+### Added
 
 - `Cosmos`: Add `AccessStrategy.RollingUnfolds`, leveraging `_etag`-contingent writes to allow state management without needing to write >=1 event per update [#146](https://github.com/jet/equinox/pull/146)
 
 ### Changed
 
-- Updated README.md to refer to `propulsion init` and `propulsion project` (formerly `eqx` `initAux` and `project`) (jet/propulsion#17)[https://github.com/jet/propulsion/pull/17]
-- `eqx project` now uses environment variables `PROPULSION_KAFKA_`* instead of `EQUINOX_`* [#143](https://github.com/jet/equinox/pull/143)
+- Updated README.md to refer to `propulsion init` and `propulsion project` (formerly `eqx` `initAux` and `project`) [jet/propulsion#17](https://github.com/jet/propulsion/pull/17)
 - `Equinox.Cosmos` now uses `Container` in preference to `Collection`, in alignment with the `Microsoft.Azure.Cosmos` SDK's standardized naming, _and other minor changes, see PR for details_ [#149](https://github.com/jet/equinox/pull/149)
 - `EQUINOX_COSMOS_COLLECTION` environment variable argument for `eqx` tool is now `EQUINOX_COSMOS_CONTAINER` [#143](https://github.com/jet/equinox/pull/143)
+- `eqx project` now uses environment variables `PROPULSION_KAFKA_*` instead of `EQUINOX_*` [#143](https://github.com/jet/equinox/pull/143)
 - renamed `Equinox.DeprecatedRawName` -> `StreamName` [#150](https://github.com/jet/equinox/pull/150)
 
 ### Removed
@@ -25,9 +34,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx project` - `ChangeFeedProcessor` and Kafka support - All projection management logic now lives in the `Propulsion` libraries [#138](https://github.com/jet/equinox/pull/138)
 - `eqx initAux` - now `propulsion init` (jet/propulsion#17)[https://github.com/jet/propulsion/pull/17]
 
-### Fixed
-
-<a name="2.0.0"></a>
 <a name="2.0.0-rc2"></a>
 ## [2.0.0-rc2] - 2019-07-01
 
@@ -40,7 +46,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
- - `Equinox.Codec` now uses `System.Buffers.ArrayPool` to reduce allocations when encoding/decoding union objects using json.net [#140](https://github.com/jet/equinox/pull/140)
+- `Equinox.Codec` now uses `System.Buffers.ArrayPool` to reduce allocations when encoding/decoding union objects using json.net [#140](https://github.com/jet/equinox/pull/140)
 - `Equinox.Codec` now uses `RecyclableMemoryStreamManager` to reduce allocations wrt `MemoryStream` objects when encoding union objects using json.net [#139](https://github.com/jet/equinox/pull/139)
 
 ### Changed
@@ -244,7 +250,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc2...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc3...HEAD
+[2.0.0-rc3]: https://github.com/jet/equinox/compare/2.0.0-rc2...2.0.0-rc3
 [2.0.0-rc2]: https://github.com/jet/equinox/compare/2.0.0-rc1...2.0.0-rc2
 [2.0.0-rc1]: https://github.com/jet/equinox/compare/2.0.0-preview9...2.0.0-rc1
 [2.0.0-preview9]: https://github.com/jet/equinox/compare/2.0.0-preview8...2.0.0-preview9
