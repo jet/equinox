@@ -10,7 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `Cosmos`: Add `AccessStrategy.RollingState`, leveraging `_etag`-contingent writes to allow state management without needing to write an event per update [#146](https://github.com/jet/equinox/pull/146)
+- `Cosmos`: Add `AccessStrategy.RollingUnfolds`, leveraging `_etag`-contingent writes to allow state management without needing to write >=1 event per update [#146](https://github.com/jet/equinox/pull/146)
 
 ### Changed
 
