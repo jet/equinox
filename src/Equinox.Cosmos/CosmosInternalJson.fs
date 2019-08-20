@@ -3,7 +3,7 @@
 open Newtonsoft.Json.Linq
 open Newtonsoft.Json
 
-/// Manages injecting prepared json into the data being submitted to DocDb as-is, on the basis we can trust it to be valid json as DocDb will need it to be
+/// Manages injecting prepared json into the data being submitted to CosmosDB as-is, on the basis we can trust it to be valid json as CosmosDB will need it to be
 type VerbatimUtf8JsonConverter() =
     inherit JsonConverter()
     
@@ -26,7 +26,7 @@ open System.IO
 open System.IO.Compression
 
 /// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
-/// Only applied to snapshots in the Index
+/// Only applied to snapshots in the Tip
 type Base64ZipUtf8JsonConverter() =
     inherit JsonConverter()
     let pickle (input : byte[]) : string =

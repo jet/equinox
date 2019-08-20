@@ -50,20 +50,20 @@ Stream | Ordered sequence of Events in a Store
 
 Term | Description
 -----|------------
-Change Feed | set of query patterns allowing one to run a continuous query reading documents in a Range in order of their last update
-Change Feed Processor | Library from Microsoft exposing facilities to Project from a Change Feed, maintaining Offsets per Physical Partition (Range) in the Lease Collection
-Collection | logical space in a CosmosDb holding [loosely] related documents. Documents bear logical Partition Keys
+Change Feed | set of query patterns allowing one to run a continuous query reading Items (documents) in a Range in order of their last update
+Change Feed Processor | Library from Microsoft exposing facilities to Project from a Change Feed, maintaining Offsets per Physical Partition (Range) in the Lease Container
+Container | logical space in a CosmosDb holding [loosely] related Items (aka Documents). Items bear logical Partition Keys. Formerly aka Collection.
 CosmosDb | Microsoft Azure's managed document database system
-Database | Group of collections
+Database | Group of Containers
 DocumentDb | Original offering of CosmosDb, now entitled the SQL Query Model, `Microsoft.Azure.DocumentDb.Client[.Core]`
-Document id | Identifier used to load a document directly without a Query
-Lease Collection | Collection, outside of the storage collection (to avoid feedback effects) that maintains a set of Offsets per Range, together with leases reflecting instances of the Change Feed Processors and their Range assignments (aka `aux` collection)
+Document id | Identifier used to load a document (Item) directly without a Query
+Lease Container | Container, outside of the storage Container (to avoid feedback effects) that maintains a set of Offsets per Range, together with leases reflecting instances of the Change Feed Processors and their Range assignments (aka `aux` container)
 Partition Key | Logical key identifying a Stream (maps to a Range)
-Projector | Process running a [set of] Change Feed Processors across the Ranges of a Collection in order to perform a global synchronization within the system across Streams
-Query | Using indices to walk a set of relevant documents in a Collection, yielding Documents
-Range | Subset of the hashed key space of a collection held as a physical partitition, can be split as part of scaling up the RUs allocated to a Collection
-Replay | The ability to re-run the processing of the Change Feed from the oldest document forward at will
-Request Units | Virtual units representing max query processor capacity per second provisioned within CosmosDb to host a Range of a Collection
+Projector | Process running a [set of] Change Feed Processors across the Ranges of a Container in order to perform a global synchronization within the system across Streams
+Query | Using indices to walk a set of relevant items in a Container, yielding Items (documents)
+Range | Subset of the hashed key space of a collection held as a physical partition, can be split as part of scaling up the RUs allocated to a Container
+Replay | The ability to re-run the processing of the Change Feed from the oldest Item (document) forward at will
+Request Units | Virtual units representing max query processor capacity per second provisioned within CosmosDb to host a Range of a Container
 Request Charge | Number of RUs charged for a specific action, taken from the RUs allocation for the relevant Range
 Stored Procedure | JavaScript code stored in a collection that can translate an input request to a set of actions to be transacted as a group within CosmosDb. Incurs equuivalent Request Charges for work performed; can chain to a continuation internally after a read or write.
 
@@ -354,9 +354,9 @@ c) submit the Events, if any, for appending
 d) retrying b+c where there's a conflict (i.e., the version of the stream that pertained in (a) has been superseded)
 e) after `maxAttempts` / `3` retries, a `MaxResyncAttemptsExceededException` is thrown, and an upstream can retry as necessary (depending on SLAs, a timeout may further constrain number of retries that can occur)
 
-Aside from reading the various documents regarding the conepts underlying CQRS, it's important to consider that (unless you're trying to leverage the Read-your-writes guarantee), doing reads direct from an event-sourced store is generally not considered a best practice (the opposite, in fact). Any state you surface to a caller is by definition out of date the millisecond you obtain it, so in many cases a caller might as well use an eventually-consistent version of the same state obtained via a [n eventually-consistent] Projection (see terms above).
+Aside from reading the various documentation regarding the concepts underlying CQRS, it's important to consider that (unless you're trying to leverage the Read-your-writes guarantee), doing reads direct from an event-sourced store is generally not considered a best practice (the opposite, in fact). Any state you surface to a caller is by definition out of date the millisecond you obtain it, so in many cases a caller might as well use an eventually-consistent version of the same state obtained via a [n eventually-consistent] Projection (see terms above).
 
-All that said, if you're in a situation where your cache hit ratio is goig to be high and/or you have reason to believe the underlying Event-Streams are not going to be long, pretty goof performance can be achieved nonetheless; just consider that taking this shortcut _will_ impede scaling and, at worst, can result in you ending up with a model that's potentially both:
+All that said, if you're in a situation where your cache hit ratio is going to be high and/or you have reason to believe the underlying Event-Streams are not going to be long, pretty goof performance can be achieved nonetheless; just consider that taking this shortcut _will_ impede scaling and, at worst, can result in you ending up with a model that's potentially both:
 
 - overly simplistic - you're passing up the opportunity to provide a Read Model that directly models the requirement by providing a Materialized View
 - unnecessarily complex - the increased complexity of the `fold` function and/or any output from `unfold` (and its storage cost) is a drag on one's ability to read, test, extend and generally maintain the Command Handling/Decision logic that can only live on the write side
@@ -399,7 +399,7 @@ The fact that we have a `Cleared` Event stems from the fact that the spec define
   ii) Because the `Cleared` Event establishes a known State, one can have the `isOrigin` flag the event as being the furthest one needs to search backwards before starting to `fold` events to establish the state. This also prevents the fact that the stream gets long in terms of numbers of events from impacting the effiency of the processing
   iii) While having a `Cleared` event happens to work, it also represents a technical trick in a toy domain and should not be considered some cure-all Pattern - real Todo apps don't have a 'declare backruptcy' function. And example alternate approaches might be to represent each Todo list as it's own stream, and then have a `TodoLists` aggregate coordinating those.
 
-The `Compacted` event is used to represent Rolling Snapshots (stored in-stream) and/or Unfolds (stored in Tip document); For a real Todo list, using this facility may well make sense - the State can fit in a reasonable space, and the likely number of Events may reach an interesting enough count to justify applying such a feature
+The `Compacted` event is used to represent Rolling Snapshots (stored in-stream) and/or Unfolds (stored in Tip document-Item); For a real Todo list, using this facility may well make sense - the State can fit in a reasonable space, and the likely number of Events may reach an interesting enough count to justify applying such a feature
   i) it should also be noted that Caching may be a better answer - note `Compacted` is also an `isOrigin` event - there's no need to go back any further if you meet one.
   ii) we use an Array in preference to a [F#] `list`; while there are `ListConverter`s out there (notably not in [`Jet.JsonNet.Converters`](https://github.com/jet/Jet.JsonNet.Converters)), in this case an Array is better from a GC and memory-efficiency stance, and does not need any special consideration when using `Newtonsoft.Json` to serialize.
 
@@ -535,13 +535,13 @@ Key aspects relevant to the Equinox programming model:
 - Similarly to EventStore, the default ARS encoding CosmosDb provides, together with interoperability concerns, means that straight json makes sense as an encoding form for events (UTF-8 arrays)
 - Collectively, the above implies (arguably counterintuitively) that using the powerful generic querying facility that CosmosDb provides should actually be a last resort.
 - See [Cosmos Storage Model](#cosmos-storage-model) for further information on the specific encoding used, informed by these concerns.
-- Because reads, writes _and updates_ of items in the Tip document are charged based on the size of the document in units of 1KB, it's worth compressing and/or storing snapshots ouside of the Tip-document (while those factors are also a concern with EventStore, the key difference is their direct effect of charges in this case).
+- Because reads, writes _and updates_ of items in the Tip document are charged based on the size of the item in units of 1KB, it's worth compressing and/or storing snapshots outside of the Tip-document (while those factors are also a concern with EventStore, the key difference is their direct effect of charges in this case).
 
 The implications of how the changefeed mechanism works also have implications for how events and snapshots should be encoded and/or stored:
 
 - Each write results in a potential cost per changefeed consumer, hence one should minimize changefeed consumers count
 - Each update of a document can have the same effect in terms of Request Charges incurred in tracking the changefeed (each write results in a document "moving to the tail" in the consumption order - if multiple writes occur within a polling period, you'll only see the last one)
-- The ChangeFeedProcessor presents a programming model which needs to maintain a position. Typically one should store that in an auxilliary collection in order to avoid feedback and/or interaction between the changefeed and those writes
+- The ChangeFeedProcessor presents a programming model which needs to maintain a position. Typically one should store that in an auxiliary collection in order to avoid feedback and/or interaction between the changefeed and those writes
 
 It can be useful to consider keeping snapshots in the auxilliary collection employed by the changefeed in order to optimize the interrelated concerns of not reading data redundantly, and not feeding back into the oneself (although having separate roundtrips obviously has implications).
  
@@ -558,7 +558,7 @@ Events are stored in immutable batches consisting of:
 - `p`artitionKey: `string` // stream identifier, e.g. "Cart-{guid}"
 - `i`ndex: `int64` // base index position of this batch (`0` for first event in a stream)
 - `n`extIndex: `int64` // base index ('i') position value of the next record in the stream - NB this _always_ corresponds to `i`+`e.length` (in the case of the `Tip` record, there won't actually be such a record yet)
-- `id`: `string` // same as `i` (CosmosDb forces every doc to have one[, and it must be a `string`])
+- `id`: `string` // same as `i` (CosmosDb forces every item (document) to have one[, and it must be a `string`])
 - `e`vents: `Event[]` // (see next section) typically there is one item in the array (can be many if events are small, for RU and performance/efficiency reasons; RU charges are per 1024 byte block)
 - `ts` // CosmosDb-intrinsic last updated date for this record (changes when replicated etc, hence see `t` below)
 
@@ -631,7 +631,7 @@ Given a stream with:
 ]
 ```
 
-If we have `state4` based on the events up to `{i:3, c:c1, d: d4}` and the index document, we can produce the `state` by folding in a variety of ways:
+If we have `state4` based on the events up to `{i:3, c:c1, d: d4}` and the Tip Item-document, we can produce the `state` by folding in a variety of ways:
 
 - `fold initial [ C1 d1; C2 d2; C3 d3; C1 d4; C3 d5 ]` (but would need a query to load the first 2 batches, with associated RUs and roundtrips)
 - `fold state4 [ C3 d5 ]` (only need to pay to transport the _tip_ document as a point read)
@@ -640,7 +640,7 @@ If we have `state4` based on the events up to `{i:3, c:c1, d: d4}` and the index
 
 If we have `state3` based on the events up to `{i:3, c:c1, d: d4}`, we can produce the `state` by folding in a variety of ways:
 
-- `fold initial [ C1 d1; C2 d2; C3 d3; C1 d4; C3 d5 ]` (but query, roundtrips)
+- `fold initial [ C1 d1; C2 d2; C3 d3; C1 d4; C3 d5 ]` (but query, round-trips)
 - `fold state3 [C1 d4 C3 d5]` (only pay for point read+transport)
 - `fold initial [S2 s4; C3 d5]` (only pay for point read+transport)
 - (if `isOrigin (S1 s5)` = `true`): `fold initial [S1 s5]` (point read + transport + decompress `s5`)
@@ -656,14 +656,14 @@ See [Programming Model](#programing-model) for what happens in the application b
 
 This covers what the most complete possible implementation of the JS Stored Procedure (see [source](https://github.com/jet/equinox/blob/tip-isa-batch/src/Equinox.Cosmos/Cosmos.fs#L302)) does when presented with a batch to be written. (NB The present implementation is slightly simplified; see [source](src/Equinox.Cosmos/Cosmos.fs#L303).
 
-The `sync` stored procedure takes a document as input which is almost identical to the format of the _`Tip`_ batch (in fact, if the stream is found to be empty, it is pretty much the template for the first document created in the stream). The request includes the following elements:
+The `sync` stored procedure takes as input, a document that is almost identical to the format of the _`Tip`_ batch (in fact, if the stream is found to be empty, it is pretty much the template for the first document created in the stream). The request includes the following elements:
 
 - `expectedVersion`: the position the requestor has based their [proposed] events on (no, [providing an `etag` to save on Request Charges is not possible in the Stored Proc](https://stackoverflow.com/questions/53355886/azure-cosmosdb-stored-procedure-ifmatch-predicate))
 - `e`: array of Events (see Event, above) to append iff the expectedVersion check is fulfilled
 - `u`: array of `unfold`ed events (aka snapshots) that supersede items with equivalent `c`ase values  
 - `maxEvents`: the maximum number of events in an individual batch prior to starting a new one. For example:
 
-  - if `e` contains 2 events, the _tip_ document's `e` has 2 documents and the `maxEvents` is `5`, the events get appended onto the tip
+  - if `e` contains 2 events, the _tip_ document's `e` has 2 events and the `maxEvents` is `5`, the events get appended onto the tip
   - if the total length including the new `e`vents would exceed `maxEvents`, the Tip is 'renamed' (gets its `id` set to `i.toString()`) to become a batch, and the new events go into the new Tip-Batch, the _tip_ gets frozen as a `Batch`, and the new request becomes the _tip_ (as an atomic transaction on the server side)
 
 - (PROPOSAL/FUTURE) `thirdPartyUnfoldRetention`: how many events to keep before the base (`i`) of the batch if required by lagging `u`nfolds which would otherwise fall out of scope as a result of the appends in this batch (this will default to `0`, so for example if a writer says maxEvents `10` and there is an `u`nfold based on an event more than `10` old it will be removed as part of the appending process)
@@ -702,8 +702,8 @@ let outputLog = LoggerConfiguration().WriteTo.NLog().CreateLogger()
 let gatewayLog = outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
 // When starting the app, we connect (once)
-let connector : Equinox.Cosmos.CosmosConnector =
-    CosmosConnector(
+let connector : Equinox.Cosmos.Connector =
+    Connector(
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnThrottledRequests = 1,
         maxRetryWaitTimeInSeconds = 3,
@@ -711,9 +711,9 @@ let connector : Equinox.Cosmos.CosmosConnector =
 let cnx = connector.Connect("Application.CommandProcessor", Discovery.FromConnectionString connectionString) |> Async.RunSynchronously
 
 // If storing in a single collection, one specifies the db and collection
-// alternately use the overload which defers the mapping until the stream one is writing to becomes clear
-let coll = CosmosCollections("databaseName", "collectionName")
-let ctx = CosmosContext(cnx, coll, gatewayLog)
+// alternately use the overload that defers the mapping until the stream one is writing to becomes clear
+let containerMap = Containers("databaseName", "containerName")
+let ctx = Context(cnx, containerMap, gatewayLog)
 
 //
 // Write an event

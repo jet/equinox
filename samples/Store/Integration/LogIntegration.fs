@@ -10,7 +10,7 @@ open System.Collections.Concurrent
 module EquinoxEsInterop =
     open Equinox.EventStore
     [<NoEquality; NoComparison>]
-    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
+    type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed
     let flatten (evt : Log.Event) : FlatMetric =
         let action, metric, batches =
@@ -25,7 +25,7 @@ module EquinoxEsInterop =
 module EquinoxCosmosInterop =
     open Equinox.Cosmos.Store
     [<NoEquality; NoComparison>]
-    type FlatMetric = { action: string; stream: string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
+    type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" __.action __.stream __.action __.interval.Elapsed __.ru
     let flatten (evt : Log.Event) : FlatMetric =
         let action, metric, batches, ru =
@@ -124,7 +124,7 @@ type Tests() =
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let gateway = createCosmosContext conn batchSize
-        let service = Backend.Cart.Service(log, CartIntegration.resolveCosmosStreamWithProjection gateway)
+        let service = Backend.Cart.Service(log, CartIntegration.resolveCosmosStreamWithSnapshotStrategy gateway)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount context cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200

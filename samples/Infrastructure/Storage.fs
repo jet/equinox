@@ -9,7 +9,7 @@ exception MissingArg of string
 type StorageConfig =
     | Memory of Equinox.MemoryStore.VolatileStore
     | Es of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
-    | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * collectionId: string
+    | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
     
 module MemoryStore =
     type [<NoEquality; NoComparison>] Arguments =
@@ -34,7 +34,7 @@ module Cosmos =
         | [<AltCommandLine("-rt")>] RetriesWaitTime of int
         | [<AltCommandLine("-s")>] Connection of string
         | [<AltCommandLine("-d")>] Database of string
-        | [<AltCommandLine("-c")>] Collection of string
+        | [<AltCommandLine("-c")>] Container of string
         interface IArgParserTemplate with
             member a.Usage =
                 match a with
@@ -43,14 +43,14 @@ module Cosmos =
                 | Retries _ ->          "specify operation retries (default: 1)."
                 | RetriesWaitTime _ ->  "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
                 | Connection _ ->       "specify a connection string for a Cosmos account (defaults: envvar:EQUINOX_COSMOS_CONNECTION, Cosmos Emulator)."
-                | ConnectionMode _ ->   "override the connection mode (default: DirectTcp)."
-                | Database _ ->         "specify a database name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
-                | Collection _ ->       "specify a collection name for Cosmos account (defaults: envvar:EQUINOX_COSMOS_COLLECTION, test)."
+                | ConnectionMode _ ->   "override the connection mode (default: Direct)."
+                | Database _ ->         "specify a database name for store (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
+                | Container _ ->        "specify a container name for store (defaults: envvar:EQUINOX_COSMOS_CONTAINER, test)."
     type Info(args : ParseResults<Arguments>) =
-        member __.Mode = args.GetResult(ConnectionMode,Equinox.Cosmos.ConnectionMode.DirectTcp)
+        member __.Mode = args.GetResult(ConnectionMode,Equinox.Cosmos.ConnectionMode.Direct)
         member __.Connection =  match args.TryGetResult Connection  with Some x -> x | None -> envBackstop "Connection" "EQUINOX_COSMOS_CONNECTION"
         member __.Database =    match args.TryGetResult Database    with Some x -> x | None -> envBackstop "Database"   "EQUINOX_COSMOS_DATABASE"
-        member __.Collection =  match args.TryGetResult Collection  with Some x -> x | None -> envBackstop "Collection" "EQUINOX_COSMOS_COLLECTION"
+        member __.Container =   match args.TryGetResult Container   with Some x -> x | None -> envBackstop "Container"  "EQUINOX_COSMOS_CONTAINER"
 
         member __.Timeout = args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member __.Retries = args.GetResult(Retries,1)
@@ -59,27 +59,27 @@ module Cosmos =
     /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
     /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
     /// 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net461/eqx.exe `
-    ///     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+    ///     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
     open Equinox.Cosmos
     open Serilog
 
     let private createGateway connection maxItems = Gateway(connection, BatchingPolicy(defaultMaxItems=maxItems))
     let connection (log: ILogger, storeLog: ILogger) (a : Info) =
         let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection|> Discovery.FromConnectionString
-        log.Information("CosmosDb {mode} {connection} Database {database} Collection {collection}",
-            a.Mode, endpointUri, a.Database, a.Collection)
+        log.Information("CosmosDb {mode} {connection} Database {database} Container {container}",
+            a.Mode, endpointUri, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, a.MaxRetryWaitTime)
-        discovery, a.Database, a.Collection, Connector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
+        discovery, a.Database, a.Container, Connector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
-        let discovery, dbName, collName, connector = connection (log, storeLog) info
+        let discovery, dName, cName, connector = connection (log, storeLog) info
         let conn = connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
         let cacheStrategy =
             if cache then
                 let c = Caching.Cache("equinox-tool", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.)
             else CachingStrategy.NoCaching
-        StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dbName, collName)
+        StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dName, cName)
 
 /// To establish a local node to run the tests against:
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows

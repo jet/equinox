@@ -5,8 +5,8 @@ param(
 	[Alias("sc")][switch][bool] $skipCosmos=$skipStores,
 	[Alias("cs")][string] $cosmosServer=$env:EQUINOX_COSMOS_CONNECTION,
 	[Alias("cd")][string] $cosmosDatabase=$env:EQUINOX_COSMOS_DATABASE,
-	[Alias("cc")][string] $cosmosCollection=$env:EQUINOX_COSMOS_COLLECTION,
-	[Alias("scp")][switch][bool] $skipProvisionCosmos=$skipCosmos -or -not $cosmosServer -or -not $cosmosDatabase -or -not $cosmosCollection,
+	[Alias("cc")][string] $cosmosContainer=$env:EQUINOX_COSMOS_CONTAINER,
+	[Alias("scp")][switch][bool] $skipProvisionCosmos=$skipCosmos -or -not $cosmosServer -or -not $cosmosDatabase -or -not $cosmosContainer,
 	[Alias("scd")][switch][bool] $skipDeprovisionCosmos=$skipProvisionCosmos,
 	[string] $additionalMsBuildArgs="-t:Build"
 )
@@ -20,8 +20,8 @@ $env:EQUINOX_INTEGRATION_SKIP_EVENTSTORE=[string]$skipEs
 if ($skipEs) { warn "Skipping EventStore tests" }
 
 function cliCosmos($arghs) {
-	Write-Host "dotnet run tools/Equinox.Tool -- $arghs cosmos -s <REDACTED> -d $cosmosDatabase -c $cosmosCollection"
-	dotnet run -p tools/Equinox.Tool -f netcoreapp2.1 -- @arghs cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosCollection
+	Write-Host "dotnet run tools/Equinox.Tool -- $arghs cosmos -s <REDACTED> -d $cosmosDatabase -c $cosmosContainer"
+	dotnet run -p tools/Equinox.Tool -f netcoreapp2.1 -- @arghs cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosContainer
 }
 
 if ($skipCosmos) {

@@ -17,7 +17,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// The Case (Event Type); used to drive deserialization
         c: string // required
 
-        /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for DocDb
+        /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for CosmosDB
         [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.AllowNull)>]
         d: byte[] // Required, but can be null so Nullary cases can work
@@ -30,12 +30,12 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     Batch =
-    {   /// DocDb-mandated Partition Key, must be maintained within the document
+    {   /// CosmosDB-mandated Partition Key, must be maintained within the document
         /// Not actually required if running in single partition mode, but for simplicity, we always write it
         [<JsonProperty(Required=Required.Default)>] // Not requested in queries
         p: string // "{streamName}"
 
-        /// DocDb-mandated unique row key; needs to be unique within any partition it is maintained; must be string
+        /// CosmosDB-mandated unique row key; needs to be unique within any partition it is maintained; must be string
         /// At the present time, one can't perform an ORDER BY on this field, hence we also have i shadowing it
         /// NB Tip uses a well known value here while it's actively 'open'
         id: string // "{index}"
@@ -125,7 +125,7 @@ module internal Position =
         else fromI (1L + Seq.max (seq { for x in xs -> x.Index }))
     /// Create Position from Tip record context (facilitating 1 RU reads)
     let fromTip (x: Tip) = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
-    /// If we encounter the tip (id=-1) doc, we're interested in its etag so we can re-sync for 1 RU
+    /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
     let tryFromBatch (x: Batch) =
         if x.id <> Tip.WellKnownDocumentId then None
         else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
@@ -302,8 +302,8 @@ module Log =
             let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d) 
 
-type Container(client : Client.DocumentClient, databaseId, collectionId) =
-    let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, collectionId)
+type Container(client : Client.DocumentClient, databaseId, containerId) =
+    let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, containerId)
     member __.Client = client
     member __.CollectionUri = collectionUri
 
@@ -333,7 +333,7 @@ module private DocDb =
         | Null -> None
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
     type Container with
-        member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : Client.RequestOptions): Async<float * ReadResult<'T>> = async {
+        member container.TryReadItem(documentId : string, ?options : Client.RequestOptions): Async<float * ReadResult<'T>> = async {
             let options = defaultArg options null
             let docLink = sprintf "%O/docs/%s" container.CollectionUri documentId
             let! ct = Async.CancellationToken
@@ -415,7 +415,7 @@ function sync(req, expectedVersion, maxEvents) {
         | Conflict of Position * events: IIndexedEvent[]
         | ConflictUnknown of Position
 
-    let private run (container : Container, stream: string) (expectedVersion: int64 option, req: Tip, maxEvents: int)
+    let private run (container : Container, stream : string) (expectedVersion: int64 option, req: Tip, maxEvents: int)
         : Async<float*Result> = async {
         let sprocLink = sprintf "%O/sprocs/%s" container.CollectionUri sprocName
         let opts = Client.RequestOptions(PartitionKey=PartitionKey stream)
@@ -472,30 +472,30 @@ function sync(req, expectedVersion, maxEvents) {
         let adjustOffer (c:Client.DocumentClient) resourceLink rus = async {
             let offer = c.CreateOfferQuery().Where(fun r -> r.ResourceLink = resourceLink).AsEnumerable().Single()
             let! _ = c.ReplaceOfferAsync(OfferV2(offer,rus)) |> Async.AwaitTaskCorrect in () }
-        let private createDatabaseIfNotExists (client:Client.DocumentClient) dbName maybeRus =
+        let private createDatabaseIfNotExists (client:Client.DocumentClient) dName maybeRus =
             let opts = Client.RequestOptions(ConsistencyLevel = Nullable ConsistencyLevel.Session)
             maybeRus |> Option.iter (fun rus -> opts.OfferThroughput <- Nullable rus)
-            client.CreateDatabaseIfNotExistsAsync(Database(Id=dbName), options = opts) |> Async.AwaitTaskCorrect
-        let private createOrProvisionDatabase (client:Client.DocumentClient) dbName mode = async {
+            client.CreateDatabaseIfNotExistsAsync(Database(Id=dName), options = opts) |> Async.AwaitTaskCorrect
+        let private createOrProvisionDatabase (client:Client.DocumentClient) dName mode = async {
             match mode with
             | Provisioning.Database rus ->
-                let! db = createDatabaseIfNotExists client dbName (Some rus)
+                let! db = createDatabaseIfNotExists client dName (Some rus)
                 return! adjustOffer client db.Resource.SelfLink rus
             | Provisioning.Container _ ->
-                let! _ = createDatabaseIfNotExists client dbName None in () }
-        let private createCollIfNotExists (client:Client.DocumentClient) dbName (def: DocumentCollection) maybeRus =
-            let dbUri = Client.UriFactory.CreateDatabaseUri dbName
+                let! _ = createDatabaseIfNotExists client dName None in () }
+        let private createContainerIfNotExists (client:Client.DocumentClient) dName (def: DocumentCollection) maybeRus =
+            let dbUri = Client.UriFactory.CreateDatabaseUri dName
             let opts = match maybeRus with None -> Client.RequestOptions() | Some rus -> Client.RequestOptions(OfferThroughput=Nullable rus)
             client.CreateDocumentCollectionIfNotExistsAsync(dbUri, def, opts) |> Async.AwaitTaskCorrect
-        let private createOrProvisionCollection (client: Client.DocumentClient) (dbName, def: DocumentCollection) mode = async {
+        let private createOrProvisionContainer (client: Client.DocumentClient) (dName, def: DocumentCollection) mode = async {
             match mode with
             | Provisioning.Database _ ->
-                let! _ = createCollIfNotExists client dbName def None in ()
+                let! _ = createContainerIfNotExists client dName def None in ()
             | Provisioning.Container rus ->
-                let! coll = createCollIfNotExists client dbName def (Some rus) in ()
-                return! adjustOffer client coll.Resource.SelfLink rus }
-        let private createStoredProcIfNotExists (container:Container) (name, body): Async<float> = async {
-            try let! r = container.Client.CreateStoredProcedureAsync(container.CollectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
+                let! container = createContainerIfNotExists client dName def (Some rus) in ()
+                return! adjustOffer client container.Resource.SelfLink rus }
+        let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
+            try let! r = c.Client.CreateStoredProcedureAsync(c.CollectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
             with CosmosException ((CosmosStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
         let private mkContainerProperties idFieldName partionKeyFieldName = 
@@ -504,8 +504,8 @@ function sync(req, expectedVersion, maxEvents) {
             let pkd = PartitionKeyDefinition()
             pkd.Paths.Add(sprintf "/%s" partionKeyFieldName)
             DocumentCollection(Id = idFieldName, PartitionKey = pkd)
-        let private createBatchAndTipCollectionIfNotExists (client: Client.DocumentClient) (dbName,collName) mode : Async<unit> =
-            let def = mkContainerProperties collName Batch.PartitionKeyField
+        let private createBatchAndTipContainerIfNotExists (client: Client.DocumentClient) (dName,cName) mode : Async<unit> =
+            let def = mkContainerProperties cName Batch.PartitionKeyField
             def.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
             def.IndexingPolicy.Automatic <- true
             // Can either do a blacklist or a whitelist
@@ -513,34 +513,35 @@ function sync(req, expectedVersion, maxEvents) {
             def.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
             // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
             for k in Batch.IndexedFields do def.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
-            createOrProvisionCollection client (dbName, def) mode
+            createOrProvisionContainer client (dName, def) mode
         let createSyncStoredProcIfNotExists (log: ILogger option) container = async {
             let! t, ru = createStoredProcIfNotExists container (sprocName,sprocBody) |> Stopwatch.Time
             match log with
             | None -> ()
             | Some log -> log.Information("Created stored procedure {sprocId} in {ms}ms rc={ru}", sprocName, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
-        let private createAuxCollectionIfNotExists client (dbName,collName) mode : Async<unit> =
-            let def = mkContainerProperties collName "id" // as per Cosmos team, Partition Key must be "/id"
+        let private createAuxContainerIfNotExists client (dName,cName) mode : Async<unit> =
+            let def = mkContainerProperties cName "id" // as per Cosmos team, Partition Key must be "/id"
             // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
             def.IndexingPolicy.Automatic <- false
             def.IndexingPolicy.IndexingMode <- IndexingMode.None
-            createOrProvisionCollection client (dbName,def) mode
-        let init log (container : Container) (dbName,collName) mode skipStoredProc = async {
-            do! createOrProvisionDatabase container.Client dbName mode
-            do! createBatchAndTipCollectionIfNotExists container.Client (dbName,collName) mode
+            createOrProvisionContainer client (dName,def) mode
+        let init log (client : Client.DocumentClient) (dName,cName) mode skipStoredProc = async {
+            do! createOrProvisionDatabase client dName mode
+            do! createBatchAndTipContainerIfNotExists client (dName,cName) mode
+            let container = Container(client,dName,cName)
             if not skipStoredProc then
                 do! createSyncStoredProcIfNotExists (Some log) container }
-        let initAux (client: Client.DocumentClient) (dbName,collName) rus = async {
+        let initAux (client: Client.DocumentClient) (dName,cName) rus = async {
             // Hardwired for now (not sure if CFP can store in a Database-allocated as it would need to be supplying partion keys)
             let mode = Provisioning.Container rus
-            do! createOrProvisionDatabase client dbName mode 
-            return! createAuxCollectionIfNotExists client (dbName,collName) mode }
+            do! createOrProvisionDatabase client dName mode 
+            return! createAuxContainerIfNotExists client (dName,cName) mode }
 
 module internal Tip =
-    let private get (container : Container, stream: string) (maybePos: Position option) =
+    let private get (container : Container, stream : string) (maybePos: Position option) =
         let ac = match maybePos with Some { etag=Some etag } -> Client.AccessCondition(Type=Client.AccessConditionType.IfNoneMatch, Condition=etag) | _ -> null
-        let ro = Client.RequestOptions(PartitionKey=PartitionKey(stream), AccessCondition = ac)
-        container.TryReadItem(PartitionKey stream, Tip.WellKnownDocumentId, ro)
+        let ro = Client.RequestOptions(PartitionKey=PartitionKey stream, AccessCondition = ac)
+        container.TryReadItem(Tip.WellKnownDocumentId, ro)
     let private loggedGet (get : Container * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
         let! t, (ru, res : ReadResult<Tip>) = get (container,stream) maybePos |> Stopwatch.Time
@@ -550,11 +551,11 @@ module internal Tip =
             (log 0 0 Log.TipNotModified).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 302, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.NotFound ->
             (log 0 0 Log.TipNotFound).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
-        | ReadResult.Found doc ->
+        | ReadResult.Found tip ->
             let log =
-                let (Log.BatchLen bytes), count = Enum.Unfolds doc.u, doc.u.Length
+                let (Log.BatchLen bytes), count = Enum.Unfolds tip.u, tip.u.Length
                 log bytes count Log.Tip
-            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataUnfolds doc.u |> Log.prop "etag" doc._etag
+            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataUnfolds tip.u |> Log.prop "etag" tip._etag
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * IIndexedEvent[]
@@ -564,12 +565,12 @@ module internal Tip =
         match res with
         | ReadResult.NotModified -> return Result.NotModified
         | ReadResult.NotFound -> return Result.NotFound
-        | ReadResult.Found doc -> return Result.Found (Position.fromTip doc, Enum.EventsAndUnfolds doc |> Array.ofSeq) }
+        | ReadResult.Found tip -> return Result.Found (Position.fromTip tip, Enum.EventsAndUnfolds tip |> Array.ofSeq) }
 
  module internal Query =
     open Microsoft.Azure.Documents.Linq
     open FSharp.Control
-    let private mkQuery (container : Container, stream: string) maxItems (direction: Direction) startPos =
+    let private mkQuery (container : Container, stream : string) maxItems (direction: Direction) startPos =
         let query =
             let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.id!=\"%s\"" Tip.WellKnownDocumentId
             let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
@@ -867,7 +868,7 @@ module Caching =
             | x -> failwithf "TryGet Incompatible cache entry %A" x
 
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: Store.ICategory<'event, 'state, Store.Container*string>, tee : string -> Store.StreamToken * 'state -> unit) =
+    type CategoryTee<'event, 'state>(inner: Store.ICategory<'event, 'state, Container*string>, tee : string -> Store.StreamToken * 'state -> unit) =
         let intercept streamName tokenAndState =
             tee streamName tokenAndState
             tokenAndState
@@ -917,39 +918,39 @@ type private Folder<'event, 'state>
             | Store.SyncResult.Conflict resync ->             return Store.SyncResult.Conflict resync
             | Store.SyncResult.Written (token',state') ->     return Store.SyncResult.Written (token',state') }
 
-/// Holds Database/Collection pair, coordinating initialization activities
-type private Collection(container : Container, ?initContainer : Container -> Async<unit>) =
+/// Holds Container state, coordinating initialization activities
+type private ContainerWrapper(container : Container, ?initContainer : Container -> Async<unit>) =
     let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
 
     member __.Container = container
     member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type Collections(categoryAndIdToDatabaseCollectionAndStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
+type Containers(categoryAndIdToDatabaseContainerStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
     // Index of database*collection -> Initialization Context
-    let collections = ConcurrentDictionary<string*string, Collection>()
-    new (databaseId, collectionId) =
+    let wrappers = ConcurrentDictionary<string*string, ContainerWrapper>()
+    new (databaseId, containerId) =
         // TOCONSIDER - this works to support the Core.Events APIs
         let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        Collections(fun categoryName streamId -> databaseId, collectionId, genStreamName categoryName streamId)
+        Containers(fun categoryName streamId -> databaseId, containerId, genStreamName categoryName streamId)
 
     member internal __.Resolve(client, categoryName, id, init) : (Container*string) * (unit -> Async<unit>) option =
-        let databaseId, collectionId, streamName = categoryAndIdToDatabaseCollectionAndStream categoryName id
+        let databaseId, containerName, streamName = categoryAndIdToDatabaseContainerStream categoryName id
         let init = match disableInitialization with Some true -> None | _ -> Some init
-        let mkColl (db,coll) = Collection(Container(client,db,coll), ?initContainer = init)
-        let coll = collections.GetOrAdd((databaseId,collectionId), mkColl)
-        (coll.Container,streamName),coll.InitializationGate
+        let mkWrapped (db,containerName) = ContainerWrapper(Container(client,db,containerName), ?initContainer = init)
+        let wrapped = wrappers.GetOrAdd((databaseId,containerName), mkWrapped)
+        (wrapped.Container,streamName),wrapped.InitializationGate
 
-/// Pairs a Gateway, defining the retry policies for CosmosDb with a Collections map defining mappings from (category,id) to (database,collection,streamName)
-type Context(gateway: Gateway, collections: Collections, [<O; D(null)>] ?log) =
+/// Pairs a Gateway, defining the retry policies for CosmosDb with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
+type Context(gateway: Gateway, containers: Containers, [<O; D(null)>] ?log) =
     let init = gateway.CreateSyncStoredProcIfNotExists log
-    new(gateway: Gateway, databaseId: string, collectionId: string, [<O; D(null)>]?log) =
-        Context(gateway, Collections(databaseId, collectionId), ?log = log)
+    new(gateway: Gateway, databaseId: string, containerId: string, [<O; D(null)>]?log) =
+        Context(gateway, Containers(databaseId, containerId), ?log = log)
 
     member __.Gateway = gateway
-    member __.Collections = collections
+    member __.Containers = containers
     member internal __.ResolveContainerStream(categoryName, id) : (Container*string) * (unit -> Async<unit>) option =
-        collections.Resolve(gateway.Client, categoryName, id, init)
+        containers.Resolve(gateway.Client, categoryName, id, init)
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
@@ -995,11 +996,11 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | CachingStrategy.SlidingWindow(cache, window) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
-    let resolveStream (streamId, maybeCollectionInitializationGate) =
+    let resolveStream (streamId, maybeContainerInitializationGate) =
         { new Store.IStream<'event, 'state> with
             member __.Load log = category.Load streamId log
             member __.TrySync (log: ILogger) (token: Store.StreamToken, originState: 'state) (events: 'event list) =
-                match maybeCollectionInitializationGate with
+                match maybeContainerInitializationGate with
                 | None -> category.TrySync log (token, originState) events
                 | Some init -> async {
                     do! init ()
@@ -1020,7 +1021,7 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     | UriAndKey of databaseUri:Uri * key:string
-    /// Implements connection string parsing logic curiously missing from the DocDb SDK
+    /// Implements connection string parsing logic curiously missing from the CosmosDB SDK
     static member FromConnectionString (connectionString: string) =
         match connectionString with
         | _ when String.IsNullOrWhiteSpace connectionString -> nullArg "connectionString"
@@ -1035,7 +1036,7 @@ type ConnectionMode =
     /// Default mode, uses Https - inefficient as uses a double hop
     | Gateway
     /// Most efficient, but requires direct connectivity
-    | DirectTcp
+    | Direct
     // More efficient than Gateway, but suboptimal
     | DirectHttps
 
@@ -1065,18 +1066,18 @@ type Connector
     do if log = null then nullArg "log"
 
     let clientOptions =
-        let cp = Client.ConnectionPolicy.Default
+        let co = Client.ConnectionPolicy.Default
         match mode with
-        | None | Some ConnectionMode.Gateway -> cp.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
-        | Some ConnectionMode.DirectHttps -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Https // Https is default when using Direct
-        | Some ConnectionMode.DirectTcp -> cp.ConnectionMode <- Client.ConnectionMode.Direct; cp.ConnectionProtocol <- Client.Protocol.Tcp
-        cp.RetryOptions <-
+        | None | Some ConnectionMode.Gateway -> co.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
+        | Some ConnectionMode.DirectHttps -> co.ConnectionMode <- Client.ConnectionMode.Direct; co.ConnectionProtocol <- Client.Protocol.Https // Https is default when using Direct
+        | Some ConnectionMode.Direct -> co.ConnectionMode <- Client.ConnectionMode.Direct; co.ConnectionProtocol <- Client.Protocol.Tcp
+        co.RetryOptions <-
             Client.RetryOptions(
                 MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
                 MaxRetryWaitTimeInSeconds = maxRetryWaitTimeInSeconds)
-        cp.RequestTimeout <- requestTimeout
-        cp.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
-        cp
+        co.RequestTimeout <- requestTimeout
+        co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
+        co
 
     /// Yields an CosmosClient configured and Connect()ed to a given DocDB collection per the requested `discovery` strategy
     let connect
@@ -1095,8 +1096,8 @@ type Connector
 
         match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
 
-    /// Connection policy (for ChangeFeed)
-    member __.ConnectionPolicy : Client.ConnectionPolicy = clientOptions
+    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
+    member __.ClientOptions : Client.ConnectionPolicy = clientOptions
 
     /// Yields a DocDbConnection configured per the specified strategy
     member __.Connect(name, discovery : Discovery) : Async<Connection> = async {
@@ -1120,10 +1121,10 @@ type AppendResult<'t> =
 
 /// Encapsulates the core facilites Equinox.Cosmos offers for operating directly on Events in Streams.
 type Context
-    (   /// Connection to CosmosDb with DocumentDb Transient Read and Write Retry policies
+    (   /// Connection to CosmosDb, includes defined Transient Read and Write Retry policies
         conn : Connection,
-        /// Database + Collection selector
-        collections: Collections,
+        /// Container selector, mapping Stream Categories to Containers
+        containers : Containers,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
@@ -1147,7 +1148,7 @@ type Context
         let! (Token.Unpack (_,_,pos')), data = res
         return pos', data }
 
-    member __.ResolveStream(streamName) = collections.Resolve(conn.Client, null, streamName, gateway.CreateSyncStoredProcIfNotExists (Some log))
+    member __.ResolveStream(streamName) = containers.Resolve(conn.Client, null, streamName, gateway.CreateSyncStoredProcIfNotExists (Some log))
     member __.CreateStream(streamName) = __.ResolveStream streamName |> fst
 
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<IIndexedEvent[]> =
@@ -1170,7 +1171,6 @@ type Context
     /// Establishes the current position of the stream in as effficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
     member __.Sync(stream, ?position: Position) : Async<Position> = async {
-        //let indexed predicate = load fold initial (coll.Gateway.IndexedOrBatched log predicate (stream,None))
         let! (Token.Unpack (_,_,pos')) = gateway.GetPosition(log, stream, ?pos=position)
         return pos' }
 

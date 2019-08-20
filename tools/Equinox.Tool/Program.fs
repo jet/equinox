@@ -27,7 +27,7 @@ type Arguments =
             | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | LogFile _ -> "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ -> "Run a load test"
-            | Init _ -> "Initialize Store/Collection (presently only relevant for `cosmos`; also handles adjusting RU/s provisioning adjustment)."
+            | Init _ -> "Initialize Store/Container (presently only relevant for `cosmos`; also handles RU/s provisioning adjustment)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
     | [<AltCommandLine("-D")>] Shared
@@ -35,9 +35,9 @@ and [<NoComparison>]InitArguments =
     | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ -> "Specify RU/s level to provision for the Collection."
+            | Rus _ -> "Specify RU/s level to provision for the Container."
             | Shared -> "Use Database-level RU allocations (Default: Use Container-level allocation)."
-            | SkipStoredProc -> "Inhibit creation of stored procedure in cited Collection."
+            | SkipStoredProc -> "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]InitDbArguments =
     | [<AltCommandLine("-ru"); Mandatory>] Rus of int
@@ -46,7 +46,7 @@ and [<NoComparison>]InitDbArguments =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ -> "Specify RU/s level to provision for the Database."
-            | SkipStoredProc -> "Inhibit creation of stored procedure in cited Collection."
+            | SkipStoredProc -> "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ -> "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
@@ -219,12 +219,11 @@ module CosmosInit =
             let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
             let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database rus else Provisioning.Container rus
             let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-            let discovery, dbName, collName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
+            let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
-            log.Information("Provisioning `Equinox.Cosmos` Store Collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
+            log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
             let! conn = connector.Connect("equinox-tool", discovery)
-            let container = Equinox.Cosmos.Store.Container(conn.Client,dbName,collName)
-            return! init log container (dbName,collName) mode skipStoredProc
+            return! init log conn.Client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 [<EntryPoint>]

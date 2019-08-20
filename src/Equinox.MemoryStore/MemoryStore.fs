@@ -13,7 +13,7 @@ exception private WrongVersionException of streamName: string * expected: int * 
 [<NoEquality; NoComparison>]
 type ConcurrentDictionarySyncResult<'t> = Written of 't | Conflict of int
 
-/// Response type for ConcurrentArrayStore.TrySync to communicate the outcome and updated state of a stream
+/// Response type for VolatileStore.TrySync to communicate the outcome and updated state of a stream
 [<NoEquality; NoComparison>]
 type ConcurrentArraySyncResult<'t> = Written of 't | Conflict of 't
 

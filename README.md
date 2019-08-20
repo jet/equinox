@@ -219,7 +219,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     ```powershell
     $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
-    $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
+    $env:EQUINOX_COSMOS_CONTAINER="equinox-test"
     ```
 
 2. use the `eqx` tool to initialize the database and/or collection (using preceding env vars)
@@ -308,10 +308,10 @@ A key facility of this repo is being able to run load tests, either in process a
 
 - `Favorite` - Simulate a very enthusiastic user that favorites something once per second
   - the test generates an ever-growing state that can only be managed efficiently if you apply either caching, snapshotting or both
-  - NB due to being unbounded, even Rolling Snapshots or Unfolds will eventually hit the Store's limits (4MB/event for EventStore, 3MB/document for CosmosDb)
+  - NB due to being unbounded, `RollingSnapshots`, `Snapshot`, `Unfolded` etc. will eventually hit the Store's limits (4MB/event for EventStore, 3MB/Item (document) for CosmosDB)
 - `SaveForLater` - Simulate a happy shopper that saves 3 items per second, and empties the Save For Later list whenever it is full (when it hits 50 items)
   - Snapshotting helps a lot
-  - Caching is not as essential as it is for the `Favorite` test (as long as oyu have either aching or snapshotting, that is)
+  - Caching is not as essential as it is for the `Favorite` test (as long as you have either caching or snapshotting, that is)
 - `Todo` - Keeps a) getting the list b) adding an item c) clearing the list when it hits 1000 items.
   - the `Cleared` event acts as a natural event to use in the `isOrigin` check. This makes snapshotting less crucial than it is, for example, in the case of the `Favorite` test
   - the `-s` parameter can be used to adjust the maximum item text length from the default (`100`, implying average length of 50)
@@ -372,12 +372,12 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
     $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
-    $env:EQUINOX_COSMOS_COLLECTION="equinox-test"
+    $env:EQUINOX_COSMOS_CONTAINER="equinox-test"
 
     tools/Equinox.Tool/bin/Release/net461/eqx run `
-      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
     dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- run `
-      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ## PROVISIONING
 
@@ -393,7 +393,7 @@ For EventStore, the tests assume a running local instance configured as follows 
 ### Provisioning CosmosDb (when not using -sc)
 
     dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- init -ru 1000 `
-        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_COLLECTION
+        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ## DEPROVISIONING
 
@@ -406,7 +406,7 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 
 ### Deprovisioning CosmosDb
 
-The [provisioning](provisioning) step spins up RUs in DocDB for the Collection, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the collection or reset teh RU provision dpwn to the lowest possible value)*.
+The [provisioning](provisioning) step spins up RUs in CosmosDB for the Container, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the collection or reset teh RU provision dpwn to the lowest possible value)*.
 
 - Kill the collection and/or database
 - Use the portal to change the allocation
