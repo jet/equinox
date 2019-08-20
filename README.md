@@ -308,10 +308,10 @@ A key facility of this repo is being able to run load tests, either in process a
 
 - `Favorite` - Simulate a very enthusiastic user that favorites something once per second
   - the test generates an ever-growing state that can only be managed efficiently if you apply either caching, snapshotting or both
-  - NB due to being unbounded, even Rolling Snapshots or Unfolds will eventually hit the Store's limits (4MB/event for EventStore, 3MB/Item (document) for CosmosDB)
+  - NB due to being unbounded, `RollingSnapshots`, `Snapshot`, `Unfolded` etc. will eventually hit the Store's limits (4MB/event for EventStore, 3MB/Item (document) for CosmosDB)
 - `SaveForLater` - Simulate a happy shopper that saves 3 items per second, and empties the Save For Later list whenever it is full (when it hits 50 items)
   - Snapshotting helps a lot
-  - Caching is not as essential as it is for the `Favorite` test (as long as oyu have either aching or snapshotting, that is)
+  - Caching is not as essential as it is for the `Favorite` test (as long as you have either caching or snapshotting, that is)
 - `Todo` - Keeps a) getting the list b) adding an item c) clearing the list when it hits 1000 items.
   - the `Cleared` event acts as a natural event to use in the `isOrigin` check. This makes snapshotting less crucial than it is, for example, in the case of the `Favorite` test
   - the `-s` parameter can be used to adjust the maximum item text length from the default (`100`, implying average length of 50)

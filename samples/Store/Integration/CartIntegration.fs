@@ -23,7 +23,7 @@ let resolveGesStreamWithRollingSnapshots gateway =
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     EventStore.Resolver(gateway, codec, fold, initial).Resolve
 
-let resolveCosmosStreamWithProjection gateway =
+let resolveCosmosStreamWithSnapshotStrategy gateway =
     Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
     Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).Resolve
@@ -78,7 +78,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly folding the events with With Projection`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveCosmosStreamWithProjection
+    let ``Can roundtrip against Cosmos, correctly folding the events with With Snapshotting`` args = Async.RunSynchronously <| async {
+        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveCosmosStreamWithSnapshotStrategy
         do! act service args
     }

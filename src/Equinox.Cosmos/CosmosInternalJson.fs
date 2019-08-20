@@ -26,7 +26,7 @@ open System.IO
 open System.IO.Compression
 
 /// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
-/// Only applied to snapshots in the Index
+/// Only applied to snapshots in the Tip
 type Base64ZipUtf8JsonConverter() =
     inherit JsonConverter()
     let pickle (input : byte[]) : string =
