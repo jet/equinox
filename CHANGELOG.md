@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Equinox.Stream.QueryEx`: exposes the stream's version in order to support versioned summary projections [#152](https://github.com/jet/equinox/pull/152)
+
 ### Changed
 ### Removed
 ### Fixed
