@@ -7,7 +7,7 @@ open System
 
 /// Store-specific opaque token to be used for synchronization purposes
 [<NoComparison>]
-type StreamToken = { value : obj }
+type StreamToken = { value : obj; version: int64 }
 
 /// Internal type used to represent the outcome of a TrySync operation
 [<NoEquality; NoComparison; RequireQualifiedAccess>]

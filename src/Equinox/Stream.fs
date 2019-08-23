@@ -27,6 +27,8 @@ type Stream<'event, 'state>
     /// Tries up to `maxAttempts` times in the case of a conflict, throwing MaxResyncsExhaustedException` to signal failure.
     member __.TransactAsync(decide : 'state -> Async<'result*'event list>) : Async<'result> = transact decide
 
+    /// Project from the folded `Version` and `State` without executing a decision flow as `Decide` does
+    member __.QueryEx(projection : int64 -> 'state -> 'view) : Async<'view> = Flow.query(stream, log, fun syncState -> projection syncState.Version syncState.State)
     /// Project from the folded `State` without executing a decision flow as `Decide` does
     member __.Query(projection : 'state -> 'view) : Async<'view> = Flow.query(stream, log, fun syncState -> projection syncState.State)
 

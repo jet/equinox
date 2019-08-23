@@ -12,6 +12,7 @@ type SyncState<'event, 'state>
 
     member __.Memento = tokenAndState
     member __.State = snd __.Memento
+    member __.Version = (fst __.Memento).version
 
     member __.TryOr(log, events, handleFailureResync : (Async<StreamToken*'state> -> Async<bool>)) : Async<bool> = async {
         let! res = trySync log tokenAndState events

@@ -289,7 +289,7 @@ module Log =
                 log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
                     name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
             for name, stat in stats do
-                if stat.count <> 0L then    
+                if stat.count <> 0L then
                     let ru = float stat.rux100 / 100.
                     totalCount <- totalCount + stat.count
                     totalRc <- totalRc + ru
@@ -301,7 +301,7 @@ module Log =
             if rows > 1 then logActivity "TOTAL" totalCount totalRc totalMs
             let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
             let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
-            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d) 
+            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d)
 
 type Container(client : Client.DocumentClient, databaseId, containerId) =
     let collectionUri = Microsoft.Azure.Documents.Client.UriFactory.CreateDocumentCollectionUri(databaseId, containerId)
@@ -353,7 +353,7 @@ module Sync =
     let [<Literal>] private sprocName = "EquinoxRollingUnfolds3"  // NB need to rename/number for any breaking change
     let [<Literal>] private sprocBody = """
 // Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
-// 1 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index) 
+// 1 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index)
 // 2a Verify no current Tip; if so - incoming req.e and defines the `n`ext position / unfolds
 // 2b If we already have a tip, move position forward, replace unfolds
 // 3 insert a new document containing the events as part of the same batch of work
@@ -510,7 +510,7 @@ function sync(req, expIndex, expEtag) {
             try let! r = c.Client.CreateStoredProcedureAsync(c.CollectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
             with CosmosException ((CosmosStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
-        let private mkContainerProperties idFieldName partionKeyFieldName = 
+        let private mkContainerProperties idFieldName partionKeyFieldName =
             // While the v2 SDK and earlier portal versions admitted 'fixed' collections where no Partition Key is defined, we follow the recent policy
             // simplification of having a convention of always defining a partion key
             let pkd = PartitionKeyDefinition()
@@ -546,7 +546,7 @@ function sync(req, expIndex, expEtag) {
         let initAux (client: Client.DocumentClient) (dName,cName) rus = async {
             // Hardwired for now (not sure if CFP can store in a Database-allocated as it would need to be supplying partion keys)
             let mode = Provisioning.Container rus
-            do! createOrProvisionDatabase client dName mode 
+            do! createOrProvisionDatabase client dName mode
             return! createAuxContainerIfNotExists client (dName,cName) mode }
 
 module internal Tip =
@@ -731,7 +731,9 @@ module internal Tip =
 
 type [<NoComparison>] Token = { container: Container; stream: string; pos: Position }
 module Token =
-    let create (container,stream) pos : Equinox.Store.StreamToken = { value = box { container = container; stream = stream; pos = pos } }
+    let create (container,stream) pos : Equinox.Store.StreamToken =
+        {  value = box { container = container; stream = stream; pos = pos }
+           version = pos.index }
     let (|Unpack|) (token: Equinox.Store.StreamToken) : Container*string*Position = let t = unbox<Token> token.value in t.container,t.stream,t.pos
     let supersedes (Unpack (_,_,currentPos)) (Unpack (_,_,xPos)) =
         let currentVersion, newVersion = currentPos.index, xPos.index
@@ -814,7 +816,7 @@ type Gateway(conn : Connection, batching : BatchingPolicy) =
         | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return LoadFromTokenResult.Found (Token.create (container,stream) pos, span)
         | _ ->  let! res = __.Read log (container,stream) Direction.Forward (Some pos) (tryDecode,isOrigin)
                 return LoadFromTokenResult.Found res }
-    member __.CreateSyncStoredProcIfNotExists log container = 
+    member __.CreateSyncStoredProcIfNotExists log container =
         Sync.Initialization.createSyncStoredProcIfNotExists log container
     member __.Sync log containerStream (exp, batch: Tip): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
@@ -844,7 +846,7 @@ type private Category<'event, 'state>(gateway : Gateway, codec : Codec.IUnionEnc
             | Choice2Of3 unfold -> Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.map codec.Encode (unfold events state')
             | Choice3Of3 transmute ->
                 let events', unfolds = transmute events state'
-                Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map codec.Encode events' |> Array.ofSeq, Seq.map codec.Encode unfolds 
+                Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map codec.Encode events' |> Array.ofSeq, Seq.map codec.Encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkUnfold baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
@@ -987,7 +989,7 @@ type CachingStrategy =
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
     /// Allow events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
-    /// When saving, `unfold` the 'state, representing it as event records stored in the Tip 
+    /// When saving, `unfold` the 'state, representing it as event records stored in the Tip
     | Unfolded of isOrigin: ('event -> bool) * unfold: ('state -> 'event seq)
     /// Simplified version of Unfolded that only saves a single Event Type
     /// Provides equivalent performance to Unfolded, just simplified function signatures

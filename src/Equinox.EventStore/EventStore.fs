@@ -110,7 +110,7 @@ module Log =
                     name, count, (if count = 0L then Double.NaN else float lat/float count))
             let mutable rows, totalCount, totalMs = 0, 0L, 0L
             for name, stat in stats do
-                if stat.count <> 0L then    
+                if stat.count <> 0L then
                     totalCount <- totalCount + stat.count
                     totalMs <- totalMs + stat.ms
                     logActivity name stat.count stat.ms
@@ -287,9 +287,10 @@ type Token = { stream: Stream; pos: Position }
 
 module Token =
     let private create compactionEventNumber batchCapacityLimit streamName streamVersion : Store.StreamToken =
-        { value = box {
-            stream = { name = streamName}
-            pos = { streamVersion = streamVersion; compactionEventNumber = compactionEventNumber; batchCapacityLimit = batchCapacityLimit } } }
+        {   value = box {
+                stream = { name = streamName}
+                pos = { streamVersion = streamVersion; compactionEventNumber = compactionEventNumber; batchCapacityLimit = batchCapacityLimit } }
+            version = streamVersion }
     /// No batching / compaction; we only need to retain the StreamVersion
     let ofNonCompacting streamName streamVersion : Store.StreamToken =
         create None None streamName streamVersion

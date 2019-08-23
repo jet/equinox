@@ -62,7 +62,8 @@ type Token = { streamVersion: int; streamName: string }
 /// Internal implementation detail of MemoryStreamStore
 module private Token =
     let private streamTokenOfIndex streamName (streamVersion : int) : Store.StreamToken =
-        { value = box { streamName = streamName; streamVersion = streamVersion; } }
+        {   value = box { streamName = streamName; streamVersion = streamVersion }
+            version = int64 streamVersion }
     let (|Unpack|) (token: Store.StreamToken) : Token = unbox<Token> token.value
     /// Represent a stream known to be empty
     let ofEmpty streamName initial = streamTokenOfIndex streamName -1, initial
