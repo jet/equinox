@@ -29,6 +29,8 @@ type Stream<'event, 'state>
 
     /// Project from the folded `State` without executing a decision flow as `Decide` does
     member __.Query(projection : 'state -> 'view) : Async<'view> = Flow.query(stream, log, fun syncState -> projection syncState.State)
+    /// Project from the folded `State` (with the current version of the stream supplied for context) without executing a decision flow as `Decide` does
+    member __.QueryEx(projection : int64 -> 'state -> 'view) : Async<'view> = Flow.query(stream, log, fun syncState -> projection syncState.Version syncState.State)
 
     /// Low-level helper to allow one to obtain a reference to a stream and state pair (including the position) in order to pass it as a continuation within the application
     /// Such a memento is then held within the application and passed in lieue of a StreamId to the StreamResolver in order to avoid having to reload state
