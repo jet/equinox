@@ -966,6 +966,8 @@ type Context(gateway: Gateway, containers: Containers, [<O; D(null)>] ?log) =
     let init = gateway.CreateSyncStoredProcIfNotExists log
     new(gateway: Gateway, databaseId: string, containerId: string, [<O; D(null)>]?log) =
         Context(gateway, Containers(databaseId, containerId), ?log = log)
+    new(connection: Connection, databaseId: string, containerId: string, [<O; D(null)>]?log) =
+        Context(Gateway(connection, BatchingPolicy()), databaseId, containerId, ?log = log)
 
     member __.Gateway = gateway
     member __.Containers = containers
