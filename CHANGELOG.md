@@ -9,15 +9,19 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
-
-- `Equinox.Stream.QueryEx`: exposes the stream's version in order to support versioned summary projections [#152](https://github.com/jet/equinox/pull/152)
-- `Equinox.Cosmos.Context` : added overload requiring only (Connection, databaseId, containerId), enabling `Gateway` and `BatchingPolicy` concepts to be skipped over in single-Aggregate microservices where they are less relevant [#153](https://github.com/jet/equinox/pull/153) @jakzale
-
 ### Changed
 ### Removed
 ### Fixed
 
 <a name="2.0.0"></a>
+<a name="2.0.0-rc4"></a>
+## [2.0.0-rc4] - 2019-08-26
+
+### Added
+
+- `Equinox.Stream.QueryEx`: exposes the stream's version in order to support versioned summary projections [#152](https://github.com/jet/equinox/pull/152)
+- `Equinox.Cosmos.Context`: added overload requiring only (Connection, databaseId, containerId), enabling `Gateway` and `BatchingPolicy` concepts to be skipped over in single-Aggregate microservices where they are less relevant [#153](https://github.com/jet/equinox/pull/153) @jakzale
+
 <a name="2.0.0-rc3"></a>
 ## [2.0.0-rc3] - 2019-08-20
 

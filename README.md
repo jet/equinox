@@ -223,11 +223,11 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     $env:EQUINOX_COSMOS_CONTAINER="equinox-test"
     ```
 
-2. use the `eqx` tool to initialize the database and/or collection (using preceding env vars)
+2. use the `eqx` tool to initialize the database and/or container (using preceding env vars)
 
     ```powershell
     dotnet tool install Equinox.Tool -g
-    eqx init -ru 400 cosmos # generates a database+collection, adds optimized indexes
+    eqx init -ru 400 cosmos # generates a database+container, adds optimized indexes
     ```
 
 3. generate sample app from template, with CosmosDb wiring
@@ -240,11 +240,10 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 4. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor
 
     ```powershell
-    # TEMP: need to uninstall and use --version flag while this is in RC
     dotnet tool uninstall Propulsion.Tool -g
-    dotnet tool install Propulsion.Tool -g --version 1.0.1-rc*
+    dotnet tool install Propulsion.Tool -g
 
-    propulsion init -ru 400 cosmos # generates a -aux collection for the ChangeFeedProcessor to maintain consumer group progress within
+    propulsion init -ru 400 cosmos # generates a -aux container for the ChangeFeedProcessor to maintain consumer group progress within
     # -v for verbose ChangeFeedProcessor logging
     # `projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # stats specifies one only wants stats regarding items (other options include `kafka` to project to Kafka)
@@ -323,7 +322,7 @@ Please note the [QuickStart](quickstart) is probably the best way to gain an ove
 
 ### build and run
 
-Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and collection prepared (see [PROVISIONING](provisioning)):
+Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and container prepared (see [PROVISIONING](provisioning)):
 
     ./build.ps1
 
@@ -407,9 +406,9 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 
 ### Deprovisioning CosmosDb
 
-The [provisioning](provisioning) step spins up RUs in CosmosDB for the Container, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the collection or reset teh RU provision dpwn to the lowest possible value)*.
+The [provisioning](provisioning) step spins up RUs in CosmosDB for the Container, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the container or reset the RU provision down to the lowest possible value)*.
 
-- Kill the collection and/or database
+- Kill the container and/or database
 - Use the portal to change the allocation
 
 ## FAQ
