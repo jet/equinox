@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- Extracted `Equinox.Codec` to external project `Gardelloyd`, with Json.net support in `Gardelloyd.NewtonsoftJson`
+
 ### Removed
 ### Fixed
 

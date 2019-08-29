@@ -18,7 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Equinox\Equinox.fsproj" />
-    <ProjectReference Include="..\Equinox.Codec\Equinox.Codec.fsproj" />
+    <ProjectReference Include="..\Gardelloyd\Gardelloyd.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

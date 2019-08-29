@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Equinox.Codec\Equinox.Codec.fsproj" />
+    <ProjectReference Include="..\..\src\Gardelloyd\Gardelloyd.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />

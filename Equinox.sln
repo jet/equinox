@@ -42,7 +42,7 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.MemoryStore", "src\
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.MemoryStore.Integration", "tests\Equinox.MemoryStore.Integration\Equinox.MemoryStore.Integration.fsproj", "{B2C695C3-ED04-4094-B672-926440B5F335}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Codec", "src\Equinox.Codec\Equinox.Codec.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Gardelloyd", "src\Gardelloyd\Gardelloyd.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Tool", "tools\Equinox.Tool\Equinox.Tool.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
 EndProject

@@ -17,7 +17,7 @@ The implementations are distilled from [`Jet.com` systems dating all the way bac
 - Designed not to invade application code; Domain tests can be written directly against your models without any need to involve or understand Equinox assemblies or constructs as part of writing those tests.
 - Extracted from working software; currently used for all data storage within Jet's API gateway and Cart processing.
 - Significant test coverage for core facilities, and with baseline and specific tests per Storage system and a comprehensive test and benchmarking story
-- Encoding of events via `Equinox.Codec` provides for pluggable encoding of events based on either:
+- Encoding of events via `Gardelloyd.IUnionEncoder` provides for pluggable encoding of events based on either:
   - a [versionable convention-based approach](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)  (using `Typeshape`'s `UnionContractEncoder` under the covers), providing for serializer-agnostic schema evolution with minimal boilerplate
   - an explicitly coded pair of `encode` and `tryDecode` functions for when you need to customize
 - Independent of the store used, Equinox provides for caching using the .NET `MemoryCache` to minimize roundtrips, latency and bandwidth / Request Charges by maintaining the folded state, without necessitating making the Domain Model folded state serializable
@@ -44,12 +44,17 @@ The implementations are distilled from [`Jet.com` systems dating all the way bac
 
 The components within this repository are delivered as a series of multi-targeted Nuget packages targeting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
-### Core libraries
+### Core library
 
 - `Equinox[.Stream]` [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/): Store-agnostic decision flow runner that manages the optimistic concurrency protocol. ([depends](https://www.fuget.org/packages/Equinox) on `Serilog` (but no specific Serilog sinks, i.e. you configure to emit to `NLog` etc))
-- `Equinox.Codec` [![Codec NuGet](https://img.shields.io/nuget/v/Equinox.Codec.svg)](https://www.nuget.org/packages/Equinox.Codec/): [a scheme for the serializing Events modelled as an F# Discriminated Union](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) ([depends](https://www.fuget.org/packages/Equinox.Codec) on `TypeShape 7.*`, `Microsoft.IO.RecyclableMemoryStream 1.2.2`, `Newtonsoft.Json >= 11.0.2` but can support any serializer) with the following capabilities:
-  - `Equinox.Codec.NewtonsoftJson.Json`: allows tagging of F# Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
-  - `Equinox.Codec.Custom`: independent of any specific serializer; enables plugging in a serializer and/or Union Encoder of your choice
+
+### Serialization support
+
+- `Gardelloyd` [![Codec NuGet](https://img.shields.io/nuget/v/Gardelloyd.svg)](https://www.nuget.org/packages/Gardelloyd/): [a scheme for the serializing Events modelled as an F# Discriminated Union](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) ([depends](https://www.fuget.org/packages/Gardelloyd) on `TypeShape 7.*`
+  - `Gardelloyd.IUnionEncoder`: allows tagging of F# Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
+  - `Gardelloyd.Custom`: enables plugging in a serializer and/or Union Encoder of your choice (typically this is used to supply a pair of functions:- `encode` and `tryDecode`)
+- `Gardelloyd.NewtonsoftJson` [![Codec NuGet](https://img.shields.io/nuget/v/Gardelloyd.NewtonsoftJson.svg)](https://www.nuget.org/packages/Gardelloyd.NewtonsoftJson/): Implementation of `Gardelloyd.IUnionEncoder` that uses Json.net to serialize the bodies of the union cases. ([depends](https://www.fuget.org/packages/Gardelloyd.NewtonsoftJson) on `Gardelloyd`, `Microsoft.IO.RecyclableMemoryStream 1.2.2`, `Newtonsoft.Json >= 11.0.2`
+- (Not yet implemented) `Gardelloyd.SystemTextJson`: drop in replacement that allows one to target the .NET `System.Text.Json` serializer solely by changing the referenced namespace.
 
 ### Store libraries
 
