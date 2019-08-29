@@ -20,7 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
-    <ProjectReference Include="..\..\src\Gardelloyd.NewtonsoftJson\Gardelloyd.NewtonsoftJson.fsproj" />
+    <ProjectReference Include="..\..\..\Gardelloyd\src\Gardelloyd.NewtonsoftJson\Gardelloyd.NewtonsoftJson.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>

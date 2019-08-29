@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Gardelloyd.NewtonsoftJson\Gardelloyd.NewtonsoftJson.fsproj" />
+    <ProjectReference Include="..\..\..\..\Gardelloyd\src\Gardelloyd.NewtonsoftJson\Gardelloyd.NewtonsoftJson.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
