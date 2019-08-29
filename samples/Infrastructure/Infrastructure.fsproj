@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
+    <ProjectReference Include="..\..\src\Gardelloyd.NewtonsoftJson\Gardelloyd.NewtonsoftJson.fsproj" />
     <ProjectReference Include="..\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\Store\Domain\Domain.fsproj" />
     <ProjectReference Include="..\TodoBackend\TodoBackend.fsproj" />

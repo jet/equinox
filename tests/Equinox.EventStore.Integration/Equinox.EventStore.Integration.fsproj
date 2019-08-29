@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
+    <ProjectReference Include="..\..\src\Gardelloyd.NewtonsoftJson\Gardelloyd.NewtonsoftJson.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

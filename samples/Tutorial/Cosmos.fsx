@@ -9,7 +9,7 @@
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
-#r "Gardelloyd.dll"
+#r "Gardelloyd.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.DocumentDb.Core.dll"
 #r "System.Net.Http"
