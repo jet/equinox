@@ -56,4 +56,4 @@ let register (services : IServiceCollection, storageConfig, handlerLog, codecGen
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
 type NewtonsoftJsonCodecGen() =
     interface ICodecGen with
-        member __.Generate() = Gardelloyd.NewtonsoftJson.Json.Create<'Union>(serializationSettings)
+        member __.Generate() = Gardelloyd.NewtonsoftJson.Codec.Create<'Union>(serializationSettings)

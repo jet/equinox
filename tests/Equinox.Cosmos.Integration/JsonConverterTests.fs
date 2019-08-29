@@ -14,7 +14,7 @@ type Union =
     interface TypeShape.UnionContract.IUnionContract
 
 let defaultSettings = JsonSerializerSettings()
-let mkUnionEncoder () = Gardelloyd.NewtonsoftJson.Json.Create<Union>(defaultSettings)
+let mkUnionEncoder () = Gardelloyd.NewtonsoftJson.Codec.Create<Union>(defaultSettings)
 
 type EmbeddedString = { embed : string }
 type EmbeddedDate = { embed : DateTime }
@@ -47,7 +47,7 @@ type VerbatimUtf8Tests() =
         let res = JsonConvert.SerializeObject(e)
         test <@ res.Contains """"d":{"embed":"\""}""" @>
 
-    let uEncoder = Gardelloyd.NewtonsoftJson.Json.Create<U>(defaultSettings)
+    let uEncoder = Gardelloyd.NewtonsoftJson.Codec.Create<U>(defaultSettings)
 
     let [<Property(MaxTest=100)>] ``roundtrips diverse bodies correctly`` (x: U) =
         let encoded = uEncoder.Encode x
@@ -62,15 +62,15 @@ type VerbatimUtf8Tests() =
 
     // NB while this aspect works, we don't support it as it gets messy when you then use the VerbatimUtf8Converter
     // https://github.com/JamesNK/Newtonsoft.Json/issues/862 // doesnt apply to this case
-    let [<Fact>] ``Gardelloyd.NewtonsoftJson.Json does not fall prey to Date-strings being mutilated`` () =
+    let [<Fact>] ``Gardelloyd.NewtonsoftJson.Codec does not fall prey to Date-strings being mutilated`` () =
         let x = ES { embed = "2016-03-31T07:02:00+07:00" }
         let encoded = uEncoder.Encode x
         let decoded = uEncoder.TryDecode encoded |> Option.get
         test <@ x = decoded @> 
 
     //// NB while this aspect works, we don't support it as it gets messy when you then use the VerbatimUtf8Converter
-    //let sEncoder = Gardelloyd.NewtonsoftJson.Json.Create<US>(defaultSettings)
-    //let [<Theory; InlineData ""; InlineData null>] ``Gardelloyd.NewtonsoftJson.Json can roundtrip strings`` (value: string)  =
+    //let sEncoder = Gardelloyd.NewtonsoftJson.Codec.Create<US>(defaultSettings)
+    //let [<Theory; InlineData ""; InlineData null>] ``Gardelloyd.NewtonsoftJson.Codec can roundtrip strings`` (value: string)  =
     //    let x = SS value
     //    let encoded = sEncoder.Encode x
     //    let decoded = sEncoder.TryDecode encoded |> Option.get

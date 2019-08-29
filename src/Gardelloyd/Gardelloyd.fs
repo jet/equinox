@@ -23,7 +23,7 @@ type IUnionEncoder<'Union, 'Format> =
     abstract TryDecode   : encoded:IEvent<'Format> -> 'Union option
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply
-/// i.e., with using conventions / Type Shapes / Reflection or specific Json processing libraries - see Gardelloyd.NewtonsoftJson.Json for batteries-included Coding/Decoding
+/// i.e., with using conventions / Type Shapes / Reflection or specific Json processing libraries - see Gardelloyd.NewtonsoftJson.Codec for batteries-included Coding/Decoding
 type Custom =
 
     /// <summary>

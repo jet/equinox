@@ -48,7 +48,7 @@ module Core =
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply using `Newtonsoft.Json` and 
 /// `TypeShape.UnionContract.UnionContractEncoder` - if you need full control and/or have have your own codecs, see `Gardelloyd.Custom.Create` instead
-type Json =
+type Codec =
 
     /// <summary>
     ///     Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,

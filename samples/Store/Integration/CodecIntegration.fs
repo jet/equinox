@@ -11,7 +11,7 @@ let serializationSettings =
             Newtonsoft.Json.Converters.FSharp.OptionConverter() |])
 
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Gardelloyd.NewtonsoftJson.Json.Create<'Union>(serializationSettings)
+    Gardelloyd.NewtonsoftJson.Codec.Create<'Union>(serializationSettings)
 
 type EventWithId = { id : CartId } // where CartId uses FSharp.UMX
 
