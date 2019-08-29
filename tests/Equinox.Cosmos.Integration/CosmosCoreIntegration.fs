@@ -3,8 +3,8 @@
 open Equinox.Cosmos.Core
 open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.Control
-open Equinox.Codec // Shadow FSharp.Control.IEvent
-open Equinox.Codec.Core
+open Gardelloyd // Shadow FSharp.Control.IEvent
+open Gardelloyd.Core
 open Newtonsoft.Json.Linq
 open Swensen.Unquote
 open Serilog

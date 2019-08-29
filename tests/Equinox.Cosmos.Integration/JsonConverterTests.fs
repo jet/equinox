@@ -14,7 +14,7 @@ type Union =
     interface TypeShape.UnionContract.IUnionContract
 
 let defaultSettings = JsonSerializerSettings()
-let mkUnionEncoder () = Equinox.Codec.NewtonsoftJson.Json.Create<Union>(defaultSettings)
+let mkUnionEncoder () = Gardelloyd.NewtonsoftJson.Json.Create<Union>(defaultSettings)
 
 type EmbeddedString = { embed : string }
 type EmbeddedDate = { embed : DateTime }
@@ -47,7 +47,7 @@ type VerbatimUtf8Tests() =
         let res = JsonConvert.SerializeObject(e)
         test <@ res.Contains """"d":{"embed":"\""}""" @>
 
-    let uEncoder = Equinox.Codec.NewtonsoftJson.Json.Create<U>(defaultSettings)
+    let uEncoder = Gardelloyd.NewtonsoftJson.Json.Create<U>(defaultSettings)
 
     let [<Property(MaxTest=100)>] ``roundtrips diverse bodies correctly`` (x: U) =
         let encoded = uEncoder.Encode x
@@ -56,21 +56,21 @@ type VerbatimUtf8Tests() =
                 e = [| { t = DateTimeOffset.MinValue; c = encoded.EventType; d = encoded.Data; m = null } |] }
         let ser = JsonConvert.SerializeObject(e, defaultSettings)
         let des = JsonConvert.DeserializeObject<Store.Batch>(ser, defaultSettings)
-        let loaded = Equinox.Codec.Core.EventData.Create(des.e.[0].c,des.e.[0].d)
+        let loaded = Gardelloyd.Core.EventData.Create(des.e.[0].c,des.e.[0].d)
         let decoded = uEncoder.TryDecode loaded |> Option.get
         x =! decoded
 
     // NB while this aspect works, we don't support it as it gets messy when you then use the VerbatimUtf8Converter
     // https://github.com/JamesNK/Newtonsoft.Json/issues/862 // doesnt apply to this case
-    let [<Fact>] ``Equinox.Codec.NewtonsoftJson.Json does not fall prey to Date-strings being mutilated`` () =
+    let [<Fact>] ``Gardelloyd.NewtonsoftJson.Json does not fall prey to Date-strings being mutilated`` () =
         let x = ES { embed = "2016-03-31T07:02:00+07:00" }
         let encoded = uEncoder.Encode x
         let decoded = uEncoder.TryDecode encoded |> Option.get
         test <@ x = decoded @> 
 
     //// NB while this aspect works, we don't support it as it gets messy when you then use the VerbatimUtf8Converter
-    //let sEncoder = Equinox.Codec.NewtonsoftJson.Json.Create<US>(defaultSettings)
-    //let [<Theory; InlineData ""; InlineData null>] ``Equinox.Codec.NewtonsoftJson.Json can roundtrip strings`` (value: string)  =
+    //let sEncoder = Gardelloyd.NewtonsoftJson.Json.Create<US>(defaultSettings)
+    //let [<Theory; InlineData ""; InlineData null>] ``Gardelloyd.NewtonsoftJson.Json can roundtrip strings`` (value: string)  =
     //    let x = SS value
     //    let encoded = sEncoder.Encode x
     //    let decoded = sEncoder.TryDecode encoded |> Option.get
@@ -131,6 +131,6 @@ type Base64ZipUtf8Tests() =
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
         let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
-        let d = Equinox.Codec.Core.EventData.Create(des.c, des.d)
+        let d = Gardelloyd.Core.EventData.Create(des.c, des.d)
         let decoded = unionEncoder.TryDecode d |> Option.get
         test <@ value = decoded @>

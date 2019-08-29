@@ -1,4 +1,4 @@
-namespace Equinox.Codec
+namespace Gardelloyd
 
 /// Common form for either a Domain Event or an Unfolded Event
 type IEvent<'Format> =
@@ -23,7 +23,7 @@ type IUnionEncoder<'Union, 'Format> =
     abstract TryDecode   : encoded:IEvent<'Format> -> 'Union option
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply
-/// i.e., with using conventions / Type Shapes / Reflection or specific Json processing libraries - see Equinox.Codec.NewtonsoftJson.Json for batteries-included Coding/Decoding
+/// i.e., with using conventions / Type Shapes / Reflection or specific Json processing libraries - see Gardelloyd.NewtonsoftJson.Json for batteries-included Coding/Decoding
 type Custom =
 
     /// <summary>
@@ -57,7 +57,7 @@ type Custom =
         let tryDecode' (et,d,_md) = tryDecode (et, d)
         Custom.Create(encode', tryDecode')
 
-namespace Equinox.Codec.Core
+namespace Gardelloyd.Core
 
 open System
 
@@ -65,7 +65,7 @@ open System
 // Included here to enable extraction of this ancillary information (by downcasting IEvent in one's IUnionEncoder.TryDecode implementation)
 // in the corner cases where this coupling is absolutely definitely better than all other approaches
 type IIndexedEvent<'Format> =
-    inherit Equinox.Codec.IEvent<'Format>
+    inherit Gardelloyd.IEvent<'Format>
     /// The index into the event sequence of this event
     abstract member Index : int64
     /// Indicates this is not a Domain Event, but actually an Unfolded Event based on the state inferred from the events up to `Index`
@@ -74,7 +74,7 @@ type IIndexedEvent<'Format> =
 /// An Event about to be written, see IEvent for further information
 type EventData<'Format> =
     { eventType : string; data : 'Format; meta : 'Format; timestamp: DateTimeOffset }
-    interface Equinox.Codec.IEvent<'Format> with
+    interface Gardelloyd.IEvent<'Format> with
         member __.EventType = __.eventType
         member __.Data = __.data
         member __.Meta = __.meta
@@ -87,7 +87,7 @@ type EventData =
             meta = defaultArg meta null
             timestamp = match timestamp with Some ts -> ts | None -> DateTimeOffset.UtcNow }
 
-namespace Equinox.Codec.NewtonsoftJson
+namespace Gardelloyd.NewtonsoftJson
 
 open Newtonsoft.Json
 open System.IO
@@ -135,7 +135,7 @@ type BytesEncoder(settings : JsonSerializerSettings) =
             serializer.Deserialize<'T>(jsonReader)
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply using `Newtonsoft.Json` and 
-/// `TypeShape.UnionContract.UnionContractEncoder` - if you need full control and/or have have your own codecs, see `Equinox.Codec.Custom.Create` instead
+/// `TypeShape.UnionContract.UnionContractEncoder` - if you need full control and/or have have your own codecs, see `Gardelloyd.Custom.Create` instead
 type Json =
 
     /// <summary>
@@ -150,15 +150,15 @@ type Json =
     static member Create<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>
         (   settings,
             [<Optional;DefaultParameterValue(null)>]?allowNullaryCases)
-        : Equinox.Codec.IUnionEncoder<'Union,byte[]> =
+        : Gardelloyd.IUnionEncoder<'Union,byte[]> =
         let dataCodec =
             TypeShape.UnionContract.UnionContractEncoder.Create<'Union,byte[]>(
                 new BytesEncoder(settings),
                 requireRecordFields=true, // See JsonConverterTests - roundtripping UTF-8 correctly with Json.net is painful so for now we lock up the dragons
                 ?allowNullaryCases=allowNullaryCases)
-        { new Equinox.Codec.IUnionEncoder<'Union,byte[]> with
+        { new Gardelloyd.IUnionEncoder<'Union,byte[]> with
             member __.Encode value =
                 let enc = dataCodec.Encode value
-                Equinox.Codec.Core.EventData.Create(enc.CaseName, enc.Payload) :> _
+                Gardelloyd.Core.EventData.Create(enc.CaseName, enc.Payload) :> _
             member __.TryDecode encoded =
                 dataCodec.TryDecode { CaseName = encoded.EventType; Payload = encoded.Data } } 

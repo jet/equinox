@@ -74,7 +74,7 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
 module FavoritesCategory = 
-    let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Favorites.Event>(Newtonsoft.Json.JsonSerializerSettings())
+    let codec = Gardelloyd.NewtonsoftJson.Json.Create<Favorites.Event>(Newtonsoft.Json.JsonSerializerSettings())
     let resolve = Resolver(Store.context, codec, Favorites.fold, Favorites.initial, Store.cacheStrategy).Resolve
 
 let service = Favorites.Service(Log.log, FavoritesCategory.resolve)

@@ -5,7 +5,7 @@ open System
 
 type StreamResolver(storage) =
     member __.Resolve
-        (   codec : Equinox.Codec.IUnionEncoder<'event,byte[]>,
+        (   codec : Gardelloyd.IUnionEncoder<'event,byte[]>,
             fold: ('state -> 'event seq -> 'state),
             initial: 'state,
             snapshot: (('event -> bool) * ('state -> 'event))) =
@@ -21,7 +21,7 @@ type StreamResolver(storage) =
             Equinox.Cosmos.Resolver<'event,'state>(store, codec, fold, initial, caching, ?access = accessStrategy).Resolve
 
 type ICodecGen =
-    abstract Generate<'Union when 'Union :> TypeShape.UnionContract.IUnionContract> : unit -> Equinox.Codec.IUnionEncoder<'Union,byte[]>
+    abstract Generate<'Union when 'Union :> TypeShape.UnionContract.IUnionContract> : unit -> Gardelloyd.IUnionEncoder<'Union,byte[]>
 
 type ServiceBuilder(storageConfig, handlerLog, codecGen : ICodecGen) =
      let resolver = StreamResolver(storageConfig)
@@ -56,4 +56,4 @@ let register (services : IServiceCollection, storageConfig, handlerLog, codecGen
 let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
 type NewtonsoftJsonCodecGen() =
     interface ICodecGen with
-        member __.Generate() = Equinox.Codec.NewtonsoftJson.Json.Create<'Union>(serializationSettings)
+        member __.Generate() = Gardelloyd.NewtonsoftJson.Json.Create<'Union>(serializationSettings)

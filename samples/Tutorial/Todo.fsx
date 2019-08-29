@@ -116,7 +116,7 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory = 
-    let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
+    let codec = Gardelloyd.NewtonsoftJson.Json.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
     let access = AccessStrategy.Snapshot (isOrigin,compact)
     let resolve = Resolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
 
