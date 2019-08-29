@@ -55,7 +55,7 @@ type Codec private () =
     static let defaultSettings = lazy Settings.Create()
 
     /// <summary>
-    ///     Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
+    ///     Generate a codec suitable for use with <c>Equinox.EventStore</c>, <c>Equinox.Cosmos</c> or <c>Propulsion</c> libraries,
     ///       using the supplied `Newtonsoft.Json` <c>settings</c>.
     ///     The Event Type Names are inferred based on either explicit `DataMember(Name=` Attributes,
     ///       or (if unspecified) the Discriminated Union Case Name

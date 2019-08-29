@@ -27,7 +27,7 @@ type IUnionEncoder<'Union, 'Format> =
 type Custom =
 
     /// <summary>
-    ///    Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
+    ///    Generate a codec suitable for use with <c>Equinox.EventStore</c>, <c>Equinox.Cosmos</c> or <c>Propulsion</c> libraries
     ///    using the supplied pair of <c>encode</c> and <c>tryDecode</code> functions. </summary>
     /// <param name="encode">Maps a 'Union to an Event Type Name with UTF-8 arrays representing the `Data` and `Metadata`.</param>
     /// <param name="tryDecode">Attempts to map from an Event Type Name and UTF-8 arrays representing the `Data` and `Metadata` to a 'Union case, or None if not mappable.</param>
@@ -47,7 +47,7 @@ type Custom =
                 tryDecode (ee.EventType, ee.Data, ee.Meta) }
 
     /// <summary>
-    ///    Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
+    ///    Generate a codec suitable for use with <c>Equinox.EventStore</c>, <c>Equinox.Cosmos</c> or <c>Propulsion</c> libraries,
     ///    using the supplied pair of <c>encode</c> and <c>tryDecode</code> functions. </summary>
     /// <param name="encode">Maps a 'Union to an Event Type Name and a UTF-8 array representing the `Data`.</param>
     /// <param name="tryDecode">Attempts to map an Event Type Name and a UTF-8 `Data` array to a 'Union case, or None if not mappable.</param>
