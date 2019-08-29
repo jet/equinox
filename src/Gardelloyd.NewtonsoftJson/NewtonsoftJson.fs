@@ -48,7 +48,7 @@ module Core =
 
 /// Provides Codecs that render to a UTF-8 array suitable for storage in EventStore or CosmosDb based on explicit functions you supply using `Newtonsoft.Json` and 
 /// `TypeShape.UnionContract.UnionContractEncoder` - if you need full control and/or have have your own codecs, see `Gardelloyd.Custom.Create` instead
-type Codec =
+type Codec private () =
 
     /// <summary>
     ///     Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
@@ -73,4 +73,58 @@ type Codec =
                 let enc = dataCodec.Encode value
                 Gardelloyd.Core.EventData.Create(enc.CaseName, enc.Payload) :> _
             member __.TryDecode encoded =
-                dataCodec.TryDecode { CaseName = encoded.EventType; Payload = encoded.Data } } 
+                dataCodec.TryDecode { CaseName = encoded.EventType; Payload = encoded.Data } }
+
+open Newtonsoft.Json.Serialization
+open System
+
+type Settings private () =
+    /// <summary>
+    ///     Creates a default set of serializer settings used by Json serialization. When used with no args, same as JsonSerializerSettings.CreateDefault()
+    /// </summary>
+    /// <param name="camelCase">Render idiomatic camelCase for PascalCase items by using `CamelCasePropertyNamesContractResolver`. Defaults to false.</param>
+    /// <param name="indent">Use multi-line, indented formatting when serializing json; defaults to false.</param>
+    /// <param name="ignoreNulls">Ignore null values in input data; defaults to false.</param>
+    /// <param name="errorOnMissing">Error on missing values (as opposed to letting them just be default-initialized); defaults to false.</param>
+    static member CreateDefault
+        (   [<Optional;ParamArray>]converters : JsonConverter[],
+            [<Optional;DefaultParameterValue(null)>]?indent : bool,
+            [<Optional;DefaultParameterValue(null)>]?camelCase : bool,
+            [<Optional;DefaultParameterValue(null)>]?ignoreNulls : bool,
+            [<Optional;DefaultParameterValue(null)>]?errorOnMissing : bool) =
+        let indent = defaultArg indent false
+        let camelCase = defaultArg camelCase false
+        let ignoreNulls = defaultArg ignoreNulls false
+        let errorOnMissing = defaultArg errorOnMissing false
+        let resolver : IContractResolver =
+             if camelCase then CamelCasePropertyNamesContractResolver() :> _
+             else DefaultContractResolver() :> _
+        JsonSerializerSettings(
+            ContractResolver = resolver,
+            Converters = converters,
+            DateTimeZoneHandling = DateTimeZoneHandling.Utc, // Override default of RoundtripKind
+            DateFormatHandling = DateFormatHandling.IsoDateFormat, // Pin Json.Net claimed default
+            Formatting = (if indent then Formatting.Indented else Formatting.None),
+            MissingMemberHandling = (if errorOnMissing then MissingMemberHandling.Error else MissingMemberHandling.Ignore),
+            NullValueHandling = (if ignoreNulls then NullValueHandling.Ignore else NullValueHandling.Include))
+
+    /// <summary>Optionated helper that creates a set of serializer settings that fail fast, providing less surprises when working in F#.</summary>
+    /// <param name="camelCase">
+    ///     Render idiomatic camelCase for PascalCase items by using `CamelCasePropertyNamesContractResolver`.
+    ///     Defaults to false on basis that you'll use record and tuple field names that are camelCase (and hence not `CLSCompliant`).</param>
+    /// <param name="indent">Use multi-line, indented formatting when serializing json; defaults to false.</param>
+    /// <param name="ignoreNulls">Ignore null values in input data; defaults to `true`. NB OOTB, Json.Net defaults to false.</param>
+    /// <param name="errorOnMissing">Error on missing values (as opposed to letting them just be default-initialized); defaults to false.</param>
+    static member Create
+        (   [<Optional;ParamArray>]converters : JsonConverter[],
+            [<Optional;DefaultParameterValue(null)>]?indent : bool,
+            [<Optional;DefaultParameterValue(null)>]?camelCase : bool,
+            [<Optional;DefaultParameterValue(null)>]?ignoreNulls : bool,
+            [<Optional;DefaultParameterValue(null)>]?errorOnMissing : bool) =
+        Settings.CreateDefault(
+            converters=converters,
+            // the key impact of this is that Nullables/options start to render as absent (same for strings etc)
+            ignoreNulls=defaultArg ignoreNulls true,
+            ?errorOnMissing=errorOnMissing,
+            ?indent=indent,
+            ?camelCase=camelCase)

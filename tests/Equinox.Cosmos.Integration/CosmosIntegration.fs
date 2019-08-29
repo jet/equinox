@@ -4,14 +4,14 @@ open Domain
 open Equinox.Cosmos
 open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.UMX
-open Newtonsoft.Json
+open Gardelloyd.NewtonsoftJson
 open Swensen.Unquote
 open System.Threading
 open System
 
-let serializationSettings = JsonSerializerSettings()
+let defaultSettings = Settings.CreateDefault()
 let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Gardelloyd.NewtonsoftJson.Codec.Create<'Union>(serializationSettings)
+    Codec.Create<'Union>(defaultSettings)
 
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial

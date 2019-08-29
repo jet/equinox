@@ -54,7 +54,7 @@ The components within this repository are delivered as a series of multi-targete
   - `Gardelloyd.IUnionEncoder`: allows tagging of F# Discriminated Union cases in a versionable manner with low-dependency `DataMember(Name=` tags using [TypeShape](https://github.com/eiriktsarpalis/TypeShape)'s [`UnionContractEncoder`](https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs)
   - `Gardelloyd.Custom`: enables plugging in a serializer and/or Union Encoder of your choice (typically this is used to supply a pair of functions:- `encode` and `tryDecode`)
 - `Gardelloyd.NewtonsoftJson` [![Codec NuGet](https://img.shields.io/nuget/v/Gardelloyd.NewtonsoftJson.svg)](https://www.nuget.org/packages/Gardelloyd.NewtonsoftJson/): Implementation of `Gardelloyd.IUnionEncoder` that uses Json.net to serialize the bodies of the union cases. ([depends](https://www.fuget.org/packages/Gardelloyd.NewtonsoftJson) on `Gardelloyd`, `Microsoft.IO.RecyclableMemoryStream 1.2.2`, `Newtonsoft.Json >= 11.0.2`
-- (Not yet implemented) `Gardelloyd.SystemTextJson`: drop in replacement that allows one to target the .NET `System.Text.Json` serializer solely by changing the referenced namespace.
+- (planned) `Gardelloyd.SystemTextJson`: drop in replacement that allows one to target the .NET `System.Text.Json` serializer solely by changing the referenced namespace.
 
 ### Store libraries
 

@@ -2,6 +2,7 @@
 
 open Equinox.Cosmos
 open FsCheck.Xunit
+open Gardelloyd.NewtonsoftJson
 open Newtonsoft.Json
 open Swensen.Unquote
 open System
@@ -13,8 +14,8 @@ type Union =
     | B of Embedded
     interface TypeShape.UnionContract.IUnionContract
 
-let defaultSettings = JsonSerializerSettings()
-let mkUnionEncoder () = Gardelloyd.NewtonsoftJson.Codec.Create<Union>(defaultSettings)
+let defaultSettings = Settings.Create()
+let mkUnionEncoder () = Codec.Create<Union>(defaultSettings)
 
 type EmbeddedString = { embed : string }
 type EmbeddedDate = { embed : DateTime }
