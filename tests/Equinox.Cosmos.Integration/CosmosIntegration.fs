@@ -4,19 +4,14 @@ open Domain
 open Equinox.Cosmos
 open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.UMX
-open Gardelloyd.NewtonsoftJson
 open Swensen.Unquote
 open System.Threading
 open System
 
-let defaultSettings = Settings.CreateDefault()
-let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Codec.Create<'Union>(defaultSettings)
-
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
     let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
-    let codec = genCodec<Domain.Cart.Events.Event>()
+    let codec = Domain.Cart.Events.codec
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
         let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve
@@ -45,7 +40,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
-    let codec = genCodec<Domain.ContactPreferences.Events.Event>()
+    let codec = Domain.ContactPreferences.Events.codec
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
         let resolveStream = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching).Resolve

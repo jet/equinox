@@ -21,6 +21,7 @@ module Events =
         | ItemQuantityChanged       of ItemQuantityChangeInfo
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
         interface TypeShape.UnionContract.IUnionContract
+    let codec = Gardelloyd.NewtonsoftJson.Codec.Create<Event>()
 
 module Folds =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }

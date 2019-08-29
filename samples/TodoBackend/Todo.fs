@@ -15,6 +15,7 @@ module Events =
         | Cleared
         | Compacted of CompactedInfo
         interface TypeShape.UnionContract.IUnionContract
+    let codec = Gardelloyd.NewtonsoftJson.Codec.Create<Event>()
 
 module Folds =
     type State = { items : Todo list; nextId : int }

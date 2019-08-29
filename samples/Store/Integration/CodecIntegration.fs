@@ -5,14 +5,6 @@ open Domain
 open Swensen.Unquote
 open TypeShape.UnionContract
 
-let serializationSettings =
-    Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect(converters=
-        [|  // Don't let json.net treat 't option as the DU it is internally
-            Newtonsoft.Json.Converters.FSharp.OptionConverter() |])
-
-let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Gardelloyd.NewtonsoftJson.Codec.Create<'Union>(serializationSettings)
-
 type EventWithId = { id : CartId } // where CartId uses FSharp.UMX
 
 type EventWithOption = { age : int option }
@@ -46,7 +38,10 @@ let render = function
     //| EventE i -> string i
     //| EventF s ->  Newtonsoft.Json.JsonConvert.SerializeObject s
 
-let codec = genCodec<SimpleDu>()
+let codec =
+    // Don't let json.net treat 't option as the DU it is internally
+    let settingsWithOptionSupport = Gardelloyd.NewtonsoftJson.Settings.Create(Newtonsoft.Json.Converters.FSharp.OptionConverter())
+    Gardelloyd.NewtonsoftJson.Codec.Create(settingsWithOptionSupport)
 
 [<AutoData(MaxTest=100)>]
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =

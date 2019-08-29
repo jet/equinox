@@ -1,6 +1,8 @@
 namespace Gardelloyd.NewtonsoftJson
 
 open Newtonsoft.Json
+open Newtonsoft.Json.Serialization
+open System
 open System.IO
 open System.Runtime.InteropServices
 
@@ -50,6 +52,8 @@ module Core =
 /// `TypeShape.UnionContract.UnionContractEncoder` - if you need full control and/or have have your own codecs, see `Gardelloyd.Custom.Create` instead
 type Codec private () =
 
+    static let defaultSettings = lazy Settings.Create()
+
     /// <summary>
     ///     Generate a codec suitable for use with <c>Equinox.EventStore</c> or <c>Equinox.Cosmos</c>,
     ///       using the supplied `Newtonsoft.Json` <c>settings</c>.
@@ -57,12 +61,13 @@ type Codec private () =
     ///       or (if unspecified) the Discriminated Union Case Name
     ///     The Union must be tagged with `interface TypeShape.UnionContract.IUnionContract` to signify this scheme applies.
     ///     See https://github.com/eiriktsarpalis/TypeShape/blob/master/tests/TypeShape.Tests/UnionContractTests.fs for example usage.</summary>
-    /// <param name="settings">Configuration to be used by the underlying <c>Newtonsoft.Json</c> Serializer when encoding/decoding.</param>
+    /// <param name="settings">Configuration to be used by the underlying <c>Newtonsoft.Json</c> Serializer when encoding/decoding. Defaults to same as `Settings.Create()`</param>
     /// <param name="allowNullaryCases">Fail encoder generation if union contains nullary cases. Defaults to <c>true</c>.</param>
     static member Create<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>
-        (   settings,
+        (   ?settings,
             [<Optional;DefaultParameterValue(null)>]?allowNullaryCases)
         : Gardelloyd.IUnionEncoder<'Union,byte[]> =
+        let settings = match settings with Some x -> x | None -> defaultSettings.Value
         let dataCodec =
             TypeShape.UnionContract.UnionContractEncoder.Create<'Union,byte[]>(
                 new Core.BytesEncoder(settings),
@@ -75,10 +80,7 @@ type Codec private () =
             member __.TryDecode encoded =
                 dataCodec.TryDecode { CaseName = encoded.EventType; Payload = encoded.Data } }
 
-open Newtonsoft.Json.Serialization
-open System
-
-type Settings private () =
+and Settings private () =
     /// <summary>
     ///     Creates a default set of serializer settings used by Json serialization. When used with no args, same as JsonSerializerSettings.CreateDefault()
     /// </summary>

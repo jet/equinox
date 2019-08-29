@@ -14,7 +14,7 @@ let createMemoryStore () =
 let createServiceMemory log store =
     Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, fold, initial).Resolve)
 
-let codec = genCodec<Domain.ContactPreferences.Events.Event>()
+let codec = Domain.ContactPreferences.Events.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
     EventStore.Resolver(gateway 1, codec, fold, initial, access = EventStore.AccessStrategy.EventsAreState).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =

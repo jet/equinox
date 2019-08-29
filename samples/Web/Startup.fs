@@ -63,8 +63,7 @@ type Startup() =
             | _  | Some (Memory _) ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 Storage.MemoryStore.config (), log
-        let codecGen : Services.ICodecGen = Services.NewtonsoftJsonCodecGen() :> _
-        Services.register(services, storeConfig, storeLog, codecGen)
+        Services.register(services, storeConfig, storeLog)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
     static member Configure(app: IApplicationBuilder, env: IHostingEnvironment) : unit =

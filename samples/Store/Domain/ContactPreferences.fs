@@ -10,6 +10,7 @@ module Events =
     type Event =
         | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
         interface TypeShape.UnionContract.IUnionContract
+    let codec = Gardelloyd.NewtonsoftJson.Codec.Create<Event>()
 
 module Folds =
     type State = Events.Preferences

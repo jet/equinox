@@ -2,7 +2,6 @@
 
 open Equinox.Cosmos
 open FsCheck.Xunit
-open Gardelloyd.NewtonsoftJson
 open Newtonsoft.Json
 open Swensen.Unquote
 open System
@@ -13,9 +12,6 @@ type Union =
     | A of Embedded
     | B of Embedded
     interface TypeShape.UnionContract.IUnionContract
-
-let defaultSettings = Settings.Create()
-let mkUnionEncoder () = Codec.Create<Union>(defaultSettings)
 
 type EmbeddedString = { embed : string }
 type EmbeddedDate = { embed : DateTime }
@@ -36,8 +32,10 @@ type US =
     | SS of string
     interface TypeShape.UnionContract.IUnionContract
 
+let defaultSettings = Gardelloyd.NewtonsoftJson.Settings.CreateDefault()
+
 type VerbatimUtf8Tests() =
-    let unionEncoder = mkUnionEncoder ()
+    let unionEncoder = Gardelloyd.NewtonsoftJson.Codec.Create()
 
     [<Fact>]
     let ``encodes correctly`` () =
@@ -102,7 +100,7 @@ module VerbatimeUtf8NullHandling =
         test <@ ((e.d = null || e.d.Length = 0) && (des.d = null)) || System.Linq.Enumerable.SequenceEqual(e.d, des.d) @>
 
 type Base64ZipUtf8Tests() =
-    let unionEncoder = mkUnionEncoder ()
+    let unionEncoder = Gardelloyd.NewtonsoftJson.Codec.Create(defaultSettings)
 
     [<Fact>]
     let ``serializes, achieving compression`` () =
