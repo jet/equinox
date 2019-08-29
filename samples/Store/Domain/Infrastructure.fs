@@ -1,9 +1,9 @@
 ﻿[<AutoOpen>]
 module Domain.Infrastructure
 
+open Gardelloyd.NewtonsoftJson
 open FSharp.UMX
 open Newtonsoft.Json
-open Newtonsoft.Json.Converters.FSharp
 open System
 
 #if NET461

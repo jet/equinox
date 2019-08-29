@@ -401,7 +401,7 @@ The fact that we have a `Cleared` Event stems from the fact that the spec define
 
 The `Compacted` event is used to represent Rolling Snapshots (stored in-stream) and/or Unfolds (stored in Tip document-Item); For a real Todo list, using this facility may well make sense - the State can fit in a reasonable space, and the likely number of Events may reach an interesting enough count to justify applying such a feature
   i) it should also be noted that Caching may be a better answer - note `Compacted` is also an `isOrigin` event - there's no need to go back any further if you meet one.
-  ii) we use an Array in preference to a [F#] `list`; while there are `ListConverter`s out there (notably not in [`Jet.JsonNet.Converters`](https://github.com/jet/Jet.JsonNet.Converters)), in this case an Array is better from a GC and memory-efficiency stance, and does not need any special consideration when using `Newtonsoft.Json` to serialize.
+  ii) we use an Array in preference to a [F#] `list`; while there are `ListConverter`s out there (notably not in [`FsCodec`](https://github.com/jet/FsCodec)), in this case an Array is better from a GC and memory-efficiency stance, and does not need any special consideration when using `Newtonsoft.Json` to serialize.
 
 #### `State` + `initial`+`fold`
 
