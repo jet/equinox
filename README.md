@@ -74,7 +74,7 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 
 ### `dotnet tool` provisioning / benchmarking tool
 
-- `Equinox.Tool` [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/): Tool incorporating a benchmark scenario runner, facilitating running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any nominated store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
+- `Equinox.Tool` [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/): Tool incorporating a benchmark scenario runner, facilitating running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any nominated store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g --version 2.0.0-rc*`)
 
 ### `dotnet new` starter project templates and sample applications
 
@@ -231,7 +231,8 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 2. use the `eqx` tool to initialize the database and/or container (using preceding env vars)
 
     ```powershell
-    dotnet tool install Equinox.Tool -g
+    dotnet tool uninstall Equinox.Tool -g
+    dotnet tool install Equinox.Tool -g --version 2.0.0-rc*
     eqx init -ru 400 cosmos # generates a database+container, adds optimized indexes
     ```
 
@@ -370,7 +371,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 #### in Window 2
 
-    dotnet tool install -g Equinox.Tool # only once
+    dotnet tool install -g Equinox.Tool --version 2.0.0-rc* # only once
     eqx run -t saveforlater -f 200 web
 
 ### run CosmosDb benchmark (when provisioned)
