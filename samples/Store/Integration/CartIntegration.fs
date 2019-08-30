@@ -16,7 +16,7 @@ let createMemoryStore () =
 let createServiceMemory log store =
     Backend.Cart.Service(log, Resolver(store, fold, initial).Resolve)
 
-let codec = Equinox.EventStore.Integration.EventStoreIntegration.genCodec<Domain.Cart.Events.Event>()
+let codec = Domain.Cart.Events.codec
 
 let resolveGesStreamWithRollingSnapshots gateway =
     EventStore.Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve

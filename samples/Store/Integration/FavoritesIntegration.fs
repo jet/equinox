@@ -15,7 +15,7 @@ let createMemoryStore () =
 let createServiceMemory log store =
     Backend.Favorites.Service(log, MemoryStore.Resolver(store, fold, initial).Resolve)
 
-let codec = genCodec<Domain.Favorites.Events.Event>()
+let codec = Domain.Favorites.Events.codec
 let createServiceGes gateway log =
     let resolveStream = EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)

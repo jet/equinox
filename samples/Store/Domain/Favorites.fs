@@ -12,6 +12,7 @@ module Events =
         | Favorited                             of Favorited
         | Unfavorited                           of Unfavorited
         interface TypeShape.UnionContract.IUnionContract
+    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
 module Folds =
     type State = Events.Favorited []

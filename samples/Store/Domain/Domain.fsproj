@@ -21,9 +21,8 @@
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-rc1" />
     <PackageReference Include="FSharp.UMX" Version="1.0.0" />
-    <PackageReference Include="Jet.JsonNet.Converters" Version="0.2.2" />
-    <PackageReference Include="TypeShape" Version="7.0.0" />
   </ItemGroup>
 
 </Project>

@@ -18,6 +18,9 @@
 type Event =
     | Added of string  
     | Removed of string
+// No IUnionContract or Codec required as we're using MemoryStore in this part
+//    interface TypeShape.UnionContract.IUnionContract
+//let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
 let initial : string list = []
 let evolve state = function

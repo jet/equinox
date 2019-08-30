@@ -5,21 +5,13 @@ open Domain
 open Swensen.Unquote
 open TypeShape.UnionContract
 
-let serializationSettings =
-    Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect(converters=
-        [|  // Don't let json.net treat 't option as the DU it is internally
-            Newtonsoft.Json.Converters.FSharp.OptionConverter() |])
-
-let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Equinox.Codec.NewtonsoftJson.Json.Create<'Union>(serializationSettings)
-
 type EventWithId = { id : CartId } // where CartId uses FSharp.UMX
 
 type EventWithOption = { age : int option }
 
 type EventWithUnion = { value : Union }
  // Using converter to collapse the `fields` of the union into the top level, alongside the `case`
- and [<Newtonsoft.Json.JsonConverter(typeof<Newtonsoft.Json.Converters.FSharp.UnionConverter>)>] Union =
+ and [<Newtonsoft.Json.JsonConverter(typeof<FsCodec.NewtonsoftJson.UnionConverter>)>] Union =
     | I of Int
     | S of MaybeInt
  and Int = { i : int }
@@ -37,16 +29,16 @@ type SimpleDu =
 
 let render = function
     | EventA { id = id } -> sprintf """{"id":"%O"}""" id
-    | EventB { age = None } -> sprintf "{}"
+    | EventB { age = None } -> sprintf "{\"age\":null}"
     | EventB { age = Some age } -> sprintf """{"age":%d}""" age
     | EventC { value = I { i = i } } -> sprintf """{"value":{"case":"I","i":%d}}""" i
-    | EventC { value = S { maybeI = None } } -> sprintf """{"value":{"case":"S"}}"""
+    | EventC { value = S { maybeI = None } } -> sprintf """{"value":{"case":"S","maybeI":null}}"""
     | EventC { value = S { maybeI = Some i } } -> sprintf """{"value":{"case":"S","maybeI":%d}}""" i
     | EventD -> null
     //| EventE i -> string i
     //| EventF s ->  Newtonsoft.Json.JsonConvert.SerializeObject s
 
-let codec = genCodec<SimpleDu>()
+let codec = FsCodec.NewtonsoftJson.Codec.Create()
 
 [<AutoData(MaxTest=100)>]
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =

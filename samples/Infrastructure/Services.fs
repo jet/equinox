@@ -1,11 +1,12 @@
 ﻿module Samples.Infrastructure.Services
 
+open Domain
 open Microsoft.Extensions.DependencyInjection
 open System
 
 type StreamResolver(storage) =
     member __.Resolve
-        (   codec : Equinox.Codec.IUnionEncoder<'event,byte[]>,
+        (   codec : FsCodec.IUnionEncoder<'event,byte[]>,
             fold: ('state -> 'event seq -> 'state),
             initial: 'state,
             snapshot: (('event -> bool) * ('state -> 'event))) =
@@ -20,40 +21,29 @@ type StreamResolver(storage) =
             let accessStrategy = if unfolds then Equinox.Cosmos.AccessStrategy.Snapshot snapshot |> Some else None
             Equinox.Cosmos.Resolver<'event,'state>(store, codec, fold, initial, caching, ?access = accessStrategy).Resolve
 
-type ICodecGen =
-    abstract Generate<'Union when 'Union :> TypeShape.UnionContract.IUnionContract> : unit -> Equinox.Codec.IUnionEncoder<'Union,byte[]>
-
-type ServiceBuilder(storageConfig, handlerLog, codecGen : ICodecGen) =
+type ServiceBuilder(storageConfig, handlerLog) =
      let resolver = StreamResolver(storageConfig)
 
      member __.CreateFavoritesService() =
-        let codec = codecGen.Generate<Domain.Favorites.Events.Event>()
-        let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
-        let snapshot = Domain.Favorites.Folds.isOrigin,Domain.Favorites.Folds.compact
-        Backend.Favorites.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot))
+        let fold, initial = Favorites.Folds.fold, Favorites.Folds.initial
+        let snapshot = Favorites.Folds.isOrigin,Favorites.Folds.compact
+        Backend.Favorites.Service(handlerLog, resolver.Resolve(Favorites.Events.codec,fold,initial,snapshot))
 
      member __.CreateSaveForLaterService() =
-        let codec = codecGen.Generate<Domain.SavedForLater.Events.Event>()
-        let fold, initial = Domain.SavedForLater.Folds.fold, Domain.SavedForLater.Folds.initial
-        let snapshot = Domain.SavedForLater.Folds.isOrigin,Domain.SavedForLater.Folds.compact
-        Backend.SavedForLater.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot), maxSavedItems=50)
+        let fold, initial = SavedForLater.Folds.fold, SavedForLater.Folds.initial
+        let snapshot = SavedForLater.Folds.isOrigin,SavedForLater.Folds.compact
+        Backend.SavedForLater.Service(handlerLog, resolver.Resolve(SavedForLater.Events.codec,fold,initial,snapshot), maxSavedItems=50)
 
      member __.CreateTodosService() =
-        let codec = codecGen.Generate<TodoBackend.Events.Event>()
         let fold, initial = TodoBackend.Folds.fold, TodoBackend.Folds.initial
         let snapshot = TodoBackend.Folds.isOrigin, TodoBackend.Folds.compact
-        TodoBackend.Service(handlerLog, resolver.Resolve(codec,fold,initial,snapshot))
+        TodoBackend.Service(handlerLog, resolver.Resolve(TodoBackend.Events.codec,fold,initial,snapshot))
 
-let register (services : IServiceCollection, storageConfig, handlerLog, codecGen : ICodecGen) =
+let register (services : IServiceCollection, storageConfig, handlerLog) =
     let regF (factory : IServiceProvider -> 'T) = services.AddSingleton<'T>(fun (sp: IServiceProvider) -> factory sp) |> ignore
 
-    regF <| fun _sp -> ServiceBuilder(storageConfig, handlerLog, codecGen)
+    regF <| fun _sp -> ServiceBuilder(storageConfig, handlerLog)
 
     regF <| fun sp -> sp.GetService<ServiceBuilder>().CreateFavoritesService()
     regF <| fun sp -> sp.GetService<ServiceBuilder>().CreateSaveForLaterService()
     regF <| fun sp -> sp.GetService<ServiceBuilder>().CreateTodosService()
-
-let serializationSettings = Newtonsoft.Json.Converters.FSharp.Settings.CreateCorrect()
-type NewtonsoftJsonCodecGen() =
-    interface ICodecGen with
-        member __.Generate() = Equinox.Codec.NewtonsoftJson.Json.Create<'Union>(serializationSettings)

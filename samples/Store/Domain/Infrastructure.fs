@@ -1,9 +1,9 @@
 ﻿[<AutoOpen>]
 module Domain.Infrastructure
 
+open FsCodec.NewtonsoftJson
 open FSharp.UMX
 open Newtonsoft.Json
-open Newtonsoft.Json.Converters.FSharp
 open System
 
 #if NET461
@@ -74,7 +74,7 @@ type CartId = Guid<cartId>
 and [<Measure>] cartId
 module CartId = let toStringN (value : CartId) : string = Guid.toStringN %value
 
-/// CartId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
+/// ClientId strongly typed id; represented internally as a Guid; not used for storage so rendering is not significant
 type ClientId = Guid<clientId>
 and [<Measure>] clientId
 module ClientId = let toStringN (value : ClientId) : string = Guid.toStringN %value

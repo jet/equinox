@@ -9,7 +9,8 @@
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
-#r "Equinox.Codec.dll"
+#r "FsCodec.dll"
+#r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.DocumentDb.Core.dll"
 #r "System.Net.Http"
@@ -24,6 +25,7 @@ module Favorites =
         | Added of string
         | Removed of string
         interface TypeShape.UnionContract.IUnionContract
+    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let initial : string list = []
     let evolve state = function
         | Added sku -> sku :: state
@@ -74,8 +76,7 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
 module FavoritesCategory = 
-    let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Favorites.Event>(Newtonsoft.Json.JsonSerializerSettings())
-    let resolve = Resolver(Store.context, codec, Favorites.fold, Favorites.initial, Store.cacheStrategy).Resolve
+    let resolve = Resolver(Store.context, Favorites.codec, Favorites.fold, Favorites.initial, Store.cacheStrategy).Resolve
 
 let service = Favorites.Service(Log.log, FavoritesCategory.resolve)
 

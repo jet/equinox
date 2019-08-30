@@ -9,7 +9,8 @@
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
-#r "Equinox.Codec.dll"
+#r "FsCodec.dll"
+#r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.DocumentDb.Core.dll"
 #r "Equinox.Cosmos.dll"
@@ -30,6 +31,7 @@ type Event =
     | Cleared
     | Compacted of CompactedInfo
     interface TypeShape.UnionContract.IUnionContract
+let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
@@ -116,7 +118,6 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory = 
-    let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
     let access = AccessStrategy.Snapshot (isOrigin,compact)
     let resolve = Resolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
 

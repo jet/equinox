@@ -2,7 +2,6 @@
 
 open Equinox.EventStore
 open Equinox.Integration.Infrastructure
-open Newtonsoft.Json
 open Serilog
 open Swensen.Unquote
 open System.Threading
@@ -19,16 +18,12 @@ let connectToLocalEventStoreNode log =
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
 
-let serializationSettings = JsonSerializerSettings()
-let genCodec<'Union when 'Union :> TypeShape.UnionContract.IUnionContract>() =
-    Equinox.Codec.NewtonsoftJson.Json.Create<'Union>(serializationSettings)
-
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
+    let codec = Domain.Cart.Events.codec
     let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
-    let codec = genCodec<Domain.Cart.Events.Event>()
     let createServiceWithoutOptimization log gateway =
-        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial).Resolve)
+        Backend.Cart.Service(log, Resolver(gateway, Domain.Cart.Events.codec, fold, initial).Resolve)
     let createServiceWithCompaction log gateway =
         let resolveStream = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
         Backend.Cart.Service(log, resolveStream)
@@ -41,7 +36,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
-    let codec = genCodec<Domain.ContactPreferences.Events.Event>()
+    let codec = Domain.ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let gateway = createGesGateway connection defaultBatchSize
         Backend.ContactPreferences.Service(log, Resolver(gateway, codec, fold, initial).Resolve)
