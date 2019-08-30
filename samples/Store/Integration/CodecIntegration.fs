@@ -11,7 +11,7 @@ type EventWithOption = { age : int option }
 
 type EventWithUnion = { value : Union }
  // Using converter to collapse the `fields` of the union into the top level, alongside the `case`
- and [<Newtonsoft.Json.JsonConverter(typeof<Gardelloyd.NewtonsoftJson.UnionConverter>)>] Union =
+ and [<Newtonsoft.Json.JsonConverter(typeof<FsCodec.NewtonsoftJson.UnionConverter>)>] Union =
     | I of Int
     | S of MaybeInt
  and Int = { i : int }
@@ -38,7 +38,7 @@ let render = function
     //| EventE i -> string i
     //| EventF s ->  Newtonsoft.Json.JsonConvert.SerializeObject s
 
-let codec = Gardelloyd.NewtonsoftJson.Codec.Create()
+let codec = FsCodec.NewtonsoftJson.Codec.Create()
 
 [<AutoData(MaxTest=100)>]
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =

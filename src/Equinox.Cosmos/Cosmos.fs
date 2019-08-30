@@ -5,8 +5,9 @@ open Microsoft.Azure.Documents
 open Newtonsoft.Json
 open Serilog
 open System
+open System.IO
 
-type IIndexedEvent = Gardelloyd.Core.IIndexedEvent<byte[]>
+type IIndexedEvent = FsCodec.Core.IIndexedEvent<byte[]>
 
 /// A single Domain Event from the array held in a Batch
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
@@ -18,14 +19,20 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         c: string // required
 
         /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for CosmosDB
-        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+        [<JsonConverter(typeof<FsCodec.NewtonsoftJson.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.AllowNull)>]
         d: byte[] // Required, but can be null so Nullary cases can work
 
         /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
-        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.VerbatimUtf8JsonConverter>)>]
+        [<JsonConverter(typeof<FsCodec.NewtonsoftJson.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        m: byte[] } // optional
+        m: byte[] }  // optional
+
+    interface FsCodec.IEvent<byte[]> with
+        member __.EventType = __.c
+        member __.Data = __.d
+        member __.Meta = __.m
+        member __.Timestamp = __.t
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
@@ -69,13 +76,44 @@ type Unfold =
         c: string // required
 
         /// Event body - Json -> UTF-8 -> Deflate -> Base64
-        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
+        [<JsonConverter(typeof<Base64DeflateUtf8JsonConverter>)>]
         d: byte[] // required
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
-        [<JsonConverter(typeof<Equinox.Cosmos.Internal.Json.Base64ZipUtf8JsonConverter>)>]
+        [<JsonConverter(typeof<Base64DeflateUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
         m: byte[] } // optional
+
+/// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
+/// Only applied to snapshots in the Tip
+and Base64DeflateUtf8JsonConverter() =
+    inherit JsonConverter()
+    let pickle (input : byte[]) : string =
+        if input = null then null else
+
+        use output = new MemoryStream()
+        use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
+        compressor.Write(input,0,input.Length)
+        compressor.Close()
+        System.Convert.ToBase64String(output.ToArray())
+    let unpickle str : byte[] =
+        if str = null then null else
+
+        let compressedBytes = System.Convert.FromBase64String str
+        use input = new MemoryStream(compressedBytes)
+        use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
+        use output = new MemoryStream()
+        decompressor.CopyTo(output)
+        output.ToArray()
+
+    override __.CanConvert(objectType) =
+        typeof<byte[]>.Equals(objectType)
+    override __.ReadJson(reader, _, _, serializer) =
+        //(   if reader.TokenType = JsonToken.Null then null else
+        serializer.Deserialize(reader, typedefof<string>) :?> string |> unpickle |> box
+    override __.WriteJson(writer, value, serializer) =
+        let pickled = value |> unbox |> pickle
+        serializer.Serialize(writer, pickled)
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
@@ -201,7 +239,7 @@ module Log =
         | SyncResync of Measurement
         | SyncConflict of Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
-    let propData name (events: #Gardelloyd.IEvent<byte[]> seq) (log : ILogger) =
+    let propData name (events: #FsCodec.IEvent<byte[]> seq) (log : ILogger) =
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (System.Text.Encoding.UTF8.GetString e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let propEvents = propData "events"
@@ -224,7 +262,7 @@ module Log =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
-    let (|EventLen|) (x: #Gardelloyd.IEvent<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
+    let (|EventLen|) (x: #FsCodec.IEvent<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
     /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
@@ -471,11 +509,11 @@ function sync(req, expIndex, expEtag) {
     let batch (log : ILogger) retryPolicy containerStream batch: Async<Result> =
         let call = logged containerStream batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
-    let mkBatch (stream: string) (events: Gardelloyd.IEvent<_>[]) unfolds: Tip =
+    let mkBatch (stream: string) (events: FsCodec.IEvent<_>[]) unfolds: Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta } |]
             u = Array.ofSeq unfolds }
-    let mkUnfold baseIndex (unfolds: Gardelloyd.IEvent<_> seq) : Unfold seq =
+    let mkUnfold baseIndex (unfolds: FsCodec.IEvent<_> seq) : Unfold seq =
         unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta } : Unfold)
 
     module Initialization =
@@ -781,7 +819,7 @@ type BatchingPolicy
     member __.MaxRequests = maxRequests
 
 type Gateway(conn : Connection, batching : BatchingPolicy) =
-    let (|FromUnfold|_|) (tryDecode: #Gardelloyd.IEvent<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#Gardelloyd.IEvent<_>[]) : Option<'event[]> =
+    let (|FromUnfold|_|) (tryDecode: #FsCodec.IEvent<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#FsCodec.IEvent<_>[]) : Option<'event[]> =
         match Array.tryFindIndexBack (tryDecode >> Option.exists isOrigin) xs with
         | None -> None
         | Some index -> xs |> Seq.skip index |> Seq.choose tryDecode |> Array.ofSeq |> Some
@@ -826,7 +864,7 @@ type Gateway(conn : Connection, batching : BatchingPolicy) =
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create containerStream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create containerStream pos') }
 
-type private Category<'event, 'state>(gateway : Gateway, codec : Gardelloyd.IUnionEncoder<'event, byte[]>) =
+type private Category<'event, 'state>(gateway : Gateway, codec : FsCodec.IUnionEncoder<'event, byte[]>) =
     let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: IIndexedEvent seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
     member __.Load includeUnfolds containerStream fold initial isOrigin (log : ILogger): Async<Store.StreamToken * 'state> = async {
         let! token, events =
@@ -1135,7 +1173,7 @@ namespace Equinox.Cosmos.Core
 open Equinox.Cosmos
 open Equinox.Cosmos.Store
 open FSharp.Control
-open Gardelloyd // must shadow Control.IEvent
+open FsCodec // must shadow Control.IEvent
 open System.Runtime.InteropServices
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position

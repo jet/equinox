@@ -42,8 +42,6 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.MemoryStore", "src\
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.MemoryStore.Integration", "tests\Equinox.MemoryStore.Integration\Equinox.MemoryStore.Integration.fsproj", "{B2C695C3-ED04-4094-B672-926440B5F335}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Gardelloyd", "..\Gardelloyd\src\Gardelloyd\Gardelloyd.fsproj", "{F5491EB1-D072-4262-8184-2A908E1D6175}"
-EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Tool", "tools\Equinox.Tool\Equinox.Tool.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cosmos", "src\Equinox.Cosmos\Equinox.Cosmos.fsproj", "{54EA6187-9F9F-4D67-B602-163D011E43E6}"
@@ -59,8 +57,6 @@ EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Tutorial", "samples\Tutorial\Tutorial.fsproj", "{D82AAB2E-7264-421A-A893-63A37E5F08B6}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Tools.TestHarness", "tools\Equinox.Tools.TestHarness\Equinox.Tools.TestHarness.fsproj", "{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Gardelloyd.NewtonsoftJson", "..\Gardelloyd\src\Gardelloyd.NewtonsoftJson\Gardelloyd.NewtonsoftJson.fsproj", "{C725B50F-1622-4E36-B013-309D18ED35DD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -112,10 +108,6 @@ Global
 		{B2C695C3-ED04-4094-B672-926440B5F335}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B2C695C3-ED04-4094-B672-926440B5F335}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B2C695C3-ED04-4094-B672-926440B5F335}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F5491EB1-D072-4262-8184-2A908E1D6175}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F5491EB1-D072-4262-8184-2A908E1D6175}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F5491EB1-D072-4262-8184-2A908E1D6175}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F5491EB1-D072-4262-8184-2A908E1D6175}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -140,10 +132,6 @@ Global
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Release|Any CPU.Build.0 = Release|Any CPU
-		{C725B50F-1622-4E36-B013-309D18ED35DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C725B50F-1622-4E36-B013-309D18ED35DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C725B50F-1622-4E36-B013-309D18ED35DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C725B50F-1622-4E36-B013-309D18ED35DD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

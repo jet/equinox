@@ -9,8 +9,8 @@
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
-#r "Gardelloyd.dll"
-#r "Gardelloyd.NewtonsoftJson.dll"
+#r "FsCodec.dll"
+#r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.DocumentDb.Core.dll"
 #r "System.Net.Http"
@@ -25,7 +25,7 @@ module Favorites =
         | Added of string
         | Removed of string
         interface TypeShape.UnionContract.IUnionContract
-    let codec = Gardelloyd.NewtonsoftJson.Codec.Create<Event>()
+    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let initial : string list = []
     let evolve state = function
         | Added sku -> sku :: state

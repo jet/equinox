@@ -269,16 +269,16 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
-    let encodedEventOfResolvedEvent (x : ResolvedEvent) : Gardelloyd.IEvent<byte[]> =
+    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.IEvent<byte[]> =
         // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
         let ts = DateTimeOffset.FromUnixTimeMilliseconds(x.Event.CreatedEpoch)
-        Gardelloyd.Core.EventData.Create(x.Event.EventType, x.Event.Data, x.Event.Metadata, ts) :> _
-    let private eventDataOfEncodedEvent (x : Gardelloyd.IEvent<byte[]>) =
+        FsCodec.Core.EventData.Create(x.Event.EventType, x.Event.Data, x.Event.Metadata, ts) :> _
+    let private eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
         EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
-    let encode (xs : Gardelloyd.IEvent<byte[]> []) : EventData[] = Array.map eventDataOfEncodedEvent xs
-    let encodeEvents (codec : Gardelloyd.IUnionEncoder<'event,byte[]>) (xs : 'event seq) : EventData[] =
+    let encode (xs : FsCodec.IEvent<byte[]> []) : EventData[] = Array.map eventDataOfEncodedEvent xs
+    let encodeEvents (codec : FsCodec.IUnionEncoder<'event,byte[]>) (xs : 'event seq) : EventData[] =
         xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
-    let decodeKnownEvents (codec : Gardelloyd.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
+    let decodeKnownEvents (codec : FsCodec.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
         xs |> Seq.map encodedEventOfResolvedEvent |> Seq.choose codec.TryDecode
 
 type Stream = { name: string }
@@ -382,7 +382,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
                 | Some compactionEventIndex ->
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
-    member __.Sync(log, streamName, streamVersion, events: Gardelloyd.IEvent<byte[]>[]) : Async<GatewaySyncResult> = async {
+    member __.Sync(log, streamName, streamVersion, events: FsCodec.IEvent<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = UnionEncoderAdapters.encode events
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with
@@ -402,7 +402,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
  /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state>(context : Context, codec : Gardelloyd.IUnionEncoder<'event,byte[]>, ?access : AccessStrategy<'event,'state>) =
+type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionEncoder<'event,byte[]>, ?access : AccessStrategy<'event,'state>) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let compactionPredicate =
         match access with

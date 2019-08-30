@@ -1,7 +1,7 @@
 ﻿[<AutoOpen>]
 module Domain.Infrastructure
 
-open Gardelloyd.NewtonsoftJson
+open FsCodec.NewtonsoftJson
 open FSharp.UMX
 open Newtonsoft.Json
 open System
