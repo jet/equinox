@@ -10,13 +10,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
-
-- Extracted `Equinox.Codec` to external project `FsCodec`, with Json.net support in `FsCodec.NewtonsoftJson` [#156](https://github.com/jet/equinox/pull/156)
-
 ### Removed
 ### Fixed
 
 <a name="2.0.0"></a>
+<a name="2.0.0-rc5"></a>
+## [2.0.0-rc5] - 2019-08-30
+
+### Changed
+
+- Extracted `Equinox.Codec` to external project `FsCodec`, with Json.net support in `FsCodec.NewtonsoftJson` [#156](https://github.com/jet/equinox/pull/156)
+
 <a name="2.0.0-rc4"></a>
 ## [2.0.0-rc4] - 2019-08-26
 
@@ -261,7 +265,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc3...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc5...HEAD
+[2.0.0-rc5]: https://github.com/jet/equinox/compare/2.0.0-rc4...2.0.0-rc5
+[2.0.0-rc4]: https://github.com/jet/equinox/compare/2.0.0-rc3...2.0.0-rc4
 [2.0.0-rc3]: https://github.com/jet/equinox/compare/2.0.0-rc2...2.0.0-rc3
 [2.0.0-rc2]: https://github.com/jet/equinox/compare/2.0.0-rc1...2.0.0-rc2
 [2.0.0-rc1]: https://github.com/jet/equinox/compare/2.0.0-preview9...2.0.0-rc1
