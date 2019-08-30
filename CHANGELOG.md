@@ -11,7 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 ### Changed
 
-- Extracted `Equinox.Codec` to external project `FsCodec`, with Json.net support in `FsCodec.NewtonsoftJson`
+- Extracted `Equinox.Codec` to external project `FsCodec`, with Json.net support in `FsCodec.NewtonsoftJson` [#156](https://github.com/jet/equinox/pull/156)
 
 ### Removed
 ### Fixed
