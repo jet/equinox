@@ -1,9 +1,8 @@
 ﻿namespace Equinox.EventStore
 
-open EventStore.ClientAPI
 open Equinox
 open Equinox.Store
-open FSharp.Control
+open EventStore.ClientAPI
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
 
@@ -162,6 +161,7 @@ module private Write =
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
 module private Read =
+    open FSharp.Control
     let private readSliceAsync (conn : IEventStoreConnection) (streamName : string) (direction : Direction) (batchSize : int) (startPos : int64)
         : Async<StreamEventsSlice> = async {
         let call =
@@ -273,13 +273,8 @@ module UnionEncoderAdapters =
         // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
         let ts = DateTimeOffset.FromUnixTimeMilliseconds(x.Event.CreatedEpoch)
         FsCodec.Core.EventData.Create(x.Event.EventType, x.Event.Data, x.Event.Metadata, ts) :> _
-    let private eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
+    let eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
         EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
-    let encode (xs : FsCodec.IEvent<byte[]> []) : EventData[] = Array.map eventDataOfEncodedEvent xs
-    let encodeEvents (codec : FsCodec.IUnionEncoder<'event,byte[]>) (xs : 'event seq) : EventData[] =
-        xs |> Seq.map (codec.Encode >> eventDataOfEncodedEvent) |> Seq.toArray
-    let decodeKnownEvents (codec : FsCodec.IUnionEncoder<'event, byte[]>) (xs : ResolvedEvent[]) : 'event seq =
-        xs |> Seq.map encodedEventOfResolvedEvent |> Seq.choose codec.TryDecode
 
 type Stream = { name: string }
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }
@@ -383,7 +378,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
     member __.Sync(log, streamName, streamVersion, events: FsCodec.IEvent<byte[]>[]) : Async<GatewaySyncResult> = async {
-        let encodedEvents : EventData[] = UnionEncoderAdapters.encode events
+        let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with
         | EsSyncResult.Conflict actualVersion ->
@@ -399,7 +394,7 @@ type AccessStrategy<'event,'state> =
     | RollingSnapshots of isValid: ('event -> bool) * compact: ('state -> 'event)
 
 type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) =
- /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
+    /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionEncoder<'event,byte[]>, ?access : AccessStrategy<'event,'state>) =
@@ -437,7 +432,7 @@ type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionE
                 let cc = CompactionContext(List.length events, pos.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
 
-        let encodedEvents : EventData[] = UnionEncoderAdapters.encodeEvents codec events
+        let encodedEvents : EventData[] = events |> Seq.map (codec.Encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
         let! syncRes = context.TrySync log streamToken (events,encodedEvents) compactionPredicate
         match syncRes with
         | GatewaySyncResult.ConflictUnknown _ ->
