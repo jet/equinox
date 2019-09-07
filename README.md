@@ -197,6 +197,8 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Web
     ```
 
+4. browse writes at http://localhost:30778/web/index.html#/streams
+
 ### Store data in [Azure CosmosDb](https://docs.microsoft.com/en-us/azure/cosmos-db/introduction)
 
 1. *export 3x env vars* (see [provisioning instructions](#run-cosmosdb-benchmark-when-provisioned))
