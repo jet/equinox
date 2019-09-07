@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
@@ -10,10 +10,12 @@
     <None Include="Counter.fsx" />
     <None Include="Todo.fsx" />
     <None Include="Cosmos.fsx" />
+    <None Include="AsAt.fsx" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>
