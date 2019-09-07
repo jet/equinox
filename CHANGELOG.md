@@ -9,6 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-rc6"></a>
+## [2.0.0-rc6] - 2019-09-07
+
+### Added
 
 - EventStore: expose `Index` when decoding events via `IIndexedEvent` [#158](https://github.com/jet/equinox/pull/158)
 - `AsAt.fsx`: Illustrates usage of `IndexedEvent.Index` and snapshots in `.EventStore` vs `.Cosmos` [#159](https://github.com/jet/equinox/pull/159)
@@ -17,10 +26,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - Updated to `FsCodec 1.0.0-rc2` to enable `TryDecode` to see `IIndexedEvent` without casting [#158](https://github.com/jet/equinox/pull/157)
 
-### Removed
-### Fixed
-
-<a name="2.0.0"></a>
 <a name="2.0.0-rc5"></a>
 ## [2.0.0-rc5] - 2019-08-30
 
@@ -272,7 +277,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc5...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc6...HEAD
+[2.0.0-rc6]: https://github.com/jet/equinox/compare/2.0.0-rc5...2.0.0-rc6
 [2.0.0-rc5]: https://github.com/jet/equinox/compare/2.0.0-rc4...2.0.0-rc5
 [2.0.0-rc4]: https://github.com/jet/equinox/compare/2.0.0-rc3...2.0.0-rc4
 [2.0.0-rc3]: https://github.com/jet/equinox/compare/2.0.0-rc2...2.0.0-rc3
