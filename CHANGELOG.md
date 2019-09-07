@@ -10,11 +10,12 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- EventStore: expose `Index` when decoding events via `IIndexedEvent` [#157](https://github.com/jet/equinox/pull/157)
+- EventStore: expose `Index` when decoding events via `IIndexedEvent` [#158](https://github.com/jet/equinox/pull/158)
+- `AsAt.fsx`: Illustrates usage of `IndexedEvent.Index` and snapshots in `.EventStore` vs `.Cosmos` [#159](https://github.com/jet/equinox/pull/159)
 
 ### Changed
 
-- Updated to `FsCodec 1.0.0-rc2` to enable `TryDecode` to see `IIndexedEvent` without casting [#157](https://github.com/jet/equinox/pull/157)
+- Updated to `FsCodec 1.0.0-rc2` to enable `TryDecode` to see `IIndexedEvent` without casting [#158](https://github.com/jet/equinox/pull/157)
 
 ### Removed
 ### Fixed
