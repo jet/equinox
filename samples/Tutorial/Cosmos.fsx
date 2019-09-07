@@ -21,15 +21,16 @@ open Equinox.Cosmos
 open System
 
 module Favorites =
+    type Item = { sku : string }
     type Event =
-        | Added of string
-        | Removed of string
+        | Added of Item
+        | Removed of Item
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let initial : string list = []
     let evolve state = function
-        | Added sku -> sku :: state
-        | Removed sku -> state |> List.filter (fun x -> x <> sku)
+        | Added {sku = sku } -> sku :: state
+        | Removed {sku = sku } -> state |> List.filter (fun x -> x <> sku)
     let fold s xs = Seq.fold evolve s xs
 
     type Command =
@@ -37,8 +38,8 @@ module Favorites =
         | Remove of string
     let interpret command state =
         match command with
-        | Add sku -> if state |> List.contains sku then [] else [Added sku]
-        | Remove sku -> if state |> List.contains sku then [Removed sku] else []
+        | Add sku -> if state |> List.contains sku then [] else [Added {sku = sku}]
+        | Remove sku -> if state |> List.contains sku then [Removed {sku = sku}] else []
 
     type Service(log, resolveStream, ?maxAttempts) =
         let (|AggregateId|) clientId = Equinox.AggregateId("Favorites", clientId)
