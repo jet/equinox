@@ -7,7 +7,7 @@ open Serilog
 open System
 open System.IO
 
-type IIndexedEvent = FsCodec.Core.IIndexedEvent<byte[]>
+type IIndexedEvent = FsCodec.IIndexedEvent<byte[]>
 
 /// A single Domain Event from the array held in a Batch
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
@@ -173,16 +173,9 @@ module internal Position =
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 type internal Enum() =
-    static member internal Events(b: Tip) =
-        b.e |> Seq.mapi (fun offset x ->
-            { new IIndexedEvent with
-                member __.Index = b.i + int64 offset
-                member __.IsUnfold = false
-                member __.EventType = x.c
-                member __.Data = x.d
-                member __.Meta = x.m
-                member __.Timestamp = x.t })
-    static member Events(i: int64, e: Event[], startPos : Position option, direction) = seq {
+    static member internal Events(b: Tip) : IIndexedEvent seq =
+        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.IndexedEventData(b.i + int64 offset, false, x.c, x.d, x.m, x.t) :> _)
+    static member Events(i: int64, e: Event[], startPos : Position option, direction) : IIndexedEvent seq = seq {
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         let isValidGivenStartPos i =
             match startPos with
@@ -193,25 +186,12 @@ type internal Enum() =
             let index = i + int64 offset
             if isValidGivenStartPos index then
                 let x = e.[offset]
-                yield {
-                    new IIndexedEvent with
-                        member __.Index = index
-                        member __.IsUnfold = false
-                        member __.EventType = x.c
-                        member __.Data = x.d
-                        member __.Meta = x.m
-                        member __.Timestamp = x.t } }
+                yield FsCodec.Core.IndexedEventData(index,false, x.c, x.d, x.m, x.t) :> _ }
     static member internal Events(b: Batch, startPos, direction) =
         Enum.Events(b.i, b.e, startPos, direction)
         |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
-    static member Unfolds (xs: Unfold[]) = seq {
-        for x in xs -> { new IIndexedEvent with
-            member __.Index = x.i
-            member __.IsUnfold = true
-            member __.EventType = x.c
-            member __.Data = x.d
-            member __.Meta = x.m
-            member __.Timestamp = DateTimeOffset.MinValue } }
+    static member Unfolds(xs: Unfold[]) : IIndexedEvent seq = seq {
+        for x in xs -> FsCodec.Core.IndexedEventData(x.i, true, x.c, x.d, x.m, DateTimeOffset.MinValue) }
     static member EventsAndUnfolds(x: Tip): IIndexedEvent seq =
         Enum.Events x
         |> Seq.append (Enum.Unfolds x.u)

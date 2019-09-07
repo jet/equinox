@@ -26,7 +26,7 @@
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-rc1" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-rc2" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.21" />
     <PackageReference Include="Microsoft.Azure.DocumentDB" Version="2.0.0" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
     <PackageReference Include="Microsoft.Azure.DocumentDB.Core" Version="2.0.0" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />

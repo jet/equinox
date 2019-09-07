@@ -269,10 +269,11 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
-    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.IEvent<byte[]> =
+    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.IIndexedEvent<byte[]> =
+        let e = x.Event
         // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
-        let ts = DateTimeOffset.FromUnixTimeMilliseconds(x.Event.CreatedEpoch)
-        FsCodec.Core.EventData.Create(x.Event.EventType, x.Event.Data, x.Event.Metadata, ts) :> _
+        let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
+        FsCodec.Core.IndexedEventData(e.EventNumber, (*isUnfold*)false, e.EventType, e.Data, e.Metadata, ts) :> _
     let eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
         EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
 
