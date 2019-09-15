@@ -16,6 +16,7 @@
     <Compile Include="Stream.fs" />
     <Compile Include="Retry.fs" />
     <Compile Include="AsyncCacheCell.fs" />
+    <Compile Include="Cache.fs" />
   </ItemGroup>
 
   <ItemGroup>
