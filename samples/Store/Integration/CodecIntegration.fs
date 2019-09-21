@@ -44,6 +44,6 @@ let codec = FsCodec.NewtonsoftJson.Codec.Create()
 let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =
     let serialized = codec.Encode x
     render x =! if serialized.Data = null then null else System.Text.Encoding.UTF8.GetString(serialized.Data)
-    let adapted = FsCodec.Core.IndexedEventData(-1L,false,serialized.EventType,serialized.Data,serialized.Meta,serialized.Timestamp)
+    let adapted = FsCodec.Core.TimelineEvent.Create(-1L, serialized.EventType, serialized.Data, serialized.Meta, serialized.Timestamp)
     let deserialized = codec.TryDecode adapted |> Option.get
     deserialized =! x

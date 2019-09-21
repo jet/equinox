@@ -49,7 +49,7 @@ module Events =
     // unlike most normal codecs, we have a mapping to supply as we want the Index to be added to each event so we can track it in the State as we fold
     let codec =
         // our upconversion function doesn't actually fit the term - it just tuples the underlying event
-        let up (evt : FsCodec.IIndexedEvent<_>,e) : Event =
+        let up (evt : FsCodec.ITimelineEvent<_>,e) : Event =
             evt.Index,e
         // as per the `up`, the downcoverter needs to drop the index (which is only there for symmetry), add null metadata
         let down (_,e) : Contract * _ option * DateTimeOffset option =

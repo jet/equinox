@@ -1,13 +1,12 @@
 ﻿namespace Equinox.Cosmos.Store
 
 open Equinox.Store
+open FsCodec
 open Microsoft.Azure.Documents
 open Newtonsoft.Json
 open Serilog
 open System
 open System.IO
-
-type IIndexedEvent = FsCodec.IIndexedEvent<byte[]>
 
 /// A single Domain Event from the array held in a Batch
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
@@ -28,7 +27,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
         m: byte[] }  // optional
 
-    interface FsCodec.IEvent<byte[]> with
+    interface IEventData<byte[]> with
         member __.EventType = __.c
         member __.Data = __.d
         member __.Meta = __.m
@@ -159,7 +158,7 @@ module internal Position =
     let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
     let fromEtag (value : string) = { fromI -2L with etag = Some value }
     /// NB very inefficient compared to FromDocument or using one already returned to you
-    let fromMaxIndex (xs: IIndexedEvent[]) =
+    let fromMaxIndex (xs: ITimelineEvent<byte[]>[]) =
         if Array.isEmpty xs then fromKnownEmpty
         else fromI (1L + Seq.max (seq { for x in xs -> x.Index }))
     /// Create Position from Tip record context (facilitating 1 RU reads)
@@ -173,9 +172,9 @@ module internal Position =
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 type internal Enum() =
-    static member internal Events(b: Tip) : IIndexedEvent seq =
-        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.IndexedEventData(b.i + int64 offset, false, x.c, x.d, x.m, x.t) :> _)
-    static member Events(i: int64, e: Event[], startPos : Position option, direction) : IIndexedEvent seq = seq {
+    static member internal Events(b: Tip) : ITimelineEvent<byte[]> seq =
+        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.TimelineEvent.Create(b.i + int64 offset, x.c, x.d, x.m, x.t) :> _)
+    static member Events(i: int64, e: Event[], startPos : Position option, direction) : ITimelineEvent<byte[]> seq = seq {
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         let isValidGivenStartPos i =
             match startPos with
@@ -186,13 +185,13 @@ type internal Enum() =
             let index = i + int64 offset
             if isValidGivenStartPos index then
                 let x = e.[offset]
-                yield FsCodec.Core.IndexedEventData(index,false, x.c, x.d, x.m, x.t) :> _ }
+                yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, x.t) :> _ }
     static member internal Events(b: Batch, startPos, direction) =
         Enum.Events(b.i, b.e, startPos, direction)
         |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
-    static member Unfolds(xs: Unfold[]) : IIndexedEvent seq = seq {
-        for x in xs -> FsCodec.Core.IndexedEventData(x.i, true, x.c, x.d, x.m, DateTimeOffset.MinValue) }
-    static member EventsAndUnfolds(x: Tip): IIndexedEvent seq =
+    static member Unfolds(xs: Unfold[]) : ITimelineEvent<byte[]> seq = seq {
+        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, DateTimeOffset.MinValue, isUnfold=true) }
+    static member EventsAndUnfolds(x: Tip): ITimelineEvent<byte[]> seq =
         Enum.Events x
         |> Seq.append (Enum.Unfolds x.u)
         // where Index is equal, unfolds get delivered after the events so the fold semantics can be 'idempotent'
@@ -219,7 +218,7 @@ module Log =
         | SyncResync of Measurement
         | SyncConflict of Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
-    let propData name (events: #FsCodec.IEvent<byte[]> seq) (log : ILogger) =
+    let propData name (events: #IEventData<byte[]> seq) (log : ILogger) =
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (System.Text.Encoding.UTF8.GetString e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let propEvents = propData "events"
@@ -242,7 +241,7 @@ module Log =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
-    let (|EventLen|) (x: #FsCodec.IEvent<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
+    let (|EventLen|) (x: #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
     /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
@@ -437,7 +436,7 @@ function sync(req, expIndex, expEtag) {
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Result =
         | Written of Position
-        | Conflict of Position * events: IIndexedEvent[]
+        | Conflict of Position * events: ITimelineEvent<byte[]>[]
         | ConflictUnknown of Position
 
     type [<RequireQualifiedAccess>] Exp = Version of int64 | Etag of string | Any
@@ -489,11 +488,11 @@ function sync(req, expIndex, expEtag) {
     let batch (log : ILogger) retryPolicy containerStream batch: Async<Result> =
         let call = logged containerStream batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
-    let mkBatch (stream: string) (events: FsCodec.IEvent<_>[]) unfolds: Tip =
+    let mkBatch (stream: string) (events: IEventData<_>[]) unfolds: Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta } |]
             u = Array.ofSeq unfolds }
-    let mkUnfold baseIndex (unfolds: FsCodec.IEvent<_> seq) : Unfold seq =
+    let mkUnfold baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
         unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta } : Unfold)
 
     module Initialization =
@@ -588,7 +587,7 @@ module internal Tip =
             let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataUnfolds tip.u |> Log.prop "etag" tip._etag
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
-    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * IIndexedEvent[]
+    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * ITimelineEvent<byte[]>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.NotModified
     let tryLoad (log : ILogger) retryPolicy containerStream (maybePos: Position option): Async<Result> = async {
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log
@@ -614,7 +613,7 @@ module internal Tip =
 
     // Unrolls the Batches in a response - note when reading backwards, the events are emitted in reverse order of index
     let private handleResponse direction (streamName: string) startPos (query: IDocumentQuery<Batch>) (log: ILogger)
-        : Async<IIndexedEvent[] * Position option * float> = async {
+        : Async<ITimelineEvent<byte[]>[] * Position option * float> = async {
         let! ct = Async.CancellationToken
         let! t, (res : Client.FeedResponse<Batch>) = query.ExecuteNextAsync<Batch>(ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let batches, ru = Array.ofSeq res, res.RequestCharge
@@ -630,23 +629,23 @@ module internal Tip =
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         return events, maybePosition, ru }
 
-    let private run (log : ILogger) (readSlice: IDocumentQuery<Batch> -> ILogger -> Async<IIndexedEvent[] * Position option * float>)
+    let private run (log : ILogger) (readSlice: IDocumentQuery<Batch> -> ILogger -> Async<ITimelineEvent<byte[]>[] * Position option * float>)
             (maxPermittedBatchReads: int option)
             (query: IDocumentQuery<Batch>)
-        : AsyncSeq<IIndexedEvent[] * Position option * float> =
-        let rec loop batchCount : AsyncSeq<IIndexedEvent[] * Position option * float> = asyncSeq {
+        : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> =
+        let rec loop batchCount : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> = asyncSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! (slice : IIndexedEvent[] * Position option * float) = readSlice query batchLog
+            let! (slice : ITimelineEvent<byte[]>[] * Position option * float) = readSlice query batchLog
             yield slice
             if query.HasMoreResults then
                 yield! loop (batchCount + 1) }
         loop 0
 
-    let private logQuery direction batchSize streamName interval (responsesCount, events : IIndexedEvent[]) n (ru: float) (log : ILogger) =
+    let private logQuery direction batchSize streamName interval (responsesCount, events : ITimelineEvent<byte[]>[]) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Event.Query (direction, responsesCount, reqMetric)
@@ -655,7 +654,7 @@ module internal Tip =
             "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms rc={ru}",
             action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
-    let private calculateUsedVersusDroppedPayload stopIndex (xs: IIndexedEvent[]) : int * int =
+    let private calculateUsedVersusDroppedPayload stopIndex (xs: ITimelineEvent<byte[]>[]) : int * int =
         let mutable used, dropped = 0, 0
         let mutable found = false
         for x in xs do
@@ -666,10 +665,10 @@ module internal Tip =
         used, dropped
 
     let walk<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests direction startPos
-        (tryDecode : IIndexedEvent -> 'event option, isOrigin: 'event -> bool)
+        (tryDecode : ITimelineEvent<byte[]> -> 'event option, isOrigin: 'event -> bool)
         : Async<Position * 'event[]> = async {
         let responseCount = ref 0
-        let mergeBatches (log : ILogger) (batchesBackward: AsyncSeq<IIndexedEvent[] * Position option * float>) = async {
+        let mergeBatches (log : ILogger) (batchesBackward: AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float>) = async {
             let mutable lastResponse, mapbeTipPos, ru = None, None, 0.
             let! events =
                 batchesBackward
@@ -696,7 +695,7 @@ module internal Tip =
         let retryingLoggingReadSlice query = Log.withLoggedRetries retryPolicy "readAttempt" (pullSlice query)
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readlog = log |> Log.prop "direction" direction
-        let batches : AsyncSeq<IIndexedEvent[] * Position option * float> = run readlog retryingLoggingReadSlice maxRequests query
+        let batches : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> = run readlog retryingLoggingReadSlice maxRequests query
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws, decoded = (Array.map fst events), (events |> Seq.choose snd |> Array.ofSeq)
         let pos = match maybeTipPos with Some p -> p | None -> Position.fromMaxIndex raws
@@ -705,7 +704,7 @@ module internal Tip =
         return pos, decoded }
 
     let walkLazy<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests direction startPos
-        (tryDecode : IIndexedEvent -> 'event option, isOrigin: 'event -> bool)
+        (tryDecode : ITimelineEvent<byte[]> -> 'event option, isOrigin: 'event -> bool)
         : AsyncSeq<'event[]> = asyncSeq {
         let responseCount = ref 0
         let query = mkQuery (container,stream) maxItems direction startPos
@@ -761,7 +760,7 @@ module Token =
 [<AutoOpen>]
 module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type InternalSyncResult = Written of StreamToken | ConflictUnknown of StreamToken | Conflict of StreamToken * IIndexedEvent[]
+    type InternalSyncResult = Written of StreamToken | ConflictUnknown of StreamToken | Conflict of StreamToken * ITimelineEvent<byte[]>[]
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of Equinox.Store.StreamToken * 'event[]
@@ -771,6 +770,7 @@ namespace Equinox.Cosmos
 open Equinox
 open Equinox.Cosmos.Store
 open Equinox.Store.Infrastructure
+open FsCodec
 open FSharp.Control
 open Microsoft.Azure.Documents
 open Serilog
@@ -799,7 +799,7 @@ type BatchingPolicy
     member __.MaxRequests = maxRequests
 
 type Gateway(conn : Connection, batching : BatchingPolicy) =
-    let (|FromUnfold|_|) (tryDecode: #FsCodec.IEvent<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#FsCodec.IEvent<_>[]) : Option<'event[]> =
+    let (|FromUnfold|_|) (tryDecode: #IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#IEventData<_>[]) : Option<'event[]> =
         match Array.tryFindIndexBack (tryDecode >> Option.exists isOrigin) xs with
         | None -> None
         | Some index -> xs |> Seq.skip index |> Seq.choose tryDecode |> Array.ofSeq |> Some
@@ -844,8 +844,8 @@ type Gateway(conn : Connection, batching : BatchingPolicy) =
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create containerStream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create containerStream pos') }
 
-type private Category<'event, 'state>(gateway : Gateway, codec : FsCodec.IUnionEncoder<'event, byte[]>) =
-    let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: IIndexedEvent seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
+type private Category<'event, 'state>(gateway : Gateway, codec : IUnionEncoder<'event, byte[]>) =
+    let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: ITimelineEvent<byte[]> seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
     member __.Load includeUnfolds containerStream fold initial isOrigin (log : ILogger): Async<Store.StreamToken * 'state> = async {
         let! token, events =
             if not includeUnfolds then gateway.LoadBackwardsStopping log containerStream (codec.TryDecode,isOrigin)
@@ -1153,13 +1153,14 @@ namespace Equinox.Cosmos.Core
 
 open Equinox.Cosmos
 open Equinox.Cosmos.Store
+open FsCodec
 open System.Runtime.InteropServices
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]
 type AppendResult<'t> =
     | Ok of pos: 't
-    | Conflict of index: 't * conflictingEvents: IIndexedEvent[]
+    | Conflict of index: 't * conflictingEvents: ITimelineEvent<byte[]>[]
     | ConflictUnknown of index: 't
 
 /// Encapsulates the core facilites Equinox.Cosmos offers for operating directly on Events in Streams.
@@ -1194,7 +1195,7 @@ type Context
     member __.ResolveStream(streamName) = containers.Resolve(conn.Client, null, streamName, gateway.CreateSyncStoredProcIfNotExists (Some log))
     member __.CreateStream(streamName) = __.ResolveStream streamName |> fst
 
-    member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : FSharp.Control.AsyncSeq<IIndexedEvent[]> =
+    member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : FSharp.Control.AsyncSeq<ITimelineEvent<byte[]>[]> =
         let direction = defaultArg direction Direction.Forward
         let batching = BatchingPolicy(defaultArg batchSize batching.MaxItems)
         gateway.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
@@ -1219,16 +1220,16 @@ type Context
 
     /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member __.Walk(stream, batchSize, ?position, ?direction) : FSharp.Control.AsyncSeq<IIndexedEvent[]> =
+    member __.Walk(stream, batchSize, ?position, ?direction) : FSharp.Control.AsyncSeq<ITimelineEvent<byte[]>[]> =
         __.GetLazy((stream, position), batchSize, ?direction=direction)
 
     /// Reads all Events from a `Position` in a given `direction`
-    member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*IIndexedEvent[]> =
+    member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*ITimelineEvent<byte[]>[]> =
         __.GetInternal((stream, position), ?maxCount=maxCount, ?direction=direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
-    member __.Sync((container,stream), position, events: FsCodec.IEvent<_>[]) : Async<AppendResult<Position>> = async {
+    member __.Sync((container,stream), position, events: IEventData<_>[]) : Async<AppendResult<Position>> = async {
         // Writes go through the stored proc, which we need to provision per-collection
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
         //   to move this about before we reach a final destination in any case
@@ -1244,7 +1245,7 @@ type Context
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Stream enables building equivalent equivalent idempotent handling with minimal code.
-    member __.NonIdempotentAppend(stream, events: FsCodec.IEvent<_>[]) : Async<Position> = async {
+    member __.NonIdempotentAppend(stream, events: IEventData<_>[]) : Async<Position> = async {
         let! res = __.Sync(stream, Position.fromAppendAtEnd, events)
         match res with
         | AppendResult.Ok token -> return token
@@ -1253,7 +1254,7 @@ type Context
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
     /// Creates an Event record, suitable for supplying to Append et al
-    static member FromUtf8Bytes(eventType, data, ?meta) : FsCodec.IEvent<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta=meta) :> _
+    static member FromUtf8Bytes(eventType, data, ?meta) : IEventData<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta=meta) :> _
 
 /// Api as defined in the Equinox Specification
 /// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
@@ -1268,7 +1269,7 @@ module Events =
     let private stripPosition (f: Async<Position>): Async<int64> = async {
         let! (PositionIndex index) = f
         return index }
-    let private dropPosition (f: Async<Position*IIndexedEvent[]>): Async<IIndexedEvent[]> = async {
+    let private dropPosition (f: Async<Position*ITimelineEvent<byte[]>[]>): Async<ITimelineEvent<byte[]>[]> = async {
         let! _,xs = f
         return xs }
     let (|MinPosition|) = function
@@ -1282,41 +1283,41 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: Context) (streamName: string) (MinPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<IIndexedEvent[]> =
+    let getAll (ctx: Context) (streamName: string) (MinPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<ITimelineEvent<byte[]>[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: Context) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
+    let get (ctx: Context) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: Context) (streamName: string) (index: int64) (events: FsCodec.IEvent<_>[]): Async<AppendResult<int64>> =
+    let append (ctx: Context) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
         ctx.Sync(ctx.CreateStream streamName, Position.fromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx: Context) (streamName: string) (events: FsCodec.IEvent<_>[]): Async<int64> =
+    let appendAtEnd (ctx: Context) (streamName: string) (events: IEventData<_>[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.CreateStream streamName, events) |> stripPosition
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<IIndexedEvent[]> =
+    let getAllBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<ITimelineEvent<byte[]>[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<IIndexedEvent[]> =
+    let getBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position
