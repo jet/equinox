@@ -1,7 +1,0 @@
-{
-  "profiles": {
-    "Equinox.Sql.Integration": {
-      "commandName": "Project"
-    }
-  }
-}
