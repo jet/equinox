@@ -19,6 +19,7 @@
     </PackageReference>
     <PackageReference Include="Serilog" Version="2.8.0" />
     <PackageReference Include="SqlStreamStore" Version="1.2.0-beta.4" />
+    <PackageReference Include="System.Runtime.Caching" Version="4.5.0" />
   </ItemGroup>
 
   <ItemGroup>
