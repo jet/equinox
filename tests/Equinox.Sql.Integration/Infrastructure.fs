@@ -4,6 +4,43 @@ module Equinox.Integration.Infrastructure
 open Domain
 open FsCheck
 open System
+open FsConfig
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// CONFIGURATION
+////////////////////////////////////////////////////////////////////////////////////////////////////
+type DatabaseConfig = {
+    [<DefaultValue("localhost")>]
+    Server : string
+    [<DefaultValue("EQUINOX_TEST_DB")>]
+    Database : string
+    [<DefaultValue("admin")>]
+    UserId : string
+    [<DefaultValue("P@$$w0rd")>]
+    Password : string }
+    with member __.ConnectionString =
+        let connectionString =
+            sprintf
+                "Server=%s;Database=%s;User ID=%s;Password=%s;"
+                __.Server __.Database __.UserId __.Password
+        connectionString
+
+type Config = {
+  [<CustomName("DB")>]
+  Database : DatabaseConfig
+}
+
+let config = 
+    match EnvConfig.Get<Config>() with
+    | Ok config -> config
+    | Error error -> 
+      match error with
+      | NotFound envVarName -> 
+        failwithf "Environment variable %s not found" envVarName
+      | BadValue (envVarName, value) ->
+        failwithf "Environment variable %s has invalid value" envVarName value
+      | NotSupported msg -> 
+        failwith msg
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
