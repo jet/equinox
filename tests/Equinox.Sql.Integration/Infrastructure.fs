@@ -14,7 +14,7 @@ type DatabaseConfig = {
     Server : string
     [<DefaultValue("EQUINOX_TEST_DB")>]
     Database : string
-    [<DefaultValue("admin")>]
+    [<DefaultValue("sa")>]
     UserId : string
     [<DefaultValue("P@$$w0rd")>]
     Password : string }

@@ -8,7 +8,7 @@ open System.Threading
 open System
 open SqlStreamStore
 
-let connectToLocalEventStoreNode (log : ILogger) = async {
+let connectToLocalEventStoreNode (_ : ILogger) = async {
     let storeSettings = MsSqlStreamStoreV3Settings(config.Database.ConnectionString)
     let store = new MsSqlStreamStoreV3(storeSettings)
 

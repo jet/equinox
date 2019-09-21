@@ -282,7 +282,9 @@ module UnionEncoderAdapters =
 
         FsCodec.Core.IndexedEventData(e.Position, (*isUnfold*)false, e.Type, data, e.JsonMetadata |> System.Text.Encoding.UTF8.GetBytes, ts) :> _
     let eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
-        NewStreamMessage(Guid.NewGuid(), x.EventType, x.Data |> System.Text.Encoding.UTF8.GetString, x.Meta |> System.Text.Encoding.UTF8.GetString)
+        let data = match x.Data with null | [||] -> String.Empty | value -> value |> System.Text.Encoding.UTF8.GetString
+        let meta = match x.Meta with null | [||] -> String.Empty | value -> value |> System.Text.Encoding.UTF8.GetString
+        NewStreamMessage(Guid.NewGuid(), x.EventType, data, meta)
 
 type Stream = { name: string }
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }
