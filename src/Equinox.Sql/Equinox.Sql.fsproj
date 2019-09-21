@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox.MemoryStore\StoreHelpers.fs" Link="StoreHelpers.fs" />
+    <Compile Include="..\Equinox.EventStore\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="EventStore.fs" />
   </ItemGroup>
 
