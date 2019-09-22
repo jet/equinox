@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FsCodec" Version="1.0.0-rc2" />
+    <PackageReference Include="FsCodec" Version="1.0.0-rc2.3" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.21" />
     <PackageReference Include="MinVer" Version="2.0.0-alpha.2">
       <PrivateAssets>all</PrivateAssets>
@@ -13,6 +13,7 @@
     </PackageReference>
     <PackageReference Include="Serilog" Version="2.8.0" />
     <PackageReference Include="SqlStreamStore" Version="1.2.0-beta.4" />
+    <PackageReference Include="SqlStreamStore.Postgres" Version="1.2.0-beta.5" />
     <PackageReference Include="System.Runtime.Caching" Version="4.5.0" />
   </ItemGroup>
 
