@@ -5,6 +5,7 @@ namespace Equinox.MemoryStore
 
 open Equinox
 open Serilog
+open System.Runtime.InteropServices
 
 /// Equivalent to GetEventStore's in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
 exception private WrongVersionException of streamName: string * expected: int * value: obj
@@ -97,7 +98,7 @@ type Resolver<'event, 'state>(store : VolatileStore, fold, initial) =
     let category = Category<'event,'state>(store, fold, initial)
     let resolveStream streamName = Store.Stream.create category streamName
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
-    member __.Resolve(target : Target, ?option) =
+    member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option) =
         match resolveTarget target, option with
         | sn, None -> resolveStream sn
         | sn, Some AssumeEmpty -> Store.Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn)

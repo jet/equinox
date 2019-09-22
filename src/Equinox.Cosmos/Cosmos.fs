@@ -1053,7 +1053,7 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | AggregateId (categoryName,streamId) -> context.ResolveContainerStream(categoryName, streamId)
         | StreamName _ as x -> failwithf "Stream name not supported: %A" x
 
-    member __.Resolve(target, ?option) =
+    member __.Resolve(target, [<O; D null>]?option) =
         match resolveTarget target, option with
         | streamArgs,None -> resolveStream streamArgs
         | (containerStream,maybeInit),Some AssumeEmpty ->

@@ -553,7 +553,7 @@ type Resolver<'event,'state>
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
     let resolveStream = Stream.create category
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
-    member __.Resolve(target, ?option) =
+    member __.Resolve(target, [<O; D null>]?option) =
         match resolveTarget target, option with
         | sn, None -> resolveStream sn
         | sn, Some AssumeEmpty -> Stream.ofMemento (context.LoadEmpty sn,initial) (resolveStream sn)
