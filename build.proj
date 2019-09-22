@@ -18,6 +18,7 @@
     <Exec Command="dotnet pack src/Equinox.Cosmos $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.Storage $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack tools/Equinox.Tools.TestHarness $(Cfg) $(PackOptions)" />
     <Exec Command='dotnet publish tools/Equinox.Tool $(Cfg) -f net461 -o "$(ThisDirAbsolute)/bin/equinox-tool/net461" ' />
     <Exec Command="dotnet pack tools/Equinox.Tool $(Cfg) $(PackOptions) /p:PackAsTool=true" />
