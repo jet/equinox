@@ -12,7 +12,7 @@
   <ItemGroup>
     <Compile Include="Infrastructure.fs" />
     <Compile Include="Types.fs" />
-    <Compile Include="StorageStream.fs" />
+    <Compile Include="Stream.fs" />
     <Compile Include="Retry.fs" />
     <Compile Include="AsyncCacheCell.fs" />
   </ItemGroup>
