@@ -1,0 +1,42 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(TestTargetFrameworks)</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <WarningLevel>5</WarningLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Infrastructure.fs" />
+    <Compile Include="EventStoreIntegration.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
+    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MsSql\Equinox.SqlStreamStore.MsSql.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FsCheck.xUnit" Version="2.13.0" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-rc2.3" />
+    <PackageReference Include="FsConfig" Version="2.1.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.0" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
+    <PackageReference Include="SqlStreamStore" Version="1.2.0-beta.4" />
+    <PackageReference Include="SqlStreamStore.MsSql" Version="1.2.0-beta.5" />
+    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />
+    <PackageReference Include="unquote" Version="4.0" />
+    <PackageReference Include="xunit" Version="2.4.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="4.7.0" />
+  </ItemGroup>
+
+</Project>
