@@ -1,4 +1,4 @@
-﻿namespace Equinox.SqlStreamStore.MsSql
+﻿namespace Equinox.SqlStreamStore.Postgres
 
 open Equinox
 open Equinox.Store
@@ -6,9 +6,9 @@ open Equinox.Store
 type Connector (connectionString: string(*, [<O; D(null)>]?schema: string*), [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     let createStreamStore = 
         fun () -> async {
-            let storeSettings = SqlStreamStore.MsSqlStreamStoreV3Settings(connectionString)
+            let storeSettings = SqlStreamStore.PostgresStreamStoreSettings(connectionString)
         
-            let store = new SqlStreamStore.MsSqlStreamStoreV3(storeSettings)
+            let store = new SqlStreamStore.PostgresStreamStore(storeSettings)
 
             do! store.CreateSchemaIfNotExists() |> Async.AwaitTask
 

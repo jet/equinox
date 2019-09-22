@@ -577,3 +577,15 @@ type Resolver<'event,'state>
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack token as streamToken, state) =
         Stream.ofMemento (streamToken,state) <| resolve token.stream.name
+
+type Connector (createStreamStore: unit -> Async<SqlStreamStore.IStreamStore>, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+    member __.Connect () = async {
+        let! store = createStreamStore()
+
+        return store
+    }
+
+    member __.Establish () : Async<Connection> = async {
+        let! conn = __.Connect()
+        return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) 
+    }
