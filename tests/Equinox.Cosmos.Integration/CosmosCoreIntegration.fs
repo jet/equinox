@@ -91,7 +91,7 @@ type Tests(testOutputHelper) =
         return TestEvents.Create(0,6)
     }
 
-    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<_>[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<byte[]>[]) =
         let xs, baseIndex =
             if direction = Equinox.Cosmos.Store.Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
