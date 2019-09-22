@@ -12,6 +12,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - Updated `MinVer` to `2.0.0-alpha.2`
+- Updated `FsCodec` to `1.0.0-pr.20.rc2.5` to pick up final name changes [#161](https://github.com/jet/equinox/pull/161)
 
 ### Removed
 ### Fixed

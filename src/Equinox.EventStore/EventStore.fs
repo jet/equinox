@@ -269,12 +269,12 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
-    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.IIndexedEvent<byte[]> =
+    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.ITimelineEvent<byte[]> =
         let e = x.Event
         // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
         let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
-        FsCodec.Core.IndexedEventData(e.EventNumber, (*isUnfold*)false, e.EventType, e.Data, e.Metadata, ts) :> _
-    let eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
+        FsCodec.Core.TimelineEvent.Create(e.EventNumber, e.EventType, e.Data, e.Metadata, ts) :> _
+    let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
         EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
 
 type Stream = { name: string }
@@ -378,7 +378,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
                 | Some compactionEventIndex ->
                     Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
         return GatewaySyncResult.Written token }
-    member __.Sync(log, streamName, streamVersion, events: FsCodec.IEvent<byte[]>[]) : Async<GatewaySyncResult> = async {
+    member __.Sync(log, streamName, streamVersion, events: FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with

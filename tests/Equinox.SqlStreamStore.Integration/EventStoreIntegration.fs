@@ -1,6 +1,6 @@
-﻿module Equinox.EventStore.Integration.EventStoreIntegration
+﻿module Equinox.SqlStreamStore.Integration.EventStoreIntegration
 
-open Equinox.EventStore
+open Equinox.SqlStreamStore
 open Equinox.Integration.Infrastructure
 open Serilog
 open Swensen.Unquote

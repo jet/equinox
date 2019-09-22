@@ -1,4 +1,4 @@
-﻿namespace Equinox.EventStore
+﻿namespace Equinox.SqlStreamStore
 
 open Equinox
 open Equinox.Store
