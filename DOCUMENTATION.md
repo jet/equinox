@@ -229,14 +229,14 @@ while these are not omnipresent, for the purposes of this discussion we’ll tre
 
 ### Flows, Streams and Accumulators
 
-Equinox’s Command Handling consists of < 250 lines including interfaces and comments in https://github.com/jet/equinox/tree/master/src/Equinox - the elements you'll touch are in a normal application are:
+Equinox’s Command Handling consists of < 200 lines including interfaces and comments in https://github.com/jet/equinox/tree/master/src/Equinox - the elements you'll touch in a normal application are:
 
-- [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs#L36) - internal implementation of Optimistic Concurrency Control / retry loop used by `Stream`. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
-- [`type Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L11) - surface API one uses to `Transact` or `Query` against a specific stream
-- [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Stream.fs#L39) - used to identify the Stream pertaining to the relevant Aggregate that `resolveStream` will use to hydrate a `Stream`
-- _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in some flavors of Service__
+- [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs#L34) - internal implementation of Optimistic Concurrency Control / retry loop used by `Stream`. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
+- [`type Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L11) - surface API one uses to `Transact` or `Query` against a specific stream
+- [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L42) - used to identify the Stream pertaining to the relevant Aggregate that `resolveStream` will use to hydrate a `Stream`
+- _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in some complex flavors of Service__
 
-Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the few hundred lines can tell many of the thousands of words about to follow!
+Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the 3 files can tell many of the thousands of words about to follow!
 
 #### Stream Members
 
@@ -342,7 +342,7 @@ type Service(log, stream, ?maxAttempts) =
         inner.Query id
 ```
 
-The `Stream`-related functions in a given Aggregate establish the access patterns used across when Service methods access streams (see below). Typically these are relatively straightforward calls forwarding to a `Equinox.Stream` equivalent (see [`src/Equinox/Stream.fs`](src/Equinox/Stream.fs)), which in turn use the Optimistic Concurrency retry-loop  in [`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
+The `Stream`-related functions in a given Aggregate establish the access patterns used across when Service methods access streams (see below). Typically these are relatively straightforward calls forwarding to a `Equinox.Stream` equivalent (see [`src/Equinox/Equinox.fs`](src/Equinox/Equinox.fs)), which in turn use the Optimistic Concurrency retry-loop  in [`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent state (while this can be optimized by reading through the cache, each invocation will hit the store regardless). This Synchronous Read can be used to [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency) to establish a state incorporating the effects of any Command invocation you know to have been completed.
 

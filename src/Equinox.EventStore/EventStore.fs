@@ -2,7 +2,6 @@
 
 open Equinox
 open Equinox.Storage
-open Equinox.Store
 open EventStore.ClientAPI
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System

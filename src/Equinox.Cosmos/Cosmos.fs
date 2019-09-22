@@ -1,7 +1,6 @@
 ﻿namespace Equinox.Cosmos.Store
 
 open Equinox.Storage
-open Equinox.Store
 open FsCodec
 open Microsoft.Azure.Documents
 open Newtonsoft.Json
@@ -771,7 +770,6 @@ namespace Equinox.Cosmos
 open Equinox
 open Equinox.Cosmos.Store
 open Equinox.Storage
-open Equinox.Store
 open FsCodec
 open FSharp.Control
 open Microsoft.Azure.Documents

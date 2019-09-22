@@ -1,6 +1,5 @@
 namespace Equinox.Storage
 
-open Equinox.Store
 open Serilog
 open System
 open System.Diagnostics
