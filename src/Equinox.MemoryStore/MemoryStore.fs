@@ -4,6 +4,8 @@
 namespace Equinox.MemoryStore
 
 open Equinox
+open Equinox.Storage
+open Equinox.Store
 open Serilog
 open System.Runtime.InteropServices
 
@@ -62,10 +64,10 @@ type Token = { streamVersion: int; streamName: string }
 
 /// Internal implementation detail of MemoryStreamStore
 module private Token =
-    let private streamTokenOfIndex streamName (streamVersion : int) : Store.StreamToken =
+    let private streamTokenOfIndex streamName (streamVersion : int) : StreamToken =
         {   value = box { streamName = streamName; streamVersion = streamVersion }
             version = int64 streamVersion }
-    let (|Unpack|) (token: Store.StreamToken) : Token = unbox<Token> token.value
+    let (|Unpack|) (token: StreamToken) : Token = unbox<Token> token.value
     /// Represent a stream known to be empty
     let ofEmpty streamName initial = streamTokenOfIndex streamName -1, initial
     let tokenOfArray streamName (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex streamName
@@ -76,7 +78,7 @@ module private Token =
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type Category<'event, 'state>(store : VolatileStore, fold, initial) =
-    interface Store.ICategory<'event, 'state, string> with
+    interface ICategory<'event, 'state, string> with
         member __.Load streamName (log : ILogger) = async {
             match store.TryLoad<'event> streamName log with
             | None -> return Token.ofEmpty streamName initial
@@ -91,18 +93,18 @@ type Category<'event, 'state>(store : VolatileStore, fold, initial) =
                     let version = Token.tokenOfArray token.streamName conflictingEvents
                     let successorEvents = conflictingEvents |> Seq.skip (token.streamVersion + 1) |> List.ofSeq
                     return version, fold state (Seq.ofList successorEvents) }
-                return Store.SyncResult.Conflict resync
-            | ConcurrentArraySyncResult.Written events -> return Store.SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
+                return SyncResult.Conflict resync
+            | ConcurrentArraySyncResult.Written events -> return SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
 type Resolver<'event, 'state>(store : VolatileStore, fold, initial) =
     let category = Category<'event,'state>(store, fold, initial)
-    let resolveStream streamName = Store.Stream.create category streamName
+    let resolveStream streamName = Stream.create category streamName
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
     member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option) =
         match resolveTarget target, option with
         | sn, None -> resolveStream sn
-        | sn, Some AssumeEmpty -> Store.Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn)
+        | sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken,state) =
-        Store.Stream.ofMemento (streamToken,state) (resolveStream stream.streamName)
+        Stream.ofMemento (streamToken,state) (resolveStream stream.streamName)

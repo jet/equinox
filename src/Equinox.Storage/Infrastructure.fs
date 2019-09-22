@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.Store.Infrastructure
+module internal Equinox.Storage.Infrastructure
 
 open FSharp.Control
 open System
@@ -84,78 +84,6 @@ module AsyncSeq =
     /// Same as takeWhile, but returns the final element too
     let takeWhileInclusive p (source : AsyncSeq<'T>) =
         takeWhileInclusiveAsync (p >> async.Return) source
-
-type Stopwatch =
-    /// <summary>
-    ///     Times a computation, returning the result with a time range measurement.
-    /// </summary>
-    /// <param name="f">Function to execute & time.</param>
-    [<DebuggerStepThrough>]
-    static member Time(f : unit -> 'T) : StopwatchInterval * 'T =
-        let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
-        let result = f ()
-        let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
-        let tr = StopwatchInterval(startTicks, endTicks)
-        tr, result
-
-    /// <summary>
-    ///     Times an async computation, returning the result with a time range measurement.
-    /// </summary>
-    /// <param name="f">Function to execute & time.</param>
-    [<DebuggerStepThrough>]
-    static member Time(f : Async<'T>) : Async<StopwatchInterval * 'T> = async {
-        let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
-        let! result = f
-        let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
-        let tr = StopwatchInterval(startTicks, endTicks)
-        return tr, result
-    }
-
-/// Asynchronous Lazy<'T> that guarantees workflow will be executed at most once.
-type AsyncLazy<'T>(workflow : Async<'T>) =
-    let task = lazy(Async.StartAsTask workflow)
-    member __.AwaitValue() = Async.AwaitTaskCorrect task.Value
-    member internal __.PeekInternalTask = task
-
-/// Generic async lazy caching implementation that admits expiration/recomputation semantics
-/// If `workflow` fails, all readers entering while the load/refresh is in progress will share the failure
-type AsyncCacheCell<'T>(workflow : Async<'T>, ?isExpired : 'T -> bool) =
-    let mutable currentCell = AsyncLazy workflow
-
-    let initializationFailed (value: System.Threading.Tasks.Task<_>) =
-        // for TMI on this, see https://stackoverflow.com/a/33946166/11635
-        value.IsCompleted && value.Status <> System.Threading.Tasks.TaskStatus.RanToCompletion
-
-    let update cell = async {
-        // avoid unneccessary recomputation in cases where competing threads detect expiry;
-        // the first write attempt wins, and everybody else reads off that value
-        let _ = System.Threading.Interlocked.CompareExchange(&currentCell, AsyncLazy workflow, cell)
-        return! currentCell.AwaitValue()
-    }
-
-    /// Enables callers to short-circuit the gate by checking whether a value has been computed
-    member __.PeekIsValid() =
-        let cell = currentCell
-        let currentState = cell.PeekInternalTask
-        if not currentState.IsValueCreated then false else
-
-        let value = currentState.Value
-        not (initializationFailed value) 
-        && (match isExpired with Some f -> not (f value.Result) | _ -> false)
-    
-    /// Gets or asynchronously recomputes a cached value depending on expiry and availability
-    member __.AwaitValue() = async {
-        let cell = currentCell
-        let currentState = cell.PeekInternalTask
-        // If the last attempt completed, but failed, we need to treat it as expired
-        if currentState.IsValueCreated && initializationFailed currentState.Value then
-            return! update cell
-        else
-            let! current = cell.AwaitValue()
-            match isExpired with
-            | Some f when f current -> return! update cell
-            | _ -> return current
-    }
 
 [<RequireQualifiedAccess>]
 module Regex =
