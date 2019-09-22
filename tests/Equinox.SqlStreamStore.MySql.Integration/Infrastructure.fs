@@ -10,19 +10,21 @@ open Equinox.SqlStreamStore
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // CONFIGURATION
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-type DatabaseConfig = 
-    {
-        [<DefaultValue("localhost")>]
-        Server : string
-        [<DefaultValue("EQUINOX_TEST_DB")>]
-        Database : string
-        [<DefaultValue("sa")>]
-        UserId : string
-        [<DefaultValue("P@$$w0rd")>]
-        Password : string 
-    }
-    with member __.ConnectionString = 
-            sprintf "Server=%s;Database=%s;User ID=%s;Password=%s;" __.Server __.Database __.UserId __.Password
+type DatabaseConfig = {
+    [<DefaultValue("localhost")>]
+    Server : string
+    [<DefaultValue("EQUINOX_TEST_DB")>]
+    Database : string
+    [<DefaultValue("sa")>]
+    UserId : string
+    [<DefaultValue("P@$$w0rd")>]
+    Password : string }
+    with member __.ConnectionString =
+        let connectionString =
+            sprintf
+                "Server=%s;Database=%s;User ID=%s;Password=%s;"
+                __.Server __.Database __.UserId __.Password
+        connectionString
 
 type Config = {
   [<CustomName("DB")>]

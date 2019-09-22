@@ -72,6 +72,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SqlStreamStore", "SqlStream
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.MsSql.Integration", "tests\Equinox.SqlStreamStore.MsSql.Integration\Equinox.SqlStreamStore.MsSql.Integration.fsproj", "{761A8CCF-20D8-47DF-BB8E-52541B08A708}"
 EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.MySql.Integration", "tests\Equinox.SqlStreamStore.MySql.Integration\Equinox.SqlStreamStore.MySql.Integration.fsproj", "{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.Postgres.Integration", "tests\Equinox.SqlStreamStore.Postgres.Integration\Equinox.SqlStreamStore.Postgres.Integration.fsproj", "{CDA2F063-B089-4452-8421-82A4EC57B13B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -170,6 +174,14 @@ Global
 		{761A8CCF-20D8-47DF-BB8E-52541B08A708}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{761A8CCF-20D8-47DF-BB8E-52541B08A708}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{761A8CCF-20D8-47DF-BB8E-52541B08A708}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CDA2F063-B089-4452-8421-82A4EC57B13B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CDA2F063-B089-4452-8421-82A4EC57B13B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CDA2F063-B089-4452-8421-82A4EC57B13B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CDA2F063-B089-4452-8421-82A4EC57B13B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -191,6 +203,8 @@ Global
 		{ACD2B8C4-A3C6-4A44-9A8A-7135937E932E} = {CCAFA792-6477-4A52-9F9B-C84733833B04}
 		{610464A7-6C30-45DE-8DBC-8B0B832B9EAE} = {CCAFA792-6477-4A52-9F9B-C84733833B04}
 		{761A8CCF-20D8-47DF-BB8E-52541B08A708} = {CCAFA792-6477-4A52-9F9B-C84733833B04}
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9} = {CCAFA792-6477-4A52-9F9B-C84733833B04}
+		{CDA2F063-B089-4452-8421-82A4EC57B13B} = {CCAFA792-6477-4A52-9F9B-C84733833B04}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {177E1E7B-E275-4FC6-AE3C-2C651ECCF71E}

@@ -10,19 +10,24 @@ open Equinox.SqlStreamStore
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // CONFIGURATION
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-type DatabaseConfig = 
-    {
-        [<DefaultValue("localhost")>]
-        Server : string
-        [<DefaultValue("EQUINOX_TEST_DB")>]
-        Database : string
-        [<DefaultValue("sa")>]
-        UserId : string
-        [<DefaultValue("P@$$w0rd")>]
-        Password : string 
-    }
-    with member __.ConnectionString = 
-            sprintf "Server=%s;Database=%s;User ID=%s;Password=%s;" __.Server __.Database __.UserId __.Password
+type DatabaseConfig =
+    { [<DefaultValue("postgres")>]
+      UserName : string
+      [<DefaultValue("test")>]
+      Password : string
+      [<DefaultValue("localhost")>]
+      Host : string
+      [<DefaultValue("EQUINOX_TEST_DB")>]
+      Database : string
+      [<DefaultValue("public")>]
+      Schema : string
+      [<DefaultValue("5432")>]
+      Port : int
+      [<DefaultValue("postgresql")>]
+      Protocol : string }
+    member __.ConnectionString =
+        sprintf "%s://%s:%s@%s:%d/%s?%s" __.Protocol __.UserName __.Password
+            __.Host __.Port __.Database __.Schema
 
 type Config = {
   [<CustomName("DB")>]
