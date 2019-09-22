@@ -10,13 +10,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Equinox.MemoryStore\StoreHelpers.fs" Link="StoreHelpers.fs" />
-    <Compile Include="..\Equinox.EventStore\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="..\Equinox.Storage\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Cosmos.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Equinox\Equinox.fsproj" />
+    <ProjectReference Include="..\Equinox.Storage\Equinox.Storage.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
