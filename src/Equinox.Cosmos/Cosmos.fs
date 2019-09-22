@@ -1049,14 +1049,15 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
                 | Some init -> async {
                     do! init ()
                     return! category.TrySync log (token, originState) events } }
+    let resolveTarget = function
+        | AggregateId (categoryName,streamId) -> context.ResolveContainerStream(categoryName, streamId)
+        | StreamName _ as x -> failwithf "Stream name not supported: %A" x
 
-    member __.Resolve = function
-        | Target.AggregateId (categoryName,streamId) ->
-            context.ResolveContainerStream(categoryName, streamId) |> resolveStream
-        | Target.AggregateIdEmpty (categoryName,streamId) ->
-            let containerStream, maybeInit = context.ResolveContainerStream(categoryName, streamId)
-            Store.Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream, maybeInit))
-        | Target.StreamName _ as x -> failwithf "Stream name not supported: %A" x
+    member __.Resolve(target, ?option) =
+        match resolveTarget target, option with
+        | streamArgs,None -> resolveStream streamArgs
+        | (containerStream,maybeInit),Some AssumeEmpty ->
+            Store.Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit))
 
     member __.FromMemento(Token.Unpack (container,stream,_pos) as streamToken,state) =
         let skipInitialization = None

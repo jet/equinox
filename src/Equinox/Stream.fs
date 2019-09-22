@@ -33,16 +33,19 @@ type Stream<'event, 'state>
     member __.QueryEx(projection : int64 -> 'state -> 'view) : Async<'view> = Flow.query(stream, log, fun syncState -> projection syncState.Version syncState.State)
 
     /// Low-level helper to allow one to obtain a reference to a stream and state pair (including the position) in order to pass it as a continuation within the application
-    /// Such a memento is then held within the application and passed in lieue of a StreamId to the StreamResolver in order to avoid having to reload state
+    /// Such a memento is then held within the application and passed in lieu of a StreamId to the StreamResolver in order to avoid having to reload state
     member __.CreateMemento(): Async<Store.StreamToken * 'state> = Flow.query(stream, log, fun syncState -> syncState.Memento)
 
-/// Store-agnostic way to specify a target Stream (with optional known State) to pass to a Resolver
+/// Store-agnostic way to specify a target Stream to a Resolver
 [<NoComparison; NoEquality>]
 type Target =
     /// Recommended way to specify a stream identifier; a category identifier and an aggregate identity
     | AggregateId of category: string * id: string
-    /// Resolve the stream, but stub the attempt to Load based on a strong likelihood that a stream is empty and hence it's reasonable to optimistically avoid
-    /// a Load roundtrip; if that turns out not to be the case, the price is to have to do a re-run after the resync
-    | AggregateIdEmpty of category: string * id: string
-    /// Specify the full stream name. NB use of AggregateId is recommended for simplicity and consistency.
+    /// Specify the full stream name. NOTE use of <c>AggregateId</c> is recommended for simplicity and consistency.
     | StreamName of streamName: string
+
+/// Store-agnostic <c>Context.Resolve</c> Options
+[<NoComparison; NoEquality>]
+type ResolveOption =
+    /// If no State is held in the cache for a given stream, assume the Stream to be empty for the initial Query or Transact
+    | AssumeEmpty
