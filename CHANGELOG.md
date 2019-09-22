@@ -12,6 +12,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - Updated `MinVer` to `2.0.0-alpha.2`
+- Replaced `TargetId.AggregateIdEmpty` to with `ResolveOption.AssumeEmpty` [#163](https://github.com/jet/equinox/pull/163)
 
 ### Removed
 ### Fixed
