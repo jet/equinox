@@ -65,6 +65,7 @@ type Async with
                     sc ())
             |> ignore)
 
+#if !NO_ASYNCSEQ
 module AsyncSeq =
     /// Same as takeWhileAsync, but returns the final element too
     let takeWhileInclusiveAsync p (source : AsyncSeq<'T>) : AsyncSeq<_> = asyncSeq {
@@ -84,6 +85,7 @@ module AsyncSeq =
     /// Same as takeWhile, but returns the final element too
     let takeWhileInclusive p (source : AsyncSeq<'T>) =
         takeWhileInclusiveAsync (p >> async.Return) source
+#endif
 
 [<RequireQualifiedAccess>]
 module Regex =
