@@ -1,5 +1,5 @@
 ﻿/// Low level stream builders, generally consumed via Store-specific Stream Builders that layer policies such as Caching in at the Category level
-module Equinox.Storage.Stream
+module Equinox.Core.Stream
 
 /// Represents a specific stream in a ICategory
 type private Stream<'event, 'state, 'streamId>(category : ICategory<'event, 'state, 'streamId>, streamId: 'streamId) =

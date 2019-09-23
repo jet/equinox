@@ -4,7 +4,7 @@
 namespace Equinox.MemoryStore
 
 open Equinox
-open Equinox.Storage
+open Equinox.Core
 open Serilog
 open System.Runtime.InteropServices
 

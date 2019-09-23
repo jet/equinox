@@ -1,6 +1,6 @@
 ﻿namespace Equinox
 
-open Equinox.Storage
+open Equinox.Core
 open System.Runtime.InteropServices
 
 // Exception yielded by Stream.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
@@ -9,7 +9,7 @@ type MaxResyncsExhaustedException(count) =
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 type Stream<'event, 'state>
-    (   log, stream : Storage.IStream<'event, 'state>, maxAttempts : int,
+    (   log, stream : IStream<'event, 'state>, maxAttempts : int,
         [<Optional; DefaultParameterValue(null)>]?mkAttemptsExhaustedException,
         [<Optional; DefaultParameterValue(null)>]?resyncPolicy) =
     let transact f =

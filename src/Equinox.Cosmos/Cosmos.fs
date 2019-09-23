@@ -1,6 +1,6 @@
 ﻿namespace Equinox.Cosmos.Store
 
-open Equinox.Storage
+open Equinox.Core
 open FsCodec
 open Microsoft.Azure.Documents
 open Newtonsoft.Json
@@ -768,8 +768,8 @@ module Internal =
 namespace Equinox.Cosmos
 
 open Equinox
+open Equinox.Core
 open Equinox.Cosmos.Store
-open Equinox.Storage
 open FsCodec
 open FSharp.Control
 open Microsoft.Azure.Documents

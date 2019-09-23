@@ -1,4 +1,4 @@
-namespace Equinox.Storage
+namespace Equinox.Core
 
 /// Asynchronous Lazy<'T> that guarantees workflow will be executed at most once.
 type AsyncLazy<'T>(workflow : Async<'T>) =

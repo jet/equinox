@@ -1,4 +1,4 @@
-namespace Equinox.Storage
+namespace Equinox.Core
 
 /// Exception yielded by after `count` attempts to complete an operation have taken place
 type OperationRetriesExceededException(count : int, innerException : exn) =

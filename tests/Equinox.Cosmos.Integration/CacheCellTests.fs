@@ -1,6 +1,6 @@
 ﻿module Equinox.Cosmos.Integration.CacheCellTests
 
-open Equinox.Storage
+open Equinox.Core
 open Swensen.Unquote
 open System.Threading
 open Xunit

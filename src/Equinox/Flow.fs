@@ -1,6 +1,6 @@
 ﻿/// Internal data structures/impl. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implementing a Store or a decorator thereof.
 /// i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Equinox.fs, not here
-namespace Equinox.Storage
+namespace Equinox.Core
 
 open Serilog
 

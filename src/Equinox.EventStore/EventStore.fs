@@ -1,7 +1,7 @@
 ﻿namespace Equinox.EventStore
 
 open Equinox
-open Equinox.Storage
+open Equinox.Core
 open EventStore.ClientAPI
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
