@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
+open Equinox.Core
 open Equinox.Cosmos.Integration
-open Equinox.Storage
 open FSharp.UMX
 open Swensen.Unquote
 open System

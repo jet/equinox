@@ -1,4 +1,4 @@
-namespace Equinox.Storage
+namespace Equinox.Core
 
 open Serilog
 open System

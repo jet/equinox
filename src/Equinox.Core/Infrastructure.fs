@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module internal Equinox.Storage.Infrastructure
+module internal Equinox.Core.Infrastructure
 
 open FSharp.Control
 open System
