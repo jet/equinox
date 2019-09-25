@@ -136,7 +136,7 @@ module private Write =
                 | value when value.HasValue -> ex.ExpectedVersion.Value
                 | _ -> ExpectedVersion.Any
 
-            log.Information(ex, "Es TrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
+            log.Information(ex, "SqlEs TrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
                 [| for x in events -> x.Type |], expectedVersion)
             return EsSyncResult.Conflict (expectedVersion |> int64) }
     let eventDataBytes events =
@@ -156,7 +156,7 @@ module private Write =
                 log |> Log.prop "actualVersion" actualVersion, Log.WriteConflict m
             | EsSyncResult.Written x, m ->
                 log |> Log.prop "currentVersion" x.CurrentVersion |> Log.prop "currentPosition" x.CurrentPosition, Log.WriteSuccess m
-        (resultLog |> Log.event evt).Information("Es{action:l} count={count} conflict={conflict}",
+        (resultLog |> Log.event evt).Information("SqlEs{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
     let writeEvents (log : ILogger) retryPolicy (conn : IStreamStore) (streamName : string) (version : int) (events : NewStreamMessage[])
@@ -182,7 +182,7 @@ module private Read =
         let reqMetric : Log.Measurement ={ stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice (direction, reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice.Messages
-        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Es{action:l} count={count} version={version}",
+        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("SqlEs{action:l} count={count} version={version}",
             "Read", count, slice.LastStreamPosition)
         return slice }
     let private readBatches (log : ILogger) (readSlice : int -> ILogger -> Async<ReadStreamPage>)
@@ -212,7 +212,7 @@ module private Read =
         let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
         let evt = Log.Event.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            "Es{action:l} stream={stream} count={count}/{batches} version={version}",
+            "SqlEs{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
     let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
         : Async<int64 * StreamMessage[]> = async {
@@ -252,10 +252,10 @@ module private Read =
                 |> AsyncSeq.takeWhileInclusive (function
                     | x, Some e when isOrigin e ->
                         match !lastBatch with
-                        | None -> log.Information("EsStop stream={stream} at={eventNumber}", streamName, x.Position)
+                        | None -> log.Information("SqlEsStop stream={stream} at={eventNumber}", streamName, x.Position)
                         | Some batch ->
                             let used, residual = batch |> partitionPayloadFrom x.Position
-                            log.Information("EsStop stream={stream} at={eventNumber} used={used} residual={residual}", streamName, x.Position, used, residual)
+                            log.Information("SqlEsStop stream={stream} at={eventNumber} used={used} residual={residual}", streamName, x.Position, used, residual)
                         false
                     | _ -> true) // continue the search
                 |> AsyncSeq.toArrayAsync
@@ -543,7 +543,7 @@ type Resolver<'event,'state>
         [<O; D(null)>]?access) =
     do  match access with
         | Some (AccessStrategy.EventsAreState) when Option.isSome caching ->
-            "Equinox.EventStore does not support (and it would make things _less_ efficient even if it did)"
+            "Equinox.SqlStreamStore does not support (and it would make things _less_ efficient even if it did)"
             + "mixing AccessStrategy.EventsAreState with Caching at present."
             |> invalidOp
         | _ -> ()
