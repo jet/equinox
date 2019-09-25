@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Connection.fs" />
   </ItemGroup>
 
