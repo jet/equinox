@@ -46,6 +46,6 @@ type Base64ZipUtf8Tests() =
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
         let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
-        let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d, null)
+        let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
         let decoded = unionEncoder.TryDecode d |> Option.get
         test <@ value = decoded @>

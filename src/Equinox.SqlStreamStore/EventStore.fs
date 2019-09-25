@@ -562,21 +562,16 @@ type Resolver<'event,'state>
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
         | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
-    let mkStreamName categoryName streamId = sprintf "%s-%s" categoryName streamId
-    let resolve = Stream.create category
-
-    member __.Resolve = function
-        | Target.AggregateId (categoryName,streamId) ->
-            resolve <| mkStreamName categoryName streamId
-        | Target.AggregateIdEmpty (categoryName,streamId) ->
-            let streamName = mkStreamName categoryName streamId
-            Stream.ofMemento (context.LoadEmpty streamName,initial) <| resolve streamName
-        | Target.StreamName streamName ->
-            resolve streamName
+    let resolveStream = Stream.create category
+    let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
+    member __.Resolve(target, [<O; D null>]?option) =
+        match resolveTarget target, option with
+        | sn, None -> resolveStream sn
+        | sn, Some AssumeEmpty -> Stream.ofMemento (context.LoadEmpty sn,initial) (resolveStream sn)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack token as streamToken, state) =
-        Stream.ofMemento (streamToken,state) <| resolve token.stream.name
+        Stream.ofMemento (streamToken,state) (resolveStream token.stream.name)
 
 type Connector (createStreamStore: unit -> Async<SqlStreamStore.IStreamStore>, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.Connect () = async {

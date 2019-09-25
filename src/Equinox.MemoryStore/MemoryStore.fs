@@ -5,6 +5,7 @@ namespace Equinox.MemoryStore
 
 open Equinox
 open Serilog
+open System.Runtime.InteropServices
 
 /// Equivalent to GetEventStore's in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
 exception private WrongVersionException of streamName: string * expected: int * value: obj
@@ -95,16 +96,12 @@ type Category<'event, 'state>(store : VolatileStore, fold, initial) =
 
 type Resolver<'event, 'state>(store : VolatileStore, fold, initial) =
     let category = Category<'event,'state>(store, fold, initial)
-    let mkStreamName categoryName streamId = sprintf "%s-%s" categoryName streamId
     let resolveStream streamName = Store.Stream.create category streamName
-
-    member __.Resolve = function
-        | Target.AggregateId (categoryName,streamId) ->
-            resolveStream (mkStreamName categoryName streamId)
-        | Target.AggregateIdEmpty (categoryName,streamId) ->
-            let streamName = mkStreamName categoryName streamId
-            Store.Stream.ofMemento (Token.ofEmpty streamName initial) (resolveStream streamName)
-        | Target.StreamName _ as x -> failwithf "Stream name not supported: %A" x
+    let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
+    member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option) =
+        match resolveTarget target, option with
+        | sn, None -> resolveStream sn
+        | sn, Some AssumeEmpty -> Store.Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken,state) =
