@@ -5,9 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Equinox.MemoryStore\StoreHelpers.fs" Link="StoreHelpers.fs" />
-    <Compile Include="..\Equinox.EventStore\Infrastructure.fs" Link="Infrastructure.fs" />
-    <Compile Include="EventStore.fs" />
+    <Compile Include="SqlStreamStore.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Equinox.Core\Equinox.Core.fsproj" />
     <ProjectReference Include="..\Equinox\Equinox.fsproj" />
   </ItemGroup>
 

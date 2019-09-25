@@ -1,12 +1,12 @@
 ﻿module Equinox.EventStore.Tests.EventStoreTokenTests
 
-open Equinox
+open Equinox.Core
 open Equinox.EventStore
 open FsCheck.Xunit
 open Swensen.Unquote.Assertions
 open Xunit
 
-let unpack (Token.Unpack token : Store.StreamToken) =
+let unpack (Token.Unpack token : StreamToken) =
     token.pos.streamVersion, token.pos.compactionEventNumber, token.pos.batchCapacityLimit
 
 [<Theory

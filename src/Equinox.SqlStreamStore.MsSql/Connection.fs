@@ -2,7 +2,7 @@
 
 open System
 open Equinox
-open Equinox.Store
+open Equinox.Core
 
 type Connector (connectionString: string, [<O; D(null)>]?schema: string, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     let createStreamStore = 

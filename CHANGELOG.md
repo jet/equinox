@@ -14,6 +14,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Updated `MinVer` to `2.0.0-alpha.2`
 - Updated `FsCodec` to `1.0.0-pr.20.rc2.5` to pick up final name changes [#162](https://github.com/jet/equinox/pull/162)
 - Replaced `TargetId.AggregateIdEmpty` with `ResolveOption.AssumeEmpty` [#163](https://github.com/jet/equinox/pull/163)
+- Extracted `Equinox.Core` module [#164](https://github.com/jet/equinox/pull/164)
 
 ### Removed
 ### Fixed

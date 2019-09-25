@@ -1,5 +1,6 @@
 ﻿namespace Equinox
 
+open Equinox.Core
 open System.Runtime.InteropServices
 
 // Exception yielded by Stream.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
@@ -8,7 +9,7 @@ type MaxResyncsExhaustedException(count) =
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 type Stream<'event, 'state>
-    (   log, stream : Store.IStream<'event, 'state>, maxAttempts : int,
+    (   log, stream : IStream<'event, 'state>, maxAttempts : int,
         [<Optional; DefaultParameterValue(null)>]?mkAttemptsExhaustedException,
         [<Optional; DefaultParameterValue(null)>]?resyncPolicy) =
     let transact f =
@@ -34,7 +35,7 @@ type Stream<'event, 'state>
 
     /// Low-level helper to allow one to obtain a reference to a stream and state pair (including the position) in order to pass it as a continuation within the application
     /// Such a memento is then held within the application and passed in lieu of a StreamId to the StreamResolver in order to avoid having to reload state
-    member __.CreateMemento(): Async<Store.StreamToken * 'state> = Flow.query(stream, log, fun syncState -> syncState.Memento)
+    member __.CreateMemento(): Async<StreamToken * 'state> = Flow.query(stream, log, fun syncState -> syncState.Memento)
 
 /// Store-agnostic way to specify a target Stream to a Resolver
 [<NoComparison; NoEquality>]
