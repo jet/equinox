@@ -3,7 +3,7 @@
 open Equinox
 open Equinox.Store
 
-type Connector (connectionString: string(*, [<O; D(null)>]?schema: string*), [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type Connector (connectionString: string, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     let createStreamStore = 
         fun () -> async {
             let storeSettings = SqlStreamStore.MySqlStreamStoreSettings(connectionString)

@@ -252,10 +252,10 @@ module private Read =
                 |> AsyncSeq.takeWhileInclusive (function
                     | x, Some e when isOrigin e ->
                         match !lastBatch with
-                        | None -> log.Information("GesStop stream={stream} at={eventNumber}", streamName, x.Position)
+                        | None -> log.Information("EsStop stream={stream} at={eventNumber}", streamName, x.Position)
                         | Some batch ->
                             let used, residual = batch |> partitionPayloadFrom x.Position
-                            log.Information("GesStop stream={stream} at={eventNumber} used={used} residual={residual}", streamName, x.Position, used, residual)
+                            log.Information("EsStop stream={stream} at={eventNumber} used={used} residual={residual}", streamName, x.Position, used, residual)
                         false
                     | _ -> true) // continue the search
                 |> AsyncSeq.toArrayAsync
