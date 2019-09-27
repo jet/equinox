@@ -375,17 +375,16 @@ type Context(conn : Connection, batching : BatchingPolicy) =
         | EsSyncResult.Conflict expectedVersion ->
             return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting token.stream.name expectedVersion)
         | EsSyncResult.Written wr ->
-
-        let version' = wr.CurrentVersion + 1 |> int64
-        let token =
-            match isCompactionEventType with
-            | None -> Token.ofNonCompacting token.stream.name version'
-            | Some isCompactionEvent ->
-                match events |> Array.ofList |> Array.tryFindIndexBack isCompactionEvent with
-                | None -> Token.ofPreviousTokenAndEventsLength streamToken encodedEvents.Length batching.BatchSize version'
-                | Some compactionEventIndex ->
-                    Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
-        return GatewaySyncResult.Written token }
+            let version' = wr.CurrentVersion + 1 |> int64
+            let token =
+                match isCompactionEventType with
+                | None -> Token.ofNonCompacting token.stream.name version'
+                | Some isCompactionEvent ->
+                    match events |> Array.ofList |> Array.tryFindIndexBack isCompactionEvent with
+                    | None -> Token.ofPreviousTokenAndEventsLength streamToken encodedEvents.Length batching.BatchSize version'
+                    | Some compactionEventIndex ->
+                        Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
+            return GatewaySyncResult.Written token }
     member __.Sync(log, streamName, streamVersion, events: FsCodec.IEvent<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : NewStreamMessage[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
@@ -452,7 +451,7 @@ type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionE
 module Caching =
     open System.Runtime.Caching
     [<AllowNullLiteral>]
-    type CacheEntry<'state>(initialToken : Core.StreamToken, initialState :'state) =
+    type CacheEntry<'state>(initialToken : StreamToken, initialState :'state) =
         let mutable currentToken, currentState = initialToken, initialState
         member __.UpdateIfNewer (other : CacheEntry<'state>) =
             lock __ <| fun () ->
@@ -460,7 +459,7 @@ module Caching =
                 if otherToken |> Token.supersedes currentToken then
                     currentToken <- otherToken
                     currentState <- otherState
-        member __.Value : Core.StreamToken  * 'state =
+        member __.Value : StreamToken  * 'state =
             lock __ <| fun () ->
                 currentToken, currentState
 
@@ -481,7 +480,7 @@ module Caching =
             | x -> failwithf "TryGet Incompatible cache entry %A" x
 
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, string>, tee : string -> Core.StreamToken * 'state -> unit) =
+    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, string>, tee : string -> StreamToken * 'state -> unit) =
         let intercept streamName tokenAndState =
             tee streamName tokenAndState
             tokenAndState
@@ -489,13 +488,13 @@ module Caching =
             let! tokenAndState = load
             return intercept streamName tokenAndState }
         interface ICategory<'event, 'state, string> with
-            member __.Load (streamName : string) (log : ILogger) : Async<Core.StreamToken * 'state> =
+            member __.Load (streamName : string) (log : ILogger) : Async<StreamToken * 'state> =
                 interceptAsync (inner.Load streamName log) streamName
-            member __.TrySync (log : ILogger) ((Token.StreamPos (stream,_) as token), state) (events : 'event list) : Async<Core.SyncResult<'state>> = async {
+            member __.TrySync (log : ILogger) ((Token.StreamPos (stream,_) as token), state) (events : 'event list) : Async<SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync log (token, state) events
                 match syncRes with
-                | Core.SyncResult.Conflict resync ->             return Core.SyncResult.Conflict (interceptAsync resync stream.name)
-                | Core.SyncResult.Written (token', state') ->    return Core.SyncResult.Written (token', state') }
+                | SyncResult.Conflict resync ->             return SyncResult.Conflict (interceptAsync resync stream.name)
+                | SyncResult.Written (token', state') ->    return SyncResult.Written (token', state') }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache: Cache)
@@ -518,13 +517,13 @@ type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: '
             | None -> batched
             | Some (token, state) -> cached token state
     interface ICategory<'event, 'state, string> with
-        member __.Load (streamName : string) (log : ILogger) : Async<Core.StreamToken * 'state> =
+        member __.Load (streamName : string) (log : ILogger) : Async<StreamToken * 'state> =
             loadAlgorithm streamName initial log
-        member __.TrySync (log : ILogger) (token, initialState) (events : 'event list) : Async<Core.SyncResult<'state>> = async {
+        member __.TrySync (log : ILogger) (token, initialState) (events : 'event list) : Async<SyncResult<'state>> = async {
             let! syncRes = category.TrySync fold log (token, initialState) events
             match syncRes with
-            | Core.SyncResult.Conflict resync ->         return Core.SyncResult.Conflict resync
-            | Core.SyncResult.Written (token',state') -> return Core.SyncResult.Written (token',state') }
+            | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
+            | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
@@ -573,11 +572,10 @@ type Resolver<'event,'state>
 type Connector (createStreamStore: unit -> Async<SqlStreamStore.IStreamStore>, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.Connect () = async {
         let! store = createStreamStore()
-
         return store
     }
 
     member __.Establish () : Async<Connection> = async {
-        let! conn = __.Connect()
-        return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) 
+        let! store = __.Connect()
+        return Connection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) 
     }
