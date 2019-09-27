@@ -9,9 +9,7 @@ type Connector (connectionString: string, [<O; D(null)>]?readRetryPolicy, [<O; D
             let storeSettings = SqlStreamStore.MySqlStreamStoreSettings(connectionString)
         
             let store = new SqlStreamStore.MySqlStreamStore(storeSettings)
-
             do! store.CreateSchemaIfNotExists() |> Async.AwaitTask
-
             return store :> SqlStreamStore.IStreamStore
         }
         

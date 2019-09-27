@@ -15,9 +15,7 @@ type Connector (connectionString: string, [<O; D(null)>]?schema: string, [<O; D(
             | _ -> ()
         
             let store = new SqlStreamStore.PostgresStreamStore(storeSettings)
-
             do! store.CreateSchemaIfNotExists() |> Async.AwaitTask
-
             return store :> SqlStreamStore.IStreamStore
         }
         
