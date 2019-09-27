@@ -125,24 +125,21 @@ type EsSyncResult = Written of AppendResult | Conflict of expectedVersion: int64
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
-    let private writeEventsAsync (log : ILogger) (conn : IStreamStore) (streamName : string) (version : int) (events : NewStreamMessage[])
+    let private writeEventsAsync (log : ILogger) (conn : IStreamStore) (streamName : string) (version : int64) (events : NewStreamMessage[])
         : Async<EsSyncResult> = async {
         try
-            let! wr = conn.AppendToStream(StreamId(streamName), version, events) |> Async.AwaitTaskCorrect
+            let! wr = conn.AppendToStream(StreamId(streamName), version |> int, events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? WrongExpectedVersionException as ex ->
-            let expectedVersion =
-                match ex.ExpectedVersion with
-                | value when value.HasValue -> ex.ExpectedVersion.Value
-                | _ -> ExpectedVersion.Any
+            let expectedVersion = let v = ex.ExpectedVersion in v.Value |> int64
 
             log.Information(ex, "SqlEs TrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
                 [| for x in events -> x.Type |], expectedVersion)
-            return EsSyncResult.Conflict (expectedVersion |> int64) }
+            return EsSyncResult.Conflict expectedVersion }
     let eventDataBytes events =
         let eventDataLen (x : NewStreamMessage) = match x.JsonData |> System.Text.Encoding.UTF8.GetBytes, x.JsonMetadata |> System.Text.Encoding.UTF8.GetBytes with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
         events |> Array.sumBy eventDataLen
-    let private writeEventsLogged (conn : IStreamStore) (streamName : string) (version : int) (events : NewStreamMessage[]) (log : ILogger)
+    let private writeEventsLogged (conn : IStreamStore) (streamName : string) (version : int64) (events : NewStreamMessage[]) (log : ILogger)
         : Async<EsSyncResult> = async {
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
@@ -159,7 +156,7 @@ module private Write =
         (resultLog |> Log.event evt).Information("SqlEs{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
-    let writeEvents (log : ILogger) retryPolicy (conn : IStreamStore) (streamName : string) (version : int) (events : NewStreamMessage[])
+    let writeEvents (log : ILogger) retryPolicy (conn : IStreamStore) (streamName : string) (version : int64) (events : NewStreamMessage[])
         : Async<EsSyncResult> =
         let call = writeEventsLogged conn streamName version events
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
@@ -373,13 +370,13 @@ type Context(conn : Connection, batching : BatchingPolicy) =
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose tryDecode events }
     member __.TrySync log (Token.Unpack token as streamToken) (events, encodedEvents: NewStreamMessage array) (isCompactionEventType) : Async<GatewaySyncResult> = async {
         let streamVersion = token.pos.streamVersion
-        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection token.stream.name (streamVersion |> int) encodedEvents
+        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection token.stream.name streamVersion encodedEvents
         match wr with
         | EsSyncResult.Conflict expectedVersion ->
             return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting token.stream.name expectedVersion)
         | EsSyncResult.Written wr ->
 
-        let version' = wr.CurrentVersion |> int64
+        let version' = wr.CurrentVersion + 1 |> int64
         let token =
             match isCompactionEventType with
             | None -> Token.ofNonCompacting token.stream.name version'
@@ -396,7 +393,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
         | EsSyncResult.Conflict actualVersion ->
             return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting streamName actualVersion)
         | EsSyncResult.Written wr ->
-            let version' = wr.CurrentVersion |> int64
+            let version' = wr.CurrentVersion + 1 |> int64
             let token = Token.ofNonCompacting streamName version'
             return GatewaySyncResult.Written token }
 
