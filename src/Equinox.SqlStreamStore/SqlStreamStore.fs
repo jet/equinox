@@ -275,10 +275,10 @@ module private Read =
 
 module UnionEncoderAdapters =
     let encodedEventOfResolvedEvent (e : StreamMessage) : FsCodec.IIndexedEvent<byte[]> =
+        let data = e.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously |> System.Text.Encoding.UTF8.GetBytes
+
         // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
         let ts = (e.CreatedUtc.ToUniversalTime().Ticks - (new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero)).Ticks) / TimeSpan.TicksPerSecond |> DateTimeOffset.FromUnixTimeMilliseconds
-
-        let data = e.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously |> System.Text.Encoding.UTF8.GetBytes
 
         FsCodec.Core.IndexedEventData(e.Position, (*isUnfold*)false, e.Type, data, e.JsonMetadata |> System.Text.Encoding.UTF8.GetBytes, ts) :> _
     let eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
@@ -291,35 +291,35 @@ type Position = { streamVersion: int64; compactionEventNumber: int64 option; bat
 type Token = { stream: Stream; pos: Position }
 
 module Token =
-    let private create compactionEventNumber batchCapacityLimit streamName streamVersion : Core.StreamToken =
+    let private create compactionEventNumber batchCapacityLimit streamName streamVersion : StreamToken =
         {   value = box {
                 stream = { name = streamName}
                 pos = { streamVersion = streamVersion; compactionEventNumber = compactionEventNumber; batchCapacityLimit = batchCapacityLimit } }
             version = streamVersion }
     /// No batching / compaction; we only need to retain the StreamVersion
-    let ofNonCompacting streamName streamVersion : Core.StreamToken =
+    let ofNonCompacting streamName streamVersion : StreamToken =
         create None None streamName streamVersion
     // headroom before compaction is necessary given the stated knowledge of the last (if known) `compactionEventNumberOption`
     let private batchCapacityLimit compactedEventNumberOption unstoredEventsPending (batchSize : int) (streamVersion : int64) : int =
         match compactedEventNumberOption with
         | Some (compactionEventNumber : int64) -> (batchSize - unstoredEventsPending) - int (streamVersion - compactionEventNumber + 1L) |> max 0
         | None -> (batchSize - unstoredEventsPending) - (int streamVersion + 1) - 1 |> max 0
-    let (*private*) ofCompactionEventNumber compactedEventNumberOption unstoredEventsPending batchSize streamName streamVersion : Core.StreamToken =
+    let (*private*) ofCompactionEventNumber compactedEventNumberOption unstoredEventsPending batchSize streamName streamVersion : StreamToken =
         let batchCapacityLimit = batchCapacityLimit compactedEventNumberOption unstoredEventsPending batchSize streamVersion
         create compactedEventNumberOption (Some batchCapacityLimit) streamName streamVersion
     /// Assume we have not seen any compaction events; use the batchSize and version to infer headroom
-    let ofUncompactedVersion batchSize streamName streamVersion : Core.StreamToken =
+    let ofUncompactedVersion batchSize streamName streamVersion : StreamToken =
         ofCompactionEventNumber None 0 batchSize streamName streamVersion
-    let (|Unpack|) (x : Core.StreamToken) : Token = unbox<Token> x.value
+    let (|Unpack|) (x : StreamToken) : Token = unbox<Token> x.value
     /// Use previousToken plus the data we are adding and the position we are adding it to infer a headroom
-    let ofPreviousTokenAndEventsLength (Unpack previousToken) eventsLength batchSize streamVersion : Core.StreamToken =
+    let ofPreviousTokenAndEventsLength (Unpack previousToken) eventsLength batchSize streamVersion : StreamToken =
         let compactedEventNumber = previousToken.pos.compactionEventNumber
         ofCompactionEventNumber compactedEventNumber eventsLength batchSize previousToken.stream.name streamVersion
     /// Use an event just read from the stream to infer headroom
-    let ofCompactionResolvedEventAndVersion (compactionEvent: StreamMessage) batchSize streamName streamVersion : Core.StreamToken =
-        ofCompactionEventNumber (Some compactionEvent.Position) 0 batchSize streamName streamVersion
+    let ofCompactionResolvedEventAndVersion (compactionEvent: StreamMessage) batchSize streamName streamVersion : StreamToken =
+        ofCompactionEventNumber (Some (compactionEvent.StreamVersion |> int64)) 0 batchSize streamName streamVersion
     /// Use an event we are about to write to the stream to infer headroom
-    let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion' : Core.StreamToken =
+    let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion' : StreamToken =
         ofCompactionEventNumber (Some (token.pos.streamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize token.stream.name streamVersion'
     let (|StreamPos|) (Unpack token) : Stream * Position = token.stream, token.pos
     let supersedes (Unpack current) (Unpack x) =
