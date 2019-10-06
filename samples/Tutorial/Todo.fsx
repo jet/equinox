@@ -65,7 +65,7 @@ type Service(log, resolveStream, ?maxAttempts) =
     let handle (Stream stream) command : Async<Todo list> =
         stream.Transact(fun state ->
             let ctx = Equinox.Accumulator(fold, state)
-            ctx.Execute (interpret command)
+            ctx.Transact (interpret command)
             ctx.State.items,ctx.Accumulated)
     let query (Stream stream) (projection : State -> 't) : Async<'t> =
         stream.Query projection
