@@ -11,7 +11,7 @@ type Service(log, resolveStream) =
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             let ctx = Equinox.Accumulator(Folds.fold,state)
-            let execute = Commands.interpret >> ctx.Execute
+            let execute = Commands.interpret >> ctx.Transact
             let res = flow ctx execute
             return res,ctx.Accumulated })
     let read (Stream stream) : Async<Folds.State> =
