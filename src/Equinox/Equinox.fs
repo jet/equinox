@@ -49,3 +49,7 @@ type Target =
 type ResolveOption =
     /// Without consulting Cache or any other source, assume the Stream to be empty for the initial Query or Transact
     | AssumeEmpty
+    /// If the Cache holds a value, use that without checking the backing store for updates, implying:
+    /// - maximizing use of OCC for `Stream.Transact`
+    /// - enabling potentially stale reads [in the face of multiple writers)] (for `Stream.Query`)
+    | AllowStale

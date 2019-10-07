@@ -883,8 +883,8 @@ module Caching =
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
         interface ICategory<'event, 'state, Container*string> with
-            member __.Load(log, (container,streamName)) : Async<StreamToken * 'state> =
-                loadAndIntercept (inner.Load(log, (container,streamName))) streamName
+            member __.Load(log, (container,streamName), opt) : Async<StreamToken * 'state> =
+                loadAndIntercept (inner.Load(log, (container,streamName), opt)) streamName
             member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list)
                 : Async<SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync(log, streamToken, state, events)
@@ -913,12 +913,13 @@ type private Folder<'event, 'state>
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     let batched log containerStream = category.Load inspectUnfolds containerStream fold initial isOrigin log
     interface ICategory<'event, 'state, Container*string> with
-        member __.Load(log, (container,streamName)): Async<StreamToken * 'state> =
+        member __.Load(log, (container,streamName), opt): Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log (container,streamName)
             | Some (cache : ICache, prefix : string) -> async {
                 match! cache.TryGet(prefix + streamName) with
                 | None -> return! batched log (container,streamName)
+                | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
                 | Some tokenAndState -> return! category.LoadFromToken tokenAndState fold isOrigin log }
         member __.TrySync(log : ILogger, streamToken, state, events : 'event list)
             : Async<SyncResult<'state>> = async {
@@ -1011,9 +1012,9 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | CachingStrategy.SlidingWindow(cache, window) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
-    let resolveStream (streamId, maybeContainerInitializationGate) =
+    let resolveStream opt (streamId, maybeContainerInitializationGate) =
         { new IStream<'event, 'state> with
-            member __.Load log = category.Load(log, streamId)
+            member __.Load log = category.Load(log, streamId, opt)
             member __.TrySync(log: ILogger, token: StreamToken, originState: 'state, events: 'event list) =
                 match maybeContainerInitializationGate with
                 | None -> category.TrySync(log, token, originState, events)
@@ -1026,13 +1027,13 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
 
     member __.Resolve(target, [<O; D null>]?option) =
         match resolveTarget target, option with
-        | streamArgs,None -> resolveStream streamArgs
+        | streamArgs,(None|Some AllowStale) -> resolveStream option streamArgs
         | (containerStream,maybeInit),Some AssumeEmpty ->
-            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit))
+            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream option (containerStream,maybeInit))
 
     member __.FromMemento(Token.Unpack (container,stream,_pos) as streamToken,state) =
         let skipInitialization = None
-        Stream.ofMemento (streamToken,state) (resolveStream ((container,stream),skipInitialization))
+        Stream.ofMemento (streamToken,state) (resolveStream None ((container,stream),skipInitialization))
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =

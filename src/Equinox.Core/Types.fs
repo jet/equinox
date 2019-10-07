@@ -8,7 +8,7 @@ open System.Diagnostics
 /// Store-agnostic interface representing interactions an Application can have with a set of streams with a common event type
 type ICategory<'event, 'state, 'streamId> =
     /// Obtain the state from the target stream
-    abstract Load : log: ILogger * 'streamId -> Async<StreamToken * 'state>
+    abstract Load : log: ILogger * 'streamId * ResolveOption option -> Async<StreamToken * 'state>
     /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
     /// - Written: signifies synchronization has succeeded, implying the included StreamState should now be assumed to be the state of the stream
     /// - Conflict: signifies the sync failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
