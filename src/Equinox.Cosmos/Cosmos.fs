@@ -1012,7 +1012,7 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | CachingStrategy.SlidingWindow(cache, window) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
-    let resolveStream opt (streamId, maybeContainerInitializationGate) =
+    let resolveStream (streamId, maybeContainerInitializationGate) opt =
         { new IStream<'event, 'state> with
             member __.Load log = category.Load(log, streamId, opt)
             member __.TrySync(log: ILogger, token: StreamToken, originState: 'state, events: 'event list) =
@@ -1027,13 +1027,13 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
 
     member __.Resolve(target, [<O; D null>]?option) =
         match resolveTarget target, option with
-        | streamArgs,(None|Some AllowStale) -> resolveStream option streamArgs
+        | streamArgs,(None|Some AllowStale) -> resolveStream streamArgs option
         | (containerStream,maybeInit),Some AssumeEmpty ->
-            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream option (containerStream,maybeInit))
+            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit) option)
 
     member __.FromMemento(Token.Unpack (container,stream,_pos) as streamToken,state) =
         let skipInitialization = None
-        Stream.ofMemento (streamToken,state) (resolveStream None ((container,stream),skipInitialization))
+        Stream.ofMemento (streamToken,state) (resolveStream ((container,stream),skipInitialization) None)
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
