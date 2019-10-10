@@ -337,7 +337,7 @@ module CosmosStats =
     type Microsoft.Azure.Cosmos.Container with
         // NB DO NOT CONSIDER PROMULGATING THIS HACK
         member container.QueryValue<'T>(sqlQuery : string) =
-            let query : seq<'T> = failwith "TODO" //container.ReadItemAsync(sqlQuery) :> _
+            let query : seq<'T> = failwith "TODO translate" //container.ReadItemAsync(sqlQuery) :> _
             query |> Seq.exactlyOne
     let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
