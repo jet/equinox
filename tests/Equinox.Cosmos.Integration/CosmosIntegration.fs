@@ -79,7 +79,6 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
 
         let maxItemsPerRequest = 2
-        let maxEventsPerBatch = 3
         let service = Cart.createServiceWithoutOptimization conn maxItemsPerRequest log
         capture.Clear() // for re-runs of the test
 
@@ -87,26 +86,23 @@ type Tests(testOutputHelper) =
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 2
         let eventsPerAction = addRemoveCount * 2 - 1
-        let batches = 4
-        for i in [1..batches] do
+        let transactions = 6
+        for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service addRemoveCount
-            let expectedBatchesOf2Items =
-                match i with
-                | 1 -> 1 // it does cost a single trip to determine there are 0 items
-                | i -> ceil(float (i-1) * float eventsPerAction / float maxItemsPerRequest / float maxEventsPerBatch) |> int
-            test <@ List.replicate expectedBatchesOf2Items EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 46 // 44.32
+            // Extra roundtrip required after maxItemsPerRequest is exceeded
+            let expectedBatchesOf2Items = (i-1) / maxItemsPerRequest + 1
+            test <@ i = i && List.replicate expectedBatchesOf2Items EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
+            verifyRequestChargesMax 48 // 47.29
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
         let! state = service.Read cartId
-        let expectedEventCount = batches * eventsPerAction
+        let expectedEventCount = transactions * eventsPerAction
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        // Need 6 trips of 2 maxItemsPerRequest to read 12 events
-        test <@ let expectedResponses = ceil(float expectedEventCount/float maxItemsPerRequest/float maxEventsPerBatch) |> int
-                List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 7 // 5.93
+        let expectedResponses = transactions/maxItemsPerRequest + 1
+        test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+        verifyRequestChargesMax 12 // 11.8
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
