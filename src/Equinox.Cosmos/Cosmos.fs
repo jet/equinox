@@ -1090,9 +1090,8 @@ type Connector
         match mode with
         | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
-        match gatewayModeMaxConnectionLimit with
-        | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
-        | x -> co.GatewayModeMaxConnectionLimit <- defaultArg x 1000
+        if co.ConnectionMode = ConnectionMode.Gateway then
+            co.GatewayModeMaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
         co
 
     /// Yields an CosmosClient configured and connected to a given DocDB collection per the requested `discovery` strategy
