@@ -5,6 +5,12 @@ open Domain
 open FsCheck
 open System
 
+#if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL
+open Equinox.SqlStreamStore
+#else
+open Equinox.EventStore
+#endif
+
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
     static member ContactPreferencesId =
@@ -50,17 +56,17 @@ module SerilogHelpers =
         | _ -> None
     [<RequireQualifiedAccess>]
     type EsAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward
-    let (|EsAction|) (evt : Equinox.EventStore.Log.Event) =
+    let (|EsAction|) (evt : Log.Event) =
         match evt with
-        | Equinox.EventStore.Log.WriteSuccess _ -> EsAct.Append
-        | Equinox.EventStore.Log.WriteConflict _ -> EsAct.AppendConflict
-        | Equinox.EventStore.Log.Slice (Equinox.EventStore.Direction.Forward,_) -> EsAct.SliceForward
-        | Equinox.EventStore.Log.Slice (Equinox.EventStore.Direction.Backward,_) -> EsAct.SliceBackward
-        | Equinox.EventStore.Log.Batch (Equinox.EventStore.Direction.Forward,_,_) -> EsAct.BatchForward
-        | Equinox.EventStore.Log.Batch (Equinox.EventStore.Direction.Backward,_,_) -> EsAct.BatchBackward
-    let (|EsEvent|_|) (logEvent : LogEvent) : Equinox.EventStore.Log.Event option =
+        | Log.WriteSuccess _ -> EsAct.Append
+        | Log.WriteConflict _ -> EsAct.AppendConflict
+        | Log.Slice (Direction.Forward,_) -> EsAct.SliceForward
+        | Log.Slice (Direction.Backward,_) -> EsAct.SliceBackward
+        | Log.Batch (Direction.Forward,_,_) -> EsAct.BatchForward
+        | Log.Batch (Direction.Backward,_,_) -> EsAct.BatchBackward
+    let (|EsEvent|_|) (logEvent : LogEvent) : Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Equinox.EventStore.Log.Event as e) -> Some e
+            | SerilogScalar (:? Log.Event as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =

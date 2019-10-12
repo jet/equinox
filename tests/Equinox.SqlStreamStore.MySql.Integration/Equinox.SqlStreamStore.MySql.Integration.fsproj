@@ -4,11 +4,12 @@
     <TargetFrameworks>$(TestTargetFrameworks)</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
+    <DefineConstants>$(DefineConstants);STORE_MYSQL</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Equinox.SqlStreamStore.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
-    <Compile Include="MysqlStoreIntegration.fs" />
+    <Compile Include="..\Equinox.EventStore.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="..\Equinox.EventStore.Integration\StoreIntegration.fs" Link="StoreIntegration.fs" />
   </ItemGroup>
 
   <ItemGroup>

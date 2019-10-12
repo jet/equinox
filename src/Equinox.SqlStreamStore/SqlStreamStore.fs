@@ -272,11 +272,11 @@ module private Read =
 module UnionEncoderAdapters =
 
     let (|Bytes|) = function null -> null | (s : string) -> System.Text.Encoding.UTF8.GetBytes s
-    let encodedEventOfResolvedEvent (e : StreamMessage) : FsCodec.IIndexedEvent<byte[]> =
+    let encodedEventOfResolvedEvent (e : StreamMessage) : FsCodec.ITimelineEvent<byte[]> =
         let (Bytes data) = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
         let (Bytes meta) = e.JsonMetadata
-        FsCodec.Core.IndexedEventData(e.Position, (*isUnfold*)false, e.Type, data, meta, (let ts = e.CreatedUtc in DateTimeOffset(ts))) :> _
-    let eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
+        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, (let ts = e.CreatedUtc in DateTimeOffset(ts))) :> _
+    let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
         let str = function null -> null | s -> System.Text.Encoding.UTF8.GetString s
         NewStreamMessage(Guid.NewGuid(), x.EventType, str x.Data, str x.Meta)
 
@@ -382,7 +382,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
                     | Some compactionEventIndex ->
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
             return GatewaySyncResult.Written token }
-    member __.Sync(log, streamName, streamVersion, events: FsCodec.IEvent<byte[]>[]) : Async<GatewaySyncResult> = async {
+    member __.Sync(log, streamName, streamVersion, events: FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : NewStreamMessage[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with

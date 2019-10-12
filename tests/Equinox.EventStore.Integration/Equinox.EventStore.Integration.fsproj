@@ -4,11 +4,12 @@
     <TargetFrameworks>$(TestTargetFrameworks)</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
+    <DefineConstants>$(DefineConstants);STORE_EVENTSTORE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Infrastructure.fs" />
-    <Compile Include="EventStoreIntegration.fs" />
+    <Compile Include="StoreIntegration.fs" />
     <Compile Include="EventStoreTokenTests.fs" />
   </ItemGroup>
 
