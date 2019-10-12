@@ -67,7 +67,7 @@ module Log =
             let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
                 | (:? ScalarValue as x) -> Some x.Value
                 | _ -> None
-            let (|CosmosMetric|_|) (logEvent : LogEvent) : Event option =
+            let (|EsMetric|_|) (logEvent : LogEvent) : Event option =
                 match logEvent.Properties.TryGetValue("esEvt") with
                 | true, SerilogScalar (:? Event as e) -> Some e
                 | _ -> None
@@ -91,10 +91,10 @@ module Log =
                     span
                 interface Serilog.Core.ILogEventSink with
                     member __.Emit logEvent = logEvent |> function
-                        | CosmosMetric (Read stats) -> LogSink.Read.Ingest stats
-                        | CosmosMetric (Write stats) -> LogSink.Write.Ingest stats
-                        | CosmosMetric (Resync stats) -> LogSink.Resync.Ingest stats
-                        | CosmosMetric (Rollup _) -> ()
+                        | EsMetric (Read stats) -> LogSink.Read.Ingest stats
+                        | EsMetric (Write stats) -> LogSink.Write.Ingest stats
+                        | EsMetric (Resync stats) -> LogSink.Resync.Ingest stats
+                        | EsMetric (Rollup _) -> ()
                         | _ -> ()
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
@@ -191,7 +191,7 @@ module private Read =
             let! slice = readSlice pos batchLog
             match slice.Status with
             | SliceReadStatus.StreamDeleted -> raise <| EventStore.ClientAPI.Exceptions.StreamDeletedException(slice.Stream)
-            | SliceReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.NoStream), Array.empty
+            | SliceReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.EmptyStream), Array.empty // EmptyStream must = -1
             | SliceReadStatus.Success ->
                 let version = if batchCount = 0 then Some slice.LastEventNumber else None
                 yield version, slice.Events

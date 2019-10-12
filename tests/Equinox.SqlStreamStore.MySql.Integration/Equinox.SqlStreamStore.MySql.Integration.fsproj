@@ -7,8 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Infrastructure.fs" />
-    <Compile Include="EventStoreIntegration.fs" />
+    <Compile Include="..\Equinox.SqlStreamStore.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="MysqlStoreIntegration.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -21,22 +21,15 @@
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.13.0" />
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-rc2.3" />
-    <PackageReference Include="FsConfig" Version="2.1.3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
-    <PackageReference Include="SqlStreamStore" Version="1.2.0-beta.4" />
-    <PackageReference Include="SqlStreamStore.MySql" Version="1.2.0-beta.5" />
-    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />
+<!--    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />-->
     <PackageReference Include="unquote" Version="4.0" />
     <PackageReference Include="xunit" Version="2.4.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="4.7.0" />
   </ItemGroup>
 
 </Project>

@@ -15,7 +15,7 @@ type Connector (connectionString: string, [<O; D(null)>]?schema: string, [<O; D(
             | _ -> ()
         
             let store = new SqlStreamStore.MsSqlStreamStoreV3(storeSettings)
-            do! store.CreateSchemaIfNotExists() |> Async.AwaitTask
+            do! store.CreateSchemaIfNotExists() |> Async.AwaitTaskCorrect
             return store :> SqlStreamStore.IStreamStore
         }
         

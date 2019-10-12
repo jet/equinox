@@ -49,6 +49,7 @@ module Log =
                 f log
             retryPolicy withLoggingContextWrapping
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
+    let (|StrLen|) = function null -> 0 | (x : string) -> x.Length
 
     /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
     /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
@@ -66,7 +67,7 @@ module Log =
             let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
                 | (:? ScalarValue as x) -> Some x.Value
                 | _ -> None
-            let (|CosmosMetric|_|) (logEvent : LogEvent) : Event option =
+            let (|EsMetric|_|) (logEvent : LogEvent) : Event option =
                 match logEvent.Properties.TryGetValue("esEvt") with
                 | true, SerilogScalar (:? Event as e) -> Some e
                 | _ -> None
@@ -90,10 +91,10 @@ module Log =
                     span
                 interface Serilog.Core.ILogEventSink with
                     member __.Emit logEvent = logEvent |> function
-                        | CosmosMetric (Read stats) -> LogSink.Read.Ingest stats
-                        | CosmosMetric (Write stats) -> LogSink.Write.Ingest stats
-                        | CosmosMetric (Resync stats) -> LogSink.Resync.Ingest stats
-                        | CosmosMetric (Rollup _) -> ()
+                        | EsMetric (Read stats) -> LogSink.Read.Ingest stats
+                        | EsMetric (Write stats) -> LogSink.Write.Ingest stats
+                        | EsMetric (Resync stats) -> LogSink.Resync.Ingest stats
+                        | EsMetric (Rollup _) -> ()
                         | _ -> ()
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
@@ -121,7 +122,7 @@ module Log =
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EsSyncResult = Written of AppendResult | Conflict of expectedVersion: int64
+type EsSyncResult = Written of AppendResult | ConflictUnknown
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
@@ -131,11 +132,9 @@ module private Write =
             let! wr = conn.AppendToStream(StreamId(streamName), version |> int, events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? WrongExpectedVersionException as ex ->
-            let expectedVersion = let v = ex.ExpectedVersion in v.Value |> int64
-
             log.Information(ex, "SqlEs TrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
-                [| for x in events -> x.Type |], expectedVersion)
-            return EsSyncResult.Conflict expectedVersion }
+                [| for x in events -> x.Type |], version)
+            return EsSyncResult.ConflictUnknown }
     let eventDataBytes events =
         let eventDataLen (x : NewStreamMessage) = match x.JsonData |> System.Text.Encoding.UTF8.GetBytes, x.JsonMetadata |> System.Text.Encoding.UTF8.GetBytes with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
         events |> Array.sumBy eventDataLen
@@ -149,8 +148,8 @@ module private Write =
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result, reqMetric with
-            | EsSyncResult.Conflict actualVersion, m ->
-                log |> Log.prop "actualVersion" actualVersion, Log.WriteConflict m
+            | EsSyncResult.ConflictUnknown, m ->
+                log, Log.WriteConflict m
             | EsSyncResult.Written x, m ->
                 log |> Log.prop "currentVersion" x.CurrentVersion |> Log.prop "currentPosition" x.CurrentPosition, Log.WriteSuccess m
         (resultLog |> Log.event evt).Information("SqlEs{action:l} count={count} conflict={conflict}",
@@ -171,8 +170,8 @@ module private Read =
             | Direction.Backward -> conn.ReadStreamBackwards(streamName, startPos, batchSize)
         return! call |> Async.AwaitTaskCorrect }
     let (|ResolvedEventLen|) (x : StreamMessage) = 
-        let data = x.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
-        match data |> System.Text.Encoding.UTF8.GetBytes, x.JsonMetadata |> System.Text.Encoding.UTF8.GetBytes with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
+        let data = x.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
+        match data, x.JsonMetadata with Log.StrLen bytes, Log.StrLen metaBytes -> bytes + metaBytes
     let private loggedReadSlice conn streamName direction batchSize startPos (log : ILogger) : Async<ReadStreamPage> = async {
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.Time
         let bytes, count = slice.Messages |> Array.sumBy (|ResolvedEventLen|), slice.Messages.Length
@@ -180,7 +179,7 @@ module private Read =
         let evt = Log.Slice (direction, reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice.Messages
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("SqlEs{action:l} count={count} version={version}",
-            "Read", count, slice.LastStreamPosition)
+            "Read", count, slice.LastStreamVersion)
         return slice }
     let private readBatches (log : ILogger) (readSlice : int -> ILogger -> Async<ReadStreamPage>)
             (maxPermittedBatchReads : int option) (startPosition : int)
@@ -193,9 +192,9 @@ module private Read =
             let batchLog = log |> Log.prop "batchIndex" batchCount
             let! slice = readSlice pos batchLog
             match slice.Status with
-            | PageReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.NoStream), Array.empty
+            | PageReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.EmptyStream), Array.empty // NB NoStream in ES version= -1
             | PageReadStatus.Success ->
-                let version = if batchCount = 0 then Some slice.LastStreamPosition else None
+                let version = if batchCount = 0 then Some (int64 slice.LastStreamVersion) else None
                 yield version, slice.Messages
                 if not slice.IsEnd then
                     yield! loop (batchCount + 1) slice.NextStreamVersion
@@ -271,17 +270,15 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
+
+    let (|Bytes|) = function null -> null | (s : string) -> System.Text.Encoding.UTF8.GetBytes s
     let encodedEventOfResolvedEvent (e : StreamMessage) : FsCodec.IIndexedEvent<byte[]> =
-        let data = e.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously |> System.Text.Encoding.UTF8.GetBytes
-
-        // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
-        let ts = (e.CreatedUtc.ToUniversalTime().Ticks - (new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero)).Ticks) / TimeSpan.TicksPerSecond |> DateTimeOffset.FromUnixTimeMilliseconds
-
-        FsCodec.Core.IndexedEventData(e.Position, (*isUnfold*)false, e.Type, data, e.JsonMetadata |> System.Text.Encoding.UTF8.GetBytes, ts) :> _
+        let (Bytes data) = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
+        let (Bytes meta) = e.JsonMetadata
+        FsCodec.Core.IndexedEventData(e.Position, (*isUnfold*)false, e.Type, data, meta, (let ts = e.CreatedUtc in DateTimeOffset(ts))) :> _
     let eventDataOfEncodedEvent (x : FsCodec.IEvent<byte[]>) =
-        let data = match x.Data with null | [||] -> String.Empty | value -> value |> System.Text.Encoding.UTF8.GetString
-        let meta = match x.Meta with null | [||] -> String.Empty | value -> value |> System.Text.Encoding.UTF8.GetString
-        NewStreamMessage(Guid.NewGuid(), x.EventType, data, meta)
+        let str = function null -> null | s -> System.Text.Encoding.UTF8.GetString s
+        NewStreamMessage(Guid.NewGuid(), x.EventType, str x.Data, str x.Meta)
 
 type Stream = { name: string }
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }
@@ -335,7 +332,7 @@ type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountLimi
     member __.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
-type GatewaySyncResult = Written of StreamToken | ConflictUnknown of StreamToken
+type GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
 type Context(conn : Connection, batching : BatchingPolicy) =
     let isResolvedEventEventType (tryDecode,predicate) (e:StreamMessage) = 
@@ -372,8 +369,8 @@ type Context(conn : Connection, batching : BatchingPolicy) =
         let streamVersion = token.pos.streamVersion
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection token.stream.name streamVersion encodedEvents
         match wr with
-        | EsSyncResult.Conflict expectedVersion ->
-            return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting token.stream.name expectedVersion)
+        | EsSyncResult.ConflictUnknown ->
+            return GatewaySyncResult.ConflictUnknown
         | EsSyncResult.Written wr ->
             let version' = wr.CurrentVersion + 1 |> int64
             let token =
@@ -389,8 +386,8 @@ type Context(conn : Connection, batching : BatchingPolicy) =
         let encodedEvents : NewStreamMessage[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with
-        | EsSyncResult.Conflict actualVersion ->
-            return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting streamName actualVersion)
+        | EsSyncResult.ConflictUnknown ->
+            return GatewaySyncResult.ConflictUnknown
         | EsSyncResult.Written wr ->
             let version' = wr.CurrentVersion + 1 |> int64
             let token = Token.ofNonCompacting streamName version'
@@ -443,7 +440,7 @@ type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionE
         let encodedEvents : NewStreamMessage[] = events |> Seq.map (codec.Encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
         let! syncRes = context.TrySync log streamToken (events,encodedEvents) compactionPredicate
         match syncRes with
-        | GatewaySyncResult.ConflictUnknown _ ->
+        | GatewaySyncResult.ConflictUnknown ->
             return SyncResult.Conflict  (load fold state (context.LoadFromToken true stream.name log streamToken (tryDecode,compactionPredicate)))
         | GatewaySyncResult.Written token' ->
             return SyncResult.Written   (token', fold state (Seq.ofList events)) }

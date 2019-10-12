@@ -19,11 +19,11 @@ type Service(log, resolveStream) =
     let execute clientId command =
         flowAsync clientId ((fun _ctx execute -> execute command), None)
 
-    member __.FlowAsync(clientId, flow, ?prepare) =
-        flowAsync clientId (flow, prepare)
+    member __.FlowAsync(cartId, flow, ?prepare) =
+        flowAsync cartId (flow, prepare)
 
-    member __.Execute(clientId, command) =
-        execute clientId command
+    member __.Execute(cartId, command) =
+        execute cartId command
 
-    member __.Read clientId =
-        read clientId
+    member __.Read cartId =
+        read cartId

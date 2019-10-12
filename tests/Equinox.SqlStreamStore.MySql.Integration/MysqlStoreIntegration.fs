@@ -1,4 +1,4 @@
-﻿module Equinox.SqlStreamStore.Integration.EventStoreIntegration
+﻿module Equinox.SqlStreamStore.MySql.Integration.MysqlStoreIntegration
 
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MySql
@@ -9,7 +9,7 @@ open System.Threading
 open System
 
 let connectToLocalEventStoreNode (_ : ILogger) = 
-    Connector(config.Database.ConnectionString).Establish()
+    Connector(sprintf "Server=%s;Database=%s;User ID=%s;Password=%s;" "localhost" "EQUINOX_TEST" "root" "").Establish()
 
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))

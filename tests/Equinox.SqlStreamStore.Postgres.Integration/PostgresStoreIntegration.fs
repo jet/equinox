@@ -1,15 +1,16 @@
-﻿module Equinox.SqlStreamStore.Integration.EventStoreIntegration
+﻿module Equinox.SqlStreamStore.Postgres.Integration.PostgresStoreIntegration
 
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.Postgres
 open Equinox.Integration.Infrastructure
+open FSharp.UMX
 open Serilog
 open Swensen.Unquote
 open System.Threading
 open System
 
 let connectToLocalEventStoreNode (_ : ILogger) = 
-    Connector(config.Database.ConnectionString).Establish()
+    Connector("Host=localhost;Port=5432;User Id=postgres").Establish()
 
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
@@ -239,7 +240,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
         let batchSize = 10
@@ -247,6 +248,7 @@ type Tests(testOutputHelper) =
         let gateway = createGesGateway conn batchSize
         let createServiceCached () = Cart.createServiceWithCaching log gateway cache
         let service1, service2 = createServiceCached (), createServiceCached ()
+        let cartId = % System.Guid.NewGuid()
 
         // Trigger 10 events, then reload
         do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 5
