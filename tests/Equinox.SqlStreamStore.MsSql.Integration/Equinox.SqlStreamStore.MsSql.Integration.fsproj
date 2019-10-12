@@ -21,7 +21,7 @@
 
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.13.0" />
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-rc2.3" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-pr.20.rc2.5" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
     <PackageReference Include="unquote" Version="4.0" />
