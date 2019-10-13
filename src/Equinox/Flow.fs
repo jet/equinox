@@ -77,9 +77,9 @@ module internal Flow =
                 return result
             elif attempt = maxSyncAttempts then
                 log.Debug "Max Sync Attempts exceeded"
-                let! comitted = syncState.TryOr(log, events, fun _resync -> async { return false })
+                let! committed = syncState.TryOr(log, events, fun _resync -> async { return false })
 
-                if not comitted then
+                if not committed then
                     return raise (createMaxAttemptsExhaustedException attempt)
                 else
                     return result

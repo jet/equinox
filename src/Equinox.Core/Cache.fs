@@ -15,13 +15,13 @@ type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, superse
             if otherToken |> supersedes currentToken then
                 currentToken <- otherToken
                 currentState <- otherState
-    member __.Value: StreamToken * 'state =
+    member __.Value : StreamToken * 'state =
         lock __ <| fun () ->
             currentToken, currentState
 
 
 type ICache =
-    abstract member UpdateIfNewer: cacheItemOptions:CacheItemOptions -> key: string -> CacheEntry<'state> -> Async<unit>
+    abstract member UpdateIfNewer : key: string * options: CacheItemOptions * entry: CacheEntry<'state> -> Async<unit>
     abstract member TryGet: key: string -> Async<(StreamToken * 'state) option>
 
 namespace Equinox
@@ -31,18 +31,18 @@ open Equinox.Core
 
 type Cache(name, sizeMb : int) =
         let cache =
-                let config = System.Collections.Specialized.NameValueCollection(1)
-                config.Add("cacheMemoryLimitMegabytes", string sizeMb);
-                new MemoryCache(name, config)
+            let config = System.Collections.Specialized.NameValueCollection(1)
+            config.Add("cacheMemoryLimitMegabytes", string sizeMb);
+            new MemoryCache(name, config)
 
-        let getPolicy (cacheItemOption: CacheItemOptions) =
+        let toPolicy (cacheItemOption: CacheItemOptions) =
             match cacheItemOption with
             | AbsoluteExpiration absolute -> new CacheItemPolicy(AbsoluteExpiration = absolute)
             | RelativeExpiration relative -> new CacheItemPolicy(SlidingExpiration = relative)
 
         interface ICache with
-            member this.UpdateIfNewer cacheItemOptions key entry = async {
-                let policy = getPolicy cacheItemOptions
+            member this.UpdateIfNewer(key, options, entry) = async {
+                let policy = toPolicy options
                 match cache.AddOrGetExisting(key, box entry, policy) with
                 | null -> ()
                 | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry

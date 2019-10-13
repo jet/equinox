@@ -895,14 +895,14 @@ module Caching =
                     return SyncResult.Written(intercepted) }
 
     let applyCacheUpdatesWithSlidingExpiration
-            (cache: ICache)
-            (prefix: string)
+            (cache : ICache)
+            (prefix : string)
             (slidingExpiration : TimeSpan)
-            (category: ICategory<'event, 'state, Container*string>)
+            (category : ICategory<'event, 'state, Container*string>)
             : ICategory<'event, 'state, Container*string> =
-        let mkCacheEntry (initialToken: StreamToken, initialState: 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
-        let policy = CacheItemOptions.RelativeExpiration(slidingExpiration)
-        let addOrUpdateSlidingExpirationCacheEntry streamName = mkCacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let options = CacheItemOptions.RelativeExpiration slidingExpiration
+        let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
 type private Folder<'event, 'state>

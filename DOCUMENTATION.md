@@ -81,7 +81,7 @@ WrongExpectedVersion | Low level exception thrown to communicate an Optimistic C
 
 Term | Description
 -----|------------
-Cache | `System.Net.MemoryCache` holding State and/or `etag` information for a Stream with a view to reducing roundtrips, latency and/or Request Charges
+Cache | `System.Net.MemoryCache` or equivalent holding _State_ and/or `etag` information for a Stream with a view to reducing roundtrips, latency and/or Request Charges
 Rolling Snapshot | Event written to an EventStore stream in order to ensure minimal roundtrips to EventStore when there is a Cache miss
 Unfolds | Snapshot information, represented as Events that are stored in an appropriate storage location (outside of a Stream's actual events) to minimize Queries and the attendant Request Charges when there is a Cache miss
 
@@ -744,7 +744,7 @@ This is a very loose laundry list of items that have occurred to us to do, given
 
 ## Wouldn't it be nice - `Equinox`
 
-- Performance tuning for non-store-specific logic; no perf tuning has been done to date (though some of the Store/Domain implementations do show perf-optimized fold implementation techniques). While in general the work is I/O bound, there are definitely opportunities to use `System.IO.Pipelines` etc, and the `MemoryStore` and CLI gives a good testbed to drive this improvement.
+- Performance tuning for non-store-specific logic; no perf tuning has been done to date (though some of the Store/Domain implementations do show perf-optimized fold implementation techniques). While in general the work is I/O bound, there are definitely opportunities to use `System.IO.Pipelines` etc, and the `MemoryStore` and `eqxtestbed` gives a good host drive this improvement.
 
 ## Wouldn't it be nice - `Equinox.EventStore`
 
