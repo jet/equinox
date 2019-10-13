@@ -247,7 +247,7 @@ type Tests(testOutputHelper) =
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
         let batchSize = 10
-        let cache = Caching.Cache("cart", sizeMb = 50)
+        let cache = Equinox.Cache("cart", sizeMb = 50)
         let gateway = createGesGateway conn batchSize
         let createServiceCached () = Cart.createServiceWithCaching log gateway cache
         let service1, service2 = createServiceCached (), createServiceCached ()
@@ -277,7 +277,7 @@ type Tests(testOutputHelper) =
         let batchSize = 10
         let gateway = createGesGateway conn batchSize
         let service1 = Cart.createServiceWithCompaction log gateway
-        let cache = Caching.Cache("cart", sizeMb = 50)
+        let cache = Equinox.Cache("cart", sizeMb = 50)
         let gateway = createGesGateway conn batchSize
         let service2 = Cart.createServiceWithCompactionAndCaching log gateway cache
 
