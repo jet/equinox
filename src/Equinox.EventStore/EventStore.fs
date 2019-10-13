@@ -472,13 +472,13 @@ module Caching =
 
 type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
     let loadAlgorithm streamName initial log = async {
-        let! batched = category.Load fold initial streamName log
+        let batched = category.Load fold initial streamName log
         let cached token state = category.LoadFromToken fold state streamName token log
         match readCache with
-        | None -> return batched
+        | None -> return! batched
         | Some (cache : ICache, prefix : string) ->
             match! cache.TryGet(prefix + streamName) with
-            | None -> return batched
+            | None -> return! batched
             | Some (token, state) -> return! cached token state }
     interface ICategory<'event, 'state, string> with
         member __.Load (streamName : string) (log : ILogger) : Async<StreamToken * 'state> =

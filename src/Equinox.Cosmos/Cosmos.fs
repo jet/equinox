@@ -913,13 +913,13 @@ type private Folder<'event, 'state>
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     interface ICategory<'event, 'state, Container*string> with
         member __.Load containerStream (log : ILogger): Async<StreamToken * 'state>  = async {
-            let! batched = category.Load inspectUnfolds containerStream fold initial isOrigin log
+            let batched = category.Load inspectUnfolds containerStream fold initial isOrigin log
             let cached tokenAndState = category.LoadFromToken tokenAndState fold isOrigin log
             match readCache with
-            | None -> return batched
+            | None -> return! batched
             | Some (cache : ICache, prefix : string) ->
                 match! cache.TryGet(prefix + snd containerStream) with
-                | None -> return batched
+                | None -> return! batched
                 | Some tokenAndState -> return! cached tokenAndState }
         member __.TrySync (log : ILogger) (streamToken,state) (events : 'event list)
             : Async<SyncResult<'state>> = async {
