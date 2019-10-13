@@ -444,8 +444,7 @@ type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionE
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
     type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, string>, tee : string -> StreamToken * 'state -> Async<unit>) =
-        let intercept streamName tokenAndState =
-            async{
+        let intercept streamName tokenAndState = async {
                 let! _ = tee streamName tokenAndState
                 return tokenAndState
             }
@@ -461,31 +460,27 @@ module Caching =
                 | SyncResult.Conflict resync ->             return SyncResult.Conflict (interceptAsync resync stream.name)
                 | SyncResult.Written (token', state') ->    return SyncResult.Written (token', state') }
 
-
     let applyCacheUpdatesWithSlidingExpiration
             (cache: ICache)
             (prefix: string)
             (slidingExpiration : TimeSpan)
             (category: ICategory<'event, 'state, string>)
             : ICategory<'event, 'state, string> =
-        let cacheEntryGenerator (initialToken: StreamToken, initialState: 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let mkCacheEntry (initialToken: StreamToken, initialState: 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let policy = CacheItemOptions.RelativeExpiration(slidingExpiration)
-        let addOrUpdateSlidingExpirationCacheEntry streamName = cacheEntryGenerator >> cache.UpdateIfNewer policy (prefix + streamName)
+        let addOrUpdateSlidingExpirationCacheEntry streamName = mkCacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
 type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
-    let loadAlgorithm streamName initial log =
-        async {
-            let! batched = category.Load fold initial streamName log
-            let cached token state = category.LoadFromToken fold state streamName token log
-            match readCache with
+    let loadAlgorithm streamName initial log = async {
+        let! batched = category.Load fold initial streamName log
+        let cached token state = category.LoadFromToken fold state streamName token log
+        match readCache with
+        | None -> return batched
+        | Some (cache : ICache, prefix : string) ->
+            match! cache.TryGet(prefix + streamName) with
             | None -> return batched
-            | Some (cache : ICache, prefix : string) ->
-                let! cacheItem = cache.TryGet(prefix + streamName)
-                match cacheItem with
-                | None -> return batched
-                | Some (token, state) -> return! cached token state
-        }
+            | Some (token, state) -> return! cached token state }
     interface ICategory<'event, 'state, string> with
         member __.Load (streamName : string) (log : ILogger) : Async<StreamToken * 'state> =
             loadAlgorithm streamName initial log

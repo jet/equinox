@@ -775,7 +775,6 @@ open Microsoft.Azure.Documents
 open Serilog
 open System
 open System.Collections.Concurrent
-open System.Runtime.Caching
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
 type Connection(client: Client.DocumentClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
@@ -893,11 +892,9 @@ module Caching =
                 let! syncRes = inner.TrySync log (streamToken, state) events
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict(interceptAsync resync stream)
-                | SyncResult.Written(token', state')
-                     ->
-                            let! intercepted = intercept stream (token', state')
-                            return SyncResult.Written(intercepted) }
-
+                | SyncResult.Written(token', state') ->
+                    let! intercepted = intercept stream (token', state')
+                    return SyncResult.Written(intercepted) }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache: ICache)
@@ -905,9 +902,9 @@ module Caching =
             (slidingExpiration : TimeSpan)
             (category: ICategory<'event, 'state, Container*string>)
             : ICategory<'event, 'state, Container*string> =
-        let cacheEntryGenerator (initialToken: StreamToken, initialState: 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let mkCacheEntry (initialToken: StreamToken, initialState: 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let policy = CacheItemOptions.RelativeExpiration(slidingExpiration)
-        let addOrUpdateSlidingExpirationCacheEntry streamName = cacheEntryGenerator >> cache.UpdateIfNewer policy (prefix + streamName)
+        let addOrUpdateSlidingExpirationCacheEntry streamName = mkCacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
 type private Folder<'event, 'state>
@@ -918,17 +915,15 @@ type private Folder<'event, 'state>
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     interface ICategory<'event, 'state, Container*string> with
         member __.Load containerStream (log : ILogger): Async<StreamToken * 'state>  = async {
-                let! batched = category.Load inspectUnfolds containerStream fold initial isOrigin log
-                let cached tokenAndState = category.LoadFromToken tokenAndState fold isOrigin log
-                match readCache with
+            let! batched = category.Load inspectUnfolds containerStream fold initial isOrigin log
+            let cached tokenAndState = category.LoadFromToken tokenAndState fold isOrigin log
+            match readCache with
+            | None -> return batched
+            | Some (cache : ICache, prefix : string) ->
+                match! cache.TryGet(prefix + snd containerStream) with
                 | None -> return batched
-                | Some (cache : ICache, prefix : string) ->
-                    let! cacheItem = cache.TryGet(prefix + snd containerStream)
-                    match cacheItem with
-                    | None -> return batched
-                    | Some tokenAndState -> return! cached tokenAndState
-            }
-         member __.TrySync (log : ILogger) (streamToken,state) (events : 'event list)
+                | Some tokenAndState -> return! cached tokenAndState }
+        member __.TrySync (log : ILogger) (streamToken,state) (events : 'event list)
             : Async<SyncResult<'state>> = async {
             let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, log)
             match res with
