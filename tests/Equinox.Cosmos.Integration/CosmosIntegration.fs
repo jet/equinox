@@ -344,7 +344,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
-        let cache = Caching.Cache("cart", sizeMb = 50)
+        let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching conn batchSize log cache
         let service1, service2 = createServiceCached (), createServiceCached ()
         capture.Clear()

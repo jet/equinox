@@ -76,7 +76,7 @@ module Cosmos =
         let conn = connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
         let cacheStrategy =
             if cache then
-                let c = Caching.Cache("equinox-tool", sizeMb = 50)
+                let c = Equinox.Cache("equinox-tool", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.)
             else CachingStrategy.NoCaching
         StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dName, cName)
@@ -135,7 +135,7 @@ module EventStore =
         let conn = connect storeLog (a.Host, heartbeatTimeout, concurrentOperationsLimit) a.Credentials operationThrottling |> Async.RunSynchronously
         let cacheStrategy =
             if cache then
-                let c = Caching.Cache("equinox-tool", sizeMb = 50)
+                let c = Equinox.Cache("equinox-tool", sizeMb = 50)
                 CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) |> Some
             else None
         StorageConfig.Es ((createGateway conn batchSize), cacheStrategy, unfolds)

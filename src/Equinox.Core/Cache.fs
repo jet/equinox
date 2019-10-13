@@ -23,3 +23,36 @@ type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, superse
 type ICache =
     abstract member UpdateIfNewer: cacheItemOptions:CacheItemOptions -> key: string -> CacheEntry<'state> -> Async<unit>
     abstract member TryGet: key: string -> Async<(StreamToken * 'state) option>
+
+namespace Equinox
+open System.Runtime.Caching
+open Equinox.Core
+type Cache(name, sizeMb : int) =
+        let cache =
+                let config = System.Collections.Specialized.NameValueCollection(1)
+                config.Add("cacheMemoryLimitMegabytes", string sizeMb);
+                new MemoryCache(name, config)
+
+        let getPolicy (cacheItemOption: CacheItemOptions)=
+            match cacheItemOption with
+            | AbsoluteExpiration absolute -> new CacheItemPolicy(AbsoluteExpiration = absolute)
+            | RelativeExpiration relative -> new CacheItemPolicy(SlidingExpiration = relative)
+
+        interface ICache with
+
+            member this.UpdateIfNewer cacheItemOptions key entry =
+                let policy = getPolicy cacheItemOptions
+                match cache.AddOrGetExisting(key, box entry, policy) with
+                | null ->
+                    async.Return ()
+                | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry
+                                                            async.Return ()
+                | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
+
+            member this.TryGet key =
+                async.Return (
+                    match cache.Get key with
+                    | null -> None
+                    | :? CacheEntry<'state> as existingEntry -> Some existingEntry.Value
+                    | x -> failwithf "TryGet Incompatible cache entry %A" x
+                )
