@@ -883,11 +883,11 @@ module Caching =
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
         interface ICategory<'event, 'state, Container*string> with
-            member __.Load containerStream (log : ILogger) : Async<StreamToken * 'state> =
-                interceptAsync (inner.Load containerStream log) (snd containerStream)
-            member __.TrySync (log : ILogger) (Token.Unpack (_container,stream,_) as streamToken,state) (events : 'event list)
+            member __.Load(log, containerStream) : Async<StreamToken * 'state> =
+                interceptAsync (inner.Load(log, containerStream)) (snd containerStream)
+            member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list)
                 : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync log (streamToken, state) events
+                let! syncRes = inner.TrySync(log, streamToken, state, events)
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict(interceptAsync resync stream)
                 | SyncResult.Written(token', state') ->
@@ -912,7 +912,7 @@ type private Folder<'event, 'state>
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     interface ICategory<'event, 'state, Container*string> with
-        member __.Load containerStream (log : ILogger): Async<StreamToken * 'state>  = async {
+        member __.Load(log, containerStream): Async<StreamToken * 'state> = async {
             let batched = category.Load inspectUnfolds containerStream fold initial isOrigin log
             let cached tokenAndState = category.LoadFromToken tokenAndState fold isOrigin log
             match readCache with
@@ -921,12 +921,12 @@ type private Folder<'event, 'state>
                 match! cache.TryGet(prefix + snd containerStream) with
                 | None -> return! batched
                 | Some tokenAndState -> return! cached tokenAndState }
-        member __.TrySync (log : ILogger) (streamToken,state) (events : 'event list)
+        member __.TrySync(log : ILogger, streamToken, state, events : 'event list)
             : Async<SyncResult<'state>> = async {
             let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, log)
             match res with
-            | SyncResult.Conflict resync ->             return SyncResult.Conflict resync
-            | SyncResult.Written (token',state') ->     return SyncResult.Written (token',state') }
+            | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
+            | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
 /// Holds Container state, coordinating initialization activities
 type private ContainerWrapper(container : Container, ?initContainer : Container -> Async<unit>) =
@@ -1014,13 +1014,13 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
 
     let resolveStream (streamId, maybeContainerInitializationGate) =
         { new IStream<'event, 'state> with
-            member __.Load log = category.Load streamId log
-            member __.TrySync (log: ILogger) (token: StreamToken, originState: 'state) (events: 'event list) =
+            member __.Load log = category.Load(log, streamId)
+            member __.TrySync(log: ILogger, token: StreamToken, originState: 'state, events: 'event list) =
                 match maybeContainerInitializationGate with
-                | None -> category.TrySync log (token, originState) events
+                | None -> category.TrySync(log, token, originState, events)
                 | Some init -> async {
                     do! init ()
-                    return! category.TrySync log (token, originState) events } }
+                    return! category.TrySync(log, token, originState, events) } }
     let resolveTarget = function
         | AggregateId (categoryName,streamId) -> context.ResolveContainerStream(categoryName, streamId)
         | StreamName _ as x -> failwithf "Stream name not supported: %A" x

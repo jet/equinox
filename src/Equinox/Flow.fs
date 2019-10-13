@@ -25,10 +25,7 @@ type IStream<'event, 'state> =
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
     /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
-    abstract TrySync: log: ILogger
-        -> token: StreamToken * originState: 'state
-        -> events: 'event list
-        -> Async<SyncResult<'state>>
+    abstract TrySync: log: ILogger * token: StreamToken * originState: 'state * events: 'event list -> Async<SyncResult<'state>>
 
 /// Internal implementation of the Store agnostic load + run/render. See Equinox.fs for App-facing APIs.
 module internal Flow =
@@ -36,7 +33,7 @@ module internal Flow =
     /// Represents stream and folding state between the load and run/render phases
     type SyncState<'event, 'state>
         (   originState : StreamToken * 'state,
-            trySync : ILogger -> StreamToken * 'state -> 'event list -> Async<SyncResult<'state>>) =
+            trySync : ILogger * StreamToken * 'state * 'event list -> Async<SyncResult<'state>>) =
         let mutable tokenAndState = originState
 
         member __.Memento = tokenAndState
@@ -44,7 +41,7 @@ module internal Flow =
         member __.Version = (fst __.Memento).version
 
         member __.TryOr(log, events, handleFailureResync : (Async<StreamToken*'state> -> Async<bool>)) : Async<bool> = async {
-            let! res = trySync log tokenAndState events
+            let! res = let token, state = tokenAndState in trySync (log,token,state,events)
             match res with
             | SyncResult.Conflict resync ->
                 return! handleFailureResync resync

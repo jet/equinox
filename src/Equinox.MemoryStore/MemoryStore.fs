@@ -78,11 +78,11 @@ module private Token =
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type Category<'event, 'state>(store : VolatileStore, fold, initial) =
     interface ICategory<'event, 'state, string> with
-        member __.Load streamName (log : ILogger) = async {
+        member __.Load(log, streamName) = async {
             match store.TryLoad<'event> streamName log with
             | None -> return Token.ofEmpty streamName initial
             | Some events -> return Token.ofEventArray streamName fold initial events }
-        member __.TrySync (log : ILogger) (Token.Unpack token, state) (events : 'event list) = async {
+        member __.TrySync(log : ILogger, Token.Unpack token, state, events : 'event list) = async {
             let trySyncValue currentValue =
                 if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue events)
