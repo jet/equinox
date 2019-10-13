@@ -5,7 +5,6 @@ open Serilog
 
 open Domain
 open FsCheck
-open System
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen

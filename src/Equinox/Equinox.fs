@@ -46,7 +46,6 @@ type Target =
     | StreamName of streamName: string
 
 /// Store-agnostic <c>Context.Resolve</c> Options
-[<NoComparison; NoEquality>]
 type ResolveOption =
     /// Without consulting Cache or any other source, assume the Stream to be empty for the initial Query or Transact
     | AssumeEmpty

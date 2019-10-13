@@ -874,62 +874,35 @@ type private Category<'event, 'state>(gateway : Gateway, codec : IUnionEncoder<'
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 module Caching =
-    open System.Runtime.Caching
-    [<AllowNullLiteral>]
-    type CacheEntry<'state>(initialToken : StreamToken, initialState :'state) =
-        let mutable currentToken, currentState = initialToken, initialState
-        member __.UpdateIfNewer (other : CacheEntry<'state>) =
-            lock __ <| fun () ->
-                let otherToken, otherState = other.Value
-                if otherToken |> Token.supersedes currentToken then
-                    currentToken <- otherToken
-                    currentState <- otherState
-        member __.Value : StreamToken  * 'state =
-            lock __ <| fun () ->
-                currentToken, currentState
-
-    type Cache(name, sizeMb : int) =
-        let cache =
-            let config = System.Collections.Specialized.NameValueCollection(1)
-            config.Add("cacheMemoryLimitMegabytes", string sizeMb);
-            new MemoryCache(name, config)
-        member __.UpdateIfNewer (policy : CacheItemPolicy) (key : string) entry =
-            match cache.AddOrGetExisting(key, box entry, policy) with
-            | null -> ()
-            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry
-            | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
-        member __.TryGet (key : string) =
-            match cache.Get key with
-            | null -> None
-            | :? CacheEntry<'state> as existingEntry -> Some existingEntry.Value
-            | x -> failwithf "TryGet Incompatible cache entry %A" x
-
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, Container*string>, tee : string -> StreamToken * 'state -> unit) =
-        let intercept streamName tokenAndState =
-            tee streamName tokenAndState
-            tokenAndState
+    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, Container*string>, tee : string -> StreamToken * 'state -> Async<unit>) =
+        let intercept streamName tokenAndState = async {
+            let! _ = tee streamName tokenAndState
+            return tokenAndState }
         let interceptAsync load streamName = async {
             let! tokenAndState = load
-            return intercept streamName tokenAndState }
+            return! intercept streamName tokenAndState }
         interface ICategory<'event, 'state, Container*string> with
-            member __.Load containerStream (log : ILogger) : Async<StreamToken * 'state> =
-                interceptAsync (inner.Load containerStream log) (snd containerStream)
-            member __.TrySync (log : ILogger) (Token.Unpack (_container,stream,_) as streamToken,state) (events : 'event list)
+            member __.Load(log, containerStream) : Async<StreamToken * 'state> =
+                interceptAsync (inner.Load(log, containerStream)) (snd containerStream)
+            member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list)
                 : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync log (streamToken, state) events
+                let! syncRes = inner.TrySync(log, streamToken, state, events)
                 match syncRes with
-                | SyncResult.Conflict resync ->         return SyncResult.Conflict (interceptAsync resync stream)
-                | SyncResult.Written (token', state') ->return SyncResult.Written (intercept stream (token', state')) }
+                | SyncResult.Conflict resync -> return SyncResult.Conflict(interceptAsync resync stream)
+                | SyncResult.Written(token', state') ->
+                    let! intercepted = intercept stream (token', state')
+                    return SyncResult.Written(intercepted) }
 
     let applyCacheUpdatesWithSlidingExpiration
-            (cache: Cache)
-            (prefix: string)
+            (cache : ICache)
+            (prefix : string)
             (slidingExpiration : TimeSpan)
-            (category: ICategory<'event, 'state, Container*string>)
+            (category : ICategory<'event, 'state, Container*string>)
             : ICategory<'event, 'state, Container*string> =
-        let policy = new CacheItemPolicy(SlidingExpiration = slidingExpiration)
-        let addOrUpdateSlidingExpirationCacheEntry streamName = CacheEntry >> cache.UpdateIfNewer policy (prefix + streamName)
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let options = CacheItemOptions.RelativeExpiration slidingExpiration
+        let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
 type private Folder<'event, 'state>
@@ -939,21 +912,21 @@ type private Folder<'event, 'state>
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     interface ICategory<'event, 'state, Container*string> with
-        member __.Load containerStream (log : ILogger): Async<StreamToken * 'state> =
+        member __.Load(log, containerStream): Async<StreamToken * 'state> = async {
             let batched = category.Load inspectUnfolds containerStream fold initial isOrigin log
             let cached tokenAndState = category.LoadFromToken tokenAndState fold isOrigin log
             match readCache with
-            | None -> batched
-            | Some (cache : Caching.Cache, prefix : string) ->
-                match cache.TryGet(prefix + snd containerStream) with
-                | None -> batched
-                | Some tokenAndState -> cached tokenAndState
-        member __.TrySync (log : ILogger) (streamToken,state) (events : 'event list)
+            | None -> return! batched
+            | Some (cache : ICache, prefix : string) ->
+                match! cache.TryGet(prefix + snd containerStream) with
+                | None -> return! batched
+                | Some tokenAndState -> return! cached tokenAndState }
+        member __.TrySync(log : ILogger, streamToken, state, events : 'event list)
             : Async<SyncResult<'state>> = async {
             let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, log)
             match res with
-            | SyncResult.Conflict resync ->             return SyncResult.Conflict resync
-            | SyncResult.Written (token',state') ->     return SyncResult.Written (token',state') }
+            | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
+            | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
 /// Holds Container state, coordinating initialization activities
 type private ContainerWrapper(container : Container, ?initContainer : Container -> Async<unit>) =
@@ -1003,7 +976,7 @@ type CachingStrategy =
     /// Retain a single 'state per streamName, together with the associated etag
     /// NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     /// track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in tip
-    | SlidingWindow of Caching.Cache * window: TimeSpan
+    | SlidingWindow of ICache * window: TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
@@ -1041,13 +1014,13 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
 
     let resolveStream (streamId, maybeContainerInitializationGate) =
         { new IStream<'event, 'state> with
-            member __.Load log = category.Load streamId log
-            member __.TrySync (log: ILogger) (token: StreamToken, originState: 'state) (events: 'event list) =
+            member __.Load log = category.Load(log, streamId)
+            member __.TrySync(log: ILogger, token: StreamToken, originState: 'state, events: 'event list) =
                 match maybeContainerInitializationGate with
-                | None -> category.TrySync log (token, originState) events
+                | None -> category.TrySync(log, token, originState, events)
                 | Some init -> async {
                     do! init ()
-                    return! category.TrySync log (token, originState) events } }
+                    return! category.TrySync(log, token, originState, events) } }
     let resolveTarget = function
         | AggregateId (categoryName,streamId) -> context.ResolveContainerStream(categoryName, streamId)
         | StreamName _ as x -> failwithf "Stream name not supported: %A" x

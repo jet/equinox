@@ -9,12 +9,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- store-neutral `ICache`; centralized implementation in `Equinox.Core` [#161](https://github.com/jet/equinox/pull/161) :pray: [@DSilence](https://github.com/DSilence)
+
 ### Changed
 
-- Updated `MinVer` to `2.0.0-alpha.2`
+- Updated `MinVer` to `2.0.0-rc.1`
 - Updated `FsCodec` to `1.0.0-pr.20.rc2.5` to pick up final name changes [#162](https://github.com/jet/equinox/pull/162)
 - Replaced `TargetId.AggregateIdEmpty` with `ResolveOption.AssumeEmpty` [#163](https://github.com/jet/equinox/pull/163)
 - Extracted `Equinox.Core` module [#164](https://github.com/jet/equinox/pull/164)
+- Used `Transact` name consistently in `Accumulator` (follow-up to [#97](https://github.com/jet/equinox/pull/97)) [#166](https://github.com/jet/equinox/pull/166)
+- Changed all curried Methods to tupled
 
 ### Removed
 ### Fixed
