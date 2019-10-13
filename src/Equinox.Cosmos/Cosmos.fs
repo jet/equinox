@@ -876,11 +876,9 @@ type private Category<'event, 'state>(gateway : Gateway, codec : IUnionEncoder<'
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
     type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, Container*string>, tee : string -> StreamToken * 'state -> Async<unit>) =
-        let intercept streamName tokenAndState =
-            async{
-                let! _ = tee streamName tokenAndState
-                return tokenAndState
-            }
+        let intercept streamName tokenAndState = async {
+            let! _ = tee streamName tokenAndState
+            return tokenAndState }
         let interceptAsync load streamName = async {
             let! tokenAndState = load
             return! intercept streamName tokenAndState }

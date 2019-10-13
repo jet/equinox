@@ -446,8 +446,7 @@ module Caching =
     type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, string>, tee : string -> StreamToken * 'state -> Async<unit>) =
         let intercept streamName tokenAndState = async {
                 let! _ = tee streamName tokenAndState
-                return tokenAndState
-            }
+                return tokenAndState }
         let interceptAsync load streamName = async {
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
