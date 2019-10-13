@@ -14,28 +14,28 @@ module Cart =
     let codec = Domain.Cart.Events.codec
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
-        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve
+        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching).ResolveEx
         Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds connection batchSize log =
         let store = createCosmosContext connection batchSize
         let unfArgs = Domain.Cart.Folds.isOrigin, fun _ -> Seq.empty
-        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unfolded unfArgs).Resolve
+        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unfolded unfArgs).ResolveEx
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithSnapshotStrategy connection batchSize log =
         let store = createCosmosContext connection batchSize
-        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
+        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).ResolveEx
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithSnapshotStrategyAndCaching connection batchSize log cache =
         let store = createCosmosContext connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve
+        let resolveStream = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).ResolveEx
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithRollingUnfolds connection log =
         let store = createCosmosContext connection 1
         let access = AccessStrategy.RollingUnfolds(Domain.Cart.Folds.isOrigin,Domain.Cart.Folds.transmute)
-        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve
+        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).ResolveEx
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =
@@ -59,16 +59,18 @@ type Tests(testOutputHelper) =
     inherit TestsWithLogCapture(testOutputHelper)
     let log,capture = base.Log, base.Capture
 
-    let addAndThenRemoveItems exceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
-        service.FlowAsync(cartId, fun _ctx execute ->
+    let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
+        service.FlowAsync(cartId, optimistic, fun _ctx execute ->
             for i in 1..count do
                 execute <| Domain.Cart.AddItem (context, skuId, i)
                 if not exceptTheLastOne || i <> count then
                     execute <| Domain.Cart.RemoveItem (context, skuId) )
     let addAndThenRemoveItemsManyTimes context cartId skuId service count =
-        addAndThenRemoveItems false context cartId skuId service count
+        addAndThenRemoveItems false false context cartId skuId service count
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
-        addAndThenRemoveItems true context cartId skuId service count
+        addAndThenRemoveItems false true context cartId skuId service count
+    let addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service count =
+        addAndThenRemoveItems true true context cartId skuId service count
 
     let verifyRequestChargesMax rus =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
@@ -128,7 +130,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Backend.Cart.Service) skuId count =
-            service.FlowAsync(cartId, prepare = prepare, flow = fun _ctx execute ->
+            service.FlowAsync(cartId, false, prepare = prepare, flow = fun _ctx execute ->
                 execute <| Domain.Cart.AddItem (context, skuId, count))
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
@@ -258,7 +260,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Backend.Cart.Service) skuId count =
-            service.FlowAsync(cartId, prepare = prepare, flow = fun _ctx execute ->
+            service.FlowAsync(cartId, false, prepare = prepare, flow = fun _ctx execute ->
                 execute <| Domain.Cart.AddItem (context, skuId, count))
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
@@ -364,8 +366,16 @@ type Tests(testOutputHelper) =
 
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
+        let! _ = service2.ReadStale cartId
+        // A Stale read doesn't roundtrip
+        test <@ [] = capture.ExternalCalls @>
         let! _ = service2.Read cartId
         let! _ = service2.Read cartId
         // First is cached because writer emits etag, second remains cached
         test <@ [EqxAct.TipNotModified; EqxAct.TipNotModified] = capture.ExternalCalls @>
+
+        // Optimistic write mode saves the TipNotModified
+        capture.Clear()
+        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service1 1
+        test <@ [EqxAct.Append] = capture.ExternalCalls @>
     }

@@ -14,22 +14,22 @@ let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
 let createMemoryStore () =
     new VolatileStore ()
 let createServiceMemory log store =
-    Backend.Cart.Service(log, Resolver(store, fold, initial).Resolve)
+    Backend.Cart.Service(log, Resolver(store, fold, initial).ResolveEx)
 
 let codec = Domain.Cart.Events.codec
 
 let resolveGesStreamWithRollingSnapshots gateway =
-    EventStore.Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
+    EventStore.Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).ResolveEx
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
-    EventStore.Resolver(gateway, codec, fold, initial).Resolve
+    EventStore.Resolver(gateway, codec, fold, initial).ResolveEx
 
 let resolveCosmosStreamWithSnapshotStrategy gateway =
-    Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
+    Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).ResolveEx
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).Resolve
+    Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).ResolveEx
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
-    service.FlowAsync(cartId, fun _ctx execute ->
+    service.FlowAsync(cartId, false, fun _ctx execute ->
         for i in 1..count do
             execute <| Domain.Cart.AddItem (context, skuId, i)
             if i <> count then

@@ -1030,6 +1030,7 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | streamArgs,(None|Some AllowStale) -> resolveStream streamArgs option
         | (containerStream,maybeInit),Some AssumeEmpty ->
             Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit) option)
+    member __.ResolveEx(target,opt) = __.Resolve(target,?option=opt)
 
     member __.FromMemento(Token.Unpack (container,stream,_pos) as streamToken,state) =
         let skipInitialization = None
