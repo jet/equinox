@@ -14,40 +14,40 @@ open System.Threading
 
 [<NoEquality; NoComparison>]
 type Arguments =
-    | [<AltCommandLine("-v")>] Verbose
-    | [<AltCommandLine("-vc")>] VerboseConsole
-    | [<AltCommandLine("-S")>] LocalSeq
-    | [<AltCommandLine("-l")>] LogFile of string
+    | [<AltCommandLine "-v">]               Verbose
+    | [<AltCommandLine "-vc">]              VerboseConsole
+    | [<AltCommandLine "-S">]               LocalSeq
+    | [<AltCommandLine "-l">]               LogFile of string
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Verbose -> "Include low level logging regarding specific test runs."
-            | VerboseConsole -> "Include low level test and store actions logging in on-screen output to console."
-            | LocalSeq -> "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
-            | LogFile _ -> "specify a log file to write the result breakdown into (default: eqx.log)."
-            | Run _ -> "Run a load test"
-            | Init _ -> "Initialize Store/Container (presently only relevant for `cosmos`; also handles RU/s provisioning adjustment)."
+            | Verbose ->                    "Include low level logging regarding specific test runs."
+            | VerboseConsole ->             "Include low level test and store actions logging in on-screen output to console."
+            | LocalSeq ->                   "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
+            | LogFile _ ->                  "specify a log file to write the result breakdown into (default: eqx.log)."
+            | Run _ ->                      "Run a load test"
+            | Init _ ->                     "Initialize Store/Container (presently only relevant for `cosmos`; also handles RU/s provisioning adjustment)."
 and [<NoComparison>]InitArguments =
-    | [<AltCommandLine("-ru"); Mandatory>] Rus of int
-    | [<AltCommandLine("-D")>] Shared
-    | [<AltCommandLine("-P")>] SkipStoredProc
+    | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
+    | [<AltCommandLine "-D">] Shared
+    | [<AltCommandLine "-P">] SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ -> "Specify RU/s level to provision for the Container."
-            | Shared -> "Use Database-level RU allocations (Default: Use Container-level allocation)."
-            | SkipStoredProc -> "Inhibit creation of stored procedure in specified Container."
-            | Cosmos _ -> "Cosmos Connection parameters."
+            | Rus _ ->                      "Specify RU/s level to provision for the Container."
+            | Shared ->                     "Use Database-level RU allocations (Default: Use Container-level allocation)."
+            | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
+            | Cosmos _ ->                   "Cosmos Connection parameters."
 and [<NoComparison>]InitDbArguments =
-    | [<AltCommandLine("-ru"); Mandatory>] Rus of int
-    | [<AltCommandLine("-P")>] SkipStoredProc
+    | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
+    | [<AltCommandLine "-P">]               SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ -> "Specify RU/s level to provision for the Database."
-            | SkipStoredProc -> "Inhibit creation of stored procedure in specified Container."
-            | Cosmos _ -> "Cosmos Connection parameters."
+            | Rus _ ->                      "Specify RU/s level to provision for the Database."
+            | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
+            | Cosmos _ ->                   "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
     interface IArgParserTemplate with
@@ -55,66 +55,67 @@ and [<NoComparison>]WebArguments =
             | Endpoint _ -> "Target address. Default: https://localhost:5001"
 and [<NoComparison>]
     TestArguments =
-    | [<AltCommandLine("-t"); Unique>] Name of Test
-    | [<AltCommandLine("-s")>] Size of int
-    | [<AltCommandLine("-C")>] Cached
-    | [<AltCommandLine("-U")>] Unfolds
-    | [<AltCommandLine("-m")>] BatchSize of int
-    | [<AltCommandLine("-f")>] TestsPerSecond of int
-    | [<AltCommandLine("-d")>] DurationM of float
-    | [<AltCommandLine("-e")>] ErrorCutoff of int64
-    | [<AltCommandLine("-i")>] ReportIntervalS of int
+    | [<AltCommandLine "-t"; Unique>]       Name of Test
+    | [<AltCommandLine "-s">]               Size of int
+    | [<AltCommandLine "-C">]               Cached
+    | [<AltCommandLine "-U">]               Unfolds
+    | [<AltCommandLine "-m">]               BatchSize of int
+    | [<AltCommandLine "-f">]               TestsPerSecond of int
+    | [<AltCommandLine "-d">]               DurationM of float
+    | [<AltCommandLine "-e">]               ErrorCutoff of int64
+    | [<AltCommandLine "-i">]               ReportIntervalS of int
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<Storage.MemoryStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Es of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Es     of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Web of ParseResults<WebArguments>
+    | [<CliPrefix(CliPrefix.None); Last; Unique>] Web    of ParseResults<WebArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Name _ -> "specify which test to run. (default: Favorite)."
-            | Size _ -> "For `-t Todo`: specify random title length max size to use (default 100)."
-            | Cached -> "employ a 50MB cache, wire in to Stream configuration."
-            | Unfolds -> "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
-            | BatchSize _ -> "Maximum item count to supply when querying. Default: 500"
-            | TestsPerSecond _ -> "specify a target number of requests per second (default: 1000)."
-            | DurationM _ -> "specify a run duration in minutes (default: 30)."
-            | ErrorCutoff _ -> "specify an error cutoff; test ends when exceeded (default: 10000)."
-            | ReportIntervalS _ -> "specify reporting intervals in seconds (default: 10)."
-            | Memory _ -> "target in-process Transient Memory Store (Default if not other target specified)."
-            | Es _ -> "Run transactions in-process against EventStore."
-            | Cosmos _ -> "Run transactions in-process against CosmosDb."
-            | Web _ -> "Run transactions against a Web endpoint."
+            | Name _ ->                     "specify which test to run. (default: Favorite)."
+            | Size _ ->                     "For `-t Todo`: specify random title length max size to use (default 100)."
+            | Cached ->                     "employ a 50MB cache, wire in to Stream configuration."
+            | Unfolds ->                    "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
+            | BatchSize _ ->                "Maximum item count to supply when querying. Default: 500"
+            | TestsPerSecond _ ->           "specify a target number of requests per second (default: 1000)."
+            | DurationM _ ->                "specify a run duration in minutes (default: 30)."
+            | ErrorCutoff _ ->              "specify an error cutoff; test ends when exceeded (default: 10000)."
+            | ReportIntervalS _ ->          "specify reporting intervals in seconds (default: 10)."
+            | Memory _ ->                   "target in-process Transient Memory Store (Default if not other target specified)."
+            | Es _ ->                       "Run transactions in-process against EventStore."
+            | Cosmos _ ->                   "Run transactions in-process against CosmosDb."
+            | Web _ ->                      "Run transactions against a Web endpoint."
 and TestInfo(args: ParseResults<TestArguments>) =
-    member __.Options = args.GetResults Cached @ args.GetResults Unfolds
-    member __.Cache = __.Options |> List.contains Cached
-    member __.Unfolds = __.Options |> List.contains Unfolds
-    member __.BatchSize = args.GetResult(BatchSize,500)
-    member __.Test = args.GetResult(Name,Test.Favorite)
-    member __.ErrorCutoff = args.GetResult(ErrorCutoff,10000L)
-    member __.TestsPerSecond = args.GetResult(TestsPerSecond,1000)
-    member __.Duration = args.GetResult(DurationM,30.) |> TimeSpan.FromMinutes
+    member __.Options =                     args.GetResults Cached @ args.GetResults Unfolds
+    member __.Cache =                       __.Options |> List.contains Cached
+    member __.Unfolds =                     __.Options |> List.contains Unfolds
+    member __.BatchSize =                   args.GetResult(BatchSize,500)
+    member __.Test =                        args.GetResult(Name,Test.Favorite)
+    member __.ErrorCutoff =                 args.GetResult(ErrorCutoff,10000L)
+    member __.TestsPerSecond =              args.GetResult(TestsPerSecond,1000)
+    member __.Duration =                    args.GetResult(DurationM,30.) |> TimeSpan.FromMinutes
     member __.ReportingIntervals =
         match args.GetResults(ReportIntervalS) with
         | [] -> TimeSpan.FromSeconds 10.|> Seq.singleton
         | intervals -> seq { for i in intervals -> TimeSpan.FromSeconds(float i) }
         |> fun intervals -> [| yield __.Duration; yield! intervals |]
     member __.ConfigureStore(log : ILogger, createStoreLog) = 
+        let cache = if __.Cache then Equinox.Cache("equinox-tool", sizeMb = 50) |> Some else None
         match args.TryGetSubCommand() with
         | Some (Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
-            storeLog, Storage.EventStore.config (log,storeLog) (__.Cache, __.Unfolds, __.BatchSize) sargs
+            storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) sargs
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
             log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", __.Options)
-            storeLog, Storage.Cosmos.config (log,storeLog) (__.Cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
+            storeLog, Storage.Cosmos.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
         | _  | Some (Memory _) ->
             log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", __.Options)
             createStoreLog false, Storage.MemoryStore.config ()
     member __.Tests =
         match args.GetResult(Name,Favorite) with
-        | Favorite -> Tests.Favorite
+        | Favorite ->     Tests.Favorite
         | SaveForLater -> Tests.SaveForLater
-        | Todo -> Tests.Todo (args.GetResult(Size,100))
+        | Todo ->         Tests.Todo (args.GetResult(Size,100))
 and Test = Favorite | SaveForLater | Todo
 
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
@@ -150,20 +151,21 @@ module LoadTest =
         let storage = args.TryGetSubCommand()
 
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
+        let cache = if a.Cache then Equinox.Cache("equinox-tool", sizeMb = 50) |> Some else None
         let storeLog, storeConfig, httpClient: ILogger * Storage.StorageConfig option * HttpClient option =
             match storage with
             | Some (Web wargs) ->
                 let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
-                log.Information("Running web test targetting: {url}", uri)
+                log.Information("Running web test targeting: {url}", uri)
                 createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
             | Some (Es sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
                 log.Information("Running transactions in-process against EventStore with storage options: {options:l}", a.Options)
-                storeLog, Storage.EventStore.config (log,storeLog) (a.Cache, a.Unfolds, a.BatchSize) sargs |> Some, None
+                storeLog, Storage.EventStore.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", a.Options)
-                storeLog, Storage.Cosmos.config (log,storeLog) (a.Cache, a.Unfolds, a.BatchSize) (Storage.Cosmos.Info sargs) |> Some, None
+                storeLog, Storage.Cosmos.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) (Storage.Cosmos.Info sargs) |> Some, None
             | _  | Some (Memory _) ->
                 log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", a.Options)
                 createStoreLog false, Storage.MemoryStore.config () |> Some, None
