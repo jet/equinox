@@ -21,7 +21,8 @@
     <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-pr.20.rc2.5" />
+    <ProjectReference Include="..\..\..\..\FsCodec\src\FsCodec.NewtonsoftJson\FsCodec.NewtonsoftJson.fsproj" />
+<!--    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.0.0-pr.20.rc2.5" />-->
     <PackageReference Include="FSharp.UMX" Version="1.0.0" />
   </ItemGroup>
 

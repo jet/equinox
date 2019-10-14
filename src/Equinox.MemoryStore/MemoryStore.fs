@@ -76,13 +76,13 @@ module private Token =
     let ofEventArrayAndKnownState streamName fold (state: 'state) (events: 'event array) = tokenOfArray streamName events, fold state events
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
-type Category<'event, 'state>(store : VolatileStore, fold, initial) =
-    interface ICategory<'event, 'state, string> with
+type Category<'event, 'state, 'context>(store : VolatileStore, fold, initial) =
+    interface ICategory<'event, 'state, string, 'context> with
         member __.Load(log, streamName, _opt) = async {
             match store.TryLoad<'event> streamName log with
             | None -> return Token.ofEmpty streamName initial
             | Some events -> return Token.ofEventArray streamName fold initial events }
-        member __.TrySync(log : ILogger, Token.Unpack token, state, events : 'event list) = async {
+        member __.TrySync(log : ILogger, Token.Unpack token, state, events : 'event list, _context) = async {
             let trySyncValue currentValue =
                 if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue events)
@@ -95,9 +95,9 @@ type Category<'event, 'state>(store : VolatileStore, fold, initial) =
                 return SyncResult.Conflict resync
             | ConcurrentArraySyncResult.Written events -> return SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
-type Resolver<'event, 'state>(store : VolatileStore, fold, initial) =
-    let category = Category<'event,'state>(store, fold, initial)
-    let resolveStream streamName = Stream.create category None streamName
+type Resolver<'event, 'state, 'context>(store : VolatileStore, fold, initial, ?context) =
+    let category = Category<'event,'state,'context>(store, fold, initial)
+    let resolveStream streamName = Stream.create category streamName context None
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
     member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option) =
         match resolveTarget target, option with

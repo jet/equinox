@@ -20,7 +20,7 @@ type Base64ZipUtf8Tests() =
 
     [<Fact>]
     let ``serializes, achieving compression`` () =
-        let encoded = unionEncoder.Encode(A { embed = String('x',5000) })
+        let encoded = unionEncoder.Encode(None,A { embed = String('x',5000) })
         let e : Store.Unfold =
             {   i = 42L
                 c = encoded.EventType
@@ -37,7 +37,7 @@ type Base64ZipUtf8Tests() =
             | A { embed = x } | B { embed = x } -> obj.ReferenceEquals(null, x)
         if hasNulls then () else
 
-        let encoded = unionEncoder.Encode value
+        let encoded = unionEncoder.Encode(None,value)
         let e : Store.Unfold =
             {   i = 42L
                 c = encoded.EventType
