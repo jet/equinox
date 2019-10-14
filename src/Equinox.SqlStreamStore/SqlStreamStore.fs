@@ -372,7 +372,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
         | EsSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | EsSyncResult.Written wr ->
-            let version' = wr.CurrentVersion + 1 |> int64
+            let version' = wr.CurrentVersion |> int64
             let token =
                 match isCompactionEventType with
                 | None -> Token.ofNonCompacting token.stream.name version'
@@ -389,7 +389,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
         | EsSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | EsSyncResult.Written wr ->
-            let version' = wr.CurrentVersion + 1 |> int64
+            let version' = wr.CurrentVersion |> int64
             let token = Token.ofNonCompacting streamName version'
             return GatewaySyncResult.Written token }
 
