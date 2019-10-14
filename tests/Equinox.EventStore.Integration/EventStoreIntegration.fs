@@ -25,16 +25,16 @@ module Cart =
     let codec = Domain.Cart.Events.codec
     let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
     let createServiceWithoutOptimization log gateway =
-        Backend.Cart.Service(log, Resolver(gateway, Domain.Cart.Events.codec, fold, initial).Resolve)
+        Backend.Cart.Service(log, Resolver(gateway, Domain.Cart.Events.codec, fold, initial).ResolveEx)
     let createServiceWithCompaction log gateway =
-        let resolveStream = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve
+        let resolveStream = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).ResolveEx
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial, sliding20m).Resolve)
+        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial, sliding20m).ResolveEx)
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve)
+        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).ResolveEx)
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
@@ -51,16 +51,18 @@ module ContactPreferences =
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
 
-    let addAndThenRemoveItems exceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
-        service.FlowAsync(cartId, fun _ctx execute ->
+    let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
+        service.FlowAsync(cartId, optimistic, fun _ctx execute ->
             for i in 1..count do
                 execute <| Domain.Cart.AddItem (context, skuId, i)
                 if not exceptTheLastOne || i <> count then
                     execute <| Domain.Cart.RemoveItem (context, skuId) )
     let addAndThenRemoveItemsManyTimes context cartId skuId service count =
-        addAndThenRemoveItems false context cartId skuId service count
+        addAndThenRemoveItems false false context cartId skuId service count
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
-        addAndThenRemoveItems true context cartId skuId service count
+        addAndThenRemoveItems false true context cartId skuId service count
+    let addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service count =
+        addAndThenRemoveItems true true context cartId skuId service count
 
     let createLoggerWithCapture () =
         let capture = LogCaptureBuffer()
@@ -125,7 +127,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Backend.Cart.Service) log skuId count =
-            service.FlowAsync(cartId, prepare = prepare, flow = fun _ctx execute ->
+            service.FlowAsync(cartId, false, prepare = prepare, flow = fun _ctx execute ->
                 execute <| Domain.Cart.AddItem (context, skuId, count))
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
@@ -252,26 +254,59 @@ type Tests(testOutputHelper) =
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let gateway = createGesGateway conn batchSize
         let createServiceCached () = Cart.createServiceWithCaching log gateway cache
-        let service1, service2 = createServiceCached (), createServiceCached ()
+        let service1, service2, service3 = createServiceCached (), createServiceCached (), Cart.createServiceWithoutOptimization log gateway
         let cartId = % Guid.NewGuid()
 
         // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
-        let! _ = service2.Read cartId
-
-        // ... should see a single read as we are writes are cached
+        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service1 5
+        test <@ batchForwardAndAppend = capture.ExternalCalls @>
+        let! resStale = service2.ReadStale cartId
+        test <@ batchForwardAndAppend = capture.ExternalCalls @>
+        let! resFresh = service2.Read cartId
+        // Because we're caching writes, stale vs fresh reads are equivalent
+        test <@ resStale = resFresh @>
+        // ... should see a write plus a batched forward read as position is cached
         test <@ batchForwardAndAppend @ singleBatchForward = capture.ExternalCalls @>
 
         // Add two more - the roundtrip should only incur a single read
         capture.Clear()
         let skuId2 = SkuId <| Guid.NewGuid()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
+        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId2 service1 1
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
 
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
-        let! _ = service2.Read cartId
+        // Do a stale read - we will see outs
+        let! res = service2.ReadStale cartId
+        // result after 10 should be different to result after 12
+        test <@ res <> resFresh @>
+        // but we don't do a roundtrip to get it
+        test <@ [] = capture.ExternalCalls @>
+        let! resDefault = service2.Read cartId
         test <@ singleBatchForward = capture.ExternalCalls @>
+
+        // Optimistic transactions
+        capture.Clear()
+        // As the cache is up to date, we can transact against the cached value and do a null transaction without a roundtrip
+        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId2 service1 1
+        test <@ [] = capture.ExternalCalls @>
+        // As the cache is up to date, we can do an optimistic append, saving a Read roundtrip
+        let skuId3 = SkuId <| Guid.NewGuid()
+        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId3 service1 1
+        // this time, we did something, so we see the append call
+        test <@ [EsAct.Append] = capture.ExternalCalls @>
+
+        // If we don't have a cache attached, we don't benefit from / pay the price for any optimism
+        capture.Clear()
+        let skuId4 = SkuId <| Guid.NewGuid()
+        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId4 service3 1
+        // Need 2 batches to do the reading
+        test <@ [EsAct.SliceForward] @ singleBatchForward @ [EsAct.Append] = capture.ExternalCalls @>
+        // we've engineered a clash with the cache state (service3 doest participate in caching)
+        // Conflict with cached state leads to a read forward to resync; Then we'll idempotently decide not to do any append
+        capture.Clear()
+        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId4 service2 1
+        test <@ [EsAct.AppendConflict; EsAct.SliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]

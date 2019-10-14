@@ -2,14 +2,14 @@
 module Equinox.Core.Stream
 
 /// Represents a specific stream in a ICategory
-type private Stream<'event, 'state, 'streamId>(category : ICategory<'event, 'state, 'streamId>, streamId: 'streamId) =
+type private Stream<'event, 'state, 'streamId>(category : ICategory<'event, 'state, 'streamId>, streamId: 'streamId, opt) =
     interface IStream<'event, 'state> with
         member __.Load log =
-            category.Load(log, streamId)
+            category.Load(log, streamId, opt)
         member __.TrySync(log: Serilog.ILogger, token: StreamToken, originState: 'state, events: 'event list) =
             category.TrySync(log, token, originState, events)
 
-let create (category : ICategory<'event, 'state, 'streamId>) streamId : IStream<'event, 'state> = Stream(category, streamId) :> _
+let create (category : ICategory<'event, 'state, 'streamId>) opt streamId : IStream<'event, 'state> = Stream(category, streamId, opt) :> _
 
 /// Handles case where some earlier processing has loaded or determined a the state of a stream, allowing us to avoid a read roundtrip
 type private InitializedStream<'event, 'state>(inner : IStream<'event, 'state>, memento : StreamToken * 'state) =

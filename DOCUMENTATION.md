@@ -344,7 +344,7 @@ type Service(log, stream, ?maxAttempts) =
 
 The `Stream`-related functions in a given Aggregate establish the access patterns used across when Service methods access streams (see below). Typically these are relatively straightforward calls forwarding to a `Equinox.Stream` equivalent (see [`src/Equinox/Equinox.fs`](src/Equinox/Equinox.fs)), which in turn use the Optimistic Concurrency retry-loop  in [`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
 
-`Read` above will do a roundtrip to the Store in order to fetch the most recent state (while this can be optimized by reading through the cache, each invocation will hit the store regardless). This Synchronous Read can be used to [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency) to establish a state incorporating the effects of any Command invocation you know to have been completed.
+`Read` above will do a roundtrip to the Store in order to fetch the most recent state (in `AllowStale` mode, the store roundtrip can be optimized out by reading through the cache). This Synchronous Read can be used to [Read-your-writes](https://en.wikipedia.org/wiki/Consistency_model#Read-your-writes_Consistency) to establish a state incorporating the effects of any Command invocation you know to have been completed.
 
 `Execute` runs an Optimistic Concurrency Controlled `Transact` loop in order to effect the intent of the [write-only] Command. This involves:
 

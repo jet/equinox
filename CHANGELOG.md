@@ -11,6 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - store-neutral `ICache`; centralized implementation in `Equinox.Core` [#161](https://github.com/jet/equinox/pull/161) :pray: [@DSilence](https://github.com/DSilence)
+- `ResolveOption.AllowStale`, maximizing use of OCC for `Stream.Transact`, enabling stale reads (in the face of multiple writers) for `Stream.Query` [#167](https://github.com/jet/equinox/pull/167)
 
 ### Changed
 
@@ -20,6 +21,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Extracted `Equinox.Core` module [#164](https://github.com/jet/equinox/pull/164)
 - Used `Transact` name consistently in `Accumulator` (follow-up to [#97](https://github.com/jet/equinox/pull/97)) [#166](https://github.com/jet/equinox/pull/166)
 - Changed all curried Methods to tupled
+- `.EventStore` now caches written values [#167](https://github.com/jet/equinox/pull/167)
 
 ### Removed
 ### Fixed

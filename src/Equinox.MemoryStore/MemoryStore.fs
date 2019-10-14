@@ -78,7 +78,7 @@ module private Token =
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type Category<'event, 'state>(store : VolatileStore, fold, initial) =
     interface ICategory<'event, 'state, string> with
-        member __.Load(log, streamName) = async {
+        member __.Load(log, streamName, _opt) = async {
             match store.TryLoad<'event> streamName log with
             | None -> return Token.ofEmpty streamName initial
             | Some events -> return Token.ofEventArray streamName fold initial events }
@@ -97,11 +97,11 @@ type Category<'event, 'state>(store : VolatileStore, fold, initial) =
 
 type Resolver<'event, 'state>(store : VolatileStore, fold, initial) =
     let category = Category<'event,'state>(store, fold, initial)
-    let resolveStream streamName = Stream.create category streamName
+    let resolveStream streamName = Stream.create category None streamName
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
     member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option) =
         match resolveTarget target, option with
-        | sn,None -> resolveStream sn
+        | sn,(None|Some AllowStale) -> resolveStream sn
         | sn,Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn)
     member __.ResolveEx(target,opt) = __.Resolve(target,?option=opt)
 
