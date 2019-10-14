@@ -254,52 +254,59 @@ type Tests(testOutputHelper) =
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let gateway = createGesGateway conn batchSize
         let createServiceCached () = Cart.createServiceWithCaching log gateway cache
-        let service1, service2 = createServiceCached (), createServiceCached ()
+        let service1, service2, service3 = createServiceCached (), createServiceCached (), Cart.createServiceWithoutOptimization log gateway
         let cartId = % Guid.NewGuid()
 
         // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
+        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service1 5
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
-        let! res = service2.ReadStale cartId
+        let! resStale = service2.ReadStale cartId
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
-        let! res = service2.Read cartId
-
+        let! resFresh = service2.Read cartId
+        // Because we're caching writes, stale vs fresh reads are equivalent
+        test <@ resStale = resFresh @>
         // ... should see a write plus a batched forward read as position is cached
         test <@ batchForwardAndAppend @ singleBatchForward = capture.ExternalCalls @>
 
         // Add two more - the roundtrip should only incur a single read
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service1 1
+        let skuId2 = SkuId <| Guid.NewGuid()
+        do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId2 service1 1
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
 
         // While we now have 12 events, we should be able to read them with a single call
         capture.Clear()
-        // Do a stale read - because writes don't get cached, we won't see ours
-        let! resStale = service2.ReadStale cartId
+        // Do a stale read - we will see outs
+        let! res = service2.ReadStale cartId
         // result after 10 should be different to result after 12
-        test <@ res = resStale @>
+        test <@ res <> resFresh @>
         // but we don't do a roundtrip to get it
         test <@ [] = capture.ExternalCalls @>
         let! resDefault = service2.Read cartId
-        test <@ resDefault <> resStale @>
         test <@ singleBatchForward = capture.ExternalCalls @>
 
-        // As we've just triggered stashing of the latest value into the cache, we can do an optimistic append, saving a Read roundtrip
+        // Optimistic transactions
         capture.Clear()
-        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service1 1
-        // as we already have that item, we did no roundtrips to decide to do nothing
-        test <@ [] = capture.ExternalCalls @>
-        let skuId2 = SkuId <| Guid.NewGuid()
+        // As the cache is up to date, we can transact against the cached value and do a null transaction without a roundtrip
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId2 service1 1
+        test <@ [] = capture.ExternalCalls @>
+        // As the cache is up to date, we can do an optimistic append, saving a Read roundtrip
+        let skuId3 = SkuId <| Guid.NewGuid()
+        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId3 service1 1
         // this time, we did something, so we see the append call
         test <@ [EsAct.Append] = capture.ExternalCalls @>
 
-        // Because we don't write through the cache, we generate a conflict if we do an add now
+        // If we don't have a cache attached, we don't benefit from / pay the price for any optimism
         capture.Clear()
-        let skuId3 = SkuId <| Guid.NewGuid()
-        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId3 service1 1
-        // Conflict with Read forward to resync; Then a successful Append
-        test <@ [EsAct.AppendConflict; EsAct.SliceForward; EsAct.BatchForward] @ [EsAct.Append] = capture.ExternalCalls @>
+        let skuId4 = SkuId <| Guid.NewGuid()
+        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId4 service3 1
+        // Need 2 batches to do the reading
+        test <@ [EsAct.SliceForward] @ singleBatchForward @ [EsAct.Append] = capture.ExternalCalls @>
+        // we've engineered a clash with the cache state (service3 doest participate in caching)
+        // Conflict with cached state leads to a read forward to resync; Then we'll idempotently decide not to do any append
+        capture.Clear()
+        do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId4 service2 1
+        test <@ [EsAct.AppendConflict; EsAct.SliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]

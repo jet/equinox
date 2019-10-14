@@ -458,7 +458,8 @@ module Caching =
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync stream.name)
                 | SyncResult.Written (token',state') ->
-                    return SyncResult.Written (token', state') }
+                    let! intercepted = intercept stream.name (token', state')
+                    return SyncResult.Written intercepted }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache: ICache)

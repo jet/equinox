@@ -21,6 +21,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Extracted `Equinox.Core` module [#164](https://github.com/jet/equinox/pull/164)
 - Used `Transact` name consistently in `Accumulator` (follow-up to [#97](https://github.com/jet/equinox/pull/97)) [#166](https://github.com/jet/equinox/pull/166)
 - Changed all curried Methods to tupled
+- `.EventStore` now caches written values [#167](https://github.com/jet/equinox/pull/167)
 
 ### Removed
 ### Fixed
