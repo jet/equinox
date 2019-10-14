@@ -357,7 +357,7 @@ type Tests(testOutputHelper) =
         // ... should see a single Cached Indexed read given writes are cached and writer emits etag
         test <@ [EqxAct.TipNotFound; EqxAct.Append; EqxAct.TipNotModified] = capture.ExternalCalls @>
 
-        // Add two more - the roundtrip should only incur a single read, which should be cached by virtue of being a second one in successono
+        // Add two more - the roundtrip should only incur a single read, which should be cached by virtue of being a second one in succession
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
         test <@ [EqxAct.TipNotModified; EqxAct.Append] = capture.ExternalCalls @>

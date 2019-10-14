@@ -879,20 +879,20 @@ module Caching =
         let intercept streamName tokenAndState = async {
             let! _ = tee streamName tokenAndState
             return tokenAndState }
-        let interceptAsync load streamName = async {
+        let loadAndIntercept load streamName = async {
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
         interface ICategory<'event, 'state, Container*string> with
-            member __.Load(log, containerStream) : Async<StreamToken * 'state> =
-                interceptAsync (inner.Load(log, containerStream)) (snd containerStream)
+            member __.Load(log, (container,streamName)) : Async<StreamToken * 'state> =
+                loadAndIntercept (inner.Load(log, (container,streamName))) streamName
             member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list)
                 : Async<SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync(log, streamToken, state, events)
                 match syncRes with
-                | SyncResult.Conflict resync -> return SyncResult.Conflict(interceptAsync resync stream)
+                | SyncResult.Conflict resync -> return SyncResult.Conflict(loadAndIntercept resync stream)
                 | SyncResult.Written(token', state') ->
                     let! intercepted = intercept stream (token', state')
-                    return SyncResult.Written(intercepted) }
+                    return SyncResult.Written intercepted }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache : ICache)
@@ -911,16 +911,15 @@ type private Folder<'event, 'state>
         mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
+    let batched log containerStream = category.Load inspectUnfolds containerStream fold initial isOrigin log
     interface ICategory<'event, 'state, Container*string> with
-        member __.Load(log, containerStream): Async<StreamToken * 'state> = async {
-            let batched = category.Load inspectUnfolds containerStream fold initial isOrigin log
-            let cached tokenAndState = category.LoadFromToken tokenAndState fold isOrigin log
+        member __.Load(log, (container,streamName)): Async<StreamToken * 'state> =
             match readCache with
-            | None -> return! batched
-            | Some (cache : ICache, prefix : string) ->
-                match! cache.TryGet(prefix + snd containerStream) with
-                | None -> return! batched
-                | Some tokenAndState -> return! cached tokenAndState }
+            | None -> batched log (container,streamName)
+            | Some (cache : ICache, prefix : string) -> async {
+                match! cache.TryGet(prefix + streamName) with
+                | None -> return! batched log (container,streamName)
+                | Some tokenAndState -> return! category.LoadFromToken tokenAndState fold isOrigin log }
         member __.TrySync(log : ILogger, streamToken, state, events : 'event list)
             : Async<SyncResult<'state>> = async {
             let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, log)

@@ -16,14 +16,14 @@ type Service(log, resolveStream) =
             return res,ctx.Accumulated })
     let read (Stream stream) : Async<Folds.State> =
         stream.Query id
-    let execute clientId command =
-        flowAsync clientId ((fun _ctx execute -> execute command), None)
+    let execute cartId command =
+        flowAsync cartId ((fun _ctx execute -> execute command), None)
 
-    member __.FlowAsync(clientId, flow, ?prepare) =
-        flowAsync clientId (flow, prepare)
+    member __.FlowAsync(cartId, flow, ?prepare) =
+        flowAsync cartId (flow, prepare)
 
-    member __.Execute(clientId, command) =
-        execute clientId command
+    member __.Execute(cartId, command) =
+        execute cartId command
 
-    member __.Read clientId =
-        read clientId
+    member __.Read cartId =
+        read cartId

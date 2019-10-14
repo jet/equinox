@@ -1,7 +1,9 @@
 ﻿module Equinox.EventStore.Integration.EventStoreIntegration
 
+open Domain
 open Equinox.EventStore
 open Equinox.Integration.Infrastructure
+open FSharp.UMX
 open Serilog
 open Swensen.Unquote
 open System.Threading
@@ -55,7 +57,7 @@ type Tests(testOutputHelper) =
                 execute <| Domain.Cart.AddItem (context, skuId, i)
                 if not exceptTheLastOne || i <> count then
                     execute <| Domain.Cart.RemoveItem (context, skuId) )
-    let addAndThenRemoveItemsManyTimes context cartId skuId log service count =
+    let addAndThenRemoveItemsManyTimes context cartId skuId service count =
         addAndThenRemoveItems false context cartId skuId service count
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
         addAndThenRemoveItems true context cartId skuId service count
@@ -188,7 +190,7 @@ type Tests(testOutputHelper) =
         let service = Cart.createServiceWithCompaction log gateway
 
         // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service 5
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service 5
         let! _ = service.Read cartId
 
         // ... should see a single read as we are inside the batch threshold
@@ -196,7 +198,7 @@ type Tests(testOutputHelper) =
 
         // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service 1
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 13 events, we should be able to read them with a single call
@@ -206,14 +208,14 @@ type Tests(testOutputHelper) =
 
         // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service 4
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service 4
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 21 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service.Read cartId
         // ... and trigger a second snapshotting (inducing a single additional read + write)
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service 1
         // and reload the 24 events with a single read
         let! _ = service.Read cartId
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
@@ -243,7 +245,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId cartId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalEventStoreNode log
         let batchSize = 10
@@ -251,9 +253,10 @@ type Tests(testOutputHelper) =
         let gateway = createGesGateway conn batchSize
         let createServiceCached () = Cart.createServiceWithCaching log gateway cache
         let service1, service2 = createServiceCached (), createServiceCached ()
+        let cartId = % Guid.NewGuid()
 
         // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 5
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 
         // ... should see a single read as we are writes are cached
@@ -261,7 +264,8 @@ type Tests(testOutputHelper) =
 
         // Add two more - the roundtrip should only incur a single read
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        let skuId2 = SkuId <| Guid.NewGuid()
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
 
         // While we now have 12 events, we should be able to read them with a single call
@@ -282,32 +286,32 @@ type Tests(testOutputHelper) =
         let service2 = Cart.createServiceWithCompactionAndCaching log gateway cache
 
         // Trigger 10 events, then reload
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 5
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 5
         let! _ = service2.Read cartId
 
         // ... should see a single read as we are inside the batch threshold
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
 
-        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
+        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incur extra roundtrips)
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
-        // While we now have 13 events, we whould be able to read them backwards with a single call
+        // While we now have 13 events, we should be able to read them backwards with a single call
         capture.Clear()
         let! _ = service1.Read cartId
         test <@ singleBatchBackwards = capture.ExternalCalls @>
 
-        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
+        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a snapshot
         capture.Clear()
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 4
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 4
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
 
         // While we now have 21 events, we should be able to read them with a single call
         capture.Clear()
         let! _ = service1.Read cartId
         // ... and trigger a second snapshotting (inducing a single additional read + write)
-        do! addAndThenRemoveItemsManyTimes context cartId skuId log service1 1
+        do! addAndThenRemoveItemsManyTimes context cartId skuId service1 1
         // and we _could_ reload the 24 events with a single read if reading backwards. However we are using the cache, which last saw it with 10 events, which necessitates two reads
         let! _ = service2.Read cartId
         let suboptimalExtraSlice = [singleSliceForward]

@@ -1,6 +1,6 @@
 ﻿/// Implements an in-memory store. This fulfils two goals:
 /// 1. Acts as A target for integration testing allowing end-to-end processing of a decision flow in an efficient test
-/// 2. Illustrates a minimal implemention of the Storage interface interconnects for the purpose of writing Store connectors
+/// 2. Illustrates a minimal implementation of the Storage interface interconnects for the purpose of writing Store connectors
 namespace Equinox.MemoryStore
 
 open Equinox
@@ -44,7 +44,7 @@ type VolatileStore() =
         | false, _ -> None
         | true, packed -> __.Unpack log streamName packed |> Some
 
-    /// Attempts a sychronization operation - yields conflicting value if sync function decides there is a conflict
+    /// Attempts a synchronization operation - yields conflicting value if sync function decides there is a conflict
     member __.TrySync streamName (log : ILogger) (trySyncValue : 'events array -> ConcurrentDictionarySyncResult<'event seq>) (events: 'event seq)
         : ConcurrentArraySyncResult<'event array> =
         let seedStream _streamName = __.Pack events
@@ -101,8 +101,9 @@ type Resolver<'event, 'state>(store : VolatileStore, fold, initial) =
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
     member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option) =
         match resolveTarget target, option with
-        | sn, None -> resolveStream sn
-        | sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn)
+        | sn,None -> resolveStream sn
+        | sn,Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn)
+    member __.ResolveEx(target,opt) = __.Resolve(target,?option=opt)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken,state) =
