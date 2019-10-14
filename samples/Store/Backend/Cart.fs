@@ -4,8 +4,8 @@ open Domain
 open Domain.Cart
 
 type Service(log, resolveStream) =
-    let (|AggregateId|) (id: CartId) = Equinox.AggregateId ("Cart", CartId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, maxAttempts = 3)
+    let (|AggregateId|) (id: CartId, opt) = Equinox.AggregateId ("Cart", CartId.toStringN id), opt
+    let (|Stream|) (AggregateId (id,opt)) = Equinox.Stream(log, resolveStream (id,opt), maxAttempts = 3)
         
     let flowAsync (Stream stream) (flow, prepare) =
         stream.TransactAsync(fun state -> async {
@@ -16,14 +16,16 @@ type Service(log, resolveStream) =
             return res,ctx.Accumulated })
     let read (Stream stream) : Async<Folds.State> =
         stream.Query id
-    let execute clientId command =
-        flowAsync clientId ((fun _ctx execute -> execute command), None)
+    let execute cartId command =
+        flowAsync (cartId,None) ((fun _ctx execute -> execute command), None)
 
-    member __.FlowAsync(cartId, flow, ?prepare) =
-        flowAsync cartId (flow, prepare)
+    member __.FlowAsync(cartId, optimistic, flow, ?prepare) =
+        flowAsync (cartId,if optimistic then Some Equinox.AllowStale else None) (flow, prepare)
 
     member __.Execute(cartId, command) =
         execute cartId command
 
     member __.Read cartId =
-        read cartId
+        read (cartId,None)
+    member __.ReadStale cartId =
+        read (cartId,Some Equinox.ResolveOption.AllowStale)

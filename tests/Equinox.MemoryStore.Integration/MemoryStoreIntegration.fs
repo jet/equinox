@@ -7,7 +7,7 @@ let createMemoryStore () =
     new VolatileStore()
 
 let createServiceMemory log store =
-    Backend.Cart.Service(log, Resolver(store, Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Resolve)
+    Backend.Cart.Service(log, Resolver(store, Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).ResolveEx)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -26,10 +26,10 @@ type Tests(testOutputHelper) =
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
-            service.FlowAsync(cartId, flow)
+            service.FlowAsync(cartId, false, flow)
 
         let actLoadingStateSeparately cartId = async {
-            let! _ = service.FlowAsync(cartId, flow)
+            let! _ = service.FlowAsync(cartId, false, flow)
             return! service.Read cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately

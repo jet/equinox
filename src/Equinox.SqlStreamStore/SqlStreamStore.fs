@@ -451,17 +451,19 @@ module Caching =
         let intercept streamName tokenAndState = async {
             let! _ = tee streamName tokenAndState
             return tokenAndState }
-        let interceptAsync load streamName = async {
+        let loadAndIntercept load streamName = async {
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
         interface ICategory<'event, 'state, string> with
-            member __.Load(log, streamName : string) : Async<StreamToken * 'state> =
-                interceptAsync (inner.Load(log, streamName)) streamName
+            member __.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
+                loadAndIntercept (inner.Load(log, streamName, opt)) streamName
             member __.TrySync(log : ILogger, (Token.StreamPos (stream,_) as token), state, events : 'event list) : Async<SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync(log, token, state, events)
                 match syncRes with
-                | SyncResult.Conflict resync ->          return SyncResult.Conflict (interceptAsync resync stream.name)
-                | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
+                | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync stream.name)
+                | SyncResult.Written (token',state') ->
+                    let! intercepted = intercept stream.name (token', state')
+                    return SyncResult.Written intercepted }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache: ICache)
@@ -475,18 +477,16 @@ module Caching =
         CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
 type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
-    let loadAlgorithm streamName initial log = async {
-        let batched = category.Load fold initial streamName log
-        let cached token state = category.LoadFromToken fold state streamName token log
-        match readCache with
-        | None -> return! batched
-        | Some (cache : ICache, prefix : string) ->
-            match! cache.TryGet(prefix + streamName) with
-            | None -> return! batched
-            | Some (token, state) -> return! cached token state }
+    let batched log streamName = category.Load fold initial streamName log
     interface ICategory<'event, 'state, string> with
-        member __.Load(log, streamName : string) : Async<StreamToken * 'state> =
-            loadAlgorithm streamName initial log
+        member __.Load(log, streamName, opt) : Async<StreamToken * 'state> =
+            match readCache with
+            | None -> batched log streamName
+            | Some (cache : ICache, prefix : string) -> async {
+                match! cache.TryGet(prefix + streamName) with
+                | None -> return! batched log streamName
+                | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
+                | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
         member __.TrySync(log : ILogger, token, initialState, events : 'event list) : Async<SyncResult<'state>> = async {
             let! syncRes = category.TrySync fold log (token, initialState) events
             match syncRes with
@@ -530,12 +530,13 @@ type Resolver<'event,'state>
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
     member __.Resolve(target, [<O; D null>]?option) =
         match resolveTarget target, option with
-        | sn,None -> resolveStream sn
-        | sn,Some AssumeEmpty -> Stream.ofMemento (context.LoadEmpty sn,initial) (resolveStream sn)
+        | sn,(None|Some AllowStale) -> resolveStream option sn
+        | sn,Some AssumeEmpty -> Stream.ofMemento (context.LoadEmpty sn,initial) (resolveStream option sn)
+    member __.ResolveEx(target,opt) = __.Resolve(target,?option=opt)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack token as streamToken, state) =
-        Stream.ofMemento (streamToken,state) (resolveStream token.stream.name)
+        Stream.ofMemento (streamToken,state) (resolveStream None token.stream.name)
 
 type Connector (createStreamStore: unit -> Async<SqlStreamStore.IStreamStore>, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.Connect () = async {
@@ -545,5 +546,5 @@ type Connector (createStreamStore: unit -> Async<SqlStreamStore.IStreamStore>, [
 
     member __.Establish () : Async<Connection> = async {
         let! store = __.Connect()
-        return Connection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) 
+        return Connection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
     }
