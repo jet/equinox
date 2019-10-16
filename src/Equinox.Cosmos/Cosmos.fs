@@ -1080,7 +1080,9 @@ type Connector
         [<O; D(null)>]?writeRetryPolicy,
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
-        [<O; D(null)>]?tags : (string*string) seq) =
+        [<O; D(null)>]?tags : (string*string) seq,
+        /// Skips SSL verification when set to true, i.e. for working with the CosmosDB Emulator (default false)
+        [<O; D(null)>]?skipSslCheck : bool) =
     do if log = null then nullArg "log"
 
     let clientOptions =
@@ -1107,7 +1109,13 @@ type Connector
                 yield name
                 match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
             let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
-            let client = new Client.DocumentClient(uri, key, clientOptions, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
+            let client =
+                match skipSslCheck with
+                | Some false | None ->
+                    new Client.DocumentClient(uri, key, clientOptions, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
+                | Some true ->
+                    let noSslCheckHandler = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
+                    new Client.DocumentClient(uri, key, noSslCheckHandler, clientOptions, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
             log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
             return client }
