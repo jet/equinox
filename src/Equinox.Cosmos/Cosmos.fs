@@ -1092,8 +1092,8 @@ type Connector
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
         [<O; D(null)>]?tags : (string*string) seq,
-        /// Skips SSL verification when set to true, i.e. for working with the CosmosDB Emulator (default false)
-        [<O; D(null)>]?skipSslCheck : bool) =
+        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
+        [<O; D(null)>]?bypassCertificateValidation : bool) =
     do if log = null then nullArg "log"
 
     let clientOptions =
@@ -1121,12 +1121,11 @@ type Connector
                 match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
             let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
             let client =
-                match skipSslCheck with
-                | Some false | None ->
-                    new Client.DocumentClient(uri, key, clientOptions, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
-                | Some true ->
-                    let noSslCheckHandler = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
-                    new Client.DocumentClient(uri, key, noSslCheckHandler, clientOptions, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
+                let consistencyLevel = Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session)
+                if defaultArg bypassCertificateValidation false then
+                    let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
+                    new Client.DocumentClient(uri, key, inhibitCertCheck, clientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
+                else new Client.DocumentClient(uri, key, clientOptions, consistencyLevel)
             log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
             do! client.OpenAsync() |> Async.AwaitTaskCorrect
             return client }

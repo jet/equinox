@@ -10,6 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
+- `.Cosmos`: ability to inhibit server certificate validation via `Connector`'s `bypassCertificateValidation` option [#170](https://github.com/jet/equinox/pull/170) [@Kelvin4702](https://github.com/Kelvin4702)
 - store-neutral `ICache`; centralized implementation in `Equinox.Core` [#161](https://github.com/jet/equinox/pull/161) :pray: [@DSilence](https://github.com/DSilence)
 - `ResolveOption.AllowStale`, maximizing use of OCC for `Stream.Transact`, enabling stale reads (in the face of multiple writers) for `Stream.Query` [#167](https://github.com/jet/equinox/pull/167)
 - Ability to (optionally) pass a `'Context` when creating a `Stream`, in order to be able to interop with FsCodec's `CorrelationId` and `CausationId` fields (as added in [FsCodec#22](https://github.com/jet/FsCodec/pulls/22)) [#169](https://github.com/jet/equinox/pull/169)
@@ -17,6 +18,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - Updated `MinVer` to `2.0.0-rc.1`
+- Updated `Microsoft.Azure.DocumentDb[.Core]` to `2.2.0` (required for [#170](https://github.com/jet/equinox/pull/170))
 - Updated `FsCodec` to `1.0.0` to pick up final name changes [#162](https://github.com/jet/equinox/pull/162)
 - Replaced `TargetId.AggregateIdEmpty` with `ResolveOption.AssumeEmpty` [#163](https://github.com/jet/equinox/pull/163)
 - Extracted `Equinox.Core` module [#164](https://github.com/jet/equinox/pull/164)
