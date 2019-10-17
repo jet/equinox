@@ -9,6 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-rc7"></a>
+## [2.0.0-rc7] - 2019-10-17
+
+### Added
 
 - `.Cosmos`: ability to inhibit server certificate validation via `Connector`'s `bypassCertificateValidation` option [#170](https://github.com/jet/equinox/pull/170) [@Kelvin4702](https://github.com/Kelvin4702)
 - store-neutral `ICache`; centralized implementation in `Equinox.Core` [#161](https://github.com/jet/equinox/pull/161) :pray: [@DSilence](https://github.com/DSilence)
@@ -26,10 +35,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `.EventStore` now caches written values [#167](https://github.com/jet/equinox/pull/167)
 - (internal) Updated `MinVer` to `2.0.0`
 
-### Removed
-### Fixed
-
-<a name="2.0.0"></a>
 <a name="2.0.0-rc6"></a>
 ## [2.0.0-rc6] - 2019-09-07
 
@@ -293,7 +298,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc6...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc7...HEAD
+[2.0.0-rc7]: https://github.com/jet/equinox/compare/2.0.0-rc6...2.0.0-rc7
 [2.0.0-rc6]: https://github.com/jet/equinox/compare/2.0.0-rc5...2.0.0-rc6
 [2.0.0-rc5]: https://github.com/jet/equinox/compare/2.0.0-rc4...2.0.0-rc5
 [2.0.0-rc4]: https://github.com/jet/equinox/compare/2.0.0-rc3...2.0.0-rc4
