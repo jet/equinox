@@ -3,6 +3,7 @@
 open Equinox
 open Equinox.Core
 open EventStore.ClientAPI
+open FsCodec
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
 
@@ -273,8 +274,12 @@ module UnionEncoderAdapters =
         let e = x.Event
         // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
         let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
-        FsCodec.Core.TimelineEvent.Create(e.EventNumber, e.EventType, e.Data, e.Metadata, ts) :> _
+        // TOCONSIDER wire e.Metadata.["$correlationId"] and .["$causationId"] into correlationId and causationId
+        // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
+        FsCodec.Core.TimelineEvent.Create(e.EventNumber, e.EventType, e.Data, e.Metadata, null, null, ts) :> _
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
+        // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
+        // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
         EventData(Guid.NewGuid(), x.EventType, (*isJson*) true, x.Data, x.Meta)
 
 type Stream = { name: string }
@@ -398,7 +403,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionEncoder<'event,byte[]>, ?access : AccessStrategy<'event,'state>) =
+type private Category<'event, 'state, 'context>(context : Context, codec : FsCodec.IUnionEncoder<_,_,'context>, ?access : AccessStrategy<'event,'state>) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let compactionPredicate =
         match access with
@@ -423,9 +428,10 @@ type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionE
         loadAlgorithm (load fold) streamName initial log
     member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) (streamName : string) token (log : ILogger) : Async<StreamToken * 'state> =
         (load fold) state (context.LoadFromToken false streamName log token (tryDecode,compactionPredicate))
-    member __.TrySync (fold: 'state -> 'event seq -> 'state) (log : ILogger)
-            ((Token.StreamPos (stream,pos) as streamToken), state : 'state)
-            (events : 'event list) : Async<SyncResult<'state>> = async {
+    member __.TrySync<'context>
+        (   log : ILogger, fold: 'state -> 'event seq -> 'state,
+            (Token.StreamPos (stream,pos) as streamToken), state : 'state, events : 'event list, ctx : 'context option): Async<SyncResult<'state>> = async {
+        let encode e = codec.Encode(ctx,e)
         let events =
             match access with
             | None | Some AccessStrategy.EventsAreState -> events
@@ -433,7 +439,7 @@ type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionE
                 let cc = CompactionContext(List.length events, pos.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
 
-        let encodedEvents : EventData[] = events |> Seq.map (codec.Encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
+        let encodedEvents : EventData[] = events |> Seq.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
         let! syncRes = context.TrySync log streamToken (events,encodedEvents) compactionPredicate
         match syncRes with
         | GatewaySyncResult.ConflictUnknown _ ->
@@ -443,18 +449,18 @@ type private Category<'event, 'state>(context : Context, codec : FsCodec.IUnionE
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, string>, tee : string -> StreamToken * 'state -> Async<unit>) =
+    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, string, 'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
         let intercept streamName tokenAndState = async {
             let! _ = tee streamName tokenAndState
             return tokenAndState }
         let loadAndIntercept load streamName = async {
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
-        interface ICategory<'event, 'state, string> with
+        interface ICategory<'event, 'state, string, 'context> with
             member __.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
                 loadAndIntercept (inner.Load(log, streamName, opt)) streamName
-            member __.TrySync(log : ILogger, (Token.StreamPos (stream,_) as token), state, events : 'event list) : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync(log, token, state, events)
+            member __.TrySync(log : ILogger, (Token.StreamPos (stream,_) as token), state, events : 'event list, context) : Async<SyncResult<'state>> = async {
+                let! syncRes = inner.TrySync(log, token, state, events, context)
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync stream.name)
                 | SyncResult.Written (token',state') ->
@@ -465,16 +471,16 @@ module Caching =
             (cache: ICache)
             (prefix: string)
             (slidingExpiration : TimeSpan)
-            (category: ICategory<'event, 'state, string>)
-            : ICategory<'event, 'state, string> =
+            (category: ICategory<'event, 'state, string, 'context>)
+            : ICategory<'event, 'state, string, 'context> =
         let mkCacheEntry (initialToken: StreamToken, initialState: 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
         let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
-        CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
+        CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
-type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
+type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
     let batched log streamName = category.Load fold initial streamName log
-    interface ICategory<'event, 'state, string> with
+    interface ICategory<'event, 'state, string, 'context> with
         member __.Load(log, streamName, opt) : Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log streamName
@@ -483,8 +489,8 @@ type private Folder<'event, 'state>(category : Category<'event, 'state>, fold: '
                 | None -> return! batched log streamName
                 | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
                 | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
-        member __.TrySync(log : ILogger, token, initialState, events : 'event list) : Async<SyncResult<'state>> = async {
-            let! syncRes = category.TrySync fold log (token, initialState) events
+        member __.TrySync(log : ILogger, token, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
+            let! syncRes = category.TrySync(log, fold, token, initialState, events, context)
             match syncRes with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
@@ -495,8 +501,8 @@ type CachingStrategy =
     /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
     | SlidingWindowPrefixed of ICache * window: TimeSpan * prefix: string
 
-type Resolver<'event,'state>
-    (   context : Context, codec, fold, initial,
+type Resolver<'event, 'state, 'context>
+    (   context : Context, codec : IUnionEncoder<_,_,'context>, fold, initial,
         /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>]?caching,
@@ -508,14 +514,14 @@ type Resolver<'event,'state>
             |> invalidOp
         | _ -> ()
 
-    let inner = Category<'event, 'state>(context, codec, ?access = access)
+    let inner = Category<'event, 'state, 'context>(context, codec, ?access = access)
     let readCacheOption =
         match caching with
         | None -> None
         | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
         | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some(cache, prefix)
-    let folder = Folder<'event, 'state>(inner, fold, initial, ?readCache = readCacheOption)
-    let category : ICategory<_,_,_> =
+    let folder = Folder<'event, 'state, 'context>(inner, fold, initial, ?readCache = readCacheOption)
+    let category : ICategory<_,_,_,'context> =
         match caching with
         | None -> folder :> _
         | Some (CachingStrategy.SlidingWindow(cache, window)) ->
@@ -524,15 +530,16 @@ type Resolver<'event,'state>
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
     let resolveStream = Stream.create category
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
-    member __.Resolve(target, [<O; D null>]?option) =
+    let loadEmpty sn = context.LoadEmpty sn,initial
+    member __.Resolve(target, [<O; D null>]?option, [<O; D null>]?context) =
         match resolveTarget target, option with
-        | sn,(None|Some AllowStale) -> resolveStream option sn
-        | sn,Some AssumeEmpty -> Stream.ofMemento (context.LoadEmpty sn,initial) (resolveStream option sn)
-    member __.ResolveEx(target,opt) = __.Resolve(target,?option=opt)
+        | sn,(None|Some AllowStale) -> resolveStream sn option context
+        | sn,Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
+    member __.ResolveEx(target, opt, ?context : 'context) = __.Resolve(target, ?option=opt, ?context=context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member __.FromMemento(Token.Unpack token as streamToken, state) =
-        Stream.ofMemento (streamToken,state) (resolveStream None token.stream.name)
+    member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =
+        Stream.ofMemento (streamToken,state) (resolveStream token.stream.name context None)
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
