@@ -25,15 +25,23 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
         [<JsonConverter(typeof<FsCodec.NewtonsoftJson.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        m: byte[] }  // optional
+        m: byte[]
+
+        /// Optional correlationId (can be null, not written if missing)
+        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+        correlationId : string
+
+        /// Optional causationId (can be null, not written if missing)
+        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+        causationId : string }
 
     interface IEventData<byte[]> with
         member __.EventType = __.c
         member __.Data = __.d
         member __.Meta = __.m
         member __.Timestamp = __.t
-        member __.CorrelationId = null
-        member __.CausationId = null
+        member __.CorrelationId = __.correlationId
+        member __.CausationId = __.causationId
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
@@ -174,7 +182,7 @@ type Direction = Forward | Backward override this.ToString() = match this with F
 
 type internal Enum() =
     static member internal Events(b: Tip) : ITimelineEvent<byte[]> seq =
-        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.TimelineEvent.Create(b.i + int64 offset, x.c, x.d, x.m, null, null, x.t) :> _)
+        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.TimelineEvent.Create(b.i + int64 offset, x.c, x.d, x.m, x.correlationId, x.causationId, x.t) :> _)
     static member Events(i: int64, e: Event[], startPos : Position option, direction) : ITimelineEvent<byte[]> seq = seq {
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         let isValidGivenStartPos i =
@@ -186,7 +194,7 @@ type internal Enum() =
             let index = i + int64 offset
             if isValidGivenStartPos index then
                 let x = e.[offset]
-                yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, null, null, x.t) :> _ }
+                yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, x.correlationId, x.causationId, x.t) :> _ }
     static member internal Events(b: Batch, startPos, direction) =
         Enum.Events(b.i, b.e, startPos, direction)
         |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
@@ -491,7 +499,7 @@ function sync(req, expIndex, expEtag) {
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
     let mkBatch (stream: string) (events: IEventData<_>[]) unfolds: Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
-            e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta } |]
+            e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId } |]
             u = Array.ofSeq unfolds }
     let mkUnfold baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
         unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta } : Unfold)
