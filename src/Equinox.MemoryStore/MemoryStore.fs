@@ -95,16 +95,16 @@ type Category<'event, 'state, 'context>(store : VolatileStore, fold, initial) =
                 return SyncResult.Conflict resync
             | ConcurrentArraySyncResult.Written events -> return SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
-type Resolver<'event, 'state, 'context>(store : VolatileStore, fold, initial, ?context) =
+type Resolver<'event, 'state, 'context>(store : VolatileStore, fold, initial) =
     let category = Category<'event,'state,'context>(store, fold, initial)
-    let resolveStream streamName = Stream.create category streamName context None
+    let resolveStream streamName context = Stream.create category streamName None context
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
-    member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option) =
+    member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context) =
         match resolveTarget target, option with
-        | sn,(None|Some AllowStale) -> resolveStream sn
-        | sn,Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn)
+        | sn,(None|Some AllowStale) -> resolveStream sn context
+        | sn,Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn context)
     member __.ResolveEx(target,opt) = __.Resolve(target,?option=opt)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member __.FromMemento(Token.Unpack stream as streamToken,state) =
-        Stream.ofMemento (streamToken,state) (resolveStream stream.streamName)
+    member __.FromMemento(Token.Unpack stream as streamToken, state, ?context) =
+        Stream.ofMemento (streamToken,state) (resolveStream stream.streamName context)
