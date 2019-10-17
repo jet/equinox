@@ -16,7 +16,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Equinox.Core\Equinox.Core.fsproj" />
-    <ProjectReference Include="..\..\..\FsCodec\src\FsCodec\FsCodec.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,7 +26,7 @@
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
     <PackageReference Include="EventStore.Client" Version="5.0.1" />
-<!--    <PackageReference Include="FsCodec" Version="1.0.0-pr.20.rc2.5" />-->
+    <PackageReference Include="FsCodec" Version="1.0.0" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.21" />
   </ItemGroup>
 
