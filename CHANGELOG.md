@@ -17,14 +17,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- Updated `MinVer` to `2.0.0-rc.1`
-- Updated `Microsoft.Azure.DocumentDb[.Core]` to `2.2.0` (required for [#170](https://github.com/jet/equinox/pull/170))
+- Updated minimum `Microsoft.Azure.DocumentDb[.Core]` dep from `2.0.0` to `2.2.0` (required for [#170](https://github.com/jet/equinox/pull/170))
 - Updated `FsCodec` to `1.0.0` to pick up final name changes [#162](https://github.com/jet/equinox/pull/162)
 - Replaced `TargetId.AggregateIdEmpty` with `ResolveOption.AssumeEmpty` [#163](https://github.com/jet/equinox/pull/163)
 - Extracted `Equinox.Core` module [#164](https://github.com/jet/equinox/pull/164)
 - Used `Transact` name consistently in `Accumulator` (follow-up to [#97](https://github.com/jet/equinox/pull/97)) [#166](https://github.com/jet/equinox/pull/166)
 - Changed all curried Methods to tupled
 - `.EventStore` now caches written values [#167](https://github.com/jet/equinox/pull/167)
+- (internal) Updated `MinVer` to `2.0.0`
 
 ### Removed
 ### Fixed
