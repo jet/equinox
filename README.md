@@ -473,7 +473,7 @@ Yes, you have decisions to make; Equinox is not a panacea - there is no one size
 
 ### Is there a guide to building the simplest possible hello world "counter" sample, that simply counts with an add and a subtract event? 
 
-See the [API Guide in DOCUMENTATION.md](DOCUMENTATION.md#api). An alternate way is to look at the `Todo.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates) in the [QuickStart](#quickstart).
+Yes; [`Counter.fsx` in th Tutorial project in this repo](https://github.com/jet/equinox/blob/master/samples/Tutorial/Counter.fsx). It may also be worth starting with the [API Guide in DOCUMENTATION.md](DOCUMENTATION.md#api). An alternate way is to look at the `Todo.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates) in the [QuickStart](#quickstart).
 
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
