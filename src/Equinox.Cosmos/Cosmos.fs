@@ -1110,35 +1110,43 @@ type Connector
         co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
         co
 
-    /// Yields an CosmosClient configured and Connect()ed to a given DocDB collection per the requested `discovery` strategy
-    let connect
-        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
-            name,
-            discovery : Discovery) : Async<Client.DocumentClient> =
-        let connect (uri: Uri, key: string) = async {
-            let name = String.concat ";" <| seq {
-                yield name
-                match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
-            let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
-            let client =
-                let consistencyLevel = Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session)
-                if defaultArg bypassCertificateValidation false then
-                    let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
-                    new Client.DocumentClient(uri, key, inhibitCertCheck, clientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
-                else new Client.DocumentClient(uri, key, clientOptions, consistencyLevel)
-            log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
-            do! client.OpenAsync() |> Async.AwaitTaskCorrect
-            return client }
-
-        match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
+    let logName (uri : Uri) name =
+        let name = String.concat ";" <| seq {
+            yield name
+            match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
+        let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
+        log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
+    let mkClient name skipLog = function
+        | Discovery.UriAndKey(databaseUri=uri; key=key) ->
+            if not skipLog then logName uri name
+            let consistencyLevel = Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session)
+            if defaultArg bypassCertificateValidation false then
+                let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
+                new Client.DocumentClient(uri, key, inhibitCertCheck, clientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
+            else new Client.DocumentClient(uri, key, clientOptions, consistencyLevel)
 
     /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
     member __.ClientOptions : Client.ConnectionPolicy = clientOptions
 
-    /// Yields a DocDbConnection configured per the specified strategy
-    member __.Connect(name, discovery : Discovery) : Async<Connection> = async {
-        let! conn = connect(name, discovery)
-        return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
+    /// Yields a DocumentClient configured per the specified strategy
+    member __.CreateClient
+        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+            name, discovery : Discovery,
+            /// <c>true</c> to inhibit logging of client name
+            ?skipLog) : Client.DocumentClient =
+        mkClient name (defaultArg skipLog false) discovery
+
+    /// Yields a Connection configured per the specified strategy
+    member __.Connect
+        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+            name, discovery : Discovery,
+            /// <c>true</c> to inhibit OpenAsync call
+            ?skipOpen,
+            /// <c>true</c> to inhibit logging of client name
+            ?skipLog) : Async<Connection> = async {
+        let client = mkClient name (defaultArg skipLog false) discovery
+        if skipOpen <> Some true then do! client.OpenAsync() |> Async.AwaitTaskCorrect
+        return Connection(client, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
 namespace Equinox.Cosmos.Core
 
