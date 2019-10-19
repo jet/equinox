@@ -1109,7 +1109,6 @@ type Connector
         co.RequestTimeout <- requestTimeout
         co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
         co
-
     let logName (uri : Uri) name =
         let name = String.concat ";" <| seq {
             yield name
@@ -1124,9 +1123,6 @@ type Connector
                 let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
                 new Client.DocumentClient(uri, key, inhibitCertCheck, clientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
             else new Client.DocumentClient(uri, key, clientOptions, consistencyLevel)
-
-    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
-    member __.ClientOptions : Client.ConnectionPolicy = clientOptions
 
     /// Yields a DocumentClient configured per the specified strategy
     member __.CreateClient
