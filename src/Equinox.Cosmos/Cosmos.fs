@@ -1129,7 +1129,7 @@ type Connector
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery,
             /// <c>true</c> to inhibit logging of client name
-            ?skipLog) : Client.DocumentClient =
+            [<O; D null>]?skipLog) : Client.DocumentClient =
         mkClient name (defaultArg skipLog false) discovery
 
     /// Yields a Connection configured per the specified strategy
@@ -1137,9 +1137,9 @@ type Connector
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery,
             /// <c>true</c> to inhibit OpenAsync call
-            ?skipOpen,
+            [<O; D null>]?skipOpen,
             /// <c>true</c> to inhibit logging of client name
-            ?skipLog) : Async<Connection> = async {
+            [<O; D null>]?skipLog) : Async<Connection> = async {
         let client = __.CreateClient(name, discovery, ?skipLog=skipLog)
         if skipOpen <> Some true then do! client.OpenAsync() |> Async.AwaitTaskCorrect
         return Connection(client, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
