@@ -1140,7 +1140,7 @@ type Connector
             ?skipOpen,
             /// <c>true</c> to inhibit logging of client name
             ?skipLog) : Async<Connection> = async {
-        let client = mkClient name (defaultArg skipLog false) discovery
+        let client = __.CreateClient(name, discovery, ?skipLog=skipLog)
         if skipOpen <> Some true then do! client.OpenAsync() |> Async.AwaitTaskCorrect
         return Connection(client, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
