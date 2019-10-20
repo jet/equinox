@@ -20,11 +20,16 @@ module MemoryStore =
     let config () =
         StorageConfig.Memory (Equinox.MemoryStore.VolatileStore())
 
+let [<Literal>] appName = "equinox-tool"
+
 module Cosmos =
-    let envBackstop msg key =
-        match Environment.GetEnvironmentVariable key with
-        | null -> raise <| MissingArg (sprintf "Please provide a %s, either as an argment or via the %s environment variable" msg key)
-        | x -> x 
+    let private getEnvVarForArgumentOrThrow varName argName =
+        match Environment.GetEnvironmentVariable varName with
+        | null -> raise (MissingArg(sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName))
+        | x -> x
+    let private defaultWithEnvVar varName argName = function
+        | None -> getEnvVarForArgumentOrThrow varName argName
+        | Some x -> x
 
     type [<NoEquality; NoComparison>] Arguments =
         | [<AltCommandLine "-vs">]      VerboseStore
@@ -42,15 +47,15 @@ module Cosmos =
                 | Timeout _ ->          "specify operation timeout in seconds (default: 5)."
                 | Retries _ ->          "specify operation retries (default: 1)."
                 | RetriesWaitTime _ ->  "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
-                | Connection _ ->       "specify a connection string for a Cosmos account (defaults: envvar:EQUINOX_COSMOS_CONNECTION, Cosmos Emulator)."
-                | ConnectionMode _ ->   "override the connection mode (default: Direct)."
-                | Database _ ->         "specify a database name for store (defaults: envvar:EQUINOX_COSMOS_DATABASE, test)."
-                | Container _ ->        "specify a container name for store (defaults: envvar:EQUINOX_COSMOS_CONTAINER, test)."
+                | ConnectionMode _ ->   "override the connection mode. Default: Direct."
+                | Connection _ ->       "specify a connection string for a Cosmos account. (optional if environment variable EQUINOX_COSMOS_CONNECTION specified)"
+                | Database _ ->         "specify a database name for store. (optional if environment variable EQUINOX_COSMOS_DATABASE specified)"
+                | Container _ ->        "specify a container name for store. (optional if environment variable EQUINOX_COSMOS_CONTAINER specified)"
     type Info(args : ParseResults<Arguments>) =
         member __.Mode =                args.GetResult(ConnectionMode,Equinox.Cosmos.ConnectionMode.Direct)
-        member __.Connection =          match args.TryGetResult Connection  with Some x -> x | None -> envBackstop "Connection" "EQUINOX_COSMOS_CONNECTION"
-        member __.Database =            match args.TryGetResult Database    with Some x -> x | None -> envBackstop "Database"   "EQUINOX_COSMOS_DATABASE"
-        member __.Container =           match args.TryGetResult Container   with Some x -> x | None -> envBackstop "Container"  "EQUINOX_COSMOS_CONTAINER"
+        member __.Connection =          args.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
+        member __.Database =            args.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
+        member __.Container =           args.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
 
         member __.Timeout =             args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member __.Retries =             args.GetResult(Retries,1)
@@ -73,7 +78,7 @@ module Cosmos =
         discovery, a.Database, a.Container, Connector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
         let discovery, dName, cName, connector = connection (log, storeLog) info
-        let conn = connector.Connect("equinox-tool", discovery) |> Async.RunSynchronously
+        let conn = connector.Connect(appName, discovery) |> Async.RunSynchronously
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dName, cName)
 
@@ -119,7 +124,7 @@ module EventStore =
                 heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
                 log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
-            .Establish("equinox-tool", Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
+            .Establish(appName, Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
     let private createGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) (args : ParseResults<Arguments>) =
         let a = Info(args)

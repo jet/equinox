@@ -51,7 +51,7 @@ type Startup() =
             let defaultBatchSize = 500
             let log = Log.ForContext<App>()
 
-            let cache = if options |> List.contains Cached then Equinox.Cache("equinox-tool", sizeMb = 50) |> Some else None
+            let cache = if options |> List.contains Cached then Equinox.Cache(Storage.appName, sizeMb = 50) |> Some else None
             match args.TryGetSubCommand() with
             | Some (Es sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
