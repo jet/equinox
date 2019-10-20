@@ -1073,9 +1073,9 @@ type Connector
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
-        maxRetryAttemptsOnThrottledRequests: int,
+        maxRetryAttemptsOnRateLimitedRequests: int,
         /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
-        maxRetryWaitTimeInSeconds: int,
+        maxRetryWaitTimeOnRateLimitedRequestsSeconds: int,
         /// Log to emit connection messages to
         log : ILogger,
         /// Connection limit for Gateway Mode (default 1000)
@@ -1112,8 +1112,8 @@ type Connector
         | Some ConnectionMode.Direct -> co.ConnectionMode <- Client.ConnectionMode.Direct; co.ConnectionProtocol <- Client.Protocol.Tcp
         co.RetryOptions <-
             Client.RetryOptions(
-                MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
-                MaxRetryWaitTimeInSeconds = maxRetryWaitTimeInSeconds)
+                MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnRateLimitedRequests,
+                MaxRetryWaitTimeInSeconds = maxRetryWaitTimeOnRateLimitedRequestsSeconds)
         co.RequestTimeout <- requestTimeout
         co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
         co
