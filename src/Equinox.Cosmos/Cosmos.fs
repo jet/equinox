@@ -1096,7 +1096,15 @@ type Connector
         [<O; D(null)>]?bypassCertificateValidation : bool) =
     do if log = null then nullArg "log"
 
-    let clientOptions =
+    let logName (uri : Uri) name =
+        let name = String.concat ";" <| seq {
+            yield name
+            match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
+        let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
+        log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
+
+    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
+    member val ClientOptions =
         let co = Client.ConnectionPolicy.Default
         match mode with
         | None | Some ConnectionMode.Gateway -> co.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
@@ -1109,20 +1117,6 @@ type Connector
         co.RequestTimeout <- requestTimeout
         co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
         co
-    let logName (uri : Uri) name =
-        let name = String.concat ";" <| seq {
-            yield name
-            match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
-        let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
-        log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
-    let mkClient name skipLog = function
-        | Discovery.UriAndKey(databaseUri=uri; key=key) ->
-            if not skipLog then logName uri name
-            let consistencyLevel = Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session)
-            if defaultArg bypassCertificateValidation false then
-                let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
-                new Client.DocumentClient(uri, key, inhibitCertCheck, clientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
-            else new Client.DocumentClient(uri, key, clientOptions, consistencyLevel)
 
     /// Yields a DocumentClient configured per the specified strategy
     member __.CreateClient
@@ -1130,7 +1124,13 @@ type Connector
             name, discovery : Discovery,
             /// <c>true</c> to inhibit logging of client name
             [<O; D null>]?skipLog) : Client.DocumentClient =
-        mkClient name (defaultArg skipLog false) discovery
+        let (Discovery.UriAndKey (databaseUri=uri; key=key)) = discovery
+        if skipLog <> Some true then logName uri name
+        let consistencyLevel = Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session)
+        if defaultArg bypassCertificateValidation false then
+            let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
+            new Client.DocumentClient(uri, key, inhibitCertCheck, __.ClientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
+        else new Client.DocumentClient(uri, key, __.ClientOptions, consistencyLevel)
 
     /// Yields a Connection configured per the specified strategy
     member __.Connect
