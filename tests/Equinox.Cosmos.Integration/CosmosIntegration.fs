@@ -14,28 +14,28 @@ module Cart =
     let codec = Domain.Cart.Events.codec
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
-        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching).ResolveEx
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds connection batchSize log =
         let store = createCosmosContext connection batchSize
         let unfArgs = Domain.Cart.Folds.isOrigin, fun _ -> Seq.empty
-        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unfolded unfArgs).ResolveEx
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unfolded unfArgs).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithSnapshotStrategy connection batchSize log =
         let store = createCosmosContext connection batchSize
-        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).ResolveEx
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithSnapshotStrategyAndCaching connection batchSize log cache =
         let store = createCosmosContext connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).ResolveEx
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithRollingUnfolds connection log =
         let store = createCosmosContext connection 1
         let access = AccessStrategy.RollingUnfolds(Domain.Cart.Folds.isOrigin,Domain.Cart.Folds.transmute)
-        let resolveStream = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).ResolveEx
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
 
 module ContactPreferences =

@@ -535,7 +535,6 @@ type Resolver<'event, 'state, 'context>
         match resolveTarget target, option with
         | sn,(None|Some AllowStale) -> resolveStream sn option context
         | sn,Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
-    member __.ResolveEx(target, opt, ?context : 'context) = __.Resolve(target, ?option=opt, ?context=context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =
