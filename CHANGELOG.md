@@ -17,6 +17,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Cosmos`: renamed `Connector`'s `maxRetryAttemptsOnThrottledRequests` and `maxRetryWaitTimeInSeconds` to maxRetryAttemptsOnRateLimitedRequests` and `maxRetryWaitTimeOnRateLimitedRequests` and changed latter to `TimeSpan` to match V3 SDK [#171](https://github.com/jet/equinox/pull/171) 
 
 ### Removed
+
+- `Resolver.ResolveEx` [#172](https://github.com/jet/equinox/pull/172)
+
 ### Fixed
 
 <a name="2.0.0"></a>
