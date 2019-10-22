@@ -31,7 +31,7 @@ module Cart =
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
+        Backend.Cart.Service(log, fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Backend.Cart.Service(log, fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
