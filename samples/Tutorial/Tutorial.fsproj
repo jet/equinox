@@ -13,6 +13,10 @@
     <None Include="Cosmos.fsx" />
     <None Include="AsAt.fsx" />
     <None Include="FulfilmentCenter.fsx" />
+    <Compile Include="fc\Infrastructure.fs" />
+    <Compile Include="fc\PickTicket.fs" />
+    <Compile Include="fc\PickList.fs" />
+    <Compile Include="fc\ListTicketSaga.fs" />
   </ItemGroup>
 
   <ItemGroup>
