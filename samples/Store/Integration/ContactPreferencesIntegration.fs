@@ -12,7 +12,7 @@ let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferen
 let createMemoryStore () =
     new MemoryStore.VolatileStore()
 let createServiceMemory log store =
-    Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, fold, initial).Resolve)
+    Backend.ContactPreferences.Service(log, MemoryStore.Resolver<_,_>(store, fold, initial).Resolve)
 
 let codec = Domain.ContactPreferences.Events.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =

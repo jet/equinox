@@ -12,7 +12,7 @@ type StreamResolver(storage) =
             snapshot: (('event -> bool) * ('state -> 'event))) =
         match storage with
         | Storage.StorageConfig.Memory store ->
-            Equinox.MemoryStore.Resolver(store, fold, initial).Resolve
+            Equinox.MemoryStore.Resolver<_,_>(store, fold, initial).Resolve
         | Storage.StorageConfig.Es (context, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot |> Some else None
             Equinox.EventStore.Resolver<'event,'state,_>(context, codec, fold, initial, ?caching = caching, ?access = accessStrategy).Resolve

@@ -12,7 +12,7 @@ let snapshot = Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.compact
 let createMemoryStore () =
     new MemoryStore.VolatileStore()
 let createServiceMemory log store =
-    Backend.Favorites.Service(log, MemoryStore.Resolver(store, fold, initial).Resolve)
+    Backend.Favorites.Service(log, MemoryStore.Resolver<_,_>(store, fold, initial).Resolve)
 
 let codec = Domain.Favorites.Events.codec
 let createServiceGes gateway log =
