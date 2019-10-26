@@ -9,15 +9,15 @@ type Result =
 type Service(listService : PickList.Service, ticketService : PickTicket.Service) =
     static let maxDop = new SemaphoreSlim 10
 
-    let release (transactionId,listId,tickets) = async {
+    let release (transactionId,tickets) = async {
         let! results = seq { for x in tickets do yield ticketService.Sync(x,transactionId,None) |> maxDop.Throttle } |> Async.Parallel
-        let removed,conflicted = results |> Array.partition (function PickTicket.Result.Ok -> true | PickTicket.Result.Conflict _ -> false)
-        return removed }
+        let removed,_conflicted = results |> Array.partition (function PickTicket.Result.Ok -> true | PickTicket.Result.Conflict _ -> false)
+        return removed |> Array.toList }
 
     let acquire (transactionId,listId,tickets) = async {
         let! results = seq { for x in tickets do yield ticketService.Sync(x,transactionId,Some listId) |> maxDop.Throttle } |> Async.Parallel
-        let added,conflicted = results |> Array.partition (function PickTicket.Result.Ok -> true | PickTicket.Result.Conflict _ -> false)
-        return added }
+        let added,_conflicted = results |> Array.partition (function PickTicket.Result.Ok -> true | PickTicket.Result.Conflict _ -> false)
+        return added |> Array.toList }
 
     let rec sync attempts (transactionId, listId, tickets, removed, acquired) : Async<Result> = async {
         match! listService.Sync(listId, transactionId, tickets, removed, acquired) with
@@ -30,7 +30,7 @@ type Service(listService : PickList.Service, ticketService : PickTicket.Service)
                 let! removed =
                     match state.toRelease with
                     | [] -> async { return [] }
-                    | rel -> release (transactionId, listId, rel)
+                    | rel -> release (transactionId, rel)
                 let! acquired =
                     match state.toAcquire with
                     | [] -> async { return [] }
