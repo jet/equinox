@@ -1,8 +1,6 @@
-Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ), [README.md](README.md) and the Issues for background info on what's outstanding. While the repo is open, this is **not released**, it's a soft-launched open source repo marked > 1.0 to reflect that its in production usage and thus can't undergo random rewrites, but it's still early days. There's absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now; here are some excuses why:
+# Documentation
 
-- As noted in the [contributing section](README.md#contributing), we're simply not ready yet (we have governance models in place; this is purely a matter of conserving bandwidth, prioritising getting the system serviceable in terms of samples and documentation in advance of inviting people to evaluate)...
-- While [`dotnet new eqxweb -t`](https://github.com/jet/dotnet-templates) does provide the option to include a full-featured [TodoBackend](https://todobackend.com) per the spec, a more complete sample application is needed; see [#57](https://github.com/jet/equinox/issues/57)
-- There is a placeholder [Roadmap](#roadmap) for now, which is really an unordered backlog.
+Please refer to the [FAQ](README.md#FAQ), [README.md](README.md), the [Roadmap](#roadmap) and the [Issues](https://github.com/jet/equinox/issues) for background info on what's outstanding (aside from there being lots of room for more and better docs).
 
 # Background reading
 
@@ -761,10 +759,6 @@ EventStore, and it's Store adapter is the most proven and is pretty feature rich
 - performance, efficiency and concurrency improvements based on [`tip-isa-batch`](https://github.com/jet/equinox/tree/tip-isa-batch) schema generalization [#109](https://github.com/jet/equinox/issues/109)
 - performance improvements in loading logic
 - Perf tuning of `JObject` vs `UTF-8` arrays and/or using a different serializer [#79](https://github.com/jet/equinox/issues/79)
-
-## Wouldn't it be nice - `Equinox.SqlStreamStore`
-
-- See [#62](https://github.com/jet/equinox/issues/62)
 
 ## Wouldn't it be nice - `Equinox.DynamoDb`
 
