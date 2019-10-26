@@ -52,7 +52,7 @@ module FulfilmentCenter =
         let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
 
     let initial = Summary.Zero
-    let evolve state : Event -> Summary = function 
+    let evolve state : Event -> Summary = function
         | FCCreated x | FCRenamed x -> { state with name = Some x }
         | FCAddressChanged x -> { state with address = Some x.address }
         | FCContactChanged x -> { state with contact = Some x.contact }
