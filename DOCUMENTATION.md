@@ -1,8 +1,6 @@
-Jet 😍 F# and Event Sourcing; open sourcing Equinox has been a long journey; we're _nearly_ there! Please refer to the [FAQ](README.md#FAQ), [README.md](README.md) and the Issues for background info on what's outstanding. While the repo is open, this is **not released**, it's a soft-launched open source repo marked > 1.0 to reflect that its in production usage and thus can't undergo random rewrites, but it's still early days. There's absolutely an intention to make this be a proper open-source project; we're absolutely not making that claim right now; here are some excuses why:
+# Documentation
 
-- As noted in the [contributing section](README.md#contributing), we're simply not ready yet (we have governance models in place; this is purely a matter of conserving bandwidth, prioritising getting the system serviceable in terms of samples and documentation in advance of inviting people to evaluate)...
-- While [`dotnet new eqxweb -t`](https://github.com/jet/dotnet-templates) does provide the option to include a full-featured [TodoBackend](https://todobackend.com) per the spec, a more complete sample application is needed; see [#57](https://github.com/jet/equinox/issues/57)
-- There is a placeholder [Roadmap](#roadmap) for now, which is really an unordered backlog.
+Please refer to the [FAQ](README.md#FAQ), [README.md](README.md), the [Ideas](#ideas) and the [Issues](https://github.com/jet/equinox/issues) for background info on what's outstanding (aside from there being lots of room for more and better docs).
 
 # Background reading
 
@@ -92,14 +90,14 @@ NB this has lots of room for improvement, having started as a placeholder in [#5
 In F#, independent of the Store being used, the Equinox programming model involves (largely by convention, see [FAQ](README.md#FAQ)), per aggregation of events on a given category of stream:
 
 - `'state`: the rolling state maintained to enable Decisions or Queries to be made given a `'command` (not expected to be serializable or stored directly in a Store; can be held in a [.NET `MemoryCache`](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.caching.memorycache))
-- `'event`: a discriminated union representing all the possible Events from which a state can be `evolve`d (see `e`vents and `u`nfolds in the [Storage Model](cosmos-storage-model)). Typically the mapping of the json to an `'event` `c`ase is [driven by a `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)
+- `'event`: a discriminated union representing all the possible Events from which a state can be `evolve`d (see `e`vents and `u`nfolds in the [Storage Model](#cosmos-storage-model)). Typically the mapping of the json to an `'event` `c`ase is [driven by a `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)
 
 - `initial: 'state`: the [implied] state of an empty stream
 
 - `fold : 'state -> 'event seq -> 'state`: function used to fold one or more loaded (or proposed) events (real ones and/or unfolded ones) into a given running [persistent data structure](https://en.wikipedia.org/wiki/Persistent_data_structure) of type `'state`
 - `evolve: state -> 'event -> 'state` - the `folder` function from which `fold` is built, representing the application of a single delta that the `'event` implies for the model to the `state`. _Note: `evolve` is an implementation detail of a given Aggregate; `fold` is the function used in tests and used to parameterize the Category's storage configuration._
 
-- `interpret: 'state -> 'command -> event' list`: responsible for _Deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be reflected in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles, [see Synchronous Query in the Glossary](glossary))
+- `interpret: 'state -> 'command -> event' list`: responsible for _Deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be reflected in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles, [see Synchronous Query in the Glossary](#glossary))
 
 When using a Store with support for synchronous unfolds and/or snapshots, one will typically implement two
 further functions in order to avoid having every `'event` in the stream be loaded and processed in order to
@@ -503,7 +501,7 @@ However, given one has a specific store (or set of stores) in mind for the event
 
 ## Store-specific concerns mapping to the programming model
 
-This sections enumerates key concerns feeding into how Stores in general, and specific concrete Stores bind to the [Programming Model](programming-model):
+This sections enumerates key concerns feeding into how Stores in general, and specific concrete Stores bind to the [Programming Model](#programming-model):
 
 ### EventStore
 
@@ -734,7 +732,7 @@ match res with
 | c -> failwithf "conflict %A" c
 ```
 
-# Roadmap
+# Ideas
 
 # Things that are incomplete and/or require work
 
@@ -761,10 +759,6 @@ EventStore, and it's Store adapter is the most proven and is pretty feature rich
 - performance, efficiency and concurrency improvements based on [`tip-isa-batch`](https://github.com/jet/equinox/tree/tip-isa-batch) schema generalization [#109](https://github.com/jet/equinox/issues/109)
 - performance improvements in loading logic
 - Perf tuning of `JObject` vs `UTF-8` arrays and/or using a different serializer [#79](https://github.com/jet/equinox/issues/79)
-
-## Wouldn't it be nice - `Equinox.SqlStreamStore`
-
-- See [#62](https://github.com/jet/equinox/issues/62)
 
 ## Wouldn't it be nice - `Equinox.DynamoDb`
 
