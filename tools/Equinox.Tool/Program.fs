@@ -20,8 +20,8 @@ type Arguments =
     | [<AltCommandLine "-vc">]              VerboseConsole
     | [<AltCommandLine "-S">]               LocalSeq
     | [<AltCommandLine "-l">]               LogFile of string
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]     Run of ParseResults<TestArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]     Init of ParseResults<InitArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose ->                    "Include low level logging regarding specific test runs."
@@ -29,25 +29,16 @@ type Arguments =
             | LocalSeq ->                   "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | LogFile _ ->                  "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ ->                      "Run a load test"
-            | Init _ ->                     "Initialize Store/Container (presently only relevant for `cosmos`; also handles RU/s provisioning adjustment)."
+            | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
-    | [<AltCommandLine "-D">] Shared
-    | [<AltCommandLine "-P">] SkipStoredProc
-    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
+    | [<AltCommandLine "-D">]               Shared
+    | [<AltCommandLine "-P">]               SkipStoredProc
+    | [<CliPrefix(CliPrefix.None)>]           Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ ->                      "Specify RU/s level to provision for the Container."
             | Shared ->                     "Use Database-level RU allocations (Default: Use Container-level allocation)."
-            | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
-            | Cosmos _ ->                   "Cosmos Connection parameters."
-and [<NoComparison>]InitDbArguments =
-    | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
-    | [<AltCommandLine "-P">]               SkipStoredProc
-    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
-    interface IArgParserTemplate with
-        member a.Usage = a |> function
-            | Rus _ ->                      "Specify RU/s level to provision for the Database."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
@@ -66,10 +57,10 @@ and [<NoComparison>]
     | [<AltCommandLine "-d">]               DurationM of float
     | [<AltCommandLine "-e">]               ErrorCutoff of int64
     | [<AltCommandLine "-i">]               ReportIntervalS of int
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<Storage.MemoryStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Es     of ParseResults<Storage.EventStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Web    of ParseResults<WebArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Memory   of ParseResults<Storage.MemoryStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Web    of ParseResults<WebArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Name _ ->                     "specify which test to run. (default: Favorite)."
@@ -102,14 +93,14 @@ and TestInfo(args: ParseResults<TestArguments>) =
     member __.ConfigureStore(log : ILogger, createStoreLog) = 
         let cache = if __.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
         match args.TryGetSubCommand() with
-        | Some (Es sargs) ->
-            let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-            log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
-            storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) sargs
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
             log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", __.Options)
             storeLog, Storage.Cosmos.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
+        | Some (Es sargs) ->
+            let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
+            log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
+            storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) sargs
         | _  | Some (Memory _) ->
             log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", __.Options)
             createStoreLog false, Storage.MemoryStore.config ()
@@ -156,18 +147,18 @@ module LoadTest =
         let cache = if a.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
         let storeLog, storeConfig, httpClient: ILogger * Storage.StorageConfig option * HttpClient option =
             match storage with
-            | Some (Web wargs) ->
-                let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
-                log.Information("Running web test targeting: {url}", uri)
-                createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
-            | Some (Es sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-                log.Information("Running transactions in-process against EventStore with storage options: {options:l}", a.Options)
-                storeLog, Storage.EventStore.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", a.Options)
                 storeLog, Storage.Cosmos.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) (Storage.Cosmos.Info sargs) |> Some, None
+            | Some (Es sargs) ->
+                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
+                log.Information("Running transactions in-process against EventStore with storage options: {options:l}", a.Options)
+                storeLog, Storage.EventStore.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
+            | Some (Web wargs) ->
+                let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
+                log.Information("Running web test targeting: {url}", uri)
+                createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
             | _  | Some (Memory _) ->
                 log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", a.Options)
                 createStoreLog false, Storage.MemoryStore.config () |> Some, None
@@ -208,8 +199,8 @@ module LoadTest =
 let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
@@ -244,7 +235,7 @@ let main argv =
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
-        | _ -> failwith "Please specify a valid subcommand :- init or run"
+        | _ -> failwith "Please specify a valid subcommand :- init, configure or run"
         0
     with :? Argu.ArguParseException as e -> eprintfn "%s" e.Message; 1
         | Storage.MissingArg msg -> eprintfn "%s" msg; 1

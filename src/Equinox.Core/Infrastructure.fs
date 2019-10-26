@@ -1,4 +1,5 @@
-﻿[<AutoOpen>]
+﻿/// The types in here (being shims which ultimately will be either removed or gain proper homes in other libraries and/or can cause intellisense confusion for consumers) are intentionally not public and compiled into each module requiring it directly via a `Link`
+[<AutoOpen>]
 module internal Equinox.Core.Infrastructure
 
 open FSharp.Control

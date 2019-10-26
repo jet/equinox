@@ -11,7 +11,7 @@ type StorageConfig =
     | Memory of Equinox.MemoryStore.VolatileStore<byte[]>
     | Es     of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
     | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
-    
+
 module MemoryStore =
     type [<NoEquality; NoComparison>] Arguments =
         | [<AltCommandLine("-vs")>] VerboseStore

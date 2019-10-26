@@ -11,22 +11,22 @@ open Serilog.Events
 
 [<NoComparison>]
 type Arguments =
-    | [<AltCommandLine "-vc">]              VerboseConsole
-    | [<AltCommandLine "-S">]               LocalSeq
-    | [<AltCommandLine "-C">]               Cached
-    | [<AltCommandLine "-U">]               Unfolds
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<Storage.MemoryStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Es     of ParseResults<Storage.EventStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
+    | [<AltCommandLine "-vc">]                                VerboseConsole
+    | [<AltCommandLine "-S">]                                 LocalSeq
+    | [<AltCommandLine "-C">]                                 Cached
+    | [<AltCommandLine "-U">]                                 Unfolds
+    | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | VerboseConsole ->             "Include low level Domain and Store logging in screen output."
             | LocalSeq ->                   "configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | Cached ->                     "employ a 50MB cache."
             | Unfolds ->                    "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
-            | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
-            | Es _ ->                       "specify storage in EventStore (--help for options)."
             | Cosmos _ ->                   "specify storage in CosmosDb (--help for options)."
+            | Es _ ->                       "specify storage in EventStore (--help for options)."
+            | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
 
 type App = class end
 
@@ -53,14 +53,14 @@ type Startup() =
 
             let cache = if options |> List.contains Cached then Equinox.Cache(Storage.appName, sizeMb = 50) |> Some else None
             match args.TryGetSubCommand() with
-            | Some (Es sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-                log.Information("EventStore Storage options: {options:l}", options)
-                Storage.EventStore.config (log,storeLog) (cache, unfolds, defaultBatchSize) sargs, storeLog
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("CosmosDb Storage options: {options:l}", options)
                 Storage.Cosmos.config (log,storeLog) (cache, unfolds, defaultBatchSize) (Storage.Cosmos.Info sargs), storeLog
+            | Some (Es sargs) ->
+                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
+                log.Information("EventStore Storage options: {options:l}", options)
+                Storage.EventStore.config (log,storeLog) (cache, unfolds, defaultBatchSize) sargs, storeLog
             | _  | Some (Memory _) ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 Storage.MemoryStore.config (), log
