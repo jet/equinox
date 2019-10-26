@@ -11,13 +11,16 @@ open Serilog.Events
 
 [<NoComparison>]
 type Arguments =
-    | [<AltCommandLine "-vc">]              VerboseConsole
-    | [<AltCommandLine "-S">]               LocalSeq
-    | [<AltCommandLine "-C">]               Cached
-    | [<AltCommandLine "-U">]               Unfolds
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Memory of ParseResults<Storage.MemoryStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Es     of ParseResults<Storage.EventStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
+    | [<AltCommandLine "-vc">]                                VerboseConsole
+    | [<AltCommandLine "-S">]                                 LocalSeq
+    | [<AltCommandLine "-C">]                                 Cached
+    | [<AltCommandLine "-U">]                                 Unfolds
+    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">]  MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">]  MySql    of ParseResults<Storage.Sql.My.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">]  Postgres of ParseResults<Storage.Sql.Pg.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | VerboseConsole ->             "Include low level Domain and Store logging in screen output."
@@ -27,6 +30,9 @@ type Arguments =
             | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
             | Es _ ->                       "specify storage in EventStore (--help for options)."
             | Cosmos _ ->                   "specify storage in CosmosDb (--help for options)."
+            | MsSql _ ->                    "specify storage in Sql Server (--help for options)."
+            | MySql _ ->                    "specify storage in MySql (--help for options)."
+            | Postgres _ ->                 "specify storage in Postgres (--help for options)."
 
 type App = class end
 
@@ -61,6 +67,15 @@ type Startup() =
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("CosmosDb Storage options: {options:l}", options)
                 Storage.Cosmos.config (log,storeLog) (cache, unfolds, defaultBatchSize) (Storage.Cosmos.Info sargs), storeLog
+            | Some (MsSql sargs) ->
+                log.Information("SqlStreamStore MsSql Storage options: {options:l}", options)
+                Storage.Sql.Ms.config log (cache, unfolds, defaultBatchSize) sargs, log
+            | Some (MySql sargs) ->
+                log.Information("SqlStreamStore MySql Storage options: {options:l}", options)
+                Storage.Sql.My.config log (cache, unfolds, defaultBatchSize) sargs, log
+            | Some (Postgres sargs) ->
+                log.Information("SqlStreamStore Postgres Storage options: {options:l}", options)
+                Storage.Sql.Pg.config log (cache, unfolds, defaultBatchSize) sargs, log
             | _  | Some (Memory _) ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 Storage.MemoryStore.config (), log

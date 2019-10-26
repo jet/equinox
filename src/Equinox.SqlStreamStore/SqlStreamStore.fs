@@ -550,11 +550,11 @@ type Resolver<'event, 'state, 'context>
         Stream.ofMemento (streamToken,state) (resolveStream token.stream.name context None)
 
 [<AbstractClass>]
-type Connector([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
 
     abstract member Connect : unit -> Async<SqlStreamStore.IStreamStore>
 
-    member __.Establish() : Async<Connection> = async {
+    member __.Establish(appName) : Async<Connection> = async {
         let! store = __.Connect()
         return Connection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
     }

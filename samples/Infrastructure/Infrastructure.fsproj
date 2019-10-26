@@ -14,6 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MsSql\Equinox.SqlStreamStore.MsSql.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MySql\Equinox.SqlStreamStore.MySql.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.Postgres\Equinox.SqlStreamStore.Postgres.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.SqlStreamStore\Equinox.SqlStreamStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />

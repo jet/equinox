@@ -7,7 +7,7 @@ type Connector
     (    connectionString: string, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy,
          /// <c>true</c> to auto-create the schema upon connection
          [<O; D(null)>]?autoCreate) =
-    inherit Equinox.SqlStreamStore.Connector(?readRetryPolicy=readRetryPolicy,?writeRetryPolicy=writeRetryPolicy)
+    inherit Equinox.SqlStreamStore.ConnectorBase(?readRetryPolicy=readRetryPolicy,?writeRetryPolicy=writeRetryPolicy)
 
     let settings = MySqlStreamStoreSettings(connectionString)
     let store = new MySqlStreamStore(settings)

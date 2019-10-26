@@ -7,7 +7,7 @@ type Connector
     (    connectionString: string, [<O; D(null)>]?schema: string, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy,
          /// <c>true</c> to auto-create the schema upon connection
          [<O; D(null)>]?autoCreate) =
-    inherit Equinox.SqlStreamStore.Connector(?readRetryPolicy=readRetryPolicy,?writeRetryPolicy=writeRetryPolicy)
+    inherit Equinox.SqlStreamStore.ConnectorBase(?readRetryPolicy=readRetryPolicy,?writeRetryPolicy=writeRetryPolicy)
 
     let settings = PostgresStreamStoreSettings(connectionString)
     do match schema with Some x when (not << System.String.IsNullOrWhiteSpace) x -> settings.Schema <- x | _ -> ()
