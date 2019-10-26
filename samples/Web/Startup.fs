@@ -15,9 +15,9 @@ type Arguments =
     | [<AltCommandLine "-S">]                                 LocalSeq
     | [<AltCommandLine "-C">]                                 Cached
     | [<AltCommandLine "-U">]                                 Unfolds
-    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">]  MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">]  MySql    of ParseResults<Storage.Sql.My.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">]  Postgres of ParseResults<Storage.Sql.Pg.Arguments>
@@ -27,9 +27,9 @@ type Arguments =
             | LocalSeq ->                   "configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | Cached ->                     "employ a 50MB cache."
             | Unfolds ->                    "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
-            | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
-            | Es _ ->                       "specify storage in EventStore (--help for options)."
             | Cosmos _ ->                   "specify storage in CosmosDb (--help for options)."
+            | Es _ ->                       "specify storage in EventStore (--help for options)."
+            | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
             | MsSql _ ->                    "specify storage in Sql Server (--help for options)."
             | MySql _ ->                    "specify storage in MySql (--help for options)."
             | Postgres _ ->                 "specify storage in Postgres (--help for options)."
@@ -59,14 +59,14 @@ type Startup() =
 
             let cache = if options |> List.contains Cached then Equinox.Cache(Storage.appName, sizeMb = 50) |> Some else None
             match args.TryGetSubCommand() with
-            | Some (Es sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-                log.Information("EventStore Storage options: {options:l}", options)
-                Storage.EventStore.config (log,storeLog) (cache, unfolds, defaultBatchSize) sargs, storeLog
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("CosmosDb Storage options: {options:l}", options)
                 Storage.Cosmos.config (log,storeLog) (cache, unfolds, defaultBatchSize) (Storage.Cosmos.Info sargs), storeLog
+            | Some (Es sargs) ->
+                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
+                log.Information("EventStore Storage options: {options:l}", options)
+                Storage.EventStore.config (log,storeLog) (cache, unfolds, defaultBatchSize) sargs, storeLog
             | Some (MsSql sargs) ->
                 log.Information("SqlStreamStore MsSql Storage options: {options:l}", options)
                 Storage.Sql.Ms.config log (cache, unfolds, defaultBatchSize) sargs, log

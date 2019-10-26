@@ -68,13 +68,13 @@ and [<NoComparison>]
     | [<AltCommandLine "-d">]               DurationM of float
     | [<AltCommandLine "-e">]               ErrorCutoff of int64
     | [<AltCommandLine "-i">]               ReportIntervalS of int
-    | [<CliPrefix(CliPrefix.None); Last>]                      Memory   of ParseResults<Storage.MemoryStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                      Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Memory   of ParseResults<Storage.MemoryStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last>]                      Web    of ParseResults<WebArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Web      of ParseResults<WebArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Name _ ->                     "specify which test to run. (default: Favorite)."
@@ -86,9 +86,9 @@ and [<NoComparison>]
             | DurationM _ ->                "specify a run duration in minutes (default: 30)."
             | ErrorCutoff _ ->              "specify an error cutoff; test ends when exceeded (default: 10000)."
             | ReportIntervalS _ ->          "specify reporting intervals in seconds (default: 10)."
-            | Memory _ ->                   "target in-process Transient Memory Store (Default if not other target specified)."
             | Es _ ->                       "Run transactions in-process against EventStore."
             | Cosmos _ ->                   "Run transactions in-process against CosmosDb."
+            | Memory _ ->                   "target in-process Transient Memory Store (Default if not other target specified)."
             | MsSql _ ->                    "Run transactions in-process against Sql Server."
             | MySql _ ->                    "Run transactions in-process against MySql."
             | Postgres _ ->                 "Run transactions in-process against Postgres."
@@ -110,14 +110,14 @@ and TestInfo(args: ParseResults<TestArguments>) =
     member __.ConfigureStore(log : ILogger, createStoreLog) = 
         let cache = if __.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
         match args.TryGetSubCommand() with
-        | Some (Es sargs) ->
-            let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-            log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
-            storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) sargs
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
             log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", __.Options)
             storeLog, Storage.Cosmos.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
+        | Some (Es sargs) ->
+            let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
+            log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
+            storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) sargs
         | Some (MsSql sargs) ->
             let storeLog = createStoreLog false
             log.Information("Running transactions in-process against MsSql with storage options: {options:l}", __.Options)
@@ -177,18 +177,18 @@ module LoadTest =
         let cache = if a.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
         let storeLog, storeConfig, httpClient: ILogger * Storage.StorageConfig option * HttpClient option =
             match storage with
-            | Some (Web wargs) ->
-                let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
-                log.Information("Running web test targeting: {url}", uri)
-                createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
-            | Some (Es sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-                log.Information("Running transactions in-process against EventStore with storage options: {options:l}", a.Options)
-                storeLog, Storage.EventStore.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", a.Options)
                 storeLog, Storage.Cosmos.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) (Storage.Cosmos.Info sargs) |> Some, None
+            | Some (Es sargs) ->
+                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
+                log.Information("Running transactions in-process against EventStore with storage options: {options:l}", a.Options)
+                storeLog, Storage.EventStore.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
+            | Some (Web wargs) ->
+                let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
+                log.Information("Running web test targeting: {url}", uri)
+                createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
             | Some (MsSql sargs) ->
                 log.Information("Running transactions in-process against MsSql with storage options: {options:l}", a.Options)
                 createStoreLog false, Storage.Sql.Ms.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
