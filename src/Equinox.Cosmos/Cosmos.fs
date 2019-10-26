@@ -1073,9 +1073,10 @@ type Connector
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
-        maxRetryAttemptsOnThrottledRequests: int,
+        maxRetryAttemptsOnRateLimitedRequests: int,
         /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
-        maxRetryWaitTimeInSeconds: int,
+        // naming matches SDK ver >=3
+        maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
         /// Log to emit connection messages to
         log : ILogger,
         /// Connection limit for Gateway Mode (default 1000)
@@ -1096,7 +1097,15 @@ type Connector
         [<O; D(null)>]?bypassCertificateValidation : bool) =
     do if log = null then nullArg "log"
 
-    let clientOptions =
+    let logName (uri : Uri) name =
+        let name = String.concat ";" <| seq {
+            yield name
+            match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
+        let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
+        log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
+
+    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
+    member val ClientOptions =
         let co = Client.ConnectionPolicy.Default
         match mode with
         | None | Some ConnectionMode.Gateway -> co.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
@@ -1104,41 +1113,37 @@ type Connector
         | Some ConnectionMode.Direct -> co.ConnectionMode <- Client.ConnectionMode.Direct; co.ConnectionProtocol <- Client.Protocol.Tcp
         co.RetryOptions <-
             Client.RetryOptions(
-                MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
-                MaxRetryWaitTimeInSeconds = maxRetryWaitTimeInSeconds)
+                MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnRateLimitedRequests,
+                MaxRetryWaitTimeInSeconds = (Math.Ceiling(maxRetryWaitTimeOnRateLimitedRequests.TotalSeconds) |> int))
         co.RequestTimeout <- requestTimeout
         co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
         co
 
-    /// Yields an CosmosClient configured and Connect()ed to a given DocDB collection per the requested `discovery` strategy
-    let connect
+    /// Yields a DocumentClient configured per the specified strategy
+    member __.CreateClient
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
-            name,
-            discovery : Discovery) : Async<Client.DocumentClient> =
-        let connect (uri: Uri, key: string) = async {
-            let name = String.concat ";" <| seq {
-                yield name
-                match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
-            let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
-            let client =
-                let consistencyLevel = Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session)
-                if defaultArg bypassCertificateValidation false then
-                    let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
-                    new Client.DocumentClient(uri, key, inhibitCertCheck, clientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
-                else new Client.DocumentClient(uri, key, clientOptions, consistencyLevel)
-            log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
-            do! client.OpenAsync() |> Async.AwaitTaskCorrect
-            return client }
+            name, discovery : Discovery,
+            /// <c>true</c> to inhibit logging of client name
+            [<O; D null>]?skipLog) : Client.DocumentClient =
+        let (Discovery.UriAndKey (databaseUri=uri; key=key)) = discovery
+        if skipLog <> Some true then logName uri name
+        let consistencyLevel = Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session)
+        if defaultArg bypassCertificateValidation false then
+            let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
+            new Client.DocumentClient(uri, key, inhibitCertCheck, __.ClientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
+        else new Client.DocumentClient(uri, key, __.ClientOptions, consistencyLevel)
 
-        match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
-
-    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
-    member __.ClientOptions : Client.ConnectionPolicy = clientOptions
-
-    /// Yields a DocDbConnection configured per the specified strategy
-    member __.Connect(name, discovery : Discovery) : Async<Connection> = async {
-        let! conn = connect(name, discovery)
-        return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
+    /// Yields a Connection configured per the specified strategy
+    member __.Connect
+        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+            name, discovery : Discovery,
+            /// <c>true</c> to inhibit OpenAsync call
+            [<O; D null>]?skipOpen,
+            /// <c>true</c> to inhibit logging of client name
+            [<O; D null>]?skipLog) : Async<Connection> = async {
+        let client = __.CreateClient(name, discovery, ?skipLog=skipLog)
+        if skipOpen <> Some true then do! client.OpenAsync() |> Async.AwaitTaskCorrect
+        return Connection(client, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
 namespace Equinox.Cosmos.Core
 

@@ -9,7 +9,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Cosmos`: Exposed a `Connector.CreateClient` for interop with V2 ChangeFeedProcessor and `Propulsion.Cosmos` [#171](https://github.com/jet/equinox/pull/171) 
+
 ### Changed
+
+- `Cosmos`: renamed `Connector`'s `maxRetryAttemptsOnThrottledRequests` and `maxRetryWaitTimeInSeconds` to maxRetryAttemptsOnRateLimitedRequests` and `maxRetryWaitTimeOnRateLimitedRequests` and changed latter to `TimeSpan` to match V3 SDK [#171](https://github.com/jet/equinox/pull/171) 
+
 ### Removed
 ### Fixed
 

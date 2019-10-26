@@ -11,7 +11,7 @@ module Option =
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
 /// - Create a local Equinox via dotnet run cli/Equinox.cli -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_CONTAINER provision -ru 10000
 let private connectToCosmos (log: Serilog.ILogger) name discovery =
-    Connector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnThrottledRequests=2, maxRetryWaitTimeInSeconds=60)
+    Connector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
        .Connect(name, discovery)
 let private read env = Environment.GetEnvironmentVariable env |> Option.ofObj
 let (|Default|) def name = (read name),def ||> defaultArg
