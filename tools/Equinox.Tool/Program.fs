@@ -20,8 +20,9 @@ type Arguments =
     | [<AltCommandLine "-vc">]              VerboseConsole
     | [<AltCommandLine "-S">]               LocalSeq
     | [<AltCommandLine "-l">]               LogFile of string
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Run of ParseResults<TestArguments>
-    | [<CliPrefix(CliPrefix.None); Last; Unique>] Init of ParseResults<InitArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]     Run of ParseResults<TestArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]     Init of ParseResults<InitArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]     Config of ParseResults<ConfigArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose ->                    "Include low level logging regarding specific test runs."
@@ -29,27 +30,28 @@ type Arguments =
             | LocalSeq ->                   "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | LogFile _ ->                  "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ ->                      "Run a load test"
-            | Init _ ->                     "Initialize Store/Container (presently only relevant for `cosmos`; also handles RU/s provisioning adjustment)."
+            | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
+            | Config _ ->                    "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
-    | [<AltCommandLine "-D">] Shared
-    | [<AltCommandLine "-P">] SkipStoredProc
-    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
+    | [<AltCommandLine "-D">]               Shared
+    | [<AltCommandLine "-P">]               SkipStoredProc
+    | [<CliPrefix(CliPrefix.None)>]           Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ ->                      "Specify RU/s level to provision for the Container."
             | Shared ->                     "Use Database-level RU allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
-and [<NoComparison>]InitDbArguments =
-    | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
-    | [<AltCommandLine "-P">]               SkipStoredProc
-    | [<CliPrefix(CliPrefix.None)>] Cosmos of ParseResults<Storage.Cosmos.Arguments>
+and [<NoComparison>]ConfigArguments =
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ ->                      "Specify RU/s level to provision for the Database."
-            | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
-            | Cosmos _ ->                   "Cosmos Connection parameters."
+            | MsSql _ ->                    "Configure Sql Server Store."
+            | MySql _ ->                    "Configure MySql Store."
+            | Postgres _ ->                 "Configure Postgres Store."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
     interface IArgParserTemplate with
@@ -261,6 +263,20 @@ module CosmosInit =
             return! init log conn.Client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
+module SqlInit =
+    let databaseOrSchema (log: ILogger) (iargs: ParseResults<ConfigArguments>) = async {
+        match iargs.TryGetSubCommand() with
+        | Some (ConfigArguments.MsSql sargs) ->
+            let a = Storage.Sql.Ms.Info(sargs)
+            Storage.Sql.Ms.connect log (a.ConnectionString,a.Credentials,a.Schema,true) |> Async.RunSynchronously |> ignore
+        | Some (ConfigArguments.MySql sargs) ->
+            let a = Storage.Sql.My.Info(sargs)
+            Storage.Sql.My.connect log (a.ConnectionString,a.Credentials,true) |> Async.RunSynchronously |> ignore
+        | Some (ConfigArguments.Postgres sargs) ->
+            let a = Storage.Sql.Pg.Info(sargs)
+            Storage.Sql.Pg.connect log (a.ConnectionString,a.Credentials,a.Schema,true) |> Async.RunSynchronously |> ignore
+        | _ -> failwith "please specify a `ms`,`my` or `pg` endpoint" }
+
 [<EntryPoint>]
 let main argv =
     let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
@@ -273,10 +289,11 @@ let main argv =
         let log = createDomainLog verbose verboseConsole maybeSeq
         match args.GetSubCommand() with
         | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
+        | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
-        | _ -> failwith "Please specify a valid subcommand :- init or run"
+        | _ -> failwith "Please specify a valid subcommand :- init, configure or run"
         0
     with :? Argu.ArguParseException as e -> eprintfn "%s" e.Message; 1
         | Storage.MissingArg msg -> eprintfn "%s" msg; 1
