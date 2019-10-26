@@ -6,7 +6,7 @@ open System
 open System.Diagnostics
 
 /// Store-agnostic interface representing interactions an Application can have with a set of streams with a common event type
-type ICategory<'event, 'state, 'streamId> =
+type ICategory<'event, 'state, 'streamId, 'context> =
     /// Obtain the state from the target stream
     abstract Load : log: ILogger * 'streamId * ResolveOption option -> Async<StreamToken * 'state>
     /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
@@ -14,7 +14,7 @@ type ICategory<'event, 'state, 'streamId> =
     /// - Conflict: signifies the sync failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
     /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
-    abstract TrySync : log: ILogger * StreamToken * 'state * events: 'event list -> Async<SyncResult<'state>>
+    abstract TrySync : log: ILogger * StreamToken * 'state * events: 'event list * 'context option -> Async<SyncResult<'state>>
 
 /// Represents a time measurement of a computation that includes stopwatch tick metadata
 [<NoEquality; NoComparison>]

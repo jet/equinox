@@ -25,13 +25,23 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
         [<JsonConverter(typeof<FsCodec.NewtonsoftJson.VerbatimUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        m: byte[] }  // optional
+        m: byte[]
+
+        /// Optional correlationId (can be null, not written if missing)
+        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+        correlationId : string
+
+        /// Optional causationId (can be null, not written if missing)
+        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
+        causationId : string }
 
     interface IEventData<byte[]> with
         member __.EventType = __.c
         member __.Data = __.d
         member __.Meta = __.m
         member __.Timestamp = __.t
+        member __.CorrelationId = __.correlationId
+        member __.CausationId = __.causationId
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
@@ -172,7 +182,7 @@ type Direction = Forward | Backward override this.ToString() = match this with F
 
 type internal Enum() =
     static member internal Events(b: Tip) : ITimelineEvent<byte[]> seq =
-        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.TimelineEvent.Create(b.i + int64 offset, x.c, x.d, x.m, x.t) :> _)
+        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.TimelineEvent.Create(b.i + int64 offset, x.c, x.d, x.m, x.correlationId, x.causationId, x.t) :> _)
     static member Events(i: int64, e: Event[], startPos : Position option, direction) : ITimelineEvent<byte[]> seq = seq {
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         let isValidGivenStartPos i =
@@ -184,12 +194,12 @@ type internal Enum() =
             let index = i + int64 offset
             if isValidGivenStartPos index then
                 let x = e.[offset]
-                yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, x.t) :> _ }
+                yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, x.correlationId, x.causationId, x.t) :> _ }
     static member internal Events(b: Batch, startPos, direction) =
         Enum.Events(b.i, b.e, startPos, direction)
         |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
     static member Unfolds(xs: Unfold[]) : ITimelineEvent<byte[]> seq = seq {
-        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, DateTimeOffset.MinValue, isUnfold=true) }
+        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, null, null, DateTimeOffset.MinValue, isUnfold=true) }
     static member EventsAndUnfolds(x: Tip): ITimelineEvent<byte[]> seq =
         Enum.Events x
         |> Seq.append (Enum.Unfolds x.u)
@@ -489,7 +499,7 @@ function sync(req, expIndex, expEtag) {
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
     let mkBatch (stream: string) (events: IEventData<_>[]) unfolds: Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
-            e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta } |]
+            e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId } |]
             u = Array.ofSeq unfolds }
     let mkUnfold baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
         unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta } : Unfold)
@@ -843,7 +853,7 @@ type Gateway(conn : Connection, batching : BatchingPolicy) =
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create containerStream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create containerStream pos') }
 
-type private Category<'event, 'state>(gateway : Gateway, codec : IUnionEncoder<'event, byte[]>) =
+type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IUnionEncoder<'event,byte[],'context>) =
     let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: ITimelineEvent<byte[]> seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
     member __.Load includeUnfolds containerStream fold initial isOrigin (log : ILogger): Async<StreamToken * 'state> = async {
         let! token, events =
@@ -855,15 +865,16 @@ type private Category<'event, 'state>(gateway : Gateway, codec : IUnionEncoder<'
         match res with
         | LoadFromTokenResult.Unchanged -> return current
         | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
-    member __.Sync(Token.Unpack (container,stream,pos), state as current, events, mapUnfolds, fold, isOrigin, log): Async<SyncResult<'state>> = async {
+    member __.Sync(Token.Unpack (container,stream,pos), state as current, events, mapUnfolds, fold, isOrigin, log, context): Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
+        let encode e = codec.Encode(context,e)
         let exp,events,eventsEncoded,projectionsEncoded =
             match mapUnfolds with
-            | Choice1Of3 () ->     Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.empty
-            | Choice2Of3 unfold -> Sync.Exp.Version pos.index, events, Seq.map codec.Encode events |> Array.ofSeq, Seq.map codec.Encode (unfold events state')
+            | Choice1Of3 () ->     Sync.Exp.Version pos.index, events, Seq.map encode events |> Array.ofSeq, Seq.empty
+            | Choice2Of3 unfold -> Sync.Exp.Version pos.index, events, Seq.map encode events |> Array.ofSeq, Seq.map encode (unfold events state')
             | Choice3Of3 transmute ->
                 let events', unfolds = transmute events state'
-                Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map codec.Encode events' |> Array.ofSeq, Seq.map codec.Encode unfolds
+                Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkUnfold baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
@@ -875,19 +886,19 @@ type private Category<'event, 'state>(gateway : Gateway, codec : IUnionEncoder<'
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state>(inner: ICategory<'event, 'state, Container*string>, tee : string -> StreamToken * 'state -> Async<unit>) =
+    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, Container*string,'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
         let intercept streamName tokenAndState = async {
             let! _ = tee streamName tokenAndState
             return tokenAndState }
         let loadAndIntercept load streamName = async {
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
-        interface ICategory<'event, 'state, Container*string> with
+        interface ICategory<'event, 'state, Container*string, 'context> with
             member __.Load(log, (container,streamName), opt) : Async<StreamToken * 'state> =
                 loadAndIntercept (inner.Load(log, (container,streamName), opt)) streamName
-            member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list)
+            member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list, context)
                 : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync(log, streamToken, state, events)
+                let! syncRes = inner.TrySync(log, streamToken, state, events, context)
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict(loadAndIntercept resync stream)
                 | SyncResult.Written(token', state') ->
@@ -898,21 +909,21 @@ module Caching =
             (cache : ICache)
             (prefix : string)
             (slidingExpiration : TimeSpan)
-            (category : ICategory<'event, 'state, Container*string>)
-            : ICategory<'event, 'state, Container*string> =
+            (category : ICategory<'event, 'state, Container*string, 'context>)
+            : ICategory<'event, 'state, Container*string, 'context> =
         let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
         let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
-        CategoryTee<'event,'state>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
+        CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
-type private Folder<'event, 'state>
-    (   category: Category<'event, 'state>, fold: 'state -> 'event seq -> 'state, initial: 'state,
+type private Folder<'event, 'state, 'context>
+    (   category: Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state,
         isOrigin: 'event -> bool,
         mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     let batched log containerStream = category.Load inspectUnfolds containerStream fold initial isOrigin log
-    interface ICategory<'event, 'state, Container*string> with
+    interface ICategory<'event, 'state, Container*string, 'context> with
         member __.Load(log, (container,streamName), opt): Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log (container,streamName)
@@ -921,9 +932,9 @@ type private Folder<'event, 'state>
                 | None -> return! batched log (container,streamName)
                 | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
                 | Some tokenAndState -> return! category.LoadFromToken tokenAndState fold isOrigin log }
-        member __.TrySync(log : ILogger, streamToken, state, events : 'event list)
+        member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context)
             : Async<SyncResult<'state>> = async {
-            let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, log)
+            let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, log, context)
             match res with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
@@ -992,7 +1003,7 @@ type AccessStrategy<'event,'state> =
     /// In this mode, Optimistic Concurrency Control OCC is based on the _etag (rather than the normal Expected Version strategy)
     | RollingUnfolds of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
-type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, [<O; D(null)>]?access) =
+type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, [<O; D(null)>]?access) =
     let readCacheOption =
         match caching with
         | CachingStrategy.NoCaching -> None
@@ -1004,37 +1015,36 @@ type Resolver<'event, 'state>(context : Context, codec, fold, initial, caching, 
         | Some (AccessStrategy.Snapshot (isValid,generate)) ->           isValid,          Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
         | Some (AccessStrategy.AnyKnownEventType) ->                     (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
         | Some (AccessStrategy.RollingUnfolds (isOrigin,transmute)) -> isOrigin,         Choice3Of3 transmute
-    let cosmosCat = Category<'event, 'state>(context.Gateway, codec)
-    let folder = Folder<'event, 'state>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
-    let category : ICategory<_,_,Container*string> =
+    let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
+    let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
+    let category : ICategory<_, _, Container*string, 'context> =
         match caching with
         | CachingStrategy.NoCaching -> folder :> _
         | CachingStrategy.SlidingWindow(cache, window) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
-    let resolveStream (streamId, maybeContainerInitializationGate) opt =
+    let resolveStream (streamId, maybeContainerInitializationGate) opt context =
         { new IStream<'event, 'state> with
             member __.Load log = category.Load(log, streamId, opt)
             member __.TrySync(log: ILogger, token: StreamToken, originState: 'state, events: 'event list) =
                 match maybeContainerInitializationGate with
-                | None -> category.TrySync(log, token, originState, events)
+                | None -> category.TrySync(log, token, originState, events, context)
                 | Some init -> async {
                     do! init ()
-                    return! category.TrySync(log, token, originState, events) } }
+                    return! category.TrySync(log, token, originState, events, context) } }
     let resolveTarget = function
         | AggregateId (categoryName,streamId) -> context.ResolveContainerStream(categoryName, streamId)
         | StreamName _ as x -> failwithf "Stream name not supported: %A" x
 
-    member __.Resolve(target, [<O; D null>]?option) =
+    member __.Resolve(target, [<O; D null>]?option, [<O; D null>]?context) =
         match resolveTarget target, option with
-        | streamArgs,(None|Some AllowStale) -> resolveStream streamArgs option
+        | streamArgs,(None|Some AllowStale) -> resolveStream streamArgs option context
         | (containerStream,maybeInit),Some AssumeEmpty ->
-            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit) option)
-    member __.ResolveEx(target,opt) = __.Resolve(target,?option=opt)
+            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit) option context)
 
     member __.FromMemento(Token.Unpack (container,stream,_pos) as streamToken,state) =
         let skipInitialization = None
-        Stream.ofMemento (streamToken,state) (resolveStream ((container,stream),skipInitialization) None)
+        Stream.ofMemento (streamToken,state) (resolveStream ((container,stream),skipInitialization) None None)
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
@@ -1062,9 +1072,10 @@ type Connector
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
-        maxRetryAttemptsOnThrottledRequests: int,
+        maxRetryAttemptsOnRateLimitedRequests: int,
         /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
-        maxRetryWaitTimeInSeconds: int,
+        // naming matches SDK ver >=3
+        maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
         /// Log to emit connection messages to
         log : ILogger,
         /// Connection limit for Gateway Mode (default 1000)
@@ -1080,10 +1091,20 @@ type Connector
         [<O; D(null)>]?writeRetryPolicy,
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
-        [<O; D(null)>]?tags : (string*string) seq) =
+        [<O; D(null)>]?tags : (string*string) seq,
+        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
+        [<O; D(null)>]?bypassCertificateValidation : bool) =
     do if log = null then nullArg "log"
 
-    let clientOptions =
+    let logName (uri : Uri) name =
+        let name = String.concat ";" <| seq {
+            yield name
+            match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
+        let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
+        log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
+
+    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
+    member val ClientOptions =
         let co = Client.ConnectionPolicy.Default
         match mode with
         | None | Some ConnectionMode.Gateway -> co.ConnectionMode <- Client.ConnectionMode.Gateway // default; only supports Https
@@ -1091,36 +1112,37 @@ type Connector
         | Some ConnectionMode.Direct -> co.ConnectionMode <- Client.ConnectionMode.Direct; co.ConnectionProtocol <- Client.Protocol.Tcp
         co.RetryOptions <-
             Client.RetryOptions(
-                MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnThrottledRequests,
-                MaxRetryWaitTimeInSeconds = maxRetryWaitTimeInSeconds)
+                MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnRateLimitedRequests,
+                MaxRetryWaitTimeInSeconds = (Math.Ceiling(maxRetryWaitTimeOnRateLimitedRequests.TotalSeconds) |> int))
         co.RequestTimeout <- requestTimeout
         co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
         co
 
-    /// Yields an CosmosClient configured and Connect()ed to a given DocDB collection per the requested `discovery` strategy
-    let connect
+    /// Yields a DocumentClient configured per the specified strategy
+    member __.CreateClient
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
-            name,
-            discovery : Discovery) : Async<Client.DocumentClient> =
-        let connect (uri: Uri, key: string) = async {
-            let name = String.concat ";" <| seq {
-                yield name
-                match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
-            let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
-            let client = new Client.DocumentClient(uri, key, clientOptions, Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session))
-            log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
-            do! client.OpenAsync() |> Async.AwaitTaskCorrect
-            return client }
+            name, discovery : Discovery,
+            /// <c>true</c> to inhibit logging of client name
+            [<O; D null>]?skipLog) : Client.DocumentClient =
+        let (Discovery.UriAndKey (databaseUri=uri; key=key)) = discovery
+        if skipLog <> Some true then logName uri name
+        let consistencyLevel = Nullable(defaultArg defaultConsistencyLevel ConsistencyLevel.Session)
+        if defaultArg bypassCertificateValidation false then
+            let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
+            new Client.DocumentClient(uri, key, inhibitCertCheck, __.ClientOptions, consistencyLevel) // overload introduced in 2.2.0 SDK
+        else new Client.DocumentClient(uri, key, __.ClientOptions, consistencyLevel)
 
-        match discovery with Discovery.UriAndKey(databaseUri=uri; key=key) -> connect (uri,key)
-
-    /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
-    member __.ClientOptions : Client.ConnectionPolicy = clientOptions
-
-    /// Yields a DocDbConnection configured per the specified strategy
-    member __.Connect(name, discovery : Discovery) : Async<Connection> = async {
-        let! conn = connect(name, discovery)
-        return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
+    /// Yields a Connection configured per the specified strategy
+    member __.Connect
+        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+            name, discovery : Discovery,
+            /// <c>true</c> to inhibit OpenAsync call
+            [<O; D null>]?skipOpen,
+            /// <c>true</c> to inhibit logging of client name
+            [<O; D null>]?skipLog) : Async<Connection> = async {
+        let client = __.CreateClient(name, discovery, ?skipLog=skipLog)
+        if skipOpen <> Some true then do! client.OpenAsync() |> Async.AwaitTaskCorrect
+        return Connection(client, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
 namespace Equinox.Cosmos.Core
 

@@ -19,7 +19,6 @@ type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, superse
         lock __ <| fun () ->
             currentToken, currentState
 
-
 type ICache =
     abstract member UpdateIfNewer : key: string * options: CacheItemOptions * entry: CacheEntry<'state> -> Async<unit>
     abstract member TryGet: key: string -> Async<(StreamToken * 'state) option>
@@ -30,27 +29,27 @@ open System.Runtime.Caching
 open Equinox.Core
 
 type Cache(name, sizeMb : int) =
-        let cache =
-            let config = System.Collections.Specialized.NameValueCollection(1)
-            config.Add("cacheMemoryLimitMegabytes", string sizeMb);
-            new MemoryCache(name, config)
+    let cache =
+        let config = System.Collections.Specialized.NameValueCollection(1)
+        config.Add("cacheMemoryLimitMegabytes", string sizeMb);
+        new MemoryCache(name, config)
 
-        let toPolicy (cacheItemOption: CacheItemOptions) =
-            match cacheItemOption with
-            | AbsoluteExpiration absolute -> new CacheItemPolicy(AbsoluteExpiration = absolute)
-            | RelativeExpiration relative -> new CacheItemPolicy(SlidingExpiration = relative)
+    let toPolicy (cacheItemOption: CacheItemOptions) =
+        match cacheItemOption with
+        | AbsoluteExpiration absolute -> new CacheItemPolicy(AbsoluteExpiration = absolute)
+        | RelativeExpiration relative -> new CacheItemPolicy(SlidingExpiration = relative)
 
-        interface ICache with
-            member this.UpdateIfNewer(key, options, entry) = async {
-                let policy = toPolicy options
-                match cache.AddOrGetExisting(key, box entry, policy) with
-                | null -> ()
-                | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry
-                | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x }
+    interface ICache with
+        member this.UpdateIfNewer(key, options, entry) = async {
+            let policy = toPolicy options
+            match cache.AddOrGetExisting(key, box entry, policy) with
+            | null -> ()
+            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry
+            | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x }
 
-            member this.TryGet key = async {
-                return
-                    match cache.Get key with
-                    | null -> None
-                    | :? CacheEntry<'state> as existingEntry -> Some existingEntry.Value
-                    | x -> failwithf "TryGet Incompatible cache entry %A" x }
+        member this.TryGet key = async {
+            return
+                match cache.Get key with
+                | null -> None
+                | :? CacheEntry<'state> as existingEntry -> Some existingEntry.Value
+                | x -> failwithf "TryGet Incompatible cache entry %A" x }

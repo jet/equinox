@@ -12,6 +12,8 @@ open System
 open System.Net.Http
 open System.Threading
 
+let [<Literal>] appName = "equinox-tool"
+
 [<NoEquality; NoComparison>]
 type Arguments =
     | [<AltCommandLine "-v">]               Verbose
@@ -98,7 +100,7 @@ and TestInfo(args: ParseResults<TestArguments>) =
         | intervals -> seq { for i in intervals -> TimeSpan.FromSeconds(float i) }
         |> fun intervals -> [| yield __.Duration; yield! intervals |]
     member __.ConfigureStore(log : ILogger, createStoreLog) = 
-        let cache = if __.Cache then Equinox.Cache("equinox-tool", sizeMb = 50) |> Some else None
+        let cache = if __.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
         match args.TryGetSubCommand() with
         | Some (Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
@@ -151,7 +153,7 @@ module LoadTest =
         let storage = args.TryGetSubCommand()
 
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
-        let cache = if a.Cache then Equinox.Cache("equinox-tool", sizeMb = 50) |> Some else None
+        let cache = if a.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
         let storeLog, storeConfig, httpClient: ILogger * Storage.StorageConfig option * HttpClient option =
             match storage with
             | Some (Web wargs) ->
@@ -223,7 +225,7 @@ module CosmosInit =
             let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            let! conn = connector.Connect("equinox-tool", discovery)
+            let! conn = connector.Connect(appName, discovery)
             return! init log conn.Client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 

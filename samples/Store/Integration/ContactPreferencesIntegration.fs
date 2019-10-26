@@ -10,9 +10,9 @@ open Xunit
 let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
 
 let createMemoryStore () =
-    new MemoryStore.VolatileStore()
+    new MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, fold, initial).Resolve)
+    Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.ContactPreferences.Events.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =

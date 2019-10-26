@@ -51,16 +51,16 @@ module Cart =
     let codec = Domain.Cart.Events.codec
     let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
     let createServiceWithoutOptimization log gateway =
-        Backend.Cart.Service(log, Resolver(gateway, Domain.Cart.Events.codec, fold, initial).ResolveEx)
+        Backend.Cart.Service(log, fun (id,opt) -> Resolver(gateway, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
     let createServiceWithCompaction log gateway =
-        let resolveStream = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).ResolveEx
+        let resolveStream (id,opt) = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial, sliding20m).ResolveEx)
+        Backend.Cart.Service(log, fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.Service(log, Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).ResolveEx)
+        Backend.Cart.Service(log, fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial

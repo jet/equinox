@@ -3,7 +3,6 @@
 open Equinox
 open Equinox.Cosmos.Integration
 open Swensen.Unquote
-open Xunit
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -11,9 +10,9 @@ let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
 let snapshot = Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.compact
 
 let createMemoryStore () =
-    new MemoryStore.VolatileStore()
+    new MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    Backend.Favorites.Service(log, MemoryStore.Resolver(store, fold, initial).Resolve)
+    Backend.Favorites.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.Favorites.Events.codec
 let createServiceGes gateway log =
