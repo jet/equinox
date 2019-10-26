@@ -14,19 +14,19 @@ let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
 let createMemoryStore () =
     new VolatileStore ()
 let createServiceMemory log store =
-    Backend.Cart.Service(log, Resolver(store, fold, initial).ResolveEx)
+    Backend.Cart.Service(log, fun (id,opt) -> Resolver(store, fold, initial).Resolve(id,?option=opt))
 
 let codec = Domain.Cart.Events.codec
 
 let resolveGesStreamWithRollingSnapshots gateway =
-    EventStore.Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).ResolveEx
+    fun (id,opt) -> EventStore.Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
-    EventStore.Resolver(gateway, codec, fold, initial).ResolveEx
+    fun (id,opt) -> EventStore.Resolver(gateway, codec, fold, initial).Resolve(id,?option=opt)
 
 let resolveCosmosStreamWithSnapshotStrategy gateway =
-    Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).ResolveEx
+    fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).ResolveEx
+    fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).Resolve(id,?option=opt)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, false, fun _ctx execute ->
