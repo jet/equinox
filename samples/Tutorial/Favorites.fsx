@@ -18,7 +18,8 @@
 type Event =
     | Added of string  
     | Removed of string
-// No IUnionContract or Codec required as we're using MemoryStore in this example
+// No IUnionContract or Codec required as we're using a custom encoder in this example
+//    interface TypeShape.UnionContract.IUnionContract
 
 let initial : string list = []
 let evolve state = function
@@ -90,9 +91,19 @@ let clientAFavoritesStreamId = Equinox.AggregateId(categoryName,"ClientA")
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
 
+let codec =
+    // For this example, we hand-code; normally one uses one of the FsCodec auto codecs, which codegen something similar
+    let encode = function
+        | Added x -> "Add",box x
+        | Removed x -> "Remove",box x
+    let tryDecode : string*obj -> Event option = function
+        | "Add", (:? string as x) -> Added x |> Some
+        | "Remove", (:? string as x) -> Removed x |> Some
+        | _ -> None
+    FsCodec.Codec.Create(encode,tryDecode)
 // Each store has a Resolver which provides an IStream instance which binds to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
-let stream streamName = Equinox.MemoryStore.Resolver(store, fold, initial).Resolve(streamName)
+let stream streamName = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve(streamName)
 
 // We hand the streamId to the resolver
 let clientAStream = stream clientAFavoritesStreamId
@@ -137,7 +148,7 @@ type Service(log, resolveStream) =
         let stream = streamHandlerFor clientId
         stream.Read
 
-let resolveStream = Equinox.MemoryStore.Resolver(store, fold, initial).Resolve
+let resolveStream = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve
 
 let service = Service(log, resolveStream)
 

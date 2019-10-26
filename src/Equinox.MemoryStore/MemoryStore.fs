@@ -8,7 +8,7 @@ open Equinox.Core
 open System.Runtime.InteropServices
 
 /// Equivalent to GetEventStore's in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
-exception private WrongVersionException of streamName: string * expected: int * value: FsCodec.ITimelineEvent<obj>[]
+exception private WrongVersionException of streamName: string * expected: int * value: obj
 
 /// Internal result used to reflect the outcome of syncing with the entry in the inner ConcurrentDictionary
 [<NoEquality; NoComparison>]
@@ -18,25 +18,25 @@ type ConcurrentDictionarySyncResult<'t> = Written of 't | Conflict of int
 [<NoEquality; NoComparison>]
 type ConcurrentArraySyncResult<'t> = Written of 't | Conflict of 't
 
-// Maintains a dictionary of boxed typed arrays, raising exceptions if an attempt to extract a value encounters a mismatched type
-type VolatileStore() =
-    let streams = System.Collections.Concurrent.ConcurrentDictionary<string,FsCodec.ITimelineEvent<obj>[]>()
+/// Maintains a dictionary of ITimelineEvent<'Format>[] per stream-name, allowing one to vary the encoding used to match that of a given concrete store, or optimize test run performance
+type VolatileStore<'Format>() =
+    let streams = System.Collections.Concurrent.ConcurrentDictionary<string,FsCodec.ITimelineEvent<'Format>[]>()
 
     /// Loads state from a given stream
     member __.TryLoad streamName = match streams.TryGetValue streamName with false, _ -> None | true, packed -> Some packed
 
     /// Attempts a synchronization operation - yields conflicting value if sync function decides there is a conflict
     member __.TrySync
-        (   streamName, trySyncValue : FsCodec.ITimelineEvent<obj>[] -> ConcurrentDictionarySyncResult<FsCodec.ITimelineEvent<obj>[]>,
-            events: FsCodec.ITimelineEvent<obj>[])
-        : ConcurrentArraySyncResult<FsCodec.ITimelineEvent<obj>[]> =
+        (   streamName, trySyncValue : FsCodec.ITimelineEvent<'Format>[] -> ConcurrentDictionarySyncResult<FsCodec.ITimelineEvent<'Format>[]>,
+            events: FsCodec.ITimelineEvent<'Format>[])
+        : ConcurrentArraySyncResult<FsCodec.ITimelineEvent<'Format>[]> =
         let seedStream _streamName = events
-        let updateValue streamName (currentValue : FsCodec.ITimelineEvent<obj>[]) =
+        let updateValue streamName (currentValue : FsCodec.ITimelineEvent<'Format>[]) =
             match trySyncValue currentValue with
-            | ConcurrentDictionarySyncResult.Conflict expectedVersion -> raise <| WrongVersionException (streamName, expectedVersion, currentValue)
+            | ConcurrentDictionarySyncResult.Conflict expectedVersion -> raise <| WrongVersionException (streamName, expectedVersion, box currentValue)
             | ConcurrentDictionarySyncResult.Written value -> value
         try streams.AddOrUpdate(streamName, seedStream, updateValue) |> Written
-        with WrongVersionException(_, _, conflictingValue) -> conflictingValue |> Conflict
+        with WrongVersionException(_, _, conflictingValue) -> unbox conflictingValue |> Conflict
 
 type Token = { streamVersion: int; streamName: string }
 
@@ -57,7 +57,7 @@ module private Token =
     let ofEventArrayAndKnownState streamName fold (state: 'state) (events: 'event seq) = tokenOfSeq streamName events, fold state events
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
-type Category<'event, 'state, 'context>(store : VolatileStore, codec : FsCodec.IUnionEncoder<'event,obj,'context>, fold, initial) =
+type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>, codec : FsCodec.IUnionEncoder<'event,'Format,'context>, fold, initial) =
     let (|Decode|) = Array.choose codec.TryDecode
     interface ICategory<'event, 'state, string, 'context> with
         member __.Load(_log, streamName, _opt) = async {
@@ -65,9 +65,9 @@ type Category<'event, 'state, 'context>(store : VolatileStore, codec : FsCodec.I
             | None -> return Token.ofEmpty streamName initial
             | Some (Decode events) -> return Token.ofEventArray streamName fold initial events }
         member __.TrySync(_log, Token.Unpack token, state, events : 'event list, context : 'context option) = async {
-            let inline map i (e : FsCodec.IEventData<obj>) =
-                FsCodec.Core.TimelineEvent.Create(int64 i,e.EventType,e.Data,e.Meta,e.CorrelationId,e.CausationId,e.Timestamp) :> FsCodec.ITimelineEvent<obj>
-            let encoded = events |> Seq.mapi (fun i e -> map (token.streamVersion+1) (codec.Encode(context,e))) |> Array.ofSeq
+            let inline map i (e : FsCodec.IEventData<'Format>) =
+                FsCodec.Core.TimelineEvent.Create(int64 i,e.EventType,e.Data,e.Meta,e.CorrelationId,e.CausationId,e.Timestamp) :> FsCodec.ITimelineEvent<'Format>
+            let encoded = events |> Seq.mapi (fun i e -> map (token.streamVersion+i) (codec.Encode(context,e))) |> Array.ofSeq
             let trySyncValue currentValue =
                 if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue encoded |> Array.ofSeq)
@@ -80,8 +80,8 @@ type Category<'event, 'state, 'context>(store : VolatileStore, codec : FsCodec.I
                 return SyncResult.Conflict resync
             | ConcurrentArraySyncResult.Written _ -> return SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
 
-type Resolver<'event, 'state, 'context>(store : VolatileStore, codec : FsCodec.IUnionEncoder<'event,obj,'context>, fold, initial) =
-    let category = Category<'event,'state,'context>(store, codec, fold, initial)
+type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IUnionEncoder<'event,'Format,'context>, fold, initial) =
+    let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
     let resolveStream streamName context = Stream.create category streamName None context
     let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
     member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
@@ -92,6 +92,3 @@ type Resolver<'event, 'state, 'context>(store : VolatileStore, codec : FsCodec.I
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken, state, ?context) =
         Stream.ofMemento (streamToken,state) (resolveStream stream.streamName context)
-
-type Resolver<'event, 'state when 'event :> TypeShape.UnionContract.IUnionContract>(store : VolatileStore, fold, initial) =
-    inherit Resolver<'event,'state,obj>(store, FsCodec.Box.Codec.Create<'event>(), fold, initial)

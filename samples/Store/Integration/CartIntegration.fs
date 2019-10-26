@@ -12,9 +12,10 @@ let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
 let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
 
 let createMemoryStore () =
-    new VolatileStore ()
+    // we want to validate that the JSON UTF8 is working happily
+    new VolatileStore<byte[]>()
 let createServiceMemory log store =
-    Backend.Cart.Service(log, fun (id,opt) -> MemoryStore.Resolver<_,_>(store, fold, initial).Resolve(id,?option=opt))
+    Backend.Cart.Service(log, fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
 
 let codec = Domain.Cart.Events.codec
 
