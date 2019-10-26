@@ -3,7 +3,6 @@
 open Equinox
 open Equinox.Cosmos.Integration
 open Swensen.Unquote
-open Xunit
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
