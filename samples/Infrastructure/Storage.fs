@@ -7,7 +7,8 @@ exception MissingArg of string
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type StorageConfig =
-    | Memory of Equinox.MemoryStore.VolatileStore
+    // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
+    | Memory of Equinox.MemoryStore.VolatileStore<byte[]>
     | Es     of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
     | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
     

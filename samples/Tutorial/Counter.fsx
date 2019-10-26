@@ -11,12 +11,13 @@
 (* Events are things that have already happened, 
    they always exist in the past, and should always be past tense verbs*)
 
+(* A counter going up might clear to 0, but a counter going down might clear to 100. *)
+type Cleared = { value : int }
 type Event = 
     | Incremented
     | Decremented
-    | Cleared of int // NOTE int payload will need to be wrapped in a record if using .Cosmos and/or .EventSore
-(* A counter going up might clear to 0, 
-   but a counter going down might clear to 100. *)
+    | Cleared of Cleared
+    interface TypeShape.UnionContract.IUnionContract
 
 type State = State of int
 let initial : State = State 0
@@ -25,7 +26,7 @@ let evolve state event =
     match event, state with
     | Incremented, State s -> State (s + 1)
     | Decremented, State s -> State (s - 1)
-    | Cleared x , _ -> State x
+    | Cleared { value = x }, _ -> State x
 
 (*fold is just folding the evolve function over all events to get the current state
   It's equivalent to Linq's Aggregate function *)
@@ -46,7 +47,7 @@ let decide command (State state) =
     | Decrement -> 
         if state <= 0 then [] else [Decremented]
     | Clear i -> 
-        if state = i then [] else [Cleared i]
+        if state = i then [] else [Cleared {value = i}]
 
 type Service(log, resolveStream, ?maxAttempts) =
     let (|AggregateId|) (id : string) = Equinox.AggregateId("Counter", id)
@@ -66,7 +67,7 @@ type Service(log, resolveStream, ?maxAttempts) =
         read instanceId 
 
 let store = Equinox.MemoryStore.VolatileStore()
-let resolve = Equinox.MemoryStore.Resolver(store, fold, initial).Resolve
+let resolve = Equinox.MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let service = Service(log, resolve, maxAttempts=3)
