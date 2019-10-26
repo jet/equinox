@@ -36,7 +36,7 @@ module Cosmos =
         | [<AltCommandLine "-m">]       ConnectionMode of Equinox.Cosmos.ConnectionMode
         | [<AltCommandLine "-o">]       Timeout of float
         | [<AltCommandLine "-r">]       Retries of int
-        | [<AltCommandLine "-rt">]      RetriesWaitTime of int
+        | [<AltCommandLine "-rt">]      RetriesWaitTimeS of float
         | [<AltCommandLine "-s">]       Connection of string
         | [<AltCommandLine "-d">]       Database of string
         | [<AltCommandLine "-c">]       Container of string
@@ -46,7 +46,7 @@ module Cosmos =
                 | VerboseStore ->       "Include low level Store logging."
                 | Timeout _ ->          "specify operation timeout in seconds (default: 5)."
                 | Retries _ ->          "specify operation retries (default: 1)."
-                | RetriesWaitTime _ ->  "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
+                | RetriesWaitTimeS _ -> "specify max wait-time for retry when being throttled by Cosmos in seconds (default: 5)"
                 | ConnectionMode _ ->   "override the connection mode. Default: Direct."
                 | Connection _ ->       "specify a connection string for a Cosmos account. (optional if environment variable EQUINOX_COSMOS_CONNECTION specified)"
                 | Database _ ->         "specify a database name for store. (optional if environment variable EQUINOX_COSMOS_DATABASE specified)"
@@ -59,7 +59,7 @@ module Cosmos =
 
         member __.Timeout =             args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member __.Retries =             args.GetResult(Retries,1)
-        member __.MaxRetryWaitTime =    args.GetResult(RetriesWaitTime, 5)
+        member __.MaxRetryWaitTime =    args.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
 
     /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
     /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
@@ -74,7 +74,7 @@ module Cosmos =
         log.Information("CosmosDb {mode} {connection} Database {database} Container {container}",
             a.Mode, endpointUri, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
-            (let t = a.Timeout in t.TotalSeconds), a.Retries, a.MaxRetryWaitTime)
+            (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
         discovery, a.Database, a.Container, Connector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
         let discovery, dName, cName, connector = connection (log, storeLog) info

@@ -1075,7 +1075,8 @@ type Connector
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
         maxRetryAttemptsOnRateLimitedRequests: int,
         /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
-        maxRetryWaitTimeOnRateLimitedRequestsSeconds: int,
+        // naming matches SDK ver >=3
+        maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
         /// Log to emit connection messages to
         log : ILogger,
         /// Connection limit for Gateway Mode (default 1000)
@@ -1113,7 +1114,7 @@ type Connector
         co.RetryOptions <-
             Client.RetryOptions(
                 MaxRetryAttemptsOnThrottledRequests = maxRetryAttemptsOnRateLimitedRequests,
-                MaxRetryWaitTimeInSeconds = maxRetryWaitTimeOnRateLimitedRequestsSeconds)
+                MaxRetryWaitTimeInSeconds = (Math.Ceiling(maxRetryWaitTimeOnRateLimitedRequests.TotalSeconds) |> int))
         co.RequestTimeout <- requestTimeout
         co.MaxConnectionLimit <- defaultArg gatewayModeMaxConnectionLimit 1000
         co
