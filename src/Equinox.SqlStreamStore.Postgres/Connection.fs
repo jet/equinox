@@ -1,26 +1,20 @@
 ﻿namespace Equinox.SqlStreamStore.Postgres
 
-open System
-open Equinox
 open Equinox.Core
+open SqlStreamStore
 
-type Connector (connectionString: string, [<O; D(null)>]?schema: string, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    let createStreamStore = 
-        fun () -> async {
-            let storeSettings = SqlStreamStore.PostgresStreamStoreSettings(connectionString)
+type Connector
+    (    connectionString: string, [<O; D(null)>]?schema: string, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy,
+         /// <c>true</c> to auto-create the schema upon connection
+         [<O; D(null)>]?autoCreate) =
+    inherit Equinox.SqlStreamStore.Connector(?readRetryPolicy=readRetryPolicy,?writeRetryPolicy=writeRetryPolicy)
 
-            match schema with
-            | Some schema when schema |> String.IsNullOrWhiteSpace |> not ->
-                storeSettings.Schema <- schema
-            | _ -> ()
-        
-            let store = new SqlStreamStore.PostgresStreamStore(storeSettings)
-            do! store.CreateSchemaIfNotExists() |> Async.AwaitTaskCorrect
-            return store :> SqlStreamStore.IStreamStore
-        }
-        
-    let connector = Equinox.SqlStreamStore.Connector(createStreamStore, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
+    let settings = PostgresStreamStoreSettings(connectionString)
+    do match schema with Some x when (not << System.String.IsNullOrWhiteSpace) x -> settings.Schema <- x | _ -> ()
 
-    member __.Connect () = connector.Connect ()
+    let store = new PostgresStreamStore(settings)
 
-    member __.Establish () = connector.Establish ()
+    override __.Connect() = async {
+        if autoCreate = Some true then do! store.CreateSchemaIfNotExists() |> Async.AwaitTaskCorrect
+        return store :> IStreamStore
+    }

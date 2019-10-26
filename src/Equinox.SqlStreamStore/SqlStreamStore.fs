@@ -549,13 +549,12 @@ type Resolver<'event, 'state, 'context>
     member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =
         Stream.ofMemento (streamToken,state) (resolveStream token.stream.name context None)
 
-type Connector (createStreamStore: unit -> Async<SqlStreamStore.IStreamStore>, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    member __.Connect () = async {
-        let! store = createStreamStore()
-        return store
-    }
+[<AbstractClass>]
+type Connector([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
 
-    member __.Establish () : Async<Connection> = async {
+    abstract member Connect : unit -> Async<SqlStreamStore.IStreamStore>
+
+    member __.Establish() : Async<Connection> = async {
         let! store = __.Connect()
         return Connection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
     }

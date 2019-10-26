@@ -1,20 +1,18 @@
 ﻿namespace Equinox.SqlStreamStore.MySql
 
-open Equinox
 open Equinox.Core
+open SqlStreamStore
 
-type Connector (connectionString: string, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    let createStreamStore = 
-        fun () -> async {
-            let storeSettings = SqlStreamStore.MySqlStreamStoreSettings(connectionString)
-        
-            let store = new SqlStreamStore.MySqlStreamStore(storeSettings)
-            do! store.CreateSchemaIfNotExists() |> Async.AwaitTaskCorrect
-            return store :> SqlStreamStore.IStreamStore
-        }
-        
-    let connector = Equinox.SqlStreamStore.Connector(createStreamStore, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
+type Connector
+    (    connectionString: string, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy,
+         /// <c>true</c> to auto-create the schema upon connection
+         [<O; D(null)>]?autoCreate) =
+    inherit Equinox.SqlStreamStore.Connector(?readRetryPolicy=readRetryPolicy,?writeRetryPolicy=writeRetryPolicy)
 
-    member __.Connect () = connector.Connect ()
+    let settings = MySqlStreamStoreSettings(connectionString)
+    let store = new MySqlStreamStore(settings)
 
-    member __.Establish () = connector.Establish ()
+    override __.Connect() = async {
+        if autoCreate = Some true then do! store.CreateSchemaIfNotExists() |> Async.AwaitTaskCorrect
+        return store :> IStreamStore
+    }
