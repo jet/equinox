@@ -8,6 +8,11 @@ open System
 open SqlStreamStore
 open SqlStreamStore.Streams
 
+type EventData = NewStreamMessage
+type IEventStoreConnection = IStreamStore
+type ResolvedEvent = StreamMessage
+type StreamEventsSlice = ReadStreamPage
+
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward with
     override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -25,11 +30,11 @@ module Log =
     let propEvents name (kvps : System.Collections.Generic.KeyValuePair<string,string> seq) (log : ILogger) =
         let items = seq { for kv in kvps do yield sprintf "{\"%s\": %s}" kv.Key kv.Value }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
-    let propEventData name (events : NewStreamMessage[]) (log : ILogger) =
+    let propEventData name (events : EventData[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
                 yield System.Collections.Generic.KeyValuePair<_,_>(x.Type, x.JsonData) })
-    let propResolvedEvents name (events : StreamMessage[]) (log : ILogger) =
+    let propResolvedEvents name (events : ResolvedEvent[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
                 let data = x.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
@@ -127,7 +132,7 @@ type EsSyncResult = Written of AppendResult | ConflictUnknown
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
-    let private writeEventsAsync (log : ILogger) (conn : IStreamStore) (streamName : string) (version : int64) (events : _ [])
+    let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> = async {
         try
             let! wr = conn.AppendToStream(StreamId streamName, int version, events) |> Async.AwaitTaskCorrect
@@ -139,7 +144,7 @@ module private Write =
     let eventDataBytes events =
         let eventDataLen (x : NewStreamMessage) = match x.JsonData |> System.Text.Encoding.UTF8.GetBytes, x.JsonMetadata |> System.Text.Encoding.UTF8.GetBytes with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
         events |> Array.sumBy eventDataLen
-    let private writeEventsLogged (conn : IStreamStore) (streamName : string) (version : int64) (events : _ []) (log : ILogger)
+    let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[]) (log : ILogger)
         : Async<EsSyncResult> = async {
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
@@ -156,15 +161,15 @@ module private Write =
         (resultLog |> Log.event evt).Information("SqlEs{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
-    let writeEvents (log : ILogger) retryPolicy (conn : IStreamStore) (streamName : string) (version : int64) (events : _ [])
+    let writeEvents (log : ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> =
         let call = writeEventsLogged conn streamName version events
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
 module private Read =
     open FSharp.Control
-    let private readSliceAsync (conn : IStreamStore) (streamName : string) (direction : Direction) (batchSize : int) (startPos : int64)
-        : Async<ReadStreamPage> = async {
+    let private readSliceAsync (conn : IEventStoreConnection) (streamName : string) (direction : Direction) (batchSize : int) (startPos : int64)
+        : Async<StreamEventsSlice> = async {
         let call =
             match direction with
             | Direction.Forward ->  conn.ReadStreamForwards(streamName, int startPos, batchSize)
@@ -182,10 +187,10 @@ module private Read =
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("SqlEs{action:l} count={count} version={version}",
             "Read", count, slice.LastStreamVersion)
         return slice }
-    let private readBatches (log : ILogger) (readSlice : int64 -> ILogger -> Async<ReadStreamPage>)
+    let private readBatches (log : ILogger) (readSlice : int64 -> ILogger -> Async<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int64)
-        : AsyncSeq<int64 option * _ []> =
-        let rec loop batchCount pos : AsyncSeq<int64 option * _ []> = asyncSeq {
+        : AsyncSeq<int64 option * ResolvedEvent[]> =
+        let rec loop batchCount pos : AsyncSeq<int64 option * ResolvedEvent[]> = asyncSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
@@ -212,10 +217,10 @@ module private Read =
             "SqlEs{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
     let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
-        : Async<int64 * _ []> = async {
-        let mergeBatches (batches: AsyncSeq<int64 option * StreamMessage[]>) = async {
+        : Async<int64 * ResolvedEvent[]> = async {
+        let mergeBatches (batches: AsyncSeq<int64 option * ResolvedEvent[]>) = async {
             let mutable versionFromStream = None
-            let! (events : _ []) =
+            let! (events : ResolvedEvent[]) =
                 batches
                 |> AsyncSeq.map (function None, events -> events | (Some _) as reportedVersion, events -> versionFromStream <- reportedVersion; events)
                 |> AsyncSeq.concatSeq
@@ -226,17 +231,17 @@ module private Read =
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let direction = Direction.Forward
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
-        let batches : AsyncSeq<int64 option * _ []> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
+        let batches : AsyncSeq<int64 option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
         let! t, (version, events) = mergeBatches batches |> Stopwatch.Time
         log |> logBatchRead direction streamName t events batchSize version
         return version, events }
-    let partitionPayloadFrom firstUsedEventNumber : _ [] -> int * int =
+    let partitionPayloadFrom firstUsedEventNumber : ResolvedEvent[] -> int * int =
         let acc (tu,tr) ((ResolvedEventLen bytes) as y) = if y.Position < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
         Array.fold acc (0,0)
     let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName (tryDecode,isOrigin)
-        : Async<int64 * (_ * 'event option)[]> = async {
-        let mergeFromCompactionPointOrStartFromBackwardsStream (log : ILogger) (batchesBackward : AsyncSeq<int64 option * StreamMessage []>)
-            : Async<int64 * (_ * 'event option)[]> = async {
+        : Async<int64 * (ResolvedEvent * 'event option)[]> = async {
+        let mergeFromCompactionPointOrStartFromBackwardsStream (log : ILogger) (batchesBackward : AsyncSeq<int64 option * ResolvedEvent[]>)
+            : Async<int64 * (ResolvedEvent*'event option)[]> = async {
             let versionFromStream, lastBatch = ref None, ref None
             let! tempBackward =
                 batchesBackward
@@ -265,7 +270,7 @@ module private Read =
         let startPosition = int64 Position.End
         let direction = Direction.Backward
         let readlog = log |> Log.prop "direction" direction
-        let batchesBackward : AsyncSeq<int64 option * _[]> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads startPosition
+        let batchesBackward : AsyncSeq<int64 option * ResolvedEvent[]> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads startPosition
         let! t, (version, events) = mergeFromCompactionPointOrStartFromBackwardsStream log batchesBackward |> Stopwatch.Time
         log |> logBatchRead direction streamName t (Array.map fst events) batchSize version
         return version, events }
@@ -278,7 +283,7 @@ module UnionEncoderAdapters =
         let (Bytes meta) = e.JsonMetadata
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, null, null, let ts = e.CreatedUtc in DateTimeOffset(ts)) :> _
+        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, null, null, let ts = e.CreatedUtc in DateTimeOffset ts) :> _
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
         let str = function null -> null | s -> System.Text.Encoding.UTF8.GetString s
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
@@ -315,7 +320,7 @@ module Token =
         let compactedEventNumber = previousToken.pos.compactionEventNumber
         ofCompactionEventNumber compactedEventNumber eventsLength batchSize previousToken.stream.name streamVersion
     /// Use an event just read from the stream to infer headroom
-    let ofCompactionResolvedEventAndVersion (compactionEvent: StreamMessage) batchSize streamName streamVersion : StreamToken =
+    let ofCompactionResolvedEventAndVersion (compactionEvent: ResolvedEvent) batchSize streamName streamVersion : StreamToken =
         ofCompactionEventNumber (compactionEvent.StreamVersion |> int64 |> Some) 0 batchSize streamName streamVersion
     /// Use an event we are about to write to the stream to infer headroom
     let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion' : StreamToken =
@@ -370,7 +375,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
             match events |> Array.tryFindBack (fun re -> match tryDecode re with Some e -> isCompactionEvent e | _ -> false) with
             | None -> return Token.ofPreviousTokenAndEventsLength streamToken events.Length batching.BatchSize version, Array.choose tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose tryDecode events }
-    member __.TrySync log (Token.Unpack token as streamToken) (events, encodedEvents: _ []) (isCompactionEventType) : Async<GatewaySyncResult> = async {
+    member __.TrySync log (Token.Unpack token as streamToken) (events, encodedEvents: EventData array) (isCompactionEventType) : Async<GatewaySyncResult> = async {
         let streamVersion = token.pos.streamVersion
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection token.stream.name streamVersion encodedEvents
         match wr with
@@ -388,7 +393,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
             return GatewaySyncResult.Written token }
     member __.Sync(log, streamName, streamVersion, events: FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
-        let encodedEvents : _ [] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
+        let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with
         | EsSyncResult.ConflictUnknown ->
@@ -408,7 +413,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state, 'context>(context : Context, codec : FsCodec.IUnionEncoder<_,_,'context>, ?access : AccessStrategy<'event,'state>) =
-    let tryDecode (e: _) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
+    let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let compactionPredicate =
         match access with
         | None -> None
@@ -443,7 +448,7 @@ type private Category<'event, 'state, 'context>(context : Context, codec : FsCod
                 let cc = CompactionContext(List.length events, pos.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
 
-        let encodedEvents : _[] = events |> Seq.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
+        let encodedEvents : EventData[] = events |> Seq.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
         let! syncRes = context.TrySync log streamToken (events,encodedEvents) compactionPredicate
         match syncRes with
         | GatewaySyncResult.ConflictUnknown ->
