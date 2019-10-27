@@ -301,6 +301,35 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -- -t topic0 -g consumer1
     ```
 
+<a name="sqlstreamstore"></a>
+8. Use [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore)
+
+    The SqlStreamStore consists of
+    
+    - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -s "sqlserverconnectionstring"`
+    - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run -p /samples/Web/ -- my -s "mysqlconnectionstring"`
+    - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx confiig pg -s "postgresconnectionstring"`
+
+    ```powershell
+    cd ../equinox
+    
+    # set up the DB/schema
+    & dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- config pg -s "connectionstring" -p "u=un;p=password" -s "schema"
+    
+    # run a benchmark
+    & dotnet run -c Release -f netcoreapp2.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -s "connectionstring" -p "u=un;p=password" -s "schema" 
+    
+    #############################
+    # TODO - NOTE NOT YET RELEASED
+    ##############################
+    
+    # set up the DB/schema
+    & eqx config pg -s "connectionstring" -p "u=un;p=password" -s "schema"
+    
+    # run a benchmark
+    & eqx run -t saveforlater -f 50 -d 5 -C -U pg -s "connectionstring" -p "u=un;p=password" -s "schema" 
+   ```
+
 ### BENCHMARKS
 
 A key facility of this repo is being able to run load tests, either in process against a nominated store, or via HTTP to a nominated instance of `samples/Web` ASP.NET Core host app. The following test suites are implemented at present:
