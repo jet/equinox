@@ -148,7 +148,7 @@ module Sql =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
             | [<AltCommandLine "-s">]       Schema of string
             | [<AltCommandLine "-p">]       Credentials of string
-            | [<AltCommandLine "-a">]       AutoCreate
+            | [<AltCommandLine "-A">]       AutoCreate
             interface IArgParserTemplate with
                 member a.Usage = a |> function
                     | ConnectionString _ -> "Database connection string"
@@ -173,7 +173,7 @@ module Sql =
         type [<NoEquality; NoComparison>] Arguments =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
             | [<AltCommandLine "-p">]       Credentials of string
-            | [<AltCommandLine "-a">]       AutoCreate
+            | [<AltCommandLine "-A">]       AutoCreate
             interface IArgParserTemplate with
                 member a.Usage = a |> function
                     | ConnectionString _ -> "Database connection string"
@@ -197,7 +197,7 @@ module Sql =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
             | [<AltCommandLine "-s">]       Schema of string
             | [<AltCommandLine "-p">]       Credentials of string
-            | [<AltCommandLine "-a">]       AutoCreate
+            | [<AltCommandLine "-A">]       AutoCreate
             interface IArgParserTemplate with
                 member a.Usage = a |> function
                     | ConnectionString _ -> "Database connection string"

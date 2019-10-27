@@ -304,30 +304,33 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 <a name="sqlstreamstore"></a>
 8. Use [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore)
 
-    The SqlStreamStore consists of
-    
-    - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -s "sqlserverconnectionstring"`
-    - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run -p /samples/Web/ -- my -s "mysqlconnectionstring"`
-    - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx confiig pg -s "postgresconnectionstring"`
+  The SqlStreamStore consists of:
+
+  - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
+  - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring"`
+  - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx config pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
 
     ```powershell
-    cd ../equinox
+    cd ~/code/equinox
     
     # set up the DB/schema
-    & dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- config pg -s "connectionstring" -p "u=un;p=password" -s "schema"
+    & dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
     
     # run a benchmark
-    & dotnet run -c Release -f netcoreapp2.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -s "connectionstring" -p "u=un;p=password" -s "schema" 
+    & dotnet run -c Release -f netcoreapp2.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+    
+    # run the webserver, -a to autocreate schema on connection
+    & dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring" -A
     
     #############################
     # TODO - NOTE NOT YET RELEASED
     ##############################
     
     # set up the DB/schema
-    & eqx config pg -s "connectionstring" -p "u=un;p=password" -s "schema"
+    & eqx config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
     
     # run a benchmark
-    & eqx run -t saveforlater -f 50 -d 5 -C -U pg -s "connectionstring" -p "u=un;p=password" -s "schema" 
+    & eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
    ```
 
 ### BENCHMARKS
