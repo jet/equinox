@@ -15,7 +15,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- Targeted `Destructurama.FSharp` v `1.1.0-dev-0023` [dotnet-templates#36](https://github.com/jet/dotnet-templates/issues/36)
+- Targeted `Destructurama.FSharp` v `1.1.0` [dotnet-templates#36](https://github.com/jet/dotnet-templates/issues/36)
 - Targeted `FsCodec` v `1.2.0`
 - `Cosmos`: renamed `Connector`'s `maxRetryAttemptsOnThrottledRequests` and `maxRetryWaitTimeInSeconds` to maxRetryAttemptsOnRateLimitedRequests` and `maxRetryWaitTimeOnRateLimitedRequests` and changed latter to `TimeSpan` to match V3 SDK [#171](https://github.com/jet/equinox/pull/171) 
 
