@@ -20,7 +20,7 @@ services:
     ports:
       -  "1433:1433"
     environment:
-      - SA_PASSWORD=equinox
+      - SA_PASSWORD=!Passw0rd
       - ACCEPT_EULA=Y
 
   equinox-mysql:

@@ -13,21 +13,21 @@ open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.Postgres
 
 let connectToLocalStore (_ : ILogger) =
-    Connector("Host=localhost;User Id=postgres").Establish()
+    Connector("Host=localhost;User Id=postgres",autoCreate=true).Establish()
 #else
 #if STORE_MSSQL
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MsSql
 
 let connectToLocalStore (_ : ILogger) =
-    Connector(sprintf "Server=localhost,11433;User=sa;Password=!Passw0rd;Database=test").Establish()
+    Connector(sprintf "Server=localhost,11433;User=sa;Password=!Passw0rd;Database=test",autoCreate=true).Establish()
 #else
 #if STORE_MYSQL
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MySql
 
 let connectToLocalStore (_ : ILogger) =
-    Connector(sprintf "Server=localhost;User=root;Database=information_schema").Establish()
+    Connector(sprintf "Server=localhost;User=root;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
 #else // STORE_EVENTSTORE
 open Equinox.EventStore
 
