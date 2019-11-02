@@ -319,7 +319,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # run a benchmark
     & dotnet run -c Release -f netcoreapp2.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
     
-    # run the webserver, -a to autocreate schema on connection
+    # run the webserver, -A to autocreate schema on connection
     & dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring" -A
     
     #############################
@@ -331,7 +331,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     
     # run a benchmark
     & eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
-   ```
+    ```
 
 ### BENCHMARKS
 
