@@ -333,6 +333,8 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     & eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
     ```
 
+  _There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` should establish local `equinox-mssql`, `equinox-mysql` and `equinox-postgres` servers and databases at known ports (verified on MacOS)._
+
 ### BENCHMARKS
 
 A key facility of this repo is being able to run load tests, either in process against a nominated store, or via HTTP to a nominated instance of `samples/Web` ASP.NET Core host app. The following test suites are implemented at present:
