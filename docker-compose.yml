@@ -14,7 +14,7 @@ services:
       - "5432:5432"
 
   equinox-mssql-server:
-    container_name: equinox-mssql-server
+    container_name: equinox-mssql
     image: microsoft/mssql-server-linux:2017-latest
     restart: unless-stopped
     ports:
