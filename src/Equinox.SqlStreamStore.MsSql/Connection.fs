@@ -4,9 +4,7 @@ open Equinox.Core
 open SqlStreamStore
 
 type Connector
-    (    connectionString: string,
-         [<O; D(null)>]?schema: string,
-         [<O; D(null)>]?credetials: string,
+    (    connectionString: string, [<O; D(null)>]?schema: string,
          [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy,
          /// <c>true</c> to auto-create the schema upon connection
          [<O; D(null)>]?autoCreate) =
