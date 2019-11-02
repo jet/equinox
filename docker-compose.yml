@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
 
-  equinox-mssql-server:
+  equinox-mssql:
     container_name: equinox-mssql
     image: microsoft/mssql-server-linux:2017-latest
     restart: unless-stopped
@@ -32,3 +32,4 @@ services:
     environment:
       - MYSQL_ALLOW_EMPTY_PASSWORD=1
       - MYSQL_DATABASE=EQUINOX_TEST_DB
+    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
