@@ -12,20 +12,19 @@
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.Cosmos.dll"
 
+open FSharp.UMX
+
 [<AutoOpen>]
 module Types =
 
-    type Id = string
-    type FCInfo = { id : Id; code : string; name : string }
-
-    type PhoneNumber = string
-    type PhoneExtension = string
-    type Email = string
+    type [<Measure>] phoneNumber and PhoneNumber = string<phoneNumber>
+    type [<Measure>] phoneExtension and PhoneExtension = string<phoneExtension>
+    type [<Measure>] email and Email = string<email>
     type ContactInformation = { name : string; phone : PhoneNumber; phoneExt : PhoneExtension; email : Email; title : string }
 
-    type FCDetails = { dcCode : string; countryCode : string; financialGroupCode : string }
+    type FcDetails = { dcCode : string; countryCode : string; financialGroupCode : string }
 
-    type FCName = { code : string; name : string }
+    type FcName = { code : string; name : string }
         
     type Address =
         {   address1    : string
@@ -36,45 +35,48 @@ module Types =
             isBusiness  : bool option
             isWeekendDeliveries  : bool option
             businessName  : string option }
-    type Summary = { name : FCName option; address : Address option; contact : ContactInformation option; details : FCDetails option } with
-        static member Zero = { name = None; address = None; contact = None; details = None }
+    type Summary = { name : FcName option; address : Address option; contact : ContactInformation option; details : FcDetails option }
 
 module FulfilmentCenter =
 
     module Events =
+        type AddressData = { address : Address }
+        type ContactInformationData = { contact : ContactInformation }
+        type FcData = { details : FcDetails }
         type Event =
-            | FCCreated of FCName
-            | FCAddressChanged of {| address : Address |}
-            | FCContactChanged of {| contact : ContactInformation |}
-            | FCDetailsChanged of {| details : FCDetails |}
-            | FCRenamed of FCName
+            | FcCreated of FcName
+            | FcAddressChanged of AddressData
+            | FcContactChanged of ContactInformationData
+            | FcDetailsChanged of FcData
+            | FcRenamed of FcName
             interface TypeShape.UnionContract.IUnionContract
         let codec = Equinox.Codec.NewtonsoftJson.Json.Create<Event>(Newtonsoft.Json.JsonSerializerSettings())
 
-    let initial = Summary.Zero
-    let evolve state : Event -> Summary = function
-        | FCCreated x | FCRenamed x -> { state with name = Some x }
-        | FCAddressChanged x -> { state with address = Some x.address }
-        | FCContactChanged x -> { state with contact = Some x.contact }
-        | FCDetailsChanged x -> { state with details = Some x.details }
-    let fold s xs = Seq.fold evolve s xs
+    type State = Summary
+    let initial = { name = None; address = None; contact = None; details = None }
+    let evolve state : Events.Event -> Summary = function
+        | Events.FcCreated x | Events.FcRenamed x -> { state with name = Some x }
+        | Events.FcAddressChanged x -> { state with address = Some x.address }
+        | Events.FcContactChanged x -> { state with contact = Some x.contact }
+        | Events.FcDetailsChanged x -> { state with details = Some x.details }
+    let fold : State -> Events.Event seq -> State = Seq.fold evolve
 
     type Command =
-        | Register of FCName
+        | Register of FcName
         | UpdateAddress of Address
         | UpdateContact of ContactInformation
-        | UpdateDetails of FCDetails
+        | UpdateDetails of FcDetails
 
     let interpret command state =
         match command with
         | Register c when state.name = Some c -> []
-        | Register c -> [FCCreated c]
+        | Register c -> [Events.FcCreated c]
         | UpdateAddress c when state.address = Some c -> []
-        | UpdateAddress c -> [FCAddressChanged {| address = c |}]
+        | UpdateAddress c -> [Events.FcAddressChanged { address = c }]
         | UpdateContact c when state.contact = Some c -> []
-        | UpdateContact c -> [FCContactChanged {| contact = c |}]
+        | UpdateContact c -> [Events.FcContactChanged { contact = c }]
         | UpdateDetails c when state.details = Some c -> []
-        | UpdateDetails c -> [FCDetailsChanged {| details = c |}]
+        | UpdateDetails c -> [Events.FcDetailsChanged { details = c }]
 
     type Service(log, resolveStream, ?maxAttempts) =
         let (|AggregateId|) id = Equinox.AggregateId("FulfilmentCenter", id)
@@ -87,7 +89,7 @@ module FulfilmentCenter =
         member __.UpdateAddress(id, value) = execute id (UpdateAddress value)
         member __.UpdateContact(id, value) = execute id (UpdateContact value)
         member __.UpdateDetails(id, value) = execute id (UpdateDetails value)
-        member __.Read id: Async<Summary> = read id
+        member __.Read id : Async<Summary> = read id
 
 open Equinox.Cosmos
 open System
@@ -155,7 +157,11 @@ module FulfilmentCenterSummary =
         let read (Stream stream) : Async<Summary option> = stream.Query(Option.map (fun s -> s.state))
 
         member __.Update(id, version, value) = execute id (Update (version,value))
-        member __.TryRead id: Async<Summary option> = read id
+        member __.TryRead id : Async<Summary option> = read id
+
+/// Manages allocation of unique ids
+module FcId =
+    ()
 
 //    let createFC conn code name = async {
 //        let serialStream = Hosting.EventStore.serialIdStream "FCAssignment"
