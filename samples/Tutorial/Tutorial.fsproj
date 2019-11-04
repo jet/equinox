@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
@@ -18,7 +18,7 @@
     <Compile Include="fc\Gapless.fs" />
     <Compile Include="fc\PickTicket.fs" />
     <Compile Include="fc\PickList.fs" />
-    <Compile Include="fc\ListTicketSaga.fs" />
+    <Compile Include="fc\PickSaga.fs" />
   </ItemGroup>
 
   <ItemGroup>
