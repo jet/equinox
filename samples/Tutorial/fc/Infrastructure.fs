@@ -87,3 +87,7 @@ type TransactionId = string<transactionId>
 and [<Measure>] transactionId
 module TransactionId =
     let toString (value : TransactionId) : string = %value
+
+type SequenceId = string<sequenceId>
+and [<Measure>] sequenceId
+module SequenceId = let toString (value : SequenceId) : string = %value
