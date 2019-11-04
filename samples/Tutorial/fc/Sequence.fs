@@ -64,4 +64,4 @@ module Cosmos =
     module RollingUnfolds =
 
         let createService (context,cache) =
-            createService (context,cache,Equinox.Cosmos.RollingUnfolds (Folds.isOrigin,Folds.transmute))
+            createService (context,cache,AccessStrategy.RollingUnfolds (Folds.isOrigin,Folds.transmute))
