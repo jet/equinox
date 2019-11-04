@@ -158,16 +158,3 @@ module FulfilmentCenterSummary =
 
         member __.Update(id, version, value) = execute id (Update (version,value))
         member __.TryRead id : Async<Summary option> = read id
-
-/// Manages allocation of unique ids
-module FcId =
-    ()
-
-//    let createFC conn code name = async {
-//        let serialStream = Hosting.EventStore.serialIdStream "FCAssignment"
-//        let! id = EventStore.serialId conn serialStream (fun i -> sprintf "FC%03d" i ) false
-//        let fc = { FCName.code = code; name = name}
-//        let eventData = EventCodec.encode Codecs.created fc |> EventData.withMetadata ["id",id]
-//        let stream = fcstream id
-//        return! EventStore.appendEventDataIgnore conn stream eventData |> Async.map(fun _ -> id)
-//    }
