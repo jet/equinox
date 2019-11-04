@@ -12,7 +12,7 @@
     <Compile Include="Todo.fsx" />
     <Compile Include="Cosmos.fsx" />
     <Compile Include="AsAt.fsx" />
-    <Compile Include="fc\FulfilmentCenter.fsx" />
+    <Compile Include="FulfilmentCenter.fsx" />
   </ItemGroup>
 
   <ItemGroup>
