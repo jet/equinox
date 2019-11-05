@@ -239,10 +239,10 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     propulsion init -ru 400 cosmos # generates a -aux container for the ChangeFeedProcessor to maintain consumer group progress within
     # -v for verbose ChangeFeedProcessor logging
-    # `projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
+    # `-g projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # stats specifies one only wants stats regarding items (other options include `kafka` to project to Kafka)
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
-    propulsion -v project projector1 stats cosmos
+    propulsion -v project -g projector1 stats cosmos
     ```
 
 5. Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
@@ -254,9 +254,9 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet new proProjector
 
     # start one or more Projectors
-    # `projector2` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently
+    # `-g projector2` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
-    dotnet run -- projector2 cosmos
+    dotnet run -- -g projector2 cosmos
     ```
 
 6. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
@@ -269,7 +269,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # `kafka` specifies one wants to emit to Kafka	
     # `temp-topic` is the topic to emit to	
     # `cosmos` specifies source overrides (using defaults in step 1 in this instance)	
-    propulsion -v project projector3 -l 5 kafka temp-topic cosmos	
+    propulsion -v project -g projector3 -l 5 kafka temp-topic cosmos	
     ```	
 
  7. Generate CosmosDb [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
@@ -285,7 +285,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
     $env:PROPULSION_KAFKA_TOPIC="topic0" # or use -t
-    dotnet run -- projector4 -t topic0 cosmos
+    dotnet run -- -g projector4 -t topic0 cosmos
 
     # generate a consumer app
     md consumer | cd
