@@ -1,4 +1,4 @@
-#I "../bin/Debug/netstandard2.0/"
+#I "bin/Debug/netstandard2.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
