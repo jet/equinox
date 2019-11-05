@@ -42,7 +42,7 @@ let evolve s (e : Event) =
     | Deleted { id=id } -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
     | Compacted { items=items } -> { s with items = List.ofArray items }
-let fold state = Seq.fold evolve state
+let fold : State -> Event seq -> State = Seq.fold evolve
 let isOrigin = function Cleared | Compacted _ -> true | _ -> false
 let compact state = Compacted { items = Array.ofList state.items }
 
@@ -58,6 +58,7 @@ let interpret c (state : State) =
     | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
 type Service(log, resolveStream, ?maxAttempts) =
+
     let (|AggregateId|) (id : string) = Equinox.AggregateId("Todos", id)
     let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
     let execute (Stream stream) command : Async<unit> =
@@ -171,4 +172,4 @@ service.Execute(client, Delete 1) |> Async.RunSynchronously
 //val it : unit = ()
 service.List(client) |> Async.RunSynchronously
 //[05:47:22 INF] EqxCosmos Tip 302 119ms rc=1
-//val it : seq<Todo> = [] 
+//val it : seq<Todo> = []

@@ -57,7 +57,7 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 41 // observed 40.78 // was 11
     }
 
-    // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds updote mechanisms
+    // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
     // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {

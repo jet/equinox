@@ -52,7 +52,7 @@ module Events =
         let up (evt : FsCodec.ITimelineEvent<_>,e) : Event =
             evt.Index,e
         // as per the `up`, the downConverter needs to drop the index (which is only there for symmetry), add null metadata
-        let down (_context,e) : Contract * _ option * DateTimeOffset option =
+        let down (_index,e) : Contract * _ option * DateTimeOffset option =
             e,None,None
         FsCodec.NewtonsoftJson.Codec.Create(up,down)
 

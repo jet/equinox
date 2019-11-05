@@ -27,7 +27,7 @@ module Folds =
         | Deleted { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
         | Cleared -> { s with items = [] }
         | Compacted { items = items } -> { s with items = List.ofArray items }
-    let fold state = Seq.fold evolve state
+    let fold : State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Cleared | Events.Compacted _ -> true | _ -> false
     let compact state = Compacted { items = Array.ofList state.items }
 
