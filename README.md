@@ -234,6 +234,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     ```powershell
     dotnet new eqxweb -t -c # -t for todos, -c for cosmos
     dotnet run -p Web
+    eqx -v -vc stats -S -D -E -P cosmos # queries to determine how many streams, docs, events there are in the container
     ```
 
 4. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor
