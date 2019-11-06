@@ -11,13 +11,11 @@ type Service(listService : PickList.Service, ticketService : PickTicket.Service)
 
     let release (transactionId,tickets) = async {
         let! results = seq { for x in tickets do yield ticketService.Sync(x,transactionId,None) |> maxDop.Throttle } |> Async.Parallel
-        let removed,_conflicted = results |> Array.partition id
-        return removed |> Array.toList }
+        return results |> Seq.filter id |> Seq.toList }
 
     let acquire (transactionId,listId,tickets) = async {
         let! results = seq { for x in tickets do yield ticketService.Sync(x,transactionId,Some listId) |> maxDop.Throttle } |> Async.Parallel
-        let added,_conflicted = results |> Array.partition id
-        return added |> Array.toList }
+        return results |> Seq.filter id |> Seq.toList }
 
     let rec sync attempts (transactionId, listId, tickets, removed, acquired) : Async<Result> = async {
         match! listService.Sync(listId, transactionId, tickets, removed, acquired) with
