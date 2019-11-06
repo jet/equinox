@@ -236,7 +236,14 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Web
     ```
 
-4. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor
+4. Use the `eqx` tool to dump stats relating the contents of the CosmosDb store
+
+    ```powershell
+    # run queries to determine how many streams, docs, events there are in the container
+    eqx -v -vc stats -S -D -E -P cosmos # -P to run in parallel # -vc -v to show underlying query being used
+    ```
+
+5. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor
 
     ```powershell
     dotnet tool uninstall Propulsion.Tool -g
@@ -250,7 +257,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     propulsion -v project -g projector1 stats cosmos
     ```
 
-5. Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
+6. Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
 
     ```powershell
     dotnet new -i Equinox.Templates
@@ -264,7 +271,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -- -g projector2 cosmos
     ```
 
-6. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
+7. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
 
      ```powershell	
     $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b	
@@ -277,7 +284,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     propulsion -v project -g projector3 -l 5 kafka temp-topic cosmos	
     ```	
 
- 7. Generate CosmosDb [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
+ 8. Generate CosmosDb [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code
@@ -302,7 +309,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     ```
 
 <a name="sqlstreamstore"></a>
-8. Use [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore)
+9. Use [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore)
 
   The SqlStreamStore consists of:
 
