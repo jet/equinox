@@ -55,15 +55,17 @@ and [<NoComparison>]ConfigArguments =
             | MySql _ ->                    "Configure MySql Store."
             | Postgres _ ->                 "Configure Postgres Store."
 and [<NoComparison>]StatsArguments =
-    | [<AltCommandLine "-e"; Unique>]       Events
-    | [<AltCommandLine "-s"; Unique>]       Streams
-    | [<AltCommandLine "-d"; Unique>]       Documents
+    | [<AltCommandLine "-E"; Unique>]       Events
+    | [<AltCommandLine "-S"; Unique>]       Streams
+    | [<AltCommandLine "-D"; Unique>]       Documents
+    | [<AltCommandLine "-P"; Unique>]       Parallel
     | [<CliPrefix(CliPrefix.None)>]           Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Events _ ->                   "Count the number of Events in the store."
             | Streams _ ->                  "Count the number of Streams in the store. (Default action if no others supplied)"
             | Documents _ ->                "Count the number of Documents in the store."
+            | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
@@ -302,11 +304,12 @@ module CosmosStats =
         | Some (StatsArguments.Cosmos sargs) ->
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
+            let parallel = args.Contains Parallel
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
                     if doE then yield "Events",    """SELECT VALUE SUM(c.n) FROM c WHERE c.id="-1" """ ]
-            log.Information("Computing {measures}", Seq.map fst ops)
+            log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if parallel then "in parallel" else "serially"))
 
             let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
             let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
@@ -315,7 +318,7 @@ module CosmosStats =
             ops |> Seq.map (fun (name,sql) -> async {
                     let res = container.QueryValue<int>(sql, Microsoft.Azure.Documents.Client.FeedOptions(EnableCrossPartitionQuery=true))
                     log.Information("{Stat:l}: {result}", name, res)})
-                |> Async.Parallel
+                |> if parallel then Async.Parallel else Async.ParallelThrottled 1
                 |> Async.Ignore
                 |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint" }
