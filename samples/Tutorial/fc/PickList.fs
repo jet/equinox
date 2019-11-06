@@ -4,7 +4,7 @@ module Fc.PickList
 [<RequireQualifiedAccess>]
 module Events =
 
-    type Commenced = { transId : TransactionId; desired : PickTicketId[]; acquired : PickTicketId[] }
+    type Commenced = { transId : AllocatorId; desired : PickTicketId[]; acquired : PickTicketId[] }
     type Items = { tickets : PickTicketId[] }
     type Event =
         | Commenced of Commenced
@@ -22,8 +22,8 @@ module Folds =
 
     let mkId () = let g = System.Guid.NewGuid() in g.ToString "N" |> FSharp.UMX.UMX.tag
     let private merge (xs : 't seq) (x : 't list) = (xs |> Seq.except x,x) ||> Seq.foldBack (fun x l -> x :: l)
-    type Running = { trans : TransactionId; owned : PickTicketId list; pending : PickTicketId list; acquired : PickTicketId list; failed : PickTicketId list }
-    type Reverting = { trans : TransactionId; owned : PickTicketId list; outstanding : PickTicketId list }
+    type Running = { trans : AllocatorId; owned : PickTicketId list; pending : PickTicketId list; acquired : PickTicketId list; failed : PickTicketId list }
+    type Reverting = { trans : AllocatorId; owned : PickTicketId list; outstanding : PickTicketId list }
     type State = Open of owned : PickTicketId list | Running of Running | Reverting of Reverting
     let initial = Open []
     let evolve state = function
@@ -56,10 +56,10 @@ module Folds =
     let accessStrategy = Equinox.EventStore.AccessStrategy.RollingSnapshots (isOrigin,snapshot)
 
 type State = { owned : PickTicketId list; toRelease : PickTicketId list; toAcquire : PickTicketId list }
-type BusyState = { transactionId : TransactionId; state : State }
+type BusyState = { transactionId : AllocatorId; state : State }
 type Result = Ok of State | Conflict of BusyState
 
-let decideSync (transId : TransactionId, desired : PickTicketId list, removed, acquired) (state : Folds.State) : Result * Events.Event list =
+let decideSync (transId : AllocatorId, desired : PickTicketId list, removed, acquired) (state : Folds.State) : Result * Events.Event list =
     failwith "TODO"
 
 type Service(resolve, ?maxAttempts) =

@@ -3,7 +3,7 @@
 [<AutoOpen>]
 module AsyncExtensions =
     type Async with
-        /// <summary>
+       /// <summary>
         ///     Gets the result of given task so that in the event of exception
         ///     the actual user exception is raised as opposed to being wrapped
         ///     in a System.AggregateException.
@@ -11,13 +11,13 @@ module AsyncExtensions =
         /// <param name="task">Task to be awaited.</param>
         [<System.Diagnostics.DebuggerStepThrough>]
         static member AwaitTaskCorrect(task : System.Threading.Tasks.Task<'T>) : Async<'T> =
-            Async.FromContinuations(fun (sc,ec,_) ->
+            Async.FromContinuations(fun (sc, ec, _) ->
                 task.ContinueWith(fun (t : System.Threading.Tasks.Task<'T>) ->
                     if t.IsFaulted then
                         let e = t.Exception
                         if e.InnerExceptions.Count = 1 then ec e.InnerExceptions.[0]
                         else ec e
-                    elif t.IsCanceled then ec(new System.Threading.Tasks.TaskCanceledException())
+                    elif t.IsCanceled then ec (new System.Threading.Tasks.TaskCanceledException())
                     else sc t.Result)
                 |> ignore)
 
@@ -42,7 +42,7 @@ module SemaphoreExtensions =
 [<AutoOpen>]
 module AsyncExtensions2 =
     type Async with
-        static member Sequential(computations : seq<Async<'T>>) : Async<'T[]> =
+        static member Sequential(computations : seq<Async<'T>>) : Async<'T []> =
             let sequential = new System.Threading.SemaphoreSlim 1
             computations |> Seq.map sequential.Throttle |> Async.Parallel
 
@@ -52,28 +52,29 @@ type [<Measure>] fcId
 type FcId = string<fcId>
 module FcId =
     let toString (value : FcId) : string = %value
-    let parse (value : string) : FcId = let raw = value in % raw
+    let parse (value : string) : FcId = let raw = value in %raw
 
 type SkuId = string<skuId>
-and [<Measure>] skuId
+and  [<Measure>] skuId
 module SkuId =
-    let toString (value : SkuId) : string = % value
-    let parse (value : string) : SkuId = let raw = value in % raw
+    let toString (value : SkuId) : string = %value
+    let parse (value : string) : SkuId = let raw = value in %raw
 
 type [<Measure>] pickTicketId
 type PickTicketId = string<pickTicketId>
+
 module PickTicketId =
     let toString (value : PickTicketId) : string = %value
-    let parse (value : string) : PickTicketId = let raw = value in % raw
+    let parse (value : string) : PickTicketId = let raw = value in %raw
 
 type BatchId = int<batchId>
-and [<Measure>] batchId
+and  [<Measure>] batchId
 module BatchId =
     let toString (value : BatchId) : string = string value
-    let next (value : BatchId) : BatchId = % (%value + 1)
+    let next (value : BatchId) : BatchId = %(%value + 1)
 
 type TransmissionsId = int<transmissionsId>
-and [<Measure>] transmissionsId
+and  [<Measure>] transmissionsId
 module TransmissionsId =
     let toString (value : TransmissionsId) : string = string value
 
@@ -81,13 +82,13 @@ type [<Measure>] pickListId
 type PickListId = string<pickListId>
 module PickListId =
     let toString (value : PickListId) : string = %value
-    let parse (value : string) : PickListId = let raw = value in % raw
+    let parse (value : string) : PickListId = let raw = value in %raw
 
-type TransactionId = string<transactionId>
-and [<Measure>] transactionId
+type AllocatorId = string<transactionId>
+and  [<Measure>] transactionId
 module TransactionId =
-    let toString (value : TransactionId) : string = %value
+    let toString (value : AllocatorId) : string = %value
 
 type SequenceId = string<sequenceId>
-and [<Measure>] sequenceId
+and  [<Measure>] sequenceId
 module SequenceId = let toString (value : SequenceId) : string = %value

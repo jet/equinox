@@ -11,12 +11,12 @@ type Service(listService : PickList.Service, ticketService : PickTicket.Service)
 
     let release (transactionId,tickets) = async {
         let! results = seq { for x in tickets do yield ticketService.Sync(x,transactionId,None) |> maxDop.Throttle } |> Async.Parallel
-        let removed,_conflicted = results |> Array.partition (function PickTicket.Result.Ok -> true | PickTicket.Result.Conflict _ -> false)
+        let removed,_conflicted = results |> Array.partition id
         return removed |> Array.toList }
 
     let acquire (transactionId,listId,tickets) = async {
         let! results = seq { for x in tickets do yield ticketService.Sync(x,transactionId,Some listId) |> maxDop.Throttle } |> Async.Parallel
-        let added,_conflicted = results |> Array.partition (function PickTicket.Result.Ok -> true | PickTicket.Result.Conflict _ -> false)
+        let added,_conflicted = results |> Array.partition id
         return added |> Array.toList }
 
     let rec sync attempts (transactionId, listId, tickets, removed, acquired) : Async<Result> = async {
