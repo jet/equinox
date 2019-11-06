@@ -428,6 +428,30 @@ The [provisioning](provisioning) step spins up RUs in CosmosDB for the Container
 - Kill the container and/or database
 - Use the portal to change the allocation
 
+# RELEASING
+
+*The perfect is the enemy of the good; [all this should of course be automated, but the elephant will be consumed in small bites rather than waiting till someone does it perfectly](https://github.com/jet/equinox/issues/80). This documents the actual release checklist as it stands right now. Any small helping bites much appreciated :pray: *
+
+## Tagging releases
+
+This repo uses [MinVer](https://github.com/adamralph/minver); [see here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
+
+All non-alpha releases derive from tagged commits on `master`. The tag defines the nuget package id etc. that the release will bear (`dotnet pack` uses the `MinVer` package to grab the value from the commit)
+
+## Checklist
+
+- :cry: the Azure Pipelines script does not run the integration tests, so these need to be run manually via the following steps:
+
+  - [Provision](provisioning):
+    - Start Local EventStore running in simulated cluster mode
+    - Set Environment variables X 3 for a CosmosDb database and container (you might need to `eqx init`)
+  - Run `./build.ps1` in Powershell (or Powershell Core on mach via `brew install cask pwsh`)
+
+- [CHANGELOG](CHANGELOG.md) should be up to date
+- commit should be tagged (remember to do `git push --tags` when pushing)
+- after the push has resulted in a successful build, click through from the commit on github thru to the Azure Pipelines build state and verify _all_ artifacts bear the correct version suffix (if the tags were not pushed alongside the commit, they can be wrong). Then, and only then, do the Release (which will upload to nuget.org using a nuget API key that has upload permissions for the packages)
+- _When adding new packages_: For safety, the NuGet API Key used by the Azure DevOps Releases step can only upload new versions of existing packages. As a result, the first version of any new package needs to be manually uploaded out of band. (then invite jet.com to become owner so subsequent releases can do an automated upload [after the request has been (manually) accepted])
+
 ## FAQ
 
 ### What _is_ Equinox?
