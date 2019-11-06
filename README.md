@@ -333,8 +333,6 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     & eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
     ```
 
-  _There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` should establish local `equinox-mssql`, `equinox-mysql` and `equinox-postgres` servers and databases at known ports (verified on MacOS)._
-
 ### BENCHMARKS
 
 A key facility of this repo is being able to run load tests, either in process against a nominated store, or via HTTP to a nominated instance of `samples/Web` ASP.NET Core host app. The following test suites are implemented at present:
@@ -451,6 +449,10 @@ For EventStore, the tests assume a running local instance configured as follows 
     dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- init -ru 1000 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
+### Provisioning SqlStreamStore
+
+_There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` rigs local `equinox-mssql`, `equinox-mysql` and `equinox-postgres` servers and databases at known ports._
+  
 ## DEPROVISIONING
 
 ### Deprovisioning (aka nuking) EventStore data resulting from tests to reset baseline
@@ -484,7 +486,9 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
   - [Provision](provisioning):
     - Start Local EventStore running in simulated cluster mode
     - Set Environment variables X 3 for a CosmosDb database and container (you might need to `eqx init`)
-  - Run `./build.ps1` in Powershell (or Powershell Core on mach via `brew install cask pwsh`)
+    - `docker-compose up` to start 3 servers for the `SqlStreamStore.*.Integration` test suites
+        - [NB `SqlStreamStore.MsSql` has not been tested yet](https://github.com/jet/equinox/issues/175) :see_no_evil: **
+  - Run `./build.ps1` in PowerShell (or PowerShell Core on MacOS via `brew install cask pwsh`)
 
 - [CHANGELOG](CHANGELOG.md) should be up to date
 - commit should be tagged (remember to do `git push --tags` when pushing)
