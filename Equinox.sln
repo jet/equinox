@@ -20,6 +20,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".project", ".project", "{7E
 		LICENSE = LICENSE
 		README.md = README.md
 		SECURITY.md = SECURITY.md
+		docker-compose.yml = docker-compose.yml
 	EndProjectSection
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Domain", "samples\Store\Domain\Domain.fsproj", "{37B4A45F-039E-4515-8A84-D242DDE12D22}"
@@ -57,6 +58,20 @@ EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Tutorial", "samples\Tutorial\Tutorial.fsproj", "{D82AAB2E-7264-421A-A893-63A37E5F08B6}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Tools.TestHarness", "tools\Equinox.Tools.TestHarness\Equinox.Tools.TestHarness.fsproj", "{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore", "src\Equinox.SqlStreamStore\Equinox.SqlStreamStore.fsproj", "{A2ABD57E-0C40-4E29-8EA2-9FB21DBD4029}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.MsSql", "src\Equinox.SqlStreamStore.MsSql\Equinox.SqlStreamStore.MsSql.fsproj", "{11B0C20E-EE3E-44E6-9BCC-F2299AE216A2}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.Postgres", "src\Equinox.SqlStreamStore.Postgres\Equinox.SqlStreamStore.Postgres.fsproj", "{ACD2B8C4-A3C6-4A44-9A8A-7135937E932E}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.MySql", "src\Equinox.SqlStreamStore.MySql\Equinox.SqlStreamStore.MySql.fsproj", "{610464A7-6C30-45DE-8DBC-8B0B832B9EAE}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.MsSql.Integration", "tests\Equinox.SqlStreamStore.MsSql.Integration\Equinox.SqlStreamStore.MsSql.Integration.fsproj", "{761A8CCF-20D8-47DF-BB8E-52541B08A708}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.MySql.Integration", "tests\Equinox.SqlStreamStore.MySql.Integration\Equinox.SqlStreamStore.MySql.Integration.fsproj", "{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}"
+EndProject
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.Postgres.Integration", "tests\Equinox.SqlStreamStore.Postgres.Integration\Equinox.SqlStreamStore.Postgres.Integration.fsproj", "{CDA2F063-B089-4452-8421-82A4EC57B13B}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Core", "src\Equinox.Core\Equinox.Core.fsproj", "{3021659A-5CA4-4E06-AF00-2457ED3F105B}"
 EndProject
@@ -134,6 +149,34 @@ Global
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C2EE7D8E-6982-41AD-ADCC-E6F586E93524}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A2ABD57E-0C40-4E29-8EA2-9FB21DBD4029}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A2ABD57E-0C40-4E29-8EA2-9FB21DBD4029}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A2ABD57E-0C40-4E29-8EA2-9FB21DBD4029}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A2ABD57E-0C40-4E29-8EA2-9FB21DBD4029}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11B0C20E-EE3E-44E6-9BCC-F2299AE216A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11B0C20E-EE3E-44E6-9BCC-F2299AE216A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11B0C20E-EE3E-44E6-9BCC-F2299AE216A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11B0C20E-EE3E-44E6-9BCC-F2299AE216A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ACD2B8C4-A3C6-4A44-9A8A-7135937E932E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ACD2B8C4-A3C6-4A44-9A8A-7135937E932E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ACD2B8C4-A3C6-4A44-9A8A-7135937E932E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ACD2B8C4-A3C6-4A44-9A8A-7135937E932E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{610464A7-6C30-45DE-8DBC-8B0B832B9EAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{610464A7-6C30-45DE-8DBC-8B0B832B9EAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{610464A7-6C30-45DE-8DBC-8B0B832B9EAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{610464A7-6C30-45DE-8DBC-8B0B832B9EAE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{761A8CCF-20D8-47DF-BB8E-52541B08A708}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{761A8CCF-20D8-47DF-BB8E-52541B08A708}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{761A8CCF-20D8-47DF-BB8E-52541B08A708}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{761A8CCF-20D8-47DF-BB8E-52541B08A708}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0BEC1726-EF41-446F-932D-CB2B3FE6C5B9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CDA2F063-B089-4452-8421-82A4EC57B13B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CDA2F063-B089-4452-8421-82A4EC57B13B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CDA2F063-B089-4452-8421-82A4EC57B13B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CDA2F063-B089-4452-8421-82A4EC57B13B}.Release|Any CPU.Build.0 = Release|Any CPU
 		{3021659A-5CA4-4E06-AF00-2457ED3F105B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3021659A-5CA4-4E06-AF00-2457ED3F105B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3021659A-5CA4-4E06-AF00-2457ED3F105B}.Release|Any CPU.ActiveCfg = Release|Any CPU

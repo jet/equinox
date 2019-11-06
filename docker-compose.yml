@@ -1,0 +1,36 @@
+version: '3.7'
+
+services:
+  equinox-postgres:
+    container_name: equinox-postgres
+    image: postgres
+    restart: unless-stopped
+    environment:
+      - PG_TRUST_LOCALNET=true
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=
+      - POSTGRES_DB=EQUINOX_TEST_DB
+    ports:
+      - "5432:5432"
+
+  equinox-mssql:
+    container_name: equinox-mssql
+    image: microsoft/mssql-server-linux:2017-latest
+    restart: unless-stopped
+    ports:
+      -  "1433:1433"
+    environment:
+      - SA_PASSWORD=!Passw0rd
+      - ACCEPT_EULA=Y
+
+  equinox-mysql:
+    container_name: equinox-mysql
+    image: mysql:5.6
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ALLOW_EMPTY_PASSWORD=1
+      - MYSQL_DATABASE=EQUINOX_TEST_DB
+# it _almost_ (but doesnt) works with the default mysql using the following
+#    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']

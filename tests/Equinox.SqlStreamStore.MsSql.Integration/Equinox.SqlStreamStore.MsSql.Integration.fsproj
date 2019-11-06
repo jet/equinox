@@ -4,31 +4,28 @@
     <TargetFrameworks>$(TestTargetFrameworks)</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
-    <DefineConstants>$(DefineConstants);STORE_EVENTSTORE</DefineConstants>
+    <DefineConstants>$(DefineConstants);STORE_MSSQL</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Infrastructure.fs" />
-    <Compile Include="StoreIntegration.fs" />
-    <Compile Include="EventStoreTokenTests.fs" />
+    <Compile Include="..\Equinox.EventStore.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="..\Equinox.EventStore.Integration\StoreIntegration.fs" Link="StoreIntegration.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MsSql\Equinox.SqlStreamStore.MsSql.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FsCheck.xUnit" Version="2.14.0" />
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="1.2.0" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.3.0" />
+    <PackageReference Include="FsCheck.xUnit" Version="2.13.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
-    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />
     <PackageReference Include="unquote" Version="4.0" />
-    <PackageReference Include="xunit" Version="2.4.1" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.1">
+    <PackageReference Include="xunit" Version="2.4.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>

@@ -30,6 +30,7 @@ module Program =
                     // TOCONSIDER log and reset every minute or something ?
                     .WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
                     .WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
+                    .WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
             let c =
                 let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
                 match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)

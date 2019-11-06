@@ -5,7 +5,11 @@ open Domain
 open FsCheck
 open System
 
+#if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL
+open Equinox.SqlStreamStore
+#else
 open Equinox.EventStore
+#endif
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen

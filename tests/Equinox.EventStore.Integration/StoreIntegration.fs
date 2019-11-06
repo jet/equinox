@@ -8,6 +8,27 @@ open Swensen.Unquote
 open System.Threading
 open System
 
+#if STORE_POSTGRES
+open Equinox.SqlStreamStore
+open Equinox.SqlStreamStore.Postgres
+
+let connectToLocalStore (_ : ILogger) =
+    Connector("Host=localhost;User Id=postgres;database=EQUINOX_TEST_DB",autoCreate=true).Establish()
+#else
+#if STORE_MSSQL
+open Equinox.SqlStreamStore
+open Equinox.SqlStreamStore.MsSql
+
+let connectToLocalStore (_ : ILogger) =
+    Connector(sprintf "Server=localhost,1433;User=sa;Password=!Passw0rd;Database=test",autoCreate=true).Establish()
+#else
+#if STORE_MYSQL
+open Equinox.SqlStreamStore
+open Equinox.SqlStreamStore.MySql
+
+let connectToLocalStore (_ : ILogger) =
+    Connector(sprintf "Server=localhost;User=root;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
+#else // STORE_EVENTSTORE
 open Equinox.EventStore
 
 /// Connect directly to a locally running EventStore Node without using Gossip-driven discovery
@@ -18,6 +39,9 @@ open Equinox.EventStore
 let connectToLocalStore log =
     Connector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
         .Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"),ConnectionStrategy.ClusterSingle NodePreference.Master)
+#endif
+#endif
+#endif
 
 let defaultBatchSize = 500
 let createGesGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))

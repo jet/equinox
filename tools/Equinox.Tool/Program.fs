@@ -22,6 +22,7 @@ type Arguments =
     | [<AltCommandLine "-l">]               LogFile of string
     | [<CliPrefix(CliPrefix.None); Last>]     Run of ParseResults<TestArguments>
     | [<CliPrefix(CliPrefix.None); Last>]     Init of ParseResults<InitArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]     Config of ParseResults<ConfigArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose ->                    "Include low level logging regarding specific test runs."
@@ -30,6 +31,7 @@ type Arguments =
             | LogFile _ ->                  "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ ->                      "Run a load test"
             | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
+            | Config _ ->                    "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
     | [<AltCommandLine "-D">]               Shared
@@ -41,6 +43,15 @@ and [<NoComparison>]InitArguments =
             | Shared ->                     "Use Database-level RU allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
+and [<NoComparison>]ConfigArguments =
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Arguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | MsSql _ ->                    "Configure Sql Server Store."
+            | MySql _ ->                    "Configure MySql Store."
+            | Postgres _ ->                 "Configure Postgres Store."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
     interface IArgParserTemplate with
@@ -60,7 +71,10 @@ and [<NoComparison>]
     | [<CliPrefix(CliPrefix.None); Last>]                      Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                      Memory   of ParseResults<Storage.MemoryStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last>]                      Web    of ParseResults<WebArguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Web      of ParseResults<WebArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Name _ ->                     "specify which test to run. (default: Favorite)."
@@ -72,9 +86,12 @@ and [<NoComparison>]
             | DurationM _ ->                "specify a run duration in minutes (default: 30)."
             | ErrorCutoff _ ->              "specify an error cutoff; test ends when exceeded (default: 10000)."
             | ReportIntervalS _ ->          "specify reporting intervals in seconds (default: 10)."
-            | Memory _ ->                   "target in-process Transient Memory Store (Default if not other target specified)."
             | Es _ ->                       "Run transactions in-process against EventStore."
             | Cosmos _ ->                   "Run transactions in-process against CosmosDb."
+            | Memory _ ->                   "target in-process Transient Memory Store (Default if not other target specified)."
+            | MsSql _ ->                    "Run transactions in-process against Sql Server."
+            | MySql _ ->                    "Run transactions in-process against MySql."
+            | Postgres _ ->                 "Run transactions in-process against Postgres."
             | Web _ ->                      "Run transactions against a Web endpoint."
 and TestInfo(args: ParseResults<TestArguments>) =
     member __.Options =                     args.GetResults Cached @ args.GetResults Unfolds
@@ -101,6 +118,18 @@ and TestInfo(args: ParseResults<TestArguments>) =
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
             storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) sargs
+        | Some (MsSql sargs) ->
+            let storeLog = createStoreLog false
+            log.Information("Running transactions in-process against MsSql with storage options: {options:l}", __.Options)
+            storeLog, Storage.Sql.Ms.config log (cache, __.Unfolds, __.BatchSize) sargs
+        | Some (MySql sargs) ->
+            let storeLog = createStoreLog false
+            log.Information("Running transactions in-process against MySql with storage options: {options:l}", __.Options)
+            storeLog, Storage.Sql.My.config log (cache, __.Unfolds, __.BatchSize) sargs
+        | Some (Postgres sargs) ->
+            let storeLog = createStoreLog false
+            log.Information("Running transactions in-process against Postgres with storage options: {options:l}", __.Options)
+            storeLog, Storage.Sql.Pg.config log (cache, __.Unfolds, __.BatchSize) sargs
         | _  | Some (Memory _) ->
             log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", __.Options)
             createStoreLog false, Storage.MemoryStore.config ()
@@ -116,6 +145,7 @@ let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = if verbose then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Console((if verbose && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger() :> ILogger
@@ -159,6 +189,15 @@ module LoadTest =
                 let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
                 log.Information("Running web test targeting: {url}", uri)
                 createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
+            | Some (MsSql sargs) ->
+                log.Information("Running transactions in-process against MsSql with storage options: {options:l}", a.Options)
+                createStoreLog false, Storage.Sql.Ms.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
+            | Some (MySql sargs) ->
+                log.Information("Running transactions in-process against MySql with storage options: {options:l}", a.Options)
+                createStoreLog false, Storage.Sql.My.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
+            | Some (Postgres sargs) ->
+                log.Information("Running transactions in-process against Postgres with storage options: {options:l}", a.Options)
+                createStoreLog false, Storage.Sql.Pg.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
             | _  | Some (Memory _) ->
                 log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", a.Options)
                 createStoreLog false, Storage.MemoryStore.config () |> Some, None
@@ -182,6 +221,7 @@ module LoadTest =
         // Reset the start time based on which the shared global metrics will be computed
         let _ = Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink.Restart() 
         let _ = Equinox.EventStore.Log.InternalMetrics.Stats.LogSink.Restart() 
+        let _ = Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink.Restart()
         let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
 
         let resultFile = createResultLog reportFilename
@@ -194,6 +234,8 @@ module LoadTest =
             Equinox.Cosmos.Store.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Es _) ->
             Equinox.EventStore.Log.InternalMetrics.dump log
+        | Some (Storage.StorageConfig.Sql _) ->
+            Equinox.SqlStreamStore.Log.InternalMetrics.dump log
         | _ -> ()
 
 let createDomainLog verbose verboseConsole maybeSeqEndpoint =
@@ -201,6 +243,7 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = if verbose then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
@@ -220,6 +263,20 @@ module CosmosInit =
             return! init log conn.Client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
+module SqlInit =
+    let databaseOrSchema (log: ILogger) (iargs: ParseResults<ConfigArguments>) = async {
+        match iargs.TryGetSubCommand() with
+        | Some (ConfigArguments.MsSql sargs) ->
+            let a = Storage.Sql.Ms.Info(sargs)
+            Storage.Sql.Ms.connect log (a.ConnectionString,a.Credentials,a.Schema,true) |> Async.RunSynchronously |> ignore
+        | Some (ConfigArguments.MySql sargs) ->
+            let a = Storage.Sql.My.Info(sargs)
+            Storage.Sql.My.connect log (a.ConnectionString,a.Credentials,true) |> Async.RunSynchronously |> ignore
+        | Some (ConfigArguments.Postgres sargs) ->
+            let a = Storage.Sql.Pg.Info(sargs)
+            Storage.Sql.Pg.connect log (a.ConnectionString,a.Credentials,a.Schema,true) |> Async.RunSynchronously |> ignore
+        | _ -> failwith "please specify a `ms`,`my` or `pg` endpoint" }
+
 [<EntryPoint>]
 let main argv =
     let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
@@ -232,6 +289,7 @@ let main argv =
         let log = createDomainLog verbose verboseConsole maybeSeq
         match args.GetSubCommand() with
         | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
+        | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
