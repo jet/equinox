@@ -1,7 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
+    <WarningLevel>5</WarningLevel>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
@@ -11,6 +12,7 @@
     <None Include="Todo.fsx" />
     <None Include="Cosmos.fsx" />
     <None Include="AsAt.fsx" />
+    <None Include="FulfilmentCenter.fsx" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +25,7 @@
   <ItemGroup>
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
+    <PackageReference Include="FSharp.UMX" Version="1.0.0" />
   </ItemGroup>
 
 </Project>

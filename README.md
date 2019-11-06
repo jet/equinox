@@ -244,10 +244,10 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     propulsion init -ru 400 cosmos # generates a -aux container for the ChangeFeedProcessor to maintain consumer group progress within
     # -v for verbose ChangeFeedProcessor logging
-    # `projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
+    # `-g projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # stats specifies one only wants stats regarding items (other options include `kafka` to project to Kafka)
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
-    propulsion -v project projector1 stats cosmos
+    propulsion -v project -g projector1 stats cosmos
     ```
 
 5. Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
@@ -259,9 +259,9 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet new proProjector
 
     # start one or more Projectors
-    # `projector2` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently
+    # `-g projector2` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
-    dotnet run -- projector2 cosmos
+    dotnet run -- -g projector2 cosmos
     ```
 
 6. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
@@ -274,7 +274,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # `kafka` specifies one wants to emit to Kafka	
     # `temp-topic` is the topic to emit to	
     # `cosmos` specifies source overrides (using defaults in step 1 in this instance)	
-    propulsion -v project projector3 -l 5 kafka temp-topic cosmos	
+    propulsion -v project -g projector3 -l 5 kafka temp-topic cosmos	
     ```	
 
  7. Generate CosmosDb [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
@@ -290,7 +290,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b
     $env:PROPULSION_KAFKA_TOPIC="topic0" # or use -t
-    dotnet run -- projector4 -t topic0 cosmos
+    dotnet run -- -g projector4 -t topic0 cosmos
 
     # generate a consumer app
     md consumer | cd
@@ -466,6 +466,30 @@ The [provisioning](provisioning) step spins up RUs in CosmosDB for the Container
 
 - Kill the container and/or database
 - Use the portal to change the allocation
+
+# RELEASING
+
+*The perfect is the enemy of the good; [all this should of course be automated, but the elephant will be consumed in small bites rather than waiting till someone does it perfectly](https://github.com/jet/equinox/issues/80). This documents the actual release checklist as it stands right now. Any small helping bites much appreciated :pray: *
+
+## Tagging releases
+
+This repo uses [MinVer](https://github.com/adamralph/minver); [see here](https://github.com/adamralph/minver#how-it-works) for more information on how it works.
+
+All non-alpha releases derive from tagged commits on `master`. The tag defines the nuget package id etc. that the release will bear (`dotnet pack` uses the `MinVer` package to grab the value from the commit)
+
+## Checklist
+
+- :cry: the Azure Pipelines script does not run the integration tests, so these need to be run manually via the following steps:
+
+  - [Provision](provisioning):
+    - Start Local EventStore running in simulated cluster mode
+    - Set Environment variables X 3 for a CosmosDb database and container (you might need to `eqx init`)
+  - Run `./build.ps1` in Powershell (or Powershell Core on mach via `brew install cask pwsh`)
+
+- [CHANGELOG](CHANGELOG.md) should be up to date
+- commit should be tagged (remember to do `git push --tags` when pushing)
+- after the push has resulted in a successful build, click through from the commit on github thru to the Azure Pipelines build state and verify _all_ artifacts bear the correct version suffix (if the tags were not pushed alongside the commit, they can be wrong). Then, and only then, do the Release (which will upload to nuget.org using a nuget API key that has upload permissions for the packages)
+- _When adding new packages_: For safety, the NuGet API Key used by the Azure DevOps Releases step can only upload new versions of existing packages. As a result, the first version of any new package needs to be manually uploaded out of band. (then invite jet.com to become owner so subsequent releases can do an automated upload [after the request has been (manually) accepted])
 
 ## FAQ
 

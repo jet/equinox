@@ -412,7 +412,7 @@ let evolve s = function
     | Deleted id -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
     | Compacted items -> { s with items = List.ofArray items }
-let fold state = Seq.fold evolve state
+let fold : State -> Events.Event seq -> State = Seq.fold evolve
 let isOrigin = function Cleared | Compacted _ -> true | _ -> false
 let compact state = Compacted (Array.ofList state.items)
 ```
@@ -501,7 +501,7 @@ However, given one has a specific store (or set of stores) in mind for the event
 
 ## Store-specific concerns mapping to the programming model
 
-This sections enumerates key concerns feeding into how Stores in general, and specific concrete Stores bind to the [Programming Model](#programming-model):
+This section enumerates key concerns feeding into how Stores in general, and specific concrete Stores bind to the [Programming Model](#programming-model):
 
 ### EventStore
 

@@ -40,7 +40,7 @@ module Folds =
         | Events.ItemRemoved e -> updateItems (List.filter (fun x -> x.skuId <> e.skuId))
         | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
-    let fold state = Seq.fold evolve state
+    let fold : State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Compacted _ -> true | _ -> false
     let compact = State.toSnapshot >> Events.Compacted
     /// This transmute impl a) removes events - we're not interested in storing the events b) packs the post-state into a Compacted unfold-event
