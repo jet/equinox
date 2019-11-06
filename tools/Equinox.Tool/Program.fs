@@ -304,21 +304,20 @@ module CosmosStats =
         | Some (StatsArguments.Cosmos sargs) ->
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
-            let parallel = args.Contains Parallel
-            let ops =
-                [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
-                    if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
-                    if doE then yield "Events",    """SELECT VALUE SUM(c.n) FROM c WHERE c.id="-1" """ ]
-            log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if parallel then "in parallel" else "serially"))
-
+            let inParallel = args.Contains Parallel
             let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
             let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
             let! conn = connector.Connect(appName, discovery)
             let container = Equinox.Cosmos.Store.Container(conn.Client,dName,cName)
+            let ops =
+                [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
+                    if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
+                    if doE then yield "Events",    """SELECT VALUE SUM(c.n) FROM c WHERE c.id="-1" """ ]
+            log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name,sql) -> async {
                     let res = container.QueryValue<int>(sql, Microsoft.Azure.Documents.Client.FeedOptions(EnableCrossPartitionQuery=true))
                     log.Information("{Stat:l}: {result}", name, res)})
-                |> if parallel then Async.Parallel else Async.ParallelThrottled 1
+                |> if inParallel then Async.Parallel else Async.ParallelThrottled 1
                 |> Async.Ignore
                 |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint" }
