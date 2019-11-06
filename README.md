@@ -446,12 +446,12 @@ For EventStore, the tests assume a running local instance configured as follows 
 
 ### Provisioning CosmosDb (when not using -sc)
 
-    dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- init -ru 1000 `
+    dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- init -ru 400 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ### Provisioning SqlStreamStore
 
-_There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` rigs local `equinox-mssql`, `equinox-mysql` and `equinox-postgres` servers and databases at known ports._
+There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` rigs local `equinox-mssql`, `equinox-mysql` and `equinox-postgres` servers and databases at known ports. _NOTE The `Equinox.SqlStreamStore.*.Integration` suites currently assume this is in place and will otherwise fail_.
   
 ## DEPROVISIONING
 
