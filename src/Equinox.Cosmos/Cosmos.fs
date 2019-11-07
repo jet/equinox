@@ -1,4 +1,4 @@
-namespace Equinox.Cosmos.Store
+﻿namespace Equinox.Cosmos.Store
 
 open Equinox.Core
 open FsCodec
@@ -809,9 +809,16 @@ type BatchingPolicy
 
 type Gateway(conn : Connection, batching : BatchingPolicy) =
     let (|FromUnfold|_|) (tryDecode: #IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#IEventData<_>[]) : Option<'event[]> =
-        match Array.tryFindIndexBack (tryDecode >> Option.exists isOrigin) xs with
+        let items = ResizeArray()
+        let isOrigin' e =
+            match tryDecode e with
+            | None -> false
+            | Some e ->
+                items.Insert(0,e)
+                isOrigin e
+        match Array.tryFindIndexBack isOrigin' xs with
         | None -> None
-        | Some index -> xs |> Seq.skip index |> Seq.choose tryDecode |> Array.ofSeq |> Some
+        | Some _ -> items.ToArray() |> Some
     member __.Client = conn.Client
     member __.LoadBackwardsStopping log (container, stream) (tryDecode,isOrigin): Async<StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log (container,stream) conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward None (tryDecode,isOrigin)
