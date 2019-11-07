@@ -27,6 +27,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
+- `Cosmos`: fixed swapped `count` and `bytes` metrics fields
+
 <a name="2.0.0"></a>
 <a name="2.0.0-rc7"></a>
 ## [2.0.0-rc7] - 2019-10-17
