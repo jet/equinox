@@ -83,14 +83,13 @@ and [<NoComparison>] DumpArguments =
             | Json ->                       "Include Pretty Printed Json"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
-            | Cosmos _ ->                   "Cosmos Connection parameters."
+            | Cosmos _ ->                   "Parameters for CosmosDb."
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Endpoint _ ->                 "Target address. Default: https://localhost:5001"
-and [<NoComparison>]
-    TestArguments =
+and [<NoComparison>]TestArguments =
     | [<AltCommandLine "-t"; Unique>]       Name of Test
     | [<AltCommandLine "-s">]               Size of int
     | [<AltCommandLine "-C">]               Cached
@@ -202,37 +201,17 @@ module LoadTest =
         execute
     let private createResultLog fileName = LoggerConfiguration().WriteTo.File(fileName).CreateLogger()
     let run (log: ILogger) (verbose,verboseConsole,maybeSeq) reportFilename (args: ParseResults<TestArguments>) =
-        let a = TestInfo args
-        let storage = args.TryGetSubCommand()
-
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
-        let cache = if a.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
+        let a = TestInfo args
         let storeLog, storeConfig, httpClient: ILogger * Storage.StorageConfig option * HttpClient option =
-            match storage with
-            | Some (Cosmos sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-                log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", a.Options)
-                storeLog, Storage.Cosmos.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) (Storage.Cosmos.Info sargs) |> Some, None
-            | Some (Es sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-                log.Information("Running transactions in-process against EventStore with storage options: {options:l}", a.Options)
-                storeLog, Storage.EventStore.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
+            match args.TryGetSubCommand() with
             | Some (Web wargs) ->
                 let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
                 log.Information("Running web test targeting: {url}", uri)
                 createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
-            | Some (MsSql sargs) ->
-                log.Information("Running transactions in-process against MsSql with storage options: {options:l}", a.Options)
-                createStoreLog false, Storage.Sql.Ms.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
-            | Some (MySql sargs) ->
-                log.Information("Running transactions in-process against MySql with storage options: {options:l}", a.Options)
-                createStoreLog false, Storage.Sql.My.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
-            | Some (Postgres sargs) ->
-                log.Information("Running transactions in-process against Postgres with storage options: {options:l}", a.Options)
-                createStoreLog false, Storage.Sql.Pg.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
-            | _  | Some (Memory _) ->
-                log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", a.Options)
-                createStoreLog false, Storage.MemoryStore.config () |> Some, None
+            | _ ->
+                let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
+                storeLog, Some storeConfig, None
         let test, duration = a.Tests, a.Duration
         let runSingleTest : ClientId -> Async<unit> =
             match storeConfig, httpClient with
@@ -295,7 +274,7 @@ module CosmosInit =
             let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
             let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database rus else Provisioning.Container rus
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
-            let! storeLog, conn,dName,cName = conn (log,verboseConsole,maybeSeq) sargs
+            let! _storeLog,conn,dName,cName = conn (log,verboseConsole,maybeSeq) sargs
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
             return! init log conn.Client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
@@ -327,7 +306,7 @@ module CosmosStats =
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let! storeLog, conn,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
+            let! _storeLog,conn,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
             let container = Equinox.Cosmos.Store.Container(conn.Client,dName,cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
