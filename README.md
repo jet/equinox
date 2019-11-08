@@ -273,9 +273,9 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
 7. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
 
-     ```powershell	
+    ```powershell	
     $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b	
-     # `-v` for verbose logging	
+    # `-v` for verbose logging	
     # `projector3` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently	
     # `-l 5` to report ChangeFeed lags every 5 minutes	
     # `kafka` specifies one wants to emit to Kafka	
@@ -310,10 +310,11 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
 <a name="sqlstreamstore"></a>
 9. Use [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore)
-
+   
   The SqlStreamStore consists of:
 
   - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
+  - being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -JC -S "Favoritesab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
   - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring"`
   - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx config pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
 
@@ -321,23 +322,20 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     cd ~/code/equinox
     
     # set up the DB/schema
-    & dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+    dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
     
     # run a benchmark
-    & dotnet run -c Release -f netcoreapp2.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+    dotnet run -c Release -f netcoreapp2.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
     
     # run the webserver, -A to autocreate schema on connection
-    & dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring" -A
-    
-    #############################
-    # TODO - NOTE NOT YET RELEASED
-    ##############################
+    dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring" -A
     
     # set up the DB/schema
-    & eqx config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+    eqx config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
     
     # run a benchmark
-    & eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
+    eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
+    eqx dump -J -S "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg # show stored JSON (Guid shown in eqx run output) 
     ```
 
 ### BENCHMARKS

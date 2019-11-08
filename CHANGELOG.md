@@ -14,6 +14,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Cosmos`: Exposed a `Connector.CreateClient` for interop with V2 ChangeFeedProcessor and `Propulsion.Cosmos` [#171](https://github.com/jet/equinox/pull/171) 
 - `Cosmos`: Added `eqx stats` command to count streams/docs/events in a CosmosDb Container re [#127](https://github.com/jet/equinox/issues/127) [#176](https://github.com/jet/equinox/pull/176) 
 - `MemoryStore`: Supports custom Codec logic (can use `FsCodec.Box.Codec` as default) [#173](https://github.com/jet/equinox/pull/173) 
+- `eqx dump [store]`: Show event data from store [#177](https://github.com/jet/equinox/pull/177)
 
 ### Changed
 
@@ -26,6 +27,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Resolver.ResolveEx` [#172](https://github.com/jet/equinox/pull/172)
 
 ### Fixed
+
+- `Cosmos`: fixed accidentally swapped `count` and `bytes` metrics field values
 
 <a name="2.0.0"></a>
 <a name="2.0.0-rc7"></a>

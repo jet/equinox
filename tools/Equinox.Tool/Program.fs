@@ -24,6 +24,7 @@ type Arguments =
     | [<CliPrefix(CliPrefix.None); Last>]     Init of ParseResults<InitArguments>
     | [<CliPrefix(CliPrefix.None); Last>]     Config of ParseResults<ConfigArguments>
     | [<CliPrefix(CliPrefix.None); Last>]     Stats of ParseResults<StatsArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]     Dump of ParseResults<DumpArguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose ->                    "Include low level logging regarding specific test runs."
@@ -32,8 +33,9 @@ type Arguments =
             | LogFile _ ->                  "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ ->                      "Run a load test"
             | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
-            | Stats _ ->                    "inspect store to determine numbers of streams/documents/events (supports `cosmos` stores)."
             | Config _ ->                    "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
+            | Stats _ ->                    "inspect store to determine numbers of streams/documents/events (supports `cosmos` stores)."
+            | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
     | [<AltCommandLine "-D">]               Shared
@@ -67,13 +69,55 @@ and [<NoComparison>]StatsArguments =
             | Documents _ ->                "Count the number of Documents in the store."
             | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
+and [<NoComparison>] DumpArguments =
+    | [<AltCommandLine "-S">]               Stream of string
+    | [<AltCommandLine "-C"; Unique>]       Correlation
+    | [<AltCommandLine "-J"; Unique>]       Json
+    | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
+    | [<AltCommandLine "-E"; Unique >]      EventsOnly
+    | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Arguments>
+    interface IArgParserTemplate with
+        member a.Usage = a |> function
+            | Stream _ ->                   "Specify stream(s) to dump."
+            | Correlation ->                "Include Correlation/Causation identifiers"
+            | Json ->                       "Include Pretty Printed Json"
+            | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
+            | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
+            | Es _ ->                       "Parameters for EventStore."
+            | Cosmos _ ->                   "Parameters for CosmosDb."
+            | MsSql _ ->                    "Parameters for Sql Server."
+            | MySql _ ->                    "Parameters for MySql."
+            | Postgres _ ->                 "Parameters for Postgres."
+and DumpInfo(args: ParseResults<DumpArguments>) =
+    member __.ConfigureStore(log : ILogger, createStoreLog) =
+        let storeConfig = None,true,100
+        match args.TryGetSubCommand() with
+        | Some (DumpArguments.Cosmos sargs) ->
+            let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
+            storeLog, Storage.Cosmos.config (log,storeLog) storeConfig (Storage.Cosmos.Info sargs)
+        | Some (DumpArguments.Es sargs) ->
+            let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
+            storeLog, Storage.EventStore.config (log,storeLog) storeConfig sargs
+        | Some (DumpArguments.MsSql sargs) ->
+            let storeLog = createStoreLog false
+            storeLog, Storage.Sql.Ms.config log storeConfig sargs
+        | Some (DumpArguments.MySql sargs) ->
+            let storeLog = createStoreLog false
+            storeLog, Storage.Sql.My.config log storeConfig sargs
+        | Some (DumpArguments.Postgres sargs) ->
+            let storeLog = createStoreLog false
+            storeLog, Storage.Sql.Pg.config log storeConfig sargs
+        | _ -> failwith "please specify a `cosmos`,`es`,`ms`,`my` or `pg` endpoint"
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Endpoint _ -> "Target address. Default: https://localhost:5001"
-and [<NoComparison>]
-    TestArguments =
+            | Endpoint _ ->                 "Target address. Default: https://localhost:5001"
+and [<NoComparison>]TestArguments =
     | [<AltCommandLine "-t"; Unique>]       Name of Test
     | [<AltCommandLine "-s">]               Size of int
     | [<AltCommandLine "-C">]               Cached
@@ -185,37 +229,17 @@ module LoadTest =
         execute
     let private createResultLog fileName = LoggerConfiguration().WriteTo.File(fileName).CreateLogger()
     let run (log: ILogger) (verbose,verboseConsole,maybeSeq) reportFilename (args: ParseResults<TestArguments>) =
-        let a = TestInfo args
-        let storage = args.TryGetSubCommand()
-
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
-        let cache = if a.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
+        let a = TestInfo args
         let storeLog, storeConfig, httpClient: ILogger * Storage.StorageConfig option * HttpClient option =
-            match storage with
-            | Some (Cosmos sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-                log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", a.Options)
-                storeLog, Storage.Cosmos.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) (Storage.Cosmos.Info sargs) |> Some, None
-            | Some (Es sargs) ->
-                let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-                log.Information("Running transactions in-process against EventStore with storage options: {options:l}", a.Options)
-                storeLog, Storage.EventStore.config (log,storeLog) (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
+            match args.TryGetSubCommand() with
             | Some (Web wargs) ->
                 let uri = wargs.GetResult(WebArguments.Endpoint,"https://localhost:5001") |> Uri
                 log.Information("Running web test targeting: {url}", uri)
                 createStoreLog false, None, new HttpClient(BaseAddress=uri) |> Some
-            | Some (MsSql sargs) ->
-                log.Information("Running transactions in-process against MsSql with storage options: {options:l}", a.Options)
-                createStoreLog false, Storage.Sql.Ms.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
-            | Some (MySql sargs) ->
-                log.Information("Running transactions in-process against MySql with storage options: {options:l}", a.Options)
-                createStoreLog false, Storage.Sql.My.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
-            | Some (Postgres sargs) ->
-                log.Information("Running transactions in-process against Postgres with storage options: {options:l}", a.Options)
-                createStoreLog false, Storage.Sql.Pg.config log (cache, a.Unfolds, a.BatchSize) sargs |> Some, None
-            | _  | Some (Memory _) ->
-                log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", a.Options)
-                createStoreLog false, Storage.MemoryStore.config () |> Some, None
+            | _ ->
+                let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
+                storeLog, Some storeConfig, None
         let test, duration = a.Tests, a.Duration
         let runSingleTest : ClientId -> Async<unit> =
             match storeConfig, httpClient with
@@ -231,7 +255,9 @@ module LoadTest =
             | None, None -> invalidOp "impossible None, None"
         let clients = Array.init (a.TestsPerSecond * 2) (fun _ -> % Guid.NewGuid())
 
-        log.Information( "Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
+        let renderedIds = clients |> Seq.map ClientId.toStringN |> if verboseConsole then id else Seq.truncate 5
+        log.ForContext((if verboseConsole then "clientIds" else "clientIdsExcerpt"),renderedIds)
+            .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
         let _ = Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink.Restart()
@@ -259,22 +285,27 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
-    let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+    let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"
+    let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), outputTemplate, theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
 
 module CosmosInit =
     open Equinox.Cosmos.Store.Sync.Initialization
+    let conn (log,verboseConsole,maybeSeq) (sargs : ParseResults<Storage.Cosmos.Arguments>) = async {
+        let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
+        let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
+        let! conn = connector.Connect(appName, discovery)
+        return storeLog, conn, dName, cName }
+
     let containerAndOrDb (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitArguments>) = async {
         match iargs.TryGetSubCommand() with
         | Some (InitArguments.Cosmos sargs) ->
             let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
             let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database rus else Provisioning.Container rus
-            let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-            let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
+            let! _storeLog,conn,dName,cName = conn (log,verboseConsole,maybeSeq) sargs
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            let! conn = connector.Connect(appName, discovery)
             return! init log conn.Client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
@@ -283,13 +314,13 @@ module SqlInit =
         match iargs.TryGetSubCommand() with
         | Some (ConfigArguments.MsSql sargs) ->
             let a = Storage.Sql.Ms.Info(sargs)
-            Storage.Sql.Ms.connect log (a.ConnectionString,a.Credentials,a.Schema,true) |> Async.RunSynchronously |> ignore
+            Storage.Sql.Ms.connect log (a.ConnectionString,a.Credentials,a.Schema,true) |> Async.Ignore |> Async.RunSynchronously
         | Some (ConfigArguments.MySql sargs) ->
             let a = Storage.Sql.My.Info(sargs)
-            Storage.Sql.My.connect log (a.ConnectionString,a.Credentials,true) |> Async.RunSynchronously |> ignore
+            Storage.Sql.My.connect log (a.ConnectionString,a.Credentials,true) |> Async.Ignore |> Async.RunSynchronously
         | Some (ConfigArguments.Postgres sargs) ->
             let a = Storage.Sql.Pg.Info(sargs)
-            Storage.Sql.Pg.connect log (a.ConnectionString,a.Credentials,a.Schema,true) |> Async.RunSynchronously |> ignore
+            Storage.Sql.Pg.connect log (a.ConnectionString,a.Credentials,a.Schema,true) |> Async.Ignore |> Async.RunSynchronously
         | _ -> failwith "please specify a `ms`,`my` or `pg` endpoint" }
 
 module CosmosStats =
@@ -305,9 +336,7 @@ module CosmosStats =
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-            let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
-            let! conn = connector.Connect(appName, discovery)
+            let! _storeLog,conn,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
             let container = Equinox.Cosmos.Store.Container(conn.Client,dName,cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
@@ -317,18 +346,54 @@ module CosmosStats =
             ops |> Seq.map (fun (name,sql) -> async {
                     log.Debug("Running query: {sql}", sql)
                     let res = container.QueryValue<int>(sql, Microsoft.Azure.Documents.Client.FeedOptions(EnableCrossPartitionQuery=true))
-                    log.Information("{Stat:l}: {result}", name, res)})
+                    log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.ParallelThrottled 1 // TOCONSIDER replace with Async.Sequence when using new enough FSharp.Core
                 |> Async.Ignore
                 |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
+module Dump =
+    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) =
+        let a = DumpInfo args
+        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
+        let _storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
+        let doU,doE,doC,doJ = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,args.Contains Json
+        let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
+
+        let initial = List.empty
+        let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
+        let mutable unfolds = List.empty
+        let tryDecode (x : FsCodec.ITimelineEvent<byte[]>) =
+            if x.IsUnfold then unfolds <- x :: unfolds
+            Some x
+        let idCodec = FsCodec.Codec.Create(tryDecode, (fun _ -> failwith "No encoding required"), (fun _ -> failwith "No mapCausation"))
+        let isOriginAndSnapshot = (fun _event -> false),fun _state -> failwith "no compaction required"
+        let render (data : byte[]) =
+            match data with
+            | null | [||] -> null
+            | _ when doJ -> System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> string
+            | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
+        let readStream (name : string) = async {
+            let catAndId = name.Split([|'-'|],2,StringSplitOptions.RemoveEmptyEntries)
+            let id = match catAndId with [|cat;id|] -> Equinox.AggregateId(cat,id) | ids -> Equinox.StreamName ids.[0]
+            let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) id
+            let! _token,events = stream.Load log
+            for x in Seq.append unfolds events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
+                let ty = if x.IsUnfold then "Unfold" else "Event"
+                if not doC then log.Information("{i,3}@{t:u} {u,-6:l} {e:l} {data:l} {meta:l}",
+                                    x.Index, x.Timestamp, ty, x.EventType, render x.Data, render x.Meta)
+                else log.Information("{i,3}@{t:u} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
+                         x.Index, x.Timestamp, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
+        args.GetResults DumpArguments.Stream
+        |> Seq.map readStream
+        |> Async.Parallel
+        |> Async.Ignore
+
 [<EntryPoint>]
 let main argv =
     let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
     let parser = ArgumentParser.Create<Arguments>(programName = programName)
-    try
-        let args = parser.ParseCommandLine argv
+    try let args = parser.ParseCommandLine argv
         let verboseConsole = args.Contains VerboseConsole
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
         let verbose = args.Contains Verbose
@@ -336,11 +401,12 @@ let main argv =
         match args.GetSubCommand() with
         | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
         | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
+        | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
         | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
             LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
-        | _ -> failwith "Please specify a valid subcommand :- init, configure, stats or run"
+        | _ -> failwith "Please specify a valid subcommand :- init, config, dump, stats or run"
         0
     with :? Argu.ArguParseException as e -> eprintfn "%s" e.Message; 1
         | Storage.MissingArg msg -> eprintfn "%s" msg; 1

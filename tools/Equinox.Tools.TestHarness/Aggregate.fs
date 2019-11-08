@@ -99,7 +99,7 @@ module Observable =
     let logAggregate (log: ILogger) (source : IObservable<Envelope<TestResultAggregate>>) : IDisposable =
         source
         |> Observable.map TestResultAggregate.Render
-        |> Observable.subscribe (fun r -> log.Information("Aggregate: {result}",r))
+        |> Observable.subscribe (fun r -> log.Information("Aggregate: {result:l}",r))
 
     /// Logs load test events with provided log level
     let logEvents (log : ILogger) (events : IObservable<Envelope<LoadTestEvent>>) =

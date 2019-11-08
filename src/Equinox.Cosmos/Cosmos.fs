@@ -583,7 +583,7 @@ module internal Tip =
     let private loggedGet (get : Container * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
         let! t, (ru, res : ReadResult<Tip>) = get (container,stream) maybePos |> Stopwatch.Time
-        let log count bytes (f : Log.Measurement -> _) = log |> Log.event (f { stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
+        let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
         | ReadResult.NotModified ->
             (log 0 0 Log.TipNotModified).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 302, (let e = t.Elapsed in e.TotalMilliseconds), ru)
@@ -809,9 +809,16 @@ type BatchingPolicy
 
 type Gateway(conn : Connection, batching : BatchingPolicy) =
     let (|FromUnfold|_|) (tryDecode: #IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#IEventData<_>[]) : Option<'event[]> =
-        match Array.tryFindIndexBack (tryDecode >> Option.exists isOrigin) xs with
+        let items = ResizeArray()
+        let isOrigin' e =
+            match tryDecode e with
+            | None -> false
+            | Some e ->
+                items.Insert(0,e)
+                isOrigin e
+        match Array.tryFindIndexBack isOrigin' xs with
         | None -> None
-        | Some index -> xs |> Seq.skip index |> Seq.choose tryDecode |> Array.ofSeq |> Some
+        | Some _ -> items.ToArray() |> Some
     member __.Client = conn.Client
     member __.LoadBackwardsStopping log (container, stream) (tryDecode,isOrigin): Async<StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log (container,stream) conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward None (tryDecode,isOrigin)
@@ -1014,7 +1021,7 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         | Some (AccessStrategy.Unfolded (isOrigin, unfold)) ->           isOrigin,         Choice2Of3 (fun _ state -> unfold state)
         | Some (AccessStrategy.Snapshot (isValid,generate)) ->           isValid,          Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
         | Some (AccessStrategy.AnyKnownEventType) ->                     (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
-        | Some (AccessStrategy.RollingUnfolds (isOrigin,transmute)) -> isOrigin,         Choice3Of3 transmute
+        | Some (AccessStrategy.RollingUnfolds (isOrigin,transmute)) ->   isOrigin,         Choice3Of3 transmute
     let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
     let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
     let category : ICategory<_, _, Container*string, 'context> =
