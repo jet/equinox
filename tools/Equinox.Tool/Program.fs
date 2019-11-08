@@ -255,7 +255,8 @@ module LoadTest =
             | None, None -> invalidOp "impossible None, None"
         let clients = Array.init (a.TestsPerSecond * 2) (fun _ -> % Guid.NewGuid())
 
-        log.ForContext("clientIds",if verboseConsole then Seq.ofArray clients else Seq.truncate 5 clients)
+        let renderedIds = clients |> Seq.map ClientId.toStringN |> if verboseConsole then id else Seq.truncate 5
+        log.ForContext((if verboseConsole then "clientIds" else "clientIdsExcerpt"),renderedIds)
             .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
