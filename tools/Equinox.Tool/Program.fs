@@ -346,7 +346,7 @@ module CosmosStats =
             ops |> Seq.map (fun (name,sql) -> async {
                     log.Debug("Running query: {sql}", sql)
                     let res = container.QueryValue<int>(sql, Microsoft.Azure.Documents.Client.FeedOptions(EnableCrossPartitionQuery=true))
-                    log.Information("{Stat:l}: {result:N0}", name, res)})
+                    log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.ParallelThrottled 1 // TOCONSIDER replace with Async.Sequence when using new enough FSharp.Core
                 |> Async.Ignore
                 |> Async.RunSynchronously
