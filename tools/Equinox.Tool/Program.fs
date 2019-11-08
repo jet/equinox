@@ -255,7 +255,8 @@ module LoadTest =
             | None, None -> invalidOp "impossible None, None"
         let clients = Array.init (a.TestsPerSecond * 2) (fun _ -> % Guid.NewGuid())
 
-        log.Information( "Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
+        log.ForContext("clientIds",if verboseConsole then Seq.ofArray clients else Seq.truncate 5 clients)
+            .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
         let _ = Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink.Restart()
@@ -283,7 +284,7 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
-    let outputTemplate = "{Timestamp:T} {Level:u1} {Message} {Properties}{NewLine}{Exception}"
+    let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"
     let c = c.WriteTo.Console((if verboseConsole then LogEventLevel.Debug else LogEventLevel.Information), outputTemplate, theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger()
@@ -391,8 +392,7 @@ module Dump =
 let main argv =
     let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
     let parser = ArgumentParser.Create<Arguments>(programName = programName)
-    try
-        let args = parser.ParseCommandLine argv
+    try let args = parser.ParseCommandLine argv
         let verboseConsole = args.Contains VerboseConsole
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
         let verbose = args.Contains Verbose
