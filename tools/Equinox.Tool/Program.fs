@@ -35,7 +35,7 @@ type Arguments =
             | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
             | Config _ ->                    "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events (supports `cosmos` stores)."
-            | Dump _ ->                     "Load and show events in a specified stream (supports `cosmos` stores)."
+            | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison>]InitArguments =
     | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
     | [<AltCommandLine "-D">]               Shared
@@ -75,7 +75,11 @@ and [<NoComparison>] DumpArguments =
     | [<AltCommandLine "-J"; Unique>]       Json
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
     | [<AltCommandLine "-E"; Unique >]      EventsOnly
-    | [<CliPrefix(CliPrefix.None)>]           Cosmos of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Stream _ ->                   "Specify stream(s) to dump."
@@ -83,7 +87,31 @@ and [<NoComparison>] DumpArguments =
             | Json ->                       "Include Pretty Printed Json"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
+            | Es _ ->                       "Parameters for EventStore."
             | Cosmos _ ->                   "Parameters for CosmosDb."
+            | MsSql _ ->                    "Parameters for Sql Server."
+            | MySql _ ->                    "Parameters for MySql."
+            | Postgres _ ->                 "Parameters for Postgres."
+and DumpInfo(args: ParseResults<DumpArguments>) =
+    member __.ConfigureStore(log : ILogger, createStoreLog) =
+        let storeConfig = None,true,100
+        match args.TryGetSubCommand() with
+        | Some (DumpArguments.Cosmos sargs) ->
+            let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
+            storeLog, Storage.Cosmos.config (log,storeLog) storeConfig (Storage.Cosmos.Info sargs)
+        | Some (DumpArguments.Es sargs) ->
+            let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
+            storeLog, Storage.EventStore.config (log,storeLog) storeConfig sargs
+        | Some (DumpArguments.MsSql sargs) ->
+            let storeLog = createStoreLog false
+            storeLog, Storage.Sql.Ms.config log storeConfig sargs
+        | Some (DumpArguments.MySql sargs) ->
+            let storeLog = createStoreLog false
+            storeLog, Storage.Sql.My.config log storeConfig sargs
+        | Some (DumpArguments.Postgres sargs) ->
+            let storeLog = createStoreLog false
+            storeLog, Storage.Sql.Pg.config log storeConfig sargs
+        | _ -> failwith "please specify a `cosmos`,`es`,`ms`,`my` or `pg` endpoint"
 and [<NoComparison>]WebArguments =
     | [<AltCommandLine("-u")>] Endpoint of string
     interface IArgParserTemplate with
@@ -322,43 +350,42 @@ module CosmosStats =
                 |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
-module CosmosDump =
-    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) = async {
-        match args.TryGetSubCommand() with
-        | Some (DumpArguments.Cosmos sargs) ->
-            let doU,doE,doC,doJ = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,args.Contains Json
-            let! storeLog,conn,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
-            let ctx = Equinox.Cosmos.Context(conn,dName,cName,storeLog)
+module Dump =
+    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) =
+        let a = DumpInfo args
+        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
+        let _storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
+        let doU,doE,doC,doJ = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,args.Contains Json
+        let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
 
-            let initial = List.empty
-            let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
-            let mutable unfolds = List.empty
-            let tryDecode (x : FsCodec.ITimelineEvent<byte[]>) =
-                if x.IsUnfold then unfolds <- x :: unfolds
-                Some x
-            let idCodec = FsCodec.Codec.Create(tryDecode, (fun _ -> failwith "No encoding required"), (fun _ -> failwith "No mapCausation"))
-            let readAllIncludingSnapshotsStrategy = Equinox.Cosmos.AccessStrategy.Snapshot((fun _event -> false),fun _state -> failwith "no compaction required")
-            let res = Equinox.Cosmos.Resolver(ctx, idCodec, fold, initial, Equinox.Cosmos.CachingStrategy.NoCaching, readAllIncludingSnapshotsStrategy)
-
-            let render (data : byte[]) =
-                if data = null then null elif doJ then System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> string
-                else sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
-            let readStream (name : string) = async {
-                let catAndId = name.Split([|'-'|],2,StringSplitOptions.RemoveEmptyEntries)
-                let stream = res.Resolve(Equinox.AggregateId(catAndId.[0],catAndId.[1]))
-                let! _token,events = stream.Load log
-                for x in Seq.append unfolds events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
-                    let ty = if x.IsUnfold then "Unfold" else "Event"
-                    if not doC then log.Information("{i,3}@{t:u} {u,-6:l} {e:l} {data:l} {meta:l}",
-                                        x.Index, x.Timestamp, ty, x.EventType, render x.Data, render x.Meta)
-                    else log.Information("{i,3}@{t:u} Corr {corr} Cause {cause} {u,-6:l} {e:l} {data:l} {meta:l}",
-                             x.Index, x.Timestamp, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
-            args.GetResults DumpArguments.Stream
-            |> Seq.map readStream
-            |> Async.Parallel
-            |> Async.Ignore
-            |> Async.RunSynchronously
-        | _ -> failwith "please specify a `cosmos` endpoint" }
+        let initial = List.empty
+        let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
+        let mutable unfolds = List.empty
+        let tryDecode (x : FsCodec.ITimelineEvent<byte[]>) =
+            if x.IsUnfold then unfolds <- x :: unfolds
+            Some x
+        let idCodec = FsCodec.Codec.Create(tryDecode, (fun _ -> failwith "No encoding required"), (fun _ -> failwith "No mapCausation"))
+        let isOriginAndSnapshot = (fun _event -> false),fun _state -> failwith "no compaction required"
+        let render (data : byte[]) =
+            match data with
+            | null | [||] -> null
+            | _ when doJ -> System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> string
+            | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
+        let readStream (name : string) = async {
+            let catAndId = name.Split([|'-'|],2,StringSplitOptions.RemoveEmptyEntries)
+            let id = match catAndId with [|cat;id|] -> Equinox.AggregateId(cat,id) | ids -> Equinox.StreamName ids.[0]
+            let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) id
+            let! _token,events = stream.Load log
+            for x in Seq.append unfolds events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
+                let ty = if x.IsUnfold then "Unfold" else "Event"
+                if not doC then log.Information("{i,3}@{t:u} {u,-6:l} {e:l} {data:l} {meta:l}",
+                                    x.Index, x.Timestamp, ty, x.EventType, render x.Data, render x.Meta)
+                else log.Information("{i,3}@{t:u} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
+                         x.Index, x.Timestamp, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
+        args.GetResults DumpArguments.Stream
+        |> Seq.map readStream
+        |> Async.Parallel
+        |> Async.Ignore
 
 [<EntryPoint>]
 let main argv =
@@ -373,7 +400,7 @@ let main argv =
         match args.GetSubCommand() with
         | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
         | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
-        | Dump dargs -> CosmosDump.run (log, verboseConsole, maybeSeq)  dargs |> Async.RunSynchronously
+        | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
         | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
         | Run rargs ->
             let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
