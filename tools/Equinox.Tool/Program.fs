@@ -366,7 +366,7 @@ module Dump =
         let tryDecode (x : FsCodec.ITimelineEvent<byte[]>) =
             if x.IsUnfold then unfolds <- x :: unfolds
             Some x
-        let idCodec = FsCodec.Codec.Create(tryDecode, (fun _ -> failwith "No encoding required"), (fun _ -> failwith "No mapCausation"))
+        let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun _event -> false),fun _state -> failwith "no compaction required"
         let render (data : byte[]) =
             match data with
