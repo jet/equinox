@@ -311,12 +311,12 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 <a name="sqlstreamstore"></a>
 9. Use [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore)
    
-   The SqlStreamStore consists of:
+  The SqlStreamStore consists of:
 
-   - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
-   - being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -JC -S "Favoritesab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
-   - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring"`
-   - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx config pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
+  - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
+  - being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -JC -S "Favoritesab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
+  - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring"`
+  - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx config pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
 
     ```powershell
     cd ~/code/equinox
