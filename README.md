@@ -240,7 +240,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     ```powershell
     # run queries to determine how many streams, docs, events there are in the container
-    eqx -v -vc stats -S -D -E -P cosmos # -P to run in parallel # -vc -v to show underlying query being used
+    eqx -v -vc stats -SDEP cosmos # -P to run in parallel # -vc -v to show underlying query being used
     ```
 
 5. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor
@@ -314,7 +314,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
   The SqlStreamStore consists of:
 
   - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
-  - being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -JC -S "Favoritesab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
+  - being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -JC -s "Favoritesab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
   - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring"`
   - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx config pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
 
@@ -335,7 +335,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     
     # run a benchmark
     eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
-    eqx dump -J -S "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg # show stored JSON (Guid shown in eqx run output) 
+    eqx dump -J -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg # show stored JSON (Guid shown in eqx run output) 
     ```
 
 ### BENCHMARKS

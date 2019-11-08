@@ -69,8 +69,8 @@ and [<NoComparison>]StatsArguments =
             | Documents _ ->                "Count the number of Documents in the store."
             | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
-and [<NoComparison>] DumpArguments =
-    | [<AltCommandLine "-S">]               Stream of string
+and [<NoComparison>]DumpArguments =
+    | [<AltCommandLine "-s">]               Stream of string
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-J"; Unique>]       Json
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
