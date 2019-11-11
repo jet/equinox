@@ -2,7 +2,7 @@
 // See Sequence.fs, which represents a far simpler and saner form of this
 module Fc.Gapless
 
-// NB - these schemas reflect the actual storage formats and hence need to be versioned with care
+// NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
     type Item = { id : int64 }
     type Snapshotted = { reservations : int64[];  nextId : int64 }
