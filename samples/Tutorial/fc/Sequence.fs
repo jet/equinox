@@ -29,7 +29,7 @@ let decideReserve (count : int) (state : Folds.State) : int64 * Events.Event lis
 
 type Service(log, resolveStream, ?maxAttempts) =
 
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, id)
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, SequenceId.toString id)
     let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
 
     let decide (Stream stream) : (Folds.State -> 'r * Events.Event list) -> Async<'r> = stream.Transact

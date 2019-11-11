@@ -1,19 +1,21 @@
 module Fc.PickAllocator
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
-[<RequireQualifiedAccess>]
 module Events =
 
-    type Commenced = { transId : AllocatorId; desired : PickTicketId[]; acquired : PickTicketId[] }
     type Items = { tickets : PickTicketId[] }
+    type Assigning = { pickListId : PickListId; tickets : PickTicketId[] }
+    type Snapshotted = { tickets : PickTicketId[] }
     type Event =
-        | Commenced of Commenced
+        /// Starting an acquisition sequence
+        | Commenced of Items
         | Acquired of Items
         | Failed of Items
+        | Assigning of Assigning
+        | Aborted
         | Released of Items
         | Completed
-        | Aborted
-        | Snapshotted
+        | Snapshotted of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let [<Literal>] categoryId = "PickList"

@@ -54,7 +54,7 @@ let decideRelease item (state : Folds.State) : Events.Event list =
 
 type Service(log, resolveStream, ?maxAttempts) =
 
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, id)
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, SequenceId.toString id)
     let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
 
     let execute (Stream stream) : (Folds.State -> Events.Event list) -> Async<unit> = stream.Transact

@@ -54,41 +54,35 @@ module FcId =
     let toString (value : FcId) : string = %value
     let parse (value : string) : FcId = let raw = value in %raw
 
-type SkuId = string<skuId>
-and  [<Measure>] skuId
-module SkuId =
-    let toString (value : SkuId) : string = %value
-    let parse (value : string) : SkuId = let raw = value in %raw
+//type SkuId = string<skuId>
+//and  [<Measure>] skuId
+//module SkuId =
+//    let toString (value : SkuId) : string = %value
+//    let parse (value : string) : SkuId = let raw = value in %raw
 
-type [<Measure>] pickTicketId
 type PickTicketId = string<pickTicketId>
-
+and [<Measure>] pickTicketId
 module PickTicketId =
     let toString (value : PickTicketId) : string = %value
     let parse (value : string) : PickTicketId = let raw = value in %raw
 
-type BatchId = int<batchId>
-and  [<Measure>] batchId
-module BatchId =
-    let toString (value : BatchId) : string = string value
-    let next (value : BatchId) : BatchId = %(%value + 1)
-
-type TransmissionsId = int<transmissionsId>
-and  [<Measure>] transmissionsId
-module TransmissionsId =
-    let toString (value : TransmissionsId) : string = string value
-
-type [<Measure>] pickListId
 type PickListId = string<pickListId>
+and [<Measure>] pickListId
 module PickListId =
     let toString (value : PickListId) : string = %value
     let parse (value : string) : PickListId = let raw = value in %raw
 
-type AllocatorId = string<transactionId>
-and  [<Measure>] transactionId
-module TransactionId =
+type AllocatorId = string<allocatorId>
+and [<Measure>] allocatorId
+module AllocatorId =
     let toString (value : AllocatorId) : string = %value
 
+type TransactionId = string<transactionId>
+and [<Measure>] transactionId
+module TransactionId =
+    let toString (value : TransactionId) : string = %value
+
 type SequenceId = string<sequenceId>
-and  [<Measure>] sequenceId
-module SequenceId = let toString (value : SequenceId) : string = %value
+and [<Measure>] sequenceId
+module SequenceId =
+    let toString (value : SequenceId) : string = %value

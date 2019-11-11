@@ -3,10 +3,10 @@ module Fc.PickTicket
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Assigned = { allocatorId : AllocatorId; listId : PickListId }
+    type Allocated = { allocatorId : AllocatorId; listId : PickListId }
 
     type Event =
-        | Assigned of Assigned
+        | Allocated of Allocated
         | Revoked
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
@@ -18,7 +18,7 @@ module Folds =
     type State = Allocation option
     let initial = None
     let evolve _state = function
-        | Events.Assigned e -> Some { allocator = e.allocatorId; list = e.listId }
+        | Events.Allocated e -> Some { allocator = e.allocatorId; list = e.listId }
         | Events.Revoked -> None
     // because each event supersedes the previous one, we only ever need to fold the last event
     let fold state events =
@@ -27,7 +27,7 @@ module Folds =
 let decideSync (allocator : AllocatorId, desiredAssignment : PickListId option) (state : Folds.State) : bool * Events.Event list =
     match desiredAssignment, state with
     // ALLOCATE: not already allocated; i.e. normal case -> Ok
-    | Some reqListId, None -> true,[Events.Assigned { allocatorId = allocator; listId = reqListId }]
+    | Some reqListId, None -> true,[Events.Allocated { allocatorId = allocator; listId = reqListId }]
     // ALLOCATE: already the owner -> idempotently Ok
     | Some reqListId, Some { allocator = a; list = l } when l = reqListId && a = allocator -> true,[]
     // ALLOCATE: conflicting request
@@ -39,7 +39,7 @@ let decideSync (allocator : AllocatorId, desiredAssignment : PickListId option) 
     // REVOKE: already deallocated -> idempotently Ok
     | None, None -> true,[]
 
-type Service(resolve, ?maxAttempts) =
+type Service internal (resolve, ?maxAttempts) =
 
     let log = Serilog.Log.ForContext<Service>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, PickTicketId.toString id)
@@ -58,8 +58,8 @@ module EventStore =
     open Equinox.EventStore
     let resolve cache context =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-        // because we only ever need the last event, we use the Equinox.EventStore mode that optimizes around that
+        // because we only ever need the last event, we use the Equinox.EventStore access strategy that optimizes around that
         // (with Equinox.Cosmos, the equivalent is to use AccessStrategy.Snapshot or AccessStrategy.RollingUnfolds)
-        fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.EventsAreState).Resolve(id)
+        Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.EventsAreState).Resolve
     let createService cache context =
         Service(resolve cache context)
