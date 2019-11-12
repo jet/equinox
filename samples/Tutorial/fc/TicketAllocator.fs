@@ -79,7 +79,7 @@ module Folds =
         | Events.Completed -> state |> function
             | Running s | Reverting s when Set.isEmpty s.unknown && Set.isEmpty s.reserved && List.isEmpty s.allocating -> Idle
             | x -> failwithf "Can only Complete when reservations and unknowns resolved, not %A" x
-        | Snapshotted -> state // Dummy event
+        | Events.Snapshotted -> state // Dummy event, see EventStore bindings
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Completed -> true | Events.Snapshotted | _ -> false
 
@@ -170,7 +170,7 @@ type Service internal (resolve, ?maxAttempts) =
 module EventStore =
 
     open Equinox.EventStore
-    let resolve cache context =
+    let resolve (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         // while there are competing writers [which might cause us to have to retry a Transact], this should be infrequent
         let opt = Equinox.ResolveOption.AllowStale
@@ -179,13 +179,13 @@ module EventStore =
         let makeEmptySnapshot _state = Events.Snapshotted
         let accessStrategy = AccessStrategy.RollingSnapshots(Folds.isOrigin,makeEmptySnapshot)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
-    let createService cache context =
-        Service(resolve cache context)
+    let createService (context,cache) =
+        Service(resolve (context,cache))
 
 module Cosmos =
 
     open Equinox.Cosmos
-    let resolve cache context =
+    let resolve (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         // while there are competing writers [which might cause us to have to retry a Transact], this should be infrequent
         let opt = Equinox.ResolveOption.AllowStale
@@ -194,5 +194,5 @@ module Cosmos =
         let makeEmptyUnfolds _state = Seq.empty
         let accessStrategy = AccessStrategy.Unfolded(Folds.isOrigin,makeEmptyUnfolds)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
-    let createService cache context =
-        Service(resolve cache context)
+    let createService (context,cache) =
+        Service(resolve (context,cache))

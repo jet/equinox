@@ -62,20 +62,20 @@ type Service internal (resolve, ?maxAttempts) =
 module EventStore =
 
     open Equinox.EventStore
-    let resolve cache context =
+    let resolve (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         // because we only ever need the last event, we use the Equinox.EventStore access strategy that optimizes around that
         Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.EventsAreState).Resolve
-    let createService cache context =
-        Service(resolve cache context)
+    let createService (context,cache)=
+        Service(resolve (context,cache))
 
 module Cosmos =
 
     open Equinox.Cosmos
-    let resolve cache context =
+    let resolve (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         // because we only ever need the last event to build the state, we feed the events we are writing
         // (there's always exactly one if we are writing), into the unfolds slot so a single point read with etag check gets us state in one trip
         Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.AnyKnownEventType).Resolve
-    let createService cache context =
-        Service(resolve cache context)
+    let createService (context,cache) =
+        Service(resolve (context,cache))

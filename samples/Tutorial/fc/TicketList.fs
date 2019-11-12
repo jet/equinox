@@ -42,25 +42,25 @@ type Service internal (resolve, ?maxAttempts) =
 module EventStore =
 
     open Equinox.EventStore
-    let resolve cache context =
+    let resolve (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         // while there are competing writers (which might cause us to have to retry a Transact and discover it is redundant), there is never a cost to being wrong
         let opt = Equinox.ResolveOption.AllowStale
         // we _could_ use this Access Strategy, but because we are only generally doing a single shot write, its unwarranted
         // let accessStrategy = AccessStrategy.RollingSnapshots (Folds.isOrigin,Folds.snapshot)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy).Resolve(id,opt)
-    let createService cache context =
-        Service(resolve cache context)
+    let createService (context,cache) =
+        Service(resolve (context,cache))
 
 module Cosmos =
 
     open Equinox.Cosmos
-    let resolve cache context =
+    let resolve (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         // while there are competing writers (which might cause us to have to retry a Transact and discover it is redundant), there is never a cost to being wrong
         let opt = Equinox.ResolveOption.AllowStale
         // we want reads and writes (esp idempotent ones) to have optimal RU efficiency so we go the extra mile to do snapshotting into the Tip
         let accessStrategy = AccessStrategy.Snapshot (Folds.isOrigin,Folds.snapshot)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
-    let createService cache context =
-        Service(resolve cache context)
+    let createService (context,cache)=
+        Service(resolve (context,cache))
