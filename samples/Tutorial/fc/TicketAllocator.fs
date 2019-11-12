@@ -177,7 +177,7 @@ module EventStore =
         // We should be reaching Completed state frequently so no actual Snapshots should get written
         // TOCONSIDER implement an explicit Equinox.EventStore.AccessStrategy to codify this
         let makeEmptySnapshot _state = Events.Snapshotted
-        let accessStrategy = AccessStrategy.RollingSnapshots(Folds.isOrigin,makeEmptySnapshot)
+        let accessStrategy = AccessStrategy.RollingSnapshots (Folds.isOrigin,makeEmptySnapshot)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
     let createService (context,cache) =
         Service(resolve (context,cache))
@@ -192,7 +192,7 @@ module Cosmos =
         // We should be reaching Completed state frequently so actual snapshots are not required
         // TOCONSIDER have a mode named to allude to above outlined EventStore mode if we make that
         let makeEmptyUnfolds _state = Seq.empty
-        let accessStrategy = AccessStrategy.Unfolded(Folds.isOrigin,makeEmptyUnfolds)
+        let accessStrategy = AccessStrategy.Unfolded (Folds.isOrigin,makeEmptyUnfolds)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
     let createService (context,cache) =
         Service(resolve (context,cache))
