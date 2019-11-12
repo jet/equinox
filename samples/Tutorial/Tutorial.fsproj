@@ -18,8 +18,7 @@
     <Compile Include="fc\Gapless.fs" />
     <Compile Include="fc\Ticket.fs" />
     <Compile Include="fc\TicketList.fs" />
-    <Compile Include="fc\PickAllocator.fs" />
-    <Compile Include="fc\PickSaga.fs" />
+    <Compile Include="fc\TicketAllocator.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -12,7 +12,7 @@ module Events =
         | Revoked
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let [<Literal>] categoryId = "PickTicket"
+    let [<Literal>] categoryId = "Ticket"
 
 module Folds =
 
