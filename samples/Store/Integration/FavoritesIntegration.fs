@@ -24,7 +24,7 @@ let createServiceCosmos gateway log =
     Backend.Favorites.Service(log, resolveStream)
 
 let createServiceCosmosRollingUnfolds gateway log =
-    let access = Cosmos.AccessStrategy.RollingUnfolds (Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.transmute)
+    let access = Cosmos.AccessStrategy.Custom(Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.transmute)
     let resolveStream = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
     Backend.Favorites.Service(log, resolveStream)
 

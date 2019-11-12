@@ -998,30 +998,36 @@ type CachingStrategy =
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
-    /// Allow events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
-    /// When saving, `unfold` the 'state, representing it as event records stored in the Tip
-    | Unfolded of isOrigin: ('event -> bool) * unfold: ('state -> 'event seq)
+    /// Don't apply any optimized reading logic strategy. Note this can be cost prohibitive
+    /// and severely impact system scalability and hence should only be used with careful consideration.
+    | Unoptimized
     /// Simplified version of Unfolded that only saves a single Event Type
     /// Provides equivalent performance to Unfolded, just simplified function signatures
-    | Snapshot of isValid: ('event -> bool) * generate: ('state -> 'event)
-    /// Treat every known event type in the Union as being an Origin event
-    | AnyKnownEventType
+    | Snapshot of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
+    /// Instead of actually storing the events representing the decisions, only ever update the snapshot stored in the tip
+    | RollingState of toSnapshot: ('state -> 'event)
+    /// Allow events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
+    /// When saving, uses `toEvents` to 'unfold' the 'state, representing it as event records to be stored in the Tip with efficient read cost
+    | CustomUnfold of isOrigin: ('event -> bool) * toEvents: ('state -> 'event seq)
     /// Allow produced events to be transmuted to unfolds.
     /// In this mode, Optimistic Concurrency Control OCC is based on the _etag (rather than the normal Expected Version strategy)
-    | RollingUnfolds of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
+    | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
+    /// Treat every known event type in the Union as being an Origin event
+    | EventsAreState
 
-type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, [<O; D(null)>]?access) =
+type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, access) =
     let readCacheOption =
         match caching with
         | CachingStrategy.NoCaching -> None
         | CachingStrategy.SlidingWindow(cache, _) -> Some(cache, null)
     let isOrigin, mapUnfolds =
         match access with
-        | None ->                                                        (fun _ -> false), Choice1Of3 ()
-        | Some (AccessStrategy.Unfolded (isOrigin, unfold)) ->           isOrigin,         Choice2Of3 (fun _ state -> unfold state)
-        | Some (AccessStrategy.Snapshot (isValid,generate)) ->           isValid,          Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
-        | Some (AccessStrategy.AnyKnownEventType) ->                     (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
-        | Some (AccessStrategy.RollingUnfolds (isOrigin,transmute)) ->   isOrigin,         Choice3Of3 transmute
+        | AccessStrategy.Unoptimized ->                     (fun _ -> false), Choice1Of3 ()
+        | AccessStrategy.Snapshot (isOrigin,generate) ->    isOrigin,         Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
+        | AccessStrategy.RollingState generate ->           (fun _ -> true),  Choice3Of3 (fun _ state -> [],[generate state])
+        | AccessStrategy.CustomUnfold (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state -> unfold state)
+        | AccessStrategy.Custom (isOrigin,transmute) ->     isOrigin,         Choice3Of3 transmute
+        | AccessStrategy.EventsAreState ->                  (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
     let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
     let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
     let category : ICategory<_, _, Container*string, 'context> =

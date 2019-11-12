@@ -14,14 +14,14 @@ module Cart =
     let codec = Domain.Cart.Events.codec
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
-        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve(id,?option=opt)
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds connection batchSize log =
         let store = createCosmosContext connection batchSize
         let unfArgs = Domain.Cart.Folds.isOrigin, fun _ -> Seq.empty
-        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unfolded unfArgs).Resolve(id,?option=opt)
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.CustomUnfold unfArgs).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithSnapshotStrategy connection batchSize log =
         let store = createCosmosContext connection batchSize
@@ -34,7 +34,7 @@ module Cart =
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithRollingUnfolds connection log =
         let store = createCosmosContext connection 1
-        let access = AccessStrategy.RollingUnfolds (Domain.Cart.Folds.isOrigin,Domain.Cart.Folds.transmute)
+        let access = AccessStrategy.Custom(Domain.Cart.Folds.isOrigin,Domain.Cart.Folds.transmute)
         let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
 
@@ -43,13 +43,13 @@ module ContactPreferences =
     let codec = Domain.ContactPreferences.Events.codec
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolveStream = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching).Resolve
+        let resolveStream = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService log createGateway =
-        let resolveStream = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.AnyKnownEventType).Resolve
+        let resolveStream = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.EventsAreState).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
     let createServiceWithRollingUnfolds createGateway log cachingStrategy =
-        let access = AccessStrategy.RollingUnfolds (Domain.ContactPreferences.Folds.isOrigin,Domain.ContactPreferences.Folds.transmute)
+        let access = AccessStrategy.Custom (Domain.ContactPreferences.Folds.isOrigin,Domain.ContactPreferences.Folds.transmute)
         let resolveStream = Resolver(createGateway 1, codec, fold, initial, cachingStrategy, access).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
 
