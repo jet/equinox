@@ -1,10 +1,9 @@
 module Fc.TicketAllocator
-open System
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Tickets = { cutoff : DateTimeOffset; ticketIds : PickTicketId[] }
+    type Tickets = { cutoff : System.DateTimeOffset; ticketIds : PickTicketId[] }
     type Allocating = { listId : PickListId; ticketIds : PickTicketId[] }
     type Allocated = { listId : PickListId }
     type Snapshotted = { ticketIds : PickTicketId[] }
@@ -25,6 +24,8 @@ module Events =
         | Released of Tickets
         /// Allocated + Returned = Commenced ==> Open for a new Commenced to happen
         | Completed
+        // Dummy event to make Equinox.EventStore happy (see `module EventStore`)
+        | Snapshotted
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let [<Literal>] categoryId = "TicketAllocator"
@@ -78,8 +79,9 @@ module Folds =
         | Events.Completed -> state |> function
             | Running s | Reverting s when Set.isEmpty s.unknown && Set.isEmpty s.reserved && List.isEmpty s.allocating -> Idle
             | x -> failwithf "Can only Complete when reservations and unknowns resolved, not %A" x
+        | Snapshotted -> state // Dummy event
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
-    let isOrigin = function Events.Completed -> true | _ -> false
+    let isOrigin = function Events.Completed -> true | Events.Snapshotted | _ -> false
 
 (* TODO
 
@@ -152,6 +154,19 @@ type Service(resolve, ?maxAttempts) =
 //        // TODO think
 
 
+*)
+
+type Service internal (resolve, ?maxAttempts) =
+
+    let log = Serilog.Log.ForContext<Service>()
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, PickListId.toString id)
+    let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
+
+//    let execute (Stream stream) = decideSync >> stream.Transact
+
+//    member __.Sync(pickListId,transactionId,desired, removed, acquired) : Async<Result> =
+//        execute pickListId (transactionId,desired,removed, acquired)
+
 module EventStore =
 
     open Equinox.EventStore
@@ -159,9 +174,25 @@ module EventStore =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         // while there are competing writers [which might cause us to have to retry a Transact], this should be infrequent
         let opt = Equinox.ResolveOption.AllowStale
-        fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, Folds.accessStrategy).Resolve(id,opt)
+        // We should be reaching Completed state frequently so no actual Snapshots should get written
+        // TOCONSIDER implement an explicit Equinox.EventStore.AccessStrategy to codify this
+        let makeEmptySnapshot _state = Events.Snapshotted
+        let accessStrategy = AccessStrategy.RollingSnapshots(Folds.isOrigin,makeEmptySnapshot)
+        fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
     let createService cache context =
         Service(resolve cache context)
 
+module Cosmos =
 
-*)
+    open Equinox.Cosmos
+    let resolve cache context =
+        let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
+        // while there are competing writers [which might cause us to have to retry a Transact], this should be infrequent
+        let opt = Equinox.ResolveOption.AllowStale
+        // We should be reaching Completed state frequently so actual snapshots are not required
+        // TOCONSIDER have a mode named to allude to above outlined EventStore mode if we make that
+        let makeEmptyUnfolds _state = Seq.empty
+        let accessStrategy = AccessStrategy.Unfolded(Folds.isOrigin,makeEmptyUnfolds)
+        fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
+    let createService cache context =
+        Service(resolve cache context)
