@@ -3,25 +3,25 @@ module Fc.TicketAllocator
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Tickets = { cutoff : System.DateTimeOffset; ticketIds : PickTicketId[] }
-    type Allocating = { listId : PickListId; ticketIds : PickTicketId[] }
-    type Allocated = { listId : PickListId }
-    type Snapshotted = { ticketIds : PickTicketId[] }
+    type Tickets =      { cutoff : System.DateTimeOffset; ticketIds : TicketId[] }
+    type Allocating =   { listId : TicketListId; ticketIds : TicketId[] }
+    type Allocated =    { listId : TicketListId }
+    type Snapshotted =  { ticketIds : TicketId[] }
     type Event =
         /// Records full set of targets (so Abort can Revoke all potential in flight Reservations)
-        | Commenced of Tickets
+        | Commenced     of Tickets
         /// Tickets verified as not being attainable (Allocated, not just Reserved) // TODO does this matter or can Ticket.Reserved state go?
-        | Failed of Tickets
+        | Failed        of Tickets
         /// Tickets verified as having been marked Reserved
-        | Reserved of Tickets
+        | Reserved      of Tickets
         /// Confirming cited tickets are to be allocated to the cited list
-        | Allocating of Allocating
+        | Allocating    of Allocating
         /// Transitioning to phase where (Commenced-Allocated) get Returned by performing Releases on the Tickets
         | Aborted
         /// Confirming cited tickets have been assigned to the list
-        | Allocated of Allocated
+        | Allocated     of Allocated
         /// Records confirmed Releases of cited Tickets
-        | Released of Tickets
+        | Released      of Tickets
         /// Allocated + Returned = Commenced ==> Open for a new Commenced to happen
         | Completed
         // Dummy event to make Equinox.EventStore happy (see `module EventStore`)
@@ -34,16 +34,16 @@ module Folds =
 
     type State = Idle | Running of States | Reverting of States
     and States =
-        {   unknown : Set<PickTicketId>
-            failed : Set<PickTicketId>
-            reserved : Set<PickTicketId>
-            allocating : Events.Allocating list }
+        {   unknown     : Set<TicketId>
+            failed      : Set<TicketId>
+            reserved    : Set<TicketId>
+            allocating  : Events.Allocating list }
     module States =
-        let (|ToSet|) (xs : 'T seq) = set xs
-        let withKnown (ToSet xs) x = { x with unknown = Set.difference x.unknown xs }
-        let withFailed (ToSet xs) x = { withKnown xs x with failed = x.failed |> Set.union xs }
+        let (|ToSet|) = set
+        let withKnown (ToSet xs) x =    { x with unknown = Set.difference x.unknown xs }
+        let withFailed (ToSet xs) x =   { withKnown xs x with failed = x.failed |> Set.union xs }
         let withReserved (ToSet xs) x = { withKnown xs x with reserved = x.reserved |> Set.union xs }
-        let release (ToSet xs) x = { withKnown xs x with reserved = Set.difference x.reserved xs }
+        let release (ToSet xs) x =      { withKnown xs x with reserved = Set.difference x.reserved xs }
         let withAllocated listId x =
             let decided,remaining = x.allocating |> List.partition (fun x -> x.listId = listId)
             let xs = seq { for x in decided do yield! x.ticketIds }
@@ -54,7 +54,7 @@ module Folds =
             | Idle -> Running { unknown = set e.ticketIds; failed = Set.empty; reserved = Set.empty; allocating = [] }
             | x -> failwithf "Can only Commence when Idle, not %A" x
         | Events.Failed e -> state |> function
-            | Idle as state -> failwith "Cannot have Failed if Idle"
+            | Idle -> failwith "Cannot have Failed if Idle"
             | Running s -> Running (s |> States.withFailed e.ticketIds)
             | Reverting s -> Reverting (s |> States.withFailed e.ticketIds)
         | Events.Reserved e -> state |> function
@@ -83,36 +83,35 @@ module Folds =
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Completed -> true | Events.Snapshotted | _ -> false
 
-(* TODO
+type State =
+    | Acquiring of reserved : TicketId list * toReserve : TicketId list * toAssign : Events.Allocating
+    | Acquired  of reserved : TicketId list
+    | Releasing of toRelease : TicketId list * toAssign : Events.Allocating
+    | Complete
 
-type Result =
+type Command =
+    | Commence  of TicketId list
+    | Sync      of allocate : Events.Allocating list * release : TicketId list
     | Abort
-    and States =
-        {   unknown : Set<PickTicketId>
-            failed : Set<PickTicketId>
-            reserved : Set<PickTicketId>
-            allocating : Events.Allocating list }
-type State = { owned : PickTicketId list; toRelease : PickTicketId list; toAcquire : PickTicketId list }
-type BusyState = { transactionId : AllocatorId; state : State }
-type Result = Ok of State | Conflict of BusyState
 
-let decideSync (transId : AllocatorId, desired : PickTicketId list, removed, acquired) (state : Folds.State) : Result * Events.Event list =
+let decide (startTimestamp, timeout, failed, reserved, assigned, released, command : Command) (state : Folds.State) : (bool * State) * Events.Event list =
     failwith "TODO"
 
-type Service(resolve, ?maxAttempts) =
+type Service internal (resolve, ?maxAttempts, ?timeout) =
+
+    let timeout = defaultArg timeout System.TimeSpan.FromMinutes 1.
 
     let log = Serilog.Log.ForContext<Service>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, PickListId.toString id)
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, AllocatorId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
-    let execute (Stream stream) = decideSync >> stream.Transact
 
-    member __.Sync(pickListId,transactionId,desired, removed, acquired) : Async<Result> =
-        execute pickListId (transactionId,desired,removed, acquired)
+    let decide (Stream stream) = decide >> stream.Transact
 
-//type Result =
-//    | Ok of owned : PickTicketId list
-//    | Conflict of PickList.BusyState
-//
+    let sync (allocatorId,startTimestamp,failed,reserved,assigned,released,command) : Async<bool * State> =
+        decide allocatorId (startTimestamp,timeout,failed,reserved,assigned,released,command)
+
+(* TODO
+
 //type Service(listService : PickList.Service, ticketService : PickTicket.Service) =
 //    static let maxDop = new SemaphoreSlim 10
 //
@@ -152,20 +151,7 @@ type Service(resolve, ?maxAttempts) =
 //    member __.Deallocate(transactionId, listId) =
 //        sync 0 (transactionId, listId, [], [], [])
 //        // TODO think
-
-
 *)
-
-type Service internal (resolve, ?maxAttempts) =
-
-    let log = Serilog.Log.ForContext<Service>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, PickListId.toString id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
-
-//    let execute (Stream stream) = decideSync >> stream.Transact
-
-//    member __.Sync(pickListId,transactionId,desired, removed, acquired) : Async<Result> =
-//        execute pickListId (transactionId,desired,removed, acquired)
 
 module EventStore =
 

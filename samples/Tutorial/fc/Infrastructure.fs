@@ -60,27 +60,22 @@ module FcId =
 //    let toString (value : SkuId) : string = %value
 //    let parse (value : string) : SkuId = let raw = value in %raw
 
-type PickTicketId = string<pickTicketId>
-and [<Measure>] pickTicketId
-module PickTicketId =
-    let toString (value : PickTicketId) : string = %value
-    let parse (value : string) : PickTicketId = let raw = value in %raw
+type TicketId = string<ticketId>
+and [<Measure>] ticketId
+module TicketId =
+    let toString (value : TicketId) : string = %value
+    let parse (value : string) : TicketId = let raw = value in %raw
 
-type PickListId = string<pickListId>
-and [<Measure>] pickListId
+type TicketListId = string<ticketListId>
+and [<Measure>] ticketListId
 module PickListId =
-    let toString (value : PickListId) : string = %value
-    let parse (value : string) : PickListId = let raw = value in %raw
+    let toString (value : TicketListId) : string = %value
+    let parse (value : string) : TicketListId = let raw = value in %raw
 
 type AllocatorId = string<allocatorId>
 and [<Measure>] allocatorId
 module AllocatorId =
     let toString (value : AllocatorId) : string = %value
-
-type TransactionId = string<transactionId>
-and [<Measure>] transactionId
-module TransactionId =
-    let toString (value : TransactionId) : string = %value
 
 type SequenceId = string<sequenceId>
 and [<Measure>] sequenceId

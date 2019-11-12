@@ -3,12 +3,12 @@ module Fc.Ticket
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Reserved = { allocatorId : AllocatorId }
-    type Allocated = { allocatorId : AllocatorId; listId : PickListId }
+    type Reserved =     { allocatorId : AllocatorId }
+    type Allocated =    { allocatorId : AllocatorId; listId : TicketListId }
 
     type Event =
-        | Reserved of Reserved
-        | Allocated of Allocated
+        | Reserved      of Reserved
+        | Allocated     of Allocated
         | Revoked
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
@@ -16,7 +16,7 @@ module Events =
 
 module Folds =
 
-    type State = Unallocated | Reserved of by : AllocatorId | Allocated of by : AllocatorId * on : PickListId
+    type State = Unallocated | Reserved of by : AllocatorId | Allocated of by : AllocatorId * on : TicketListId
     let initial = Unallocated
     let evolve _state = function
         | Events.Reserved e -> Reserved e.allocatorId
@@ -30,7 +30,7 @@ type Intent =
     /// permitted if nobody owns it (or idempotently ok if we are the owner)
     | Reserve
     /// permitted if the allocator has it reserved (or idempotently ok if already on list)
-    | Allocate of on : PickListId
+    | Allocate of on : TicketListId
     /// must be performed by the owner; attempts by non-owner to deallocate get ignored as a new owner now has that responsibility
     /// (but are not failures from an Allocator's perspective)
     | Revoke
@@ -50,7 +50,7 @@ let decideSync (allocator : AllocatorId, desired : Intent) (state : Folds.State)
 type Service internal (resolve, ?maxAttempts) =
 
     let log = Serilog.Log.ForContext<Service>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, PickTicketId.toString id)
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
     let execute (Stream stream) = decideSync >> stream.Transact
 
