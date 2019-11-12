@@ -16,8 +16,8 @@
     <Compile Include="fc\Infrastructure.fs" />
     <Compile Include="fc\Sequence.fs" />
     <Compile Include="fc\Gapless.fs" />
-    <Compile Include="fc\PickTicket.fs" />
-    <Compile Include="fc\PickList.fs" />
+    <Compile Include="fc\Ticket.fs" />
+    <Compile Include="fc\TicketList.fs" />
     <Compile Include="fc\PickAllocator.fs" />
     <Compile Include="fc\PickSaga.fs" />
   </ItemGroup>
