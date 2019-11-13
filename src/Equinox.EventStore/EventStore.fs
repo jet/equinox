@@ -397,7 +397,10 @@ type Context(conn : Connection, batching : BatchingPolicy) =
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
     | LatestKnownEvent
-    | RollingSnapshots of isValid: ('event -> bool) * compact: ('state -> 'event)
+    /// Ensures a snapshot is always present (embedded in the stream as an event) every `batchSize` events using
+    /// the supplied `toSnapshot` function to generate an event from which the state can be reconstituted upon decoding.
+    /// See https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html
+    | RollingSnapshots of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
 
 type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
