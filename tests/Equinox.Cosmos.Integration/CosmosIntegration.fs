@@ -21,7 +21,7 @@ module Cart =
     let createServiceWithEmptyUnfolds connection batchSize log =
         let store = createCosmosContext connection batchSize
         let unfArgs = Domain.Cart.Folds.isOrigin, fun _ -> Seq.empty
-        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.CustomUnfold unfArgs).Resolve(id,?option=opt)
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithSnapshotStrategy connection batchSize log =
         let store = createCosmosContext connection batchSize
@@ -46,7 +46,7 @@ module ContactPreferences =
         let resolveStream = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService log createGateway =
-        let resolveStream = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.EventsAreState).Resolve
+        let resolveStream = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
     let createServiceWithRollingUnfolds createGateway log cachingStrategy =
         let access = AccessStrategy.Custom (Domain.ContactPreferences.Folds.isOrigin,Domain.ContactPreferences.Folds.transmute)
@@ -195,7 +195,7 @@ type Tests(testOutputHelper) =
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update against Cosmos with EventsAreState Access Strategy`` value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` value = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createService log (createCosmosContext conn)
 

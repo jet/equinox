@@ -1008,12 +1008,12 @@ type AccessStrategy<'event,'state> =
     | RollingState of toSnapshot: ('state -> 'event)
     /// Allow events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
     /// When saving, uses `toEvents` to 'unfold' the 'state, representing it as event records to be stored in the Tip with efficient read cost
-    | CustomUnfold of isOrigin: ('event -> bool) * toEvents: ('state -> 'event seq)
+    | MultiSnapshot of isOrigin: ('event -> bool) * toSnapshots: ('state -> 'event seq)
     /// Allow produced events to be transmuted to unfolds.
     /// In this mode, Optimistic Concurrency Control OCC is based on the _etag (rather than the normal Expected Version strategy)
     | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
     /// Treat every known event type in the Union as being an Origin event
-    | EventsAreState
+    | LatestKnownEvent
 
 type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, access) =
     let readCacheOption =
@@ -1025,9 +1025,9 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         | AccessStrategy.Unoptimized ->                     (fun _ -> false), Choice1Of3 ()
         | AccessStrategy.Snapshot (isOrigin,generate) ->    isOrigin,         Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
         | AccessStrategy.RollingState generate ->           (fun _ -> true),  Choice3Of3 (fun _ state -> [],[generate state])
-        | AccessStrategy.CustomUnfold (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state -> unfold state)
+        | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state -> unfold state)
         | AccessStrategy.Custom (isOrigin,transmute) ->     isOrigin,         Choice3Of3 transmute
-        | AccessStrategy.EventsAreState ->                  (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
+        | AccessStrategy.LatestKnownEvent ->                  (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
     let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
     let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
     let category : ICategory<_, _, Container*string, 'context> =

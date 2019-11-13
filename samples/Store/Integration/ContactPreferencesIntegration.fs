@@ -16,12 +16,12 @@ let createServiceMemory log store =
 
 let codec = Domain.ContactPreferences.Events.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
-    EventStore.Resolver(gateway 1, codec, fold, initial, access = EventStore.AccessStrategy.EventsAreState).Resolve
+    EventStore.Resolver(gateway 1, codec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
     EventStore.Resolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 let resolveStreamCosmosWithKnownEventTypeSemantics gateway =
-    Cosmos.Resolver(gateway 1, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.EventsAreState).Resolve
+    Cosmos.Resolver(gateway 1, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamCosmosWithoutCustomAccessStrategy gateway =
     Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve
 let resolveStreamCosmosRollingUnfolds gateway =

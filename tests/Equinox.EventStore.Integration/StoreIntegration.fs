@@ -69,7 +69,7 @@ module ContactPreferences =
         let gateway = createGesGateway connection defaultBatchSize
         Backend.ContactPreferences.Service(log, Resolver(gateway, codec, fold, initial).Resolve)
     let createService log connection =
-        let resolveStream = Resolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.EventsAreState).Resolve
+        let resolveStream = Resolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -255,7 +255,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can correctly read and update against EventStore, with EventsAreState Access Strategy`` id value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update against EventStore, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
         let log, capture = createLoggerWithCapture ()
         let! conn = connectToLocalStore log
         let service = ContactPreferences.createService log conn
