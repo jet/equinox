@@ -34,7 +34,7 @@ module Cart =
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithRollingUnfolds connection log =
         let store = createCosmosContext connection 1
-        let access = AccessStrategy.RollingUnfolds(Domain.Cart.Folds.isOrigin,Domain.Cart.Folds.transmute)
+        let access = AccessStrategy.RollingUnfolds (Domain.Cart.Folds.isOrigin,Domain.Cart.Folds.transmute)
         let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
 
@@ -45,7 +45,7 @@ module ContactPreferences =
         let gateway = createGateway defaultBatchSize
         let resolveStream = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
-    let createService createGateway log =
+    let createService log createGateway =
         let resolveStream = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.AnyKnownEventType).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
     let createServiceWithRollingUnfolds createGateway log cachingStrategy =
@@ -197,7 +197,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with EventsAreState Access Strategy`` value = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let service = ContactPreferences.createService (createCosmosContext conn) log
+        let service = ContactPreferences.createService log (createCosmosContext conn)
 
         let email = let g = System.Guid.NewGuid() in g.ToString "N"
         //let (Domain.ContactPreferences.Id email) = id ()

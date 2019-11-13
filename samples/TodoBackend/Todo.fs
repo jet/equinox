@@ -2,7 +2,7 @@
 
 open Domain
 
-// NB - these schemas reflect the actual storage formats and hence need to be versioned with care
+// NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<AutoOpen>]
 module Events =
     type Todo = { id: int; order: int; title: string; completed: bool }

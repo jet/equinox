@@ -3,7 +3,7 @@ module Domain.InventoryItem
 
 open System
 
-// NB - these schemas reflect the actual storage formats and hence need to be versioned with care
+// NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
     type Event =
         | Created of name: string

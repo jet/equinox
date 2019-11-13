@@ -508,7 +508,7 @@ type Resolver<'event, 'state, 'context>
         [<O; D(null)>]?caching,
         [<O; D(null)>]?access) =
     do  match access with
-        | Some (AccessStrategy.EventsAreState) when Option.isSome caching ->
+        | Some AccessStrategy.EventsAreState when Option.isSome caching ->
             "Equinox.EventStore does not support (and it would make things _less_ efficient even if it did)"
             + "mixing AccessStrategy.EventsAreState with Caching at present."
             |> invalidOp

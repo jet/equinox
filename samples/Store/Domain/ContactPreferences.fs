@@ -2,7 +2,7 @@
 
 type Id = Id of email: string
 
-// NB - these schemas reflect the actual storage formats and hence need to be versioned with care
+// NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
     type Preferences = { manyPromotions : bool; littlePromotions : bool; productReview : bool; quickSurveys : bool }
     type Value = { email : string; preferences : Preferences }

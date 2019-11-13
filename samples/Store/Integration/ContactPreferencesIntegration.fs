@@ -25,7 +25,7 @@ let resolveStreamCosmosWithKnownEventTypeSemantics gateway =
 let resolveStreamCosmosWithoutCustomAccessStrategy gateway =
     Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).Resolve
 let resolveStreamCosmosRollingUnfolds gateway =
-    let access = Cosmos.AccessStrategy.RollingUnfolds(Domain.ContactPreferences.Folds.isOrigin, Domain.ContactPreferences.Folds.transmute)
+    let access = Cosmos.AccessStrategy.RollingUnfolds (Domain.ContactPreferences.Folds.isOrigin, Domain.ContactPreferences.Folds.transmute)
     Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
 
 type Tests(testOutputHelper) =

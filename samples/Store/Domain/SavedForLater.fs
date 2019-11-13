@@ -3,7 +3,7 @@
 open System
 open System.Collections.Generic
 
-// NB - these schemas reflect the actual storage formats and hence need to be versioned with care
+// NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
     type Item =             { skuId : SkuId; dateSaved : DateTimeOffset }
 
