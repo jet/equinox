@@ -360,6 +360,8 @@ module Dump =
         let doU,doE,doC,doJ = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,args.Contains Json
         let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
 
+        let streams = args.GetResults DumpArguments.Stream
+        log.ForContext("streams",streams).Information("Reading...")
         let initial = List.empty
         let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
         let mutable unfolds = List.empty
@@ -369,10 +371,11 @@ module Dump =
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun _event -> false),fun _state -> failwith "no compaction required"
         let render (data : byte[]) =
-            match data with
-            | null | [||] -> null
-            | _ when doJ -> System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> string
-            | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
+            try match data with
+                | null | [||] -> null
+                | _ when doJ -> System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> string
+                | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
+            with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (name : string) = async {
             let catAndId = name.Split([|'-'|],2,StringSplitOptions.RemoveEmptyEntries)
             let id = match catAndId with [|cat;id|] -> Equinox.AggregateId(cat,id) | ids -> Equinox.StreamName ids.[0]
@@ -384,7 +387,7 @@ module Dump =
                                     x.Index, x.Timestamp, ty, x.EventType, render x.Data, render x.Meta)
                 else log.Information("{i,3}@{t:u} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
                          x.Index, x.Timestamp, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
-        args.GetResults DumpArguments.Stream
+        streams
         |> Seq.map readStream
         |> Async.Parallel
         |> Async.Ignore
@@ -397,17 +400,18 @@ let main argv =
         let verboseConsole = args.Contains VerboseConsole
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
         let verbose = args.Contains Verbose
-        let log = createDomainLog verbose verboseConsole maybeSeq
-        match args.GetSubCommand() with
-        | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
-        | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
-        | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
-        | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
-        | Run rargs ->
-            let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
-            LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
-        | _ -> failwith "Please specify a valid subcommand :- init, config, dump, stats or run"
-        0
+        use log = createDomainLog verbose verboseConsole maybeSeq
+        try match args.GetSubCommand() with
+            | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
+            | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
+            | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
+            | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
+            | Run rargs ->
+                let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
+                LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
+            | _ -> failwith "Please specify a valid subcommand :- init, config, dump, stats or run"
+            0
+        with e -> log.Error(e, "Fatal error; exiting"); 1
     with :? Argu.ArguParseException as e -> eprintfn "%s" e.Message; 1
         | Storage.MissingArg msg -> eprintfn "%s" msg; 1
         | e -> eprintfn "%s" e.Message; 1
