@@ -18,7 +18,7 @@ module Folds =
 
     type State = Unallocated | Reserved of by : AllocatorId | Allocated of by : AllocatorId * on : TicketListId
     let initial = Unallocated
-    let evolve _state = function
+    let private evolve _state = function
         | Events.Reserved e -> Reserved e.allocatorId
         | Events.Allocated e -> Allocated (e.allocatorId, e.listId)
         | Events.Revoked -> Unallocated
