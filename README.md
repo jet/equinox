@@ -80,10 +80,10 @@ The components within this repository are delivered as multi-targeted Nuget pack
 
 Equinox does not focus on projection logic or wrapping thereof - each store brings its own strengths, needs, opportunities and idiosyncrasies. Here's a list of some relevant libraries from sibling projects that get used with regard to this:
 
-- `Jet.ConfluentKafka.FSharp` [![Jet.ConfluentKafka.FSharp NuGet](https://img.shields.io/nuget/vpre/Jet.ConfluentKafka.FSharp.svg)](https://www.nuget.org/packages/Jet.ConfluentKafka.FSharp/): Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`propulsion project kafka`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector -k; dotnet new proConsumer` to generate a sample app](quickstart) using it (see the `BatchedAsync` and `BatchedSync` modules in `Examples.fs`).
+- `Jet.ConfluentKafka.FSharp` [![Jet.ConfluentKafka.FSharp NuGet](https://img.shields.io/nuget/vpre/Jet.ConfluentKafka.FSharp.svg)](https://www.nuget.org/packages/Jet.ConfluentKafka.FSharp/): Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`propulsion project kafka`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector -k; dotnet new proConsumer` to generate a sample app](#quickstart) using it (see the `BatchedAsync` and `BatchedSync` modules in `Examples.fs`).
 - `Propulsion` [![Propulsion NuGet](https://img.shields.io/nuget/vpre/Propulsion.svg)](https://www.nuget.org/packages/Propulsion/): defines a canonical `Propulsion.Streams.StreamEvent` used to interop with `Propulsion.*` in processing pipelines for the `proProjector` and `proSync` templates in the [templates repo](https://github.com/jet/dotnet-templates), together with the `Ingestion`, `Streams`, `Progress` and `Parallel` modules that get composed into those processing pipelines. ([depends](https://www.fuget.org/packages/Propulsion) on `Serilog`)
-- `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/vpre/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDb Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.Cosmos` for processing or forwarding). Used in the [`propulsion project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
-- `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/vpre/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
+- `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/vpre/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDb Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.Cosmos` for processing or forwarding). Used in the [`propulsion project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
+- `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/vpre/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
 - `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/vpre/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new proProjector -k; dotnet new proConsumer`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `Jet.ConfluentKafka.FSharp`)
 
 ### `dotnet tool` provisioning / benchmarking tool
@@ -92,14 +92,14 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 
 ### `dotnet new` starter project templates and sample applications
 
-- `Equinox.Templates` [![Templates NuGet](https://img.shields.io/nuget/v/Equinox.Templates.svg)](https://www.nuget.org/packages/Equinox.Templates/): [The templates repo](https://github.com/jet/dotnet-templates) has C# and F# sample apps. (Install via `dotnet new -i Equinox.Templates && dotnet new eqx --list`). See [the quickstart](quickstart) for examples of how to use it.
+- `Equinox.Templates` [![Templates NuGet](https://img.shields.io/nuget/v/Equinox.Templates.svg)](https://www.nuget.org/packages/Equinox.Templates/): [The templates repo](https://github.com/jet/dotnet-templates) has C# and F# sample apps. (Install via `dotnet new -i Equinox.Templates && dotnet new eqx --list`). See [the quickstart](#quickstart) for examples of how to use it.
 - [`samples/Store` (in this repo)](/samples/Store): Example domain types reflecting examples of how one applies Equinox to a diverse set of stream-based models
 - [`samples/TodoBackend` (in this repo)](/samples/TodoBackend): Standard https://todobackend.com compliant backend
 - [`samples/Tutorial` (in this repo)](/samples/Tutorial): Annotated `.fsx` files with sample Aggregate impls
 
 ## TEMPLATES
 
-The best place to start, sample-wise is with the [QuickStart](quickstart), which walks you through sample code, tuned for approachability, from `dotnet new` templates stored [in a dedicated repo](https://github.com/jet/dotnet-templates).
+The best place to start, sample-wise is with the [QuickStart](#quickstart), which walks you through sample code, tuned for approachability, from `dotnet new` templates stored [in a dedicated repo](https://github.com/jet/dotnet-templates).
 
 ## SAMPLES
 
@@ -377,11 +377,11 @@ Within those constraints, contributions of all kinds are welcome:
 
 ## BUILDING
 
-Please note the [QuickStart](quickstart) is probably the best way to gain an overview - these instructions are intended to illustrated various facilities of the build script for people making changes.
+Please note the [QuickStart](#quickstart) is probably the best way to gain an overview - these instructions are intended to illustrated various facilities of the build script for people making changes.
 
 ### build and run
 
-Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and container prepared (see [PROVISIONING](provisioning)):
+Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and container prepared (see [PROVISIONING](#provisioning)):
 
     ./build.ps1
 
@@ -401,7 +401,7 @@ Run, including running the tests that assume you've got a local EventStore and p
 
     ./build -se -scp
 
-### Run EventStore benchmark on Full Framework (when [provisioned](provisioning))
+### Run EventStore benchmark on Full Framework (when [provisioned](#provisioning))
 
 Continually reads and writes very small events across multiple streams on .NET Full Framework
 
@@ -469,7 +469,7 @@ While EventStore rarely shows any negative effects from repeated load test runs,
 
 ### Deprovisioning CosmosDb
 
-The [provisioning](provisioning) step spins up RUs in CosmosDB for the Container, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the container or reset the RU provision down to the lowest possible value)*.
+The [provisioning](#provisioning) step spins up RUs in CosmosDB for the Container, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the container or reset the RU provision down to the lowest possible value)*.
 
 - Kill the container and/or database
 - Use the portal to change the allocation
@@ -488,7 +488,7 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
 
 - :cry: the Azure Pipelines script does not run the integration tests, so these need to be run manually via the following steps:
 
-  - [Provision](provisioning):
+  - [Provision](#provisioning):
     - Start Local EventStore running in simulated cluster mode
     - Set Environment variables X 3 for a CosmosDb database and container (you might need to `eqx init`)
     - `docker-compose up` to start 3 servers for the `SqlStreamStore.*.Integration` test suites
