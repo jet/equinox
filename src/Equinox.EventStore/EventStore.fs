@@ -396,9 +396,13 @@ type Context(conn : Connection, batching : BatchingPolicy) =
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
+    /// Load only the single most recent event defined in <c>'event`</c> and trust that doing a <c>fold</c> from any such event
+    /// will yield a correct and complete state
+    /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
     | LatestKnownEvent
-    /// Ensures a snapshot is always present (embedded in the stream as an event) every `batchSize` events using
-    /// the supplied `toSnapshot` function to generate an event from which the state can be reconstituted upon decoding.
+    /// Ensures a snapshot/compaction event from which the state can be reconstituted upon decoding is always present
+    /// (embedded in the stream as an event), generated every <c>batchSize</c> events using the supplied <c>toSnapshot</c> function
+    /// Scanning for events concludes when any event passes the <c>isOrigin</c> test.
     /// See https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html
     | RollingSnapshots of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
 

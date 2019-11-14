@@ -998,22 +998,32 @@ type CachingStrategy =
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
-    /// Don't apply any optimized reading logic strategy. Note this can be cost prohibitive
-    /// and severely impact system scalability and hence should only be used with careful consideration.
+    /// Don't apply any optimized reading logic. Note this can be extremely RU cost prohibitive
+    /// and can severely impact system scalability. Should hence only be used with careful consideration.
     | Unoptimized
-    /// Simplified version of Unfolded that only saves a single Event Type
-    /// Provides equivalent performance to Unfolded, just simplified function signatures
-    | Snapshot of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
-    /// Instead of actually storing the events representing the decisions, only ever update the snapshot stored in the tip
-    | RollingState of toSnapshot: ('state -> 'event)
-    /// Allow events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
-    /// When saving, uses `toEvents` to 'unfold' the 'state, representing it as event records to be stored in the Tip with efficient read cost
-    | MultiSnapshot of isOrigin: ('event -> bool) * toSnapshots: ('state -> 'event seq)
-    /// Allow produced events to be transmuted to unfolds.
-    /// In this mode, Optimistic Concurrency Control OCC is based on the _etag (rather than the normal Expected Version strategy)
-    | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
-    /// Treat every known event type in the Union as being an Origin event
+    /// Load only the single most recent event defined in <c>'event`</c> and trust that doing a <c>fold</c> from any such event
+    /// will yield a correct and complete state
+    /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
+    /// <remarks>
+    /// A copy of the event is also retained in the `Tip` document in order that the state of the stream can be
+    /// retrieved using a single (cached, etag-checked) point read.
+    /// </remarks
     | LatestKnownEvent
+    /// Allow a 'snapshot' event (and/or other events that that pass the <c>isOrigin</c> test) to be used to build the state
+    /// in lieu of folding all the events from the start of the stream, as a performance optimization.
+    /// <c>toSnapshot</c> is used to generate the <c>unfold</c> that will be held in the Tip document in order to
+    /// enable efficient reading without having to query the Event documents.
+    | Snapshot of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
+    /// Allow any events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
+    /// When writing, uses `toSnapshots` to 'unfold' the <c>'state</c>, representing it as one or more Event records to be stored in
+    /// the Tip with efficient read cost.
+    | MultiSnapshot of isOrigin: ('event -> bool) * toSnapshots: ('state -> 'event seq)
+    /// Instead of actually storing the events representing the decisions, only ever update the snapshot stored in the Tip document
+    /// <remarks>In this mode, Optimistic Concurrency Control is necessarily is based on the _etag</remarks>
+    | RollingState of toSnapshot: ('state -> 'event)
+    /// Allow produced events to be filtered, transformed or removed completely and/or to be transmuted to unfolds.
+    /// <remarks>In this mode, Optimistic Concurrency Control is based on the _etag (rather than the normal Expected Version strategy)</remarks>
+    | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
 type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, access) =
     let readCacheOption =
@@ -1023,11 +1033,11 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
     let isOrigin, mapUnfolds =
         match access with
         | AccessStrategy.Unoptimized ->                     (fun _ -> false), Choice1Of3 ()
+        | AccessStrategy.LatestKnownEvent ->                (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
         | AccessStrategy.Snapshot (isOrigin,generate) ->    isOrigin,         Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
+        | AccessStrategy.MultiSnapshot (isOrigin, unfold) ->isOrigin,         Choice2Of3 (fun _ state -> unfold state)
         | AccessStrategy.RollingState generate ->           (fun _ -> true),  Choice3Of3 (fun _ state -> [],[generate state])
-        | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state -> unfold state)
         | AccessStrategy.Custom (isOrigin,transmute) ->     isOrigin,         Choice3Of3 transmute
-        | AccessStrategy.LatestKnownEvent ->                  (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
     let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
     let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
     let category : ICategory<_, _, Container*string, 'context> =
