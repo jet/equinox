@@ -19,6 +19,7 @@
     <Compile Include="fc\Ticket.fs" />
     <Compile Include="fc\TicketList.fs" />
     <Compile Include="fc\TicketAllocator.fs" />
+    <Compile Include="fc\Set.fs" />
   </ItemGroup>
 
   <ItemGroup>
