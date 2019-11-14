@@ -87,7 +87,7 @@ type State =
     | Acquiring of reserved : TicketId list * toReserve : TicketId list * toAssign : Events.Allocating
     | Acquired  of reserved : TicketId list
     | Releasing of toRelease : TicketId list * toAssign : Events.Allocating
-    | Complete
+    | Completed
 
 type Command =
     | Commence  of TicketId list
@@ -96,6 +96,8 @@ type Command =
 
 let decide (startTimestamp, timeout, failed, reserved, assigned, released, command : Command) (state : Folds.State) : (bool * State) * Events.Event list =
     failwith "TODO"
+//    match state, co§mmand with
+//    | Idle, Commence tickets -> true*,[Events.Commenced { ticketIds = Array.ofList tickets }]
 
 type Service internal (resolve, ?maxAttempts, ?timeout) =
 
