@@ -1,10 +1,14 @@
-﻿// Compile Tutorial.fsproj by either a) right-clicking or b) typing
-// dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
+﻿// Compile Tutorial.fsproj before attempting to send this to FSI with Alt-Enter by either:
+// a) right-clicking or 
+// b) typing dotnet build samples/Tutorial 
 #I "bin/Debug/netstandard2.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"
 #r "Equinox.MemoryStore.dll"
+#r "TypeShape.dll"
+#r "FsCodec.dll"
+#r "FsCodec.NewtonsoftJson.dll"
 
 // Contributed by @voronoipotato
 
@@ -21,18 +25,18 @@ type Event =
 
 type State = State of int
 let initial : State = State 0
-(*Evolve takes the present state and one event and figures out the next state*)
+(* Evolve takes the present state and one event and figures out the next state*)
 let evolve state event =
     match event, state with
     | Incremented, State s -> State (s + 1)
     | Decremented, State s -> State (s - 1)
     | Cleared { value = x }, _ -> State x
 
-(*fold is just folding the evolve function over all events to get the current state
-  It's equivalent to Linq's Aggregate function *)
+(* Fold is folding the evolve function over all events to get the current state
+   It's equivalent to LINQ's Aggregate function *)
 let fold state events = Seq.fold evolve state events
 
-(*Commands are the things we intend to happen, though they may not*)
+(* Commands are the things we intend to happen, though they may not*)
 type Command = 
     | Increment
     | Decrement
@@ -50,6 +54,7 @@ let decide command (State state) =
         if state = i then [] else [Cleared {value = i}]
 
 type Service(log, resolveStream, ?maxAttempts) =
+    (* Kind of DDD aggregate ID *)
     let (|AggregateId|) (id : string) = Equinox.AggregateId("Counter", id)
     let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
 
@@ -67,7 +72,8 @@ type Service(log, resolveStream, ?maxAttempts) =
         read instanceId 
 
 let store = Equinox.MemoryStore.VolatileStore()
-let resolve = Equinox.MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve
+let codec = FsCodec.Box.Codec.Create()
+let resolve = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let service = Service(log, resolve, maxAttempts=3)
