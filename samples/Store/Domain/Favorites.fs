@@ -4,11 +4,10 @@
 module Events =
     type Favorited =                            { date: System.DateTimeOffset; skuId: SkuId }
     type Unfavorited =                          { skuId: SkuId }
-    module Compaction =
-        type Compacted =                        { net: Favorited[] }
+    type Snapshotted =                          { net: Favorited[] }
 
     type Event =
-        | Compacted                             of Compaction.Compacted
+        | Snapshotted                           of Snapshotted
         | Favorited                             of Favorited
         | Unfavorited                           of Unfavorited
         interface TypeShape.UnionContract.IUnionContract
@@ -29,17 +28,15 @@ module Folds =
 
     let initial : State = [||]
     let private evolve (s: InternalState) = function
-        | Events.Compacted { net = net } ->     s.ReplaceAllWith net
+        | Events.Snapshotted { net = net } ->     s.ReplaceAllWith net
         | Events.Favorited e ->                 s.Favorite e
         | Events.Unfavorited { skuId = id } ->  s.Unfavorite id
     let fold (state: State) (events: seq<Events.Event>) : State =
         let s = InternalState state
         for e in events do evolve s e
         s.AsState()
-    let isOrigin = function Events.Compacted _ -> true | _ -> false
-    let compact state = Events.Compacted { net = state }
-    /// This transmute impl a) removes events - we're not interested in storing the events b) packs the post-state into a Compacted unfold-event
-    let transmute _events state = [],[compact state]
+    let isOrigin = function Events.Snapshotted _ -> true | _ -> false
+    let snapshot state = Events.Snapshotted { net = state }
 
 type Command =
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list

@@ -369,7 +369,7 @@ module Dump =
             if x.IsUnfold then unfolds <- x :: unfolds
             Some x
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
-        let isOriginAndSnapshot = (fun _event -> false),fun _state -> failwith "no compaction required"
+        let isOriginAndSnapshot = (fun _event -> false),fun _state -> failwith "no snapshot required"
         let render (data : byte[]) =
             try match data with
                 | null | [||] -> null

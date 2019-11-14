@@ -15,7 +15,7 @@ module Events =
         type State =                { items: StateItemInfo[] }
 
     type Event =
-        | Compacted                 of Compaction.State
+        | Snapshotted               of Compaction.State
         | ItemAdded                 of ItemAddInfo
         | ItemRemoved               of ItemRemoveInfo
         | ItemQuantityChanged       of ItemQuantityChangeInfo
@@ -29,22 +29,20 @@ module Folds =
     module State =
         let toSnapshot (s: State) : Events.Compaction.State =
             { items = [| for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } |] }
-        let ofCompacted (s: Events.Compaction.State) : State =
+        let ofSnapshot (s: Events.Compaction.State) : State =
             { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
     let initial = { items = [] }
     let evolve (state : State) event =
         let updateItems f = { state with items = f state.items }
         match event with
-        | Events.Compacted s -> State.ofCompacted s
+        | Events.Snapshotted s -> State.ofSnapshot s
         | Events.ItemAdded e -> updateItems (fun current -> { skuId = e.skuId; quantity = e.quantity; returnsWaived = false  } :: current)
         | Events.ItemRemoved e -> updateItems (List.filter (fun x -> x.skuId <> e.skuId))
         | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
         | Events.ItemWaiveReturnsChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with returnsWaived = e.waived } | i -> i))
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
-    let isOrigin = function Events.Compacted _ -> true | _ -> false
-    let compact = State.toSnapshot >> Events.Compacted
-    /// This transmute impl a) removes events - we're not interested in storing the events b) packs the post-state into a Compacted unfold-event
-    let transmute _events state = [],[compact state]
+    let isOrigin = function Events.Snapshotted _ -> true | _ -> false
+    let snapshot = State.toSnapshot >> Events.Snapshotted
 type Context =              { time: System.DateTime; requestId : RequestId }
 type Command =
     | AddItem               of Context * SkuId * quantity: int

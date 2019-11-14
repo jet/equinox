@@ -1035,12 +1035,12 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         | CachingStrategy.SlidingWindow(cache, _) -> Some(cache, null)
     let isOrigin, mapUnfolds =
         match access with
-        | AccessStrategy.Unoptimized ->                     (fun _ -> false), Choice1Of3 ()
-        | AccessStrategy.LatestKnownEvent ->                (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
-        | AccessStrategy.Snapshot (isOrigin,generate) ->    isOrigin,         Choice2Of3 (fun _ state -> generate state |> Seq.singleton)
-        | AccessStrategy.MultiSnapshot (isOrigin, unfold) ->isOrigin,         Choice2Of3 (fun _ state -> unfold state)
-        | AccessStrategy.RollingState generate ->           (fun _ -> true),  Choice3Of3 (fun _ state -> [],[generate state])
-        | AccessStrategy.Custom (isOrigin,transmute) ->     isOrigin,         Choice3Of3 transmute
+        | AccessStrategy.Unoptimized ->                      (fun _ -> false), Choice1Of3 ()
+        | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
+        | AccessStrategy.Snapshot (isOrigin,toSnapshot) ->   isOrigin,         Choice2Of3 (fun _ state  -> toSnapshot state |> Seq.singleton)
+        | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state  -> unfold state)
+        | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
+        | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         Choice3Of3 transmute
     let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
     let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
     let category : ICategory<_, _, Container*string, 'context> =

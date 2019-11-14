@@ -411,10 +411,10 @@ let evolve s = function
     | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
     | Deleted id -> { s with items = s.items |> List.filter (fun x -> x.id <> id) }
     | Cleared -> { s with items = [] }
-    | Compacted items -> { s with items = List.ofArray items }
+    | Snapshotted items -> { s with items = List.ofArray items }
 let fold : State -> Events.Event seq -> State = Seq.fold evolve
 let isOrigin = function Cleared | Compacted _ -> true | _ -> false
-let compact state = Compacted (Array.ofList state.items)
+let snapshot state = Snapshotted (Array.ofList state.items)
 ```
 
 - for `State` we use records and `list`s as the state needs to be a Persistent data structure.

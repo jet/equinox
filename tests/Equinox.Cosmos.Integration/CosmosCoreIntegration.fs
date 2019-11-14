@@ -134,7 +134,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 46 // 45.91 // WAS 20
+        verifyRequestChargesMax 48 // 47.02 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
