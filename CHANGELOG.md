@@ -9,6 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-rc8"></a>
+## [2.0.0-rc8] - 2019-10-14
+
+### Added
 
 - `SqlStreamStore`: Full support for Microsoft Sql Server, MySQL and Postgres using [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) [#168](https://github.com/jet/equinox/pull/168) :pray: [@rajivhost](https://github.com/rajivhost) 
 - `Cosmos`: Exposed a `Connector.CreateClient` for interop with V2 ChangeFeedProcessor and `Propulsion.Cosmos` [#171](https://github.com/jet/equinox/pull/171) 
@@ -32,7 +41,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - `Cosmos`: fixed accidentally swapped `count` and `bytes` metrics field values
 
-<a name="2.0.0"></a>
 <a name="2.0.0-rc7"></a>
 ## [2.0.0-rc7] - 2019-10-17
 
@@ -317,7 +325,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc7...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc8...HEAD
+[2.0.0-rc8]: https://github.com/jet/equinox/compare/2.0.0-rc7...2.0.0-rc8
 [2.0.0-rc7]: https://github.com/jet/equinox/compare/2.0.0-rc6...2.0.0-rc7
 [2.0.0-rc6]: https://github.com/jet/equinox/compare/2.0.0-rc5...2.0.0-rc6
 [2.0.0-rc5]: https://github.com/jet/equinox/compare/2.0.0-rc4...2.0.0-rc5
