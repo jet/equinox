@@ -9,7 +9,7 @@ open Swensen.Unquote
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
-let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
+let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.snapshot
 
 let createMemoryStore () =
     // we want to validate that the JSON UTF8 is working happily
@@ -27,7 +27,7 @@ let resolveGesStreamWithoutCustomAccessStrategy gateway =
 let resolveCosmosStreamWithSnapshotStrategy gateway =
     fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching).Resolve(id,?option=opt)
+    fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.FlowAsync(cartId, false, fun _ctx execute ->

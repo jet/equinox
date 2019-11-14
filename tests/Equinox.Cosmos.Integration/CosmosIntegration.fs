@@ -10,18 +10,18 @@ open System.Threading
 
 module Cart =
     let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
-    let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.compact
+    let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.snapshot
     let codec = Domain.Cart.Events.codec
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
-        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching).Resolve(id,?option=opt)
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let projection = "Compacted",snd snapshot
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds connection batchSize log =
         let store = createCosmosContext connection batchSize
         let unfArgs = Domain.Cart.Folds.isOrigin, fun _ -> Seq.empty
-        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unfolded unfArgs).Resolve(id,?option=opt)
+        let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
     let createServiceWithSnapshotStrategy connection batchSize log =
         let store = createCosmosContext connection batchSize
@@ -32,9 +32,9 @@ module Cart =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         let resolveStream (id,opt) = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
-    let createServiceWithRollingUnfolds connection log =
+    let createServiceWithRollingState connection log =
         let store = createCosmosContext connection 1
-        let access = AccessStrategy.RollingUnfolds (Domain.Cart.Folds.isOrigin,Domain.Cart.Folds.transmute)
+        let access = AccessStrategy.RollingState Domain.Cart.Folds.snapshot
         let resolveStream (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolveStream)
 
@@ -43,14 +43,13 @@ module ContactPreferences =
     let codec = Domain.ContactPreferences.Events.codec
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolveStream = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching).Resolve
+        let resolveStream = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
     let createService log createGateway =
-        let resolveStream = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.AnyKnownEventType).Resolve
+        let resolveStream = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
-    let createServiceWithRollingUnfolds createGateway log cachingStrategy =
-        let access = AccessStrategy.RollingUnfolds (Domain.ContactPreferences.Folds.isOrigin,Domain.ContactPreferences.Folds.transmute)
-        let resolveStream = Resolver(createGateway 1, codec, fold, initial, cachingStrategy, access).Resolve
+    let createServiceWithLatestKnownEvent createGateway log cachingStrategy =
+        let resolveStream = Resolver(createGateway 1, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
         Backend.ContactPreferences.Service(log, resolveStream)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -195,7 +194,7 @@ type Tests(testOutputHelper) =
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update against Cosmos with EventsAreState Access Strategy`` value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` value = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createService log (createCosmosContext conn)
 
@@ -220,7 +219,7 @@ type Tests(testOutputHelper) =
      [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update Contacts against Cosmos with RollingUnfolds Access Strategy`` value = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
-        let service = ContactPreferences.createServiceWithRollingUnfolds (createCosmosContext conn) log CachingStrategy.NoCaching
+        let service = ContactPreferences.createServiceWithLatestKnownEvent (createCosmosContext conn) log CachingStrategy.NoCaching
 
         let email = let g = System.Guid.NewGuid() in g.ToString "N"
         // Feed some junk into the stream
@@ -249,7 +248,7 @@ type Tests(testOutputHelper) =
         let cartId = % Guid.NewGuid()
 
         // establish base stream state
-        let service1 = Cart.createServiceWithRollingUnfolds conn log1
+        let service1 = Cart.createServiceWithRollingState conn log1
         let! maybeInitialSku =
             let (streamEmpty, skuId) = initialState
             async {
@@ -283,7 +282,7 @@ type Tests(testOutputHelper) =
             do! s4 }
         let log2, capture2 = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
         use _flush = log2
-        let service2 = Cart.createServiceWithRollingUnfolds conn log2
+        let service2 = Cart.createServiceWithRollingState conn log2
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {

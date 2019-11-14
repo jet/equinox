@@ -7,7 +7,7 @@ open Swensen.Unquote
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
-let snapshot = Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.compact
+let snapshot = Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.snapshot
 
 let createMemoryStore () =
     new MemoryStore.VolatileStore<_>()
@@ -23,8 +23,8 @@ let createServiceCosmos gateway log =
     let resolveStream = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
-let createServiceCosmosRollingUnfolds gateway log =
-    let access = Cosmos.AccessStrategy.RollingUnfolds (Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.transmute)
+let createServiceCosmosRollingState gateway log =
+    let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Folds.snapshot
     let resolveStream = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
     Backend.Favorites.Service(log, resolveStream)
 
@@ -72,6 +72,6 @@ type Tests(testOutputHelper) =
         let log = createLog ()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let gateway = createCosmosContext conn defaultBatchSize
-        let service = createServiceCosmosRollingUnfolds gateway log
+        let service = createServiceCosmosRollingState gateway log
         do! act service args
     }

@@ -21,7 +21,7 @@ module Folds =
     let fold (state: State) (events: seq<Events.Event>) : State =
         Seq.tryLast events |> Option.fold evolve state
     let isOrigin _ = true
-    /// When using AccessStrategy.RollingUnfolds, the events become unfolds, but the logic remains identical
+    /// When using AccessStrategy.Custom, we use the (single) event become an unfold, but the logic remains identical
     let transmute events _state =
         [],events
 

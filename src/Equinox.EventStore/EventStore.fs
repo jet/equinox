@@ -396,8 +396,15 @@ type Context(conn : Connection, batching : BatchingPolicy) =
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
-    | EventsAreState
-    | RollingSnapshots of isValid: ('event -> bool) * compact: ('state -> 'event)
+    /// Load only the single most recent event defined in <c>'event`</c> and trust that doing a <c>fold</c> from any such event
+    /// will yield a correct and complete state
+    /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
+    | LatestKnownEvent
+    /// Ensures a snapshot/compaction event from which the state can be reconstituted upon decoding is always present
+    /// (embedded in the stream as an event), generated every <c>batchSize</c> events using the supplied <c>toSnapshot</c> function
+    /// Scanning for events concludes when any event passes the <c>isOrigin</c> test.
+    /// See https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html
+    | RollingSnapshots of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
 
 type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
@@ -408,18 +415,18 @@ type private Category<'event, 'state, 'context>(context : Context, codec : FsCod
     let compactionPredicate =
         match access with
         | None -> None
-        | Some AccessStrategy.EventsAreState -> Some (fun _ -> true)
+        | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid,_)) -> Some isValid
     let isOrigin =
         match access with
-        | None | Some AccessStrategy.EventsAreState -> fun _ -> true
+        | None | Some AccessStrategy.LatestKnownEvent -> fun _ -> true
         | Some (AccessStrategy.RollingSnapshots (isValid,_)) -> isValid
     let loadAlgorithm load streamName initial log =
         let batched = load initial (context.LoadBatched streamName log (tryDecode,None))
         let compacted = load initial (context.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode,isOrigin))
         match access with
         | None -> batched
-        | Some AccessStrategy.EventsAreState
+        | Some AccessStrategy.LatestKnownEvent
         | Some (AccessStrategy.RollingSnapshots _) -> compacted
     let load (fold: 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
@@ -434,7 +441,7 @@ type private Category<'event, 'state, 'context>(context : Context, codec : FsCod
         let encode e = codec.Encode(ctx,e)
         let events =
             match access with
-            | None | Some AccessStrategy.EventsAreState -> events
+            | None | Some AccessStrategy.LatestKnownEvent -> events
             | Some (AccessStrategy.RollingSnapshots (_,compact)) ->
                 let cc = CompactionContext(List.length events, pos.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
@@ -508,9 +515,9 @@ type Resolver<'event, 'state, 'context>
         [<O; D(null)>]?caching,
         [<O; D(null)>]?access) =
     do  match access with
-        | Some AccessStrategy.EventsAreState when Option.isSome caching ->
+        | Some AccessStrategy.LatestKnownEvent when Option.isSome caching ->
             "Equinox.EventStore does not support (and it would make things _less_ efficient even if it did)"
-            + "mixing AccessStrategy.EventsAreState with Caching at present."
+            + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
             |> invalidOp
         | _ -> ()
 

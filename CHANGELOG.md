@@ -12,6 +12,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - `SqlStreamStore`: Full support for Microsoft Sql Server, MySQL and Postgres using [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) [#168](https://github.com/jet/equinox/pull/168) :pray: [@rajivhost](https://github.com/rajivhost) 
 - `Cosmos`: Exposed a `Connector.CreateClient` for interop with V2 ChangeFeedProcessor and `Propulsion.Cosmos` [#171](https://github.com/jet/equinox/pull/171) 
+- `Cosmos`: Codified `AccessStrategy.RollingState` [#178](https://github.com/jet/equinox/pull/178) :pray: [@jgardella](https://github.com/jgardella)
 - `Cosmos`: Added `eqx stats` command to count streams/docs/events in a CosmosDb Container re [#127](https://github.com/jet/equinox/issues/127) [#176](https://github.com/jet/equinox/pull/176) 
 - `MemoryStore`: Supports custom Codec logic (can use `FsCodec.Box.Codec` as default) [#173](https://github.com/jet/equinox/pull/173) 
 - `eqx dump [store]`: Show event data from store [#177](https://github.com/jet/equinox/pull/177)
@@ -21,6 +22,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Targeted `Destructurama.FSharp` v `1.1.1-dev-00033` [dotnet-templates#36](https://github.com/jet/dotnet-templates/issues/36)
 - Targeted `FsCodec` v `1.2.1`
 - `Cosmos`: renamed `Connector`'s `maxRetryAttemptsOnThrottledRequests` and `maxRetryWaitTimeInSeconds` to maxRetryAttemptsOnRateLimitedRequests` and `maxRetryWaitTimeOnRateLimitedRequests` and changed latter to `TimeSpan` to match V3 SDK [#171](https://github.com/jet/equinox/pull/171) 
+- `AccessStrategy`: consistent naming for Union cases and arguments; rewrote xmldoc [#178](https://github.com/jet/equinox/pull/178) :pray: [@jgardella](https://github.com/jgardella)
 
 ### Removed
 

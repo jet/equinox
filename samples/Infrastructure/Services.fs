@@ -13,8 +13,8 @@ type StreamResolver(storage) =
         match storage with
         | Storage.StorageConfig.Cosmos (gateway, caching, unfolds, databaseId, containerId) ->
             let store = Equinox.Cosmos.Context(gateway, databaseId, containerId)
-            let accessStrategy = if unfolds then Equinox.Cosmos.AccessStrategy.Snapshot snapshot |> Some else None
-            Equinox.Cosmos.Resolver<'event,'state,_>(store, codec, fold, initial, caching, ?access = accessStrategy).Resolve
+            let accessStrategy = if unfolds then Equinox.Cosmos.AccessStrategy.Snapshot snapshot else Equinox.Cosmos.AccessStrategy.Unoptimized
+            Equinox.Cosmos.Resolver<'event,'state,_>(store, codec, fold, initial, caching, accessStrategy).Resolve
         | Storage.StorageConfig.Es (context, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.EventStore.AccessStrategy.RollingSnapshots snapshot |> Some else None
             Equinox.EventStore.Resolver<'event,'state,_>(context, codec, fold, initial, ?caching = caching, ?access = accessStrategy).Resolve
@@ -29,7 +29,7 @@ type ServiceBuilder(storageConfig, handlerLog) =
 
      member __.CreateFavoritesService() =
         let fold, initial = Favorites.Folds.fold, Favorites.Folds.initial
-        let snapshot = Favorites.Folds.isOrigin,Favorites.Folds.compact
+        let snapshot = Favorites.Folds.isOrigin,Favorites.Folds.snapshot
         Backend.Favorites.Service(handlerLog, resolver.Resolve(Favorites.Events.codec,fold,initial,snapshot))
 
      member __.CreateSaveForLaterService() =
@@ -39,7 +39,7 @@ type ServiceBuilder(storageConfig, handlerLog) =
 
      member __.CreateTodosService() =
         let fold, initial = TodoBackend.Folds.fold, TodoBackend.Folds.initial
-        let snapshot = TodoBackend.Folds.isOrigin, TodoBackend.Folds.compact
+        let snapshot = TodoBackend.Folds.isOrigin, TodoBackend.Folds.snapshot
         TodoBackend.Service(handlerLog, resolver.Resolve(TodoBackend.Events.codec,fold,initial,snapshot))
 
 let register (services : IServiceCollection, storageConfig, handlerLog) =
