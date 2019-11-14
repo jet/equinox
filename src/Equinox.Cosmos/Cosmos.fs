@@ -1018,11 +1018,14 @@ type AccessStrategy<'event,'state> =
     /// When writing, uses `toSnapshots` to 'unfold' the <c>'state</c>, representing it as one or more Event records to be stored in
     /// the Tip with efficient read cost.
     | MultiSnapshot of isOrigin: ('event -> bool) * toSnapshots: ('state -> 'event seq)
-    /// Instead of actually storing the events representing the decisions, only ever update the snapshot stored in the Tip document
-    /// <remarks>In this mode, Optimistic Concurrency Control is necessarily is based on the _etag</remarks>
+    /// Instead of actually storing the events representing the decisions, only ever update a snapshot stored in the Tip document
+    /// <remarks>In this mode, Optimistic Concurrency Control is necessarily based on the _etag</remarks>
     | RollingState of toSnapshot: ('state -> 'event)
     /// Allow produced events to be filtered, transformed or removed completely and/or to be transmuted to unfolds.
-    /// <remarks>In this mode, Optimistic Concurrency Control is based on the _etag (rather than the normal Expected Version strategy)</remarks>
+    /// <remarks>
+    /// In this mode, Optimistic Concurrency Control is based on the _etag (rather than the normal Expected Version strategy)
+    /// in order that conflicting updates to the state not involving the writing of an event can trigger retries.
+    /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
 type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, access) =
