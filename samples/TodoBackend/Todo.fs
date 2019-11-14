@@ -5,15 +5,15 @@ open Domain
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<AutoOpen>]
 module Events =
-    type Todo = { id: int; order: int; title: string; completed: bool }
-    type Deleted = { id: int }
-    type Snapshotted = { items: Todo[] }
+    type Todo =         { id: int; order: int; title: string; completed: bool }
+    type Deleted =      { id: int }
+    type Snapshotted =  { items: Todo[] }
     type Event =
-        | Added     of Todo
-        | Updated   of Todo
-        | Deleted   of Deleted
+        | Added         of Todo
+        | Updated       of Todo
+        | Deleted       of Deleted
         | Cleared
-        | Snapshotted of Snapshotted
+        | Snapshotted   of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
@@ -22,11 +22,11 @@ module Folds =
     let initial = { items = []; nextId = 0 }
     let evolve s e =
         match e with
-        | Added item -> { s with items = item :: s.items; nextId = s.nextId + 1 }
+        | Added item ->    { s with items = item :: s.items; nextId = s.nextId + 1 }
         | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
-        | Deleted { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
-        | Cleared -> { s with items = [] }
-        | Snapshotted { items = items } -> { s with items = List.ofArray items }
+        | Deleted          { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
+        | Cleared ->       { s with items = [] }
+        | Snapshotted      { items = items } -> { s with items = List.ofArray items }
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Cleared | Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Snapshotted { items = Array.ofList state.items }

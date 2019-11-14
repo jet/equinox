@@ -28,7 +28,7 @@ module Folds =
 
     let initial : State = [||]
     let private evolve (s: InternalState) = function
-        | Events.Snapshotted { net = net } ->     s.ReplaceAllWith net
+        | Events.Snapshotted { net = net } ->   s.ReplaceAllWith net
         | Events.Favorited e ->                 s.Favorite e
         | Events.Unfavorited { skuId = id } ->  s.Unfavorite id
     let fold (state: State) (events: seq<Events.Event>) : State =

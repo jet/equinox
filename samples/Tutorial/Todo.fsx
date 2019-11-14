@@ -21,15 +21,15 @@ open System
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
 
-type Todo = { id: int; order: int; title: string; completed: bool }
-type DeletedInfo = { id: int }
-type Snapshotted = { items: Todo[] }
+type Todo =             { id: int; order: int; title: string; completed: bool }
+type DeletedInfo =      { id: int }
+type Snapshotted =      { items: Todo[] }
 type Event =
-    | Added       of Todo
-    | Updated     of Todo
-    | Deleted     of DeletedInfo
+    | Added             of Todo
+    | Updated           of Todo
+    | Deleted           of DeletedInfo
     | Cleared
-    | Snapshotted of Snapshotted
+    | Snapshotted       of Snapshotted
     interface TypeShape.UnionContract.IUnionContract
 let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
