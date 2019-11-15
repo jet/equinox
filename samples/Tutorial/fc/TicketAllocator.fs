@@ -1,22 +1,26 @@
 module Fc.TicketAllocator
+open System
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Tickets =      { cutoff : System.DateTimeOffset; ticketIds : TicketId[] }
+    type Commenced =    { cutoff : System.DateTimeOffset; ticketIds : TicketId[] }
+    type Tickets =      { ticketIds : TicketId[] }
     type Allocating =   { listId : TicketListId; ticketIds : TicketId[] }
     type Allocated =    { listId : TicketListId }
     type Snapshotted =  { ticketIds : TicketId[] }
     type Event =
         /// Records full set of targets (so Abort can Revoke all potential in flight Reservations)
-        | Commenced     of Tickets
+        | Commenced     of Commenced
         /// Tickets verified as not being attainable (Allocated, not just Reserved) // TODO does this matter or can Ticket.Reserved state go?
         | Failed        of Tickets
         /// Tickets verified as having been marked Reserved
         | Reserved      of Tickets
         /// Confirming cited tickets are to be allocated to the cited list
         | Allocating    of Allocating
-        /// Transitioning to phase where (Commenced-Allocated) get Returned by performing Releases on the Tickets
+        /// Transitioning to phase where (Commenced-Allocated) get Returned by performing Releases on the Tickets due to user request
+        | Cancelled
+        /// Watchdog or self-policing triggering a rollback due to cutoff expiration
         | Aborted
         /// Confirming cited tickets have been assigned to the list
         | Allocated     of Allocated
@@ -65,7 +69,7 @@ module Folds =
             | Idle -> failwith "Cannot have Allocating if Idle"
             | Running s -> Running { s with allocating = e :: s.allocating}
             | Reverting s -> Reverting { s with allocating = e :: s.allocating}
-        | Events.Aborted -> state |> function
+        | Events.Cancelled | Events.Aborted -> state |> function
             | Running s -> Reverting s
             | x -> failwithf "Can only Abort when Running, not %A" x
         | Events.Allocated e -> state |> function
@@ -83,18 +87,21 @@ module Folds =
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Completed -> true | Events.Snapshotted | _ -> false
 
-type State =
-    | Acquiring of reserved : TicketId list * toReserve : TicketId list * toAssign : Events.Allocating
-    | Acquired  of reserved : TicketId list
-    | Releasing of toRelease : TicketId list * toAssign : Events.Allocating
-    | Completed
-
+/// Impetus provided to the Aggregate Service from the Process Manager
 type Command =
-    | Commence  of TicketId list
-    | Sync      of allocate : Events.Allocating list * release : TicketId list
+    | Commence      of TicketId list * timeout : TimeSpan
+    | Progress      of allocate : Events.Allocating list * release : TicketId list
+    | Cancel
     | Abort
 
-let decide (startTimestamp, timeout, failed, reserved, assigned, released, command : Command) (state : Folds.State) : (bool * State) * Events.Event list =
+/// Current state of the workflow based on the events noted in the Aggregate
+type State =
+    | Running       of reserved : TicketId list * toReserve : TicketId list * toAllocate : Events.Allocating
+    | Idle          of reserved : TicketId list
+    | Cancelling    of toRelease : TicketId list * toAssign : Events.Allocating
+    | Completed
+
+let decide (effectiveTimeStamp, failed, reserved, assigned, released, command : Command) (state : Folds.State) : (bool*State) * Events.Event list =
     failwith "TODO"
 //    match state, co§mmand with
 //    | Idle, Commence tickets -> true*,[Events.Commenced { ticketIds = Array.ofList tickets }]
@@ -109,12 +116,36 @@ type Service internal (resolve, ?maxAttempts, ?timeout) =
 
     let decide (Stream stream) = decide >> stream.Transact
 
-    let sync (allocatorId,startTimestamp,failed,reserved,assigned,released,command) : Async<bool * State> =
-        decide allocatorId (startTimestamp,timeout,failed,reserved,assigned,released,command)
+    let sync (allocatorId,startTimestamp,failed,reserved,assigned,released,command) : Async<bool*State> =
+        decide allocatorId (startTimestamp,failed,reserved,assigned,released,command)
 
-(* TODO
+type Request =
+    /// Caller requesting continuation of in-flight work
+    | Continue
+    /// User said cancel request
+    | Cancel
+    /// Watchdog said this transaction has timed out
+    | Abort
 
-//type Service(listService : PickList.Service, ticketService : PickTicket.Service) =
+type Stats = { ticketsReserved : int; listsAllocated : int }
+type Running = { toAcquire : int; percentComplete : int }
+type Cancelling = { toRelease : int; percentComplete : int }
+
+type Result =
+    | Running of Running
+    | Cancelling of Cancelling
+    | Completed of Stats
+
+type ProcessManager(transactionTimeout, service : Service, listService : TicketList.Service, ticketService : Ticket.Service) =
+
+    member __.Start(allocator,transactionTimeout,timeSlice,tickets) : Async<bool*Result> =
+
+        failwith "TODO"
+
+    member __.Execute(allocator,timeSlice,command : Request) : Async<Result> =
+
+        failwith "TODO"
+
 //    static let maxDop = new SemaphoreSlim 10
 //
 //    let release (transactionId,tickets) = async {
