@@ -2,6 +2,8 @@
 // see Gapless.fs for a potential approach for handling such a desire
 module Fc.Sequence
 
+open System
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
@@ -20,15 +22,14 @@ module Folds =
         | Events.Reserved e -> { next = e.next }
     let fold (state: State) (events: seq<Events.Event>) : State =
         Seq.tryLast events |> Option.fold evolve state
-    let isOrigin _ = true
-    let transmute events _state =
-        [],List.tryLast events |> Option.toList
+    let snapshot (state : State) = Events.Reserved { next = state.next }
 
 let decideReserve (count : int) (state : Folds.State) : int64 * Events.Event list =
     state.next,[Events.Reserved { next = state.next + int64 count }]
 
-type Service(log, resolveStream, ?maxAttempts) =
+type Service internal (resolveStream, ?maxAttempts) =
 
+    let log = Serilog.Log.ForContext<Service>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, SequenceId.toString id)
     let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
 
@@ -38,30 +39,23 @@ type Service(log, resolveStream, ?maxAttempts) =
     member __.Reserve(series,?count) : Async<int64> =
         decide series (decideReserve (defaultArg count 1))
 
-let appName = "equinox-tutorial-sequence"
+let createService resolver = Service(resolver)
 
 module Cosmos =
 
     open Equinox.Cosmos
-    open System
-
-    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
-    let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=Serilog.Log.Logger, mode=ConnectionMode.Gateway)
-    let connection = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
-    let context = Context(connection, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
-
     let private createService (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
         let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
-        Service(Serilog.Log.Logger, resolve)
+        createService resolve
 
-    module AnyKnownEventType =
+    module LatestKnownEvent =
 
         let createService (context,cache) =
-            let accessStrategy = AccessStrategy.AnyKnownEventType
+            let accessStrategy = AccessStrategy.LatestKnownEvent
             createService (context,cache,accessStrategy)
 
     module RollingUnfolds =
 
         let createService (context,cache) =
-            createService (context,cache,AccessStrategy.RollingUnfolds (Folds.isOrigin,Folds.transmute))
+            createService (context,cache,AccessStrategy.RollingState Folds.snapshot)

@@ -184,7 +184,6 @@ type ProcessManager(transactionTimeout, service : Service, listService : TicketL
 //    member __.Deallocate(transactionId, listId) =
 //        sync 0 (transactionId, listId, [], [], [])
 //        // TODO think
-*)
 
 module EventStore =
 
@@ -208,10 +207,8 @@ module Cosmos =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         // while there are competing writers [which might cause us to have to retry a Transact], this should be infrequent
         let opt = Equinox.ResolveOption.AllowStale
-        // We should be reaching Completed state frequently so actual snapshots are not required
-        // TOCONSIDER have a mode named to allude to above outlined EventStore mode if we make that
-        let makeEmptyUnfolds _state = Seq.empty
-        let accessStrategy = AccessStrategy.Unfolded (Folds.isOrigin,makeEmptyUnfolds)
+        let makeEmptyUnfolds events _state = events,[]
+        let accessStrategy = AccessStrategy.Custom (Folds.isOrigin,makeEmptyUnfolds)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
     let createService (context,cache) =
         Service(resolve (context,cache))

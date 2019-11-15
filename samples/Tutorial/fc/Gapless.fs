@@ -1,6 +1,8 @@
-// PoC for maanging a gapless sequence of ids, with a Reserve -> Confirm OR Release flow allowing removal of gaps due to identifiers going unused
+// PoC for managing a continguous sequence of ids, with a Reserve -> Confirm OR Release flow allowing removal of gaps due to identifiers going unused
 // See Sequence.fs, which represents a far simpler and saner form of this
 module Fc.Gapless
+
+open System
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -39,9 +41,6 @@ module Folds =
         state'.ToState()
     let isOrigin = function Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { reservations = Array.ofSeq state.reserved; nextId = state.next }
-    /// When using AccessStrategy.RollingUnfolds, we elide the events and always generate a snapshot to feed into the unfolds
-    let transmute _events state =
-        [],[snapshot state]
 
 let decideReserve count (state : Folds.State) : int64 list*Events.Event list =
     failwith "TODO"
@@ -78,13 +77,6 @@ let [<Literal>] appName = "equinox-tutorial-gapless"
 module Cosmos =
 
     open Equinox.Cosmos
-    open System
-
-    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
-    let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=Serilog.Log.Logger, mode=ConnectionMode.Gateway)
-    let connection = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
-    let context = Context(connection, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
-
     let private createService (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
         let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
@@ -99,5 +91,5 @@ module Cosmos =
     module RollingUnfolds =
 
         let createService (context,cache) =
-            let accessStrategy = AccessStrategy.RollingUnfolds (Folds.isOrigin,Folds.transmute)
+            let accessStrategy = AccessStrategy.RollingState Folds.snapshot
             createService(context,cache,accessStrategy)
