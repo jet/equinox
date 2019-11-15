@@ -86,3 +86,8 @@ type[<Measure>] setId and SetId = string<setId>
 module SetId =
     let parse (value : string) : SetId = %value
     let toString (value : SetId) : string = %value
+
+type[<Measure>] indexId and IndexId = string<indexId>
+module IndexId =
+    let parse (value : string) : IndexId = %value
+    let toString (value : IndexId) : string = %value
