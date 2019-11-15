@@ -72,7 +72,7 @@ module Cosmos =
 
     let private createGateway connection maxItems = Gateway(connection, BatchingPolicy(defaultMaxItems=maxItems))
     let connection (log: ILogger, storeLog: ILogger) (a : Info) =
-        let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection|> Discovery.FromConnectionString
+        let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection |> Discovery.FromConnectionString
         log.Information("CosmosDb {mode} {connection} Database {database} Container {container}",
             a.Mode, endpointUri, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",

@@ -411,7 +411,7 @@ let main argv =
                 LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
             | _ -> failwith "Please specify a valid subcommand :- init, config, dump, stats or run"
             0
-        with e -> log.Error(e, "Fatal error; exiting"); 1
+        with e -> log.Debug(e, "Fatal error; exiting"); reraise ()
     with :? Argu.ArguParseException as e -> eprintfn "%s" e.Message; 1
         | Storage.MissingArg msg -> eprintfn "%s" msg; 1
         | e -> eprintfn "%s" e.Message; 1

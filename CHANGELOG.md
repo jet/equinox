@@ -13,6 +13,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `eqx`: Reinstated writing of missing commandline argument messages to console
+
 <a name="2.0.0"></a>
 <a name="2.0.0-rc8"></a>
 ## [2.0.0-rc8] - 2019-11-14
