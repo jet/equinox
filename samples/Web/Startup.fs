@@ -53,11 +53,11 @@ type Startup() =
 
         let storeConfig, storeLog : Storage.StorageConfig * ILogger =
             let options = args.GetResults Cached @ args.GetResults Unfolds
-            let unfolds = options |> List.contains Unfolds
+            let unfolds = options |> List.exists (function Unfolds -> true | _ -> false)
             let defaultBatchSize = 500
             let log = Log.ForContext<App>()
 
-            let cache = if options |> List.contains Cached then Equinox.Cache(Storage.appName, sizeMb = 50) |> Some else None
+            let cache = if options |> List.exists (function Cached -> true | _ -> false) then Equinox.Cache(Storage.appName, sizeMb = 50) |> Some else None
             match args.TryGetSubCommand() with
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore

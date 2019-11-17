@@ -36,7 +36,7 @@ type Arguments =
             | Config _ ->                    "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events (supports `cosmos` stores)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
-and [<NoComparison>]InitArguments =
+and [<NoComparison; NoEquality>]InitArguments =
     | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
     | [<AltCommandLine "-D">]               Shared
     | [<AltCommandLine "-P">]               SkipStoredProc
@@ -47,7 +47,7 @@ and [<NoComparison>]InitArguments =
             | Shared ->                     "Use Database-level RU allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
-and [<NoComparison>]ConfigArguments =
+and [<NoComparison; NoEquality>]ConfigArguments =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Arguments>
@@ -56,7 +56,7 @@ and [<NoComparison>]ConfigArguments =
             | MsSql _ ->                    "Configure Sql Server Store."
             | MySql _ ->                    "Configure MySql Store."
             | Postgres _ ->                 "Configure Postgres Store."
-and [<NoComparison>]StatsArguments =
+and [<NoComparison; NoEquality>]StatsArguments =
     | [<AltCommandLine "-E"; Unique>]       Events
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-D"; Unique>]       Documents
@@ -69,7 +69,7 @@ and [<NoComparison>]StatsArguments =
             | Documents _ ->                "Count the number of Documents in the store."
             | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
-and [<NoComparison>]DumpArguments =
+and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-s">]               Stream of string
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-J"; Unique>]       Json
@@ -117,7 +117,7 @@ and [<NoComparison>]WebArguments =
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Endpoint _ ->                 "Target address. Default: https://localhost:5001"
-and [<NoComparison>]TestArguments =
+and [<NoComparison; NoEquality>]TestArguments =
     | [<AltCommandLine "-t"; Unique>]       Name of Test
     | [<AltCommandLine "-s">]               Size of int
     | [<AltCommandLine "-C">]               Cached
@@ -154,8 +154,8 @@ and [<NoComparison>]TestArguments =
             | Web _ ->                      "Run transactions against a Web endpoint."
 and TestInfo(args: ParseResults<TestArguments>) =
     member __.Options =                     args.GetResults Cached @ args.GetResults Unfolds
-    member __.Cache =                       __.Options |> List.contains Cached
-    member __.Unfolds =                     __.Options |> List.contains Unfolds
+    member __.Cache =                       __.Options |> List.exists (function Cached ->  true | _ -> false)
+    member __.Unfolds =                     __.Options |> List.exists (function Unfolds -> true | _ -> false)
     member __.BatchSize =                   args.GetResult(BatchSize,500)
     member __.Test =                        args.GetResult(Name,Test.Favorite)
     member __.ErrorCutoff =                 args.GetResult(ErrorCutoff,10000L)

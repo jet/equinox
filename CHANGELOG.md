@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- Samples etc target `Argu` v `6.0.0`
+
 ### Removed
 ### Fixed
 

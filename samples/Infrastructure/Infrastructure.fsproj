@@ -28,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Argu" Version="5.5.0" />
+    <PackageReference Include="Argu" Version="6.0.0" />
     <!--Note .NetCore sufficed package is not an officially suported package and is not longer needed-->
     <PackageReference Include="Destructurama.FSharp" Version="1.1.1-dev-00033" />
     <!--Handle TypeShape-restriction; would otherwise use 3.1.2.5 for net461 -->
