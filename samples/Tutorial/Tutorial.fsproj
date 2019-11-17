@@ -21,6 +21,9 @@
     <Compile Include="fc\TicketAllocator.fs" />
     <Compile Include="fc\Index.fs" />
     <Compile Include="fc\Set.fs" />
+    <Compile Include="fc\LocationSeries.fs" />
+    <Compile Include="fc\LocationEpoch.fs" />
+    <Compile Include="fc\Location.fs" />
   </ItemGroup>
 
   <ItemGroup>

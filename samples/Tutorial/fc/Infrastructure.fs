@@ -91,3 +91,14 @@ type[<Measure>] indexId and IndexId = string<indexId>
 module IndexId =
     let parse (value : string) : IndexId = %value
     let toString (value : IndexId) : string = %value
+
+type[<Measure>] locationId and LocationId = string<locationId>
+module LocationId =
+    let parse (value : string) : LocationId = %value
+    let toString (value : LocationId) : string = %value
+
+type[<Measure>] locationEpochId and LocationEpochId = int<locationEpochId>
+module LocationEpochId =
+    let next (value : LocationEpochId) : LocationEpochId = % (%value + 1)
+    let parse (value : int) : LocationEpochId = %value
+    let toString (value : LocationEpochId) : string = string %value
