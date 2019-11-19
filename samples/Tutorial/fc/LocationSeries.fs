@@ -2,7 +2,7 @@ module Fc.Location.Series
 
 open Fc
 
-// NB - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
+// NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<RequireQualifiedAccess>]
 module Events =
 
@@ -21,7 +21,7 @@ module Folds =
         | Events.Started e -> e.epochId
     let fold = Seq.fold evolve
 
-let interpret epochId (state : Folds.State) =
+let interpretActivateEpoch epochId (state : Folds.State) =
     [if state < epochId then yield Events.Started { epochId = epochId }]
 
 type Service internal (resolve, ?maxAttempts) =
@@ -30,10 +30,10 @@ type Service internal (resolve, ?maxAttempts) =
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, LocationId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 2)
     let query (Stream stream) = stream.Query
-    let execute (Stream stream) = interpret >> stream.Transact
+    let execute (Stream stream) = interpretActivateEpoch >> stream.Transact
 
     member __.Read(locationId) : Async<LocationEpochId> = query locationId id
-    member __.MarkActive(locationId,epochId) : Async<unit> = execute locationId epochId
+    member __.ActivateEpoch(locationId,epochId) : Async<unit> = execute locationId epochId
 
 let createService resolve = Service(resolve)
 

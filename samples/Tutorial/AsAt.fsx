@@ -35,6 +35,7 @@
 open System
 
 module Events =
+
     type Delta = { count : int }
     type SnapshotInfo = { balanceLog : int[] }
     type Contract =
@@ -57,7 +58,6 @@ module Events =
         FsCodec.NewtonsoftJson.Codec.Create(up,down)
 
 module Folds =
-    open Events
 
     type State = int[]
     module State =
@@ -65,7 +65,7 @@ module Folds =
     let initial : State = [||]
     // Rather than composing a `fold` from an `evolve` function as one normally does, it makes sense for us to do it as
     // a loop as we are appending each time but can't mutate the incoming state
-    let fold state (xs : Event seq) =
+    let fold state (xs : Events.Event seq) =
         let mutable bal = state |> Array.tryLast |> Option.defaultValue 0
         let bals = ResizeArray(state)
         let record ver delta =
@@ -77,29 +77,27 @@ module Folds =
             bals.Add bal
         for x in xs do
             match x with
-            | ver,Added e -> record ver +e.count
-            | ver,Removed e -> record ver -e.count
-            | _ver,Snapshot e -> bals.Clear(); bals.AddRange e.balanceLog
+            | ver,Events.Added e -> record ver +e.count
+            | ver,Events.Removed e -> record ver -e.count
+            | _ver,Events.Snapshot e -> bals.Clear(); bals.AddRange e.balanceLog
         bals.ToArray()
     // generate a snapshot when requested
-    let snapshot state : Event = -1L,Snapshot { balanceLog = state }
+    let snapshot state : Events.Event = -1L,Events.Snapshot { balanceLog = state }
     // Recognize a relevant snapshot when we meet one in the chain
-    let isValid : Event -> bool = function (_,Snapshot _) -> true | _ -> false
+    let isValid : Events.Event -> bool = function (_,Events.Snapshot _) -> true | _ -> false
 
 module Commands =
-    open Events
-    open Folds
 
     type Command =
         | Add of int
         | Remove of int
     let interpret command state =
         match command with
-        | Add delta -> [-1L,Added { count = delta}]
+        | Add delta -> [-1L,Events.Added { count = delta}]
         | Remove delta ->
-            let bal = state |> State.balance
+            let bal = state |> Folds.State.balance
             if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
-            else [-1L,Removed {count = delta}]
+            else [-1L,Events.Removed {count = delta}]
 
 type Service(log, resolveStream, ?maxAttempts) =
     let (|AggregateId|) clientId = Equinox.AggregateId("Account", clientId)
