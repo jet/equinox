@@ -72,7 +72,7 @@ and [<NoComparison; NoEquality>]StatsArguments =
 and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-s">]               Stream of string
     | [<AltCommandLine "-C"; Unique>]       Correlation
-    | [<AltCommandLine "-J"; Unique>]       Json
+    | [<AltCommandLine "-J"; Unique>]       JsonSkip
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
     | [<AltCommandLine "-E"; Unique >]      EventsOnly
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
@@ -84,7 +84,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
         member a.Usage = a |> function
             | Stream _ ->                   "Specify stream(s) to dump."
             | Correlation ->                "Include Correlation/Causation identifiers"
-            | Json ->                       "Include Pretty Printed Json"
+            | JsonSkip ->                   "Don't attempt to decode JSON"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
             | Es _ ->                       "Parameters for EventStore."
@@ -94,7 +94,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | Postgres _ ->                 "Parameters for Postgres."
 and DumpInfo(args: ParseResults<DumpArguments>) =
     member __.ConfigureStore(log : ILogger, createStoreLog) =
-        let storeConfig = None,true,100
+        let storeConfig = None,true,500
         match args.TryGetSubCommand() with
         | Some (DumpArguments.Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
@@ -205,7 +205,9 @@ let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
-    let c = c.WriteTo.Console((if verbose && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+    let level = if verbose && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning
+    let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"
+    let c = c.WriteTo.Console(level, outputTemplate, theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
     c.CreateLogger() :> ILogger
 
@@ -356,8 +358,8 @@ module Dump =
     let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) =
         let a = DumpInfo args
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
-        let _storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
-        let doU,doE,doC,doJ = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,args.Contains Json
+        let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
+        let doU,doE,doC,doJ = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,not(args.Contains JsonSkip)
         let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
 
         let streams = args.GetResults DumpArguments.Stream
@@ -369,7 +371,7 @@ module Dump =
             if x.IsUnfold then unfolds <- x :: unfolds
             Some x
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
-        let isOriginAndSnapshot = (fun _event -> false),fun _state -> failwith "no snapshot required"
+        let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold),fun _state -> failwith "no snapshot required"
         let render (data : byte[]) =
             try match data with
                 | null | [||] -> null
@@ -380,8 +382,9 @@ module Dump =
             let catAndId = name.Split([|'-'|],2,StringSplitOptions.RemoveEmptyEntries)
             let id = match catAndId with [|cat;id|] -> Equinox.AggregateId(cat,id) | ids -> Equinox.StreamName ids.[0]
             let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) id
-            let! _token,events = stream.Load log
-            for x in Seq.append unfolds events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
+            let! _token,events = stream.Load storeLog
+            let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
+            for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
                 let ty = if x.IsUnfold then "Unfold" else "Event"
                 if not doC then log.Information("{i,3}@{t:u} {u,-6:l} {e:l} {data:l} {meta:l}",
                                     x.Index, x.Timestamp, ty, x.EventType, render x.Data, render x.Meta)

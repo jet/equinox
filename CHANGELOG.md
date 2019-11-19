@@ -9,9 +9,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `eqx dump` perf + logging improvements
+
 ### Changed
 
 - Samples etc target `Argu` v `6.0.0`
+- `eqx dump`'s `-J` switch no turns off JSON rendering
 
 ### Removed
 ### Fixed
