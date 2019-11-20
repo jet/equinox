@@ -16,13 +16,16 @@ module Events =
 module Folds =
 
     type State = LocationEpochId
-    let initial = 0<locationEpochId>
+    let initial = LocationEpochId.uninitialized
     let evolve _state = function
         | Events.Started e -> e.epochId
     let fold = Seq.fold evolve
 
 let interpretActivateEpoch epochId (state : Folds.State) =
     [if state < epochId then yield Events.Started { epochId = epochId }]
+
+let toActiveEpoch state =
+    if state = Folds.initial then None else Some state
 
 type Service internal (resolve, ?maxAttempts) =
 
@@ -32,7 +35,7 @@ type Service internal (resolve, ?maxAttempts) =
     let query (Stream stream) = stream.Query
     let execute (Stream stream) = interpretActivateEpoch >> stream.Transact
 
-    member __.Read(locationId) : Async<LocationEpochId> = query locationId id
+    member __.Read(locationId) : Async<LocationEpochId option> = query locationId toActiveEpoch
     member __.ActivateEpoch(locationId,epochId) : Async<unit> = execute locationId epochId
 
 let createService resolve = Service(resolve)

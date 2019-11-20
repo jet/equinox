@@ -31,20 +31,20 @@ module Folds =
         | Events.Closed,(Initial|Closed _ as x) -> failwithf "Closed : Unexpected %A" x
     let fold = Seq.fold evolve
 
-type Result = { balance : Folds.Balance; worked : bool; isClosed : bool }
+type Result = { balance : Folds.Balance; isComplete : bool }
 
 let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Balance -> Events.Event list) option) shouldClose state : Result*Events.Event list =
     let acc = ResizeArray()
-    let stashAndFold state = function
+    let stashEventsAndRollState state = function
         | res,[] -> res,state
         | res,[e] -> acc.Add e; res,Folds.evolve state e
         | res,xs -> acc.AddRange xs; res,Folds.fold state (Seq.ofList xs)
     // We always want to have a CarriedForward event at the start of any Epoch's event stream
-    let (),state =
+    let initialized,state =
         match state with
-        | Folds.Initial -> (),[Events.CarriedForward { initial = balanceCarriedForward |> Option.defaultValue 0 }]
-        | Folds.Open _ | Folds.Closed _ -> (),[]
-        |> stashAndFold state
+        | Folds.Initial -> true,[Events.CarriedForward { initial = Option.get balanceCarriedForward }]
+        | Folds.Open _ | Folds.Closed _ -> false,[]
+        |> stashEventsAndRollState state
     // If an `interpret` is supplied, we run that (unless we determine we're in Closed state)
     let worked,state =
         match state, interpret with
@@ -52,16 +52,16 @@ let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Bala
         | Folds.Open _,None -> false,[]
         | Folds.Open bal,Some interpret -> true,interpret bal
         | Folds.Closed _,_ -> false,[]
-        |> stashAndFold state
+        |> stashEventsAndRollState state
     /// Finally (iff we're `Open`, have `worked`, and `shouldClose`, we generate a Closed event)
-    let (balance,isClosed),_ =
+    let (balance,isOpen),_ =
         match state with
         | Folds.Initial -> failwith "Can't be Initial"
-        | Folds.Open bal as state when worked && shouldClose state -> (bal,true),[Events.Closed]
-        | Folds.Open bal -> (bal,false),[]
-        | Folds.Closed bal -> (bal,true),[]
-        |> stashAndFold state
-    { balance = balance; worked = worked; isClosed = isClosed },Seq.toList acc
+        | Folds.Open bal as state when worked && shouldClose state -> (bal,false),[Events.Closed]
+        | Folds.Open bal -> (bal,true),[]
+        | Folds.Closed bal -> (bal,false),[]
+        |> stashEventsAndRollState state
+    { balance = balance; isComplete = initialized || worked || isOpen},Seq.toList acc
 
 type Service internal (resolve, ?maxAttempts) =
 
