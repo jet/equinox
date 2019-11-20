@@ -33,10 +33,10 @@ type Service internal (resolve, ?maxAttempts) =
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, LocationId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 2)
     let query (Stream stream) = stream.Query
-    let execute (Stream stream) = interpretActivateEpoch >> stream.Transact
+    let execute (Stream stream) = stream.Transact
 
     member __.Read(locationId) : Async<LocationEpochId option> = query locationId toActiveEpoch
-    member __.ActivateEpoch(locationId,epochId) : Async<unit> = execute locationId epochId
+    member __.ActivateEpoch(locationId,epochId) : Async<unit> = execute locationId (interpretActivateEpoch epochId)
 
 let createService resolve = Service(resolve)
 

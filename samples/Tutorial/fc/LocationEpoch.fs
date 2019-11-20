@@ -53,7 +53,7 @@ let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Bala
         | Folds.Open bal,Some interpret -> true,interpret bal
         | Folds.Closed _,_ -> false,[]
         |> stashEventsAndRollState state
-    /// Finally (iff we're `Open`, have `worked`, and `shouldClose`, we generate a Closed event)
+    /// Finally (iff we're `Open`, have `worked`, and `shouldClose`), we generate a Closed event
     let (balance,isOpen),_ =
         match state with
         | Folds.Initial -> failwith "Can't be Initial"
@@ -61,7 +61,7 @@ let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Bala
         | Folds.Open bal -> (bal,true),[]
         | Folds.Closed bal -> (bal,false),[]
         |> stashEventsAndRollState state
-    { balance = balance; isComplete = initialized || worked || isOpen},Seq.toList acc
+    { balance = balance; isComplete = initialized || worked || isOpen },Seq.toList acc
 
 type Service internal (resolve, ?maxAttempts) =
 
