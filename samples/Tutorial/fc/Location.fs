@@ -13,7 +13,18 @@ type LocationService(series : Location.Series.Service, epoch : Location.Epoch.Se
             return res
         | Epoch.Closed bal -> return! chain locationId successorEpochId bal command }
 
-    member __.Read(locationId) = async {
+    let execute locationId (epochId : LocationEpochId) command = async {
+        match! epoch.Execute(locationId, epochId, command) with
+        | _,Epoch.Open res ->
+            do! series.ActivateEpoch(locationId, successorEpochId)
+            return res
+        | true,Epoch.Closed bal ->
+            do! series.ActivateEpoch(locationId, successorEpochId)
+
+            return! chain locationId successorEpochId bal command }
+        | false,Epoch.Closed bal -> return! chain locationId successorEpochId bal command }
+
+    member __.Read(locationId) : Epoch.EpochState = async {
         let! epochId = series.Read(locationId)
         match! epoch.Read(locationId, epochId) with
         | Epoch.Open res -> return res
