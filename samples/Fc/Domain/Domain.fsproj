@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>netstandard2.0</TargetFrameworks>
+        <WarningLevel>5</WarningLevel>
+        <RootNamespace>Fc.Domain</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="Infrastructure.fs" />
+        <Compile Include="LocationSeries.fs" />
+        <Compile Include="LocationEpoch.fs" />
+        <Compile Include="Location.fs" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="FSharp.UMX" Version="1.0.0" />
+        <ProjectReference Include="..\..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
+        <ProjectReference Include="..\..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
+    </ItemGroup>
+
+</Project>
