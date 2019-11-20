@@ -11,8 +11,6 @@ module LocationId =
 type LocationEpochId = int<locationEpochId>
 and [<Measure>] locationEpochId
 module LocationEpochId =
-    let uninitialized : LocationEpochId = % -1
-    let zero : LocationEpochId = %0
-    let next (value : LocationEpochId) : LocationEpochId = % (%value + 1)
     let parse (value : int) : LocationEpochId = %value
+    let next (value : LocationEpochId) : LocationEpochId = % (%value + 1)
     let toString (value : LocationEpochId) : string = string %value

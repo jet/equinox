@@ -8,7 +8,7 @@ type LocationService(zeroBalance, shouldClose, series : Location.Series.Service,
             match! epoch.Sync(locationId,epochId,balanceToCarryForward,interpret,shouldClose) with
             | { balance = bal; isComplete = true } ->
                 if originEpochId <> epochId then
-                    do! series.ActivateEpoch(locationId, epochId)
+                    do! series.ActivateEpoch(locationId,epochId)
                 return bal
             | { balance = bal } ->
                 let successorEpochId = LocationEpochId.next epochId
@@ -19,6 +19,6 @@ type LocationService(zeroBalance, shouldClose, series : Location.Series.Service,
         let! activeEpoch = series.Read(locationId)
         let originEpochId,epochId,balanceCarriedForward =
             match activeEpoch with
-            | None -> LocationEpochId.uninitialized,LocationEpochId.zero,Some zeroBalance
+            | None -> LocationEpochId.parse -1,LocationEpochId.parse 0,Some zeroBalance
             | Some activeEpochId -> activeEpochId,activeEpochId,None
         return! execute locationId originEpochId interpret epochId balanceCarriedForward }
