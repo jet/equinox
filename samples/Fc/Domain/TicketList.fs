@@ -1,9 +1,9 @@
-module Fc.TicketList
+module TicketList
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Allocated =    { allocatorId : AllocatorId; ticketIds : TicketId[] }
+    type Allocated =    { allocatorId : TicketAllocatorId; ticketIds : TicketId[] }
     type Snapshotted =  { ticketIds : TicketId[] }
     type Event =
         | Allocated     of Allocated
@@ -23,7 +23,7 @@ module Folds =
     let isOrigin = function Events.Snapshotted _ -> true | Events.Allocated _ -> false
     let snapshot state = Events.Snapshotted { ticketIds = Set.toArray state }
 
-let interpretAllocated (allocatorId : AllocatorId, allocated : TicketId list) (state : Folds.State) : Events.Event list =
+let interpretAllocated (allocatorId : TicketAllocatorId, allocated : TicketId list) (state : Folds.State) : Events.Event list =
     match allocated |> Seq.except state |> Seq.distinct |> Seq.toArray with
     | [||] -> []
     | news -> [Events.Allocated { allocatorId = allocatorId; ticketIds = news }]

@@ -1,4 +1,4 @@
-﻿namespace Fc
+﻿namespace global
 
 [<AutoOpen>]
 module AsyncExtensions =
@@ -54,29 +54,6 @@ module FcId =
     let toString (value : FcId) : string = %value
     let parse (value : string) : FcId = let raw = value in %raw
 
-//type SkuId = string<skuId>
-//and  [<Measure>] skuId
-//module SkuId =
-//    let toString (value : SkuId) : string = %value
-//    let parse (value : string) : SkuId = let raw = value in %raw
-
-type TicketId = string<ticketId>
-and [<Measure>] ticketId
-module TicketId =
-    let toString (value : TicketId) : string = %value
-    let parse (value : string) : TicketId = let raw = value in %raw
-
-type TicketListId = string<ticketListId>
-and [<Measure>] ticketListId
-module PickListId =
-    let toString (value : TicketListId) : string = %value
-    let parse (value : string) : TicketListId = let raw = value in %raw
-
-type AllocatorId = string<allocatorId>
-and [<Measure>] allocatorId
-module AllocatorId =
-    let toString (value : AllocatorId) : string = %value
-
 type SequenceId = string<sequenceId>
 and [<Measure>] sequenceId
 module SequenceId =
@@ -91,16 +68,3 @@ type[<Measure>] indexId and IndexId = string<indexId>
 module IndexId =
     let parse (value : string) : IndexId = %value
     let toString (value : IndexId) : string = %value
-
-type[<Measure>] locationId and LocationId = string<locationId>
-module LocationId =
-    let parse (value : string) : LocationId = %value
-    let toString (value : LocationId) : string = %value
-
-type[<Measure>] locationEpochId and LocationEpochId = int<locationEpochId>
-module LocationEpochId =
-    let uninitialized : LocationEpochId = % -1
-    let zero : LocationEpochId = %0
-    let next (value : LocationEpochId) : LocationEpochId = % (%value + 1)
-    let parse (value : int) : LocationEpochId = %value
-    let toString (value : LocationEpochId) : string = string %value

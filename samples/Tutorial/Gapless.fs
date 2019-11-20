@@ -1,6 +1,6 @@
-// PoC for managing a continguous sequence of ids, with a Reserve -> Confirm OR Release flow allowing removal of gaps due to identifiers going unused
+// PoC for managing a contiguous sequence of ids, with a Reserve -> Confirm OR Release flow allowing removal of gaps due to identifiers going unused
 // See Sequence.fs, which represents a far simpler and saner form of this
-module Fc.Gapless
+module Gapless
 
 open System
 

@@ -1,6 +1,6 @@
 // Manages a sequence of ids, without provision for returning unused ones in cases where we're potentially leaving a gap
 // see Gapless.fs for a potential approach for handling such a desire
-module Fc.Sequence
+module Sequence
 
 open System
 

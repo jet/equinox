@@ -1,10 +1,10 @@
-module Fc.Ticket
+module Ticket
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Reserved =     { allocatorId : AllocatorId }
-    type Allocated =    { allocatorId : AllocatorId; listId : TicketListId }
+    type Reserved =     { allocatorId : TicketAllocatorId }
+    type Allocated =    { allocatorId : TicketAllocatorId; listId : TicketListId }
 
     type Event =
         | Reserved      of Reserved
@@ -16,7 +16,7 @@ module Events =
 
 module Folds =
 
-    type State = Unallocated | Reserved of by : AllocatorId | Allocated of by : AllocatorId * on : TicketListId
+    type State = Unallocated | Reserved of by : TicketAllocatorId | Allocated of by : TicketAllocatorId * on : TicketListId
     let initial = Unallocated
     let private evolve _state = function
         | Events.Reserved e -> Reserved e.allocatorId
@@ -35,7 +35,7 @@ type Intent =
     /// (but are not failures from an Allocator's perspective)
     | Revoke
 
-let decideSync (allocator : AllocatorId, desired : Intent) (state : Folds.State) : bool * Events.Event list =
+let decideSync (allocator : TicketAllocatorId, desired : Intent) (state : Folds.State) : bool * Events.Event list =
     match desired, state with
     | Reserve, Folds.Unallocated -> true,[Events.Reserved { allocatorId = allocator }] // normal case -> allow+record
     | Reserve, Folds.Reserved by when by = allocator -> true,[] // idempotently permit

@@ -7,23 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Infrastructure.fs" />
+    <Compile Include="Sequence.fs" />
+    <Compile Include="Gapless.fs" />
+    <Compile Include="Index.fs" />
+    <Compile Include="Set.fs" />
     <None Include="Favorites.fsx" />
     <None Include="Counter.fsx" />
     <None Include="Todo.fsx" />
     <None Include="Cosmos.fsx" />
     <None Include="AsAt.fsx" />
     <None Include="FulfilmentCenter.fsx" />
-    <Compile Include="fc\Infrastructure.fs" />
-    <Compile Include="fc\Sequence.fs" />
-    <Compile Include="fc\Gapless.fs" />
-    <Compile Include="fc\Ticket.fs" />
-    <Compile Include="fc\TicketList.fs" />
-    <Compile Include="fc\TicketAllocator.fs" />
-    <Compile Include="fc\Index.fs" />
-    <Compile Include="fc\Set.fs" />
-    <Compile Include="fc\LocationSeries.fs" />
-    <Compile Include="fc\LocationEpoch.fs" />
-    <Compile Include="fc\Location.fs" />
   </ItemGroup>
 
   <ItemGroup>

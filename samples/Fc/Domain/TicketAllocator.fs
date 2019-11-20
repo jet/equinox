@@ -1,4 +1,4 @@
-module Fc.TicketAllocator
+module TicketAllocator
 
 open System
 
@@ -112,7 +112,7 @@ type Service internal (resolve, ?maxAttempts, ?timeout) =
     let timeout = defaultArg timeout System.TimeSpan.FromMinutes 1.
 
     let log = Serilog.Log.ForContext<Service>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, AllocatorId.toString id)
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketAllocatorId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
     let decide (Stream stream) = decide >> stream.Transact
