@@ -7,24 +7,24 @@ module Events =
 
     type Commenced =    { cutoff : System.DateTimeOffset; ticketIds : TicketId[] }
     type Tickets =      { ticketIds : TicketId[] }
-    type Allocating =   { listId : TicketListId; ticketIds : TicketId[] }
-    type Allocated =    { listId : TicketListId }
+    type Allocated =    { listId : TicketListId; ticketIds : TicketId[] }
+    type Assigned =     { listId : TicketListId }
     type Snapshotted =  { ticketIds : TicketId[] }
     type Event =
         /// Records full set of targets (so Abort can Revoke all potential in flight Reservations)
         | Commenced     of Commenced
-        /// Tickets verified as not being attainable (Allocated, not just Reserved) // TODO does this matter or can Ticket.Reserved state go?
+        /// Tickets verified as not being attainable (Allocated, not just Reserved)
         | Failed        of Tickets
         /// Tickets verified as having been marked Reserved
         | Reserved      of Tickets
         /// Confirming cited tickets are to be allocated to the cited list
-        | Allocating    of Allocating
+        | Allocated     of Allocated
         /// Transitioning to phase where (Commenced-Allocated) get Returned by performing Releases on the Tickets due to user request
         | Cancelled
         /// Watchdog or self-policing triggering a rollback due to cutoff expiration
         | Aborted
         /// Confirming cited tickets have been assigned to the list
-        | Allocated     of Allocated
+        | Assigned      of Assigned
         /// Records confirmed Releases of cited Tickets
         | Released      of Tickets
         /// Allocated + Returned = Commenced ==> Open for a new Commenced to happen
@@ -42,21 +42,21 @@ module Folds =
         {   unknown     : Set<TicketId>
             failed      : Set<TicketId>
             reserved    : Set<TicketId>
-            allocating  : Events.Allocating list }
+            assigning   : Events.Allocated list }
     module States =
         let (|ToSet|) = set
         let withKnown (ToSet xs) x =    { x with unknown = Set.difference x.unknown xs }
         let withFailed (ToSet xs) x =   { withKnown xs x with failed = x.failed |> Set.union xs }
         let withReserved (ToSet xs) x = { withKnown xs x with reserved = x.reserved |> Set.union xs }
         let release (ToSet xs) x =      { withKnown xs x with reserved = Set.difference x.reserved xs }
-        let withAllocated listId x =
-            let decided,remaining = x.allocating |> List.partition (fun x -> x.listId = listId)
+        let withAssigned listId x =
+            let decided,remaining = x.assigning |> List.partition (fun x -> x.listId = listId)
             let xs = seq { for x in decided do yield! x.ticketIds }
-            { release xs x with allocating = remaining }
+            { release xs x with assigning = remaining }
     let initial = Idle
-    let evolve state = function
+    let private evolve state = function
         | Events.Commenced e -> state |> function
-            | Idle -> Running { unknown = set e.ticketIds; failed = Set.empty; reserved = Set.empty; allocating = [] }
+            | Idle -> Running { unknown = set e.ticketIds; failed = Set.empty; reserved = Set.empty; assigning = [] }
             | x -> failwithf "Can only Commence when Idle, not %A" x
         | Events.Failed e -> state |> function
             | Idle -> failwith "Cannot have Failed if Idle"
@@ -66,23 +66,23 @@ module Folds =
             | Idle -> failwith "Cannot have Reserved if Idle"
             | Running s -> Running (s |> States.withReserved e.ticketIds)
             | Reverting s -> Reverting (s |> States.withReserved e.ticketIds)
-        | Events.Allocating e -> state |> function
+        | Events.Allocated e -> state |> function
             | Idle -> failwith "Cannot have Allocating if Idle"
-            | Running s -> Running { s with allocating = e :: s.allocating}
-            | Reverting s -> Reverting { s with allocating = e :: s.allocating}
+            | Running s -> Running { s with assigning = e :: s.assigning}
+            | Reverting s -> Reverting { s with assigning = e :: s.assigning}
         | Events.Cancelled | Events.Aborted -> state |> function
             | Running s -> Reverting s
             | x -> failwithf "Can only Abort when Running, not %A" x
-        | Events.Allocated e -> state |> function
+        | Events.Assigned e -> state |> function
             | Idle -> failwith "Cannot have Allocated if Idle"
-            | Running s -> Running (s |> States.withAllocated e.listId)
-            | Reverting s -> Reverting (s |> States.withAllocated e.listId)
+            | Running s -> Running (s |> States.withAssigned e.listId)
+            | Reverting s -> Reverting (s |> States.withAssigned e.listId)
         | Events.Released e -> state |> function
             | Idle -> failwith "Cannot have Released if Idle"
             | Running s -> Running (s |> States.release e.ticketIds)
             | Reverting s -> Reverting (s |> States.release e.ticketIds)
         | Events.Completed -> state |> function
-            | Running s | Reverting s when Set.isEmpty s.unknown && Set.isEmpty s.reserved && List.isEmpty s.allocating -> Idle
+            | Running s | Reverting s when Set.isEmpty s.unknown && Set.isEmpty s.reserved && List.isEmpty s.assigning -> Idle
             | x -> failwithf "Can only Complete when reservations and unknowns resolved, not %A" x
         | Events.Snapshotted -> state // Dummy event, see EventStore bindings
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
@@ -91,20 +91,20 @@ module Folds =
 /// Impetus provided to the Aggregate Service from the Process Manager
 type Command =
     | Commence      of TicketId list * timeout : TimeSpan
-    | Progress      of allocate : Events.Allocating list * release : TicketId list
+    | Progress      of allocate : Events.Allocated list * release : TicketId list
     | Cancel
     | Abort
 
 /// Current state of the workflow based on the events noted in the Aggregate
 type State =
-    | Running       of reserved : TicketId list * toReserve : TicketId list * toAllocate : Events.Allocating
+    | Running       of reserved : TicketId list * toReserve : TicketId list * toAllocate : Events.Allocated
     | Idle          of reserved : TicketId list
-    | Cancelling    of toRelease : TicketId list * toAssign : Events.Allocating
+    | Cancelling    of toRelease : TicketId list * toAssign : Events.Allocated
     | Completed
 
 let decide (effectiveTimeStamp, failed, reserved, assigned, released, command : Command) (state : Folds.State) : (bool*State) * Events.Event list =
     failwith "TODO"
-//    match state, co§mmand with
+//    match state, command with
 //    | Idle, Commence tickets -> true*,[Events.Commenced { ticketIds = Array.ofList tickets }]
 
 type Service internal (resolve, ?maxAttempts, ?timeout) =
@@ -128,14 +128,14 @@ type Request =
     /// Watchdog said this transaction has timed out
     | Abort
 
-type Stats = { ticketsReserved : int; listsAllocated : int }
-type Running = { toAcquire : int; percentComplete : int }
-type Cancelling = { toRelease : int; percentComplete : int }
+type Stats =        { ticketsReserved : int; listsAllocated : int }
+type Running =      { toAcquire : int; percentComplete : int }
+type Cancelling =   { toRelease : int; percentComplete : int }
 
 type Result =
-    | Running of Running
-    | Cancelling of Cancelling
-    | Completed of Stats
+    | Running       of Running
+    | Cancelling    of Cancelling
+    | Completed     of Stats
 
 type ProcessManager(transactionTimeout, service : Service, listService : TicketList.Service, ticketService : Ticket.Service) =
 

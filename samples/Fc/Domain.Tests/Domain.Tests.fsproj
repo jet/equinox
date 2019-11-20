@@ -12,6 +12,7 @@
         <Compile Include="LocationSeriesTests.fs" />
         <Compile Include="LocationEpochTests.fs" />
         <Compile Include="LocationTests.fs" />
+        <Compile Include="AllocatorTests.fs" />
     </ItemGroup>
 
     <ItemGroup>

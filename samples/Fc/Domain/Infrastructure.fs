@@ -1,4 +1,4 @@
-namespace global
+﻿namespace global
 
 open FSharp.UMX // see https://github.com/fsprojects/FSharp.UMX - % operator and ability to apply units of measure to Guids+strings
 
@@ -18,16 +18,17 @@ module LocationEpochId =
 type TicketId = string<ticketId>
 and [<Measure>] ticketId
 module TicketId =
-    let toString (value : TicketId) : string = %value
     let parse (value : string) : TicketId = let raw = value in %raw
+    let toString (value : TicketId) : string = %value
 
 type TicketListId = string<ticketListId>
 and [<Measure>] ticketListId
 module PickListId =
-    let toString (value : TicketListId) : string = %value
     let parse (value : string) : TicketListId = let raw = value in %raw
+    let toString (value : TicketListId) : string = %value
 
 type TicketAllocatorId = string<ticketAllocatorId>
 and [<Measure>] ticketAllocatorId
 module TicketAllocatorId =
+    let parse (value : string) : TicketAllocatorId = let raw = value in %raw
     let toString (value : TicketAllocatorId) : string = %value
