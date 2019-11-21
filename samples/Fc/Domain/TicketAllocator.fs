@@ -19,14 +19,16 @@ module Events =
         | Reserved      of Tickets
         /// Confirming cited tickets are to be allocated to the cited list
         | Allocated     of Allocated
+        /// Records intention to release cited tickets (while Running, not implicitly via Aborted)
+        | Released      of Tickets
         /// Transitioning to phase where (Commenced-Allocated) get Returned by performing Releases on the Tickets due to user request
         | Cancelled
         /// Watchdog or self-policing triggering a rollback due to cutoff expiration
         | Aborted
         /// Confirming cited tickets have been assigned to the list
         | Assigned      of Assigned
-        /// Records confirmed Releases of cited Tickets
-        | Released      of Tickets
+        /// Records confirmed Revokes of cited Tickets
+        | Revoked       of Tickets
         /// Allocated + Returned = Commenced ==> Open for a new Commenced to happen
         | Completed
         // Dummy event to make Equinox.EventStore happy (see `module EventStore`)
@@ -42,7 +44,8 @@ module Folds =
         {   unknown     : Set<TicketId>
             failed      : Set<TicketId>
             reserved    : Set<TicketId>
-            assigning   : Events.Allocated list }
+            assigning   : Events.Allocated list
+            releasing   : Set<TicketId> }
     module States =
         let (|ToSet|) = set
         let withKnown (ToSet xs) x =    { x with unknown = Set.difference x.unknown xs }
@@ -53,10 +56,13 @@ module Folds =
             let decided,remaining = x.assigning |> List.partition (fun x -> x.listId = listId)
             let xs = seq { for x in decided do yield! x.ticketIds }
             { release xs x with assigning = remaining }
+        let withReleasing (ToSet xs) x =
+            // TODO (validate via/in tests) must be unknown or reserved [and not assigning]
+            { release xs x with releasing = x.releasing |> Set.union xs }
     let initial = Idle
     let private evolve state = function
         | Events.Commenced e -> state |> function
-            | Idle -> Running { unknown = set e.ticketIds; failed = Set.empty; reserved = Set.empty; assigning = [] }
+            | Idle -> Running { unknown = set e.ticketIds; failed = Set.empty; reserved = Set.empty; assigning = []; releasing = Set.empty }
             | x -> failwithf "Can only Commence when Idle, not %A" x
         | Events.Failed e -> state |> function
             | Idle -> failwith "Cannot have Failed if Idle"
@@ -70,6 +76,10 @@ module Folds =
             | Idle -> failwith "Cannot have Allocating if Idle"
             | Running s -> Running { s with assigning = e :: s.assigning}
             | Reverting s -> Reverting { s with assigning = e :: s.assigning}
+        | Events.Released e -> state |> function
+            | Idle -> failwith "Cannot have Releasing if Idle"
+            | Running s -> Running (s |> States.withReleasing e.ticketIds)
+            | Reverting s -> Reverting (s |> States.withReleasing e.ticketIds)
         | Events.Cancelled | Events.Aborted -> state |> function
             | Running s -> Reverting s
             | x -> failwithf "Can only Abort when Running, not %A" x
@@ -77,7 +87,7 @@ module Folds =
             | Idle -> failwith "Cannot have Allocated if Idle"
             | Running s -> Running (s |> States.withAssigned e.listId)
             | Reverting s -> Reverting (s |> States.withAssigned e.listId)
-        | Events.Released e -> state |> function
+        | Events.Revoked e -> state |> function
             | Idle -> failwith "Cannot have Released if Idle"
             | Running s -> Running (s |> States.release e.ticketIds)
             | Reverting s -> Reverting (s |> States.release e.ticketIds)
@@ -88,24 +98,37 @@ module Folds =
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Completed -> true | Events.Snapshotted | _ -> false
 
+/// Current state of the workflow based on the present state of the Aggregate
+type ProcessState =
+    | Running       of reserved  : TicketId list         * toAssign : Events.Allocated list * toRelease : TicketId list * toReserve : TicketId list
+    | Idle          of reserved  : TicketId list
+    | Cancelling    of                                     toAssign : Events.Allocated list * toRelease : TicketId list
+    | Completed
+    static member FromFoldState = function
+        | Folds.Running e ->
+            match Set.toList e.reserved, e.assigning, Set.toList e.releasing, Set.toList e.unknown with
+            | res, [], [], [] ->
+                Idle (reserved = res)
+            | res, ass, rel, tor ->
+                Running (reserved = res, toAssign = ass, toRelease = rel, toReserve = Set.toList tor)
+        | Folds.Reverting e ->
+            Cancelling (toAssign = e.assigning, toRelease = [yield! e.reserved; yield! e.unknown; yield! e.releasing])
+        | Folds.Idle ->
+            Completed
+
 /// Impetus provided to the Aggregate Service from the Process Manager
 type Command =
-    | Commence      of TicketId list * timeout : TimeSpan
-    | Progress      of allocate : Events.Allocated list * release : TicketId list
+    | Commence      of tickets : TicketId list         * timeout : TimeSpan
+    | Apply         of assign  : Events.Allocated list * release : TicketId list
     | Cancel
     | Abort
 
-/// Current state of the workflow based on the events noted in the Aggregate
-type State =
-    | Running       of reserved : TicketId list * toReserve : TicketId list * toAllocate : Events.Allocated
-    | Idle          of reserved : TicketId list
-    | Cancelling    of toRelease : TicketId list * toAssign : Events.Allocated
-    | Completed
-
-let decide (effectiveTimeStamp, failed, reserved, assigned, released, command : Command) (state : Folds.State) : (bool*State) * Events.Event list =
-    failwith "TODO"
-//    match state, command with
-//    | Idle, Commence tickets -> true*,[Events.Commenced { ticketIds = Array.ofList tickets }]
+let sync (effectiveTimeStamp : DateTimeOffset, failed, reserved, assigned, released, command : Command) (state : Folds.State) : (bool*State) * Events.Event list =
+    let accepted,events =
+        match state, command with
+        | Folds.Idle, Commence (tickets,timeout) -> true,[Events.Commenced { ticketIds = Array.ofList tickets; cutoff = effectiveTimeStamp + timeout }]
+        | (Folds.Running _|Folds.Reverting _), Commence _ -> false,[]
+        | Folds.R
 
 type Service internal (resolve, ?maxAttempts, ?timeout) =
 
@@ -115,7 +138,7 @@ type Service internal (resolve, ?maxAttempts, ?timeout) =
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketAllocatorId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
-    let decide (Stream stream) = decide >> stream.Transact
+    let decide (Stream stream) = sync >> stream.Transact
 
     let sync (allocatorId,startTimestamp,failed,reserved,assigned,released,command) : Async<bool*State> =
         decide allocatorId (startTimestamp,failed,reserved,assigned,released,command)
