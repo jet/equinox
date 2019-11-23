@@ -13,6 +13,7 @@
         <Compile Include="Location.fs" />
         <Compile Include="Ticket.fs" />
         <Compile Include="TicketList.fs" />
+        <Compile Include="TicketTrans.fs" />
         <Compile Include="TicketAllocator.fs" />
     </ItemGroup>
     <ItemGroup>

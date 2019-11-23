@@ -33,11 +33,10 @@ type Service internal (resolve, ?maxAttempts) =
     let log = Serilog.Log.ForContext<Service>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, PickListId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
-    let execute (Stream stream) = interpretAllocated >> stream.Transact
 
-    /// Ensures the `assignedTickets` are recorded on the list
     member __.Sync(pickListId,allocatorId,assignedTickets) : Async<unit> =
-        execute pickListId (allocatorId,assignedTickets)
+        let (Stream agg) = pickListId
+        agg.Transact(interpretAllocated (allocatorId,assignedTickets))
 
 module EventStore =
 
