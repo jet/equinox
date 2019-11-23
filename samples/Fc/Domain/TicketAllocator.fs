@@ -1,7 +1,7 @@
 module TicketAllocator
 
 open System
-open Ticket.Events
+open System.Collections.Generic
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -121,7 +121,7 @@ type ProcessState =
             | res, [], [], [] ->
                 Idle (reserved = res)
             | res, ass, rel, tor ->
-                Running (reserved = res, toAssign = ass, toRelease = rel, toReserve = Set.toList tor)
+                Running (reserved = res, toAssign = ass, toRelease = rel, toReserve = tor)
         | Folds.Reverting e ->
             Cancelling (toAssign = e.assigning, toRelease = [yield! e.reserved; yield! e.unknown; yield! e.releasing])
         | Folds.Idle ->
@@ -134,6 +134,33 @@ type Update =
     | Assigned      of listId  : TicketListId
     | Revoked       of tickets : TicketId list
 
+let (|ToSet|) xs = set xs
+let (|SetEmpty|_|) s = if Set.isEmpty s then Some () else None
+
+/// Map processed work to associated events that are to be recorded in the stream
+let decideUpdate update state =
+    let owned (s : Folds.States) = Set.union s.releasing (set <| seq { yield! s.unknown; yield! s.reserved })
+    match state, update with
+    | Folds.Idle, (Failed _|Reserved _|Assigned _|Revoked _) as x ->
+        failwithf "Folds.Idle cannot handle (Failed|Revoked|Assigned) %A" x
+    | (Folds.Running s|Folds.Reverting s), Reserved (ToSet xs) ->
+        match set s.unknown |> Set.intersect xs with SetEmpty -> [] | changed -> [Events.Reserved { ticketIds = Set.toArray changed }]
+    | (Folds.Running s|Folds.Reverting s), Failed (ToSet xs) ->
+        match owned s |> Set.intersect xs with SetEmpty -> [] | changed -> [Events.Failed { ticketIds = Set.toArray changed }]
+    | (Folds.Running s|Folds.Reverting s), Revoked (ToSet xs) ->
+        match owned s |> Set.intersect xs with SetEmpty -> [] | changed -> [Events.Revoked { ticketIds = Set.toArray changed }]
+    | (Folds.Running s|Folds.Reverting s), Assigned listId ->
+        if s.assigning |> List.exists (fun x -> x.listId = listId) then [Events.Assigned { listId = listId }] else []
+
+/// Holds events accumulated from a series of decisions while also evolving the presented `state` to reflect the pended events
+type private Accumulator() =
+    let acc = ResizeArray()
+    member __.Ingest state : 'res * Events.Event list -> 'res * Folds.State = function
+        | res, [] ->                   res,state
+        | res, [e] -> acc.Add e;       res,Folds.evolve state e
+        | res, xs ->  acc.AddRange xs; res,Folds.fold state (Seq.ofList xs)
+    member __.Accumulated = List.ofSeq acc
+
 /// Impetus provided to the Aggregate Service from the Process Manager
 type Command =
     | Commence      of tickets : TicketId list         * timeout : TimeSpan
@@ -141,23 +168,45 @@ type Command =
     | Cancel
     | Abort
 
-/// Holds events accumulated from a series of decisions while also evolving the presented `state` to reflect the pended events
-type private Accumulator() =
-    let acc = ResizeArray()
-    member __.Ingest state : 'res * Events.Event list -> 'res * Folds.State = function
-        | res,[] ->                   res,state
-        | res,[e] -> acc.Add e;       res,Folds.evolve state e
-        | res,xs ->  acc.AddRange xs; res,Folds.fold state (Seq.ofList xs)
-    member __.Accumulated = List.ofSeq acc
-
-let sync (effectiveTimestamp : DateTimeOffset, updates : Update seq, command : Command) (state : Folds.State) : (bool*State) * Events.Event list =
+/// Apply updates, decide whether Command is applicable, emit state reflecting work to be completed to conclude the in-progress workflow (if any)
+let sync (effectiveTimestamp : DateTimeOffset, updates : Update seq, command : Command) (state : Folds.State) : (bool*ProcessState) * Events.Event list =
     let acc = Accumulator()
 
-    let accepted,events =
-        match state, command with
-        | Folds.Idle, Commence (tickets,timeout) -> true,[Events.Commenced { ticketIds = Array.ofList tickets; cutoff = effectiveTimeStamp + timeout }]
-        | (Folds.Running _|Folds.Reverting _), Commence _ -> false,[]
-        | Folds.R
+    (* Apply any updates *)
+    let mutable state = state
+    for x in updates do
+        let (),state' = acc.Ingest state ((),decideUpdate x state)
+        state <- state'
+
+    (* Decide whether the Command is now acceptable *)
+    let accepted,state =
+        acc.Ingest state <|
+            match state, command with
+            (* Symptomatic of a problem - fail request *)
+            // TOCONSIDER how to represent that a request is being denied e.g. due to timeout vs due to being complete
+            | (Folds.Idle|Folds.Reverting _), Apply _ -> false, []
+            (* Defer; Need to allow current request to progress before it can be considered *)
+            | (Folds.Running _|Folds.Reverting _), Commence _ -> false, []
+            (* Ok on the basis of idempotency *)
+            | (Folds.Idle|Folds.Reverting _), (Cancel|Abort) -> true, []
+            (* Ok; Currently idle, normal Commence request*)
+            | Folds.Idle, Commence (tickets,timeout) ->
+                true,[Events.Commenced { ticketIds = Array.ofList tickets; cutoff = effectiveTimestamp + timeout }]
+            (* Ok; normal apply to distribute held tickets *)
+            | Folds.Running s, Apply (assign,release) ->
+                let avail = HashSet s.reserved
+                let toAssign = [for a in assign -> { a with ticketIds = a.ticketIds |> Array.where avail.Remove }]
+                let toRelease = (Set.empty,release) ||> List.fold (fun s x -> if avail.Remove x then Set.add x s else s)
+                true, [
+                    for x in toAssign do if (not << Array.isEmpty) x.ticketIds then yield Events.Allocated x
+                    match toRelease with SetEmpty -> () | toRelease -> yield Events.Released { ticketIds = Set.toArray toRelease }]
+            (* Ok, normal Cancel *)
+            | Folds.Running _, Cancel -> true, [Events.Cancelled]
+            (* Ok, normal Abort *)
+            | Folds.Running _, Abort -> true, [Events.Aborted]
+
+    (* Yield outstanding processing requirements (if any), together with events accumulated based on the `updates` *)
+    (accepted, ProcessState.FromFoldState state), acc.Accumulated
 
 type Service internal (resolve, ?maxAttempts, ?timeout) =
 
