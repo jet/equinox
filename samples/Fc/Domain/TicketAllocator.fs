@@ -7,13 +7,12 @@ module Events =
 
     type Commenced =    { transId : TicketTransId; cutoff : DateTimeOffset }
     type Completed =    { transId : TicketTransId; reason : Reason }
-    and [<Newtonsoft.Json.JsonConverter(typeof<FsCodec.NewtonsoftJson.TypeSafeEnumConverter>)>]
+    and  [<Newtonsoft.Json.JsonConverter(typeof<FsCodec.NewtonsoftJson.TypeSafeEnumConverter>)>]
          Reason = Ok | TimedOut | Cancelled
     type Snapshotted =  { active : Commenced option }
     type Event =
         | Commenced     of Commenced
         | Completed     of Completed
-        | Snapshotted   of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let [<Literal>] categoryId = "TicketAllocator"
@@ -25,10 +24,7 @@ module Folds =
     let evolve _state = function
         | Events.Commenced e -> Some e
         | Events.Completed e -> None
-        | Events.Snapshotted e -> e.active
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
-    let isOrigin = function Events.Commenced _|Events.Snapshotted _ -> true | _ -> false
-    let snapshot s = Events.Snapshotted { active = s }
 
 type Command =
     | Commence  of transId : TicketTransId * cutoffTime : DateTimeOffset
@@ -47,15 +43,37 @@ let decide command (state : Folds.State) =
     | Complete _, (Some _|None) ->
         true, [] // Assume relay; accept idempotently
 
-type Service internal (resolve, ?maxAttempts) =
+type EntryPoint internal (resolve, ?maxAttempts) =
 
-    let log = Serilog.Log.ForContext<Service>()
+    let log = Serilog.Log.ForContext<EntryPoint>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketAllocatorId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
     member __.Execute(allocatorId, command) : Async<bool> =
         let (Stream agg) = allocatorId
         agg.Transact(decide command)
+
+module EventStore =
+
+    open Equinox.EventStore
+    let resolve (context,cache) =
+        let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
+        // while there are competing writers [which might cause us to have to retry a Transact], this should be infrequent
+        let opt = Equinox.ResolveOption.AllowStale
+        fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve(id,opt)
+    let create (context,cache) =
+        EntryPoint(resolve (context,cache))
+
+module Cosmos =
+
+    open Equinox.Cosmos
+    let resolve (context,cache) =
+        let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
+        // while there are competing writers [which might cause us to have to retry a Transact], this should be infrequent
+        let opt = Equinox.ResolveOption.AllowStale
+        fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve(id,opt)
+    let create (context,cache) =
+        EntryPoint(resolve (context,cache))
 
 type Request =
     /// Caller requesting continuation of in-flight work
@@ -65,7 +83,7 @@ type Request =
     /// Watchdog said this transaction has timed out
     | Abort
 
-type ProcessManager(transactionTimeout, service : Service, listService : TicketList.Service, ticketService : Ticket.Service, ?timeout) =
+type ProcessManager(transactionTimeout, service : EntryPoint, listService : TicketList.EntryPoint, ticketService : Ticket.EntryPoint, ?timeout) =
 
     let timeout = defaultArg timeout System.TimeSpan.FromMinutes 1.
 

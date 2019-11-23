@@ -28,9 +28,9 @@ let interpretAllocated (allocatorId : TicketAllocatorId, allocated : TicketId li
     | [||] -> []
     | news -> [Events.Allocated { allocatorId = allocatorId; ticketIds = news }]
 
-type Service internal (resolve, ?maxAttempts) =
+type EntryPoint internal (resolve, ?maxAttempts) =
 
-    let log = Serilog.Log.ForContext<Service>()
+    let log = Serilog.Log.ForContext<EntryPoint>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, PickListId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
@@ -48,8 +48,8 @@ module EventStore =
         // we _could_ use this Access Strategy, but because we are only generally doing a single shot write, its unwarranted
         // let accessStrategy = AccessStrategy.RollingSnapshots (Folds.isOrigin,Folds.snapshot)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy).Resolve(id,opt)
-    let createService (context,cache) =
-        Service(resolve (context,cache))
+    let create (context,cache) =
+        EntryPoint(resolve (context,cache))
 
 module Cosmos =
 
@@ -61,5 +61,5 @@ module Cosmos =
         // we want reads and writes (esp idempotent ones) to have optimal RU efficiency so we go the extra mile to do snapshotting into the Tip
         let accessStrategy = AccessStrategy.Snapshot (Folds.isOrigin,Folds.snapshot)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
-    let createService (context,cache)=
-        Service(resolve (context,cache))
+    let create (context,cache)=
+        EntryPoint(resolve (context,cache))
