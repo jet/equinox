@@ -190,7 +190,7 @@ let sync (updates : Update seq, command : Command) (state : Folds.State) : (bool
             // TOCONSIDER how to represent that a request is being denied e.g. due to timeout vs due to being complete
             | (Folds.Idle|Folds.Reverting _), Apply _ -> false, []
             (* Defer; Need to allow current request to progress before it can be considered *)
-            | (Folds.Running _|Folds.Reverting _), Commence _ -> failwith "Cannot Commence on non-Idle transaction"
+            | (Folds.Running _|Folds.Reverting _), Commence _ -> true, [] // TODO validate idempotent ?
             (* Ok on the basis of idempotency *)
             | (Folds.Idle|Folds.Reverting _), Cancel -> true, []
             (* Ok; Currently idle, normal Commence request*)
@@ -213,11 +213,11 @@ let sync (updates : Update seq, command : Command) (state : Folds.State) : (bool
 type EntryPoint internal (resolve, ?maxAttempts) =
 
     let log = Serilog.Log.ForContext<EntryPoint>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketAllocatorId.toString id)
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketTransId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
-    member __.Apply(allocatorId,updates,command) : Async<bool*ProcessState> =
-        let (Stream agg) = allocatorId
+    member __.Sync(transId,updates,command) : Async<bool*ProcessState> =
+        let (Stream agg) = transId
         agg.Transact(sync (updates,command))
 
 module EventStore =
