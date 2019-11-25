@@ -14,7 +14,7 @@ module Events =
 module Folds =
 
     type State = LocationEpochId
-    let initial = LocationEpochId.uninitialized
+    let initial = LocationEpochId.parse -1
     let evolve _state = function
         | Events.Started e -> e.epochId
     let fold = Seq.fold evolve

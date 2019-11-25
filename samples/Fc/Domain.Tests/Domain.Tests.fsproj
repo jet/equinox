@@ -1,15 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <RootNamespace>Fc.Domain.Tests</RootNamespace>
         <TargetFramework>netcoreapp2.1</TargetFramework>
         <WarningLevel>5</WarningLevel>
+        <RootNamespace>Fc.Domain.Tests</RootNamespace>
         <IsPackable>false</IsPackable>
     </PropertyGroup>
-
-    <ItemGroup>
-        <Compile Include="Program.fs" />
-    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.3.0" />
@@ -17,6 +13,10 @@
         <PackageReference Include="xunit.runner.visualstudio" Version="2.4.1" />
     </ItemGroup>
 
+    <ItemGroup>
+        <Compile Include="LocationTests.fs" />
+    </ItemGroup>
+    
     <ItemGroup>
       <ProjectReference Include="..\Domain\Domain.fsproj" />
     </ItemGroup>
