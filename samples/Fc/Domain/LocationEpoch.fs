@@ -43,24 +43,27 @@ type Result = { balance : Folds.Balance; isComplete : bool }
 let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Balance -> Events.Event list) option) shouldClose state : Result*Events.Event list =
     let acc = Accumulator()
     // We always want to have a CarriedForward event at the start of any Epoch's event stream
-    let initialized,state = acc.Ingest state <|
-        match state with
-        | Folds.Initial -> true,[Events.CarriedForward { initial = Option.get balanceCarriedForward }]
-        | Folds.Open _ | Folds.Closed _ -> false,[]
+    let initialized,state =
+        acc.Ingest state <|
+            match state with
+            | Folds.Initial -> true,[Events.CarriedForward { initial = Option.get balanceCarriedForward }]
+            | Folds.Open _ | Folds.Closed _ -> false,[]
     // If an `interpret` is supplied, we run that (unless we determine we're in Closed state)
-    let worked,state = acc.Ingest state <|
-        match state, interpret with
-        | Folds.Initial,_ -> failwith "We've just guaranteed not Initial"
-        | Folds.Open _,None -> false,[]
-        | Folds.Open bal,Some interpret -> true,interpret bal
-        | Folds.Closed _,_ -> false,[]
+    let worked,state =
+        acc.Ingest state <|
+            match state, interpret with
+            | Folds.Initial,_ -> failwith "We've just guaranteed not Initial"
+            | Folds.Open _,None -> false,[]
+            | Folds.Open bal,Some interpret -> true,interpret bal
+            | Folds.Closed _,_ -> false,[]
     // Finally (iff we're `Open`, have `worked`, and `shouldClose`), we generate a Closed event
-    let (balance,isOpen),_ = acc.Ingest state <|
-        match state with
-        | Folds.Initial -> failwith "Can't be Initial"
-        | Folds.Open bal as state when worked && shouldClose state -> (bal,false),[Events.Closed]
-        | Folds.Open bal -> (bal,true),[]
-        | Folds.Closed bal -> (bal,false),[]
+    let (balance,isOpen),_ =
+        acc.Ingest state <|
+            match state with
+            | Folds.Initial -> failwith "Can't be Initial"
+            | Folds.Open bal as state when worked && shouldClose state -> (bal,false),[Events.Closed]
+            | Folds.Open bal -> (bal,true),[]
+            | Folds.Closed bal -> (bal,false),[]
     { balance = balance; isComplete = initialized || worked || isOpen },acc.Accumulated
 
 type Service internal (resolve, ?maxAttempts) =
