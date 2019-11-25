@@ -1,6 +1,5 @@
-module TicketTrans
+module Allocation
 
-open System
 open System.Collections.Generic
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
@@ -34,7 +33,7 @@ module Events =
         | Snapshotted
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let [<Literal>] categoryId = "TicketTrans"
+    let [<Literal>] categoryId = "Allocation"
 
 module Folds =
 
@@ -213,11 +212,11 @@ let sync (updates : Update seq, command : Command) (state : Folds.State) : (bool
 type Service internal (resolve, ?maxAttempts) =
 
     let log = Serilog.Log.ForContext<Service>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketTransId.toString id)
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, AllocationId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
-    member __.Sync(transId,updates,command) : Async<bool*ProcessState> =
-        let (Stream agg) = transId
+    member __.Sync(allocationId,updates,command) : Async<bool*ProcessState> =
+        let (Stream agg) = allocationId
         agg.Transact(sync (updates,command))
 
 module EventStore =

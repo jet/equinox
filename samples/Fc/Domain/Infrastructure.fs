@@ -27,14 +27,14 @@ module PickListId =
     let parse (value : string) : TicketListId = let raw = value in %raw
     let toString (value : TicketListId) : string = %value
 
-type TicketTransId = string<ticketTransId>
-and [<Measure>] ticketTransId
-module TicketTransId =
-    let parse (value : string) : TicketTransId = let raw = value in %raw
-    let toString (value : TicketTransId) : string = %value
+type AllocationId = string<allocationId>
+and [<Measure>] allocationId
+module AllocationId =
+    let parse (value : string) : AllocationId = let raw = value in %raw
+    let toString (value : AllocationId) : string = %value
 
-type TicketAllocatorId = string<ticketAllocatorId>
-and [<Measure>] ticketAllocatorId
-module TicketAllocatorId =
-    let parse (value : string) : TicketAllocatorId = let raw = value in %raw
-    let toString (value : TicketAllocatorId) : string = %value
+type AllocatorId = string<allocatorId>
+and [<Measure>] allocatorId
+module AllocatorId =
+    let parse (value : string) : AllocatorId = let raw = value in %raw
+    let toString (value : AllocatorId) : string = %value

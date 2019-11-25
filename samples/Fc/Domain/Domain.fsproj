@@ -13,8 +13,8 @@
         <Compile Include="Location.fs" />
         <Compile Include="Ticket.fs" />
         <Compile Include="TicketList.fs" />
-        <Compile Include="TicketTrans.fs" />
-        <Compile Include="TicketAllocator.fs" />
+        <Compile Include="Allocation.fs" />
+        <Compile Include="Allocator.fs" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="FSharp.UMX" Version="1.0.0" />

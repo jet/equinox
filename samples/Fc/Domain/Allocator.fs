@@ -1,12 +1,12 @@
-module TicketAllocator
+module Allocator
 
 open System
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    type Commenced =    { transId : TicketTransId; cutoff : DateTimeOffset }
-    type Completed =    { transId : TicketTransId; reason : Reason }
+    type Commenced =    { allocationId : AllocationId; cutoff : DateTimeOffset }
+    type Completed =    { allocationId : AllocationId; reason : Reason }
     and  [<Newtonsoft.Json.JsonConverter(typeof<FsCodec.NewtonsoftJson.TypeSafeEnumConverter>)>]
          Reason = Ok | TimedOut | Cancelled
     type Snapshotted =  { active : Commenced option }
@@ -15,7 +15,7 @@ module Events =
         | Completed     of Completed
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let [<Literal>] categoryId = "TicketAllocator"
+    let [<Literal>] categoryId = "Allocator"
 
 module Folds =
 
@@ -27,33 +27,33 @@ module Folds =
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
 
 type Command =
-    | Commence  of transId : TicketTransId * cutoffTime : DateTimeOffset
-    | Complete  of transId : TicketTransId * reason     : Events.Reason
+    | Commence  of allocationId : AllocationId * cutoffTime : DateTimeOffset
+    | Complete  of allocationId : AllocationId * reason     : Events.Reason
 
-type CommenceResult = Accepted | Conflict of TicketTransId
+type CommenceResult = Accepted | Conflict of AllocationId
 
-let decideCommence transId cutoff : Folds.State -> CommenceResult*Events.Event list = function
-    | None -> Accepted, [Events.Commenced { transId = transId; cutoff = cutoff }]
-    | Some { transId = tid } when transId = tid -> Accepted, [] // Accept replay idempotently
-    | Some curr -> Conflict curr.transId, [] // Reject attempts at commencing overlapping transactions
+let decideCommence allocationId cutoff : Folds.State -> CommenceResult*Events.Event list = function
+    | None -> Accepted, [Events.Commenced { allocationId = allocationId; cutoff = cutoff }]
+    | Some { allocationId = tid } when allocationId = tid -> Accepted, [] // Accept replay idempotently
+    | Some curr -> Conflict curr.allocationId, [] // Reject attempts at commencing overlapping transactions
 
-let decideComplete transId reason : Folds.State -> Events.Event list = function
-    | Some { transId = tid } when transId = tid -> [Events.Completed { transId = transId; reason = reason }]
+let decideComplete allocationId reason : Folds.State -> Events.Event list = function
+    | Some { allocationId = tid } when allocationId = tid -> [Events.Completed { allocationId = allocationId; reason = reason }]
     | Some _|None -> [] // Assume relay; accept but don't write
 
 type Service internal (resolve, ?maxAttempts) =
 
     let log = Serilog.Log.ForContext<Service>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketAllocatorId.toString id)
+    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, AllocatorId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
-    member __.Commence(allocatorId, transId, cutoff) : Async<CommenceResult> =
+    member __.Commence(allocatorId, allocationId, cutoff) : Async<CommenceResult> =
         let (Stream agg) = allocatorId
-        agg.Transact(decideCommence transId cutoff)
+        agg.Transact(decideCommence allocationId cutoff)
 
-    member __.Complete(allocatorId, transId, reason) : Async<unit> =
+    member __.Complete(allocatorId, allocationId, reason) : Async<unit> =
         let (Stream agg) = allocatorId
-        agg.Transact(decideComplete transId reason)
+        agg.Transact(decideComplete allocationId reason)
 
 module EventStore =
 
@@ -78,36 +78,37 @@ module Cosmos =
         Service(resolve (context,cache))
 
 type Result =
-    | Incomplete of TicketTrans.Folds.Stats
-    | Completed of TicketTrans.Folds.Stats
+    | Incomplete of Allocation.Folds.Stats
+    | Completed of Allocation.Folds.Stats
 (*
     | Running       of reserved : TicketId list * toAssign : Events.Allocated list * toRelease : TicketId list * toReserve : TicketId list
     | Idle          of reserved : TicketId list
     | Cancelling    of                            toAssign : Events.Allocated list * toRelease : TicketId list
     | Completed
 *)
-type ProcessManager(maxListLen, allocators : Service, transactions : TicketTrans.Service, lists : TicketList.Service, tickets : Ticket.Service) =
+type ProcessManager(maxListLen, allocators : Service, allocations : Allocation.Service, lists : TicketList.Service, tickets : Ticket.Service) =
 
-    let run timeSlice (state : TicketTrans.ProcessState) =
+    let run timeSlice (state : Allocation.ProcessState) =
         failwith "TODO"
 
-    let continue timeSlice allocatorId transId = async {
-        let! ok,state = transactions.Sync(transId,Seq.empty,TicketTrans.Command.Apply ([],[]))
+    let cont timeSlice allocatorId allocationId = async {
+        let! ok,state = allocations.Sync(allocationId,Seq.empty,Allocation.Command.Apply ([],[]))
         return! run timeSlice state }
 
-    member __.Commence(allocatorId,transId,timeSlice,transactionTimeout,tickets) : Async<Result> = async {
-        let! res = allocators.Commence(allocatorId, transId, DateTimeOffset.UtcNow.Add transactionTimeout)
+    member __.Commence(allocatorId,allocationId,timeSlice,transactionTimeout,tickets) : Async<Result> = async {
+        let cutoff = let now = DateTimeOffset.UtcNow in now.Add transactionTimeout
+        let! res = allocators.Commence(allocatorId, allocationId, cutoff)
         match res with
         | Accepted ->
-            let! ok,state = transactions.Sync(transId,Seq.empty,TicketTrans.Command.Commence tickets)
+            let! ok,state = allocations.Sync(allocationId,Seq.empty,Allocation.Command.Commence tickets)
             return! run timeSlice state
-        | Conflict otherTransId ->
-            return! continue timeSlice allocatorId otherTransId
+        | Conflict otherAllocationId ->
+            return! cont timeSlice allocatorId otherAllocationId
         }
 
-    member __.Continue(allocatorId,transId,timeSlice) : Async<Result> = async {
-        return! continue timeSlice allocatorId transId }
+    member __.Continue(allocatorId,allocationId,timeSlice) : Async<Result> = async {
+        return! cont timeSlice allocatorId allocationId }
 
-    member __.Cancel(allocatorId,transId,timeSlice,reason) : Async<Result> = async {
-        let! ok,state = transactions.Sync(transId,Seq.empty,TicketTrans.Command.Cancel)
+    member __.Cancel(allocatorId,allocationId,timeSlice,reason) : Async<Result> = async {
+        let! ok,state = allocations.Sync(allocationId,Seq.empty,Allocation.Command.Cancel)
         return! run timeSlice state }
