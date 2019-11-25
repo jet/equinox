@@ -47,9 +47,9 @@ let decideSync (allocator : TicketAllocatorId, desired : Intent) (state : Folds.
     | Revoke, (Folds.Reserved by | Folds.Allocated (by,_)) when by = allocator -> true,[Events.Revoked] // release Reservation or Allocation
     | Revoke, (Folds.Reserved _ | Folds.Allocated _ ) -> true,[] // NOTE we report success of achieving the intent (but, critically, we leave it to the actual owner to manage any actual revoke)
 
-type EntryPoint internal (resolve, ?maxAttempts) =
+type Service internal (resolve, ?maxAttempts) =
 
-    let log = Serilog.Log.ForContext<EntryPoint>()
+    let log = Serilog.Log.ForContext<Service>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
     let execute (Stream stream) = decideSync >> stream.Transact
@@ -67,7 +67,7 @@ module EventStore =
         // because we only ever need the last event, we use the Equinox.EventStore access strategy that optimizes around that
         Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
     let create (context,cache)=
-        EntryPoint(resolve (context,cache))
+        Service(resolve (context,cache))
 
 module Cosmos =
 
@@ -78,4 +78,4 @@ module Cosmos =
         // (there's always exactly one if we are writing), into the unfolds slot so a single point read with etag check gets us state in one trip
         Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
     let create (context,cache) =
-        EntryPoint(resolve (context,cache))
+        Service(resolve (context,cache))

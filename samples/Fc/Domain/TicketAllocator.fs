@@ -41,9 +41,9 @@ let decideComplete transId reason : Folds.State -> Events.Event list = function
     | Some { transId = tid } when transId = tid -> [Events.Completed { transId = transId; reason = reason }]
     | Some _|None -> [] // Assume relay; accept but don't write
 
-type EntryPoint internal (resolve, ?maxAttempts) =
+type Service internal (resolve, ?maxAttempts) =
 
-    let log = Serilog.Log.ForContext<EntryPoint>()
+    let log = Serilog.Log.ForContext<Service>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketAllocatorId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
@@ -64,7 +64,7 @@ module EventStore =
         let opt = Equinox.ResolveOption.AllowStale
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve(id,opt)
     let create (context,cache) =
-        EntryPoint(resolve (context,cache))
+        Service(resolve (context,cache))
 
 module Cosmos =
 
@@ -75,7 +75,7 @@ module Cosmos =
         let opt = Equinox.ResolveOption.AllowStale
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve(id,opt)
     let create (context,cache) =
-        EntryPoint(resolve (context,cache))
+        Service(resolve (context,cache))
 
 type Result =
     | Incomplete of TicketTrans.Folds.Stats
@@ -86,7 +86,7 @@ type Result =
     | Cancelling    of                            toAssign : Events.Allocated list * toRelease : TicketId list
     | Completed
 *)
-type ProcessManager(maxListLen, allocators : EntryPoint, transactions : TicketTrans.EntryPoint, lists : TicketList.EntryPoint, tickets : Ticket.EntryPoint) =
+type ProcessManager(maxListLen, allocators : Service, transactions : TicketTrans.Service, lists : TicketList.Service, tickets : Ticket.Service) =
 
     let run timeSlice (state : TicketTrans.ProcessState) =
         failwith "TODO"

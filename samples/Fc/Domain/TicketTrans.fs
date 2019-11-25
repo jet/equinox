@@ -210,9 +210,9 @@ let sync (updates : Update seq, command : Command) (state : Folds.State) : (bool
     (* Yield outstanding processing requirements (if any), together with events accumulated based on the `updates` *)
     (accepted, ProcessState.FromFoldState state), acc.Accumulated
 
-type EntryPoint internal (resolve, ?maxAttempts) =
+type Service internal (resolve, ?maxAttempts) =
 
-    let log = Serilog.Log.ForContext<EntryPoint>()
+    let log = Serilog.Log.ForContext<Service>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketTransId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
@@ -230,7 +230,7 @@ module EventStore =
         // We should be reaching Completed state frequently so no actual Snapshots should get written
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy).Resolve(id,opt)
     let create (context,cache) =
-        EntryPoint(resolve (context,cache))
+        Service(resolve (context,cache))
 
 module Cosmos =
 
@@ -244,4 +244,4 @@ module Cosmos =
         let accessStrategy = AccessStrategy.Custom (Folds.isOrigin,makeEmptyUnfolds)
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve(id,opt)
     let create (context,cache) =
-        EntryPoint(resolve (context,cache))
+        Service(resolve (context,cache))
