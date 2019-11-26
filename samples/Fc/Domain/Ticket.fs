@@ -53,7 +53,7 @@ type Service internal (resolve, ?maxAttempts) =
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, TicketId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
-    /// Attempts to achieve the intent represented by `desired`. High level semantics as per comments on Desired (see decideSync for lowdown)
+    /// Attempts to achieve the intent represented by `command`. High level semantics as per comments on Command (see decide for lowdown)
     /// `false` is returned if a competing allocator holds it (or we're attempting to jump straight to Allocated without first Reserving)
     member __.Sync(pickTicketId, allocator, command : Command) : Async<bool> =
         let (Stream agg) = pickTicketId
