@@ -26,7 +26,7 @@ module Folds =
     let fold state events =
         Seq.tryLast events |> Option.fold evolve state
 
-type Intent =
+type Command =
     /// permitted if nobody owns it (or idempotently ok if we are the owner)
     | Reserve
     /// permitted if the allocator has it reserved (or idempotently ok if already on list)
@@ -35,8 +35,8 @@ type Intent =
     /// (but are not failures from an Allocator's perspective)
     | Revoke
 
-let decideSync (allocator : AllocatorId, desired : Intent) (state : Folds.State) : bool * Events.Event list =
-    match desired, state with
+let decide (allocator : AllocatorId) (command : Command) (state : Folds.State) : bool * Events.Event list =
+    match command, state with
     | Reserve, Folds.Unallocated -> true,[Events.Reserved { allocatorId = allocator }] // normal case -> allow+record
     | Reserve, Folds.Reserved by when by = allocator -> true,[] // idempotently permit
     | Reserve, (Folds.Reserved _ | Folds.Allocated _) -> false,[] // report failure, nothing to write
@@ -55,9 +55,9 @@ type Service internal (resolve, ?maxAttempts) =
 
     /// Attempts to achieve the intent represented by `desired`. High level semantics as per comments on Desired (see decideSync for lowdown)
     /// `false` is returned if a competing allocator holds it (or we're attempting to jump straight to Allocated without first Reserving)
-    member __.Sync(pickTicketId,allocator,desired: Intent) : Async<bool> =
+    member __.Sync(pickTicketId, allocator, command : Command) : Async<bool> =
         let (Stream agg) = pickTicketId
-        agg.Transact(decideSync (allocator,desired))
+        agg.Transact(decide allocator command)
 
 module EventStore =
 
