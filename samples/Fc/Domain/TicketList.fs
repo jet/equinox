@@ -23,7 +23,7 @@ module Folds =
     let isOrigin = function Events.Snapshotted _ -> true | Events.Allocated _ -> false
     let snapshot state = Events.Snapshotted { ticketIds = Set.toArray state }
 
-let interpretAllocated (allocatorId : AllocatorId, allocated : TicketId list) (state : Folds.State) : Events.Event list =
+let interpret (allocatorId : AllocatorId, allocated : TicketId list) (state : Folds.State) : Events.Event list =
     match allocated |> Seq.except state |> Seq.distinct |> Seq.toArray with
     | [||] -> []
     | news -> [Events.Allocated { allocatorId = allocatorId; ticketIds = news }]
@@ -36,7 +36,7 @@ type Service internal (resolve, ?maxAttempts) =
 
     member __.Sync(pickListId,allocatorId,assignedTickets) : Async<unit> =
         let (Stream agg) = pickListId
-        agg.Transact(interpretAllocated (allocatorId,assignedTickets))
+        agg.Transact(interpret (allocatorId,assignedTickets))
 
 module EventStore =
 
