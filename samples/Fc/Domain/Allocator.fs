@@ -23,12 +23,8 @@ module Folds =
     let initial = None
     let evolve _state = function
         | Events.Commenced e -> Some e
-        | Events.Completed e -> None
+        | Events.Completed _ -> None
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
-
-type Command =
-    | Commence  of allocationId : AllocationId * cutoffTime : DateTimeOffset
-    | Complete  of allocationId : AllocationId * reason     : Events.Reason
 
 type CommenceResult = Accepted | Conflict of AllocationId
 
@@ -39,7 +35,7 @@ let decideCommence allocationId cutoff : Folds.State -> CommenceResult*Events.Ev
 
 let decideComplete allocationId reason : Folds.State -> Events.Event list = function
     | Some { allocationId = tid } when allocationId = tid -> [Events.Completed { allocationId = allocationId; reason = reason }]
-    | Some _|None -> [] // Assume relay; accept but don't write
+    | Some _ | None -> [] // Assume replay; accept but don't write
 
 type Service internal (resolve, ?maxAttempts) =
 
