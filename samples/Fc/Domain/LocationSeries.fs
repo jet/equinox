@@ -30,11 +30,14 @@ type Service internal (resolve, ?maxAttempts) =
     let log = Serilog.Log.ForContext<Service>()
     let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, LocationId.toString id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 2)
-    let query (Stream stream) = stream.Query
-    let execute (Stream stream) = stream.Transact
 
-    member __.Read(locationId) : Async<LocationEpochId option> = query locationId toActiveEpoch
-    member __.ActivateEpoch(locationId,epochId) : Async<unit> = execute locationId (interpretActivateEpoch epochId)
+    member __.Read(locationId) : Async<LocationEpochId option> =
+        let (Stream agg) = locationId
+        agg.Query toActiveEpoch
+
+    member __.ActivateEpoch(locationId,epochId) : Async<unit> =
+        let (Stream agg) = locationId
+        agg.Transact(interpretActivateEpoch epochId)
 
 let createService resolve = Service(resolve)
 
