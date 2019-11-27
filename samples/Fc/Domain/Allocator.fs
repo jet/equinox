@@ -44,12 +44,12 @@ type Service internal (resolve, ?maxAttempts) =
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
     member __.Commence(allocatorId, allocationId, cutoff) : Async<CommenceResult> =
-        let (Stream agg) = allocatorId
-        agg.Transact(decideCommence allocationId cutoff)
+        let (Stream stream) = allocatorId
+        stream.Transact(decideCommence allocationId cutoff)
 
     member __.Complete(allocatorId, allocationId, reason) : Async<unit> =
-        let (Stream agg) = allocatorId
-        agg.Transact(decideComplete allocationId reason)
+        let (Stream stream) = allocatorId
+        stream.Transact(decideComplete allocationId reason)
 
 module EventStore =
 

@@ -56,8 +56,8 @@ type Service internal (resolve, ?maxAttempts) =
     /// Attempts to achieve the intent represented by `command`. High level semantics as per comments on Command (see decide for lowdown)
     /// `false` is returned if a competing allocator holds it (or we're attempting to jump straight to Allocated without first Reserving)
     member __.Sync(pickTicketId, allocator, command : Command) : Async<bool> =
-        let (Stream agg) = pickTicketId
-        agg.Transact(decide allocator command)
+        let (Stream stream) = pickTicketId
+        stream.Transact(decide allocator command)
 
 module EventStore =
 

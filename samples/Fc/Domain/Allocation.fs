@@ -219,8 +219,8 @@ type Service internal (resolve, ?maxAttempts) =
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 3)
 
     member __.Sync(allocationId,updates,command) : Async<bool*ProcessState> =
-        let (Stream agg) = allocationId
-        agg.Transact(sync (updates,command))
+        let (Stream stream) = allocationId
+        stream.Transact(sync (updates,command))
 
 module EventStore =
 
