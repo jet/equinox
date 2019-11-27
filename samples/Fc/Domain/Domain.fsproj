@@ -13,8 +13,9 @@
         <Compile Include="Location.fs" />
         <Compile Include="Ticket.fs" />
         <Compile Include="TicketList.fs" />
-        <Compile Include="Allocation.fs" />
         <Compile Include="Allocator.fs" />
+        <Compile Include="Allocation.fs" />
+        <Compile Include="ListAllocation.fs" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="FSharp.UMX" Version="1.0.0" />

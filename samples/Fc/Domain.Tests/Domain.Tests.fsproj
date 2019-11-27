@@ -15,6 +15,7 @@
         <Compile Include="TicketTests.fs" />
         <Compile Include="TicketListTests.fs" />
         <Compile Include="AllocatorTests.fs" />
+        <Compile Include="AllocationTests.fs" />
     </ItemGroup>
 
     <ItemGroup>

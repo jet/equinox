@@ -72,39 +72,3 @@ module Cosmos =
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve(id,opt)
     let create (context,cache) =
         Service(resolve (context,cache))
-
-type Result =
-    | Incomplete of Allocation.Folds.Stats
-    | Completed of Allocation.Folds.Stats
-(*
-    | Running       of reserved : TicketId list * toAssign : Events.Allocated list * toRelease : TicketId list * toReserve : TicketId list
-    | Idle          of reserved : TicketId list
-    | Cancelling    of                            toAssign : Events.Allocated list * toRelease : TicketId list
-    | Completed
-*)
-type ProcessManager(maxListLen, allocators : Service, allocations : Allocation.Service, lists : TicketList.Service, tickets : Ticket.Service) =
-
-    let run timeSlice (state : Allocation.ProcessState) =
-        failwith "TODO"
-
-    let cont timeSlice allocatorId allocationId = async {
-        let! ok,state = allocations.Sync(allocationId,Seq.empty,Allocation.Command.Apply ([],[]))
-        return! run timeSlice state }
-
-    member __.Commence(allocatorId,allocationId,timeSlice,transactionTimeout,tickets) : Async<Result> = async {
-        let cutoff = let now = DateTimeOffset.UtcNow in now.Add transactionTimeout
-        let! res = allocators.Commence(allocatorId, allocationId, cutoff)
-        match res with
-        | Accepted ->
-            let! ok,state = allocations.Sync(allocationId,Seq.empty,Allocation.Command.Commence tickets)
-            return! run timeSlice state
-        | Conflict otherAllocationId ->
-            return! cont timeSlice allocatorId otherAllocationId
-        }
-
-    member __.Continue(allocatorId,allocationId,timeSlice) : Async<Result> = async {
-        return! cont timeSlice allocatorId allocationId }
-
-    member __.Cancel(allocatorId,allocationId,timeSlice,reason) : Async<Result> = async {
-        let! ok,state = allocations.Sync(allocationId,Seq.empty,Allocation.Command.Cancel)
-        return! run timeSlice state }
