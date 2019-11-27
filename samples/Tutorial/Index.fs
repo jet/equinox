@@ -48,7 +48,7 @@ type Service<'t> internal (indexId, resolveStream, ?maxAttempts) =
     member __.Read() : Async<Map<string,'t>> =
         stream.Query id
 
-let createService resolve indexId = Service(indexId, resolve)
+let create resolve indexId = Service(indexId, resolve)
 
 module Cosmos =
 
@@ -57,10 +57,10 @@ module Cosmos =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Folds.snapshot
         let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
-        createService resolve
+        create resolve
 
 module MemoryStore =
 
     let createService store =
         let resolve = Equinox.MemoryStore.Resolver(store, Events.codec, Folds.fold, Folds.initial).Resolve
-        createService resolve
+        create resolve

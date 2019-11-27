@@ -39,7 +39,7 @@ type Service internal (resolveStream, ?maxAttempts) =
     member __.Reserve(series,?count) : Async<int64> =
         decide series (decideReserve (defaultArg count 1))
 
-let createService resolver = Service(resolver)
+let create resolver = Service(resolver)
 
 module Cosmos =
 
@@ -47,7 +47,7 @@ module Cosmos =
     let private createService (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
         let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
-        createService resolve
+        create resolve
 
     module LatestKnownEvent =
 
