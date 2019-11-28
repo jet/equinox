@@ -38,7 +38,7 @@ type private Accumulator() =
         | res, xs ->  acc.AddRange xs; res, Folds.fold state (Seq.ofList xs)
     member __.Accumulated = List.ofSeq acc
 
-type Result = { balance : Folds.Balance; isComplete : bool }
+type Result = { balance : Folds.Balance; worked : bool; isOpen : bool }
 
 let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Balance -> Events.Event list) option) shouldClose state : Result*Events.Event list =
     let acc = Accumulator()
@@ -53,7 +53,7 @@ let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Bala
         acc.Ingest state <|
             match state, interpret with
             | Folds.Initial, _ -> failwith "We've just guaranteed not Initial"
-            | Folds.Open _, None -> false, []
+            | Folds.Open _, None -> true, []
             | Folds.Open bal, Some interpret -> true, interpret bal
             | Folds.Closed _, _ -> false, []
     // Finally (iff we're `Open`, have `worked`, and `shouldClose`), we generate a Closed event
@@ -64,7 +64,7 @@ let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Bala
             | Folds.Open bal as state when worked && shouldClose state -> (bal, false), [Events.Closed]
             | Folds.Open bal -> (bal, true), []
             | Folds.Closed bal -> (bal, false), []
-    { balance = balance; isComplete = initialized || worked || isOpen }, acc.Accumulated
+    { balance = balance; worked = worked; isOpen = isOpen }, acc.Accumulated
 
 type Service internal (resolve, ?maxAttempts) =
 
