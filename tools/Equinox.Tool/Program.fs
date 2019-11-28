@@ -74,6 +74,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-J"; Unique>]       JsonSkip
     | [<AltCommandLine "-P"; Unique>]       PrettySkip
+    | [<AltCommandLine "-T"; Unique>]       TimeRegular
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
     | [<AltCommandLine "-E"; Unique >]      EventsOnly
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
@@ -87,6 +88,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | Correlation ->                "Include Correlation/Causation identifiers"
             | JsonSkip ->                   "Don't attempt to decode JSON"
             | PrettySkip ->                 "Don't pretty print the JSON over multiple lines"
+            | TimeRegular ->                "Don't humanize time intervals between events"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
             | Es _ ->                       "Parameters for EventStore."
@@ -365,7 +367,8 @@ module Dump =
         let a = DumpInfo args
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
         let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
-        let doU,doE,doC,doJ,doP = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip)
+        let doU,doE = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly)
+        let doC,doJ,doP,doT = args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip),not(args.Contains TimeRegular)
         let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
 
         let streams = args.GetResults DumpArguments.Stream
@@ -391,12 +394,23 @@ module Dump =
             let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) id
             let! _token,events = stream.Load storeLog
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
+            let mutable prevTs = None
             for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
                 let ty = if x.IsUnfold then "Unfold" else "Event"
-                if not doC then log.Information("{i,3}@{t:u} {u:l} {e:l} {data:l} {meta:l}",
-                                    x.Index, x.Timestamp, ty, x.EventType, render x.Data, render x.Meta)
-                else log.Information("{i,3}@{t:u} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
-                         x.Index, x.Timestamp, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
+                let interval =
+                    match prevTs with Some p when not x.IsUnfold -> Some (x.Timestamp - p) | _ -> None
+                    |> function
+                    | None -> if doT then "n/a" else "0"
+                    | Some (i : TimeSpan) when not doT -> i.ToString()
+                    | Some (i : TimeSpan) when i.TotalDays >= 1. -> i.ToString "d\dhh\hmm\m"
+                    | Some i when i.TotalHours >= 1. -> i.ToString "h\hmm\mss\s"
+                    | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\s"
+                    | Some i -> i.ToString("s\.ff\s")
+                prevTs <- Some x.Timestamp
+                if not doC then log.Information("{i,3}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
+                                    x.Index, x.Timestamp, interval, ty, x.EventType, render x.Data, render x.Meta)
+                else log.Information("{i,3}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
+                         x.Index, x.Timestamp, interval, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
         streams
         |> Seq.map readStream
         |> Async.Parallel
