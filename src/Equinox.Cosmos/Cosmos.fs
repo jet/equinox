@@ -233,7 +233,7 @@ module Log =
     let propEvents = propData "events"
     let propDataUnfolds = Enum.Unfolds >> propData "unfolds"
     let propStartPos (value : Position) log = prop "startPos" value.index log
-    let propMaybeStartPos (value : Position option) log = match value with None -> log | Some value -> propStartPos value log
+    let propStartEtag (value : Position) log = prop "startEtag" value.etag log
 
     let withLoggedRetries<'t> (retryPolicy: IRetryPolicy option) (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
         match retryPolicy with
@@ -593,7 +593,9 @@ module internal Tip =
             let log =
                 let (Log.BatchLen bytes), count = Enum.Unfolds tip.u, tip.u.Length
                 log bytes count Log.Tip
-            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataUnfolds tip.u |> Log.prop "etag" tip._etag
+            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataUnfolds tip.u
+            let log = match maybePos with Some p -> log |> Log.propStartPos p |> Log.propStartEtag p | None -> log
+            let log = log |> Log.prop "_etag" tip._etag |> Log.prop "n" tip.n
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * ITimelineEvent<byte[]>[]

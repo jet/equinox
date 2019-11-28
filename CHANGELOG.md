@@ -11,11 +11,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `eqx dump` perf + logging improvements
+- `eqx dump -P` turns off JSON pretty printing
+- `Cosmos`: `Tip 200` now logs received `n` and `_etag` values
 
 ### Changed
 
 - Samples etc target `Argu` v `6.0.0`
-- `eqx dump`'s `-J` switch no turns off JSON rendering
+- `eqx dump`'s `-J` switch now turns off JSON rendering
+- `eqx -vc dump` now renders Store `.Information` logs
 
 ### Removed
 ### Fixed

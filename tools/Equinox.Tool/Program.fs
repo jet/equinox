@@ -73,6 +73,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-s">]               Stream of string
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-J"; Unique>]       JsonSkip
+    | [<AltCommandLine "-P"; Unique>]       PrettySkip
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
     | [<AltCommandLine "-E"; Unique >]      EventsOnly
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
@@ -85,6 +86,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | Stream _ ->                   "Specify stream(s) to dump."
             | Correlation ->                "Include Correlation/Causation identifiers"
             | JsonSkip ->                   "Don't attempt to decode JSON"
+            | PrettySkip ->                 "Don't pretty print the JSON over multiple lines"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
             | Es _ ->                       "Parameters for EventStore."
@@ -94,7 +96,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | Postgres _ ->                 "Parameters for Postgres."
 and DumpInfo(args: ParseResults<DumpArguments>) =
     member __.ConfigureStore(log : ILogger, createStoreLog) =
-        let storeConfig = None,true,500
+        let storeConfig = None,true,1000
         match args.TryGetSubCommand() with
         | Some (DumpArguments.Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
@@ -205,7 +207,11 @@ let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
-    let level = if verbose && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning
+    let level =
+        match verbose,verboseConsole with
+        | true, true -> LogEventLevel.Debug
+        | false, true -> LogEventLevel.Information
+        | _ -> LogEventLevel.Warning
     let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"
     let c = c.WriteTo.Console(level, outputTemplate, theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
     let c = match maybeSeqEndpoint with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
@@ -359,7 +365,7 @@ module Dump =
         let a = DumpInfo args
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
         let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
-        let doU,doE,doC,doJ = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,not(args.Contains JsonSkip)
+        let doU,doE,doC,doJ,doP = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly),args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip)
         let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
 
         let streams = args.GetResults DumpArguments.Stream
@@ -372,10 +378,11 @@ module Dump =
             Some x
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold),fun _state -> failwith "no snapshot required"
+        let fo = if doP then Newtonsoft.Json.Formatting.Indented else Newtonsoft.Json.Formatting.None
         let render (data : byte[]) =
             try match data with
                 | null | [||] -> null
-                | _ when doJ -> System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> string
+                | _ when doJ -> System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> fun x -> x.ToString fo
                 | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (name : string) = async {
@@ -386,7 +393,7 @@ module Dump =
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
             for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
                 let ty = if x.IsUnfold then "Unfold" else "Event"
-                if not doC then log.Information("{i,3}@{t:u} {u,-6:l} {e:l} {data:l} {meta:l}",
+                if not doC then log.Information("{i,3}@{t:u} {u:l} {e:l} {data:l} {meta:l}",
                                     x.Index, x.Timestamp, ty, x.EventType, render x.Data, render x.Meta)
                 else log.Information("{i,3}@{t:u} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
                          x.Index, x.Timestamp, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
