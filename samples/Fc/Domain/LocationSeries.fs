@@ -32,14 +32,14 @@ type Service internal (resolve, ?maxAttempts) =
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 2)
 
     member __.Read(locationId) : Async<LocationEpochId option> =
-        let (Stream agg) = locationId
-        agg.Query toActiveEpoch
+        let (Stream stream) = locationId
+        stream.Query toActiveEpoch
 
     member __.ActivateEpoch(locationId,epochId) : Async<unit> =
-        let (Stream agg) = locationId
-        agg.Transact(interpretActivateEpoch epochId)
+        let (Stream stream) = locationId
+        stream.Transact(interpretActivateEpoch epochId)
 
-let createService resolve = Service(resolve)
+let create resolve = Service(resolve)
 
 module Cosmos =
 
@@ -49,4 +49,4 @@ module Cosmos =
         let opt = Equinox.ResolveOption.AllowStale
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve(id,opt)
     let createService (context,cache) =
-        createService (resolve (context,cache))
+        create (resolve (context,cache))
