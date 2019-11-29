@@ -1,5 +1,6 @@
 module LocationTests
 
+open FsCheck.Xunit
 open Location
 open Swensen.Unquote
 open System
@@ -24,19 +25,10 @@ module Location =
             let epochs = Epoch.create (Epoch.resolve store) maxAttempts
             create (zeroBalance, shouldClose) (series, epochs)
 
-open FsCheck
-
-type FsCheckGenerators =
-    static member NonNullStrings = Arb.Default.String() |> Arb.filter (fun s -> s <> null)
-
-type NonNullStringsPropertyAttribute() =
-    inherit FsCheck.Xunit.PropertyAttribute(QuietOnSuccess = true, Arbitrary=[| typeof<FsCheckGenerators> |])
-
-let [<NonNullStringsProperty>] ``parallel properties`` loc1 (locations : _[]) (deltas : _[]) maxEvents = Async.RunSynchronously <| async {
+let [<Property>] ``parallel properties`` (IdsAtLeastOne locations) (deltas : _[]) maxEvents = Async.RunSynchronously <| async {
     let store = Equinox.MemoryStore.VolatileStore()
     let zeroBalance = 0
     let maxEvents = max 1 maxEvents
-    let locations = Seq.append locations (Seq.singleton loc1) |> Seq.toArray
     let shouldClose (state : Epoch.Folds.OpenState) = state.count > maxEvents
     let service = Location.MemoryStore.createService (zeroBalance, shouldClose) store
     let adjust delta (bal : Epoch.Folds.Balance) =
@@ -50,10 +42,6 @@ let [<NonNullStringsProperty>] ``parallel properties`` loc1 (locations : _[]) (d
     let expectedBalances = Seq.append (seq { for l in locations -> l, 0}) appliedDeltas |> Seq.groupBy fst |> Seq.map (fun (l,xs) -> l, xs |> Seq.sumBy snd) |> Set.ofSeq
     test <@ expectedBalances = Set.ofSeq balances @> }
 
-
-let (|Id|) (x : Guid) = x.ToString "N" |> FSharp.UMX.UMX.tag
-let (|Ids|) (xs : Guid[]) = xs |> Array.map (|Id|)
-
 type Cosmos(testOutput) =
 
     let context,cache = Cosmos.connect ()
@@ -63,10 +51,9 @@ type Cosmos(testOutput) =
     let log = testOutput |> TestOutputAdapter |> createLogger
     do Serilog.Log.Logger <- log
 
-    let [<NonNullStringsProperty>] properties (Id loc1) (Ids locations) (deltas : _[]) maxEvents = Async.RunSynchronously <| async {
+    let [<Property>] properties (IdsAtLeastOne locations) (deltas : _[]) maxEvents = Async.RunSynchronously <| async {
         let zeroBalance = 0
         let maxEvents = max 1 maxEvents
-        let locations = Seq.append locations (Seq.singleton loc1) |> Seq.toArray
         let shouldClose (state : Epoch.Folds.OpenState) = state.count > maxEvents
         let service = Location.Cosmos.createService (zeroBalance, shouldClose) (context,cache,Int32.MaxValue)
         let adjust delta (bal : Epoch.Folds.Balance) =

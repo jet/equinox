@@ -22,7 +22,7 @@ type LocationService internal (zeroBalance, shouldClose, series : Series.Service
         aux
 
     member __.Execute(locationId, decide) = async {
-        let! activeEpoch = series.Read(locationId)
+        let! activeEpoch = series.Read locationId
         let originEpochId, epochId, balanceCarriedForward =
             match activeEpoch with
             | None -> LocationEpochId.parse -1, LocationEpochId.parse 0, Some zeroBalance

@@ -56,12 +56,12 @@ let sync (balanceCarriedForward : Folds.Balance option) (decide : (Folds.Balance
             | Folds.Initial -> failwith "We've just guaranteed not Initial"
             | Folds.Open { value = bal } -> let r,es = decide bal in Some r,es
             | Folds.Closed _ -> None, []
-    // Finally (iff we're `Open`, have worked, and `shouldClose`), we generate a Closed event
+    // Finally (iff we're `Open`, have run a `decide` and `shouldClose`), we generate a Closed event
     let (balance, isOpen), _ =
         acc.Ingest state <|
             match state with
             | Folds.Initial -> failwith "Can't be Initial"
-            | Folds.Open ({ value = bal } as openState) when Option.isSome result && shouldClose openState -> (bal, false), [Events.Closed]
+            | Folds.Open ({ value = bal } as openState) when shouldClose openState -> (bal, false), [Events.Closed]
             | Folds.Open { value = bal } -> (bal, true), []
             | Folds.Closed bal -> (bal, false), []
     { balance = balance; result = result; isOpen = isOpen }, acc.Accumulated
