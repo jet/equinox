@@ -228,7 +228,8 @@ module Log =
         | SyncConflict of Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
     let propData name (events: #IEventData<byte[]> seq) (log : ILogger) =
-        let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (System.Text.Encoding.UTF8.GetString e.Data) }
+        let render = function null -> "null" | bytes -> System.Text.Encoding.UTF8.GetString bytes
+        let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let propEvents = propData "events"
     let propDataUnfolds = Enum.Unfolds >> propData "unfolds"

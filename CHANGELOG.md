@@ -24,6 +24,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Fixed
 
 - `eqx`: Reinstated writing of missing commandline argument messages to console
+- `Cosmos`: Fix `null` Data handling exception when log level <= `Debug`
 
 <a name="2.0.0"></a>
 <a name="2.0.0-rc8"></a>
