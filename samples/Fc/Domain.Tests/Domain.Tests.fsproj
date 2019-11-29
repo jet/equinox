@@ -9,9 +9,6 @@
 
     <ItemGroup>
         <Compile Include="Infrastructure.fs" />
-        <Compile Include="LocationSeriesTests.fs" />
-        <Compile Include="LocationEpochTests.fs" />
-        <Compile Include="LocationTests.fs" />
         <Compile Include="TicketTests.fs" />
         <Compile Include="TicketListTests.fs" />
         <Compile Include="AllocatorTests.fs" />
