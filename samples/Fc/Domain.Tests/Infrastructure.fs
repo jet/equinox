@@ -5,6 +5,7 @@ open Serilog
 open System
 
 let (|Id|) (x : Guid) = x.ToString "N" |> FSharp.UMX.UMX.tag
+let inline mkId () = Guid.NewGuid() |> (|Id|)
 let (|Ids|) (xs : Guid[]) = xs |> Array.map (|Id|)
 let (|IdsAtLeastOne|) (Id x, Ids xs) = Seq.append xs (Seq.singleton x) |> Seq.toArray
 

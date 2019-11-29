@@ -31,12 +31,12 @@ type LocationService internal (zeroBalance, shouldClose, series : Series.Service
 
 [<AutoOpen>]
 module Helpers =
-    let create (zeroBalance, shouldClose) (series,epochs) =
+    let create (zeroBalance, shouldClose) (series, epochs) =
         LocationService(zeroBalance, shouldClose, series, epochs)
 
 module Cosmos =
 
-    let createService (zeroBalance, shouldClose) (context,cache,maxAttempts) =
+    let createService (zeroBalance, shouldClose) (context, cache, maxAttempts) =
         let series = Series.Cosmos.createService (context, cache, maxAttempts)
         let epochs = Epoch.Cosmos.createService (context, cache, maxAttempts)
         create (zeroBalance, shouldClose) (series, epochs)
