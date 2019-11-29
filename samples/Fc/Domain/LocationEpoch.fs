@@ -17,13 +17,14 @@ module Events =
 module Folds =
 
     type Balance = int
-    type State = Initial | Open of Balance | Closed of Balance
+    type OpenState = { count : int; value : Balance }
+    type State = Initial | Open of OpenState | Closed of Balance
     let initial = Initial
     let evolve state event =
         match event, state with
-        | Events.CarriedForward e, Initial -> Open e.initial
-        | Events.Delta e, Open bal -> Open (bal + e.value)
-        | Events.Closed, Open bal -> Closed bal
+        | Events.CarriedForward e, Initial -> Open { count = 0; value = e.initial }
+        | Events.Delta e, Open bal -> Open { count = bal.count + 1; value = bal.value + e.value }
+        | Events.Closed, Open { value = bal } -> Closed bal
         | Events.CarriedForward _, (Open _|Closed _ as x) -> failwithf "CarriedForward : Unexpected %A" x
         | Events.Delta _, (Initial|Closed _ as x) -> failwithf "Delta : Unexpected %A" x
         | Events.Closed, (Initial|Closed _ as x) -> failwithf "Closed : Unexpected %A" x
@@ -38,33 +39,32 @@ type private Accumulator() =
         | res, xs ->  acc.AddRange xs; res, Folds.fold state (Seq.ofList xs)
     member __.Accumulated = List.ofSeq acc
 
-type Result = { balance : Folds.Balance; worked : bool; isOpen : bool }
+type Result<'t> = { balance : Folds.Balance; result : 't option; isOpen : bool }
 
-let sync (balanceCarriedForward : Folds.Balance option) (interpret : (Folds.Balance -> Events.Event list) option) shouldClose state : Result*Events.Event list =
+let sync (balanceCarriedForward : Folds.Balance option) (decide : (Folds.Balance -> 't*Events.Event list)) shouldClose state : Result<'t>*Events.Event list =
     let acc = Accumulator()
     // We always want to have a CarriedForward event at the start of any Epoch's event stream
-    let initialized, state =
+    let (), state =
         acc.Ingest state <|
             match state with
-            | Folds.Initial -> true, [Events.CarriedForward { initial = Option.get balanceCarriedForward }]
-            | Folds.Open _ | Folds.Closed _ -> false, []
-    // If an `interpret` is supplied, we run that (unless we determine we're in Closed state)
-    let worked, state =
+            | Folds.Initial -> (), [Events.CarriedForward { initial = Option.get balanceCarriedForward }]
+            | Folds.Open _ | Folds.Closed _ -> (), []
+    // Run, unless we determine we're in Closed state
+    let result, state =
         acc.Ingest state <|
-            match state, interpret with
-            | Folds.Initial, _ -> failwith "We've just guaranteed not Initial"
-            | Folds.Open _, None -> true, []
-            | Folds.Open bal, Some interpret -> true, interpret bal
-            | Folds.Closed _, _ -> false, []
-    // Finally (iff we're `Open`, have `worked`, and `shouldClose`), we generate a Closed event
+            match state with
+            | Folds.Initial -> failwith "We've just guaranteed not Initial"
+            | Folds.Open { value = bal } -> let r,es = decide bal in Some r,es
+            | Folds.Closed _ -> None, []
+    // Finally (iff we're `Open`, have worked, and `shouldClose`), we generate a Closed event
     let (balance, isOpen), _ =
         acc.Ingest state <|
             match state with
             | Folds.Initial -> failwith "Can't be Initial"
-            | Folds.Open bal as state when worked && shouldClose state -> (bal, false), [Events.Closed]
-            | Folds.Open bal -> (bal, true), []
+            | Folds.Open ({ value = bal } as openState) when Option.isSome result && shouldClose openState -> (bal, false), [Events.Closed]
+            | Folds.Open { value = bal } -> (bal, true), []
             | Folds.Closed bal -> (bal, false), []
-    { balance = balance; worked = worked; isOpen = isOpen }, acc.Accumulated
+    { balance = balance; result = result; isOpen = isOpen }, acc.Accumulated
 
 type Service internal (resolve, ?maxAttempts) =
 
@@ -74,11 +74,11 @@ type Service internal (resolve, ?maxAttempts) =
         Equinox.AggregateId(Events.categoryId, id)
     let (|Stream|) (AggregateId id) = Equinox.Stream<Events.Event,Folds.State>(log, resolve id, maxAttempts = defaultArg maxAttempts 2)
 
-    member __.Sync(locationId, epochId, prevEpochBalanceCarriedForward, interpret, shouldClose) : Async<Result> =
+    member __.Sync<'R>(locationId, epochId, prevEpochBalanceCarriedForward, decide, shouldClose) : Async<Result<'R>> =
         let (Stream stream) = (locationId, epochId)
-        stream.Transact(sync prevEpochBalanceCarriedForward interpret shouldClose)
+        stream.Transact(sync prevEpochBalanceCarriedForward decide shouldClose)
 
-let create resolve = Service(resolve)
+let create resolve maxAttempts = Service(resolve, maxAttempts)
 
 module Cosmos =
 
@@ -87,4 +87,4 @@ module Cosmos =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
     let createService (context,cache) =
-        create (resolve (context,cache))
+        create (resolve (context,cache)) 3

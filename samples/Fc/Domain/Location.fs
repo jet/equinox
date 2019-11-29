@@ -1,27 +1,42 @@
 namespace Location
 
+type Wip<'R> = Pending of decide : (Epoch.Folds.Balance -> 'R*Epoch.Events.Event list) | Complete of 'R
+
 /// Manages a Series of Epochs, with a running total being carried forward to the next Epoch when it's Closed
-type LocationService(zeroBalance, shouldClose, series : Location.Series.Service, epoch : Location.Epoch.Service) =
+type LocationService internal (zeroBalance, shouldClose, series : Series.Service, epochs : Epoch.Service) =
 
     let rec execute locationId originEpochId =
-        let rec aux epochId balanceToCarryForward interpret = async {
-            match! epoch.Sync(locationId,epochId,balanceToCarryForward,interpret,shouldClose) with
-            | { balance = bal; isOpen = true } ->
+        let rec aux epochId balanceToCarryForward wip = async {
+            let decide state = match wip with Complete r -> r,[] | Pending decide -> decide state
+            match! epochs.Sync(locationId, epochId, balanceToCarryForward, decide, shouldClose) with
+            | { balance = bal; result = Some res; isOpen = true } ->
                 if originEpochId <> epochId then
                     do! series.ActivateEpoch(locationId, epochId)
-                return bal
-            | { balance = bal; worked = true } ->
+                return bal, res
+            | { balance = bal; result = Some res } ->
                 let successorEpochId = LocationEpochId.next epochId
-                return! aux successorEpochId (Some bal) None
+                return! aux successorEpochId (Some bal) (Wip.Complete res)
             | { balance = bal } ->
                 let successorEpochId = LocationEpochId.next epochId
-                return! aux successorEpochId (Some bal) interpret }
+                return! aux successorEpochId (Some bal) wip }
         aux
 
-    member __.Execute(locationId, interpret) = async {
+    member __.Execute(locationId, decide) = async {
         let! activeEpoch = series.Read(locationId)
-        let originEpochId,epochId,balanceCarriedForward =
+        let originEpochId, epochId, balanceCarriedForward =
             match activeEpoch with
-            | None -> LocationEpochId.parse -1,LocationEpochId.parse 0,Some zeroBalance
-            | Some activeEpochId -> activeEpochId,activeEpochId,None
-        return! execute locationId originEpochId epochId interpret balanceCarriedForward }
+            | None -> LocationEpochId.parse -1, LocationEpochId.parse 0, Some zeroBalance
+            | Some activeEpochId -> activeEpochId, activeEpochId, None
+        return! execute locationId originEpochId epochId balanceCarriedForward (Wip.Pending decide)}
+
+[<AutoOpen>]
+module Helpers =
+    let create (zeroBalance, shouldClose) (series,epochs) =
+        LocationService(zeroBalance, shouldClose, series, epochs)
+
+module Cosmos =
+
+    let createService (zeroBalance, shouldClose) (context,cache) =
+        let series = Series.Cosmos.createService (context, cache)
+        let epochs = Epoch.Cosmos.createService (context, cache)
+        create (zeroBalance, shouldClose) (series, epochs)

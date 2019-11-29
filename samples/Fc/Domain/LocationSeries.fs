@@ -39,7 +39,7 @@ type Service internal (resolve, ?maxAttempts) =
         let (Stream stream) = locationId
         stream.Transact(interpretActivateEpoch epochId)
 
-let create resolve = Service(resolve)
+let create resolve maxAttempts = Service(resolve, maxAttempts)
 
 module Cosmos =
 
@@ -49,4 +49,4 @@ module Cosmos =
         let opt = Equinox.ResolveOption.AllowStale
         fun id -> Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve(id,opt)
     let createService (context,cache) =
-        create (resolve (context,cache))
+        create (resolve (context,cache)) 3
