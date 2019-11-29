@@ -382,7 +382,7 @@ module Dump =
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold),fun _state -> failwith "no snapshot required"
         let fo = if doP then Newtonsoft.Json.Formatting.Indented else Newtonsoft.Json.Formatting.None
-        let render (data : byte[]) =
+        let render fo (data : byte[]) =
             try match data with
                 | null | [||] -> null
                 | _ when doJ -> System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> fun x -> x.ToString fo
@@ -396,7 +396,7 @@ module Dump =
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
             let mutable prevTs = None
             for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
-                let ty = if x.IsUnfold then "Unfold" else "Event"
+                let ty,render = if x.IsUnfold then "U", render Newtonsoft.Json.Formatting.Indented else "E", render fo
                 let interval =
                     match prevTs with Some p when not x.IsUnfold -> Some (x.Timestamp - p) | _ -> None
                     |> function
@@ -404,8 +404,8 @@ module Dump =
                     | Some (i : TimeSpan) when not doT -> i.ToString()
                     | Some (i : TimeSpan) when i.TotalDays >= 1. -> i.ToString "d\dhh\hmm\m"
                     | Some i when i.TotalHours >= 1. -> i.ToString "h\hmm\mss\s"
-                    | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\s"
-                    | Some i -> i.ToString("s\.ff\s")
+                    | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\.f\s"
+                    | Some i -> i.ToString("s\.fff\s")
                 prevTs <- Some x.Timestamp
                 if not doC then log.Information("{i,3}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
                                     x.Index, x.Timestamp, interval, ty, x.EventType, render x.Data, render x.Meta)
