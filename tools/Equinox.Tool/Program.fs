@@ -404,12 +404,12 @@ module Dump =
                     | Some (i : TimeSpan) when not doT -> i.ToString()
                     | Some (i : TimeSpan) when i.TotalDays >= 1. -> i.ToString "d\dhh\hmm\m"
                     | Some i when i.TotalHours >= 1. -> i.ToString "h\hmm\mss\s"
-                    | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\.f\s"
+                    | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\.ff\s"
                     | Some i -> i.ToString("s\.fff\s")
                 prevTs <- Some x.Timestamp
-                if not doC then log.Information("{i,3}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
+                if not doC then log.Information("{i,4}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
                                     x.Index, x.Timestamp, interval, ty, x.EventType, render x.Data, render x.Meta)
-                else log.Information("{i,3}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
+                else log.Information("{i,4}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
                          x.Index, x.Timestamp, interval, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
         streams
         |> Seq.map readStream
