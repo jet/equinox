@@ -36,7 +36,7 @@ module Helpers =
 
 module Cosmos =
 
-    let createService (zeroBalance, shouldClose) (context,cache) =
-        let series = Series.Cosmos.createService (context, cache)
-        let epochs = Epoch.Cosmos.createService (context, cache)
+    let createService (zeroBalance, shouldClose) (context,cache,maxAttempts) =
+        let series = Series.Cosmos.createService (context, cache, maxAttempts)
+        let epochs = Epoch.Cosmos.createService (context, cache, maxAttempts)
         create (zeroBalance, shouldClose) (series, epochs)

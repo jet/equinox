@@ -86,5 +86,5 @@ module Cosmos =
     let resolve (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
-    let createService (context,cache) =
-        create (resolve (context,cache)) 3
+    let createService (context,cache,maxAttempts) =
+        create (resolve (context,cache)) maxAttempts
