@@ -16,6 +16,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
+- Update to `Microsoft.SourceLink.GitHub` v `1.0.0`
 - Samples etc target `Argu` v `6.0.0`
 - `eqx dump`'s `-J` switch now turns off JSON rendering
 - `eqx -vc dump` now renders Store `.Information` logs
