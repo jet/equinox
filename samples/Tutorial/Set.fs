@@ -11,6 +11,7 @@ module Events =
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let [<Literal>] categoryId = "Set"
+    let (|AggregateId|) id = Equinox.AggregateId(categoryId, SetId.toString id)
 
 module Folds =
 
@@ -39,8 +40,7 @@ let interpret add remove (state : Folds.State) =
 type Service internal (setId, resolveStream, ?maxAttempts) =
 
     let log = Serilog.Log.ForContext<Service>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, SetId.toString id)
-    let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+    let (|Stream|) (Events.AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
     let (Stream stream) = setId
 
     member __.Add(add : string seq,remove : string seq) : Async<int*int> =
@@ -49,7 +49,7 @@ type Service internal (setId, resolveStream, ?maxAttempts) =
     member __.Read() : Async<Set<string>> =
         stream.Query id
 
-let create resolve setId = Service(setId, resolve)
+let create resolveStream setId = Service(setId, resolveStream)
 
 module Cosmos =
 

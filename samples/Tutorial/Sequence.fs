@@ -13,6 +13,7 @@ module Events =
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let [<Literal>] categoryId = "Sequence"
+    let (|AggregateId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
 
 module Folds =
 
@@ -30,16 +31,14 @@ let decideReserve (count : int) (state : Folds.State) : int64 * Events.Event lis
 type Service internal (resolveStream, ?maxAttempts) =
 
     let log = Serilog.Log.ForContext<Service>()
-    let (|AggregateId|) id = Equinox.AggregateId(Events.categoryId, SequenceId.toString id)
-    let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
-
-    let decide (Stream stream) : (Folds.State -> 'r * Events.Event list) -> Async<'r> = stream.Transact
+    let (|Stream|) (Events.AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
 
     /// Reserves an id, yielding the reserved value. Optional <c>count</c> enables reserving more than the default count of <c>1</c> in a single transaction
     member __.Reserve(series,?count) : Async<int64> =
-        decide series (decideReserve (defaultArg count 1))
+        let (Stream stream) = series
+        stream.Transact(decideReserve (defaultArg count 1))
 
-let create resolver = Service(resolver)
+let create resolveStream = Service(resolveStream)
 
 module Cosmos =
 
