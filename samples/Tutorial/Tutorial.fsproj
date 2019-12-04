@@ -7,12 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="Todo.fsx" />
     <Compile Include="Infrastructure.fs" />
     <Compile Include="Sequence.fs" />
     <Compile Include="Gapless.fs" />
     <Compile Include="Index.fs" />
     <Compile Include="Set.fs" />
+    <Compile Include="Upload.fs" />
+    <None Include="Todo.fsx" />
     <None Include="Favorites.fsx" />
     <None Include="Counter.fsx" />
     <None Include="Cosmos.fsx" />
