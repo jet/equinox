@@ -5,6 +5,7 @@
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"
 #r "Equinox.MemoryStore.dll"
+#r "FSCodec.dll"
 
 (*
  * EVENTS
