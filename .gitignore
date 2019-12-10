@@ -42,3 +42,6 @@ packages.config
 
 # CodeRush
 .cr/
+
+#Ionide
+.ionide/
