@@ -4,10 +4,15 @@ module Upload
 open System
 open FSharp.UMX
 
-type OrderId = string<orderNo>
-and [<Measure>] orderNo
-module OrderId =
-    let toString (value : OrderId) : string = %value
+type PurchaseOrderId = int<purchaseOrderId>
+and [<Measure>] purchaseOrderId
+module PurchaseOrderId =
+    let toString (value : PurchaseOrderId) : string = string %value
+
+type CompanyId = string<companyId>
+and [<Measure>] companyId
+module CompanyId =
+    let toString (value : CompanyId) : string = %value
 
 type UploadId = string<uploadId>
 and [<Measure>] uploadId
@@ -23,7 +28,9 @@ module Events =
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let [<Literal>] categoryId = "Upload"
-    let (|AggregateId|) id = Equinox.AggregateId(categoryId, OrderId.toString id)
+    let (|For|) (companyId, purchaseOrderId) =
+        let id = sprintf "%s_%s" (PurchaseOrderId.toString purchaseOrderId) (CompanyId.toString companyId)
+        Equinox.AggregateId(categoryId, id)
 
 module Folds =
 
@@ -39,16 +46,15 @@ let decide (value : UploadId) (state : Folds.State) : Choice<unit,UploadId> * Ev
     | None -> Choice1Of2 (), [Events.IdAssigned { value = value}]
     | Some value -> Choice2Of2 value, []
 
-type Service internal (resolveStream, ?maxAttempts) =
+type Service internal (log, resolve, maxAttempts) =
 
-    let log = Serilog.Log.ForContext<Service>()
-    let (|Stream|) (Events.AggregateId streamId) = Equinox.Stream(log, resolveStream streamId, defaultArg maxAttempts 3)
+    let resolve (Events.For id) = Equinox.Stream(log, resolve id, maxAttempts)
 
-    member __.Sync(orderId,value) : Async<Choice<unit,UploadId>> =
-        let (Stream stream) = orderId
+    member __.Sync(companyId, purchaseOrderId, value) : Async<Choice<unit,UploadId>> =
+        let stream = resolve (companyId, purchaseOrderId)
         stream.Transact(decide value)
 
-let create resolveStream = Service(resolveStream)
+let create resolve = Service(Serilog.Log.ForContext<Service>(), resolve, 3)
 
 module Cosmos =
 
