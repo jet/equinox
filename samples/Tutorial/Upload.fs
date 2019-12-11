@@ -41,16 +41,16 @@ module Folds =
     let fold (state: State) (events: seq<Events.Event>) : State =
         Seq.tryLast events |> Option.fold evolve state
 
-let decide (value : UploadId) (state : Folds.State) : Choice<unit,UploadId> * Events.Event list =
+let decide (value : UploadId) (state : Folds.State) : Choice<UploadId,UploadId> * Events.Event list =
     match state with
-    | None -> Choice1Of2 (), [Events.IdAssigned { value = value}]
+    | None -> Choice1Of2 value, [Events.IdAssigned { value = value}]
     | Some value -> Choice2Of2 value, []
 
 type Service internal (log, resolve, maxAttempts) =
 
     let resolve (Events.For id) = Equinox.Stream(log, resolve id, maxAttempts)
 
-    member __.Sync(companyId, purchaseOrderId, value) : Async<Choice<unit,UploadId>> =
+    member __.Sync(companyId, purchaseOrderId, value) : Async<Choice<UploadId,UploadId>> =
         let stream = resolve (companyId, purchaseOrderId)
         stream.Transact(decide value)
 
