@@ -4,16 +4,18 @@ open Domain.Cart
 
 type Service(log, resolve) =
 
-    let (|Stream|) (Events.ForCartId streamId, opt) = Equinox.Stream(log, resolve (streamId,opt), maxAttempts = 3)
+    let resolve (Events.ForCartId streamId, opt) = Equinox.Stream(log, resolve (streamId,opt), maxAttempts = 3)
         
-    let flowAsync (Stream stream) (flow, prepare) =
+    let flowAsync cartId (flow, prepare) =
+        let stream = resolve cartId
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             let ctx = Equinox.Accumulator(Fold.fold,state)
             let execute = Commands.interpret >> ctx.Transact
             let res = flow ctx execute
             return res,ctx.Accumulated })
-    let read (Stream stream) : Async<Fold.State> =
+    let read cartId : Async<Fold.State> =
+        let stream = resolve cartId
         stream.Query id
     let execute cartId command =
         flowAsync (cartId,None) ((fun _ctx execute -> execute command), None)

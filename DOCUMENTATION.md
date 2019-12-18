@@ -175,11 +175,13 @@ let isOrigin = function
 
 type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
-    let execute (Stream stream) command : Async<unit> =
+    let execute clientId command : Async<unit> =
+        let stream = resolve clientId
         stream.Transact(interpret command)
-    let read (Stream stream) : Async<string list> =
+    let read clientId : Async<string list> =
+        let stream = resolve clientId
         stream.Query id
 
     member __.Execute(clientId, command) =
@@ -450,16 +452,19 @@ let interpret c (state : State) =
 ```fsharp
 type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+    let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
-    let execute (Stream stream) command : Async<unit> =
+    let execute clientId command : Async<unit> =
+        let stream = reolve clientId
         stream.Transact(interpret command)
-    let handle (Stream stream) command : Async<Todo list> =
+    let handle clientId command : Async<Todo list> =
+        let stream = reolve clientId
         stream.Transact(fun state ->
             let ctx = Equinox.Context(fold, state)
             ctx.Execute (interpret command)
             ctx.State.items,ctx.Accumulated) // including any events just pended
-    let query (Stream stream) (projection : State -> T) : Async<T> =
+    let query clientId (projection : State -> T) : Async<T> =
+        let stream = reolve clientId
         stream.Query projection
 
     member __.List clientId : Async<Todo seq> =

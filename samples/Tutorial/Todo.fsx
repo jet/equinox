@@ -60,17 +60,21 @@ let interpret c (state : State) =
 
 type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+    let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
-    let execute (Stream stream) command : Async<unit> =
+    let execute clientId command : Async<unit> =
+        let stream = resolve clientId
         stream.Transact(interpret command)
-    let handle (Stream stream) command : Async<Todo list> =
+    let handle clientId command : Aync<Todo list> =
+        let stream = resolve clientId
         stream.Transact(fun state ->
             let ctx = Equinox.Accumulator(fold, state)
             ctx.Transact (interpret command)
             ctx.State.items,ctx.Accumulated)
-    let query (Stream stream) (projection : State -> 't) : Async<'t> =
+    let query clientId (projection : State -> 't) : Async<'t> =
+        let stream = resolve clientId
         stream.Query projection
+
     member __.List clientId : Async<Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
     member __.TryGet(clientId, id) =

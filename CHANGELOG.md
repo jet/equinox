@@ -19,7 +19,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Samples etc target `Argu` v `6.0.0`
 - `eqx dump`'s `-J` switch now turns off JSON rendering
 - `eqx -vc dump` now renders Store `.Information` logs
-- Samples consistently use `module Fold`, `(Events.ForX streamId)`  [#174](https://github.com/jet/equinox/pull/174) 
+- Samples consistently use `module Fold`, `(Events.ForX streamId)`, removed `(|Stream|)`  [#174](https://github.com/jet/equinox/pull/174) 
 
 ### Removed
 ### Fixed

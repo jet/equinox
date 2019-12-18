@@ -4,10 +4,12 @@ open Domain.InventoryItem
 
 type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (Events.ForInventoryItemId id) = Equinox.Stream(log, resolve id, defaultArg maxAttempts 3)
+    let resolve (Events.ForInventoryItemId id) = Equinox.Stream(log, resolve id, defaultArg maxAttempts 3)
 
-    member __.Execute (Stream handler) command =
-        handler.Transact(Commands.interpret command)
+    member __.Execute(itemId, command) =
+        let stream = resolve itemId
+        stream.Transact(Commands.interpret command)
 
-    member __.Read(Stream handler) =
-        handler.Query id 
+    member __.Read(itemId) =
+        let stream = resolve itemId
+        stream.Query id

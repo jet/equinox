@@ -102,10 +102,14 @@ module Commands =
 
 type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
-    let execute (Stream stream) command : Async<unit> = stream.Transact(Commands.interpret command)
-    let query (Stream stream) projection : Async<int> = stream.Query projection
+    let execute clientId command : Async<unit> =
+        let stream = resolve clientId
+        stream.Transact(Commands.interpret command)
+    let query clientId projection : Async<int> =
+        let stream = resolve clientId
+        stream.Query projection
 
     member __.Add(clientId, count) = execute clientId (Commands.Add count)
     member __.Remove(clientId, count) = execute clientId (Commands.Remove count)

@@ -37,6 +37,7 @@ module Fold =
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
 
 module Commands =
+
     let interpret c (state : Fold.State) =
         match c with
         | Add value -> [Added { value with id = state.nextId }]
@@ -49,11 +50,16 @@ module Commands =
 
 type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts = defaultArg maxAttempts 2)
+    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts = defaultArg maxAttempts 2)
 
-    let execute (Stream stream) command = stream.Transact(Commands.interpret command)
-    let query (Stream stream) projection = stream.Query projection
-    let handle (Stream stream) command =
+    let execute clientId command =
+        let stream = resolve clientId
+        stream.Transact(Commands.interpret command)
+    let query clientId projection =
+        let stream = resolve clientId
+        stream.Query projection
+    let handle clientId command =
+        let stream = resolve clientId
         stream.Transact(fun state ->
             let ctx = Equinox.Accumulator(Fold.fold, state)
             ctx.Transact (Commands.interpret command)

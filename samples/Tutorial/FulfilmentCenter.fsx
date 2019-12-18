@@ -82,11 +82,17 @@ module FulfilmentCenter =
 
     type Service(log, reesolve, ?maxAttempts) =
 
-        let (|Stream|) (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+        let resolve (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
-        let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
-        let read (Stream stream) : Async<Summary> = stream.Query id
-        let queryEx (Stream stream) (projection : Fold.State -> 't) : Async<int64*'t> = stream.QueryEx(fun v s -> v, projection s)
+        let execute fc command : Async<unit> =
+            let stream = resolve fc
+            stream.Transact(interpret command)
+        let read fc : Async<Summary> =
+            let stream = resolve fc
+            stream.Query id
+        let queryEx fc (projection : Fold.State -> 't) : Async<int64*'t> =
+            let stream = resolve fc
+            stream.QueryEx(fun v s -> v, projection s)
 
         member __.UpdateName(id, value) = execute id (Register value)
         member __.UpdateAddress(id, value) = execute id (UpdateAddress value)
@@ -160,10 +166,14 @@ module FulfilmentCenterSummary =
 
     type Service(log, resolve, ?maxAttempts) =
 
-        let (|Stream|) (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+        let resolve (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
-        let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
-        let read (Stream stream) : Async<Summary option> = stream.Query(Option.map (fun s -> s.state))
+        let execute fc command : Async<unit> =
+            let stream = resolve fc
+            stream.Transact(interpret command)
+        let read fc : Async<Summary option> =
+            let stream = resolve fc
+            stream.Query(Option.map (fun s -> s.state))
 
         member __.Update(id, version, value) = execute id (Update (version,value))
         member __.TryRead id : Async<Summary option> = read id

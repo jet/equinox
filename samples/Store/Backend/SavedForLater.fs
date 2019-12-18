@@ -8,16 +8,19 @@ type Service(handlerLog, resolve, maxSavedItems : int, ?maxAttempts) =
 
     do if maxSavedItems < 0 then invalidArg "maxSavedItems" "must be non-negative value."
 
-    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(handlerLog, resolve streamId, defaultArg maxAttempts 3)
+    let resolve (Events.ForClientId streamId) = Equinox.Stream(handlerLog, resolve streamId, defaultArg maxAttempts 3)
 
-    let execute (Stream stream) command : Async<bool> =
+    let execute clientId command : Async<bool> =
+        let stream = resolve clientId
         stream.Transact(Commands.decide maxSavedItems command)
-    let read (Stream stream) : Async<Events.Item[]> =
+    let read clientId : Async<Events.Item[]> =
+        let stream = resolve clientId
         stream.Query id
-    let remove (Stream stream) (resolve : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
+    let remove clientId (resolveCommand : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
+        let stream = resolve clientId
         stream.TransactAsync(fun (state : Fold.State) -> async {
             let contents = seq { for item in state -> item.skuId } |> set
-            let! cmd = resolve contents.Contains
+            let! cmd = resolveCommand contents.Contains
             let _, events = Commands.decide maxSavedItems cmd state
             return (),events } )
 

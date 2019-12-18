@@ -5,11 +5,13 @@ open System
 
 type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 2)
+    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 2)
 
-    let execute (Stream stream) command : Async<unit> =
+    let execute clientId command : Async<unit> =
+        let stream = resolve clientId
         stream.Transact(Commands.interpret command)
-    let read (Stream stream) : Async<Events.Favorited []> =
+    let read clientId : Async<Events.Favorited []> =
+        let stream = resolve clientId
         stream.Query id
 
     member __.Execute(clientId, command) =

@@ -57,11 +57,13 @@ let decide command (State state) =
 
 type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (ForCounterId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+    let resolve (ForCounterId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
-    let execute (Stream stream) command : Async<unit> =
+    let execute counterId command : Async<unit> =
+        let stream = resolve counterId
         stream.Transact(decide command)
-    let read (Stream stream) : Async<int> =
+    let read counterId : Async<int> =
+        let stream = resolve counterId
         stream.Query(fun (State value) -> value)
 
     member __.Execute(instanceId, command) : Async<unit> =
