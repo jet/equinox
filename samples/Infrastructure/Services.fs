@@ -28,18 +28,18 @@ type ServiceBuilder(storageConfig, handlerLog) =
      let resolver = StreamResolver(storageConfig)
 
      member __.CreateFavoritesService() =
-        let fold, initial = Favorites.Folds.fold, Favorites.Folds.initial
-        let snapshot = Favorites.Folds.isOrigin,Favorites.Folds.snapshot
+        let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
+        let snapshot = Favorites.Fold.isOrigin,Favorites.Fold.snapshot
         Backend.Favorites.Service(handlerLog, resolver.Resolve(Favorites.Events.codec,fold,initial,snapshot))
 
      member __.CreateSaveForLaterService() =
-        let fold, initial = SavedForLater.Folds.fold, SavedForLater.Folds.initial
-        let snapshot = SavedForLater.Folds.isOrigin,SavedForLater.Folds.compact
+        let fold, initial = SavedForLater.Fold.fold, SavedForLater.Fold.initial
+        let snapshot = SavedForLater.Fold.isOrigin,SavedForLater.Fold.compact
         Backend.SavedForLater.Service(handlerLog, resolver.Resolve(SavedForLater.Events.codec,fold,initial,snapshot), maxSavedItems=50)
 
      member __.CreateTodosService() =
-        let fold, initial = TodoBackend.Folds.fold, TodoBackend.Folds.initial
-        let snapshot = TodoBackend.Folds.isOrigin, TodoBackend.Folds.snapshot
+        let fold, initial = TodoBackend.Fold.fold, TodoBackend.Fold.initial
+        let snapshot = TodoBackend.Fold.isOrigin, TodoBackend.Fold.snapshot
         TodoBackend.Service(handlerLog, resolver.Resolve(TodoBackend.Events.codec,fold,initial,snapshot))
 
 let register (services : IServiceCollection, storageConfig, handlerLog) =

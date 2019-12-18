@@ -7,8 +7,8 @@ let createMemoryStore () =
     new VolatileStore<_>()
 
 let createServiceMemory log store =
-    let resolveStream (id,opt) = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Resolve(id,?option=opt)
-    Backend.Cart.Service(log, resolveStream)
+    let resolve (id,opt) = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Cart.Fold.fold, Domain.Cart.Fold.initial).Resolve(id,?option=opt)
+    Backend.Cart.Service(log, resolve)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -40,8 +40,8 @@ type Tests(testOutputHelper) =
 
         // Assert 2. Verify that the Command got correctly reflected in the state, with no extraneous effects
         let verifyFoldedStateReflectsCommand = function
-            | { Domain.Cart.Folds.State.items = [ item ] } ->
-                let expectedItem : Domain.Cart.Folds.ItemInfo = { skuId = skuId; quantity = quantity; returnsWaived = false }
+            | { Domain.Cart.Fold.State.items = [ item ] } ->
+                let expectedItem : Domain.Cart.Fold.ItemInfo = { skuId = skuId; quantity = quantity; returnsWaived = false }
                 test <@ expectedItem = item @>
             | x -> x |> failwithf "Expected to find item, got %A"
         verifyFoldedStateReflectsCommand expected

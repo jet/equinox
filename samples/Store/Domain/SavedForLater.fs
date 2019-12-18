@@ -27,8 +27,9 @@ module Events =
         | Added of Added
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("SavedForLater", ClientId.toStringN id)
 
-module Folds =
+module Fold =
     open Events
     let isSupersededAt effectiveDate (item : Item) = item.dateSaved < effectiveDate
     type private InternalState(externalState : seq<Item>) =
@@ -64,8 +65,6 @@ module Folds =
         Array.length newState > maxSavedItems
     let isOrigin = function Compacted _ -> true | _ -> false
     let compact state = Events.Compacted { items = state }
-    /// This transmute impl a) removes events - we're not interested in storing the events b) packs the post-state into a Compacted unfold-event
-    let transmute _events state = [],[compact state]
 
 type Command =
     | Merge of merges : Events.Item []
@@ -85,9 +84,9 @@ module Commands =
             this.DoesNotAlreadyContainSameOrMoreRecent item.dateSaved item.skuId
 
     // yields true if the command was executed, false if it would have breached the invariants
-    let decide (maxSavedItems : int) (cmd : Command) (state : Folds.State) : bool * Events.Event list =
+    let decide (maxSavedItems : int) (cmd : Command) (state : Fold.State) : bool * Events.Event list =
         let validateAgainstInvariants events =
-            if Folds.proposedEventsWouldExceedLimit maxSavedItems events state then false, []
+            if Fold.proposedEventsWouldExceedLimit maxSavedItems events state then false, []
             else true, events
         match cmd with
         | Merge merges ->

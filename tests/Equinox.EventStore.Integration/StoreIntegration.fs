@@ -47,14 +47,14 @@ let defaultBatchSize = 500
 let createGesGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
 
 module Cart =
-    let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
+    let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
     let codec = Domain.Cart.Events.codec
-    let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.snapshot
+    let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
     let createServiceWithoutOptimization log gateway =
         Backend.Cart.Service(log, fun (id,opt) -> Resolver(gateway, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
     let createServiceWithCompaction log gateway =
-        let resolveStream (id,opt) = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
-        Backend.Cart.Service(log, resolveStream)
+        let resolve (id,opt) = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
+        Backend.Cart.Service(log, resolve)
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Backend.Cart.Service(log, fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
@@ -63,14 +63,14 @@ module Cart =
         Backend.Cart.Service(log, fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
 
 module ContactPreferences =
-    let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
+    let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let gateway = createGesGateway connection defaultBatchSize
         Backend.ContactPreferences.Service(log, Resolver(gateway, codec, fold, initial).Resolve)
     let createService log connection =
-        let resolveStream = Resolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent).Resolve
-        Backend.ContactPreferences.Service(log, resolveStream)
+        let resolve = Resolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent).Resolve
+        Backend.ContactPreferences.Service(log, resolve)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

@@ -1,15 +1,17 @@
 ﻿module Backend.Favorites
 
-open Domain
 open Domain.Favorites
 open System
 
-type Service(log, resolveStream, ?maxAttempts) =
-    let (|AggregateId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 2)
-    let execute (Stream stream) command : Async<unit> =
+type Service(log, resolve, ?maxAttempts) =
+
+    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 2)
+
+    let execute clientId command : Async<unit> =
+        let stream = resolve clientId
         stream.Transact(Commands.interpret command)
-    let read (Stream stream) : Async<Events.Favorited []> =
+    let read clientId : Async<Events.Favorited []> =
+        let stream = resolve clientId
         stream.Query id
 
     member __.Execute(clientId, command) =

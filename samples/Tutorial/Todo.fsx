@@ -32,6 +32,7 @@ type Event =
     | Snapshotted       of Snapshotted
     interface TypeShape.UnionContract.IUnionContract
 let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+let (|ForClientId|) (id : string) = Equinox.AggregateId("Todos", id)
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
@@ -57,19 +58,23 @@ let interpret c (state : State) =
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted { id=id }] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
-type Service(log, resolveStream, ?maxAttempts) =
+type Service(log, resolve, ?maxAttempts) =
 
-    let (|AggregateId|) (id : string) = Equinox.AggregateId("Todos", id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
-    let execute (Stream stream) command : Async<unit> =
+    let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+
+    let execute clientId command : Async<unit> =
+        let stream = resolve clientId
         stream.Transact(interpret command)
-    let handle (Stream stream) command : Async<Todo list> =
+    let handle clientId command : Aync<Todo list> =
+        let stream = resolve clientId
         stream.Transact(fun state ->
             let ctx = Equinox.Accumulator(fold, state)
             ctx.Transact (interpret command)
             ctx.State.items,ctx.Accumulated)
-    let query (Stream stream) (projection : State -> 't) : Async<'t> =
+    let query clientId (projection : State -> 't) : Async<'t> =
+        let stream = resolve clientId
         stream.Query projection
+
     member __.List clientId : Async<Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
     member __.TryGet(clientId, id) =

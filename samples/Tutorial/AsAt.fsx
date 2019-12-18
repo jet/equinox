@@ -35,6 +35,7 @@
 open System
 
 module Events =
+
     type Delta = { count : int }
     type SnapshotInfo = { balanceLog : int[] }
     type Contract =
@@ -55,9 +56,9 @@ module Events =
         let down (_index,e) : Contract * _ option * DateTimeOffset option =
             e,None,None
         FsCodec.NewtonsoftJson.Codec.Create(up,down)
+    let (|ForClientId|) clientId = Equinox.AggregateId("Account", clientId)
 
-module Folds =
-    open Events
+module Fold =
 
     type State = int[]
     module State =
@@ -65,7 +66,7 @@ module Folds =
     let initial : State = [||]
     // Rather than composing a `fold` from an `evolve` function as one normally does, it makes sense for us to do it as
     // a loop as we are appending each time but can't mutate the incoming state
-    let fold state (xs : Event seq) =
+    let fold state (xs : Events.Event seq) =
         let mutable bal = state |> Array.tryLast |> Option.defaultValue 0
         let bals = ResizeArray(state)
         let record ver delta =
@@ -77,40 +78,42 @@ module Folds =
             bals.Add bal
         for x in xs do
             match x with
-            | ver,Added e -> record ver +e.count
-            | ver,Removed e -> record ver -e.count
-            | _ver,Snapshot e -> bals.Clear(); bals.AddRange e.balanceLog
+            | ver,Events.Added e -> record ver +e.count
+            | ver,Events.Removed e -> record ver -e.count
+            | _ver,Events.Snapshot e -> bals.Clear(); bals.AddRange e.balanceLog
         bals.ToArray()
     // generate a snapshot when requested
-    let snapshot state : Event = -1L,Snapshot { balanceLog = state }
+    let snapshot state : Events.Event = -1L,Events.Snapshot { balanceLog = state }
     // Recognize a relevant snapshot when we meet one in the chain
-    let isValid : Event -> bool = function (_,Snapshot _) -> true | _ -> false
+    let isValid : Events.Event -> bool = function (_,Events.Snapshot _) -> true | _ -> false
 
 module Commands =
-    open Events
-    open Folds
 
     type Command =
         | Add of int
         | Remove of int
     let interpret command state =
         match command with
-        | Add delta -> [-1L,Added { count = delta}]
+        | Add delta -> [-1L,Events.Added { count = delta}]
         | Remove delta ->
-            let bal = state |> State.balance
+            let bal = state |> Fold.State.balance
             if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
-            else [-1L,Removed {count = delta}]
+            else [-1L,Events.Removed {count = delta}]
 
-type Service(log, resolveStream, ?maxAttempts) =
-    let (|AggregateId|) clientId = Equinox.AggregateId("Account", clientId)
-    let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+type Service(log, resolve, ?maxAttempts) =
 
-    let execute (Stream stream) command : Async<unit> = stream.Transact(Commands.interpret command)
-    let query (Stream stream) projection : Async<int> = stream.Query projection
+    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+
+    let execute clientId command : Async<unit> =
+        let stream = resolve clientId
+        stream.Transact(Commands.interpret command)
+    let query clientId projection : Async<int> =
+        let stream = resolve clientId
+        stream.Query projection
 
     member __.Add(clientId, count) = execute clientId (Commands.Add count)
     member __.Remove(clientId, count) = execute clientId (Commands.Remove count)
-    member __.Read(clientId) = query clientId (Folds.State.balance)
+    member __.Read(clientId) = query clientId (Fold.State.balance)
     member __.AsAt(clientId,index) = query clientId (fun state -> state.[index])
 
 module Log =
@@ -145,8 +148,8 @@ module EventStore =
     // cache so normal read pattern is to read from whatever we've built in memory
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
-    let accessStrategy = AccessStrategy.RollingSnapshots (Folds.isValid,Folds.snapshot)
-    let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
+    let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
+    let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
 
 module Cosmos =
     open Equinox.Cosmos
@@ -156,8 +159,8 @@ module Cosmos =
     let conn = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
     let context = Context(conn, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-    let accessStrategy = AccessStrategy.Snapshot (Folds.isValid,Folds.snapshot)
-    let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
+    let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
+    let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
 
 let serviceES = Service(Log.log, EventStore.resolve)
 let serviceCosmos = Service(Log.log, Cosmos.resolve)

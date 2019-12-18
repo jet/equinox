@@ -8,8 +8,8 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
-let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.snapshot
+let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
+let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
 
 let createMemoryStore () =
     // we want to validate that the JSON UTF8 is working happily
@@ -54,11 +54,11 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrange connect choose resolveStream = async {
+    let arrange connect choose resolve = async {
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn defaultBatchSize
-        return Backend.Cart.Service(log, resolveStream gateway) }
+        return Backend.Cart.Service(log, resolve gateway) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {

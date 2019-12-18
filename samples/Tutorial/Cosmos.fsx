@@ -26,6 +26,7 @@ module Favorites =
         | Added of Item
         | Removed of Item
         interface TypeShape.UnionContract.IUnionContract
+        let (|ForClientId|) clientId = Equinox.AggregateId("Favorites", clientId)
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let initial : string list = []
     let evolve state = function
@@ -41,16 +42,19 @@ module Favorites =
         | Add sku -> if state |> List.contains sku then [] else [Added {sku = sku}]
         | Remove sku -> if state |> List.contains sku then [Removed {sku = sku}] else []
 
-    type Service(log, resolveStream, ?maxAttempts) =
-        let (|AggregateId|) clientId = Equinox.AggregateId("Favorites", clientId)
-        let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+    type Service(log, resolve, maxAttempts) =
 
-        let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
-        let read (Stream stream) : Async<string list> = stream.Query id
+        let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts)
+
+        let execute clientId command : Async<unit> =
+            let stream = resolve clientId
+            stream.Transact(interpret command)
 
         member __.Favorite(clientId, sku) = execute clientId (Add sku)
         member __.Unfavorite(clientId, skus) = execute clientId (Remove skus)
-        member __.List clientId: Async<string list> = read clientId
+        member __.List clientId: Async<string list> =
+            let stream = resolve clientId
+            stream.Query id
 
 module Log =
     open Serilog

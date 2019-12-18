@@ -4,25 +4,29 @@ open Domain
 open Domain.SavedForLater
 open System
 
-type Service(handlerLog, resolveStream, maxSavedItems : int, ?maxAttempts) =
+type Service(handlerLog, resolve, maxSavedItems : int, ?maxAttempts) =
+
     do if maxSavedItems < 0 then invalidArg "maxSavedItems" "must be non-negative value."
-    let (|AggregateId|) (id: ClientId) = Equinox.AggregateId("SavedForLater", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(handlerLog, resolveStream id, defaultArg maxAttempts 3)
-    let read (Stream stream) : Async<Events.Item[]> =
-        stream.Query id
-    let execute (Stream stream) command : Async<bool> =
+
+    let resolve (Events.ForClientId streamId) = Equinox.Stream(handlerLog, resolve streamId, defaultArg maxAttempts 3)
+
+    let execute clientId command : Async<bool> =
+        let stream = resolve clientId
         stream.Transact(Commands.decide maxSavedItems command)
-    let remove (Stream stream) (resolve : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
-        stream.TransactAsync(fun (state : Folds.State) -> async {
+    let read clientId : Async<Events.Item[]> =
+        let stream = resolve clientId
+        stream.Query id
+    let remove clientId (resolveCommand : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
+        let stream = resolve clientId
+        stream.TransactAsync(fun (state : Fold.State) -> async {
             let contents = seq { for item in state -> item.skuId } |> set
-            let! cmd = resolve contents.Contains
+            let! cmd = resolveCommand contents.Contains
             let _, events = Commands.decide maxSavedItems cmd state
             return (),events } )
 
     member __.MaxSavedItems = maxSavedItems
 
-    member __.List clientId : Async<Events.Item []> =
-        read clientId
+    member __.List clientId : Async<Events.Item []> = read clientId
 
     member __.Save(clientId, skus : seq<SkuId>) : Async<bool> =
         execute clientId <| Add (DateTimeOffset.Now, Seq.toArray skus)

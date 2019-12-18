@@ -3,7 +3,7 @@
 open Domain
 open Domain.Favorites
 open Domain.Favorites.Events
-open Domain.Favorites.Folds
+open Domain.Favorites.Fold
 open Swensen.Unquote
 open System
 

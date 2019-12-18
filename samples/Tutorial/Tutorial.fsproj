@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
@@ -7,9 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Infrastructure.fs" />
+    <Compile Include="Sequence.fs" />
+    <Compile Include="Gapless.fs" />
+    <Compile Include="Index.fs" />
+    <Compile Include="Set.fs" />
+    <Compile Include="Upload.fs" />
+    <None Include="Todo.fsx" />
     <None Include="Favorites.fsx" />
     <None Include="Counter.fsx" />
-    <None Include="Todo.fsx" />
     <None Include="Cosmos.fsx" />
     <None Include="AsAt.fsx" />
     <None Include="FulfilmentCenter.fsx" />

@@ -50,8 +50,9 @@ module FulfilmentCenter =
             | FcRenamed of FcName
             interface TypeShape.UnionContract.IUnionContract
         let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenter", id)
 
-    module Folds =
+    module Fold =
 
         type State = Summary
         let initial = { name = None; address = None; contact = None; details = None }
@@ -79,21 +80,26 @@ module FulfilmentCenter =
         | UpdateDetails c when state.details = Some c -> []
         | UpdateDetails c -> [Events.FcDetailsChanged { details = c }]
 
-    type Service(log, resolveStream, ?maxAttempts) =
+    type Service(log, reesolve, ?maxAttempts) =
 
-        let (|AggregateId|) id = Equinox.AggregateId("FulfilmentCenter", id)
-        let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+        let resolve (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
-        let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
-        let read (Stream stream) : Async<Summary> = stream.Query id
-        let queryEx (Stream stream) (projection : Folds.State -> 't) : Async<int64*'t> = stream.QueryEx(fun v s -> v, projection s)
+        let execute fc command : Async<unit> =
+            let stream = resolve fc
+            stream.Transact(interpret command)
+        let read fc : Async<Summary> =
+            let stream = resolve fc
+            stream.Query id
+        let queryEx fc (projection : Fold.State -> 't) : Async<int64*'t> =
+            let stream = resolve fc
+            stream.QueryEx(fun v s -> v, projection s)
 
         member __.UpdateName(id, value) = execute id (Register value)
         member __.UpdateAddress(id, value) = execute id (UpdateAddress value)
         member __.UpdateContact(id, value) = execute id (UpdateContact value)
         member __.UpdateDetails(id, value) = execute id (UpdateDetails value)
         member __.Read id : Async<Summary> = read id
-        member __.QueryWithVersion(id, render : Folds.State -> 'res) : Async<int64*'res> = queryEx id render
+        member __.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
 
 open Equinox.Cosmos
 open System
@@ -125,7 +131,7 @@ module Store =
 
 open FulfilmentCenter
 
-let resolve = Resolver(Store.context, Events.codec, Folds.fold, Folds.initial, Store.cacheStrategy).Resolve
+let resolve = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy).Resolve
 let service = Service(Log.log, resolve)
 
 let fc = "fc0"
@@ -143,6 +149,7 @@ module FulfilmentCenterSummary =
             | Updated of UpdatedData
             interface TypeShape.UnionContract.IUnionContract
         let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenterSummary", id)
 
     type State = { version : int64; state : Types.Summary }
     let initial = None
@@ -157,12 +164,16 @@ module FulfilmentCenterSummary =
         | Update (uv,us) when state |> Option.exists (fun s -> s.version > uv) -> []
         | Update (uv,us) -> [Events.Updated { version = uv; state = us }]
 
-    type Service(log, resolveStream, ?maxAttempts) =
-        let (|AggregateId|) id = Equinox.AggregateId("FulfilmentCenterSummary", id)
-        let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+    type Service(log, resolve, ?maxAttempts) =
 
-        let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
-        let read (Stream stream) : Async<Summary option> = stream.Query(Option.map (fun s -> s.state))
+        let resolve (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+
+        let execute fc command : Async<unit> =
+            let stream = resolve fc
+            stream.Transact(interpret command)
+        let read fc : Async<Summary option> =
+            let stream = resolve fc
+            stream.Query(Option.map (fun s -> s.state))
 
         member __.Update(id, version, value) = execute id (Update (version,value))
         member __.TryRead id : Async<Summary option> = read id

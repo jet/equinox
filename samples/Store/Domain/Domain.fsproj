@@ -25,4 +25,8 @@
     <PackageReference Include="FSharp.UMX" Version="1.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
+  </ItemGroup>
+
 </Project>

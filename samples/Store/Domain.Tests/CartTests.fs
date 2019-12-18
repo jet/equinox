@@ -2,7 +2,7 @@
 
 open Domain.Cart
 open Domain.Cart.Events
-open Domain.Cart.Folds
+open Domain.Cart.Fold
 open Domain.Cart.Commands
 open Swensen.Unquote
 open TypeShape.Empty

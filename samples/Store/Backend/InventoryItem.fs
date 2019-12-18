@@ -1,14 +1,15 @@
 ﻿module Backend.InventoryItem
 
-open Domain
 open Domain.InventoryItem
 
-type Service(log, resolveStream, ?maxAttempts) =
-    let (|AggregateId|) (id : InventoryItemId) = Equinox.AggregateId ("InventoryItem", InventoryItemId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+type Service(log, resolve, ?maxAttempts) =
 
-    member __.Execute (Stream handler) command =
-        handler.Transact(Commands.interpret command)
+    let resolve (Events.ForInventoryItemId id) = Equinox.Stream(log, resolve id, defaultArg maxAttempts 3)
 
-    member __.Read(Stream handler) =
-        handler.Query id 
+    member __.Execute(itemId, command) =
+        let stream = resolve itemId
+        stream.Transact(Commands.interpret command)
+
+    member __.Read(itemId) =
+        let stream = resolve itemId
+        stream.Query id
