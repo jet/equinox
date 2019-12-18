@@ -12,6 +12,7 @@ module Events =
         | Unfavorited                           of Unfavorited
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
 
 module Folds =
     type State = Events.Favorited []

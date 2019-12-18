@@ -7,8 +7,8 @@ let createMemoryStore () =
     new VolatileStore<_>()
 
 let createServiceMemory log store =
-    let resolveStream (id,opt) = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Resolve(id,?option=opt)
-    Backend.Cart.Service(log, resolveStream)
+    let resolve (id,opt) = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Cart.Folds.fold, Domain.Cart.Folds.initial).Resolve(id,?option=opt)
+    Backend.Cart.Service(log, resolve)
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

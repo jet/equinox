@@ -99,9 +99,9 @@ module Commands =
             if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
             else [-1L,Events.Removed {count = delta}]
 
-type Service(log, resolveStream, ?maxAttempts) =
-    let (|AggregateId|) clientId = Equinox.AggregateId("Account", clientId)
-    let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+type Service(log, resolve, ?maxAttempts) =
+    let (|ForClientId|) clientId = Equinox.AggregateId("Account", clientId)
+    let (|Stream|) (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
     let execute (Stream stream) command : Async<unit> = stream.Transact(Commands.interpret command)
     let query (Stream stream) projection : Async<int> = stream.Query projection

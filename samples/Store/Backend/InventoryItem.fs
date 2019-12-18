@@ -3,9 +3,9 @@
 open Domain
 open Domain.InventoryItem
 
-type Service(log, resolveStream, ?maxAttempts) =
-    let (|AggregateId|) (id : InventoryItemId) = Equinox.AggregateId ("InventoryItem", InventoryItemId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+type Service(log, resolve, ?maxAttempts) =
+    let (|ForInventoryItemId|) (id : InventoryItemId) = Equinox.AggregateId ("InventoryItem", InventoryItemId.toStringN id)
+    let (|Stream|) (ForInventoryItemId id) = Equinox.Stream(log, resolve id, defaultArg maxAttempts 3)
 
     member __.Execute (Stream handler) command =
         handler.Transact(Commands.interpret command)

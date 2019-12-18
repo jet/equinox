@@ -16,7 +16,7 @@ module Events =
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let [<Literal>] categoryId = "Gapless"
-    let (|AggregateId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
+    let (|ForSequenceId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
 
 module Folds =
 
@@ -52,12 +52,12 @@ let decideConfirm item (state : Folds.State) : Events.Event list =
 let decideRelease item (state : Folds.State) : Events.Event list =
     failwith "TODO"
 
-type Service(log, resolveStream, ?maxAttempts) =
+type Service(log, resolve, ?maxAttempts) =
 
-    let (|Stream|) (Events.AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+    let resolve (Events.ForSequenceId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
     member __.ReserveMany(series,count) : Async<int64 list> =
-        let (Stream stream) = series
+        let stream = resolve series
         stream.Transact(decideReserve count)
 
     member __.Reserve(series) : Async<int64> = async {
@@ -65,11 +65,11 @@ type Service(log, resolveStream, ?maxAttempts) =
         return List.head res }
 
     member __.Confirm(series,item) : Async<unit> =
-        let (Stream stream) = series
+        let stream = resolve series
         stream.Transact(decideConfirm item)
 
     member __.Release(series,item) : Async<unit> =
-        let (Stream stream) = series
+        let stream = resolve series
         stream.Transact(decideRelease item)
 
 let [<Literal>] appName = "equinox-tutorial-gapless"

@@ -2,9 +2,10 @@
 
 open Domain.ContactPreferences
 
-type Service(log, resolveStream, ?maxAttempts) =
-    let (|AggregateId|) (email: string) = Equinox.AggregateId ("ContactPreferences", email) // TODO hash >> base64
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+type Service(log, resolve, ?maxAttempts) =
+
+    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+
     let update (Stream stream as email) value : Async<unit> =
         let command = Update { email = email; preferences = value }
         stream.Transact(Commands.interpret command)

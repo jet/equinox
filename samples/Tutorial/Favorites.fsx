@@ -129,28 +129,28 @@ handler.Read |> Async.RunSynchronously
 (* Building a service to package Command Handling and related functions
     No, this is not doing CQRS! *)
 
-type Service(log, resolveStream) =
+type Service(log, resolve) =
     (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
-    let streamHandlerFor (clientId: string) =
+    let streamFor (clientId: string) =
         let aggregateId = Equinox.AggregateId("Favorites", clientId)
-        let stream = resolveStream aggregateId
+        let stream = resolve aggregateId
         Handler(log, stream)
 
     member __.Favorite(clientId, sku) =
-        let stream = streamHandlerFor clientId
+        let stream = streamFor clientId
         stream.Execute(Add sku)
 
     member __.Unfavorite(clientId, skus) =
-        let stream = streamHandlerFor clientId
+        let stream = streamFor clientId
         stream.Execute(Remove skus)
 
     member __.List(clientId): Async<string list> =
-        let stream = streamHandlerFor clientId
+        let stream = streamFor clientId
         stream.Read
 
-let resolveStream = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve
+let resolve = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve
 
-let service = Service(log, resolveStream)
+let service = Service(log, resolve)
 
 let client = "ClientB"
 service.Favorite(client, "a") |> Async.RunSynchronously

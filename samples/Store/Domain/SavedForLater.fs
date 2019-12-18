@@ -27,6 +27,7 @@ module Events =
         | Added of Added
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("SavedForLater", ClientId.toStringN id)
 
 module Folds =
     open Events

@@ -45,11 +45,11 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrange connect choose resolveStream = async {
+    let arrange connect choose resolve = async {
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn
-        return Backend.ContactPreferences.Service(log, resolveStream gateway) }
+        return Backend.ContactPreferences.Service(log, resolve gateway) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {

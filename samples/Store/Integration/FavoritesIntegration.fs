@@ -16,17 +16,17 @@ let createServiceMemory log store =
 
 let codec = Domain.Favorites.Events.codec
 let createServiceGes gateway log =
-    let resolveStream = EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
-    Backend.Favorites.Service(log, resolveStream)
+    let resolve = EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
+    Backend.Favorites.Service(log, resolve)
 
 let createServiceCosmos gateway log =
-    let resolveStream = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
-    Backend.Favorites.Service(log, resolveStream)
+    let resolve = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
+    Backend.Favorites.Service(log, resolve)
 
 let createServiceCosmosRollingState gateway log =
     let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Folds.snapshot
-    let resolveStream = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
-    Backend.Favorites.Service(log, resolveStream)
+    let resolve = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
+    Backend.Favorites.Service(log, resolve)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

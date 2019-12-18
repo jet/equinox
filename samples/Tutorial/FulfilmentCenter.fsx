@@ -79,10 +79,10 @@ module FulfilmentCenter =
         | UpdateDetails c when state.details = Some c -> []
         | UpdateDetails c -> [Events.FcDetailsChanged { details = c }]
 
-    type Service(log, resolveStream, ?maxAttempts) =
+    type Service(log, reesolve, ?maxAttempts) =
 
-        let (|AggregateId|) id = Equinox.AggregateId("FulfilmentCenter", id)
-        let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenter", id)
+        let (|Stream|) (ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
         let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
         let read (Stream stream) : Async<Summary> = stream.Query id
@@ -157,9 +157,9 @@ module FulfilmentCenterSummary =
         | Update (uv,us) when state |> Option.exists (fun s -> s.version > uv) -> []
         | Update (uv,us) -> [Events.Updated { version = uv; state = us }]
 
-    type Service(log, resolveStream, ?maxAttempts) =
-        let (|AggregateId|) id = Equinox.AggregateId("FulfilmentCenterSummary", id)
-        let (|Stream|) (AggregateId aggregateId) = Equinox.Stream(log, resolveStream aggregateId, defaultArg maxAttempts 3)
+    type Service(log, resolve, ?maxAttempts) =
+        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenterSummary", id)
+        let (|Stream|) (ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
         let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
         let read (Stream stream) : Async<Summary option> = stream.Query(Option.map (fun s -> s.state))

@@ -22,6 +22,7 @@ module Events =
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let (|ForCartId|) (id: CartId) = Equinox.AggregateId ("Cart", CartId.toStringN id)
 
 module Folds =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }

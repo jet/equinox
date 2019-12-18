@@ -22,6 +22,8 @@ type Event =
     | Decremented
     | Cleared of Cleared
     interface TypeShape.UnionContract.IUnionContract
+(* Kind of DDD aggregate ID *)
+let (|ForCounterId|) (id : string) = Equinox.AggregateId("Counter", id)
 
 type State = State of int
 let initial : State = State 0
@@ -53,10 +55,8 @@ let decide command (State state) =
     | Clear i -> 
         if state = i then [] else [Cleared {value = i}]
 
-type Service(log, resolveStream, ?maxAttempts) =
-    (* Kind of DDD aggregate ID *)
-    let (|AggregateId|) (id : string) = Equinox.AggregateId("Counter", id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+type Service(log, resolve, ?maxAttempts) =
+    let (|Stream|) (ForCounterId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
     let execute (Stream stream) command : Async<unit> =
         stream.Transact(decide command)

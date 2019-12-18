@@ -28,7 +28,7 @@ module Events =
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let [<Literal>] categoryId = "Upload"
-    let (|For|) (companyId, purchaseOrderId) =
+    let (|ForCompanyAndPurchaseOrder|) (companyId, purchaseOrderId) =
         let id = sprintf "%s_%s" (PurchaseOrderId.toString purchaseOrderId) (CompanyId.toString companyId)
         Equinox.AggregateId(categoryId, id)
 
@@ -48,7 +48,7 @@ let decide (value : UploadId) (state : Folds.State) : Choice<UploadId,UploadId> 
 
 type Service internal (log, resolve, maxAttempts) =
 
-    let resolve (Events.For id) = Equinox.Stream(log, resolve id, maxAttempts)
+    let resolve (Events.ForCompanyAndPurchaseOrder streamId) = Equinox.Stream(log, resolve streamId, maxAttempts)
 
     member __.Sync(companyId, purchaseOrderId, value) : Async<Choice<UploadId,UploadId>> =
         let stream = resolve (companyId, purchaseOrderId)

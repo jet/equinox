@@ -32,6 +32,7 @@ type Event =
     | Snapshotted       of Snapshotted
     interface TypeShape.UnionContract.IUnionContract
 let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+let (|ForClientId|) (id : string) = Equinox.AggregateId("Todos", id)
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
@@ -57,10 +58,9 @@ let interpret c (state : State) =
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted { id=id }] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
-type Service(log, resolveStream, ?maxAttempts) =
+type Service(log, resolve, ?maxAttempts) =
 
-    let (|AggregateId|) (id : string) = Equinox.AggregateId("Todos", id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+    let (|Stream|) (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
     let execute (Stream stream) command : Async<unit> =
         stream.Transact(interpret command)
     let handle (Stream stream) command : Async<Todo list> =

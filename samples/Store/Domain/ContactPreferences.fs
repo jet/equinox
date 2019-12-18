@@ -11,6 +11,7 @@ module Events =
         | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let (|ForClientId|) (email: string) = Equinox.AggregateId ("ContactPreferences", email) // TODO hash >> base64
 
 module Folds =
     type State = Events.Preferences

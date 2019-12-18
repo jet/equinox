@@ -134,6 +134,7 @@ type Event =
     | Added of Item
     | Removed of itemId: int
     | Compacted of items: Item[]
+let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
 
 (* State types/helpers *)
 
@@ -172,9 +173,8 @@ let isOrigin = function
 (* The Service defines operations in business terms with minimal reference to Equinox terms
    or need to talk in terms of infrastructure; typically the service is stateless and can be a Singleton *)
 
-type Service(log, resolveStream, ?maxAttempts) =
-    let (|AggregateId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+type Service(log, resolve, ?maxAttempts) =
+    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
     let execute (Stream stream) command : Async<unit> =
         stream.Transact(interpret command)
     let read (Stream stream) : Async<string list> =
@@ -231,7 +231,7 @@ Equinox’s Command Handling consists of < 200 lines including interfaces and co
 
 - [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs#L34) - internal implementation of Optimistic Concurrency Control / retry loop used by `Stream`. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
 - [`type Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L11) - surface API one uses to `Transact` or `Query` against a specific stream
-- [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L42) - used to identify the Stream pertaining to the relevant Aggregate that `resolveStream` will use to hydrate a `Stream`
+- [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L42) - used to identify the Stream pertaining to the relevant Aggregate that `resolve` will use to hydrate a `Stream`
 - _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in some complex flavors of Service__
 
 Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the 3 files can tell many of the thousands of words about to follow!
@@ -327,10 +327,10 @@ A final consideration to mention is that, even when correct idempotent handling 
 #### `Stream` usage
 
 ```fsharp
-type Service(log, stream, ?maxAttempts) =
-    let streamHandlerFor (clientId: string) =
+type Service(log, resolve, ?maxAttempts) =
+    let streamFor (clientId: string) =
         let aggregateId = Equinox.AggregateId("Favorites", clientId)
-        let stream = resolveStream aggregateId
+        let stream = resolve aggregateId
         Equinox.Stream(log, stream, defaultArg maxAttempts 3)
     let execute clientId command : Async<unit> =
         let stream = streamFor clientId
@@ -374,7 +374,7 @@ All that said, if you're in a situation where your cache hit ratio is going to b
 
 - while the Command pattern can help clarify a high level flow, there's no subsitute for representing actual business functions as well-named methods representing specific behaviors that are meaningful in the context of the application's Ubiquitous Language, can be documented and tested.
 
-- the `resolveStream` parameter affords one a sufficient [_seam_](http://www.informit.com/articles/article.aspx?p=359417) that facilitates testing independently with a mocked or stubbed Stream (without adding any references), or a `MemoryStore` (which does necessitate a reference to a separate Assembly for clarity) as desired. 
+- the `resolve` parameter affords one a sufficient [_seam_](http://www.informit.com/articles/article.aspx?p=359417) that facilitates testing independently with a mocked or stubbed Stream (without adding any references), or a `MemoryStore` (which does necessitate a reference to a separate Assembly for clarity) as desired. 
 
 ### Todo[Backend] walkthrough
 
@@ -390,12 +390,13 @@ type Event =
     | Deleted   of int
     | Cleared
     | Compacted of Todo[]
+let (|ForClientId|) (id : string) = Equinox.AggregateId("Todos", id)
 ```
 
-The fact that we have a `Cleared` Event stems from the fact that the spec defines such an operation. While one could implement this by emitting a `Deleted` event per currrently existing item, there many reasons to do model this as a first class event:-
+The fact that we have a `Cleared` Event stems from the fact that the spec defines such an operation. While one could implement this by emitting a `Deleted` event per currently existing item, there many reasons to do model this as a first class event:-
   i) Events should reflect user intent in its most direct form possible; if the user clicked Delete All, it's not the same to implement that as a set of individual deletes that happen to be united by having timestamp with a very low number of ms of each other.
-  ii) Because the `Cleared` Event establishes a known State, one can have the `isOrigin` flag the event as being the furthest one needs to search backwards before starting to `fold` events to establish the state. This also prevents the fact that the stream gets long in terms of numbers of events from impacting the effiency of the processing
-  iii) While having a `Cleared` event happens to work, it also represents a technical trick in a toy domain and should not be considered some cure-all Pattern - real Todo apps don't have a 'declare backruptcy' function. And example alternate approaches might be to represent each Todo list as it's own stream, and then have a `TodoLists` aggregate coordinating those.
+  ii) Because the `Cleared` Event establishes a known State, one can have the `isOrigin` flag the event as being the furthest one needs to search backwards before starting to `fold` events to establish the state. This also prevents the fact that the stream gets long in terms of numbers of events from impacting the efficiency of the processing
+  iii) While having a `Cleared` event happens to work, it also represents a technical trick in a toy domain and should not be considered some cure-all Pattern - real Todo apps don't have a 'declare bankruptcy' function. And example alternate approaches might be to represent each Todo list as it's own stream, and then have a `TodoLists` aggregate coordinating those.
 
 The `Compacted` event is used to represent Rolling Snapshots (stored in-stream) and/or Unfolds (stored in Tip document-Item); For a real Todo list, using this facility may well make sense - the State can fit in a reasonable space, and the likely number of Events may reach an interesting enough count to justify applying such a feature
   i) it should also be noted that Caching may be a better answer - note `Compacted` is also an `isOrigin` event - there's no need to go back any further if you meet one.
@@ -442,9 +443,9 @@ let interpret c (state : State) =
 #### `Service`
 
 ```fsharp
-type Service(log, resolveStream, ?maxAttempts) =
-    let (|AggregateId|) (id : string) = Equinox.AggregateId("Todos", id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, defaultArg maxAttempts 3)
+type Service(log, resolve, ?maxAttempts) =
+
+    let (|Stream|) (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
     let execute (Stream stream) command : Async<unit> =
         stream.Transact(interpret command)

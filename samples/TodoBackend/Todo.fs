@@ -16,6 +16,9 @@ module Events =
         | Snapshotted   of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    // The TodoBackend spec does not dictate having multiple lists, tenants or clients
+    // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
+    let (|ForClientId|) (id : ClientId) = Equinox.AggregateId("Todos", ClientId.toStringN id)
 
 module Folds =
     type State = { items : Todo list; nextId : int }
@@ -44,11 +47,8 @@ module Commands =
         | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted {id=id}] else []
         | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
-type Service(log, resolveStream, ?maxAttempts) =
-    // The TodoBackend spec does not dictate having multiple lists, tentants or clients
-    // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
-    let (|AggregateId|) (id : ClientId) = Equinox.AggregateId("Todos", ClientId.toStringN id)
-    let (|Stream|) (AggregateId id) = Equinox.Stream(log, resolveStream id, maxAttempts = defaultArg maxAttempts 2)
+type Service(log, resolve, ?maxAttempts) =
+    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts = defaultArg maxAttempts 2)
     let execute (Stream stream) command = stream.Transact(Commands.interpret command)
     let query (Stream stream) projection = stream.Query projection
     let handle (Stream stream) command =
