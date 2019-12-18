@@ -174,7 +174,9 @@ let isOrigin = function
    or need to talk in terms of infrastructure; typically the service is stateless and can be a Singleton *)
 
 type Service(log, resolve, ?maxAttempts) =
+
     let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+
     let execute (Stream stream) command : Async<unit> =
         stream.Transact(interpret command)
     let read (Stream stream) : Async<string list> =
@@ -328,13 +330,16 @@ A final consideration to mention is that, even when correct idempotent handling 
 
 ```fsharp
 type Service(log, resolve, ?maxAttempts) =
+
     let streamFor (clientId: string) =
         let aggregateId = Equinox.AggregateId("Favorites", clientId)
         let stream = resolve aggregateId
         Equinox.Stream(log, stream, defaultArg maxAttempts 3)
+
     let execute clientId command : Async<unit> =
         let stream = streamFor clientId
         stream.Transact(interpret command)
+
     let read clientId : Async<string list> =
         let stream = streamFor clientId
         inner.Query id

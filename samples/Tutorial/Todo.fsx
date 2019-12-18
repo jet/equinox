@@ -61,6 +61,7 @@ let interpret c (state : State) =
 type Service(log, resolve, ?maxAttempts) =
 
     let (|Stream|) (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+
     let execute (Stream stream) command : Async<unit> =
         stream.Transact(interpret command)
     let handle (Stream stream) command : Async<Todo list> =

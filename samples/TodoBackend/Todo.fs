@@ -48,7 +48,9 @@ module Commands =
         | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
 type Service(log, resolve, ?maxAttempts) =
+
     let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts = defaultArg maxAttempts 2)
+
     let execute (Stream stream) command = stream.Transact(Commands.interpret command)
     let query (Stream stream) projection = stream.Query projection
     let handle (Stream stream) command =

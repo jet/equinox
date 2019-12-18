@@ -12,6 +12,7 @@ module Events =
         | Removed of count: int
         | CheckedIn of count: int
         interface TypeShape.UnionContract.IUnionContract
+    let (|ForInventoryItemId|) (id : InventoryItemId) = Equinox.AggregateId ("InventoryItem", InventoryItemId.toStringN id)
 
 module Fold =
     type State = { active : bool; name: string; quantity: int }

@@ -56,6 +56,7 @@ let decide command (State state) =
         if state = i then [] else [Cleared {value = i}]
 
 type Service(log, resolve, ?maxAttempts) =
+
     let (|Stream|) (ForCounterId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
     let execute (Stream stream) command : Async<unit> =

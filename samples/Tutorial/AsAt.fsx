@@ -56,6 +56,7 @@ module Events =
         let down (_index,e) : Contract * _ option * DateTimeOffset option =
             e,None,None
         FsCodec.NewtonsoftJson.Codec.Create(up,down)
+    let (|ForClientId|) clientId = Equinox.AggregateId("Account", clientId)
 
 module Fold =
 
@@ -100,8 +101,8 @@ module Commands =
             else [-1L,Events.Removed {count = delta}]
 
 type Service(log, resolve, ?maxAttempts) =
-    let (|ForClientId|) clientId = Equinox.AggregateId("Account", clientId)
-    let (|Stream|) (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+
+    let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
     let execute (Stream stream) command : Async<unit> = stream.Transact(Commands.interpret command)
     let query (Stream stream) projection : Async<int> = stream.Query projection

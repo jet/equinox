@@ -5,6 +5,7 @@ open Domain.SavedForLater
 open System
 
 type Service(handlerLog, resolve, maxSavedItems : int, ?maxAttempts) =
+
     do if maxSavedItems < 0 then invalidArg "maxSavedItems" "must be non-negative value."
 
     let (|Stream|) (Events.ForClientId streamId) = Equinox.Stream(handlerLog, resolve streamId, defaultArg maxAttempts 3)

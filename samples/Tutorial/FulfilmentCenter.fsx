@@ -50,6 +50,7 @@ module FulfilmentCenter =
             | FcRenamed of FcName
             interface TypeShape.UnionContract.IUnionContract
         let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenter", id)
 
     module Fold =
 
@@ -81,8 +82,7 @@ module FulfilmentCenter =
 
     type Service(log, reesolve, ?maxAttempts) =
 
-        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenter", id)
-        let (|Stream|) (ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+        let (|Stream|) (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
         let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
         let read (Stream stream) : Async<Summary> = stream.Query id
@@ -143,6 +143,7 @@ module FulfilmentCenterSummary =
             | Updated of UpdatedData
             interface TypeShape.UnionContract.IUnionContract
         let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenterSummary", id)
 
     type State = { version : int64; state : Types.Summary }
     let initial = None
@@ -158,8 +159,8 @@ module FulfilmentCenterSummary =
         | Update (uv,us) -> [Events.Updated { version = uv; state = us }]
 
     type Service(log, resolve, ?maxAttempts) =
-        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenterSummary", id)
-        let (|Stream|) (ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+
+        let (|Stream|) (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
         let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
         let read (Stream stream) : Async<Summary option> = stream.Query(Option.map (fun s -> s.state))
