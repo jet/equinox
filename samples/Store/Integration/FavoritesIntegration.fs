@@ -6,8 +6,8 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial = Domain.Favorites.Folds.fold, Domain.Favorites.Folds.initial
-let snapshot = Domain.Favorites.Folds.isOrigin, Domain.Favorites.Folds.snapshot
+let fold, initial = Domain.Favorites.Fold.fold, Domain.Favorites.Fold.initial
+let snapshot = Domain.Favorites.Fold.isOrigin, Domain.Favorites.Fold.snapshot
 
 let createMemoryStore () =
     new MemoryStore.VolatileStore<_>()
@@ -24,7 +24,7 @@ let createServiceCosmos gateway log =
     Backend.Favorites.Service(log, resolve)
 
 let createServiceCosmosRollingState gateway log =
-    let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Folds.snapshot
+    let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
     let resolve = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
     Backend.Favorites.Service(log, resolve)
 

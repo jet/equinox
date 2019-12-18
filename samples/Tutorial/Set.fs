@@ -13,7 +13,7 @@ module Events =
     let [<Literal>] categoryId = "Set"
     let (|ForSetId|) id = Equinox.AggregateId(categoryId, SetId.toString id)
 
-module Folds =
+module Fold =
 
     type State = Set<string>
     let initial : State = Set.empty
@@ -26,7 +26,7 @@ module Folds =
     let fold (state : State) = Seq.fold evolve state
     let snapshot state = Events.Snapshotted { items = Set.toArray state }
 
-let interpret add remove (state : Folds.State) =
+let interpret add remove (state : Fold.State) =
     // no need to deduplicate adds as we'll be folding these into the state imminently in any case
     let fresh = [| for i in add do if not (state.Contains i) then yield i |]
     let dead = [| for i in remove do if state.Contains i then yield i |]
@@ -55,12 +55,12 @@ module Cosmos =
     open Equinox.Cosmos
     let createService (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-        let accessStrategy = AccessStrategy.RollingState Folds.snapshot
-        let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
+        let accessStrategy = AccessStrategy.RollingState Fold.snapshot
+        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         create resolve
 
 module MemoryStore =
 
     let createService store =
-        let resolve = Equinox.MemoryStore.Resolver(store, Events.codec, Folds.fold, Folds.initial).Resolve
+        let resolve = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial).Resolve
         create resolve

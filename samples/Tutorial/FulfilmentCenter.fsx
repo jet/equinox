@@ -51,7 +51,7 @@ module FulfilmentCenter =
             interface TypeShape.UnionContract.IUnionContract
         let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
-    module Folds =
+    module Fold =
 
         type State = Summary
         let initial = { name = None; address = None; contact = None; details = None }
@@ -86,14 +86,14 @@ module FulfilmentCenter =
 
         let execute (Stream stream) command : Async<unit> = stream.Transact(interpret command)
         let read (Stream stream) : Async<Summary> = stream.Query id
-        let queryEx (Stream stream) (projection : Folds.State -> 't) : Async<int64*'t> = stream.QueryEx(fun v s -> v, projection s)
+        let queryEx (Stream stream) (projection : Fold.State -> 't) : Async<int64*'t> = stream.QueryEx(fun v s -> v, projection s)
 
         member __.UpdateName(id, value) = execute id (Register value)
         member __.UpdateAddress(id, value) = execute id (UpdateAddress value)
         member __.UpdateContact(id, value) = execute id (UpdateContact value)
         member __.UpdateDetails(id, value) = execute id (UpdateDetails value)
         member __.Read id : Async<Summary> = read id
-        member __.QueryWithVersion(id, render : Folds.State -> 'res) : Async<int64*'res> = queryEx id render
+        member __.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
 
 open Equinox.Cosmos
 open System
@@ -125,7 +125,7 @@ module Store =
 
 open FulfilmentCenter
 
-let resolve = Resolver(Store.context, Events.codec, Folds.fold, Folds.initial, Store.cacheStrategy).Resolve
+let resolve = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy).Resolve
 let service = Service(Log.log, resolve)
 
 let fc = "fc0"

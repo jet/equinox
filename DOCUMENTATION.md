@@ -220,7 +220,7 @@ At a high level we have:
 In the code handling a given Aggregate’s Commands and Synchronous Queries, the code you write divide into:
 
 - Events (`codec`, `encode`, `tryDecode`, etc.)
-- State/Folds (`fold`, `evolve`)
+- State/Fold (`fold`, `evolve`)
 - Storage Model helpers (`isOrigin`,`unfold` etc)
 
 while these are not omnipresent, for the purposes of this discussion we’ll treat them as that. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.

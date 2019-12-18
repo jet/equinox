@@ -14,7 +14,7 @@ module Events =
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
 
-module Folds =
+module Fold =
     type State = Events.Favorited []
 
     type private InternalState(input: State) =
@@ -44,7 +44,7 @@ type Command =
     | Unfavorite    of skuId : SkuId
 
 module Commands =
-    let interpret command (state : Folds.State) =
+    let interpret command (state : Fold.State) =
         let doesntHave skuId = state |> Array.exists (fun x -> x.skuId = skuId) |> not
         match command with
         | Favorite (date = date; skuIds = skuIds) ->

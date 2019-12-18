@@ -2,7 +2,7 @@
 
 open Domain
 open Domain.SavedForLater
-open Domain.SavedForLater.Folds
+open Domain.SavedForLater.Fold
 open Swensen.Unquote.Assertions
 open System
 open System.Collections.Generic
@@ -171,7 +171,7 @@ module Specification =
                         && e.skus |> Seq.forall updated.ContainsKey @>
             | x -> x |> failwithf "Unexpected %A"
             // Verify the post state is correct and there is no remaining work
-            let updatedIsSameOrNewerThan date sku = not (updated.[sku] |> Folds.isSupersededAt date)
+            let updatedIsSameOrNewerThan date sku = not (updated.[sku] |> Fold.isSupersededAt date)
             test <@ original |> Seq.forall updated.ContainsKey
                     && skus |> Seq.forall (updatedIsSameOrNewerThan date) @>
         // Any merge event should onl reflect variances from current contet
@@ -183,12 +183,12 @@ module Specification =
             | [Events.Merged e] ->
                 let originalIsSupersededByMerged (item : Events.Item) =
                     match original.TryGetValue item.skuId with
-                    | true, originalItem -> originalItem |> Folds.isSupersededAt item.dateSaved
+                    | true, originalItem -> originalItem |> Fold.isSupersededAt item.dateSaved
                     | false, _ -> true
                 test <@ e.items |> Seq.forall originalIsSupersededByMerged @>
             | x -> x |> failwithf "Unexpected %A"
             // Verify the post state is correct and there is no remaining work
-            let updatedIsSameOrNewerThan (item : Events.Item) = not (updated.[item.skuId] |> Folds.isSupersededAt item.dateSaved)
+            let updatedIsSameOrNewerThan (item : Events.Item) = not (updated.[item.skuId] |> Fold.isSupersededAt item.dateSaved)
             let combined = Seq.append state donorState |> Array.ofSeq
             let combinedSkus = combined |> asSkus |> set
             test <@ combined |> Seq.forall updatedIsSameOrNewerThan

@@ -15,7 +15,7 @@ module Events =
     let [<Literal>] categoryId = "Sequence"
     let (|ForSequenceId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
 
-module Folds =
+module Fold =
 
     type State = { next : int64 }
     let initial = { next = 0L }
@@ -25,7 +25,7 @@ module Folds =
         Seq.tryLast events |> Option.fold evolve state
     let snapshot (state : State) = Events.Reserved { next = state.next }
 
-let decideReserve (count : int) (state : Folds.State) : int64 * Events.Event list =
+let decideReserve (count : int) (state : Fold.State) : int64 * Events.Event list =
     state.next,[Events.Reserved { next = state.next + int64 count }]
 
 type Service internal (log, resolve, maxAttempts) =
@@ -44,7 +44,7 @@ module Cosmos =
     open Equinox.Cosmos
     let private createService (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
+        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         create resolve
 
     module LatestKnownEvent =
@@ -56,4 +56,4 @@ module Cosmos =
     module RollingUnfolds =
 
         let createService (context,cache) =
-            createService (context,cache,AccessStrategy.RollingState Folds.snapshot)
+            createService (context,cache,AccessStrategy.RollingState Fold.snapshot)

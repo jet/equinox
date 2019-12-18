@@ -9,8 +9,8 @@ open System
 open System.Threading
 
 module Cart =
-    let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
-    let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.snapshot
+    let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
+    let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
     let codec = Domain.Cart.Events.codec
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
@@ -20,7 +20,7 @@ module Cart =
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds connection batchSize log =
         let store = createCosmosContext connection batchSize
-        let unfArgs = Domain.Cart.Folds.isOrigin, fun _ -> Seq.empty
+        let unfArgs = Domain.Cart.Fold.isOrigin, fun _ -> Seq.empty
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolve)
     let createServiceWithSnapshotStrategy connection batchSize log =
@@ -34,12 +34,12 @@ module Cart =
         Backend.Cart.Service(log, resolve)
     let createServiceWithRollingState connection log =
         let store = createCosmosContext connection 1
-        let access = AccessStrategy.RollingState Domain.Cart.Folds.snapshot
+        let access = AccessStrategy.RollingState Domain.Cart.Fold.snapshot
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
         Backend.Cart.Service(log, resolve)
 
 module ContactPreferences =
-    let fold, initial = Domain.ContactPreferences.Folds.fold, Domain.ContactPreferences.Folds.initial
+    let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codec
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize

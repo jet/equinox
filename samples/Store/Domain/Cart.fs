@@ -24,7 +24,7 @@ module Events =
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let (|ForCartId|) (id: CartId) = Equinox.AggregateId ("Cart", CartId.toStringN id)
 
-module Folds =
+module Fold =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }
     type State =                    { items: ItemInfo list }
     module State =
@@ -51,7 +51,7 @@ type Command =
     | RemoveItem            of Context * SkuId
 
 module Commands =
-    let interpret command (state : Folds.State) =
+    let interpret command (state : Fold.State) =
         let itemExists f                                    = state.items |> List.exists f
         let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
         let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)

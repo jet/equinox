@@ -57,7 +57,7 @@ module Events =
             e,None,None
         FsCodec.NewtonsoftJson.Codec.Create(up,down)
 
-module Folds =
+module Fold =
 
     type State = int[]
     module State =
@@ -95,7 +95,7 @@ module Commands =
         match command with
         | Add delta -> [-1L,Events.Added { count = delta}]
         | Remove delta ->
-            let bal = state |> Folds.State.balance
+            let bal = state |> Fold.State.balance
             if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
             else [-1L,Events.Removed {count = delta}]
 
@@ -108,7 +108,7 @@ type Service(log, resolve, ?maxAttempts) =
 
     member __.Add(clientId, count) = execute clientId (Commands.Add count)
     member __.Remove(clientId, count) = execute clientId (Commands.Remove count)
-    member __.Read(clientId) = query clientId (Folds.State.balance)
+    member __.Read(clientId) = query clientId (Fold.State.balance)
     member __.AsAt(clientId,index) = query clientId (fun state -> state.[index])
 
 module Log =
@@ -143,8 +143,8 @@ module EventStore =
     // cache so normal read pattern is to read from whatever we've built in memory
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
-    let accessStrategy = AccessStrategy.RollingSnapshots (Folds.isValid,Folds.snapshot)
-    let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
+    let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
+    let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
 
 module Cosmos =
     open Equinox.Cosmos
@@ -154,8 +154,8 @@ module Cosmos =
     let conn = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
     let context = Context(conn, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-    let accessStrategy = AccessStrategy.Snapshot (Folds.isValid,Folds.snapshot)
-    let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, accessStrategy).Resolve
+    let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
+    let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
 
 let serviceES = Service(Log.log, EventStore.resolve)
 let serviceCosmos = Service(Log.log, Cosmos.resolve)

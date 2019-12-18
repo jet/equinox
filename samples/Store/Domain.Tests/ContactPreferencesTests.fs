@@ -3,7 +3,7 @@
 open Domain.ContactPreferences
 open Domain.ContactPreferences.Commands
 open Domain.ContactPreferences.Events
-open Domain.ContactPreferences.Folds
+open Domain.ContactPreferences.Fold
 open Swensen.Unquote
 
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded

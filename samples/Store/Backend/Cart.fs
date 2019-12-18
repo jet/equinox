@@ -9,11 +9,11 @@ type Service(log, resolve) =
     let flowAsync (Stream stream) (flow, prepare) =
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
-            let ctx = Equinox.Accumulator(Folds.fold,state)
+            let ctx = Equinox.Accumulator(Fold.fold,state)
             let execute = Commands.interpret >> ctx.Transact
             let res = flow ctx execute
             return res,ctx.Accumulated })
-    let read (Stream stream) : Async<Folds.State> =
+    let read (Stream stream) : Async<Fold.State> =
         stream.Query id
     let execute cartId command =
         flowAsync (cartId,None) ((fun _ctx execute -> execute command), None)

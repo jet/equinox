@@ -20,7 +20,7 @@ module Events =
     // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
     let (|ForClientId|) (id : ClientId) = Equinox.AggregateId("Todos", ClientId.toStringN id)
 
-module Folds =
+module Fold =
     type State = { items : Todo list; nextId : int }
     let initial = { items = []; nextId = 0 }
     let evolve s e =
@@ -37,7 +37,7 @@ module Folds =
 type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
 
 module Commands =
-    let interpret c (state : Folds.State) =
+    let interpret c (state : Fold.State) =
         match c with
         | Add value -> [Added { value with id = state.nextId }]
         | Update value ->
@@ -53,7 +53,7 @@ type Service(log, resolve, ?maxAttempts) =
     let query (Stream stream) projection = stream.Query projection
     let handle (Stream stream) command =
         stream.Transact(fun state ->
-            let ctx = Equinox.Accumulator(Folds.fold, state)
+            let ctx = Equinox.Accumulator(Fold.fold, state)
             ctx.Transact (Commands.interpret command)
             ctx.State.items,ctx.Accumulated)
 

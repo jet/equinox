@@ -14,7 +14,7 @@ type Service(handlerLog, resolve, maxSavedItems : int, ?maxAttempts) =
     let read (Stream stream) : Async<Events.Item[]> =
         stream.Query id
     let remove (Stream stream) (resolve : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
-        stream.TransactAsync(fun (state : Folds.State) -> async {
+        stream.TransactAsync(fun (state : Fold.State) -> async {
             let contents = seq { for item in state -> item.skuId } |> set
             let! cmd = resolve contents.Contains
             let _, events = Commands.decide maxSavedItems cmd state

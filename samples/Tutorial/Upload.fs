@@ -32,7 +32,7 @@ module Events =
         let id = sprintf "%s_%s" (PurchaseOrderId.toString purchaseOrderId) (CompanyId.toString companyId)
         Equinox.AggregateId(categoryId, id)
 
-module Folds =
+module Fold =
 
     type State = UploadId option
     let initial = None
@@ -41,7 +41,7 @@ module Folds =
     let fold (state: State) (events: seq<Events.Event>) : State =
         Seq.tryLast events |> Option.fold evolve state
 
-let decide (value : UploadId) (state : Folds.State) : Choice<UploadId,UploadId> * Events.Event list =
+let decide (value : UploadId) (state : Fold.State) : Choice<UploadId,UploadId> * Events.Event list =
     match state with
     | None -> Choice1Of2 value, [Events.IdAssigned { value = value}]
     | Some value -> Choice2Of2 value, []
@@ -61,11 +61,11 @@ module Cosmos =
     open Equinox.Cosmos
     let createService (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
+        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
         create resolve
 
 module EventStore =
     open Equinox.EventStore
     let createService context =
-        let resolve = Resolver(context, Events.codec, Folds.fold, Folds.initial, access=AccessStrategy.LatestKnownEvent).Resolve
+        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent).Resolve
         create resolve

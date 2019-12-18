@@ -8,8 +8,8 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial = Domain.Cart.Folds.fold, Domain.Cart.Folds.initial
-let snapshot = Domain.Cart.Folds.isOrigin, Domain.Cart.Folds.snapshot
+let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
+let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
 
 let createMemoryStore () =
     // we want to validate that the JSON UTF8 is working happily
