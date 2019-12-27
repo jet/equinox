@@ -240,7 +240,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     ```powershell
     # run queries to determine how many streams, docs, events there are in the container
-    eqx -v -vc stats -SDEP cosmos # -P to run in parallel # -vc -v to show underlying query being used
+    eqx -V -C stats -SDEP cosmos # -P to run in parallel # -V -C to show underlying query being used
     ```
 
 5. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor
@@ -250,11 +250,11 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet tool install Propulsion.Tool -g
 
     propulsion init -ru 400 cosmos # generates a -aux container for the ChangeFeedProcessor to maintain consumer group progress within
-    # -v for verbose ChangeFeedProcessor logging
+    # -V for verbose ChangeFeedProcessor logging
     # `-g projector1` represents the consumer group - >=1 are allowed, allowing multiple independent projections to run concurrently
     # stats specifies one only wants stats regarding items (other options include `kafka` to project to Kafka)
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
-    propulsion -v project -g projector1 stats cosmos
+    propulsion -V project -g projector1 stats cosmos
     ```
 
 6. Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
@@ -275,13 +275,13 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     ```powershell	
     $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b	
-    # `-v` for verbose logging	
+    # `-V` for verbose logging	
     # `projector3` represents the consumer group; >=1 are allowed, allowing multiple independent projections to run concurrently	
     # `-l 5` to report ChangeFeed lags every 5 minutes	
     # `kafka` specifies one wants to emit to Kafka	
     # `temp-topic` is the topic to emit to	
     # `cosmos` specifies source overrides (using defaults in step 1 in this instance)	
-    propulsion -v project -g projector3 -l 5 kafka temp-topic cosmos	
+    propulsion -V project -g projector3 -l 5 kafka temp-topic cosmos	
     ```	
 
  8. Generate CosmosDb [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)

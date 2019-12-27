@@ -11,7 +11,7 @@ open Serilog.Events
 
 [<NoComparison>]
 type Arguments =
-    | [<AltCommandLine "-vc">]                                VerboseConsole
+    | [<AltCommandLine "-V">]                                 Verbose
     | [<AltCommandLine "-S">]                                 LocalSeq
     | [<AltCommandLine "-C">]                                 Cached
     | [<AltCommandLine "-U">]                                 Unfolds
@@ -23,7 +23,7 @@ type Arguments =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">]  Postgres of ParseResults<Storage.Sql.Pg.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | VerboseConsole ->             "Include low level Domain and Store logging in screen output."
+            | Verbose ->                    "Include low level Domain and Store logging in screen output."
             | LocalSeq ->                   "configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | Cached ->                     "employ a 50MB cache."
             | Unfolds ->                    "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
@@ -42,12 +42,12 @@ type Startup() =
     static member ConfigureServices(services: IServiceCollection, args: ParseResults<Arguments>) : unit =
         services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1) |> ignore
 
-        let verboseConsole = args.Contains VerboseConsole
+        let verbose = args.Contains Verbose
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
         let createStoreLog verboseStore =
             let c = LoggerConfiguration().Destructure.FSharpTypes()
             let c = if verboseStore then c.MinimumLevel.Debug() else c
-            let c = c.WriteTo.Console((if verboseStore && verboseConsole then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+            let c = c.WriteTo.Console((if verboseStore && verbose then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
             let c = match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
             c.CreateLogger() :> ILogger
 
