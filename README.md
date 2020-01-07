@@ -553,6 +553,7 @@ Yes, you have decisions to make; Equinox is not a panacea - there is no one size
 
 Yes; [`Counter.fsx` in th Tutorial project in this repo](https://github.com/jet/equinox/blob/master/samples/Tutorial/Counter.fsx). It may also be worth starting with the [API Guide in DOCUMENTATION.md](DOCUMENTATION.md#api). An alternate way is to look at the `Todo.fs` files emitted by [`dotnet new equinoxweb`](https://github.com/jet/dotnet-templates) in the [QuickStart](#quickstart).
 
+<a name="why-snapshots-in-stream"></a>
 ### Why do the snapshots go in the same stream in `Equinox.EventStore` and `Equinox.SqlStreamStore` ? :pray: [@chrisjhoare](https://github.com/chrisjhoare)
 
 I've been looking through the snapshotting code recently. Can see the snapshot events go in the same stream as regular events. Presume this is to save on operations to read/write the streams? and a bit less overhead maintaining two serializers? Are there any other advantages? I quite like it this way but think i saw the [geteventstore](https://eventstore.org) advice was separate streams so just interested in any other reasoning behind it
