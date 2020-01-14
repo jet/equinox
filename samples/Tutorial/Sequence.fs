@@ -7,13 +7,14 @@ open System
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
+    let [<Literal>] categoryId = "Sequence"
+    let (|ForSequenceId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
+
     type Reserved = { next : int64 }
     type Event =
         | Reserved of Reserved
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let [<Literal>] categoryId = "Sequence"
-    let (|ForSequenceId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
 
 module Fold =
 

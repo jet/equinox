@@ -3,6 +3,9 @@ module Set
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
+    let [<Literal>] categoryId = "Set"
+    let (|ForSetId|) id = Equinox.AggregateId(categoryId, SetId.toString id)
+
     type Items = { items : string[] }
     type Event =
         | Added of Items
@@ -10,8 +13,6 @@ module Events =
         | Snapshotted of Items
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let [<Literal>] categoryId = "Set"
-    let (|ForSetId|) id = Equinox.AggregateId(categoryId, SetId.toString id)
 
 module Fold =
 

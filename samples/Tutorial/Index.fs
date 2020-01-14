@@ -3,6 +3,9 @@ module Index
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
+    let [<Literal>] categoryId = "Index"
+    let (|ForIndexId|) indexId = Equinox.AggregateId(categoryId, IndexId.toString indexId)
+
     type ItemIds = { items : string[] }
     type Items<'v> = { items : Map<string,'v> }
     type Event<'v> =
@@ -11,8 +14,6 @@ module Events =
         | Snapshotted of Items<'v>
         interface TypeShape.UnionContract.IUnionContract
     let codec<'v> = FsCodec.NewtonsoftJson.Codec.Create<Event<'v>>()
-    let [<Literal>] categoryId = "Index"
-    let (|ForIndexId|) indexId = Equinox.AggregateId(categoryId, IndexId.toString indexId)
 
 module Fold =
 

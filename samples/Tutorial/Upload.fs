@@ -22,15 +22,16 @@ module UploadId =
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
+    let [<Literal>] categoryId = "Upload"
+    let (|ForCompanyAndPurchaseOrder|) (companyId, purchaseOrderId) =
+        let id = sprintf "%s_%s" (PurchaseOrderId.toString purchaseOrderId) (CompanyId.toString companyId)
+        Equinox.AggregateId(categoryId, id)
+
     type IdAssigned = { value : UploadId }
     type Event =
         | IdAssigned of IdAssigned
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let [<Literal>] categoryId = "Upload"
-    let (|ForCompanyAndPurchaseOrder|) (companyId, purchaseOrderId) =
-        let id = sprintf "%s_%s" (PurchaseOrderId.toString purchaseOrderId) (CompanyId.toString companyId)
-        Equinox.AggregateId(categoryId, id)
 
 module Fold =
 

@@ -6,6 +6,10 @@ open System
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
+
+    let [<Literal>] categoryId = "Gapless"
+    let (|ForSequenceId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
+
     type Item = { id : int64 }
     type Snapshotted = { reservations : int64[];  nextId : int64 }
     type Event =
@@ -15,8 +19,6 @@ module Events =
         | Snapshotted of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let [<Literal>] categoryId = "Gapless"
-    let (|ForSequenceId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
 
 module Fold =
 
