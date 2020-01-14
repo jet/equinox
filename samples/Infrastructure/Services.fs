@@ -6,7 +6,7 @@ open System
 
 type StreamResolver(storage) =
     member __.Resolve
-        (   codec : FsCodec.IUnionEncoder<'event,byte[],_>,
+        (   codec : FsCodec.IEventCodec<'event,byte[],_>,
             fold: ('state -> 'event seq -> 'state),
             initial: 'state,
             snapshot: (('event -> bool) * ('state -> 'event))) =

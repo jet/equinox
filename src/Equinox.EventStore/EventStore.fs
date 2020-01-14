@@ -276,7 +276,7 @@ module UnionEncoderAdapters =
         let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
         // TOCONSIDER wire e.Metadata.["$correlationId"] and .["$causationId"] into correlationId and causationId
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        FsCodec.Core.TimelineEvent.Create(e.EventNumber, e.EventType, e.Data, e.Metadata, null, null, ts) :> _
+        FsCodec.Core.TimelineEvent.Create(e.EventNumber, e.EventType, e.Data, e.Metadata, null, null, ts)
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
@@ -410,7 +410,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state, 'context>(context : Context, codec : FsCodec.IUnionEncoder<_,_,'context>, ?access : AccessStrategy<'event,'state>) =
+type private Category<'event, 'state, 'context>(context : Context, codec : FsCodec.IEventCodec<_,_,'context>, ?access : AccessStrategy<'event,'state>) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let compactionPredicate =
         match access with
@@ -509,7 +509,7 @@ type CachingStrategy =
     | SlidingWindowPrefixed of ICache * window: TimeSpan * prefix: string
 
 type Resolver<'event, 'state, 'context>
-    (   context : Context, codec : IUnionEncoder<_,_,'context>, fold, initial,
+    (   context : Context, codec : IEventCodec<_,_,'context>, fold, initial,
         /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>]?caching,
