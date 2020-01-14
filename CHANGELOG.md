@@ -16,12 +16,12 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- Update to `Microsoft.SourceLink.GitHub` v `1.0.0`
+- Target `Microsoft.SourceLink.GitHub`, `Microsoft.NETFramework.ReferenceAssemblies` v `1.0.0`
 - Samples etc target `Argu` v `6.0.0`
 - `eqx dump`'s `-J` switch now turns off JSON rendering
 - `eqx -C dump` now renders Store `.Information` logs
 - Samples consistently use `module Fold`, `(Events.ForX streamId)`, removed `(|Stream|)` [#174](https://github.com/jet/equinox/pull/174)
-- Targeted `FsCodec` v `2.0.0-rc1`
+- Target `FsCodec` v `2.0.0-rc1`
 
 ### Removed
 ### Fixed
