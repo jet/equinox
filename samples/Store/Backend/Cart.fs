@@ -2,16 +2,47 @@
 
 open Domain.Cart
 
-let decide command state =
-    let events = Commands.interpret command state
-    let state' = Fold.fold state events
-    state',events
+#if ACCUMULATOR
+// This was once part of the core Equinox functionality, but was removed in https://github.com/jet/equinox/pull/184
+// it remains here solely to serve as an example; the PR details the considerations leading to this conclusion
 
-let decideMany decide commands state =
-    ((state,[]),commands)
-    ||> Seq.fold (fun (state,acc) command ->
-        let state',events = decide command state
-        state',acc@events)
+/// Maintains a rolling folded State while Accumulating Events pended as part of a decision flow
+type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originState : 'state) =
+    let accumulated = ResizeArray<'event>()
+
+    /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
+    member __.Accumulated : 'event list =
+        accumulated |> List.ofSeq
+
+    /// The current folded State, based on the Stream's `originState` + any events that have been Accumulated during the the decision flow
+    member __.State : 'state =
+        accumulated |> fold originState
+
+    /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
+    member __.Transact(interpret : 'state -> 'event list) : unit =
+        interpret __.State |> accumulated.AddRange
+    /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
+    member __.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+        let! events = interpret __.State
+        accumulated.AddRange events }
+    /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
+    member __.Transact(decide : 'state -> 'result * 'event list) : 'result =
+        let result, newEvents = decide __.State
+        accumulated.AddRange newEvents
+        result
+    /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
+    member __.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+        let! result, newEvents = decide __.State
+        accumulated.AddRange newEvents
+        return result }
+#else
+let interpretMany interprets (state : 'state) : 'state * 'event list=
+    ((state,[]),interprets)
+    ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
+        let events = interpret state
+        let state' = Fold.fold state events
+        state', acc @ events)
+#endif
 
 type Service(log, resolve) =
 
@@ -21,12 +52,13 @@ type Service(log, resolve) =
         let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
-#if false
-            let acc = Equinox.Accumulator(Fold.fold,state)
-            for cmd in commands do acc.Transact(decide cmd)
-            return ctx.State,ctx.Accumulated }
+#if ACCUMULATOR
+            let acc = Accumulator(Fold.fold, state)
+            for cmd in commands do
+                acc.Transact(Commands.interpret cmd)
+            return acc.State, acc.Accumulated })
 #else
-            return decideMany decide commands state })
+            return interpretMany (Seq.map Commands.interpret commands) state })
 #endif
 
     member __.ExecuteManyAsync(cartId, optimistic, commands : Command seq, ?prepare) : Async<unit> =

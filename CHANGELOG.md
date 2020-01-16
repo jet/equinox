@@ -25,6 +25,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Target `FsCodec` v `2.0.0-rc1`
 
 ### Removed
+
+- `Accumulator` [#184](https://github.com/jet/equinox/pull/184)
+
 ### Fixed
 
 - `eqx`: Reinstated writing of missing commandline argument messages to console
