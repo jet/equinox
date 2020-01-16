@@ -602,10 +602,28 @@ let validateIdempotent contextAndOrArgsAndOrCommand state' =
     | xs -> failwithf "Not idempotent; Generated %A in response to %A" xs contextAndOrArgsAndOrCommand
 ```
 
-// Example FsCheck.xUnit test to validate command is always valid given the Aggregate's initial state'
+### With [`FsCheck.xUnit`](https://fsharpforfunandprofit.com/posts/property-based-testing/)
+
+Example FsCheck.xUnit test to validate command is always valid given the Aggregate's `initial` state:
+
+```fsharp
 let [<Property>] properties contextAndOrArgsAndOrCommand =
     let state' = validateInterpret contextAndOrArgsAndOrCommand initial
     validateIdempotent contextAndOrArgsAndOrCommand state'
+```
+
+### With `xUnit` [`TheoryData`](https://blog.ploeh.dk/2019/09/16/picture-archivist-in-f/)
+
+```fsharp
+type InterpretCases() as this =
+    inherit TheoryData()
+    do this.Add( case1 )
+    do this.Add( case2 )
+
+let [<Theory; ClassData(nameof(InterpretCases)>] examples args =
+    let state' = validateInterpret contextAndOrArgsAndOrCommand initial
+    validateIdempotent contextAndOrArgsAndOrCommand state'
+```
 
 # Equinox Architectural Overview
 
