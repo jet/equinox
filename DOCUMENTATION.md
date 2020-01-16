@@ -512,11 +512,11 @@ In some cases, a Command is logically composed of separable actions against the 
 There's an example of such a case in the [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Backend/Cart.fs#L53):-
 
 ```fsharp
-let interpretMany interprets (state : 'state) : 'state * 'event list=
+let interpretMany fold interprets (state : 'state) : 'state * 'event list =
     ((state,[]),interprets)
     ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
         let events = interpret state
-        let state' = Fold.fold state events
+        let state' = fold state events
         state', acc @ events)
 
 type Service ... =
@@ -524,7 +524,7 @@ type Service ... =
         let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
-            return interpretMany (Seq.map Commands.interpret commands) state })
+            return interpretMany Fold.fold (Seq.map Commands.interpret commands) state })
 ```
 
 <a name="accumulator"></a>
