@@ -20,8 +20,14 @@ type Service(log, resolve) =
     let execute cartId command =
         flowAsync (cartId,None) ((fun _acc execute -> execute command), None)
 
-    member __.FlowAsync(cartId, optimistic, flow, ?prepare) =
-        flowAsync (cartId,if optimistic then Some Equinox.AllowStale else None) (flow, prepare)
+    member __.Run(cartId, optimistic, flow : Command seq, ?prepare) : Async<Fold.State> =
+        let inner (acc : Equinox.Accumulator<_,_>) _ =
+            for x in flow do acc.Transact(Commands.interpret x)
+            acc.State
+        flowAsync (cartId,if optimistic then Some Equinox.AllowStale else None) (inner, prepare)
+
+    member __.ExecuteManyAsync(cartId, optimistic, flow : Command seq, ?prepare) : Async<unit> =
+        __.Run(cartId, optimistic, flow, ?prepare=prepare) |> Async.Ignore
 
     member __.Execute(cartId, command) =
         execute cartId command

@@ -416,7 +416,7 @@ type AccessStrategy<'event,'state> =
     | RollingSnapshots of isOrigin: ('event -> bool) * toSnapshot: ('state -> 'event)
 
 type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) =
-    /// Determines whether writing a Compaction event is warranted (based on the existing state and the current `Accumulated` changes)
+    /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state, 'context>(context : Context, codec : FsCodec.IEventCodec<_,_,'context>, ?access : AccessStrategy<'event,'state>) =
