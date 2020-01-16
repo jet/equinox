@@ -234,7 +234,7 @@ Equinox’s Command Handling consists of < 200 lines including interfaces and co
 - [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs#L34) - internal implementation of Optimistic Concurrency Control / retry loop used by `Stream`. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
 - [`type Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L11) - surface API one uses to `Transact` or `Query` against a specific stream
 - [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L42) - used to identify the Stream pertaining to the relevant Aggregate that `resolve` will use to hydrate a `Stream`
-- _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in extremely complex flavors of Service__
+- _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in extremely complex flavors of Service_
 
 Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the 3 files can tell many of the thousands of words about to follow!
 
@@ -297,7 +297,7 @@ Events are represented as an F# Discriminated Union; see the [article on the `Un
 
 The `evolve` function is responsible for computing the post-State that should result from taking a given State and incorporating the effect that _single_ Event implies in that context and yielding that result _without mutating either input_.
 
-While the `evolve` function operates on a `state` and a _single_ event, `fold` (named for the standard FP operation of that name) walks a chain of events, propagating the running state into each `evolve` invocation. It is the `fold` operation that's typically used a) in tests and b) when passing a function to an Equinox `StreamBuilder` to manage the behavior.
+While the `evolve` function operates on a `state` and a _single_ event, `fold` (named for the standard FP operation of that name) walks a chain of events, propagating the running state into each `evolve` invocation. It is the `fold` operation that's typically used a) in tests and b) when passing a function to an Equinox `Resolver` to manage the behavior.
 
 It should also be called out that Events represent Facts about things that have happened - an `evolve` or `fold` should not throw Exceptions or log. There should be absolutely minimal conditional logic.
 
@@ -457,16 +457,16 @@ type Service(log, resolve, ?maxAttempts) =
     let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
     let execute clientId command : Async<unit> =
-        let stream = reolve clientId
+        let stream = resolve clientId
         stream.Transact(interpret command)
     let handle clientId command : Async<Todo list> =
-        let stream = reolve clientId
+        let stream = resolve clientId
         stream.Transact(fun state ->
-            let ctx = Equinox.Context(fold, state)
-            ctx.Execute (interpret command)
-            ctx.State.items,ctx.Accumulated) // including any events just pended
+            let events = interpret command state
+            let state' = fold state events
+            state'.items,events)
     let query clientId (projection : State -> T) : Async<T> =
-        let stream = reolve clientId
+        let stream = resolve clientId
         stream.Query projection
 
     member __.List clientId : Async<Todo seq> =
@@ -483,7 +483,7 @@ type Service(log, resolve, ?maxAttempts) =
         return List.find (fun x -> x.id = item.id) updated }
 ```
 
-- `handle` represents a command processing flow where we (idempotently) apply a command, but then also emit the state to the caller, as dictated by the needs of the call as specified in the TodoBackend spec. This uses the `Accumulator` helper type, which accumulates an `Event list`, and provides a way to compute the `state` incorporating the proposed events immediately.
+- `handle` represents a command processing flow where we (idempotently) apply a command, but then also emit the state to the caller, as dictated by the needs of the call as specified in the TodoBackend spec. We use the `fold` function to compute the post-state, and then project from that, along with the (pending) events as computed.
 - While we could theoretically use Projections to service queries from an eventually consistent Read Model, this is not in alignment with the Read-you-writes expectation embodied in the tests (i.e. it would not pass the tests), and, more importantly, would not work correctly as a backend for the app. Because we have more than one query required, we make a generic `query` method, even though a specific `read` method (as in the Favorite example) might make sense to expose too
 - The main conclusion to be drawn from the Favorites and TodoBackend `Service` implementations's use of `Stream` Methods is that, while there can be commonality in terms of the sorts of transactions one might encapsulate in this manner, there's also It Depends factors; for instance:
   i) the design doesnt provide complete idempotency and/or follow the CQRS style

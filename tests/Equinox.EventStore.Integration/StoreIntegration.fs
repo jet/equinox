@@ -78,7 +78,7 @@ type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
 
     let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
-        service.FlowAsync(cartId, optimistic, fun _ctx execute ->
+        service.FlowAsync(cartId, optimistic, fun _acc execute ->
             for i in 1..count do
                 execute <| Domain.Cart.AddItem (context, skuId, i)
                 if not exceptTheLastOne || i <> count then
@@ -157,7 +157,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Backend.Cart.Service) log skuId count =
-            service.FlowAsync(cartId, false, prepare = prepare, flow = fun _ctx execute ->
+            service.FlowAsync(cartId, false, prepare = prepare, flow = fun _acc execute ->
                 execute <| Domain.Cart.AddItem (context, skuId, count))
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }

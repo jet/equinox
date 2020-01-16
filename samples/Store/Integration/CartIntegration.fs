@@ -30,7 +30,7 @@ let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
     fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
-    service.FlowAsync(cartId, false, fun _ctx execute ->
+    service.FlowAsync(cartId, false, fun _acc execute ->
         for i in 1..count do
             execute <| Domain.Cart.AddItem (context, skuId, i)
             if i <> count then

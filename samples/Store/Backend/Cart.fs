@@ -18,7 +18,7 @@ type Service(log, resolve) =
         let stream = resolve cartId
         stream.Query id
     let execute cartId command =
-        flowAsync (cartId,None) ((fun _ctx execute -> execute command), None)
+        flowAsync (cartId,None) ((fun _acc execute -> execute command), None)
 
     member __.FlowAsync(cartId, optimistic, flow, ?prepare) =
         flowAsync (cartId,if optimistic then Some Equinox.AllowStale else None) (flow, prepare)
