@@ -4,6 +4,9 @@
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
+#r "Equinox.Core.dll"
+#r "FSharp.UMX.dll"
+#r "FSCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
 #r "Microsoft.Azure.DocumentDb.Core.dll"
 #r "System.Net.Http"
@@ -80,7 +83,7 @@ module FulfilmentCenter =
         | UpdateDetails c when state.details = Some c -> []
         | UpdateDetails c -> [Events.FcDetailsChanged { details = c }]
 
-    type Service(log, reesolve, ?maxAttempts) =
+    type Service(log, resolve, ?maxAttempts) =
 
         let resolve (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
@@ -131,7 +134,7 @@ module Store =
 
 open FulfilmentCenter
 
-let resolve = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy).Resolve
+let resolve = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized).Resolve
 let service = Service(Log.log, resolve)
 
 let fc = "fc0"
@@ -161,7 +164,7 @@ module FulfilmentCenterSummary =
         | Update of version : int64 * Types.Summary
     let interpret command (state : State option) =
         match command with
-        | Update (uv,us) when state |> Option.exists (fun s -> s.version > uv) -> []
+        | Update (uv,_us) when state |> Option.exists (fun s -> s.version > uv) -> []
         | Update (uv,us) -> [Events.Updated { version = uv; state = us }]
 
     type Service(log, resolve, ?maxAttempts) =

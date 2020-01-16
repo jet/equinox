@@ -9,6 +9,7 @@
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
+#r "Equinox.Core.dll"
 #r "FsCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
@@ -21,12 +22,14 @@ open Equinox.Cosmos
 open System
 
 module Favorites =
+
+    let (|ForClientId|) clientId = Equinox.AggregateId("Favorites", clientId)
+
     type Item = { sku : string }
     type Event =
         | Added of Item
         | Removed of Item
         interface TypeShape.UnionContract.IUnionContract
-        let (|ForClientId|) clientId = Equinox.AggregateId("Favorites", clientId)
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
     let initial : string list = []
     let evolve state = function
@@ -83,9 +86,9 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
 module FavoritesCategory = 
-    let resolve = Resolver(Store.context, Favorites.codec, Favorites.fold, Favorites.initial, Store.cacheStrategy).Resolve
+    let resolve = Resolver(Store.context, Favorites.codec, Favorites.fold, Favorites.initial, Store.cacheStrategy, AccessStrategy.Unoptimized).Resolve
 
-let service = Favorites.Service(Log.log, FavoritesCategory.resolve)
+let service = Favorites.Service(Log.log, FavoritesCategory.resolve, maxAttempts=3)
 
 let client = "ClientJ"
 service.Favorite(client, "a") |> Async.RunSynchronously

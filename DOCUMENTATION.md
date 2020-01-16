@@ -128,14 +128,15 @@ See [Cosmos Storage Model](#cosmos-storage-model) for a more detailed discussion
 The following example is a minimal version of [the Favorites model](samples/Store/Domain/Favorites.fs), with shortcuts for brevity, that implements all the relevant functions above:
 
 ```fsharp
-(* Event schemas *)
+(* Event stream naming + schemas *)
 
-type Item = { id: int; name: string; added: DateTimeOffset } 
+let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
+
+type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
     | Added of Item
     | Removed of itemId: int
     | Snapshotted of items: Item[]
-let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
 
 (* State types/helpers *)
 
@@ -220,7 +221,7 @@ At a high level we have:
 
 In the code handling a given Aggregate’s Commands and Synchronous Queries, the code you write divide into:
 
-- Events (`codec`, `encode`, `tryDecode`, `category`, `(|For|)` etc.)
+- Events (`codec`, `encode`, `tryDecode`, `category`, `(|For...|)` etc.)
 - State/Fold (`evolve`, `fold`, `initial`)
 - Storage Model helpers (`isOrigin`,`unfold`,`toSnapshot` etc)
 
@@ -318,7 +319,7 @@ let interpret command state =
     | Remove sku -> if state |> List.contains sku |> not then [] else [Removed sku]
 ```
 
-Command handling should almost invariably be implemented in an [Idempotent](https://en.wikipedia.org/wiki/Idempotence) fashion. In some cases, a blind append can argubaly be an OK way to do this, especially if one is doing simple add/removes that are not problematic if repeated or reordered. However it should be noted that:
+Command handling should almost invariably be implemented in an [Idempotent](https://en.wikipedia.org/wiki/Idempotence) fashion. In some cases, a blind append can arguably be an OK way to do this, especially if one is doing simple add/removes that are not problematic if repeated or reordered. However it should be noted that:
 
 - each write roundtrip (i.e. each `Transact`), and ripple effects resulting from all subscriptions having to process an event are not free either. As the cache can be used to validate whether an Event is actually necessary in the first instance, it's highly recommended to follow the convention as above and return an empty Event `list` in the case of a Command not needing to trigger events to move the model toward it's intended end-state
 - understanding the reasons for each event typically yields a more correct model and/or test suite, which pays off in more understandable code
@@ -374,7 +375,7 @@ All that said, if you're in a situation where your cache hit ratio is going to b
     member __.Unfavorite(clientId, skus) =
         execute clientId (Remove skus)
     member __.List clientId : Async<string list> =
-        stream.Read clientId
+        read clientId
 ```
 
 - while the Stream-related logic in the `Service` type can arguably be extracted into a `Stream` or `Handler` type in order to separate the stream logic from the business function being accomplished, its been determined in the course of writing tutorials and simply explaining what things do that the extra concept count does not present sufficient value. This can be further exacerbated by the need to hover and/or annotate in order to understand what types are flowing about.
@@ -390,6 +391,8 @@ See [the TodoBackend.com sample](README.md#TodoBackend) for reference info regar
 #### `Event`s
 
 ```fsharp
+let (|ForClientId|) (id : string) = Equinox.AggregateId("Todos", id)
+
 type Todo = { id: int; order: int; title: string; completed: bool }
 type Event =
     | Added     of Todo
@@ -397,7 +400,6 @@ type Event =
     | Deleted   of int
     | Cleared
     | Compacted of Todo[]
-let (|ForClientId|) (id : string) = Equinox.AggregateId("Todos", id)
 ```
 
 The fact that we have a `Cleared` Event stems from the fact that the spec defines such an operation. While one could implement this by emitting a `Deleted` event per currently existing item, there many reasons to do model this as a first class event:-

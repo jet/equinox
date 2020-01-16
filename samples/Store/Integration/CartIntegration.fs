@@ -13,7 +13,7 @@ let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
 
 let createMemoryStore () =
     // we want to validate that the JSON UTF8 is working happily
-    new VolatileStore<byte[]>()
+    VolatileStore<byte[]>()
 let createServiceMemory log store =
     Backend.Cart.Service(log, fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
 
