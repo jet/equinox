@@ -13,6 +13,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx dump` perf + logging improvements
 - `eqx dump -P` turns off JSON pretty printing
 - `Cosmos`: `Tip 200` now logs received `n` and `_etag` values
+- `EventStore`: Add missing optional parameters for `Connector`: `gossipTimeout` and `clientConnectionTimeout`
 
 ### Changed
 
