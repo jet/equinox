@@ -129,7 +129,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Backend.Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, flow = [Domain.Cart.AddItem (context, skuId, count)])
+            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Domain.Cart.AddItem (context, skuId, count)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()
@@ -258,7 +258,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Backend.Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, flow = [Domain.Cart.AddItem (context, skuId, count)])
+            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Domain.Cart.AddItem (context, skuId, count)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()

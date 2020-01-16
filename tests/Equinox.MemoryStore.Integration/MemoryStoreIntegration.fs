@@ -21,14 +21,14 @@ type Tests(testOutputHelper) =
             cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
         let service = let log = createLog () in createServiceMemory log store
-        let command = [Domain.Cart.AddItem args]
+        let command = Domain.Cart.AddItem args
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
-            service.Run(cartId, false, command)
+            service.Run(cartId, false, [command])
 
         let actLoadingStateSeparately cartId = async {
-            let! _ = service.ExecuteManyAsync(cartId, false, command)
+            let! _ = service.ExecuteManyAsync(cartId, false, [command])
             return! service.Read cartId }
         let! expected = cartId1 |> actTrappingStateAsSaved
         let! actual = cartId2 |> actLoadingStateSeparately

@@ -2,37 +2,42 @@
 
 open Domain.Cart
 
+let decide command state =
+    let events = Commands.interpret command state
+    let state' = Fold.fold state events
+    state',events
+
+let decideMany decide commands state =
+    ((state,[]),commands)
+    ||> Seq.fold (fun (state,acc) command ->
+        let state',events = decide command state
+        state',acc@events)
+
 type Service(log, resolve) =
 
     let resolve (Events.ForCartId streamId, opt) = Equinox.Stream(log, resolve (streamId,opt), maxAttempts = 3)
-        
-    let flowAsync cartId (flow, prepare) =
-        let stream = resolve cartId
+
+    member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+        let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
-            let ctx = Equinox.Accumulator(Fold.fold,state)
-            let execute = Commands.interpret >> ctx.Transact
-            let res = flow ctx execute
-            return res,ctx.Accumulated })
-    let read cartId : Async<Fold.State> =
-        let stream = resolve cartId
-        stream.Query id
-    let execute cartId command =
-        flowAsync (cartId,None) ((fun _acc execute -> execute command), None)
+#if false
+            let acc = Equinox.Accumulator(Fold.fold,state)
+            for cmd in commands do acc.Transact(decide cmd)
+            return ctx.State,ctx.Accumulated }
+#else
+            return decideMany decide commands state })
+#endif
 
-    member __.Run(cartId, optimistic, flow : Command seq, ?prepare) : Async<Fold.State> =
-        let inner (acc : Equinox.Accumulator<_,_>) _ =
-            for x in flow do acc.Transact(Commands.interpret x)
-            acc.State
-        flowAsync (cartId,if optimistic then Some Equinox.AllowStale else None) (inner, prepare)
-
-    member __.ExecuteManyAsync(cartId, optimistic, flow : Command seq, ?prepare) : Async<unit> =
-        __.Run(cartId, optimistic, flow, ?prepare=prepare) |> Async.Ignore
+    member __.ExecuteManyAsync(cartId, optimistic, commands : Command seq, ?prepare) : Async<unit> =
+        __.Run(cartId, optimistic, commands, ?prepare=prepare) |> Async.Ignore
 
     member __.Execute(cartId, command) =
-        execute cartId command
+         __.ExecuteManyAsync(cartId, false, [command])
 
     member __.Read cartId =
-        read (cartId,None)
+        let stream = resolve (cartId,None)
+        stream.Query id
     member __.ReadStale cartId =
-        read (cartId,Some Equinox.ResolveOption.AllowStale)
+        let stream = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
+        stream.Query id
