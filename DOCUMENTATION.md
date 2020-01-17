@@ -90,15 +90,17 @@ NB this has lots of room for improvement, having started as a placeholder in [#5
 
 In F#, independent of the Store being used, the Equinox programming model involves (largely by convention, see [FAQ](README.md#FAQ)), per aggregation of events on a given category of stream:
 
-- `'state`: the rolling state maintained to enable Decisions or Queries to be made given a `'command` (not expected to be serializable or stored directly in a Store; can be held in a [.NET `MemoryCache`](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.caching.memorycache))
+- `'state`: the rolling state maintained to enable Decisions or Queries to be made given a command and/or other context (not expected to be serializable or stored directly in a Store; can be held in a [.NET `MemoryCache`](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.caching.memorycache))
 - `'event`: a discriminated union representing all the possible Events from which a state can be `evolve`d (see `e`vents and `u`nfolds in the [Storage Model](#cosmos-storage-model)). Typically the mapping of the json to an `'event` `c`ase is [driven by a `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)
 
 - `initial: 'state`: the [implied] state of an empty stream. See also [Null Object Pattern](https://en.wikipedia.org/wiki/Null_object_pattern), [Identity element](https://en.wikipedia.org/wiki/Identity_element)
 
 - `fold : 'state -> 'event seq -> 'state`: function used to fold one or more loaded (or proposed) events (real ones and/or unfolded ones) into a given running [persistent data structure](https://en.wikipedia.org/wiki/Persistent_data_structure) of type `'state`
-- `evolve: state -> 'event -> 'state` - the `folder` function from which `fold` is built, representing the application of a single delta that the `'event` implies for the model to the `state`. _Note: `evolve` is an implementation detail of a given Aggregate; `fold` is the function used in tests and used to parameterize the Category's storage configuration._. Sometimes named `apply`
+- (`evolve: state -> 'event -> 'state` - the `folder` function from which `fold` is built, representing the application of a single delta that the `'event` implies for the model to the `state`. _Note: `evolve` is an implementation detail of a given Aggregate; `fold` is the function used in tests and used to parameterize the Category's storage configuration._. Sometimes named `apply`)
 
-- `interpret: 'state -> 'command -> event' list`: responsible for _Deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by a `command` should (given the provided `state`) be reflected in terms of a) the `events` that should be written to the stream to record the decision b) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles, [see Synchronous Query in the Glossary](#glossary))
+- `interpret: (context/command etc ->) 'state -> event' list` or `decide : (context/command etc ->) 'state -> 'result*'event list`: responsible for _Deciding_ (in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner) how the intention represented by `context/command` should be mapped with regard to the provided `state` in terms of:
+  a) the `'events` that should be written to the stream to record the decision
+  b) (for the `'result` in the `decide` signature) any response to be returned to the invoker (NB returning a result likely represents a violation of the [CQS](https://en.wikipedia.org/wiki/Command%E2%80%93query_separation) and/or CQRS principles, [see Synchronous Query in the Glossary](#glossary))
 
 When using a Store with support for synchronous unfolds and/or snapshots, one will typically implement two
 further functions in order to avoid having every `'event` in the stream be loaded and processed in order to
@@ -502,79 +504,6 @@ The typical function signatures used are:
 
   This extended signature, where the command processing can also emit an output or outcome (alongside the normal events)
 
-<a name="composed-commands"></a>
-## Handling sequences of Commands as a single transaction
-
-In some cases, a Command is logically composed of separable actions against the aggregate. It's advisable in general to represent each aspect of the processing in terms of the above `interpret` function signature. This allows that aspect of the behavior to be unit tested cleanly. The overall chain of processing can then be represented as a [composed method](https://wiki.c2.com/?ComposedMethod) which can then summarize the overall transaction.
-
-### Idiomatic approach - composed method based on side-effect free functions
-
-There's an example of such a case in the [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Backend/Cart.fs#L53):-
-
-```fsharp
-let interpretMany fold interprets (state : 'state) : 'state * 'event list =
-    ((state,[]),interprets)
-    ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
-        let events = interpret state
-        let state' = fold state events
-        state', acc @ events)
-
-type Service ... =
-    member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-        let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        stream.TransactAsync(fun state -> async {
-            match prepare with None -> () | Some prep -> do! prep
-            return interpretMany Fold.fold (Seq.map Commands.interpret commands) state })
-```
-
-<a name="accumulator"></a>
-### Alternate approach - composing with an Accumulator encapsulating the folding
-
-As illustrated in [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Backend/Cart.fs#L5), an alternate approach is to encapsulate the folding (Equinox in V1 exposed an interface that encouraged such patterns; this was removed in two steps, as code written using the idiomatic approach is [intrinsically simpler, even if it seems not as Easy](https://www.infoq.com/presentations/Simple-Made-Easy/) at first)
-
-    ```fsharp
-    /// Maintains a rolling folded State while Accumulating Events pended as part of a decision flow
-    type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originState : 'state) =
-        let accumulated = ResizeArray<'event>()
-
-        /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
-        member __.Accumulated : 'event list =
-            accumulated |> List.ofSeq
-
-        /// The current folded State, based on the Stream's `originState` + any events that have been Accumulated during the the decision flow
-        member __.State : 'state =
-            accumulated |> fold originState
-
-        /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
-        member __.Transact(interpret : 'state -> 'event list) : unit =
-            interpret __.State |> accumulated.AddRange
-        /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
-        member __.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
-            let! events = interpret __.State
-            accumulated.AddRange events }
-        /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
-        member __.Transact(decide : 'state -> 'result * 'event list) : 'result =
-            let result, newEvents = decide __.State
-            accumulated.AddRange newEvents
-            result
-        /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
-        member __.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
-            let! result, newEvents = decide __.State
-            accumulated.AddRange newEvents
-            return result }
-
-    type Service ... =
-        member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-            let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-            stream.TransactAsync(fun state -> async {
-                match prepare with None -> () | Some prep -> do! prep
-                let acc = Accumulator(Fold.fold, state)
-                for cmd in commands do
-                    acc.Transact(Commands.interpret cmd)
-                return acc.State, acc.Accumulated
-            })
-    ```
-
 <a name="testing-interpret"></a>
 ## Testing `interpret` functions
 
@@ -623,6 +552,81 @@ type InterpretCases() as this =
 let [<Theory; ClassData(nameof(InterpretCases)>] examples args =
     let state' = validateInterpret contextAndOrArgsAndOrCommand initial
     validateIdempotent contextAndOrArgsAndOrCommand state'
+```
+
+<a name="composed-commands"></a>
+## Handling sequences of Commands as a single transaction
+
+In some cases, a Command is logically composed of separable actions against the aggregate. It's advisable in general to represent each aspect of the processing in terms of the above `interpret` function signature. This allows that aspect of the behavior to be unit tested cleanly. The overall chain of processing can then be represented as a [composed method](https://wiki.c2.com/?ComposedMethod) which can then summarize the overall transaction.
+
+### Idiomatic approach - composed method based on side-effect free functions
+
+There's an example of such a case in the [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Backend/Cart.fs#L53):-
+
+```fsharp
+let interpretMany fold interprets (state : 'state) : 'state * 'event list =
+    ((state,[]),interprets)
+    ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
+        let events = interpret state
+        let state' = fold state events
+        state', acc @ events)
+
+type Service ... =
+    member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+        let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
+        stream.TransactAsync(fun state -> async {
+            match prepare with None -> () | Some prep -> do! prep
+            return interpretMany Fold.fold (Seq.map Commands.interpret commands) state })
+```
+
+<a name="accumulator"></a>
+### Alternate approach - composing with an Accumulator encapsulating the folding
+
+_NOTE: This is an example of an alternate approach provided as a counterpoint - there's no need to read it as the preceding approach is the recommended one is advised as a default strategy to use_
+
+As illustrated in [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Backend/Cart.fs#L5), an alternate approach is to encapsulate the folding (Equinox in V1 exposed an interface that encouraged such patterns; this was removed in two steps, as code written using the idiomatic approach is [intrinsically simpler, even if it seems not as Easy](https://www.infoq.com/presentations/Simple-Made-Easy/) at first)
+
+```fsharp
+/// Maintains a rolling folded State while Accumulating Events pended as part of a decision flow
+type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originState : 'state) =
+    let accumulated = ResizeArray<'event>()
+
+    /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
+    member __.Accumulated : 'event list =
+        accumulated |> List.ofSeq
+
+    /// The current folded State, based on the Stream's `originState` + any events that have been Accumulated during the the decision flow
+    member __.State : 'state =
+        accumulated |> fold originState
+
+    /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
+    member __.Transact(interpret : 'state -> 'event list) : unit =
+        interpret __.State |> accumulated.AddRange
+    /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
+    member __.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+        let! events = interpret __.State
+        accumulated.AddRange events }
+    /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
+    member __.Transact(decide : 'state -> 'result * 'event list) : 'result =
+        let result, newEvents = decide __.State
+        accumulated.AddRange newEvents
+        result
+    /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
+    member __.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+        let! result, newEvents = decide __.State
+        accumulated.AddRange newEvents
+        return result }
+
+type Service ... =
+    member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+        let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
+        stream.TransactAsync(fun state -> async {
+            match prepare with None -> () | Some prep -> do! prep
+            let acc = Accumulator(Fold.fold, state)
+            for cmd in commands do
+                acc.Transact(Commands.interpret cmd)
+            return acc.State, acc.Accumulated
+        })
 ```
 
 # Equinox Architectural Overview
