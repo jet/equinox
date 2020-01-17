@@ -23,6 +23,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx -C dump` now renders Store `.Information` logs
 - Samples consistently use `module Fold`, `(Events.ForX streamId)`, removed `(|Stream|)` [#174](https://github.com/jet/equinox/pull/174)
 - Target `FsCodec` v `2.0.0-rc1`
+- `SqlStreamStore`.*: Target `SqlStreamStore` v `1.2.0-beta.8`
 
 ### Removed
 
