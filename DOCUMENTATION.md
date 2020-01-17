@@ -221,22 +221,21 @@ At a high level we have:
 
 In the code handling a given Aggregate’s Commands and Synchronous Queries, the code you write divide into:
 
-- Events (`codec`, `encode`, `tryDecode`, `category`, `(|For...|)` etc.)
+- Events (`codec`, `encode`, `tryDecode`, `categoryId`, `(|For...|)` etc.)
 - State/Fold (`evolve`, `fold`, `initial`)
 - Storage Model helpers (`isOrigin`,`unfold`,`toSnapshot` etc)
 
 while these are not omnipresent, for the purposes of this discussion we’ll treat them as that. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.
 
-### Flows, Streams and Accumulators
+### Flows and Streams
 
 Equinox’s Command Handling consists of < 200 lines including interfaces and comments in https://github.com/jet/equinox/tree/master/src/Equinox - the elements you'll touch in a normal application are:
 
 - [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs#L34) - internal implementation of Optimistic Concurrency Control / retry loop used by `Stream`. It's recommended to at least scan this file as it defines the Transaction semantics everything is coming together in service of.
 - [`type Stream`](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L11) - surface API one uses to `Transact` or `Query` against a specific stream
 - [`type Target` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Equinox.fs#L42) - used to identify the Stream pertaining to the relevant Aggregate that `resolve` will use to hydrate a `Stream`
-- _[`type Accumulator`](https://github.com/jet/equinox/blob/master/src/Equinox/Accumulator.fs) - optional `type` that can be used to manage application-local State in extremely complex flavors of Service__
 
-Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the 3 files can tell many of the thousands of words about to follow!
+Its recommended to read the examples in conjunction with perusing the code in order to see the relatively simple implementations that underlie the abstractions; the 2 files can tell many of the thousands of words about to follow!
 
 #### Stream Members
 
@@ -252,26 +251,6 @@ type Equinox.Stream(stream, log, maxAttempts) =
     // Runs a Null Flow that simply yields a `projection` of `Context.State`
     member __.Query(projection : State -> View) : Async<View>
 ```
-
-#### Accumulator
-
-```fsharp
-type Accumulator(fold, originState) =
-
-    // Events proposed thus far
-    member Accumulated : Event list
-
-    // Effective State including `Accumulated`
-    member State : State
-
-    // Execute a normal Command-interpretation, stashing the Events in `Accumulated`
-    member Transact(interpret : State -> Event list) : unit
-
-    // Less frequently used variant that can additionally yield a result
-    member Transact(decide : State -> 'result * Event list) : 'result
-```
-
-`Accumulator` is a small optional helper class that can be useful in certain scenarios where one is applying a sequence of Commands. One can use it within the body of a `decide` or `interpret` function as passed to `Stream.Transact`.
 
 ### Favorites walkthrough
 
@@ -297,7 +276,7 @@ Events are represented as an F# Discriminated Union; see the [article on the `Un
 
 The `evolve` function is responsible for computing the post-State that should result from taking a given State and incorporating the effect that _single_ Event implies in that context and yielding that result _without mutating either input_.
 
-While the `evolve` function operates on a `state` and a _single_ event, `fold` (named for the standard FP operation of that name) walks a chain of events, propagating the running state into each `evolve` invocation. It is the `fold` operation that's typically used a) in tests and b) when passing a function to an Equinox `StreamBuilder` to manage the behavior.
+While the `evolve` function operates on a `state` and a _single_ event, `fold` (named for the standard FP operation of that name) walks a chain of events, propagating the running state into each `evolve` invocation. It is the `fold` operation that's typically used a) in tests and b) when passing a function to an Equinox `Resolver` to manage the behavior.
 
 It should also be called out that Events represent Facts about things that have happened - an `evolve` or `fold` should not throw Exceptions or log. There should be absolutely minimal conditional logic.
 
@@ -457,16 +436,16 @@ type Service(log, resolve, ?maxAttempts) =
     let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
 
     let execute clientId command : Async<unit> =
-        let stream = reolve clientId
+        let stream = resolve clientId
         stream.Transact(interpret command)
     let handle clientId command : Async<Todo list> =
-        let stream = reolve clientId
+        let stream = resolve clientId
         stream.Transact(fun state ->
-            let ctx = Equinox.Context(fold, state)
-            ctx.Execute (interpret command)
-            ctx.State.items,ctx.Accumulated) // including any events just pended
+            let events = interpret command state
+            let state' = fold state events
+            state'.items,events)
     let query clientId (projection : State -> T) : Async<T> =
-        let stream = reolve clientId
+        let stream = resolve clientId
         stream.Query projection
 
     member __.List clientId : Async<Todo seq> =
@@ -483,12 +462,168 @@ type Service(log, resolve, ?maxAttempts) =
         return List.find (fun x -> x.id = item.id) updated }
 ```
 
-- `handle` represents a command processing flow where we (idempotently) apply a command, but then also emit the state to the caller, as dictated by the needs of the call as specified in the TodoBackend spec. This uses the `Accumulator` helper type, which accumulates an `Event list`, and provides a way to compute the `state` incorporating the proposed events immediately.
+- `handle` represents a command processing flow where we (idempotently) apply a command, but then also emit the state to the caller, as dictated by the needs of the call as specified in the TodoBackend spec. We use the `fold` function to compute the post-state, and then project from that, along with the (pending) events as computed.
 - While we could theoretically use Projections to service queries from an eventually consistent Read Model, this is not in alignment with the Read-you-writes expectation embodied in the tests (i.e. it would not pass the tests), and, more importantly, would not work correctly as a backend for the app. Because we have more than one query required, we make a generic `query` method, even though a specific `read` method (as in the Favorite example) might make sense to expose too
 - The main conclusion to be drawn from the Favorites and TodoBackend `Service` implementations's use of `Stream` Methods is that, while there can be commonality in terms of the sorts of transactions one might encapsulate in this manner, there's also It Depends factors; for instance:
   i) the design doesnt provide complete idempotency and/or follow the CQRS style
   ii) the fact that this is a toy system with lots of artificial constraints and/or simplifications when compared to aspects that might present in a more complete implementation.
 - the `AggregateId` and `Stream` Active Patterns provide succinct ways to map an incoming `clientId` (which is not a `string` in the real implementation but instead an id using [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive manner.
+
+<a name="commands"></a>
+# Command Handling Patterns
+
+## DOs
+
+- In general, you want to default to separating reads from writes for various reasons (CQRS)
+- Any command's processing should take into account the current `'state` of the aggregate, `interpreting` the state in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner; applying the same Command twice should result in no events being written when the same logical request is made the second time.
+
+## DONTs
+
+- Doing blind writes (ignoring [idempotence](https://en.wikipedia.org/wiki/Idempotence) principles) is normally a design smell
+
+## Mixing Commands and Queries
+
+In general, you want commands
+
+## Function signatures
+
+The typical function signatures used are:
+
+- *interpret*: `let interpret (context, command, args) state : Events.Event list`
+
+  This is the canonical (and preferred) signature for a command handling function - the `state` comes last as
+  a) it's computed and supplied by the Equinox Flow
+  b) it's always relevant (in order to make the handling idempotent)
+
+  - The command can be rejected [by throwing](https://eiriktsarpalis.wordpress.com/2017/02/19/youre-better-off-using-exceptions/)
+  - In some cases, depending on the domain in question, it's valid to record some details of the request (that are represented as Events that become Facts), even if the command was logically ignored - in that case, the function can emit one or more events. _Note that emitting an event dictates that the processing may be rerun should a conflicting write have taken place since the loading of the state_
+
+- *decide*: `let decide (context, command, args) state : 'result * Events.Event list`
+
+  This extended signature, where the command processing can also emit an output or outcome (alongside the normal events)
+
+<a name="composed-commands"></a>
+## Handling sequences of Commands as a single transaction
+
+In some cases, a Command is logically composed of separable actions against the aggregate. It's advisable in general to represent each aspect of the processing in terms of the above `interpret` function signature. This allows that aspect of the behavior to be unit tested cleanly. The overall chain of processing can then be represented as a [composed method](https://wiki.c2.com/?ComposedMethod) which can then summarize the overall transaction.
+
+### Idiomatic approach - composed method based on side-effect free functions
+
+There's an example of such a case in the [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Backend/Cart.fs#L53):-
+
+```fsharp
+let interpretMany fold interprets (state : 'state) : 'state * 'event list =
+    ((state,[]),interprets)
+    ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
+        let events = interpret state
+        let state' = fold state events
+        state', acc @ events)
+
+type Service ... =
+    member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+        let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
+        stream.TransactAsync(fun state -> async {
+            match prepare with None -> () | Some prep -> do! prep
+            return interpretMany Fold.fold (Seq.map Commands.interpret commands) state })
+```
+
+<a name="accumulator"></a>
+### Alternate approach - composing with an Accumulator encapsulating the folding
+
+As illustrated in [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Backend/Cart.fs#L5), an alternate approach is to encapsulate the folding (Equinox in V1 exposed an interface that encouraged such patterns; this was removed in two steps, as code written using the idiomatic approach is [intrinsically simpler, even if it seems not as Easy](https://www.infoq.com/presentations/Simple-Made-Easy/) at first)
+
+    ```fsharp
+    /// Maintains a rolling folded State while Accumulating Events pended as part of a decision flow
+    type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originState : 'state) =
+        let accumulated = ResizeArray<'event>()
+
+        /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
+        member __.Accumulated : 'event list =
+            accumulated |> List.ofSeq
+
+        /// The current folded State, based on the Stream's `originState` + any events that have been Accumulated during the the decision flow
+        member __.State : 'state =
+            accumulated |> fold originState
+
+        /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
+        member __.Transact(interpret : 'state -> 'event list) : unit =
+            interpret __.State |> accumulated.AddRange
+        /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
+        member __.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+            let! events = interpret __.State
+            accumulated.AddRange events }
+        /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
+        member __.Transact(decide : 'state -> 'result * 'event list) : 'result =
+            let result, newEvents = decide __.State
+            accumulated.AddRange newEvents
+            result
+        /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
+        member __.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+            let! result, newEvents = decide __.State
+            accumulated.AddRange newEvents
+            return result }
+
+    type Service ... =
+        member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+            let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
+            stream.TransactAsync(fun state -> async {
+                match prepare with None -> () | Some prep -> do! prep
+                let acc = Accumulator(Fold.fold, state)
+                for cmd in commands do
+                    acc.Transact(Commands.interpret cmd)
+                return acc.State, acc.Accumulated
+            })
+    ```
+
+<a name="testing-interpret"></a>
+## Testing `interpret` functions
+
+The canonical `interpret` and `decide` signatures above make unit testing possible without imposing the use of any support libraries or DSLs.
+
+Given an opening `state` and an `interpret` command, you can validate the handling is idempotent as follows:
+
+```fsharp
+let fold, initial = Aggregate.Fold.fold, Aggregate.Fold.initial
+// Alternately: open Aggregate.Fold
+
+let validateInterpret contextAndOrArgsAndOrCommand state =
+    let events = interpret contextAndOrArgsAndOrCommand state
+    // TODO assert/match against the events to validate correct events considering the contextAndOrArgsAndOrCommand
+    let state' = fold state events
+    // TODO assert the events, when `fold`ed, yield the correct successor state (in general, prefer asserting against `events` than `state'`)
+    state'
+
+// Validate handling is idempotent in nature
+let validateIdempotent contextAndOrArgsAndOrCommand state' =
+    let events' = interpret contextAndOrArgsAndOrCommand state'
+    match events' with
+    | [] -> ()
+    // TODO add clauses to validate edge cases that should still generate events on a re-run
+    | xs -> failwithf "Not idempotent; Generated %A in response to %A" xs contextAndOrArgsAndOrCommand
+```
+
+### With [`FsCheck.xUnit`](https://fsharpforfunandprofit.com/posts/property-based-testing/)
+
+Example FsCheck.xUnit test to validate command is always valid given the Aggregate's `initial` state:
+
+```fsharp
+let [<Property>] properties contextAndOrArgsAndOrCommand =
+    let state' = validateInterpret contextAndOrArgsAndOrCommand initial
+    validateIdempotent contextAndOrArgsAndOrCommand state'
+```
+
+### With `xUnit` [`TheoryData`](https://blog.ploeh.dk/2019/09/16/picture-archivist-in-f/)
+
+```fsharp
+type InterpretCases() as this =
+    inherit TheoryData()
+    do this.Add( case1 )
+    do this.Add( case2 )
+
+let [<Theory; ClassData(nameof(InterpretCases)>] examples args =
+    let state' = validateInterpret contextAndOrArgsAndOrCommand initial
+    validateIdempotent contextAndOrArgsAndOrCommand state'
+```
 
 # Equinox Architectural Overview
 

@@ -61,9 +61,9 @@ type Service(log, resolve, ?maxAttempts) =
     let handle clientId command =
         let stream = resolve clientId
         stream.Transact(fun state ->
-            let ctx = Equinox.Accumulator(Fold.fold, state)
-            ctx.Transact (Commands.interpret command)
-            ctx.State.items,ctx.Accumulated)
+            let events = Commands.interpret command state
+            let state' = Fold.fold state events
+            state'.items,events)
 
     member __.List(clientId) : Async<Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)

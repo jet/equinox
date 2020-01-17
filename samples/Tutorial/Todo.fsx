@@ -8,6 +8,7 @@
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
+#r "Equinox.Core.dll"
 #r "Equinox.dll"
 #r "FsCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
@@ -65,12 +66,12 @@ type Service(log, resolve, ?maxAttempts) =
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
         stream.Transact(interpret command)
-    let handle clientId command : Aync<Todo list> =
+    let handle clientId command : Async<Todo list> =
         let stream = resolve clientId
         stream.Transact(fun state ->
-            let ctx = Equinox.Accumulator(fold, state)
-            ctx.Transact (interpret command)
-            ctx.State.items,ctx.Accumulated)
+            let events = interpret command state
+            let state' = fold state events
+            state'.items,events)
     let query clientId (projection : State -> 't) : Async<'t> =
         let stream = resolve clientId
         stream.Query projection
