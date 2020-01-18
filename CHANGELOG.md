@@ -13,17 +13,18 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx dump` perf + logging improvements
 - `eqx dump -P` turns off JSON pretty printing
 - `Cosmos`: `Tip 200` now logs received `n` and `_etag` values
+- `Cosmos`: Unfolds now write and return `t` (creation `DateTimeOffset.UtcNow`)
 - `EventStore`: Add missing optional parameters for `Connector`: `gossipTimeout` and `clientConnectionTimeout` [#186](https://github.com/jet/equinox/pull/186) :pray: [@AndrewRublyov](https://github.com/AndrewRublyov)
 
 ### Changed
 
+- `SqlStreamStore`.*: Target `SqlStreamStore` v `1.2.0-beta.8`
+- Target `FsCodec` v `2.0.0-rc1`
 - Target `Microsoft.SourceLink.GitHub`, `Microsoft.NETFramework.ReferenceAssemblies` v `1.0.0`
 - Samples etc target `Argu` v `6.0.0`
 - `eqx dump`'s `-J` switch now turns off JSON rendering
 - `eqx -C dump` now renders Store `.Information` logs
 - Samples consistently use `module Fold`, `(Events.ForX streamId)`, removed `(|Stream|)` [#174](https://github.com/jet/equinox/pull/174)
-- Target `FsCodec` v `2.0.0-rc1`
-- `SqlStreamStore`.*: Target `SqlStreamStore` v `1.2.0-beta.8`
 
 ### Removed
 

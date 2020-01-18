@@ -25,9 +25,10 @@ type Base64ZipUtf8Tests() =
             {   i = 42L
                 c = encoded.EventType
                 d = encoded.Data
-                m = null }
+                m = null
+                t = DateTimeOffset.MinValue }
         let res = JsonConvert.SerializeObject e
-        test <@ res.Contains("\"d\":\"") && res.Length < 100 @>
+        test <@ res.Contains("\"d\":\"") && res.Length < 128 @>
 
     [<Property>]
     let roundtrips value =
@@ -42,7 +43,8 @@ type Base64ZipUtf8Tests() =
             {   i = 42L
                 c = encoded.EventType
                 d = encoded.Data
-                m = null }
+                m = null
+                t = DateTimeOffset.MinValue }
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
         let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
