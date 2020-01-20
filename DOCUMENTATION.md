@@ -471,38 +471,113 @@ type Service(log, resolve, ?maxAttempts) =
   ii) the fact that this is a toy system with lots of artificial constraints and/or simplifications when compared to aspects that might present in a more complete implementation.
 - the `AggregateId` and `Stream` Active Patterns provide succinct ways to map an incoming `clientId` (which is not a `string` in the real implementation but instead an id using [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive manner.
 
+<a name="queries"></a>
+# Queries
+
+Queries are handled by `Equinox.Stream`s' `Query` function.
+
+A _query_ projects a value from the `'state` of an Aggregate. Queries should be used sparingly, as loading and folding the events each time is against the general principle of Command Query Responsibility Segregation (CQRS). A query should not simply expose the `'state` of an aggregate, as this will inevitably lead to the leaking of decision logic outside of the Aggregate's `module`.
+
+```fsharp
+// Query function exposing part of the state
+member __.ReadAddress(clientId) =
+    let stream = resolve clientId
+    stream.Query(fun state -> state.address)
+
+// Return the entire state we hold for this aggregate (NOTE: generally not a good idea)
+member __.Read(clientId) =
+    let stream = resolve clientId
+    stream.Query id
+```
+
 <a name="commands"></a>
-# Command Handling Patterns
+# Command+Decision Handling functions
+
+Commands or Decisions are handled via `Equinox.Stream`'s `Transact' method
+
+## Commands (`interpret` signature)
+
+The normal [command pattern](https://en.wikipedia.org/wiki/Command_pattern) involves taking the execution context (e.g., the principal on behalf of which the processing is happening), a command (with relevant parameters) reflecting the intent and the present `'state` of the Aggregate into account and mapping that to one or more Events that represent that intent as a decision on the stream.
+
+In this case, the Decision Process is `interpret`ing the _Command_ in the context of a `'state`.
+
+The function signature is: `let interpret (context, command, args) state : Events.Event list`
+
+Note the `'state` is the last parameter; it's computed and supplied by the Equinox Flow.
+
+If the _interpret function_ does not yield any events, there will be no trip to the store them.
+
+A command may be rejected [by throwing](https://eiriktsarpalis.wordpress.com/2017/02/19/youre-better-off-using-exceptions/) from within the `interpret` function.
+
+_Note that emitting an event dictates that the processing may be rerun should a conflicting write have taken place since the loading of the state_
+
+```fsharp
+
+let interpret (context, command) state : Events.Event list =
+    match tryCommand context command state with
+    | None ->
+        [] // not relevant / already in effect
+    | Some eventDetails -> // accepted, mapped to event details record
+        [Event.HandledCommand eventDetails]
+
+type Service(...)
+
+/// ...
+
+// Given the supplied context, apply the command for the specified clientId
+member __.Execute(clientId, context, command) : Async<unit> =
+    let stream = resolve clientId
+    stream.Transact(fun state -> interpretCommand (context, command) state)
+
+// Given the supplied context, apply the command for the specified clientId
+// Throws if this client's data is marked Read Only
+member __.Execute(clientId, context, command) : Async<unit> =
+    let stream = resolve clientId
+    stream.Transact(fun state ->
+        if state.isReadOnly then raise AccessDeniedException() // Mapped to 403 externally
+        interpretCommand (context, command) state)
+```
+
+## Decisions (`Transact`ing Commands that also emit a result using the `decide` signature)
+
+In some cases, depending on the domain in question, it may be appropriate to record some details of the request (that are represented as Events that become Facts), even if the 'command' is logically ignored. In such cases, the necessary function is a hybrid of a _projection_ and the preceding `interpret` signature: you're both potentially emitting events and yielding an outcome or projecting some of the 'state'.
+
+In this case, the signature is: `let decide (context, command, args) state : 'result * Events.Event list`
+
+Note that the return value is a _tuple_ of `('result,Event list):
+- the `fst` element is returned from `stream.Transact`
+- the `snd` element of the tuple represents the events (if any) that should represent the state change implied by the request.with
+
+Note if the decision function yields events, and a conflict is detected, the flow may result in the `decide` function being rerun with the conflicting state until either no events are emitted, or there were on further conflicting writes supplied by competing writers.
+
+```fsharp
+let decide (context, command) state : int * Events.Event list =
+   // ... if `snd` contains event, they are written
+   // `fst` (an `int` in this instance) is returned as the outcome to the caller
+
+type Service(...)
+
+/// ...
+
+// Given the supplied context, attempt to apply the command for the specified clientId
+// NOTE Try will return the `fst` of the tuple that `decide` returned
+// If >1 attempt was necessary (e.g., due to conflicting events), the `fst` from the last attempt is the outcome
+member __.Try(clientId, context, command) : Async<int> =
+    let stream = resolve clientId
+    stream.Transact(fun state ->
+        decide (context, command) state)
+```
 
 ## DOs
 
-- In general, you want to default to separating reads from writes for various reasons (CQRS)
+- Identify Invariants you're seeking to maintain. Events are ordered and updates consistency checked for this reason; it'll also be an important part of how you test things.
+- In general, you want to default to separating reads from writes for ease of understanding, testing, maintenance and scaling (see CQRS)
 - Any command's processing should take into account the current `'state` of the aggregate, `interpreting` the state in an [idempotent](https://en.wikipedia.org/wiki/Idempotence) manner; applying the same Command twice should result in no events being written when the same logical request is made the second time.
 
 ## DONTs
 
-- Doing blind writes (ignoring [idempotence](https://en.wikipedia.org/wiki/Idempotence) principles) is normally a design smell
-
-## Mixing Commands and Queries
-
-In general, you want commands
-
-## Function signatures
-
-The typical function signatures used are:
-
-- *interpret*: `let interpret (context, command, args) state : Events.Event list`
-
-  This is the canonical (and preferred) signature for a command handling function - the `state` comes last as
-  a) it's computed and supplied by the Equinox Flow
-  b) it's always relevant (in order to make the handling idempotent)
-
-  - The command can be rejected [by throwing](https://eiriktsarpalis.wordpress.com/2017/02/19/youre-better-off-using-exceptions/)
-  - In some cases, depending on the domain in question, it's valid to record some details of the request (that are represented as Events that become Facts), even if the command was logically ignored - in that case, the function can emit one or more events. _Note that emitting an event dictates that the processing may be rerun should a conflicting write have taken place since the loading of the state_
-
-- *decide*: `let decide (context, command, args) state : 'result * Events.Event list`
-
-  This extended signature, where the command processing can also emit an output or outcome (alongside the normal events)
+- Write blindly: blind writes (ignoring [idempotence](https://en.wikipedia.org/wiki/Idempotence) principles) is normally a design smell
+- Mixing Commands and Queries - in general, the read and write paths should be separated as much as possible (see CQRS)
 
 <a name="testing-interpret"></a>
 ## Testing `interpret` functions
