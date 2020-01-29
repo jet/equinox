@@ -265,7 +265,7 @@ module LoadTest =
             | None, None -> invalidOp "impossible None, None"
         let clients = Array.init (a.TestsPerSecond * 2) (fun _ -> % Guid.NewGuid())
 
-        let renderedIds = clients |> Seq.map ClientId.toStringN |> if verboseConsole then id else Seq.truncate 5
+        let renderedIds = clients |> Seq.map ClientId.toString |> if verboseConsole then id else Seq.truncate 5
         log.ForContext((if verboseConsole then "clientIds" else "clientIdsExcerpt"),renderedIds)
             .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
@@ -389,8 +389,7 @@ module Dump =
                 | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (name : string) = async {
-            let catAndId = name.Split([|'-'|],2,StringSplitOptions.RemoveEmptyEntries)
-            let id = match catAndId with [|cat;id|] -> Equinox.AggregateId(cat,id) | ids -> Equinox.StreamName ids.[0]
+            let id = StreamName.ofRaw name
             let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) id
             let! _token,events = stream.Load storeLog
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds

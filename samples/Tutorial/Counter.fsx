@@ -23,7 +23,7 @@ type Event =
     | Cleared of Cleared
     interface TypeShape.UnionContract.IUnionContract
 (* Kind of DDD aggregate ID *)
-let (|ForCounterId|) (id : string) = Equinox.AggregateId("Counter", id)
+let (|ForCounterId|) (id : string) = StreamName.create "Counter" id
 
 type State = State of int
 let initial : State = State 0

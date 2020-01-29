@@ -4,7 +4,7 @@ module Index
 module Events =
 
     let [<Literal>] categoryId = "Index"
-    let (|ForIndexId|) indexId = Equinox.AggregateId(categoryId, IndexId.toString indexId)
+    let (|ForIndexId|) indexId = StreamName.create categoryId (IndexId.toString indexId)
 
     type ItemIds = { items : string[] }
     type Items<'v> = { items : Map<string,'v> }

@@ -4,7 +4,7 @@ module Set
 module Events =
 
     let [<Literal>] categoryId = "Set"
-    let (|ForSetId|) id = Equinox.AggregateId(categoryId, SetId.toString id)
+    let (|ForSetId|) id = StreamName.create categoryId (SetId.toString id)
 
     type Items = { items : string[] }
     type Event =

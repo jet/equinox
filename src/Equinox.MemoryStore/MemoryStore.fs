@@ -84,11 +84,10 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
 type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
     let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
     let resolveStream streamName context = Stream.create category streamName None context
-    let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
-    member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
-        match resolveTarget target, option with
-        | sn,(None|Some AllowStale) -> resolveStream sn context
-        | sn,Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn context)
+    member __.Resolve(streamName : StreamName, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
+        match streamName, option with
+        | StreamName sn, (None|Some AllowStale) -> resolveStream sn context
+        | StreamName sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken, state, ?context) =

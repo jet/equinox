@@ -49,7 +49,7 @@ type Service(log, resolve) =
     let resolve (Events.ForCartId streamId, opt) = Equinox.Stream(log, resolve (streamId,opt), maxAttempts = 3)
 
     member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-        let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
+        let stream = resolve (cartId,if optimistic then Some AllowStale else None)
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
 #if ACCUMULATOR
@@ -71,5 +71,5 @@ type Service(log, resolve) =
         let stream = resolve (cartId,None)
         stream.Query id
     member __.ReadStale cartId =
-        let stream = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
+        let stream = resolve (cartId,Some ResolveOption.AllowStale)
         stream.Query id

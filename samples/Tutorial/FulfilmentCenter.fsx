@@ -42,6 +42,8 @@ module FulfilmentCenter =
 
     module Events =
 
+        let (|ForFcId|) id = StreamName.create "FulfilmentCenter" id
+
         type AddressData = { address : Address }
         type ContactInformationData = { contact : ContactInformation }
         type FcData = { details : FcDetails }
@@ -53,7 +55,6 @@ module FulfilmentCenter =
             | FcRenamed of FcName
             interface TypeShape.UnionContract.IUnionContract
         let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenter", id)
 
     module Fold =
 
@@ -146,13 +147,14 @@ Log.dumpMetrics ()
 /// Manages ingestion of summary events tagged with the version emitted from FulmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
+    let (|ForFcId|) id = StreamName.create "FulfilmentCenterSummary" id
+
     module Events =
         type UpdatedData = { version : int64; state : Summary }
         type Event =
             | Updated of UpdatedData
             interface TypeShape.UnionContract.IUnionContract
         let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-        let (|ForFcId|) id = Equinox.AggregateId("FulfilmentCenterSummary", id)
 
     type State = { version : int64; state : Types.Summary }
     let initial = None

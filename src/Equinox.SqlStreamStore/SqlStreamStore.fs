@@ -545,12 +545,11 @@ type Resolver<'event, 'state, 'context>
         | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
     let resolveStream = Stream.create category
-    let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
     let loadEmpty sn = context.LoadEmpty sn,initial
-    member __.Resolve(target, [<O; D null>]?option, [<O; D null>]?context) =
-        match resolveTarget target, option with
-        | sn,(None|Some AllowStale) -> resolveStream sn option context
-        | sn,Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
+    member __.Resolve(streamName : StreamName, [<O; D null>]?option, [<O; D null>]?context) =
+        match streamName, option with
+        | StreamName sn,(None|Some AllowStale) -> resolveStream sn option context
+        | StreamName sn,Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =

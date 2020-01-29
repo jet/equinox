@@ -9,7 +9,7 @@ open System.Net.Http
 type Session(client: HttpClient, clientId: ClientId) =
 
     member __.Send(req : HttpRequestMessage) : Async<HttpResponseMessage> =
-        let req = req |> HttpReq.withHeader "COMPLETELY_INSECURE_CLIENT_ID" (ClientId.toStringN clientId)
+        let req = req |> HttpReq.withHeader "COMPLETELY_INSECURE_CLIENT_ID" (ClientId.toString clientId)
         client.Send(req)
 
 type Favorited = { date: System.DateTimeOffset; skuId: SkuId }

@@ -32,7 +32,7 @@ module IdTypes =
         let x = Guid.NewGuid() in let xs, xn = x.ToString(), x.ToString "N"
         let (x1 : CartId, x2 : CartId) = %x, %x
         test <@ x1 = x2
-                && xn = CartId.toStringN x2
+                && xn = CartId.toString x2
                 && string x1 = xs @>
 
     [<Fact>]
@@ -40,7 +40,7 @@ module IdTypes =
         let x = Guid.NewGuid() in let xs, xn = x.ToString(), x.ToString "N"
         let (x1 : ClientId, x2 : ClientId) = %x, %x
         test <@ x1 = x2
-                && xn = ClientId.toStringN x2
+                && xn = ClientId.toString x2
                 && string x1 = xs @>
 
     [<Fact>]

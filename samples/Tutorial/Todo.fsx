@@ -22,6 +22,8 @@ open System
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
 
+let (|ForClientId|) (id : string) = StreamName.create "Todos" id
+
 type Todo =             { id: int; order: int; title: string; completed: bool }
 type DeletedInfo =      { id: int }
 type Snapshotted =      { items: Todo[] }
@@ -33,7 +35,6 @@ type Event =
     | Snapshotted       of Snapshotted
     interface TypeShape.UnionContract.IUnionContract
 let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-let (|ForClientId|) (id : string) = Equinox.AggregateId("Todos", id)
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }

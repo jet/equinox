@@ -5,6 +5,9 @@ open System
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
+
+    let (|ForInventoryItemId|) (id : InventoryItemId) = StreamName.create "InventoryItem" (InventoryItemId.toString id)
+
     type Event =
         | Created of name: string
         | Deactivated
@@ -12,7 +15,6 @@ module Events =
         | Removed of count: int
         | CheckedIn of count: int
         interface TypeShape.UnionContract.IUnionContract
-    let (|ForInventoryItemId|) (id : InventoryItemId) = Equinox.AggregateId ("InventoryItem", InventoryItemId.toStringN id)
 
 module Fold =
     type State = { active : bool; name: string; quantity: int }

@@ -1,4 +1,6 @@
-﻿// Example of using the FsCodec up/down conversion mechanism to access the underlying `Index` of the event in the stream
+﻿open System.IO
+
+// Example of using the FsCodec up/down conversion mechanism to access the underlying `Index` of the event in the stream
 //   in order to be able to query to obtain an as-at balance
 // For a more realistic and detailed example, see https://andrewcmeier.com/bi-temporal-event-sourcing
 
@@ -37,6 +39,8 @@ open System
 
 module Events =
 
+    let (|ForClientId|) clientId = StreamName.create "Account" clientId
+
     type Delta = { count : int }
     type SnapshotInfo = { balanceLog : int[] }
     type Contract =
@@ -57,7 +61,6 @@ module Events =
         let down (_index,e) : Contract * _ option * DateTimeOffset option =
             e,None,None
         FsCodec.NewtonsoftJson.Codec.Create(up,down)
-    let (|ForClientId|) clientId = Equinox.AggregateId("Account", clientId)
 
 module Fold =
 

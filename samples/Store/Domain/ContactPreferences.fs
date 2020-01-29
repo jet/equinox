@@ -4,6 +4,9 @@ type Id = Id of email: string
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
+
+    let (|ForClientId|) (email: string) = StreamName.create "ContactPreferences" email // TODO hash >> base64
+
     type Preferences = { manyPromotions : bool; littlePromotions : bool; productReview : bool; quickSurveys : bool }
     type Value = { email : string; preferences : Preferences }
 
@@ -11,7 +14,6 @@ module Events =
         | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let (|ForClientId|) (email: string) = Equinox.AggregateId ("ContactPreferences", email) // TODO hash >> base64
 
 module Fold =
     type State = Events.Preferences

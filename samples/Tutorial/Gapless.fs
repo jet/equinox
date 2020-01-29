@@ -8,7 +8,7 @@ open System
 module Events =
 
     let [<Literal>] categoryId = "Gapless"
-    let (|ForSequenceId|) id = Equinox.AggregateId(categoryId, SequenceId.toString id)
+    let (|ForSequenceId|) id = StreamName.create categoryId (SequenceId.toString id)
 
     type Item = { id : int64 }
     type Snapshotted = { reservations : int64[];  nextId : int64 }
