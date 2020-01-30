@@ -29,7 +29,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 
 - `Accumulator` [#184](https://github.com/jet/equinox/pull/184)
-- `Target` (now uses `FsCodec.StreamName`)
+- `Target` (now uses `FsCodec.StreamName`) [#189](https://github.com/jet/equinox/pull/189)
 
 ### Fixed
 
