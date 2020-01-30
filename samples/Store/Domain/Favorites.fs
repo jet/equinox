@@ -3,7 +3,7 @@
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    let (|ForClientId|) (id: ClientId) = StreamName.create "Favorites" (ClientId.toString id)
+    let (|ForClientId|) (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
 
     type Favorited =                            { date: System.DateTimeOffset; skuId: SkuId }
     type Unfavorited =                          { skuId: SkuId }
@@ -17,6 +17,7 @@ module Events =
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
 module Fold =
+
     type State = Events.Favorited []
 
     type private InternalState(input: State) =

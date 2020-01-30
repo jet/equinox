@@ -8,7 +8,7 @@ open System
 module Events =
 
     let [<Literal>] categoryId = "Sequence"
-    let (|ForSequenceId|) id = StreamName.create categoryId (SequenceId.toString id)
+    let (|ForSequenceId|) id = FsCodec.StreamName.create categoryId (SequenceId.toString id)
 
     type Reserved = { next : int64 }
     type Event =

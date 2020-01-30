@@ -23,7 +23,7 @@ open System
 
 module Favorites =
 
-    let (|ForClientId|) clientId = StreamName.create "Favorites" clientId
+    let (|ForClientId|) clientId = FsCodec.StreamName.create "Favorites" clientId
 
     type Item = { sku : string }
     type Event =

@@ -22,7 +22,7 @@ open System
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
 
-let (|ForClientId|) (id : string) = StreamName.create "Todos" id
+let (|ForClientId|) (id : string) = FsCodec.StreamName.create "Todos" id
 
 type Todo =             { id: int; order: int; title: string; completed: bool }
 type DeletedInfo =      { id: int }

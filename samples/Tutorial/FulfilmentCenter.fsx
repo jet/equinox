@@ -42,7 +42,7 @@ module FulfilmentCenter =
 
     module Events =
 
-        let (|ForFcId|) id = StreamName.create "FulfilmentCenter" id
+        let (|ForFcId|) id = FsCodec.StreamName.create "FulfilmentCenter" id
 
         type AddressData = { address : Address }
         type ContactInformationData = { contact : ContactInformation }
@@ -147,7 +147,7 @@ Log.dumpMetrics ()
 /// Manages ingestion of summary events tagged with the version emitted from FulmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
-    let (|ForFcId|) id = StreamName.create "FulfilmentCenterSummary" id
+    let (|ForFcId|) id = FsCodec.StreamName.create "FulfilmentCenterSummary" id
 
     module Events =
         type UpdatedData = { version : int64; state : Summary }

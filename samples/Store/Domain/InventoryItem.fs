@@ -6,7 +6,7 @@ open System
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    let (|ForInventoryItemId|) (id : InventoryItemId) = StreamName.create "InventoryItem" (InventoryItemId.toString id)
+    let (|ForInventoryItemId|) (id : InventoryItemId) = FsCodec.StreamName.create "InventoryItem" (InventoryItemId.toString id)
 
     type Event =
         | Created of name: string

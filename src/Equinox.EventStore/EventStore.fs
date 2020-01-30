@@ -3,7 +3,6 @@
 open Equinox
 open Equinox.Core
 open EventStore.ClientAPI
-open FsCodec
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
 
@@ -509,7 +508,7 @@ type CachingStrategy =
     | SlidingWindowPrefixed of ICache * window: TimeSpan * prefix: string
 
 type Resolver<'event, 'state, 'context>
-    (   context : Context, codec : IEventCodec<_,_,'context>, fold, initial,
+    (   context : Context, codec : FsCodec.IEventCodec<_,_,'context>, fold, initial,
         /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>]?caching,
@@ -537,10 +536,10 @@ type Resolver<'event, 'state, 'context>
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
     let resolveStream = Stream.create category
     let loadEmpty sn = context.LoadEmpty sn,initial
-    member __.Resolve(streamName : StreamName, [<O; D null>]?option, [<O; D null>]?context) =
-        match streamName, option with
-        | StreamName sn, (None|Some AllowStale) -> resolveStream sn option context
-        | StreamName sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
+    member __.Resolve(streamName : FsCodec.StreamName, [<O; D null>]?option, [<O; D null>]?context) =
+        match FsCodec.StreamName.toString streamName, option with
+        | sn, (None|Some AllowStale) -> resolveStream sn option context
+        | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =

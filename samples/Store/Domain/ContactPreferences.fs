@@ -5,7 +5,7 @@ type Id = Id of email: string
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    let (|ForClientId|) (email: string) = StreamName.create "ContactPreferences" email // TODO hash >> base64
+    let (|ForClientId|) (email: string) = FsCodec.StreamName.create "ContactPreferences" email // TODO hash >> base64
 
     type Preferences = { manyPromotions : bool; littlePromotions : bool; productReview : bool; quickSurveys : bool }
     type Value = { email : string; preferences : Preferences }
@@ -16,6 +16,7 @@ module Events =
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
 module Fold =
+
     type State = Events.Preferences
 
     let initial : State = { manyPromotions = false; littlePromotions = false; productReview = false; quickSurveys = false }

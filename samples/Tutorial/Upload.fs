@@ -23,7 +23,7 @@ module UploadId =
 module Events =
 
     let [<Literal>] categoryId = "Upload"
-    let (|ForCompanyAndPurchaseOrder|) (companyId, purchaseOrderId) = StreamName.compose categoryId [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId]
+    let (|ForCompanyAndPurchaseOrder|) (companyId, purchaseOrderId) = FsCodec.StreamName.compose categoryId [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId]
 
     type IdAssigned = { value : UploadId }
     type Event =

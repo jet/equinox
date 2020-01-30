@@ -3,7 +3,7 @@
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    let (|ForCartId|) (id: CartId) = StreamName.create "Cart" (CartId.toString id)
+    let (|ForCartId|) (id: CartId) = FsCodec.StreamName.create "Cart" (CartId.toString id)
 
     type ContextInfo =              { time: System.DateTime; requestId: RequestId }
 

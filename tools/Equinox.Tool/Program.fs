@@ -70,7 +70,7 @@ and [<NoComparison; NoEquality>]StatsArguments =
             | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and [<NoComparison; NoEquality>]DumpArguments =
-    | [<AltCommandLine "-s">]               Stream of string
+    | [<AltCommandLine "-s">]               Stream of FsCodec.StreamName
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-J"; Unique>]       JsonSkip
     | [<AltCommandLine "-P"; Unique>]       PrettySkip
@@ -388,9 +388,8 @@ module Dump =
                 | _ when doJ -> System.Text.Encoding.UTF8.GetString data |> Newtonsoft.Json.Linq.JObject.Parse |> fun x -> x.ToString fo
                 | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
-        let readStream (name : string) = async {
-            let id = StreamName.ofRaw name
-            let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) id
+        let readStream (streamName : FsCodec.StreamName) = async {
+            let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
             let! _token,events = stream.Load storeLog
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
             let mutable prevTs = None

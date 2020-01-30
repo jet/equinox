@@ -37,39 +37,6 @@ type Stream<'event, 'state>
     /// Such a memento is then held within the application and passed in lieu of a StreamId to the StreamResolver in order to avoid having to reload state
     member __.CreateMemento(): Async<StreamToken * 'state> = Flow.query(stream, log, fun syncState -> syncState.Memento)
 
-/// Store-agnostic way to specify a target Stream to a Resolver
-[<NoComparison; NoEquality>]
-type StreamName = StreamName of string
-
-namespace global
-
-/// Manages creation and parsing of well-formed Stream Names
-module StreamName =
-
-    /// Specify the full stream name. NOTE use of <c>create</c> is recommended for simplicity and consistency.
-    let ofRaw (name : string) = Equinox.StreamName name
-    /// Recommended way to specify a stream identifier; a category identifier and an aggregate identity. Category is separated from id by `-`
-    let create (category : string) id =
-        if category.IndexOf '-' <> -1  then invalidArg "category" "may not contain embedded '-' symbols"
-        ofRaw (sprintf "%s-%s" category id)
-    /// Composes a StreamName from a category and > 1 name elements. Category is separated from id by '-', elements are separated by '_'
-    let compose (category : string) (subElements : string seq) =
-        let buf = System.Text.StringBuilder 128
-        let mutable first = true
-        for x in subElements do
-            if first then () else buf.Append '_' |> ignore
-            first <- false
-            if System.String.IsNullOrEmpty x then invalidArg "subElements" "may not contain null or empty components"
-            if x.IndexOf '_' <> -1 then invalidArg "subElements" "may not contain embedded '_' symbols"
-            buf.Append x |> ignore
-        create category (buf.ToString())
-    let private dash = [|'-'|]
-    /// Splits a well-formed Stream Name into a Category and an Id
-    let parse (streamName : string) : string * string =
-        match streamName.Split dash with
-        | [| cat; id |] -> (cat, id)
-        | _ -> invalidArg (sprintf "Stream Name '%s' did not contain exactly one '-' separator" streamName) "streamName"
-
 /// Store-agnostic <c>Context.Resolve</c> Options
 type ResolveOption =
     /// Without consulting Cache or any other source, assume the Stream to be empty for the initial Query or Transact
