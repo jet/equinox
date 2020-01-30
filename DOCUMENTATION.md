@@ -132,7 +132,7 @@ The following example is a minimal version of [the Favorites model](samples/Stor
 ```fsharp
 (* Event stream naming + schemas *)
 
-let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
+let (|ForClientId|) (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -372,7 +372,7 @@ See [the TodoBackend.com sample](README.md#TodoBackend) for reference info regar
 #### `Event`s
 
 ```fsharp
-let (|ForClientId|) (id : string) = Equinox.AggregateId("Todos", id)
+let (|ForClientId|) (id : string) = FsCodec.StreamName.create "Todos" id
 
 type Todo = { id: int; order: int; title: string; completed: bool }
 type Event =

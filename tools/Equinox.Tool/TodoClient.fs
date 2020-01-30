@@ -11,7 +11,7 @@ type Todo = { id: int; url: string; order: int; title: string; completed: bool }
 type Session(client: HttpClient, clientId: ClientId) =
 
     member __.Send(req : HttpRequestMessage) : Async<HttpResponseMessage> =
-        let req = req |> HttpReq.withHeader "COMPLETELY_INSECURE_CLIENT_ID" (ClientId.toStringN clientId)
+        let req = req |> HttpReq.withHeader "COMPLETELY_INSECURE_CLIENT_ID" (ClientId.toString clientId)
         client.Send(req)
 
 type TodosClient(session: Session) =

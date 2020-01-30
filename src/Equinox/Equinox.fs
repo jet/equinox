@@ -3,7 +3,7 @@
 open Equinox.Core
 open System.Runtime.InteropServices
 
-// Exception yielded by Stream.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
+/// Exception yielded by Stream.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
 type MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Concurrency violation; aborting after %i attempts." count)
 
@@ -36,14 +36,6 @@ type Stream<'event, 'state>
     /// Low-level helper to allow one to obtain a reference to a stream and state pair (including the position) in order to pass it as a continuation within the application
     /// Such a memento is then held within the application and passed in lieu of a StreamId to the StreamResolver in order to avoid having to reload state
     member __.CreateMemento(): Async<StreamToken * 'state> = Flow.query(stream, log, fun syncState -> syncState.Memento)
-
-/// Store-agnostic way to specify a target Stream to a Resolver
-[<NoComparison; NoEquality>]
-type Target =
-    /// Recommended way to specify a stream identifier; a category identifier and an aggregate identity
-    | AggregateId of category: string * id: string
-    /// Specify the full stream name. NOTE use of <c>AggregateId</c> is recommended for simplicity and consistency.
-    | StreamName of streamName: string
 
 /// Store-agnostic <c>Context.Resolve</c> Options
 type ResolveOption =

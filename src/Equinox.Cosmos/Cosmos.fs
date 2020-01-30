@@ -1064,12 +1064,12 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
                 | Some init -> async {
                     do! init ()
                     return! category.TrySync(log, token, originState, events, context) } }
-    let resolveTarget = function
-        | AggregateId (categoryName,streamId) -> context.ResolveContainerStream(categoryName, streamId)
-        | StreamName _ as x -> failwithf "Stream name not supported: %A" x
 
-    member __.Resolve(target, [<O; D null>]?option, [<O; D null>]?context) =
-        match resolveTarget target, option with
+    let resolveTarget = function
+        | StreamName.CategoryAndId (categoryName, streamId) -> context.ResolveContainerStream(categoryName, streamId)
+
+    member __.Resolve(streamName : StreamName, [<O; D null>]?option, [<O; D null>]?context) =
+        match resolveTarget streamName, option with
         | streamArgs,(None|Some AllowStale) -> resolveStream streamArgs option context
         | (containerStream,maybeInit),Some AssumeEmpty ->
             Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit) option context)

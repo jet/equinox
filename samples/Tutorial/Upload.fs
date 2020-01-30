@@ -23,9 +23,7 @@ module UploadId =
 module Events =
 
     let [<Literal>] categoryId = "Upload"
-    let (|ForCompanyAndPurchaseOrder|) (companyId, purchaseOrderId) =
-        let id = sprintf "%s_%s" (PurchaseOrderId.toString purchaseOrderId) (CompanyId.toString companyId)
-        Equinox.AggregateId(categoryId, id)
+    let (|ForCompanyAndPurchaseOrder|) (companyId, purchaseOrderId) = FsCodec.StreamName.compose categoryId [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId]
 
     type IdAssigned = { value : UploadId }
     type Event =

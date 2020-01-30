@@ -2,6 +2,9 @@
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
+
+    let (|ForClientId|) (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
+
     type Favorited =                            { date: System.DateTimeOffset; skuId: SkuId }
     type Unfavorited =                          { skuId: SkuId }
     type Snapshotted =                          { net: Favorited[] }
@@ -12,9 +15,9 @@ module Events =
         | Unfavorited                           of Unfavorited
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("Favorites", ClientId.toStringN id)
 
 module Fold =
+
     type State = Events.Favorited []
 
     type private InternalState(input: State) =

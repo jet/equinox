@@ -37,6 +37,8 @@ open System
 
 module Events =
 
+    let (|ForClientId|) clientId = FsCodec.StreamName.create "Account" clientId
+
     type Delta = { count : int }
     type SnapshotInfo = { balanceLog : int[] }
     type Contract =
@@ -57,7 +59,6 @@ module Events =
         let down (_index,e) : Contract * _ option * DateTimeOffset option =
             e,None,None
         FsCodec.NewtonsoftJson.Codec.Create(up,down)
-    let (|ForClientId|) clientId = Equinox.AggregateId("Account", clientId)
 
 module Fold =
 

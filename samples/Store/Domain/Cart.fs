@@ -2,6 +2,9 @@
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
+
+    let (|ForCartId|) (id: CartId) = FsCodec.StreamName.create "Cart" (CartId.toString id)
+
     type ContextInfo =              { time: System.DateTime; requestId: RequestId }
 
     type ItemInfo =                 { context: ContextInfo; item: ItemInfo }
@@ -22,7 +25,6 @@ module Events =
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let (|ForCartId|) (id: CartId) = Equinox.AggregateId ("Cart", CartId.toStringN id)
 
 module Fold =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }

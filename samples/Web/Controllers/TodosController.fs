@@ -23,9 +23,9 @@ type GetByIdArgsTemplate = { id: int }
 type TodosController(service: Service) =
     inherit ControllerBase()
 
-    let toModel (value : TodoView) : Todo = { id = value.id; order = value.order; title = value.title; completed = value.completed }
+    let toModel (value : TodoView) : Events.Todo = { id = value.id; order = value.order; title = value.title; completed = value.completed }
 
-    member private __.WithUri(x : Todo) : TodoView =
+    member private __.WithUri(x : Events.Todo) : TodoView =
         let url = __.Url.RouteUrl("GetTodo", { id=x.id }, __.Request.Scheme) // Supplying scheme is secret sauce for making it absolute as required by client
         { id = x.id; url = url; order = x.order; title = x.title; completed = x.completed }
 

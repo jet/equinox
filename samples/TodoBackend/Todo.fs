@@ -3,8 +3,12 @@
 open Domain
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
-[<AutoOpen>]
 module Events =
+
+    // The TodoBackend spec does not dictate having multiple lists, tenants or clients
+    // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
+    let (|ForClientId|) (id : ClientId) = FsCodec.StreamName.create "Todos" (ClientId.toString id)
+
     type Todo =         { id: int; order: int; title: string; completed: bool }
     type Deleted =      { id: int }
     type Snapshotted =  { items: Todo[] }
@@ -16,37 +20,34 @@ module Events =
         | Snapshotted   of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    // The TodoBackend spec does not dictate having multiple lists, tenants or clients
-    // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
-    let (|ForClientId|) (id : ClientId) = Equinox.AggregateId("Todos", ClientId.toStringN id)
 
 module Fold =
-    type State = { items : Todo list; nextId : int }
+    type State = { items : Events.Todo list; nextId : int }
     let initial = { items = []; nextId = 0 }
     let evolve s e =
         match e with
-        | Added item ->    { s with items = item :: s.items; nextId = s.nextId + 1 }
-        | Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
-        | Deleted          { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
-        | Cleared ->       { s with items = [] }
-        | Snapshotted      { items = items } -> { s with items = List.ofArray items }
+        | Events.Added item ->    { s with items = item :: s.items; nextId = s.nextId + 1 }
+        | Events.Updated value -> { s with items = s.items |> List.map (function { id = id } when id = value.id -> value | item -> item) }
+        | Events.Deleted          { id=id } -> { s with items = s.items  |> List.filter (fun x -> x.id <> id) }
+        | Events.Cleared ->       { s with items = [] }
+        | Events.Snapshotted      { items = items } -> { s with items = List.ofArray items }
     let fold : State -> Events.Event seq -> State = Seq.fold evolve
     let isOrigin = function Events.Cleared | Events.Snapshotted _ -> true | _ -> false
-    let snapshot state = Snapshotted { items = Array.ofList state.items }
+    let snapshot state = Events.Snapshotted { items = Array.ofList state.items }
 
-type Command = Add of Todo | Update of Todo | Delete of id: int | Clear
+type Command = Add of Events.Todo | Update of Events.Todo | Delete of id: int | Clear
 
 module Commands =
 
     let interpret c (state : Fold.State) =
         match c with
-        | Add value -> [Added { value with id = state.nextId }]
+        | Add value -> [Events.Added { value with id = state.nextId }]
         | Update value ->
             match state.items |> List.tryFind (function { id = id } -> id = value.id) with
-            | Some current when current <> value -> [Updated value]
+            | Some current when current <> value -> [Events.Updated value]
             | _ -> []
-        | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted {id=id}] else []
-        | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
+        | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Events.Deleted {id=id}] else []
+        | Clear -> if state.items |> List.isEmpty then [] else [Events.Cleared]
 
 type Service(log, resolve, ?maxAttempts) =
 
@@ -65,7 +66,7 @@ type Service(log, resolve, ?maxAttempts) =
             let state' = Fold.fold state events
             state'.items,events)
 
-    member __.List(clientId) : Async<Todo seq> =
+    member __.List(clientId) : Async<Events.Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
 
     member __.TryGet(clientId, id) =
@@ -74,10 +75,10 @@ type Service(log, resolve, ?maxAttempts) =
     member __.Execute(clientId, command) : Async<unit> =
         execute clientId command
 
-    member __.Create(clientId, template: Todo) : Async<Todo> = async {
+    member __.Create(clientId, template: Events.Todo) : Async<Events.Todo> = async {
         let! state' = handle clientId (Command.Add template)
         return List.head state' }
 
-    member __.Patch(clientId, item: Todo) : Async<Todo> = async {
+    member __.Patch(clientId, item: Events.Todo) : Async<Events.Todo> = async {
         let! state' = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }

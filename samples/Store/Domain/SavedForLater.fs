@@ -5,6 +5,9 @@ open System.Collections.Generic
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
+
+    let (|ForClientId|) (id: ClientId) = FsCodec.StreamName.create "SavedForLater" (ClientId.toString id)
+
     type Item =             { skuId : SkuId; dateSaved : DateTimeOffset }
 
     type Added =            { skus : SkuId []; dateSaved : DateTimeOffset }
@@ -27,7 +30,6 @@ module Events =
         | Added of Added
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let (|ForClientId|) (id: ClientId) = Equinox.AggregateId("SavedForLater", ClientId.toStringN id)
 
 module Fold =
     open Events

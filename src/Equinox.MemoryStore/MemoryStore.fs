@@ -5,7 +5,6 @@ namespace Equinox.MemoryStore
 
 open Equinox
 open Equinox.Core
-open FsCodec
 open System.Runtime.InteropServices
 
 /// Equivalent to GetEventStore's in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
@@ -68,7 +67,7 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
         member __.TrySync(_log, Token.Unpack token, state, events : 'event list, context : 'context option) = async {
             let inline map i (e : FsCodec.IEventData<'Format>) =
                 FsCodec.Core.TimelineEvent.Create(int64 i,e.EventType,e.Data,e.Meta,e.CorrelationId,e.CausationId,e.Timestamp)
-            let encoded : ITimelineEvent<_>[] = events |> Seq.mapi (fun i e -> map (token.streamVersion+i) (codec.Encode(context,e))) |> Array.ofSeq
+            let encoded : FsCodec.ITimelineEvent<_>[] = events |> Seq.mapi (fun i e -> map (token.streamVersion+i) (codec.Encode(context,e))) |> Array.ofSeq
             let trySyncValue currentValue =
                 if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue encoded |> Array.ofSeq)
@@ -84,11 +83,10 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
 type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
     let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
     let resolveStream streamName context = Stream.create category streamName None context
-    let resolveTarget = function AggregateId (cat,streamId) -> sprintf "%s-%s" cat streamId | StreamName streamName -> streamName
-    member __.Resolve(target : Target, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
-        match resolveTarget target, option with
-        | sn,(None|Some AllowStale) -> resolveStream sn context
-        | sn,Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn context)
+    member __.Resolve(streamName : FsCodec.StreamName, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
+        match FsCodec.StreamName.toString streamName, option with
+        | sn, (None|Some AllowStale) -> resolveStream sn context
+        | sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken, state, ?context) =

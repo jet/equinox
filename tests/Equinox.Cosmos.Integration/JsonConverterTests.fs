@@ -16,11 +16,11 @@ type Union =
 let defaultSettings = FsCodec.NewtonsoftJson.Settings.CreateDefault()
 
 type Base64ZipUtf8Tests() =
-    let unionEncoder = FsCodec.NewtonsoftJson.Codec.Create(defaultSettings)
+    let eventCodec = FsCodec.NewtonsoftJson.Codec.Create(defaultSettings)
 
     [<Fact>]
     let ``serializes, achieving compression`` () =
-        let encoded = unionEncoder.Encode(None,A { embed = String('x',5000) })
+        let encoded = eventCodec.Encode(None,A { embed = String('x',5000) })
         let e : Store.Unfold =
             {   i = 42L
                 c = encoded.EventType
@@ -38,7 +38,7 @@ type Base64ZipUtf8Tests() =
             | A { embed = x } | B { embed = x } -> obj.ReferenceEquals(null, x)
         if hasNulls then () else
 
-        let encoded = unionEncoder.Encode(None,value)
+        let encoded = eventCodec.Encode(None,value)
         let e : Store.Unfold =
             {   i = 42L
                 c = encoded.EventType
@@ -49,5 +49,5 @@ type Base64ZipUtf8Tests() =
         test <@ ser.Contains("\"d\":\"") @>
         let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
         let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
-        let decoded = unionEncoder.TryDecode d |> Option.get
+        let decoded = eventCodec.TryDecode d |> Option.get
         test <@ value = decoded @>
