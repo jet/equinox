@@ -639,8 +639,8 @@ In some cases, a Command is logically composed of separable actions against the 
 There's an example of such a case in the [Cart's Domain Service](https://github.com/jet/equinox/blob/master/samples/Store/Backend/Cart.fs#L53):-
 
 ```fsharp
-let interpretMany fold interprets (state : 'state) : 'state * 'event list =
-    ((state,[]),interprets)
+let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
+    ((state,[]),interpreters)
     ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
         let events = interpret state
         let state' = fold state events

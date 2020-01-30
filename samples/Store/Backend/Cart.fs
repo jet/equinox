@@ -36,8 +36,8 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
         accumulated.AddRange newEvents
         return result }
 #else
-let interpretMany fold interprets (state : 'state) : 'state * 'event list =
-    ((state,[]),interprets)
+let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
+    ((state,[]),interpreters)
     ||> Seq.fold (fun (state : 'state, acc : 'event list) interpret ->
         let events = interpret state
         let state' = fold state events
