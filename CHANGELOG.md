@@ -9,6 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+<a name="2.0.0-rc9"></a>
+## [2.0.0-rc9] - 2020-01-31
+
+### Added
 
 - `eqx dump` perf + logging improvements
 - `eqx dump -P` turns off JSON pretty printing
@@ -36,7 +45,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx`: Reinstated writing of missing commandline argument messages to console
 - `Cosmos`: Fix `null` Data handling exception when log level <= `Debug`
 
-<a name="2.0.0"></a>
 <a name="2.0.0-rc8"></a>
 ## [2.0.0-rc8] - 2019-11-14
 
@@ -348,7 +356,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc8...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc9...HEAD
+[2.0.0-rc9]: https://github.com/jet/equinox/compare/2.0.0-rc8...2.0.0-rc9
 [2.0.0-rc8]: https://github.com/jet/equinox/compare/2.0.0-rc7...2.0.0-rc8
 [2.0.0-rc7]: https://github.com/jet/equinox/compare/2.0.0-rc6...2.0.0-rc7
 [2.0.0-rc6]: https://github.com/jet/equinox/compare/2.0.0-rc5...2.0.0-rc6
