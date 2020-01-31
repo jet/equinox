@@ -20,6 +20,7 @@
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
+#r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "Equinox.Core.dll"
 #r "Equinox.dll"

@@ -7,6 +7,7 @@
 #r "Equinox.dll"
 #r "Equinox.MemoryStore.dll"
 #r "TypeShape.dll"
+#r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
 

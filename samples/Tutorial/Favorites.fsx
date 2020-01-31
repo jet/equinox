@@ -5,6 +5,7 @@
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"
 #r "Equinox.MemoryStore.dll"
+#r "FSharp.UMX.dll"
 #r "FSCodec.dll"
 
 (*
@@ -86,8 +87,8 @@ open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
 // related streams are termed a Category; Each client will have it's own Stream.
-let categoryName = "Favorites"
-let clientAFavoritesStreamId = Equinox.AggregateId(categoryName,"ClientA")
+let categoryId = "Favorites"
+let clientAFavoritesStreamId = FsCodec.StreamName.create categoryId "ClientA"
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
@@ -133,8 +134,8 @@ handler.Read |> Async.RunSynchronously
 type Service(log, resolve) =
     (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
     let streamFor (clientId: string) =
-        let aggregateId = Equinox.AggregateId("Favorites", clientId)
-        let stream = resolve aggregateId
+        let streamName = FsCodec.StreamName.create "Favorites" clientId
+        let stream = resolve streamName
         Handler(log, stream)
 
     member __.Favorite(clientId, sku) =

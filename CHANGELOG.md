@@ -19,7 +19,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - `SqlStreamStore`.*: Target `SqlStreamStore` v `1.2.0-beta.8`
-- Target `FsCodec` v `2.0.0-rc2`
+- Target `FsCodec` v `2.0.0-rc3`
 - Target `Microsoft.SourceLink.GitHub`, `Microsoft.NETFramework.ReferenceAssemblies` v `1.0.0`
 - Samples etc target `Argu` v `6.0.0`
 - `eqx dump`'s `-J` switch now turns off JSON rendering

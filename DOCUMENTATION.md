@@ -316,8 +316,8 @@ A final consideration to mention is that, even when correct idempotent handling 
 type Service(log, resolve, ?maxAttempts) =
 
     let streamFor (clientId: string) =
-        let aggregateId = Equinox.AggregateId("Favorites", clientId)
-        let stream = resolve aggregateId
+        let streamName = FsCodec.StreamName.create "Favorites" clientId
+        let stream = resolve streamName
         Equinox.Stream(log, stream, defaultArg maxAttempts 3)
 
     let execute clientId command : Async<unit> =

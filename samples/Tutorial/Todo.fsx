@@ -10,6 +10,7 @@
 #r "TypeShape.dll"
 #r "Equinox.Core.dll"
 #r "Equinox.dll"
+#r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
