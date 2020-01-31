@@ -13,6 +13,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 
 - Update to `3.1.101` SDK
+- Retarget `netcoreapp2.1` apps to `netcoreapp3.1` (not least to make tool traverse proxies on Windows)
 
 ### Removed
 ### Fixed

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp2.1;net461</TargetFrameworks>
+    <TargetFrameworks>netcoreapp3.1;net461</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <WarningLevel>5</WarningLevel>
@@ -48,7 +48,7 @@
   <!-- bundle the net461 exe inside the .net core tool package -->
   <PropertyGroup Condition=" '$(PackAsTool)' == 'true' ">
     <TargetFrameworks></TargetFrameworks>
-    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup Condition=" '$(PackAsTool)' == 'true' ">

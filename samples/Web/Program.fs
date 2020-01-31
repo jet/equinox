@@ -4,6 +4,7 @@ open Argu
 open Microsoft.AspNetCore
 open Microsoft.AspNetCore.Hosting
 open Microsoft.Extensions.DependencyInjection
+open Microsoft.Extensions.Hosting
 open Serilog
 
 module Program =
@@ -11,7 +12,7 @@ module Program =
         WebHost
             .CreateDefaultBuilder(args)
             .ConfigureServices(fun services -> Startup.ConfigureServices(services, parsed))
-            .Configure(fun app -> Startup.Configure(app, app.ApplicationServices.GetService<IHostingEnvironment>()))
+            .Configure(fun app -> Startup.Configure(app, app.ApplicationServices.GetService<IHostEnvironment>()))
             .UseSerilog()
 
     [<EntryPoint>]

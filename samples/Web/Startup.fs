@@ -2,9 +2,9 @@ namespace Web
 
 open Argu
 open Microsoft.AspNetCore.Builder
-open Microsoft.AspNetCore.Hosting
 open Microsoft.AspNetCore.Mvc
 open Microsoft.Extensions.DependencyInjection
+open Microsoft.Extensions.Hosting
 open Samples.Infrastructure
 open Serilog
 open Serilog.Events
@@ -40,7 +40,7 @@ type App = class end
 type Startup() =
     // This method gets called by the runtime. Use this method to add services to the container.
     static member ConfigureServices(services: IServiceCollection, args: ParseResults<Arguments>) : unit =
-        services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1) |> ignore
+        services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Latest) |> ignore
 
         let verbose = args.Contains Verbose
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
@@ -82,7 +82,7 @@ type Startup() =
         Services.register(services, storeConfig, storeLog)
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-    static member Configure(app: IApplicationBuilder, env: IHostingEnvironment) : unit =
+    static member Configure(app: IApplicationBuilder, env: IHostEnvironment) : unit =
         if env.IsDevelopment() then app.UseDeveloperExceptionPage() |> ignore
         else app.UseHsts() |> ignore
 
