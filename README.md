@@ -116,7 +116,7 @@ The `samples/` folder contains various further examples (some of the templates a
 
 The repo contains a vanilla ASP.NET Core 2.1 implementation of [the well-known TodoBackend Spec](https://www.todobackend.com). **NB the implementation is largely dictated by spec; no architectural guidance expressed or implied ;)**. It can be run via:
 
-    & dotnet run -f netcoreapp2.1 -p samples/Web -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE
+    & dotnet run -f netcoreapp3.1 -p samples/Web -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE
     start https://www.todobackend.com/specs/index.html?https://localhost:5001/todos # for low-level debugging / validation of hosting arrangements
     start https://www.todobackend.com/client/index.html?https://localhost:5001/todos # standard JavaScript UI
     start http://localhost:5341/#/events # see logs triggered by `-S` above in https://getseq.net        
@@ -322,10 +322,10 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     cd ~/code/equinox
     
     # set up the DB/schema
-    dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+    dotnet run -f netcoreapp3.1 -p tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
     
     # run a benchmark
-    dotnet run -c Release -f netcoreapp2.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+    dotnet run -c Release -f netcoreapp3.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
     
     # run the webserver, -A to autocreate schema on connection
     dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring" -A
@@ -412,7 +412,7 @@ Continually reads and writes very small events across multiple streams on .NET F
 
 At present, .NET Core seems to show comparable perf under normal load, but becomes very unpredictable under load. The following benchmark should produce pretty consistent levels of reads and writes, and can be used as a baseline for investigation:
 
-    & dotnet run -c Release -f netcoreapp2.1 -p tools/Equinox.Tool -- run -t saveforlater -f 1000 -d 5 -C -U es
+    & dotnet run -c Release -f netcoreapp3.1 -p tools/Equinox.Tool -- run -t saveforlater -f 1000 -d 5 -C -U es
 
 ### run Web benchmark
 
@@ -420,7 +420,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 #### in Window 1
 
-    & dotnet run -c Release -f netcoreapp2.1 -p samples/Web -- -C -U es
+    & dotnet run -c Release -f netcoreapp3.1 -p samples/Web -- -C -U es
 
 #### in Window 2
 
@@ -435,7 +435,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
     tools/Equinox.Tool/bin/Release/net461/eqx run `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
-    dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- run `
+    dotnet run -f netcoreapp3.1 -p tools/Equinox.Tool -- run `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ## PROVISIONING
@@ -451,7 +451,7 @@ For EventStore, the tests assume a running local instance configured as follows 
 
 ### Provisioning CosmosDb (when not using -sc)
 
-    dotnet run -f netcoreapp2.1 -p tools/Equinox.Tool -- init -ru 400 `
+    dotnet run -f netcoreapp3.1 -p tools/Equinox.Tool -- init -ru 400 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ### Provisioning SqlStreamStore

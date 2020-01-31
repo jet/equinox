@@ -21,7 +21,7 @@ if ($skipEs) { warn "Skipping EventStore tests" }
 
 function cliCosmos($arghs) {
 	Write-Host "dotnet run tools/Equinox.Tool -- $arghs cosmos -s <REDACTED> -d $cosmosDatabase -c $cosmosContainer"
-	dotnet run -p tools/Equinox.Tool -f netcoreapp2.1 -- @arghs cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosContainer
+	dotnet run -p tools/Equinox.Tool -f netcoreapp3.1 -- @arghs cosmos -s $cosmosServer -d $cosmosDatabase -c $cosmosContainer
 }
 
 if ($skipCosmos) {
