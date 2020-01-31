@@ -26,7 +26,7 @@ jobs:
 
 - job: Linux
   pool:
-    vmImage: 'ubuntu-16.04'
+    vmImage: 'ubuntu-latest'
   steps:
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
@@ -46,7 +46,7 @@ jobs:
 
 - job: MacOS
   pool:
-    vmImage: 'macOS-10.13'
+    vmImage: 'macOS-latest'
   steps:
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
