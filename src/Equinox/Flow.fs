@@ -11,10 +11,10 @@ type StreamToken = { value : obj; version: int64 }
 /// Internal type used to represent the outcome of a TrySync operation
 [<NoEquality; NoComparison; RequireQualifiedAccess>]
 type SyncResult<'state> =
-    /// The write succeeded (the supplied token and state can be used to efficiently continue the processing if desired)
+    /// The write succeeded (the supplied token and state can be used to efficiently continue the processing if, and only if, desired)
     | Written of StreamToken * 'state
     /// The set of changes supplied to TrySync conflict with the present state of the underlying stream based on the configured policy for that store
-    /// The inner is Async as some stores (and/or states) are such that determining the conflicting state (if required) needs an extra trip to obtain
+    /// The inner is Async as some stores (and/or states) are such that determining the conflicting state (if, and only if, required) needs an extra trip to obtain
     | Conflict of Async<StreamToken * 'state>
 
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
