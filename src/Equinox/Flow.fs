@@ -67,8 +67,7 @@ module internal Flow =
         (decide : 'state -> Async<'result * 'event list>)
         : Async<'result> =
 
-        if maxSyncAttempts < 1 then 
-            raise <| System.ArgumentOutOfRangeException("maxSyncAttempts", maxSyncAttempts, "should be >= 1")
+        if maxSyncAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxSyncAttempts", maxSyncAttempts, "should be >= 1")
 
         /// Run a decision cycle - decide what events should be appended given the presented state
         let rec loop attempt : Async<'result> = async {
