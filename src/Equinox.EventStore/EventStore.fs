@@ -134,7 +134,7 @@ module Log =
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EsSyncResult = Written of WriteResult | Conflict of actualVersion: int64
+type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict of actualVersion: int64
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
