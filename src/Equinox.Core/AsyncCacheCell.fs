@@ -11,7 +11,7 @@ type AsyncLazy<'T>(workflow : Async<'T>) =
 type AsyncCacheCell<'T>(workflow : Async<'T>, ?isExpired : 'T -> bool) =
     let mutable currentCell = AsyncLazy workflow
 
-    let initializationFailed (value: System.Threading.Tasks.Task<_>) =
+    let initializationFailed (value : System.Threading.Tasks.Task<_>) =
         // for TMI on this, see https://stackoverflow.com/a/33946166/11635
         value.IsCompleted && value.Status <> System.Threading.Tasks.TaskStatus.RanToCompletion
 

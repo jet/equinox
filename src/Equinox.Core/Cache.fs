@@ -9,19 +9,20 @@ type CacheItemOptions =
 [<AllowNullLiteral>]
 type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, supersedes: StreamToken -> StreamToken -> bool) =
     let mutable currentToken, currentState = initialToken, initialState
-    member __.UpdateIfNewer(other: CacheEntry<'state>) =
+    member __.UpdateIfNewer(other : CacheEntry<'state>) =
         lock __ <| fun () ->
             let otherToken, otherState = other.Value
             if otherToken |> supersedes currentToken then
                 currentToken <- otherToken
                 currentState <- otherState
+
     member __.Value : StreamToken * 'state =
         lock __ <| fun () ->
             currentToken, currentState
 
 type ICache =
     abstract member UpdateIfNewer : key: string * options: CacheItemOptions * entry: CacheEntry<'state> -> Async<unit>
-    abstract member TryGet: key: string -> Async<(StreamToken * 'state) option>
+    abstract member TryGet : key: string -> Async<(StreamToken * 'state) option>
 
 namespace Equinox
 
@@ -40,14 +41,14 @@ type Cache(name, sizeMb : int) =
         | RelativeExpiration relative -> new CacheItemPolicy(SlidingExpiration = relative)
 
     interface ICache with
-        member this.UpdateIfNewer(key, options, entry) = async {
+        member __.UpdateIfNewer(key, options, entry) = async {
             let policy = toPolicy options
             match cache.AddOrGetExisting(key, box entry, policy) with
             | null -> ()
             | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x }
 
-        member this.TryGet key = async {
+        member __.TryGet key = async {
             return
                 match cache.Get key with
                 | null -> None
