@@ -884,7 +884,7 @@ This covers what the most complete possible implementation of the JS Stored Proc
 The `sync` stored procedure takes as input, a document that is almost identical to the format of the _`Tip`_ batch (in fact, if the stream is found to be empty, it is pretty much the template for the first document created in the stream). The request includes the following elements:
 
 - `expectedVersion`: the position the requester has based their [proposed] events on (no, [providing an `etag` to save on Request Charges is not possible in the Stored Proc](https://stackoverflow.com/questions/53355886/azure-cosmosdb-stored-procedure-ifmatch-predicate))
-- `e`: array of Events (see Event, above) to append iff the expectedVersion check is fulfilled
+- `e`: array of Events (see Event, above) to append if the expectedVersion check is fulfilled
 - `u`: array of `unfold`ed events (aka snapshots) that supersede items with equivalent `c`ase values  
 - `maxEvents`: the maximum number of events in an individual batch prior to starting a new one. For example:
 
