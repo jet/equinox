@@ -40,7 +40,7 @@ and [<NoComparison; NoEquality>]InitArguments =
     | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
     | [<AltCommandLine "-D">]               Shared
     | [<AltCommandLine "-P">]               SkipStoredProc
-    | [<CliPrefix(CliPrefix.None)>]           Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ ->                      "Specify RU/s level to provision for the Container."
@@ -61,7 +61,7 @@ and [<NoComparison; NoEquality>]StatsArguments =
     | [<AltCommandLine "-S"; Unique>]       Streams
     | [<AltCommandLine "-D"; Unique>]       Documents
     | [<AltCommandLine "-P"; Unique>]       Parallel
-    | [<CliPrefix(CliPrefix.None)>]           Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Events _ ->                   "Count the number of Events in the store."

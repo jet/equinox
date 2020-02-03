@@ -15,7 +15,7 @@ type StorageConfig =
 
 module MemoryStore =
     type [<NoEquality; NoComparison>] Arguments =
-        | [<AltCommandLine("-vs")>] VerboseStore
+        | [<AltCommandLine "-V">]        VerboseStore
         interface IArgParserTemplate with
             member a.Usage = a |> function
                 | VerboseStore ->       "Include low level Store logging."
@@ -34,7 +34,7 @@ module Cosmos =
         | Some x -> x
 
     type [<NoEquality; NoComparison>] Arguments =
-        | [<AltCommandLine "-vs">]      VerboseStore
+        | [<AltCommandLine "-V">]       VerboseStore
         | [<AltCommandLine "-m">]       ConnectionMode of Equinox.Cosmos.ConnectionMode
         | [<AltCommandLine "-o">]       Timeout of float
         | [<AltCommandLine "-r">]       Retries of int
@@ -89,7 +89,7 @@ module Cosmos =
 ///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 module EventStore =
     type [<NoEquality; NoComparison>] Arguments =
-        | [<AltCommandLine("-vs")>]     VerboseStore
+        | [<AltCommandLine("-V")>]      VerboseStore
         | [<AltCommandLine("-o")>]      Timeout of float
         | [<AltCommandLine("-r")>]      Retries of int
         | [<AltCommandLine("-g")>]      Host of string
