@@ -11,21 +11,22 @@ type StreamToken = { value : obj; version: int64 }
 /// Internal type used to represent the outcome of a TrySync operation
 [<NoEquality; NoComparison; RequireQualifiedAccess>]
 type SyncResult<'state> =
-    /// The write succeeded (the supplied token and state can be used to efficiently continue the processing iff desired)
+    /// The write succeeded (the supplied token and state can be used to efficiently continue the processing if, and only if, desired)
     | Written of StreamToken * 'state
     /// The set of changes supplied to TrySync conflict with the present state of the underlying stream based on the configured policy for that store
-    /// The inner is Async as some stores (and/or states) are such that determining the conflicting state (iff required) needs an extra trip to obtain
+    /// The inner is Async as some stores (and/or states) are such that determining the conflicting state (if, and only if, required) needs an extra trip to obtain
     | Conflict of Async<StreamToken * 'state>
 
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
 type IStream<'event, 'state> =
     /// Obtain the state from the target stream
-    abstract Load: log: ILogger
+    abstract Load : log: ILogger
         -> Async<StreamToken * 'state>
+
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
     /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
-    abstract TrySync: log: ILogger * token: StreamToken * originState: 'state * events: 'event list -> Async<SyncResult<'state>>
+    abstract TrySync : log: ILogger * token: StreamToken * originState: 'state * events: 'event list -> Async<SyncResult<'state>>
 
 /// Internal implementation of the Store agnostic load + run/render. See Equinox.fs for App-facing APIs.
 module internal Flow =
@@ -48,6 +49,7 @@ module internal Flow =
             | SyncResult.Written (token', streamState') ->
                 tokenAndState <- token', streamState'
                 return true }
+
         member __.TryOrResync(runResync, attemptNumber: int, log : ILogger, events) : Async<bool> =
             let resyncInPreparationForRetry resync = async {
                 let! streamState' = runResync log attemptNumber resync
@@ -64,9 +66,11 @@ module internal Flow =
         (syncState : SyncState<'event, 'state>)
         (decide : 'state -> Async<'result * 'event list>)
         : Async<'result> =
+
         if maxSyncAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxSyncAttempts", maxSyncAttempts, "should be >= 1")
+
         /// Run a decision cycle - decide what events should be appended given the presented state
-        let rec loop attempt: Async<'result> = async {
+        let rec loop attempt : Async<'result> = async {
             let log = if attempt = 1 then log else log.ForContext("syncAttempt", attempt)
             let! result, events = decide syncState.State
             if List.isEmpty events then
@@ -88,15 +92,16 @@ module internal Flow =
                     return! loop (attempt + 1)
                 else
                     return result }
+
         /// Commence, processing based on the incoming state
         loop 1
 
-    let transact (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) (stream : IStream<_,_>, log) decide : Async<'result> = async {
+    let transact (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) (stream : IStream<_, _>, log) decide : Async<'result> = async {
         let! streamState = stream.Load log
         let syncState = SyncState(streamState, stream.TrySync)
-        return! run log (maxAttempts,resyncRetryPolicy,createMaxAttemptsExhaustedException) syncState decide }
+        return! run log (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) syncState decide }
 
-    let query (stream : IStream<'event, 'state>, log : ILogger, project: SyncState<'event,'state> -> 'result) : Async<'result> = async {
+    let query (stream : IStream<'event, 'state>, log : ILogger, project: SyncState<'event, 'state> -> 'result) : Async<'result> = async {
         let! streamState = stream.Load log
         let syncState = SyncState(streamState, stream.TrySync)
         return project syncState }

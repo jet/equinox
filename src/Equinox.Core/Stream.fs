@@ -6,6 +6,7 @@ type private Stream<'event, 'state, 'streamId, 'context>(category : ICategory<'e
     interface IStream<'event, 'state> with
         member __.Load log =
             category.Load(log, streamId, opt)
+
         member __.TrySync(log: Serilog.ILogger, token: StreamToken, originState: 'state, events: 'event list) =
             category.TrySync(log, token, originState, events, context)
 
@@ -19,6 +20,7 @@ type private InitializedStream<'event, 'state>(inner : IStream<'event, 'state>, 
             match preloadedTokenAndState with
             | Some value -> async { preloadedTokenAndState <- None; return value }
             | None -> inner.Load log
+
         member __.TrySync(log: Serilog.ILogger, token: StreamToken, originState: 'state, events: 'event list) =
             inner.TrySync(log, token, originState, events)
 

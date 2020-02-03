@@ -9,6 +9,7 @@ open System.Diagnostics
 type ICategory<'event, 'state, 'streamId, 'context> =
     /// Obtain the state from the target stream
     abstract Load : log: ILogger * 'streamId * ResolveOption option -> Async<StreamToken * 'state>
+
     /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
     /// - Written: signifies synchronization has succeeded, implying the included StreamState should now be assumed to be the state of the stream
     /// - Conflict: signifies the sync failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
@@ -23,7 +24,7 @@ type StopwatchInterval (startTicks : int64, endTicks : int64) =
 
     // Converts a tick count as measured by stopwatch into a TimeSpan value
     let timeSpanFromStopwatchTicks (ticks : int64) =
-        let ticksPerSecond = double System.Diagnostics.Stopwatch.Frequency
+        let ticksPerSecond = double Stopwatch.Frequency
         let totalSeconds = double ticks / ticksPerSecond
         TimeSpan.FromSeconds totalSeconds
 
@@ -39,9 +40,9 @@ type Stopwatch =
     /// <param name="f">Function to execute & time.</param>
     [<DebuggerStepThrough>]
     static member Time(f : unit -> 'T) : StopwatchInterval * 'T =
-        let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+        let startTicks = Stopwatch.GetTimestamp()
         let result = f ()
-        let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+        let endTicks = Stopwatch.GetTimestamp()
         let tr = StopwatchInterval(startTicks, endTicks)
         tr, result
 
@@ -51,9 +52,9 @@ type Stopwatch =
     /// <param name="f">Function to execute & time.</param>
     [<DebuggerStepThrough>]
     static member Time(f : Async<'T>) : Async<StopwatchInterval * 'T> = async {
-        let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+        let startTicks = Stopwatch.GetTimestamp()
         let! result = f
-        let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+        let endTicks = Stopwatch.GetTimestamp()
         let tr = StopwatchInterval(startTicks, endTicks)
         return tr, result
     }
