@@ -1081,12 +1081,14 @@ type Connector
         [<O; D(null)>]?writeRetryPolicy,
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
-        [<O; D(null)>]?tags : (string*string) seq) =
+        [<O; D(null)>]?tags : (string*string) seq,
+        [<O; D(null)>]?webProxy) =
     do if log = null then nullArg "log"
 
     let clientOptions =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnThrottledRequests, (Nullable << TimeSpan.FromSeconds << float) maxRetryWaitTimeInSeconds, requestTimeout
-        let co = CosmosClientOptions(MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout)
+        let co = CosmosClientOptions(MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait,
+                                     RequestTimeout = timeout, WebProxy = Option.toObj webProxy)
         match mode with
         | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
