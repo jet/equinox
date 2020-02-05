@@ -26,7 +26,7 @@
 
     <PackageReference Include="EventStore.Client.Grpc" Version="6.0.0-preview2" />
     <PackageReference Include="FsCodec" Version="2.0.0-rc3" />
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.21" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
   </ItemGroup>
 
 </Project>
