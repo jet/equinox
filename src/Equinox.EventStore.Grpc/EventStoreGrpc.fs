@@ -6,10 +6,6 @@ open EventStore.Client
 open Serilog
 open System
 
-[<RequireQualifiedAccess>]
-type Direction = Forward | Backward with
-    override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
-
 module Log =
     [<NoEquality; NoComparison>]
     type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int }
@@ -134,16 +130,16 @@ module Log =
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict of actualVersion: int64
+type EsSyncResult = Written of EventStore.Client.WriteResult | Conflict of actualVersion: int64
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
-    let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
+    let private writeEventsAsync (log : ILogger) (conn : EventStoreClient) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> = async {
-        try
-            let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
+        try let! ct = Async.CancellationToken
+            let! wr = conn.AppendToStreamAsync(streamName, StreamRevision.FromInt64 version, events, cancellationToken=ct) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
-        with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
+        with :? EventStore.Client.WrongExpectedVersionException as ex ->
             log.Information(ex, "Ges TrySync WrongExpectedVersionException writing {EventTypes}, actual {ActualVersion}",
                 [| for x in events -> x.Type |], ex.ActualVersion)
             return EsSyncResult.Conflict (let v = ex.ActualVersion in v.Value) }
@@ -152,7 +148,7 @@ module private Write =
         let eventDataLen (x : EventData) = match x.Data, x.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
         events |> Array.sumBy eventDataLen
 
-    let private writeEventsLogged (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[]) (log : ILogger)
+    let private writeEventsLogged (conn : EventStoreClient) (streamName : string) (version : int64) (events : EventData[]) (log : ILogger)
         : Async<EsSyncResult> = async {
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
@@ -170,7 +166,7 @@ module private Write =
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
 
-    let writeEvents (log : ILogger) retryPolicy (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
+    let writeEvents (log : ILogger) retryPolicy (conn : EventStoreClient) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> =
         let call = writeEventsLogged conn streamName version events
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
@@ -178,17 +174,14 @@ module private Write =
 module private Read =
     open FSharp.Control
 
-    let private readSliceAsync (conn : IEventStoreConnection) (streamName : string) (direction : Direction) (batchSize : int) (startPos : int64)
-        : Async<StreamEventsSlice> = async {
-        let call =
-            match direction with
-            | Direction.Forward  -> conn.ReadStreamEventsForwardAsync(streamName, startPos, batchSize, resolveLinkTos = false)
-            | Direction.Backward -> conn.ReadStreamEventsBackwardAsync(streamName, startPos, batchSize, resolveLinkTos = false)
-        return! call |> Async.AwaitTaskCorrect }
+    let private readSliceAsync (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : int64)
+        : AsyncSeq<ResolvedEvent> =
+        // TODO ct
+        conn.ReadStreamAsync(direction, streamName, StreamRevision.FromInt64 startPos, uint64 batchSize, resolveLinkTos = false) |> AsyncSeq.ofAsyncEnum
 
     let (|ResolvedEventLen|) (x : ResolvedEvent) = match x.Event.Data, x.Event.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
 
-    let private loggedReadSlice conn streamName direction batchSize startPos (log : ILogger) : Async<StreamEventsSlice> = async {
+    let private loggedReadSlice conn streamName direction batchSize startPos (log : ILogger) : Async<AsyncSeq<ResolvedEvent>> = async {
         let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Stopwatch.Time
         let bytes, count = slice.Events |> Array.sumBy (|ResolvedEventLen|), slice.Events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
@@ -225,7 +218,7 @@ module private Read =
         let bytes, count = resolvedEventBytes events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1) / batchSize + 1
-        let action = match direction with Direction.Forward -> "LoadF" | Direction.Backward -> "LoadB"
+        let action = match direction with Direction.Forwards -> "LoadF" | Direction.Backwards -> "LoadB"
         let evt = Log.Event.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Ges{action:l} stream={stream} count={count}/{batches} version={version}",
@@ -243,9 +236,9 @@ module private Read =
             let version = match versionFromStream with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
             return version, events }
 
-        let call pos = loggedReadSlice conn streamName Direction.Forward batchSize pos
+        let call pos = loggedReadSlice conn streamName Direction.Forwards batchSize pos
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
-        let direction = Direction.Forward
+        let direction = Direction.Forwards
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
         let batches : AsyncSeq<int64 option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
         let! t, (version, events) = mergeBatches batches |> Stopwatch.Time
