@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <WarningLevel>5</WarningLevel>
+    <IsTestProject>false</IsTestProject>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
+    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">$(DefineConstants);NET461</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="EventStoreGrpc.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Equinox.Core\Equinox.Core.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="2.0.0" PrivateAssets="All" />
+
+    <PackageReference Include="FSharp.Core" Version="4.3.4" />
+
+    <PackageReference Include="EventStore.Client.Grpc" Version="6.0.0-preview2" />
+    <PackageReference Include="FsCodec" Version="2.0.0-rc3" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.21" />
+  </ItemGroup>
+
+</Project>
