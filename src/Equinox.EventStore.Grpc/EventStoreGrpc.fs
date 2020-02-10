@@ -200,16 +200,13 @@ module private Read =
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! slice = readSlice pos batchLog
-            match slice.Status with
-            | SliceReadStatus.StreamDeleted -> raise <| EventStore.ClientAPI.Exceptions.StreamDeletedException(slice.Stream)
-            | SliceReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.EmptyStream), Array.empty // EmptyStream must = -1
-            | SliceReadStatus.Success ->
+            try let! slice = readSlice pos batchLog
                 let version = if batchCount = 0 then Some slice.LastEventNumber else None
                 yield version, slice.Events
                 if not slice.IsEndOfStream then
                     yield! loop (batchCount + 1) slice.NextEventNumber
-            | x -> raise <| System.ArgumentOutOfRangeException("SliceReadStatus", x, "Unknown result value") }
+            with StreamNotFoundException ->
+            yield Some -1L, Array.empty } // EmptyStream must = -1
         loop 0 startPosition
 
     let resolvedEventBytes events = events |> Array.sumBy (|ResolvedEventLen|)
