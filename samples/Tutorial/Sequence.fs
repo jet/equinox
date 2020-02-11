@@ -4,6 +4,17 @@ module Sequence
 
 open System
 
+// shim for net461
+module Seq =
+    let tryLast (source : seq<_>) =
+        use e = source.GetEnumerator()
+        if e.MoveNext() then
+            let mutable res = e.Current
+            while (e.MoveNext()) do res <- e.Current
+            Some res
+        else
+            None
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
