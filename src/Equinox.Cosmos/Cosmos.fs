@@ -351,10 +351,10 @@ module private MicrosoftAzureCosmosWrappers =
         | _ -> None
     // CosmosDB Error HttpStatusCode extractor
     let (|CosmosStatusCode|) (e : CosmosException) =
-        e.StatusCode
+        e.Response.Status
 
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
-    type Container with
+    type Azure.Cosmos.CosmosContainer with
         member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : ItemRequestOptions): Async<float * ReadResult<'T>> = async {
             let options = defaultArg options null
             let! ct = Async.CancellationToken
@@ -364,8 +364,8 @@ module private MicrosoftAzureCosmosWrappers =
                 // NB `.Document` will NRE if a IfNoneModified precondition triggers a NotModified result
                 // else
                 return item.RequestCharge, Found item.Resource
-            with CosmosException (CosmosStatusCode System.Net.HttpStatusCode.NotFound as e) -> return e.RequestCharge, NotFound
-                | CosmosException (CosmosStatusCode System.Net.HttpStatusCode.NotModified as e) -> return e.RequestCharge, NotModified
+            with CosmosException (CosmosStatusCode 404 as e) -> return e.RequestCharge, NotFound
+                | CosmosException (CosmosStatusCode 304 as e) -> return e.RequestCharge, NotModified
                 // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
                 | CosmosException (CosmosStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, NotModified }
 
