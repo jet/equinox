@@ -2,7 +2,7 @@
 
 open Equinox.Core
 open FsCodec
-open Microsoft.Azure.Cosmos
+open Azure.Cosmos
 open Newtonsoft.Json
 open Serilog
 open System
@@ -775,7 +775,7 @@ open Equinox.Core
 open Equinox.Cosmos.Store
 open FsCodec
 open FSharp.Control
-open Microsoft.Azure.Cosmos
+open Azure.Cosmos
 open Serilog
 open System
 open System.Collections.Concurrent
