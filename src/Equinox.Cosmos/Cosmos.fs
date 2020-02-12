@@ -579,7 +579,7 @@ function sync(req, expIndex, expEtag) {
 
 module internal Tip =
     let private get (container : CosmosContainer, stream : string) (maybePos: Position option) =
-        let ro = match maybePos with Some { etag=Some etag } -> ItemRequestOptions(IfNoneMatchEtag=etag) | _ -> null
+        let ro = match maybePos with Some { etag=Some etag } -> ItemRequestOptions(IfNoneMatch=Nullable(Azure.ETag(etag))) | _ -> null
         container.TryReadItem(PartitionKey stream, Tip.WellKnownDocumentId, ro)
     let private loggedGet (get : CosmosContainer * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
