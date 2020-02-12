@@ -334,7 +334,7 @@ module SqlInit =
         | _ -> failwith "please specify a `ms`,`my` or `pg` endpoint" }
 
 module CosmosStats =
-    type Azure.Cosmos.Container with
+    type Azure.Cosmos.CosmosContainer with
         // NB DO NOT CONSIDER PROMULGATING THIS HACK
         member container.QueryValue<'T>(sqlQuery : string) =
             let query : seq<'T> = failwith "TODO translate" //container.ReadItemAsync(sqlQuery) :> _

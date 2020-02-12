@@ -6,6 +6,7 @@ open FSharp.Control
 open System
 open System.Diagnostics
 open System.Threading.Tasks
+open System.Threading
 
 type OAttribute = System.Runtime.InteropServices.OptionalAttribute
 type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute

@@ -2,6 +2,7 @@
 
 open Equinox.Core
 open FsCodec
+open Azure
 open Azure.Cosmos
 open Newtonsoft.Json
 open Serilog
@@ -610,7 +611,7 @@ module internal Tip =
 
  module internal Query =
     open FSharp.Control
-    let private mkQuery (container : CosmosContainer, stream: string) maxItems (direction: Direction) startPos : FeedIterator<Batch>=
+    let private mkQuery (container : CosmosContainer, stream: string) maxItems (direction: Direction) startPos : AsyncSeq<Page<Batch>> =
         let query =
             let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.id!=\"%s\"" Tip.WellKnownDocumentId
             let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
@@ -620,40 +621,47 @@ module internal Tip =
                 let cond = if direction = Direction.Forward then "c.n > @startPos" else "c.i < @startPos"
                 QueryDefinition(sprintf "%s AND %s %s" root cond tail).WithParameter("@startPos", positionSoExclusiveWhenBackward)
         let qro = new QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
-        container.GetItemQueryIterator<Batch>(query, requestOptions = qro)
+        container.GetItemQueryIterator<Batch>(query, requestOptions = qro).AsPages() |> AsyncSeq.ofAsyncEnum
 
     // Unrolls the Batches in a response - note when reading backwards, the events are emitted in reverse order of index
-    let private handleResponse direction (streamName: string) startPos (query: FeedIterator<Batch>) (log: ILogger)
-        : Async<ITimelineEvent<byte[]>[] * Position option * float> = async {
-        let! ct = Async.CancellationToken
-        let! t, (res : FeedResponse<Batch>) = query.ReadNextAsync(ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
-        let batches, ru = Array.ofSeq res, res.RequestCharge
-        let events = batches |> Seq.collect (fun b -> Enum.Events(b, startPos, direction)) |> Array.ofSeq
-        let (Log.BatchLen bytes), count = events, events.Length
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
-        let log = let evt = Log.Response (direction, reqMetric) in log |> Log.event evt
-        let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
-        let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
-        (log |> (match startPos with Some pos -> Log.propStartPos pos | None -> id) |> Log.prop "bytes" bytes)
-            .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
-                "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
-        let maybePosition = batches |> Array.tryPick Position.tryFromBatch
-        return events, maybePosition, ru }
+    let private processNextPage direction (streamName: string) startPos (enumerator: IAsyncEnumerator<Page<Batch>>) (log: ILogger)
+        : Async<Option<ITimelineEvent<byte[]>[] * Position option * float>> = async {
+        let! t, res = enumerator.MoveNext() |> Stopwatch.Time
 
-    let private run (log : ILogger) (readSlice: FeedIterator<Batch> -> ILogger -> Async<ITimelineEvent<byte[]>[] * Position option * float>)
-            (maxPermittedBatchReads: int option)
-            (query: FeedIterator<Batch>)
-        : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> =
+        return
+            res
+            |> Option.map (fun page ->
+                let batches, ru = Array.ofSeq page.Values, page.GetRawResponse().Headers.GetRequestCharge()
+                let events = batches |> Seq.collect (fun b -> Enum.Events(b, startPos, direction)) |> Array.ofSeq
+                let (Log.BatchLen bytes), count = events, events.Length
+                let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
+                let log = let evt = Log.Response (direction, reqMetric) in log |> Log.event evt
+                let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
+                let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
+                (log |> (match startPos with Some pos -> Log.propStartPos pos | None -> id) |> Log.prop "bytes" bytes)
+                    .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
+                        "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
+                let maybePosition = batches |> Array.tryPick Position.tryFromBatch
+                events, maybePosition, ru) }
+
+    let private run (log : ILogger) (readNextPage: IAsyncEnumerator<Page<Batch>> -> ILogger -> Async<Option<ITimelineEvent<byte[]>[] * Position option * float>>)
+        (maxPermittedBatchReads: int option)
+        (query: AsyncSeq<Page<Batch>>) =
+
+        let e = query.GetEnumerator()
+
         let rec loop batchCount : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> = asyncSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! (slice : ITimelineEvent<byte[]>[] * Position option * float) = readSlice query batchLog
-            yield slice
-            if query.HasMoreResults then
+            let! (page : Option<ITimelineEvent<byte[]>[] * Position option * float>) = readNextPage e batchLog
+
+            if page |> Option.isSome then
+                yield page.Value
                 yield! loop (batchCount + 1) }
+
         loop 0
 
     let private logQuery direction batchSize streamName interval (responsesCount, events : ITimelineEvent<byte[]>[]) n (ru: float) (log : ILogger) =
@@ -702,11 +710,11 @@ module internal Tip =
                 |> AsyncSeq.toArrayAsync
             return events, maybeTipPos, ru }
         let query = mkQuery (container,stream) maxItems direction startPos
-        let pullSlice = handleResponse direction stream startPos
-        let retryingLoggingReadSlice query = Log.withLoggedRetries retryPolicy "readAttempt" (pullSlice query)
+        let readPage = processNextPage direction stream startPos
+        let retryingLoggingReadPage e = Log.withLoggedRetries retryPolicy "readAttempt" (readPage e)
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readlog = log |> Log.prop "direction" direction
-        let batches : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> = run readlog retryingLoggingReadSlice maxRequests query
+        let batches : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> = run readlog retryingLoggingReadPage maxRequests query
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws, decoded = (Array.map fst events), (events |> Seq.choose snd |> Array.ofSeq)
         let pos = match maybeTipPos with Some p -> p | None -> Position.fromMaxIndex raws
@@ -719,14 +727,18 @@ module internal Tip =
         : AsyncSeq<'event[]> = asyncSeq {
         let responseCount = ref 0
         let query = mkQuery (container,stream) maxItems direction startPos
-        let pullSlice = handleResponse direction stream startPos
-        let retryingLoggingReadSlice query = Log.withLoggedRetries retryPolicy "readAttempt" (pullSlice query)
+        let readPage = processNextPage direction stream startPos
+        let retryingLoggingReadPage e = Log.withLoggedRetries retryPolicy "readAttempt" (readPage e)
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let mutable ru = 0.
-        let allSlices = ResizeArray()
+        let allEvents = ResizeArray()
         let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+
+        let e = query.GetEnumerator()
+
         try let readlog = log |> Log.prop "direction" direction
             let mutable ok = true
+
             while ok do
                 incr responseCount
 
@@ -735,27 +747,31 @@ module internal Tip =
                 | _ -> ()
 
                 let batchLog = readlog |> Log.prop "batchIndex" !responseCount
-                let! (slice,_pos,rus) = retryingLoggingReadSlice query batchLog
-                ru <- ru + rus
-                allSlices.AddRange(slice)
+                let! page = retryingLoggingReadPage e batchLog
 
-                let acc = ResizeArray()
-                for x in slice do
-                    match tryDecode x with
-                    | Some e when isOrigin e ->
-                        let used, residual = slice |> calculateUsedVersusDroppedPayload x.Index
-                        log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
-                            stream, x.Index, x.EventType, used, residual)
-                        ok <- false
-                        acc.Add e
-                    | Some e -> acc.Add e
-                    | None -> ()
-                yield acc.ToArray()
-                ok <- ok && query.HasMoreResults
+                match page with
+                | Some (evts, _pos, rus) -> 
+                    ru <- ru + rus
+                    allEvents.AddRange(evts)
+
+                    let acc = ResizeArray()
+                    for x in evts do
+                        match tryDecode x with
+                        | Some e when isOrigin e ->
+                            let used, residual = evts |> calculateUsedVersusDroppedPayload x.Index
+                            log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
+                                stream, x.Index, x.EventType, used, residual)
+                            ok <- false
+                            acc.Add e
+                        | Some e -> acc.Add e
+                        | None -> ()
+
+                    yield acc.ToArray()
+                | _ -> ok <- false
         finally
             let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             let t = StopwatchInterval(startTicks, endTicks)
-            log |> logQuery direction maxItems stream t (!responseCount,allSlices.ToArray()) -1L ru }
+            log |> logQuery direction maxItems stream t (!responseCount,allEvents.ToArray()) -1L ru }
 
 type [<NoComparison>] Token = { container: CosmosContainer; stream: string; pos: Position }
 module Token =
@@ -795,7 +811,7 @@ type Connection(client: CosmosClient, [<O; D(null)>]?readRetryPolicy: IRetryPoli
     member __.QueryRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
 
-/// Defines the policies in force regarding how to a) split up calls b) limit the number of events per slice
+/// Defines the policies in force regarding how to a) split up calls b) limit the number of events per page
 type BatchingPolicy
     (   // Max items to request in query response. Defaults to 10.
         [<O; D(null)>]?defaultMaxItems : int,
