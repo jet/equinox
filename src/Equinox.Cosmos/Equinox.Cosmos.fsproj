@@ -27,8 +27,9 @@
 
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.0.0" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.21" />
-    <PackageReference Include="Microsoft.Azure.DocumentDB" Version="2.2.0" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
-    <PackageReference Include="Microsoft.Azure.DocumentDB.Core" Version="2.2.0" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.1.1" />
+    <PackageReference Include="System.Runtime.Caching" Version="4.5.0" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
+    <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
   </ItemGroup>
 
 </Project>
