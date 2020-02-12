@@ -4,6 +4,17 @@ module Upload
 open System
 open FSharp.UMX
 
+// shim for net461
+module Seq =
+    let tryLast (source : seq<_>) =
+        use e = source.GetEnumerator()
+        if e.MoveNext() then
+            let mutable res = e.Current
+            while (e.MoveNext()) do res <- e.Current
+            Some res
+        else
+            None
+
 type PurchaseOrderId = int<purchaseOrderId>
 and [<Measure>] purchaseOrderId
 module PurchaseOrderId =
@@ -38,7 +49,7 @@ module Fold =
     let private evolve _ignoreState = function
         | Events.IdAssigned e -> Some e.value
     let fold (state: State) (events: seq<Events.Event>) : State =
-        Seq.tryLast events |> Option.fold evolve state
+        events |> Seq.tryLast |> Option.fold evolve state
 
 let decide (value : UploadId) (state : Fold.State) : Choice<UploadId,UploadId> * Events.Event list =
     match state with
