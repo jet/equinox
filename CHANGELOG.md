@@ -11,6 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - now targets `Microsoft.Azure.Cosmos` v `3.1.1` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
+- `Core.ISyncContext.SessionToken`: Allows one to inspect the `SessionToken` for relevant stores (i.e., `CosmosDB`), after loading and/or syncing has concluded [#195](https://github.com/jet/equinox/pull/195) 
 
 ### Changed
 
