@@ -6,7 +6,7 @@ open Serilog
 
 /// Store-specific opaque token to be used for synchronization purposes
 [<NoComparison>]
-type StreamToken = { value : obj; version: int64 }
+type StreamToken = { value : obj; version: int64; sessionToken : string }
 
 /// Internal type used to represent the outcome of a TrySync operation
 [<NoEquality; NoComparison; RequireQualifiedAccess>]
@@ -36,6 +36,10 @@ type ISyncContext<'state> =
     /// Exposes the underlying Store's internal Version/Index (which, depending on the Codec, may or may not be reflected in the last event presented)
     abstract member Version : int64
 
+    /// Exposes the underlying Store's internal SessionToken
+    // (relevant to CosmosDB)
+    abstract member SessionToken : string
+
     /// The present State of the stream within the context of this Flow
     abstract member State : 'state
 
@@ -61,6 +65,7 @@ module internal Flow =
             member __.CreateMemento() = tokenAndState
             member __.State = snd tokenAndState
             member __.Version = (fst tokenAndState).version
+            member __.SessionToken = (fst tokenAndState).sessionToken
 
         member __.TryWithoutResync(log : ILogger, events) : Async<bool> =
             trySyncOr log events (fun _resync -> async { return false })
