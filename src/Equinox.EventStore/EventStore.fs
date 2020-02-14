@@ -332,7 +332,7 @@ module Token =
     let (*private*) ofCompactionEventNumber compactedEventNumberOption unstoredEventsPending batchSize streamName streamVersion : StreamToken =
         let batchCapacityLimit = batchCapacityLimit compactedEventNumberOption unstoredEventsPending batchSize streamVersion
         create compactedEventNumberOption (Some batchCapacityLimit) streamName streamVersion
-    
+
     /// Assume we have not seen any compaction events; use the batchSize and version to infer headroom
     let ofUncompactedVersion batchSize streamName streamVersion : StreamToken =
         ofCompactionEventNumber None 0 batchSize streamName streamVersion

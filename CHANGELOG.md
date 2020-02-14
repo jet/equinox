@@ -9,7 +9,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Stream.TransactAsyncEx` to expose `Core.ISyncContext` at conclusion of processing, enabling one to extract the post-state `Version` etc. (This paves the way for exposing [`SessionToken`](https://github.com/jet/equinox/issues/192) at a later point without a breaking change)
+
 ### Changed
+
+- `Stream.QueryEx` to supply `Core.ISyncContext` in lieu of only exposing `Version` (to align with `TransactAsyncEx`)
+
 ### Removed
 ### Fixed
 

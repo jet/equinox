@@ -96,7 +96,7 @@ module FulfilmentCenter =
             stream.Query id
         let queryEx fc (projection : Fold.State -> 't) : Async<int64*'t> =
             let stream = resolve fc
-            stream.QueryEx(fun v s -> v, projection s)
+            stream.QueryEx(fun c -> c.Version, projection c.State)
 
         member __.UpdateName(id, value) = execute id (Register value)
         member __.UpdateAddress(id, value) = execute id (UpdateAddress value)
