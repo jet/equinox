@@ -19,6 +19,7 @@
     <Exec Command="dotnet pack src/Equinox.CosmosStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.CosmosStore.Prometheus $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.EventStore.Grpc $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.SqlStreamStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.SqlStreamStore.MsSql $(Cfg) $(PackOptions)" />
