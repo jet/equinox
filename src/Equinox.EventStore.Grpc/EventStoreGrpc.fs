@@ -186,9 +186,9 @@ module private Read =
             let version =
                 match events with
                 | [||] when direction = Direction.Backwards -> -1L // When reading backwards, the startPos is End, which is not directly convertible
-                | [||] -> startPos.ToInt64()
-                | xs when direction = Direction.Backwards -> xs.[0].Event.EventNumber.ToInt64()
-                | xs -> xs.[xs.Length - 1].Event.EventNumber.ToInt64()
+                | [||] -> startPos.ToInt64() // e.g. if reading forward from (verified existing) event 10 and there are none, the version is still 10
+                | xs when direction = Direction.Backwards -> xs.[0].Event.EventNumber.ToInt64() // the events arrive backwards, so first is the 'version'
+                | xs -> xs.[xs.Length - 1].Event.EventNumber.ToInt64() // In normal case, the last event represents the version of the stream
             return version, events
         with :? StreamNotFoundException -> return -1L, [||] }
 
