@@ -566,6 +566,7 @@ type Resolver<'event, 'state, 'context>
     member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =
         Stream.ofMemento (streamToken, state) (resolveStream token.stream.name context None)
 
+#if PREVIEW3 // - there's no logging implemented in V3 as yet, so disabling for now
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
         member __.Debug(format : string, args : obj []) =           log.Debug(format, args)
@@ -587,6 +588,7 @@ type Logger =
         | SerilogNormal logger -> b.UseCustomLogger(SerilogAdapter(logger))
         | CustomVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(logger)
         | CustomNormal logger -> b.UseCustomLogger(logger)
+#endif
 
 [<RequireQualifiedAccess; NoComparison>]
 type NodePreference =
