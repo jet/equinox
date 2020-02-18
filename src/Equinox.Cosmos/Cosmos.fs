@@ -359,7 +359,7 @@ module private MicrosoftAzureCosmosWrappers =
     type Azure.Core.ResponseHeaders with
         member headers.GetRequestCharge () =
             match headers.TryGetValue("x-ms-request-charge") with
-            | true, charge -> float charge
+            | true, charge when not <| String.IsNullOrEmpty charge -> float charge
             | _ -> 0.
 
     type Azure.Cosmos.CosmosContainer with
