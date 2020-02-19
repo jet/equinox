@@ -301,12 +301,12 @@ module UnionEncoderAdapters =
         let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
         // TOCONSIDER wire e.Metadata.["$correlationId"] and .["$causationId"] into correlationId and causationId
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        FsCodec.Core.TimelineEvent.Create(e.EventNumber, e.EventType, e.Data, e.Metadata, correlationId = null, causationId = null, timestamp = ts)
+        FsCodec.Core.TimelineEvent.Create(e.EventNumber, e.EventType, e.Data, e.Metadata, e.EventId, correlationId = null, causationId = null, timestamp = ts)
 
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        EventData(Guid.NewGuid(), x.EventType, isJson = true, data = x.Data, metadata = x.Meta)
+        EventData(x.EventId, x.EventType, isJson = true, data = x.Data, metadata = x.Meta)
 
 type Stream = { name : string }
 type Position = { streamVersion : int64; compactionEventNumber : int64 option; batchCapacityLimit : int option }

@@ -9,17 +9,22 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.0.0"></a>
+## [2.0.0] - 2020-02-19
+
+### Added
 
 - `Stream.TransactAsyncEx`, exposing the `Core.ISyncContext` at conclusion of the sync operation, affording the ability to examine the post-state `Version` etc. (This paves the way for exposing [`SessionToken`](https://github.com/jet/equinox/issues/192) at a later point without a breaking change) [#194](https://github.com/jet/equinox/pull/194)
 
 ### Changed
 
-- `Stream.QueryEx` to supply `Core.ISyncContext` in lieu of only exposing `Version` (to align with `TransactAsyncEx`) [#194](https://github.com/jet/equinox/pull/194) 
+- `Stream.QueryEx` to supply `Core.ISyncContext` in lieu of only exposing `Version` (to align with `TransactAsyncEx`) [#194](https://github.com/jet/equinox/pull/194)
+- Target `FsCodec` v `2.0.0`
 
-### Removed
-### Fixed
-
-<a name="2.0.0"></a>
 <a name="2.0.0-rc9"></a>
 ## [2.0.0-rc9] - 2020-01-31
 
@@ -362,7 +367,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0-rc9...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/jet/equinox/compare/2.0.0-rc9...2.0.0
 [2.0.0-rc9]: https://github.com/jet/equinox/compare/2.0.0-rc8...2.0.0-rc9
 [2.0.0-rc8]: https://github.com/jet/equinox/compare/2.0.0-rc7...2.0.0-rc8
 [2.0.0-rc7]: https://github.com/jet/equinox/compare/2.0.0-rc6...2.0.0-rc7

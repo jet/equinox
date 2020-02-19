@@ -66,7 +66,7 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
             | Some (Decode events) -> return Token.ofEventArray streamName fold initial events }
         member __.TrySync(_log, Token.Unpack token, state, events : 'event list, context : 'context option) = async {
             let inline map i (e : FsCodec.IEventData<'Format>) =
-                FsCodec.Core.TimelineEvent.Create(int64 i,e.EventType,e.Data,e.Meta,e.CorrelationId,e.CausationId,e.Timestamp)
+                FsCodec.Core.TimelineEvent.Create(int64 i, e.EventType, e.Data, e.Meta, e.EventId, e.CorrelationId, e.CausationId, e.Timestamp)
             let encoded : FsCodec.ITimelineEvent<_>[] = events |> Seq.mapi (fun i e -> map (token.streamVersion+i) (codec.Encode(context,e))) |> Array.ofSeq
             let trySyncValue currentValue =
                 if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)

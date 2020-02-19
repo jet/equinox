@@ -282,12 +282,12 @@ module UnionEncoderAdapters =
         let (Bytes meta) = e.JsonMetadata
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, null, null, let ts = e.CreatedUtc in DateTimeOffset ts)
+        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, e.MessageId, null, null, let ts = e.CreatedUtc in DateTimeOffset ts)
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
         let str = function null -> null | s -> System.Text.Encoding.UTF8.GetString s
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        NewStreamMessage(Guid.NewGuid(), x.EventType, str x.Data, str x.Meta)
+        NewStreamMessage(x.EventId, x.EventType, str x.Data, str x.Meta)
 
 type Stream = { name: string }
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }

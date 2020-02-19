@@ -39,9 +39,10 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         member __.EventType = __.c
         member __.Data = __.d
         member __.Meta = __.m
-        member __.Timestamp = __.t
+        member __.EventId = Guid.Empty
         member __.CorrelationId = __.correlationId
         member __.CausationId = __.causationId
+        member __.Timestamp = __.t
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
 type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
@@ -185,7 +186,7 @@ type Direction = Forward | Backward override this.ToString() = match this with F
 
 type internal Enum() =
     static member internal Events(b: Tip) : ITimelineEvent<byte[]> seq =
-        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.TimelineEvent.Create(b.i + int64 offset, x.c, x.d, x.m, x.correlationId, x.causationId, x.t))
+        b.e |> Seq.mapi (fun offset x -> FsCodec.Core.TimelineEvent.Create(b.i + int64 offset, x.c, x.d, x.m, Guid.Empty, x.correlationId, x.causationId, x.t))
     static member Events(i: int64, e: Event[], startPos : Position option, direction) : ITimelineEvent<byte[]> seq = seq {
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         let isValidGivenStartPos i =
@@ -197,12 +198,12 @@ type internal Enum() =
             let index = i + int64 offset
             if isValidGivenStartPos index then
                 let x = e.[offset]
-                yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, x.correlationId, x.causationId, x.t) }
+                yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, Guid.Empty, x.correlationId, x.causationId, x.t) }
     static member internal Events(b: Batch, startPos, direction) =
         Enum.Events(b.i, b.e, startPos, direction)
         |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
     static member Unfolds(xs: Unfold[]) : ITimelineEvent<byte[]> seq = seq {
-        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, null, null, x.t, isUnfold=true) }
+        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, Guid.Empty, null, null, x.t, isUnfold=true) }
     static member EventsAndUnfolds(x: Tip): ITimelineEvent<byte[]> seq =
         Enum.Events x
         |> Seq.append (Enum.Unfolds x.u)
