@@ -24,7 +24,6 @@
     <Exec Command="dotnet pack src/Equinox.SqlStreamStore.MySql $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.SqlStreamStore.Postgres $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack tools/Equinox.Tools.TestHarness $(Cfg) $(PackOptions)" />
-    <Exec Command='dotnet publish tools/Equinox.Tool $(Cfg) -f net461 -o "$(ThisDirAbsolute)/bin/equinox-tool/net461" ' />
     <Exec Command="dotnet pack tools/Equinox.Tool $(Cfg) $(PackOptions) /p:PackAsTool=true" />
   </Target>
 

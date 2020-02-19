@@ -9,7 +9,7 @@ open System.Threading.Tasks
 
 type OAttribute = System.Runtime.InteropServices.OptionalAttribute
 type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
-    
+
 #if NET461
 module Array =
     let tryHead (array : 'T[]) =
@@ -67,28 +67,6 @@ type Async with
                 else
                     sc ())
             |> ignore)
-
-#if !NO_ASYNCSEQ
-module AsyncSeq =
-    /// Same as takeWhileAsync, but returns the final element too
-    let takeWhileInclusiveAsync p (source : AsyncSeq<'T>) : AsyncSeq<_> = asyncSeq {
-        use ie = source.GetEnumerator()
-        let! move = ie.MoveNext()
-        let b = ref move
-        while b.Value.IsSome do
-            let v = b.Value.Value
-            yield v
-            let! res = p v
-            if res then
-                let! moven = ie.MoveNext()
-                b := moven
-            else
-                b := None }
-
-    /// Same as takeWhile, but returns the final element too
-    let takeWhileInclusive p (source : AsyncSeq<'T>) =
-        takeWhileInclusiveAsync (p >> async.Return) source
-#endif
 
 [<RequireQualifiedAccess>]
 module Regex =

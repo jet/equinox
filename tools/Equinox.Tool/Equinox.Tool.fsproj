@@ -1,14 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp3.1;net461</TargetFrameworks>
+    <TargetFrameworks>netcoreapp3.1</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <WarningLevel>5</WarningLevel>
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
-    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">$(DefineConstants);NET461</DefineConstants>
 
     <PackageId>Equinox.Tool</PackageId>
     <AssemblyName>eqx</AssemblyName>
@@ -43,20 +42,6 @@
 
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
-  </ItemGroup>
-
-  <!-- bundle the net461 exe inside the .net core tool package -->
-  <PropertyGroup Condition=" '$(PackAsTool)' == 'true' ">
-    <TargetFrameworks></TargetFrameworks>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
-  </PropertyGroup>
-
-  <ItemGroup Condition=" '$(PackAsTool)' == 'true' ">
-    <Content Include="$(ThisDirAbsolute)/bin/equinox-tool/net461/*">
-      <Pack>true</Pack>
-      <PackagePath>tools\net461\any\%(Filename)%(Extension)</PackagePath>
-      <Visible>true</Visible>
-    </Content>
   </ItemGroup>
 
   <!-- workaround for not being able to make Backend and Domain as inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
