@@ -54,10 +54,30 @@ let create resolve indexId = Service(indexId, resolve, maxAttempts = 3)
 module Cosmos =
 
     open Equinox.Cosmos
+    open Equinox.Cosmos.Json
+    open System.Text.Json
+
+    module Codec =
+        open Events
+
+        let encode<'v> (evt: Event<'v>) =
+            match evt with
+            | Added items -> "Added", JsonSerializer.SerializeToElement(items, JsonSerializer.defaultOptions)
+            | Deleted itemIds -> "Deleted", JsonSerializer.SerializeToElement(itemIds, JsonSerializer.defaultOptions)
+            | Snapshotted items -> "Snapshotted", JsonSerializer.SerializeToElement(items, JsonSerializer.defaultOptions)
+
+        let tryDecode<'v> (eventType, data: JsonElement) =
+            match eventType with
+            | "Added" -> Some (Added <| JsonSerializer.DeserializeElement<Items<'v>>(data))
+            | "Deleted" -> Some (Deleted <| JsonSerializer.DeserializeElement<ItemIds>(data))
+            | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Items<'v>>(data))
+            | _ -> None
+
     let createService<'v> (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
+        let codec = FsCodec.Codec.Create<Events.Event<'v>, JsonElement>(Codec.encode<'v>, Codec.tryDecode<'v>)
+        let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         create resolve
 
 module MemoryStore =

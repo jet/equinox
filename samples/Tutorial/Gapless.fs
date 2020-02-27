@@ -79,9 +79,31 @@ let [<Literal>] appName = "equinox-tutorial-gapless"
 module Cosmos =
 
     open Equinox.Cosmos
+    open Equinox.Cosmos.Json
+    open System.Text.Json
+
+    module Codec =
+        open Events
+
+        let encode (evt: Event) =
+            match evt with
+            | Reserved item -> "Reserved", JsonSerializer.SerializeToElement(item, JsonSerializer.defaultOptions)
+            | Confirmed item -> "Confirmed", JsonSerializer.SerializeToElement(item, JsonSerializer.defaultOptions)
+            | Released item -> "Released", JsonSerializer.SerializeToElement(item, JsonSerializer.defaultOptions)
+            | Snapshotted snapshot -> "Snapshotted", JsonSerializer.SerializeToElement(snapshot, JsonSerializer.defaultOptions)
+
+        let tryDecode (eventType, data: JsonElement) =
+            match eventType with
+            | "Reserved" -> Some (Reserved <| JsonSerializer.DeserializeElement<Item>(data))
+            | "Confirmed" -> Some (Confirmed <| JsonSerializer.DeserializeElement<Item>(data))
+            | "Released" -> Some (Released <| JsonSerializer.DeserializeElement<Item>(data))
+            | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Snapshotted>(data))
+            | _ -> None
+
     let private createService (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
+        let codec = FsCodec.Codec.Create<Events.Event, JsonElement>(Codec.encode, Codec.tryDecode)
+        let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         Service(Serilog.Log.Logger, resolve)
 
     module Snapshot =

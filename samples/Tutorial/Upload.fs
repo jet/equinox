@@ -69,9 +69,25 @@ let create resolve = Service(Serilog.Log.ForContext<Service>(), resolve, 3)
 module Cosmos =
 
     open Equinox.Cosmos
+    open Equinox.Cosmos.Json
+    open System.Text.Json
+
+    module Codec =
+        open Events
+
+        let encode (evt: Event) =
+            match evt with
+            | IdAssigned id -> "IdAssigned", JsonSerializer.SerializeToElement(id, JsonSerializer.defaultOptions)
+
+        let tryDecode (eventType, data: JsonElement) =
+            match eventType with
+            | "IdAssigned" -> Some (IdAssigned <| JsonSerializer.DeserializeElement<IdAssigned>(data))
+            | _ -> None
+
     let createService (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
+        let codec = FsCodec.Codec.Create<Events.Event, JsonElement>(Codec.encode, Codec.tryDecode)
+        let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
         create resolve
 
 module EventStore =
