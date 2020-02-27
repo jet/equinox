@@ -72,29 +72,9 @@ type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
     static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
 
-/// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
-type Unfold =
-    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
-        i: int64
-
-        /// Generation datetime
-        t: DateTimeOffset // ISO 8601 // Not written by versions <= 2.0.0-rc9
-
-        /// The Case (Event Type) of this compaction/snapshot, used to drive deserialization
-        c: string // required
-
-        /// Event body - Json -> UTF-8 -> Deflate -> Base64
-        [<JsonConverter(typeof<JsonCompressedBase64Converter>)>]
-        d: JsonElement // required
-
-        /// Optional metadata, same encoding as `d` (can be null; not written if missing)
-        [<JsonConverter(typeof<JsonCompressedBase64Converter>)>]
-        m: JsonElement  // TODO for STJ v5: Optional, not serialized if missing
-    }
-
 /// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
 /// Only applied to snapshots in the Tip
-and JsonCompressedBase64Converter() =
+type JsonCompressedBase64Converter() =
     inherit JsonConverter<JsonElement>()
 
     override __.Read (reader, _typeToConvert, options) =
@@ -108,9 +88,9 @@ and JsonCompressedBase64Converter() =
             decompressor.CopyTo(output)
             JsonSerializer.Deserialize<JsonElement>(ReadOnlySpan.op_Implicit(output.ToArray()), options)
 
-    override __.Write (writer, value, options) =
-        if value.ValueKind = JsonValueKind.Null then
-            value.WriteTo(writer)
+    override __.Write (writer, value, _options) =
+        if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
+            writer.WriteNullValue()
         else
             let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
             use output = new MemoryStream()
@@ -118,6 +98,35 @@ and JsonCompressedBase64Converter() =
             compressor.Write(input, 0, input.Length)
             compressor.Close()
             writer.WriteBase64StringValue(ReadOnlySpan.op_Implicit(output.ToArray()))
+
+type JsonCompressedBase64ConverterAttribute () =
+    inherit JsonConverterAttribute(typeof<JsonCompressedBase64Converter>)
+
+    static let converter = JsonCompressedBase64Converter()
+
+    override __.CreateConverter _typeToConvert =
+        converter :> JsonConverter
+
+/// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
+[<NoComparison>]
+type Unfold =
+    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
+        i: int64
+
+        /// Generation datetime
+        t: DateTimeOffset // ISO 8601 // Not written by versions <= 2.0.0-rc9
+
+        /// The Case (Event Type) of this compaction/snapshot, used to drive deserialization
+        c: string // required
+
+        /// Event body - Json -> UTF-8 -> Deflate -> Base64
+        [<JsonCompressedBase64Converter>]
+        d: JsonElement // required
+
+        /// Optional metadata, same encoding as `d` (can be null; not written if missing)
+        [<JsonCompressedBase64Converter>]
+        m: JsonElement  // TODO for STJ v5: Optional, not serialized if missing
+    }
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
@@ -245,7 +254,7 @@ module Log =
     let event (value : Event) (log : ILogger) =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
-    let (|BlobLen|) = function (j: JsonElement) when j.ValueKind <> JsonValueKind.Null -> j.GetRawText().Length | _ -> 0
+    let (|BlobLen|) = function (j: JsonElement) when j.ValueKind <> JsonValueKind.Null && j.ValueKind <> JsonValueKind.Undefined -> j.GetRawText().Length | _ -> 0
     let (|EventLen|) (x: #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
@@ -786,6 +795,7 @@ namespace Equinox.Cosmos
 
 open Equinox
 open Equinox.Core
+open Equinox.Cosmos.Json
 open Equinox.Cosmos.Store
 open FsCodec
 open FSharp.Control
@@ -1131,7 +1141,7 @@ type Connector
     /// ClientOptions for this Connector as configured
     member val ClientOptions =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
-        let co = CosmosClientOptions(MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout)
+        let co = CosmosClientOptions(MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout, Serializer = CosmosJsonSerializer(JsonSerializer.defaultOptions))
         match mode with
         | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https

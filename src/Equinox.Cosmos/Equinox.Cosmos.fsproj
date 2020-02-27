@@ -10,7 +10,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Json\JsonElementHelpers.fs" />
+    <Compile Include="Json\Utf8JsonReaderExtensions.fs" />
+    <Compile Include="Json\JsonRecordConverter.fs" />
+    <Compile Include="Json\Options.fs" />
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="CosmosJsonSerializer.fs" />
     <Compile Include="Cosmos.fs" />
   </ItemGroup>
 

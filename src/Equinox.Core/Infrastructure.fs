@@ -69,6 +69,10 @@ type Async with
                     sc ())
             |> ignore)
 
+#if NETSTANDARD2_1
+    static member inline AwaitValueTask (vtask: ValueTask<'T>) : Async<'T> = vtask.AsTask() |> Async.AwaitTaskCorrect
+#endif
+
 [<RequireQualifiedAccess>]
 module Regex =
     open System.Text.RegularExpressions
