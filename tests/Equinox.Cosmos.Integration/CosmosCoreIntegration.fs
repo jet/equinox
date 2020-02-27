@@ -8,7 +8,7 @@ open Newtonsoft.Json.Linq
 open Swensen.Unquote
 open Serilog
 open System
-open System.Text
+open System.Text.Json
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -16,8 +16,8 @@ type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
         EventData.FromUtf8Bytes
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
-                Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}"),
-                Encoding.UTF8.GetBytes "{\"m\":\"m\"}")
+                IntegrationJsonSerializer.deserialize<JsonElement>(defaultArg json "{\"d\":\"d\"}"),
+                IntegrationJsonSerializer.deserialize<JsonElement>("{\"m\":\"m\"}")    )
     static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
 
 type Tests(testOutputHelper) =
@@ -69,8 +69,8 @@ type Tests(testOutputHelper) =
         test <@ match res with Choice2Of2 ((:? InvalidOperationException) as ex) -> ex.Message.StartsWith "Must write either events or unfolds." | x -> failwithf "%A" x @>
     }
 
-    let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
-    let stringOfUtf8 (x: byte[]) = Encoding.UTF8.GetString(x)
+    let blobEquals (x: JsonElement) (y: JsonElement) = x.GetRawText().Equals(y.GetRawText())
+    let stringOfUtf8 (x: JsonElement) = x.GetRawText()
     let xmlDiff (x: string) (y: string) =
         match JsonDiffPatchDotNet.JsonDiffPatch().Diff(JToken.Parse x,JToken.Parse y) with
         | null -> ""
@@ -91,7 +91,7 @@ type Tests(testOutputHelper) =
         return TestEvents.Create(0,6)
     }
 
-    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<byte[]>[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<JsonElement>[]) =
         let xs, baseIndex =
             if direction = Equinox.Cosmos.Store.Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
