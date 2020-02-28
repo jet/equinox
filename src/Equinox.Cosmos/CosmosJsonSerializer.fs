@@ -4,7 +4,6 @@ open System.IO
 open System.Text.Json
 open Azure.Cosmos.Serialization
 open Equinox.Core
-open Equinox.Cosmos.Json
 
 type CosmosJsonSerializer (options: JsonSerializerOptions) =
     inherit CosmosSerializer()

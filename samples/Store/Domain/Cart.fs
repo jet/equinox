@@ -1,5 +1,8 @@
 ﻿module Domain.Cart
 
+open System.Text.Json
+open FsCodec.SystemTextJson
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
@@ -24,7 +27,31 @@ module Events =
         | ItemQuantityChanged       of ItemQuantityChangeInfo
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module Utf8ArrayCodec =
+        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module JsonElementCodec =
+        let private encode (options: JsonSerializerOptions) =
+            fun (evt: Event) ->
+                match evt with
+                | Snapshotted state -> "Snapshotted", JsonSerializer.SerializeToElement(state, options)
+                | ItemAdded addInfo -> "ItemAdded", JsonSerializer.SerializeToElement(addInfo, options)
+                | ItemRemoved removeInfo -> "ItemRemoved", JsonSerializer.SerializeToElement(removeInfo, options)
+                | ItemQuantityChanged changeInfo -> "ItemQuantityChanged", JsonSerializer.SerializeToElement(changeInfo, options)
+                | ItemWaiveReturnsChanged waiveInfo -> "ItemWaiveReturnsChanged", JsonSerializer.SerializeToElement(waiveInfo, options)
+    
+        let private tryDecode (options: JsonSerializerOptions) =
+            fun (eventType, data: JsonElement) ->
+                match eventType with
+                | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Compaction.State>(data, options))
+                | "ItemAdded" -> Some (ItemAdded <| JsonSerializer.DeserializeElement<ItemAddInfo>(data, options))
+                | "ItemRemoved" -> Some (ItemRemoved <| JsonSerializer.DeserializeElement<ItemRemoveInfo>(data, options))
+                | "ItemQuantityChanged" -> Some (ItemQuantityChanged <| JsonSerializer.DeserializeElement<ItemQuantityChangeInfo>(data, options))
+                | "ItemWaiveReturnsChanged" -> Some (ItemWaiveReturnsChanged <| JsonSerializer.DeserializeElement<ItemWaiveReturnsInfo>(data, options))
+                | _ -> None
+
+        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
 
 module Fold =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }

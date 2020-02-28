@@ -1,12 +1,12 @@
 ﻿[<AutoOpen>]
 module Equinox.Cosmos.Integration.Json
 
-open Equinox.Cosmos
-open Equinox.Cosmos.Json
 open System
 open System.Text.Json
 open System.Text.Json.Serialization
 open Domain
+open FsCodec.SystemTextJson
+open FsCodec.SystemTextJson.Serialization
 
 type JsonSkuIdConverter () =
     inherit JsonConverter<SkuId>()

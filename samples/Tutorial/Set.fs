@@ -1,5 +1,7 @@
 module Set
 
+open System.Text.Json
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
@@ -12,7 +14,27 @@ module Events =
         | Deleted of Items
         | Snapshotted of Items
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module Utf8ArrayCodec =
+        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module JsonElementCodec =
+        open FsCodec.SystemTextJson
+
+        let private encode (options: JsonSerializerOptions) = fun (evt: Event) ->
+            match evt with
+            | Added items -> "Added", JsonSerializer.SerializeToElement(items, options)
+            | Deleted items -> "Deleted", JsonSerializer.SerializeToElement(items, options)
+            | Snapshotted items -> "Snapshotted", JsonSerializer.SerializeToElement(items, options)
+
+        let private tryDecode (options: JsonSerializerOptions) = fun (eventType, data: JsonElement) ->
+            match eventType with
+            | "Added" -> Some (Added <| JsonSerializer.DeserializeElement<Items>(data, options))
+            | "Deleted" -> Some (Deleted <| JsonSerializer.DeserializeElement<Items>(data, options))
+            | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Items>(data, options))
+            | _ -> None
+
+        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
 
 module Fold =
 
@@ -54,34 +76,17 @@ let create resolve setId = Service(Serilog.Log.ForContext<Service>(), setId, res
 module Cosmos =
 
     open Equinox.Cosmos
-    open Equinox.Cosmos.Json
-    open System.Text.Json
-
-    module Codec =
-        open Events
-
-        let encode (evt: Event) =
-            match evt with
-            | Added items -> "Added", JsonSerializer.SerializeToElement(items, JsonSerializer.defaultOptions)
-            | Deleted items -> "Deleted", JsonSerializer.SerializeToElement(items, JsonSerializer.defaultOptions)
-            | Snapshotted items -> "Snapshotted", JsonSerializer.SerializeToElement(items, JsonSerializer.defaultOptions)
-
-        let tryDecode (eventType, data: JsonElement) =
-            match eventType with
-            | "Added" -> Some (Added <| JsonSerializer.DeserializeElement<Items>(data))
-            | "Deleted" -> Some (Deleted <| JsonSerializer.DeserializeElement<Items>(data))
-            | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Items>(data))
-            | _ -> None
+    open FsCodec.SystemTextJson.Serialization
 
     let createService (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        let codec = FsCodec.Codec.Create<Events.Event, JsonElement>(Codec.encode, Codec.tryDecode)
+        let codec = Events.JsonElementCodec.codec JsonSerializer.defaultOptions
         let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         create resolve
 
 module MemoryStore =
 
     let createService store =
-        let resolve = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial).Resolve
+        let resolve = Equinox.MemoryStore.Resolver(store, Events.Utf8ArrayCodec.codec, Fold.fold, Fold.initial).Resolve
         create resolve

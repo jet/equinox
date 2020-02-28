@@ -2,7 +2,6 @@
 
 open System
 open System.Threading
-open System.Text.Json
 open Domain
 open Equinox.Cosmos
 open Equinox.Cosmos.Integration.Infrastructure
@@ -10,29 +9,9 @@ open FSharp.UMX
 open Swensen.Unquote
 
 module Cart =
-    module Codec =
-        open Domain.Cart.Events
-
-        let encode (evt: Event) =
-            match evt with
-            | Snapshotted state -> "Snapshotted", IntegrationJsonSerializer.serializeToElement(state)
-            | ItemAdded addInfo -> "ItemAdded", IntegrationJsonSerializer.serializeToElement(addInfo)
-            | ItemRemoved removeInfo -> "ItemRemoved", IntegrationJsonSerializer.serializeToElement(removeInfo)
-            | ItemQuantityChanged changeInfo -> "ItemQuantityChanged", IntegrationJsonSerializer.serializeToElement(changeInfo)
-            | ItemWaiveReturnsChanged waiveInfo -> "ItemWaiveReturnsChanged", IntegrationJsonSerializer.serializeToElement(waiveInfo)
-            
-        let tryDecode (eventType, data: JsonElement) =
-            match eventType with
-            | "Snapshotted" -> Some (Snapshotted <| IntegrationJsonSerializer.deserializeElement<Compaction.State>(data))
-            | "ItemAdded" -> Some (ItemAdded <| IntegrationJsonSerializer.deserializeElement<ItemAddInfo>(data))
-            | "ItemRemoved" -> Some (ItemRemoved <| IntegrationJsonSerializer.deserializeElement<ItemRemoveInfo>(data))
-            | "ItemQuantityChanged" -> Some (ItemQuantityChanged <| IntegrationJsonSerializer.deserializeElement<ItemQuantityChangeInfo>(data))
-            | "ItemWaiveReturnsChanged" -> Some (ItemWaiveReturnsChanged <| IntegrationJsonSerializer.deserializeElement<ItemWaiveReturnsInfo>(data))
-            | _ -> None
-
     let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
-    let codec = FsCodec.Codec.Create<Domain.Cart.Events.Event, JsonElement>(Codec.encode, Codec.tryDecode)
+    let codec = Domain.Cart.Events.JsonElementCodec.codec IntegrationJsonSerializer.options
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
@@ -60,20 +39,8 @@ module Cart =
         Backend.Cart.Service(log, resolve)
 
 module ContactPreferences =
-    module Codec =
-        open Domain.ContactPreferences.Events
-
-        let encode (evt: Event) =
-            match evt with
-            | Updated value -> "contactPreferencesChanged", IntegrationJsonSerializer.serializeToElement(value)
-        
-        let tryDecode (eventType, data: JsonElement) =
-            match eventType with
-            | "contactPreferencesChanged" -> Some (Updated <| IntegrationJsonSerializer.deserializeElement<Value>(data))
-            | _ -> None
-
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
-    let codec = FsCodec.Codec.Create<Domain.ContactPreferences.Events.Event, JsonElement>(Codec.encode, Codec.tryDecode)
+    let codec = Domain.ContactPreferences.Events.JsonElementCodec.codec IntegrationJsonSerializer.options
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
         let resolve = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve

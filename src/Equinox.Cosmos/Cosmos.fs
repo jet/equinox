@@ -795,7 +795,7 @@ namespace Equinox.Cosmos
 
 open Equinox
 open Equinox.Core
-open Equinox.Cosmos.Json
+open FsCodec.SystemTextJson.Serialization
 open Equinox.Cosmos.Store
 open FsCodec
 open FSharp.Control

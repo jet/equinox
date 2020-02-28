@@ -3,6 +3,7 @@
 module Gapless
 
 open System
+open System.Text.Json
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -18,7 +19,30 @@ module Events =
         | Released of Item
         | Snapshotted of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module Utf8ArrayCodec =
+        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module JsonElementCodec =
+        open FsCodec.SystemTextJson
+
+        let private encode (options: JsonSerializerOptions) = fun (evt: Event) ->
+            match evt with
+            | Reserved item -> "Reserved", JsonSerializer.SerializeToElement(item, options)
+            | Confirmed item -> "Confirmed", JsonSerializer.SerializeToElement(item, options)
+            | Released item -> "Released", JsonSerializer.SerializeToElement(item, options)
+            | Snapshotted snapshot -> "Snapshotted", JsonSerializer.SerializeToElement(snapshot, options)
+
+        let private tryDecode (options: JsonSerializerOptions) = fun (eventType, data: JsonElement) ->
+            match eventType with
+            | "Reserved" -> Some (Reserved <| JsonSerializer.DeserializeElement<Item>(data, options))
+            | "Confirmed" -> Some (Confirmed <| JsonSerializer.DeserializeElement<Item>(data, options))
+            | "Released" -> Some (Released <| JsonSerializer.DeserializeElement<Item>(data, options))
+            | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Snapshotted>(data, options))
+            | _ -> None
+
+        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+        
 
 module Fold =
 
@@ -79,30 +103,11 @@ let [<Literal>] appName = "equinox-tutorial-gapless"
 module Cosmos =
 
     open Equinox.Cosmos
-    open Equinox.Cosmos.Json
-    open System.Text.Json
-
-    module Codec =
-        open Events
-
-        let encode (evt: Event) =
-            match evt with
-            | Reserved item -> "Reserved", JsonSerializer.SerializeToElement(item, JsonSerializer.defaultOptions)
-            | Confirmed item -> "Confirmed", JsonSerializer.SerializeToElement(item, JsonSerializer.defaultOptions)
-            | Released item -> "Released", JsonSerializer.SerializeToElement(item, JsonSerializer.defaultOptions)
-            | Snapshotted snapshot -> "Snapshotted", JsonSerializer.SerializeToElement(snapshot, JsonSerializer.defaultOptions)
-
-        let tryDecode (eventType, data: JsonElement) =
-            match eventType with
-            | "Reserved" -> Some (Reserved <| JsonSerializer.DeserializeElement<Item>(data))
-            | "Confirmed" -> Some (Confirmed <| JsonSerializer.DeserializeElement<Item>(data))
-            | "Released" -> Some (Released <| JsonSerializer.DeserializeElement<Item>(data))
-            | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Snapshotted>(data))
-            | _ -> None
+    open FsCodec.SystemTextJson.Serialization
 
     let private createService (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let codec = FsCodec.Codec.Create<Events.Event, JsonElement>(Codec.encode, Codec.tryDecode)
+        let codec = Events.JsonElementCodec.codec JsonSerializer.defaultOptions
         let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         Service(Serilog.Log.Logger, resolve)
 

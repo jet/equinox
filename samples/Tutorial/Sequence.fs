@@ -3,6 +3,7 @@
 module Sequence
 
 open System
+open System.Text.Json
 
 // shim for net461
 module Seq =
@@ -25,7 +26,23 @@ module Events =
     type Event =
         | Reserved of Reserved
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module Utf8ArrayCodec =
+        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module JsonElementCodec =
+        open FsCodec.SystemTextJson
+
+        let private encode (options: JsonSerializerOptions) = fun (evt: Event) ->
+            match evt with
+            | Reserved reserved -> "Reserved", JsonSerializer.SerializeToElement(reserved, options)
+
+        let private tryDecode (options: JsonSerializerOptions) = fun (eventType, data: JsonElement) ->
+            match eventType with
+            | "Reserved" -> Some (Reserved <| JsonSerializer.DeserializeElement<Reserved>(data, options))
+            | _ -> None
+
+        let codec options= FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
 
 module Fold =
 
@@ -54,24 +71,11 @@ let create resolve = Service(Serilog.Log.ForContext<Service>(), resolve, maxAtte
 module Cosmos =
 
     open Equinox.Cosmos
-    open Equinox.Cosmos.Json
-    open System.Text.Json
-
-    module Codec =
-        open Events
-
-        let encode (evt: Event) =
-            match evt with
-            | Reserved reserved -> "Reserved", JsonSerializer.SerializeToElement(reserved, JsonSerializer.defaultOptions)
-    
-        let tryDecode (eventType, data: JsonElement) =
-            match eventType with
-            | "Reserved" -> Some (Reserved <| JsonSerializer.DeserializeElement<Reserved>(data))
-            | _ -> None
+    open FsCodec.SystemTextJson.Serialization
 
     let private createService (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let codec = FsCodec.Codec.Create<Events.Event, JsonElement>(Codec.encode, Codec.tryDecode)
+        let codec = Events.JsonElementCodec.codec JsonSerializer.defaultOptions
         let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         create resolve
 
