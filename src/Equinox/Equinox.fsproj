@@ -9,10 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Json\JsonElementHelpers.fs" />
-    <Compile Include="Json\Utf8JsonReaderExtensions.fs" />
-    <Compile Include="Json\JsonRecordConverter.fs" />
-    <Compile Include="Json\Options.fs" />
     <Compile Include="Flow.fs" />
     <Compile Include="Equinox.fs" />
   </ItemGroup>

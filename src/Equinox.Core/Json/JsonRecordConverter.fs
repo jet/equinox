@@ -7,6 +7,7 @@ open System.Linq.Expressions
 open System.Text.Json
 open System.Text.Json.Serialization
 open FSharp.Reflection
+open Equinox.Core
 
 type JsonRecordConverterActivator = delegate of JsonSerializerOptions -> JsonConverter
 
