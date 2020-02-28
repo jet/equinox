@@ -591,13 +591,25 @@ The other thing that should be pointed out is the caching can typically cover a 
 
 TL;DR yes and no respectively
 
-it may be helpful to look at [how an `AccessStrategy` is mapped to `isOrigin`, `toSnapshot` and `transmute` lambdas internally](https://github.com/jet/equinox/blob/74129903e85e01ce584b4449f629bf3e525515ea/src/Equinox.Cosmos/Cosmos.fs#L1029)
+#### Some context
 
-Events are the atoms from which state is built, they live forever in immutable Batch documents with id <> -1.
+General rules:
+- Events are the atoms from which state is built, they live forever in immutable Batch documents with id <> -1.
+- Snapshots/unfolds live in the `.u` array in the Tip doc (id: -1)
+ loading/build of state is composed of
+- regardless of what happens, Events are _never_ destroyed, updated or touched in any way, ever. Having said that, if your Event DU does not match them, they're also as good as not there from the point of view of how State is established.
+- Reads always get the `Tip` first (one exception: `Unoptimized` mode skips reading the `Tip` as, by definition, you're not using snapshots/unfolds/any tricks), Writes always touch the `Tip` (yes, even in `Unoptimized` mode; there's no such thing as a stream that has ever been written to that does not have a `Tip`).
+- In the current implementation, the calling code in the server figures out everything that's going to go in the ~~snapshots~~ unfolds list if this sync is successful.
+ 
+ The high level skeleton of the loading in a given access strategy is: 
+   a) load and decode unfolds from tip (followed by events, if and only if necessary)
+   b) offer the events to an `isOrigin` function to allow us to stop when we've got a start point (a Reset Event, a relevant snapshot, or, failing that, the start of the stream)
 
-Snapshots/unfolds live in the `.u` array in the Tip doc (id: -1)
+It may be helpful to look at [how an `AccessStrategy` is mapped to `isOrigin`, `toSnapshot` and `transmute` lambdas internally](https://github.com/jet/equinox/blob/74129903e85e01ce584b4449f629bf3e525515ea/src/Equinox.Cosmos/Cosmos.fs#L1029)
 
-Whenever a State is being built, it always loads Tip first and shows any ~~events~~ ~~snapshots~~ _unfolds_ in there...
+----
+
+Whenever a State is being built, it always loads `Tip` first and shows any ~~events~~ ~~snapshots~~ _unfolds_ in there...
  
 If `isOrigin` says no to those and/or the `EventType`s of those unfolds are not in the union / event type to which the codec is mapping, the next thing is a query backwards of the Batches of events, in order.
 
@@ -613,8 +625,6 @@ Then, whenever you emit events from a `decide` or `interpret`, the `AccessStrate
 - remove or adjust events before they get passed down to the `sync` stored procedure (`Custom`, `RollingState`, `LatestKnownEvent` modes)
 
 Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's really not that :scream:](https://github.com/jet/equinox/blob/74129903e85e01ce584b4449f629bf3e525515ea/src/Equinox.Cosmos/Cosmos.fs#L870).
-
-Regardless of what happens, Events are _never_ destroyed, updated or touched in any way, ever. Having said that, if your Event DU does not match them, they're also as good as not there from the point of view of how State is established.
 
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
