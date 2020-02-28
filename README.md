@@ -612,6 +612,8 @@ Then, whenever you emit events from a `decide` or `interpret`, the `AccessStrate
 - write updated unfolds/snapshots
 - remove or adjust events before they get passed down to the `sync` stored procedure (`Custom`, `RollingState`, `LatestKnownEvent` modes)
 
+Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's really not that :scream:](https://github.com/jet/equinox/blob/74129903e85e01ce584b4449f629bf3e525515ea/src/Equinox.Cosmos/Cosmos.fs#L870).
+
 Regardless of what happens, Events are _never_ destroyed, updated or touched in any way, ever. Having said that, if your Event DU does not match them, they're also as good as not there from the point of view of how State is established.
 
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
