@@ -17,6 +17,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Update to `3.1.101` SDK
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1`
 - Target `FSharp.Control.AsyncSeq` v `2.0.23`
+- Updated AzDO CI/CD to use `windows-latest`
 
 ### Removed
 ### Fixed
