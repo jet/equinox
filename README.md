@@ -582,6 +582,38 @@ I expand (too much!) on some more of the considerations in https://github.com/je
 
 The other thing that should be pointed out is the caching can typically cover a lot of perf stuff as long as stream lengths stay sane - Snapshotting (esp polluting the stream with snapshot events should definitely be toward the bottom of your list of tactics for managing a stream efficiently given long streams are typically a design smell)
 
+<a name="changing-access-strategy"></a>
+### Changing Access / Representation strategies in `Equinox.Cosmos` - what happens?
+
+> Does Equinox adapt the stream if we start writing with `Equinox.Cosmos.AccessStrategy.RollingState` and change to `Snapshotted` for instance? It could take the last RollingState writing and make the first snapshot ?
+
+> what about the opposite? It deletes all events and start writing `RollingState` ?
+
+TL;DR yes and no respectively
+
+it may be helpful to look at [how an `AccessStrategy` is mapped to `isOrigin`, `toSnapshot` and `transmute` lambdas internally](https://github.com/jet/equinox/blob/74129903e85e01ce584b4449f629bf3e525515ea/src/Equinox.Cosmos/Cosmos.fs#L1029)
+
+Events are the atoms from which state is built, they live forever in immutable Batch documents with id <> -1.
+
+Snapshots/unfolds live in the `.u` array in the Tip doc (id: -1)
+
+Whenever a State is being built, it always loads Tip first and shows any ~~events~~ ~~snapshots~~ _unfolds_ in there...
+ 
+If `isOrigin` says no to those and/or the `EventType`s of those unfolds are not in the union / event type to which the codec is mapping, the next thing is a query backwards of the Batches of events, in order.
+
+All those get pushed onto a stack until we either hit the start, or `isOrigin` says - yes, we can start from here (at which point all the decoded events are then passed (in forward order) to the `fold` to make the `'state`).
+
+So, if you are doing `RollingState` or any other mode, there are still events and unfolds; and they all have `EventType`s - there are just some standard combos of steps that happen.
+
+If the `EventType` of the Event or Unfold matches, the `fold`/`evolve` will see them and build `'state` from that.
+
+Then, whenever you emit events from a `decide` or `interpret`, the `AccessStrategy` will define what happens next; a mix of:
+- write actual events (not if `RollingState`)
+- write updated unfolds/snapshots
+- remove or adjust events before they get passed down to the `sync` stored procedure (`Custom`, `RollingState`, `LatestKnownEvent` modes)
+
+Regardless of what happens, Events are _never_ destroyed, updated or touched in any way, ever. Having said that, if your Event DU does not match them, they're also as good as not there from the point of view of how State is established.
+
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
 😲Please raise a question-Issue, and we'll be delighted to either answer directly, or incorporate the question and answer here
