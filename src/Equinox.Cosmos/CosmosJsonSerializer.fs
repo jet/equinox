@@ -21,14 +21,11 @@ type CosmosJsonSerializer (options: JsonSerializerOptions) =
         )
 
     override __.ToStream<'T> (input: 'T) =
-        async {
-            let memoryStream = new MemoryStream()
+        let memoryStream = new MemoryStream()
 
-            do!
-                JsonSerializer.SerializeAsync(memoryStream, input, input.GetType(), options)
-                |> Async.AwaitTaskCorrect
-
-            memoryStream.Position <- 0L
-            return memoryStream :> Stream
-        }
+        JsonSerializer.SerializeAsync(memoryStream, input, input.GetType(), options)
+        |> Async.AwaitTaskCorrect
         |> Async.RunSynchronously
+
+        memoryStream.Position <- 0L
+        memoryStream :> Stream
