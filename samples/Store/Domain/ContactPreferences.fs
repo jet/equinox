@@ -30,7 +30,7 @@ module Events =
         let private tryDecode (options: JsonSerializerOptions) =
             fun (eventType, data: JsonElement) ->
                 match eventType with
-                | "contactPreferencesChanged" -> Some (Updated <| JsonSerializer.DeserializeElement<Value>(data))
+                | "contactPreferencesChanged" -> Some (Updated <| JsonSerializer.DeserializeElement<Value>(data, options))
                 | _ -> None
         
         let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)

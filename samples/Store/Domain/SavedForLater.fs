@@ -2,6 +2,7 @@
 
 open System
 open System.Collections.Generic
+open System.Text.Json
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -29,7 +30,31 @@ module Events =
         /// Addition of a collection of skus to the list
         | Added of Added
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module Utf8ArrayCodec =
+        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module JsonElementCodec =
+        open FsCodec.SystemTextJson
+
+        let private encode (options: JsonSerializerOptions) =
+            fun (evt: Event) ->
+                match evt with
+                | Compacted compacted -> Compaction.EventType, JsonSerializer.SerializeToElement(compacted, options)
+                | Merged merged -> "Merged", JsonSerializer.SerializeToElement(merged, options)
+                | Removed removed -> "Removed", JsonSerializer.SerializeToElement(removed, options)
+                | Added added -> "Added", JsonSerializer.SerializeToElement(added, options)
+    
+        let private tryDecode (options: JsonSerializerOptions) =
+            fun (eventType, data: JsonElement) ->
+                match eventType with
+                | Compaction.EventType -> Some (Compacted <| JsonSerializer.DeserializeElement<Compaction.Compacted>(data, options))
+                | "Merged" -> Some (Merged <| JsonSerializer.DeserializeElement<Merged>(data, options))
+                | "Removed" -> Some (Removed <| JsonSerializer.DeserializeElement<Removed>(data, options))
+                | "Added" -> Some (Added <| JsonSerializer.DeserializeElement<Added>(data, options))
+                | _ -> None
+
+        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
 
 module Fold =
     open Events
