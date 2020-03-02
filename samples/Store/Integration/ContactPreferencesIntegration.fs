@@ -4,7 +4,7 @@ open Equinox
 open Equinox.Cosmos.Integration
 open Swensen.Unquote
 open Xunit
-open System.Text.Json
+open FsCodec.SystemTextJson.Serialization
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -15,25 +15,13 @@ let createMemoryStore () =
 let createServiceMemory log store =
     Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
-let eventStoreCodec = Domain.ContactPreferences.Events.codec
+let eventStoreCodec = Domain.ContactPreferences.Events.Utf8ArrayCodec.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
     EventStore.Resolver(gateway 1, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
     EventStore.Resolver(gateway defaultBatchSize, eventStoreCodec, fold, initial).Resolve
 
-module CosmosCodec =
-    open Domain.ContactPreferences.Events
-
-    let encode (evt: Event) =
-        match evt with
-        | Updated value -> "contactPreferencesChanged", IntegrationJsonSerializer.serializeToElement(value)
-
-    let tryDecode (eventType, data: JsonElement) =
-        match eventType with
-        | "contactPreferencesChanged" -> Some (Updated <| IntegrationJsonSerializer.deserializeElement<Value>(data))
-        | _ -> None
-
-let cosmosCodec = FsCodec.Codec.Create<Domain.ContactPreferences.Events.Event, JsonElement>(CosmosCodec.encode, CosmosCodec.tryDecode)
+let cosmosCodec = Domain.ContactPreferences.Events.JsonElementCodec.codec JsonSerializer.defaultOptions
 let resolveStreamCosmosWithLatestKnownEventSemantics gateway =
     Cosmos.Resolver(gateway 1, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamCosmosUnoptimized gateway =

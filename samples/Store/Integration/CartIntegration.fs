@@ -5,6 +5,7 @@ open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
+open FsCodec.SystemTextJson.Serialization
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -15,15 +16,15 @@ let createMemoryStore () =
     // we want to validate that the JSON UTF8 is working happily
     VolatileStore<byte[]>()
 let createServiceMemory log store =
-    Backend.Cart.Service(log, fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
+    Backend.Cart.Service(log, fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.Utf8ArrayCodec.codec, fold, initial).Resolve(id,?option=opt))
 
-let eventStoreCodec = Domain.Cart.Events.codec
+let eventStoreCodec = Domain.Cart.Events.Utf8ArrayCodec.codec
 let resolveGesStreamWithRollingSnapshots gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial).Resolve(id,?option=opt)
 
-let cosmosCodec = Equinox.Cosmos.Integration.CosmosIntegration.Cart.codec
+let cosmosCodec = Domain.Cart.Events.JsonElementCodec.codec JsonSerializer.defaultOptions
 let resolveCosmosStreamWithSnapshotStrategy gateway =
     fun (id,opt) -> Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =

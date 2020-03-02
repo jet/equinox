@@ -3,7 +3,7 @@
 open Equinox
 open Equinox.Cosmos.Integration
 open Swensen.Unquote
-open System.Text.Json
+open FsCodec.SystemTextJson.Serialization
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -15,28 +15,12 @@ let createMemoryStore () =
 let createServiceMemory log store =
     Backend.Favorites.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
-let eventStoreCodec = Domain.Favorites.Events.codec
+let eventStoreCodec = Domain.Favorites.Events.Utf8ArrayCodec.codec
 let createServiceGes gateway log =
     let resolve = EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
     Backend.Favorites.Service(log, resolve)
 
-module CosmosCodec =
-    open Domain.Favorites.Events
-
-    let encode (evt: Event) =
-        match evt with
-        | Snapshotted snapshotted -> "Snapshotted", IntegrationJsonSerializer.serializeToElement(snapshotted)
-        | Favorited favorited -> "Favorited", IntegrationJsonSerializer.serializeToElement(favorited)
-        | Unfavorited unfavorited -> "Unfavorited", IntegrationJsonSerializer.serializeToElement(unfavorited)
-
-    let tryDecode (eventType, data: JsonElement) =
-        match eventType with
-        | "Snapshotted" -> Some (Snapshotted <| IntegrationJsonSerializer.deserializeElement<Snapshotted>(data))
-        | "Favorited" -> Some (Favorited <| IntegrationJsonSerializer.deserializeElement<Favorited>(data))
-        | "Unfavorited" -> Some (Unfavorited <| IntegrationJsonSerializer.deserializeElement<Unfavorited>(data))
-        | _ -> None
-
-let cosmosCodec = FsCodec.Codec.Create<Domain.Favorites.Events.Event, JsonElement>(CosmosCodec.encode, CosmosCodec.tryDecode)
+let cosmosCodec = Domain.Favorites.Events.JsonElementCodec.codec JsonSerializer.defaultOptions
 let createServiceCosmos gateway log =
     let resolve = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolve)
