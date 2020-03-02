@@ -20,7 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FsCodec" Version="2.0.1" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
     <PackageReference Include="MinVer" Version="2.0.0" PrivateAssets="All" />
 
@@ -30,6 +29,7 @@
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
     <PackageReference Include="Azure.Cosmos" Version="4.0.0-preview3" />
     <PackageReference Include="System.Runtime.Caching" Version="4.5.0" />
+    <PackageReference Include="FsCodec" Version="2.0.1" />
   </ItemGroup>
 
 </Project>
