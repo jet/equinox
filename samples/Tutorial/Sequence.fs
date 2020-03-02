@@ -3,7 +3,6 @@
 module Sequence
 
 open System
-open System.Text.Json
 
 // shim for net461
 module Seq =
@@ -32,6 +31,7 @@ module Events =
 
     module JsonElementCodec =
         open FsCodec.SystemTextJson
+        open System.Text.Json
 
         let private encode (options: JsonSerializerOptions) = fun (evt: Event) ->
             match evt with

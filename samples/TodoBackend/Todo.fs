@@ -1,7 +1,6 @@
 ﻿namespace TodoBackend
 
 open Domain
-open System.Text.Json
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -26,6 +25,7 @@ module Events =
 
     module JsonElementCodec =
         open FsCodec.SystemTextJson
+        open System.Text.Json
 
         let private encode (options: JsonSerializerOptions) =
             fun (evt: Event) ->

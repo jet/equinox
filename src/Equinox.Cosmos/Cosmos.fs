@@ -1,9 +1,9 @@
 ﻿namespace Equinox.Cosmos.Store
 
-open Equinox.Core
-open FsCodec
 open Azure
 open Azure.Cosmos
+open Equinox.Core
+open FsCodec
 open Serilog
 open System
 open System.IO
@@ -793,13 +793,13 @@ module Internal =
 
 namespace Equinox.Cosmos
 
+open Azure.Cosmos
 open Equinox
 open Equinox.Core
-open FsCodec.SystemTextJson.Serialization
 open Equinox.Cosmos.Store
 open FsCodec
+open FsCodec.SystemTextJson.Serialization
 open FSharp.Control
-open Azure.Cosmos
 open Serilog
 open System
 open System.Collections.Concurrent

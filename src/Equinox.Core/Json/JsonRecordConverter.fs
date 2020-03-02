@@ -1,5 +1,6 @@
 ﻿namespace FsCodec.SystemTextJson.Serialization
 
+open Equinox.Core
 open System
 open System.Collections.Generic
 open System.Linq

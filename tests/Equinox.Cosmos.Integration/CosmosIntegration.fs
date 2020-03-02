@@ -1,12 +1,12 @@
 ﻿module Equinox.Cosmos.Integration.CosmosIntegration
 
-open System
-open System.Threading
 open Domain
 open Equinox.Cosmos
 open Equinox.Cosmos.Integration.Infrastructure
 open FSharp.UMX
 open Swensen.Unquote
+open System
+open System.Threading
 
 module Cart =
     let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial

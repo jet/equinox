@@ -2,9 +2,9 @@
 
 open Equinox
 open Equinox.Cosmos.Integration
+open FsCodec.SystemTextJson.Serialization
 open Swensen.Unquote
 open Xunit
-open FsCodec.SystemTextJson.Serialization
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

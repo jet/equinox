@@ -1,11 +1,11 @@
 ﻿module Samples.Infrastructure.Services
 
 open Domain
+open FsCodec
+open FsCodec.SystemTextJson.Serialization
 open Microsoft.Extensions.DependencyInjection
 open System
 open System.Text.Json
-open FsCodec
-open FsCodec.SystemTextJson.Serialization
 
 [<NoComparison>]
 type StreamCodec<'event, 'context> =

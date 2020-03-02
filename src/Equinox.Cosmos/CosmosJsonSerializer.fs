@@ -1,9 +1,9 @@
 ﻿namespace Equinox.Cosmos.Store
 
-open System.IO
-open System.Text.Json
 open Azure.Cosmos.Serialization
 open Equinox.Core
+open System.IO
+open System.Text.Json
 
 type CosmosJsonSerializer (options: JsonSerializerOptions) =
     inherit CosmosSerializer()

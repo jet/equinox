@@ -4,8 +4,8 @@ open Equinox.Cosmos
 open FsCheck.Xunit
 open Swensen.Unquote
 open System
-open Xunit
 open System.Text.Json
+open Xunit
 
 type Embedded = { embed : string }
 type Union =

@@ -1,7 +1,5 @@
 ﻿module Domain.ContactPreferences
 
-open System.Text.Json
-
 type Id = Id of email: string
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
@@ -21,6 +19,7 @@ module Events =
 
     module JsonElementCodec =
         open FsCodec.SystemTextJson
+        open System.Text.Json
 
         let private encode (options: JsonSerializerOptions) =
             fun (evt: Event) ->

@@ -2,7 +2,6 @@
 module Upload
 
 open System
-open System.Text.Json
 open FSharp.UMX
 
 // shim for net461
@@ -47,6 +46,7 @@ module Events =
 
     module JsonElementCodec =
         open FsCodec.SystemTextJson
+        open System.Text.Json
 
         let encode (options: JsonSerializerOptions) = fun (evt: Event) ->
             match evt with
