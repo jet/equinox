@@ -17,6 +17,6 @@ type Utf8JsonReaderExtension =
         reader.ValidateTokenType(JsonTokenType.PropertyName)
         
         if not <| reader.ValueTextEquals expectedPropertyName then
-            sprintf "Expected a property named '%s', but encounted property with name '%s'." expectedPropertyName (reader.GetString())
+            sprintf "Expected a property named '%s', but encountered property with name '%s'." expectedPropertyName (reader.GetString())
             |> JsonException
             |> raise
