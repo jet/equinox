@@ -7,7 +7,6 @@ open System.Linq.Expressions
 open System.Text.Json
 open System.Text.Json.Serialization
 open FSharp.Reflection
-open Equinox.Core
 
 type JsonRecordConverterActivator = delegate of JsonSerializerOptions -> JsonConverter
 
@@ -31,11 +30,11 @@ type RecordFieldConverter<'F> () =
 
 [<NoComparison>]
 type RecordField = {
-    Name: string
-    Type: Type
-    Index: int
-    IsIgnored: bool
-    Converter: IRecordFieldConverter option
+    name: string
+    fieldType: Type
+    index: int
+    isIgnored: bool
+    converter: IRecordFieldConverter option
 }
 
 type JsonRecordConverter<'T> (options: JsonSerializerOptions) =
@@ -50,7 +49,7 @@ type JsonRecordConverter<'T> (options: JsonSerializerOptions) =
         FSharpType.GetRecordFields(recordType, true)
         |> Array.mapi (fun idx f ->
             {
-                Name =
+                name =
                     f.GetCustomAttributes(typedefof<JsonPropertyNameAttribute>, true)
                     |> Array.tryHead
                     |> Option.map (fun attr -> (attr :?> JsonPropertyNameAttribute).Name)
@@ -59,10 +58,10 @@ type JsonRecordConverter<'T> (options: JsonSerializerOptions) =
                             then f.Name
                             else options.PropertyNamingPolicy.ConvertName f.Name)
 
-                Type = f.PropertyType
-                Index = idx
-                IsIgnored = f.GetCustomAttributes(typeof<JsonIgnoreAttribute>, true) |> Array.isEmpty |> not
-                Converter =
+                fieldType = f.PropertyType
+                index = idx
+                isIgnored = f.GetCustomAttributes(typeof<JsonIgnoreAttribute>, true) |> Array.isEmpty |> not
+                converter =
                     f.GetCustomAttributes(typeof<JsonConverterAttribute>, true)
                     |> Array.tryHead
                     |> Option.map (fun attr -> attr :?> JsonConverterAttribute)
@@ -84,7 +83,7 @@ type JsonRecordConverter<'T> (options: JsonSerializerOptions) =
 
     let fieldsByName =
         fields
-        |> Array.map (fun f -> f.Name, f)
+        |> Array.map (fun f -> f.name, f)
 #if NETSTANDARD2_1
         |> Array.map KeyValuePair.Create
         |> (fun kvp -> Dictionary(kvp, StringComparer.OrdinalIgnoreCase))
@@ -113,13 +112,13 @@ type JsonRecordConverter<'T> (options: JsonSerializerOptions) =
 
             match tryGetFieldByName <| reader.GetString() with
             | Some field -> 
-                fields.[field.Index] <-
-                    match field.Converter with
+                fields.[field.index] <-
+                    match field.converter with
                     | Some converter ->
                         reader.Read() |> ignore
-                        converter.Read(&reader, field.Type, options)
+                        converter.Read(&reader, field.fieldType, options)
                     | None ->
-                        JsonSerializer.Deserialize(&reader, field.Type, options)
+                        JsonSerializer.Deserialize(&reader, field.fieldType, options)
             | _ -> 
                 reader.Skip()
 
@@ -135,10 +134,10 @@ type JsonRecordConverter<'T> (options: JsonSerializerOptions) =
             match value with
             | :? JsonElement as je when je.ValueKind = JsonValueKind.Undefined -> ()
             | _ ->
-                if not field.IsIgnored && not (options.IgnoreNullValues && isNull value) then
-                    writer.WritePropertyName(field.Name)
+                if not field.isIgnored && not (options.IgnoreNullValues && isNull value) then
+                    writer.WritePropertyName(field.name)
 
-                    match field.Converter with
+                    match field.converter with
                     | Some converter -> converter.Write(writer, value, options)
                     | None -> JsonSerializer.Serialize(writer, value, options))
 
