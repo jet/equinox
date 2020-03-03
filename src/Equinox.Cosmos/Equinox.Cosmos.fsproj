@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
-    <Compile Include="NewtonsoftJsonSerializer.fs" />
+    <Compile Include="CosmosJsonSerializer.fs" />
     <Compile Include="Cosmos.fs" />
   </ItemGroup>
 
@@ -26,10 +26,10 @@
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="1.1.0" />
 
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.0.0" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
     <PackageReference Include="Azure.Cosmos" Version="4.0.0-preview3" />
     <PackageReference Include="System.Runtime.Caching" Version="4.5.0" />
+    <PackageReference Include="FsCodec" Version="2.0.1" />
   </ItemGroup>
 
 </Project>

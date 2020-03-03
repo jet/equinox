@@ -11,6 +11,7 @@ open Serilog.Events
 open System
 open System.Net.Http
 open System.Threading
+open System.Text.Json
 
 let [<Literal>] appName = "equinox-tool"
 
@@ -362,16 +363,24 @@ module CosmosStats =
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 module Dump =
-    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) =
-        let a = DumpInfo args
-        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
-        let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
-        let doU,doE = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly)
-        let doC,doJ,doP,doT = args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip),not(args.Contains TimeRegular)
-        let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
+    let logEvent (log: ILogger) (prevTs: DateTimeOffset option) doC doT (event: FsCodec.ITimelineEvent<'format>) (renderer: 'format -> string) =
+        let ty = if event.IsUnfold then "U" else "E"
+        let interval =
+            match prevTs with Some p when not event.IsUnfold -> Some (event.Timestamp - p) | _ -> None
+            |> function
+            | None -> if doT then "n/a" else "0"
+            | Some (i : TimeSpan) when not doT -> i.ToString()
+            | Some (i : TimeSpan) when i.TotalDays >= 1. -> i.ToString "d\dhh\hmm\m"
+            | Some i when i.TotalHours >= 1. -> i.ToString "h\hmm\mss\s"
+            | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\.ff\s"
+            | Some i -> i.ToString("s\.fff\s")
+        if not doC then log.Information("{i,4}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
+                            event.Index, event.Timestamp, interval, ty, event.EventType, renderer event.Data, renderer event.Meta)
+        else log.Information("{i,4}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
+                 event.Index, event.Timestamp, interval, event.CorrelationId, event.CausationId, ty, event.EventType, renderer event.Data, renderer event.Meta)
+        event.Timestamp
 
-        let streams = args.GetResults DumpArguments.Stream
-        log.ForContext("streams",streams).Information("Reading...")
+    let dumpUtf8ArrayStorage (log: ILogger) (storeLog: ILogger) doU doE doC doJ doP doT (resolver: Services.StreamResolver) (streams: FsCodec.StreamName list) =
         let initial = List.empty
         let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
         let mutable unfolds = List.empty
@@ -388,30 +397,58 @@ module Dump =
                 | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (streamName : FsCodec.StreamName) = async {
-            let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
+            let stream = resolver.ResolveWithUtf8ArrayCodec(idCodec,fold,initial,isOriginAndSnapshot) streamName
             let! _token,events = stream.Load storeLog
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
             let mutable prevTs = None
             for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
-                let ty,render = if x.IsUnfold then "U", render Newtonsoft.Json.Formatting.Indented else "E", render fo
-                let interval =
-                    match prevTs with Some p when not x.IsUnfold -> Some (x.Timestamp - p) | _ -> None
-                    |> function
-                    | None -> if doT then "n/a" else "0"
-                    | Some (i : TimeSpan) when not doT -> i.ToString()
-                    | Some (i : TimeSpan) when i.TotalDays >= 1. -> i.ToString "d\dhh\hmm\m"
-                    | Some i when i.TotalHours >= 1. -> i.ToString "h\hmm\mss\s"
-                    | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\.ff\s"
-                    | Some i -> i.ToString("s\.fff\s")
-                prevTs <- Some x.Timestamp
-                if not doC then log.Information("{i,4}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
-                                    x.Index, x.Timestamp, interval, ty, x.EventType, render x.Data, render x.Meta)
-                else log.Information("{i,4}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
-                         x.Index, x.Timestamp, interval, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
+                let render = if x.IsUnfold then render Newtonsoft.Json.Formatting.Indented else render fo
+                prevTs <- Some (logEvent log prevTs doC doT x render) }
         streams
         |> Seq.map readStream
         |> Async.Parallel
         |> Async.Ignore
+
+    let dumpJsonElementStorage (log: ILogger) (storeLog: ILogger) doU doE doC doJ _doP doT (resolver: Services.StreamResolver) (streams: FsCodec.StreamName list) =
+        let initial = List.empty
+        let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
+        let mutable unfolds = List.empty
+        let tryDecode (x : FsCodec.ITimelineEvent<JsonElement>) =
+            if x.IsUnfold then unfolds <- x :: unfolds
+            Some x
+        let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
+        let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold),fun _state -> failwith "no snapshot required"
+        let render (data : JsonElement) =
+            match data.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> null
+            | _ when doJ -> data.GetRawText()
+            | _ -> sprintf "(%d chars)" (data.GetRawText().Length)
+        let readStream (streamName : FsCodec.StreamName) = async {
+            let stream = resolver.ResolveWithJsonElementCodec(idCodec,fold,initial,isOriginAndSnapshot) streamName
+            let! _token,events = stream.Load storeLog
+            let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
+            let mutable prevTs = None
+            for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
+                prevTs <- Some (logEvent log prevTs doC doT x render) }
+        streams
+        |> Seq.map readStream
+        |> Async.Parallel
+        |> Async.Ignore
+
+    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) =
+        let a = DumpInfo args
+        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
+        let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
+        let doU,doE = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly)
+        let doC,doJ,doP,doT = args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip),not(args.Contains TimeRegular)
+        let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
+
+        let streams = args.GetResults DumpArguments.Stream
+        log.ForContext("streams",streams).Information("Reading...")
+
+        match storeConfig with
+        | Storage.StorageConfig.Cosmos _ -> dumpJsonElementStorage log storeLog doU doE doC doJ doP doT resolver streams
+        | _ -> dumpUtf8ArrayStorage log storeLog doU doE doC doJ doP doT resolver streams
 
 [<EntryPoint>]
 let main argv =

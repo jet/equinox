@@ -2,6 +2,7 @@
 
 open Equinox
 open Equinox.Cosmos.Integration
+open FsCodec.SystemTextJson.Serialization
 open Swensen.Unquote
 open Xunit
 
@@ -14,19 +15,20 @@ let createMemoryStore () =
 let createServiceMemory log store =
     Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
-let codec = Domain.ContactPreferences.Events.codec
+let eventStoreCodec = Domain.ContactPreferences.Events.Utf8ArrayCodec.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
-    EventStore.Resolver(gateway 1, codec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
+    EventStore.Resolver(gateway 1, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
-    EventStore.Resolver(gateway defaultBatchSize, codec, fold, initial).Resolve
+    EventStore.Resolver(gateway defaultBatchSize, eventStoreCodec, fold, initial).Resolve
 
+let cosmosCodec = Domain.ContactPreferences.Events.JsonElementCodec.codec JsonSerializer.defaultOptions
 let resolveStreamCosmosWithLatestKnownEventSemantics gateway =
-    Cosmos.Resolver(gateway 1, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
+    Cosmos.Resolver(gateway 1, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamCosmosUnoptimized gateway =
-    Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve
+    Cosmos.Resolver(gateway defaultBatchSize, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve
 let resolveStreamCosmosRollingUnfolds gateway =
     let access = Cosmos.AccessStrategy.Custom(Domain.ContactPreferences.Fold.isOrigin, Domain.ContactPreferences.Fold.transmute)
-    Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
+    Cosmos.Resolver(gateway defaultBatchSize, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

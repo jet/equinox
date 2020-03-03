@@ -11,7 +11,7 @@ open System.Threading
 module Cart =
     let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
-    let codec = Domain.Cart.Events.codec
+    let codec = Domain.Cart.Events.JsonElementCodec.codec IntegrationJsonSerializer.options
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
@@ -40,7 +40,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
-    let codec = Domain.ContactPreferences.Events.codec
+    let codec = Domain.ContactPreferences.Events.JsonElementCodec.codec IntegrationJsonSerializer.options
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
         let resolve = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve

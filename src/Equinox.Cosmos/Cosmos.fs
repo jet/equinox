@@ -1,16 +1,17 @@
 ﻿namespace Equinox.Cosmos.Store
 
-open Equinox.Core
-open FsCodec
 open Azure
 open Azure.Cosmos
-open Newtonsoft.Json
+open Equinox.Core
+open FsCodec
 open Serilog
 open System
 open System.IO
+open System.Text.Json
+open System.Text.Json.Serialization
 
 /// A single Domain Event from the array held in a Batch
-type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
+type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless explicitly optional
     Event =
     {   /// Creation datetime (as opposed to system-defined _lastUpdated which is touched by triggers, replication etc.)
         t: DateTimeOffset // ISO 8601
@@ -19,24 +20,19 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         c: string // required
 
         /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for CosmosDB
-        [<JsonConverter(typeof<FsCodec.NewtonsoftJson.VerbatimUtf8JsonConverter>)>]
-        [<JsonProperty(Required=Required.AllowNull)>]
-        d: byte[] // Required, but can be null so Nullary cases can work
+        d: JsonElement // TODO for STJ v5: Required, but can be null so Nullary cases can work
 
-        /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
-        [<JsonConverter(typeof<FsCodec.NewtonsoftJson.VerbatimUtf8JsonConverter>)>]
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        m: byte[]
+        /// Optional metadata, as UTF-8 encoded json, ready to emit directly
+        m: JsonElement // TODO for STJ v5: Optional, not serialized if missing
 
-        /// Optional correlationId (can be null, not written if missing)
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        correlationId : string
+        /// Optional correlationId
+        correlationId : string // TODO for STJ v5: Optional, not serialized if missing
 
-        /// Optional causationId (can be null, not written if missing)
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        causationId : string }
+        /// Optional causationId
+        causationId : string // TODO for STJ v5: Optional, not serialized if missing
+    } 
 
-    interface IEventData<byte[]> with
+    interface IEventData<JsonElement> with
         member __.EventType = __.c
         member __.Data = __.d
         member __.Meta = __.m
@@ -46,12 +42,11 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         member __.Timestamp = __.t
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
-type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
+type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless explicitly optional
     Batch =
     {   /// CosmosDB-mandated Partition Key, must be maintained within the document
         /// Not actually required if running in single partition mode, but for simplicity, we always write it
-        [<JsonProperty(Required=Required.Default)>] // Not requested in queries
-        p: string // "{streamName}"
+        p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
 
         /// CosmosDB-mandated unique row key; needs to be unique within any partition it is maintained; must be string
         /// At the present time, one can't perform an ORDER BY on this field, hence we also have i shadowing it
@@ -61,8 +56,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// When we read, we need to capture the value so we can retain it for caching purposes
         /// NB this is not relevant to fill in when we pass it to the writing stored procedure
         /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
-        [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
-        _etag: string
+        _etag: string // TODO for STJ v5: Optional, not serialized if missing
 
         /// base 'i' value for the Events held herein
         i: int64 // {index}
@@ -78,7 +72,43 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
     static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
 
+/// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
+/// Only applied to snapshots in the Tip
+type JsonCompressedBase64Converter() =
+    inherit JsonConverter<JsonElement>()
+
+    override __.Read (reader, _typeToConvert, options) =
+        if reader.TokenType = JsonTokenType.Null then
+            JsonSerializer.Deserialize<JsonElement>(&reader, options)
+        else
+            let compressedBytes = reader.GetBytesFromBase64()
+            use input = new MemoryStream(compressedBytes)
+            use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
+            use output = new MemoryStream()
+            decompressor.CopyTo(output)
+            JsonSerializer.Deserialize<JsonElement>(ReadOnlySpan.op_Implicit(output.ToArray()), options)
+
+    override __.Write (writer, value, _options) =
+        if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
+            writer.WriteNullValue()
+        else
+            let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
+            use output = new MemoryStream()
+            use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
+            compressor.Write(input, 0, input.Length)
+            compressor.Close()
+            writer.WriteBase64StringValue(ReadOnlySpan.op_Implicit(output.ToArray()))
+
+type JsonCompressedBase64ConverterAttribute () =
+    inherit JsonConverterAttribute(typeof<JsonCompressedBase64Converter>)
+
+    static let converter = JsonCompressedBase64Converter()
+
+    override __.CreateConverter _typeToConvert =
+        converter :> JsonConverter
+
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
+[<NoComparison>]
 type Unfold =
     {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
         i: int64
@@ -90,61 +120,30 @@ type Unfold =
         c: string // required
 
         /// Event body - Json -> UTF-8 -> Deflate -> Base64
-        [<JsonConverter(typeof<Base64DeflateUtf8JsonConverter>)>]
-        d: byte[] // required
+        [<JsonCompressedBase64Converter>]
+        d: JsonElement // required
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
-        [<JsonConverter(typeof<Base64DeflateUtf8JsonConverter>)>]
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        m: byte[] } // optional
-
-/// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
-/// Only applied to snapshots in the Tip
-and Base64DeflateUtf8JsonConverter() =
-    inherit JsonConverter()
-    let pickle (input : byte[]) : string =
-        if input = null then null else
-
-        use output = new MemoryStream()
-        use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
-        compressor.Write(input,0,input.Length)
-        compressor.Close()
-        System.Convert.ToBase64String(output.ToArray())
-    let unpickle str : byte[] =
-        if str = null then null else
-
-        let compressedBytes = System.Convert.FromBase64String str
-        use input = new MemoryStream(compressedBytes)
-        use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
-        use output = new MemoryStream()
-        decompressor.CopyTo(output)
-        output.ToArray()
-
-    override __.CanConvert(objectType) =
-        typeof<byte[]>.Equals(objectType)
-    override __.ReadJson(reader, _, _, serializer) =
-        //(   if reader.TokenType = JsonToken.Null then null else
-        serializer.Deserialize(reader, typedefof<string>) :?> string |> unpickle |> box
-    override __.WriteJson(writer, value, serializer) =
-        let pickled = value |> unbox |> pickle
-        serializer.Serialize(writer, pickled)
+        [<JsonCompressedBase64Converter>]
+        m: JsonElement  // TODO for STJ v5: Optional, not serialized if missing
+    }
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
 /// NB the type does double duty as a) model for when we read it b) encoding a batch being sent to the stored proc
-type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
+type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless explicitly optional
     Tip =
-    {   [<JsonProperty(Required=Required.Default)>] // Not requested in queries
+    {
         /// Partition key, as per Batch
-        p: string // "{streamName}"
+        p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
+
         /// Document Id within partition, as per Batch
         id: string // "{-1}" - Well known IdConstant used while this remains the pending batch
 
         /// When we read, we need to capture the value so we can retain it for caching purposes
         /// NB this is not relevant to fill in when we pass it to the writing stored procedure
         /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
-        [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
-        _etag: string
+        _etag: string // TODO for STJ v5: Optional, not serialized if missing
 
         /// base 'i' value for the Events held herein
         i: int64
@@ -172,7 +171,7 @@ module internal Position =
     let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
     let fromEtag (value : string) = { fromI -2L with etag = Some value }
     /// NB very inefficient compared to FromDocument or using one already returned to you
-    let fromMaxIndex (xs: ITimelineEvent<byte[]>[]) =
+    let fromMaxIndex (xs: ITimelineEvent<JsonElement>[]) =
         if Array.isEmpty xs then fromKnownEmpty
         else fromI (1L + Seq.max (seq { for x in xs -> x.Index }))
     /// Create Position from Tip record context (facilitating 1 RU reads)
@@ -186,9 +185,9 @@ module internal Position =
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 type internal Enum() =
-    static member internal Events(b: Tip) : ITimelineEvent<byte[]> seq =
+    static member internal Events(b: Tip) : ITimelineEvent<JsonElement> seq =
         b.e |> Seq.mapi (fun offset x -> FsCodec.Core.TimelineEvent.Create(b.i + int64 offset, x.c, x.d, x.m, Guid.Empty, x.correlationId, x.causationId, x.t))
-    static member Events(i: int64, e: Event[], startPos : Position option, direction) : ITimelineEvent<byte[]> seq = seq {
+    static member Events(i: int64, e: Event[], startPos : Position option, direction) : ITimelineEvent<JsonElement> seq = seq {
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
         let isValidGivenStartPos i =
             match startPos with
@@ -203,9 +202,9 @@ type internal Enum() =
     static member internal Events(b: Batch, startPos, direction) =
         Enum.Events(b.i, b.e, startPos, direction)
         |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
-    static member Unfolds(xs: Unfold[]) : ITimelineEvent<byte[]> seq = seq {
+    static member Unfolds(xs: Unfold[]) : ITimelineEvent<JsonElement> seq = seq {
         for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, Guid.Empty, null, null, x.t, isUnfold=true) }
-    static member EventsAndUnfolds(x: Tip): ITimelineEvent<byte[]> seq =
+    static member EventsAndUnfolds(x: Tip): ITimelineEvent<JsonElement> seq =
         Enum.Events x
         |> Seq.append (Enum.Unfolds x.u)
         // where Index is equal, unfolds get delivered after the events so the fold semantics can be 'idempotent'
@@ -232,8 +231,8 @@ module Log =
         | SyncResync of Measurement
         | SyncConflict of Measurement
     let prop name value (log : ILogger) = log.ForContext(name, value)
-    let propData name (events: #IEventData<byte[]> seq) (log : ILogger) =
-        let render = function null -> "null" | bytes -> System.Text.Encoding.UTF8.GetString bytes
+    let propData name (events: #IEventData<JsonElement> seq) (log : ILogger) =
+        let render = function (j: JsonElement) when j.ValueKind <> JsonValueKind.Null -> j.GetRawText() | _ -> "null"
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let propEvents = propData "events"
@@ -255,7 +254,7 @@ module Log =
     let event (value : Event) (log : ILogger) =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
-    let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
+    let (|BlobLen|) = function (j: JsonElement) when j.ValueKind <> JsonValueKind.Null && j.ValueKind <> JsonValueKind.Undefined -> j.GetRawText().Length | _ -> 0
     let (|EventLen|) (x: #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
@@ -451,7 +450,7 @@ function sync(req, expIndex, expEtag) {
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Result =
         | Written of Position
-        | Conflict of Position * events: ITimelineEvent<byte[]>[]
+        | Conflict of Position * events: ITimelineEvent<JsonElement>[]
         | ConflictUnknown of Position
 
     type [<RequireQualifiedAccess>] Exp = Version of int64 | Etag of string | Any
@@ -600,7 +599,7 @@ module internal Tip =
             let log = log |> Log.prop "_etag" tip._etag |> Log.prop "n" tip.n
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
-    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * ITimelineEvent<byte[]>[]
+    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * ITimelineEvent<JsonElement>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.NotModified
     let tryLoad (log : ILogger) retryPolicy containerStream (maybePos: Position option): Async<Result> = async {
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log
@@ -625,7 +624,7 @@ module internal Tip =
 
     // Unrolls the Batches in a response - note when reading backwards, the events are emitted in reverse order of index
     let private processNextPage direction (streamName: string) startPos (enumerator: IAsyncEnumerator<Page<Batch>>) (log: ILogger)
-        : Async<Option<ITimelineEvent<byte[]>[] * Position option * float>> = async {
+        : Async<Option<ITimelineEvent<JsonElement>[] * Position option * float>> = async {
         let! t, res = enumerator.MoveNext() |> Stopwatch.Time
 
         return
@@ -644,19 +643,19 @@ module internal Tip =
                 let maybePosition = batches |> Array.tryPick Position.tryFromBatch
                 events, maybePosition, ru) }
 
-    let private run (log : ILogger) (readNextPage: IAsyncEnumerator<Page<Batch>> -> ILogger -> Async<Option<ITimelineEvent<byte[]>[] * Position option * float>>)
+    let private run (log : ILogger) (readNextPage: IAsyncEnumerator<Page<Batch>> -> ILogger -> Async<Option<ITimelineEvent<JsonElement>[] * Position option * float>>)
         (maxPermittedBatchReads: int option)
         (query: AsyncSeq<Page<Batch>>) =
 
         let e = query.GetEnumerator()
 
-        let rec loop batchCount : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> = asyncSeq {
+        let rec loop batchCount : AsyncSeq<ITimelineEvent<JsonElement>[] * Position option * float> = asyncSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! (page : Option<ITimelineEvent<byte[]>[] * Position option * float>) = readNextPage e batchLog
+            let! (page : Option<ITimelineEvent<JsonElement>[] * Position option * float>) = readNextPage e batchLog
 
             if page |> Option.isSome then
                 yield page.Value
@@ -664,7 +663,7 @@ module internal Tip =
 
         loop 0
 
-    let private logQuery direction batchSize streamName interval (responsesCount, events : ITimelineEvent<byte[]>[]) n (ru: float) (log : ILogger) =
+    let private logQuery direction batchSize streamName interval (responsesCount, events : ITimelineEvent<JsonElement>[]) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Event.Query (direction, responsesCount, reqMetric)
@@ -673,7 +672,7 @@ module internal Tip =
             "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms rc={ru}",
             action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
-    let private calculateUsedVersusDroppedPayload stopIndex (xs: ITimelineEvent<byte[]>[]) : int * int =
+    let private calculateUsedVersusDroppedPayload stopIndex (xs: ITimelineEvent<JsonElement>[]) : int * int =
         let mutable used, dropped = 0, 0
         let mutable found = false
         for x in xs do
@@ -684,10 +683,10 @@ module internal Tip =
         used, dropped
 
     let walk<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests direction startPos
-        (tryDecode : ITimelineEvent<byte[]> -> 'event option, isOrigin: 'event -> bool)
+        (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
         : Async<Position * 'event[]> = async {
         let responseCount = ref 0
-        let mergeBatches (log : ILogger) (batchesBackward: AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float>) = async {
+        let mergeBatches (log : ILogger) (batchesBackward: AsyncSeq<ITimelineEvent<JsonElement>[] * Position option * float>) = async {
             let mutable lastResponse, maybeTipPos, ru = None, None, 0.
             let! events =
                 batchesBackward
@@ -714,7 +713,7 @@ module internal Tip =
         let retryingLoggingReadPage e = Log.withLoggedRetries retryPolicy "readAttempt" (readPage e)
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readlog = log |> Log.prop "direction" direction
-        let batches : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> = run readlog retryingLoggingReadPage maxRequests query
+        let batches : AsyncSeq<ITimelineEvent<JsonElement>[] * Position option * float> = run readlog retryingLoggingReadPage maxRequests query
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws, decoded = (Array.map fst events), (events |> Seq.choose snd |> Array.ofSeq)
         let pos = match maybeTipPos with Some p -> p | None -> Position.fromMaxIndex raws
@@ -723,7 +722,7 @@ module internal Tip =
         return pos, decoded }
 
     let walkLazy<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests direction startPos
-        (tryDecode : ITimelineEvent<byte[]> -> 'event option, isOrigin: 'event -> bool)
+        (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
         : AsyncSeq<'event[]> = asyncSeq {
         let responseCount = ref 0
         let query = mkQuery (container,stream) maxItems direction startPos
@@ -787,22 +786,24 @@ module Token =
 [<AutoOpen>]
 module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type InternalSyncResult = Written of StreamToken | ConflictUnknown of StreamToken | Conflict of StreamToken * ITimelineEvent<byte[]>[]
+    type InternalSyncResult = Written of StreamToken | ConflictUnknown of StreamToken | Conflict of StreamToken * ITimelineEvent<JsonElement>[]
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of StreamToken * 'event[]
 
 namespace Equinox.Cosmos
 
+open Azure.Cosmos
 open Equinox
 open Equinox.Core
 open Equinox.Cosmos.Store
 open FsCodec
+open FsCodec.SystemTextJson.Serialization
 open FSharp.Control
-open Azure.Cosmos
 open Serilog
 open System
 open System.Collections.Concurrent
+open System.Text.Json
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
 type Connection(client: CosmosClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
@@ -878,8 +879,8 @@ type Gateway(conn : Connection, batching : BatchingPolicy) =
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create containerStream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create containerStream pos') }
 
-type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IEventCodec<'event,byte[],'context>) =
-    let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: ITimelineEvent<byte[]> seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
+type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IEventCodec<'event,JsonElement,'context>) =
+    let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: ITimelineEvent<JsonElement> seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
     member __.Load includeUnfolds containerStream fold initial isOrigin (log : ILogger): Async<StreamToken * 'state> = async {
         let! token, events =
             if not includeUnfolds then gateway.LoadBackwardsStopping log containerStream (codec.TryDecode,isOrigin)
@@ -1140,7 +1141,7 @@ type Connector
     /// ClientOptions for this Connector as configured
     member val ClientOptions =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
-        let co = CosmosClientOptions(MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout, Serializer = NewtonsoftJsonSerializer())
+        let co = CosmosClientOptions(MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout, Serializer = CosmosJsonSerializer(JsonSerializer.defaultOptions))
         match mode with
         | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
@@ -1186,12 +1187,13 @@ open Equinox.Cosmos.Store
 open FsCodec
 open FSharp.Control
 open System.Runtime.InteropServices
+open System.Text.Json
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]
 type AppendResult<'t> =
     | Ok of pos: 't
-    | Conflict of index: 't * conflictingEvents: ITimelineEvent<byte[]>[]
+    | Conflict of index: 't * conflictingEvents: ITimelineEvent<JsonElement>[]
     | ConflictUnknown of index: 't
 
 /// Encapsulates the core facilities Equinox.Cosmos offers for operating directly on Events in Streams.
@@ -1226,7 +1228,7 @@ type Context
     member __.ResolveStream(streamName) = containers.Resolve(conn.Client, null, streamName, gateway.CreateSyncStoredProcIfNotExists (Some log))
     member __.CreateStream(streamName) = __.ResolveStream streamName |> fst
 
-    member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
+    member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<ITimelineEvent<JsonElement>[]> =
         let direction = defaultArg direction Direction.Forward
         let batching = BatchingPolicy(defaultArg batchSize batching.MaxItems)
         gateway.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
@@ -1251,11 +1253,11 @@ type Context
 
     /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member __.Walk(stream, batchSize, ?position, ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
+    member __.Walk(stream, batchSize, ?position, ?direction) : AsyncSeq<ITimelineEvent<JsonElement>[]> =
         __.GetLazy((stream, position), batchSize, ?direction=direction)
 
     /// Reads all Events from a `Position` in a given `direction`
-    member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*ITimelineEvent<byte[]>[]> =
+    member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*ITimelineEvent<JsonElement>[]> =
         __.GetInternal((stream, position), ?maxCount=maxCount, ?direction=direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
@@ -1300,7 +1302,7 @@ module Events =
     let private stripPosition (f: Async<Position>): Async<int64> = async {
         let! (PositionIndex index) = f
         return index }
-    let private dropPosition (f: Async<Position*ITimelineEvent<byte[]>[]>): Async<ITimelineEvent<byte[]>[]> = async {
+    let private dropPosition (f: Async<Position*ITimelineEvent<JsonElement>[]>): Async<ITimelineEvent<JsonElement>[]> = async {
         let! _,xs = f
         return xs }
     let (|MinPosition|) = function
@@ -1314,14 +1316,14 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: Context) (streamName: string) (MinPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<ITimelineEvent<byte[]>[]> =
+    let getAll (ctx: Context) (streamName: string) (MinPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<ITimelineEvent<JsonElement>[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: Context) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
+    let get (ctx: Context) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<JsonElement>[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
@@ -1341,14 +1343,14 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<byte[]>[]> =
+    let getAllBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<JsonElement>[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
+    let getBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<JsonElement>[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position

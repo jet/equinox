@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox.Core\Equinox.Core.fsproj" />
     <ProjectReference Include="..\Domain\Domain.fsproj" />
   </ItemGroup>
 

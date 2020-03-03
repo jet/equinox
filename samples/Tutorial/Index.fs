@@ -13,7 +13,28 @@ module Events =
         | Deleted of ItemIds
         | Snapshotted of Items<'v>
         interface TypeShape.UnionContract.IUnionContract
-    let codec<'v> = FsCodec.NewtonsoftJson.Codec.Create<Event<'v>>()
+
+    module Utf8ArrayCodec =
+        let codec<'v> = FsCodec.NewtonsoftJson.Codec.Create<Event<'v>>()
+
+    module JsonElementCodec =
+        open FsCodec.SystemTextJson
+        open System.Text.Json
+
+        let private encode<'v> (options: JsonSerializerOptions) = fun (evt: Event<'v>) ->
+            match evt with
+            | Added items -> "Added", JsonSerializer.SerializeToElement(items, options)
+            | Deleted itemIds -> "Deleted", JsonSerializer.SerializeToElement(itemIds, options)
+            | Snapshotted items -> "Snapshotted", JsonSerializer.SerializeToElement(items, options)
+
+        let private tryDecode<'v> (options: JsonSerializerOptions) = fun (eventType, data: JsonElement) ->
+            match eventType with
+            | "Added" -> Some (Added <| JsonSerializer.DeserializeElement<Items<'v>>(data, options))
+            | "Deleted" -> Some (Deleted <| JsonSerializer.DeserializeElement<ItemIds>(data, options))
+            | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Items<'v>>(data, options))
+            | _ -> None
+
+        let codec<'v> options = FsCodec.Codec.Create<Event<'v>, JsonElement>(encode<'v> options, tryDecode<'v> options)
 
 module Fold =
 
@@ -54,14 +75,17 @@ let create resolve indexId = Service(indexId, resolve, maxAttempts = 3)
 module Cosmos =
 
     open Equinox.Cosmos
+    open FsCodec.SystemTextJson.Serialization
+
     let createService<'v> (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
+        let codec = Events.JsonElementCodec.codec<'v> JsonSerializer.defaultOptions
+        let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         create resolve
 
 module MemoryStore =
 
     let createService store =
-        let resolve = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial).Resolve
+        let resolve = Equinox.MemoryStore.Resolver(store, Events.Utf8ArrayCodec.codec, Fold.fold, Fold.initial).Resolve
         create resolve

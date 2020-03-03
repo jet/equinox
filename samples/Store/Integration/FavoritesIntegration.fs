@@ -2,6 +2,7 @@
 
 open Equinox
 open Equinox.Cosmos.Integration
+open FsCodec.SystemTextJson.Serialization
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -14,18 +15,19 @@ let createMemoryStore () =
 let createServiceMemory log store =
     Backend.Favorites.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
-let codec = Domain.Favorites.Events.codec
+let eventStoreCodec = Domain.Favorites.Events.Utf8ArrayCodec.codec
 let createServiceGes gateway log =
-    let resolve = EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
+    let resolve = EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
     Backend.Favorites.Service(log, resolve)
 
+let cosmosCodec = Domain.Favorites.Events.JsonElementCodec.codec JsonSerializer.defaultOptions
 let createServiceCosmos gateway log =
-    let resolve = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
+    let resolve = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
     Backend.Favorites.Service(log, resolve)
 
 let createServiceCosmosRollingState gateway log =
     let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
-    let resolve = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
+    let resolve = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
     Backend.Favorites.Service(log, resolve)
 
 type Tests(testOutputHelper) =

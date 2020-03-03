@@ -13,7 +13,26 @@ module Events =
     type Event =
         | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module Utf8ArrayCodec =
+        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    module JsonElementCodec =
+        open FsCodec.SystemTextJson
+        open System.Text.Json
+
+        let private encode (options: JsonSerializerOptions) =
+            fun (evt: Event) ->
+                match evt with
+                | Updated value -> "contactPreferencesChanged", JsonSerializer.SerializeToElement(value, options)
+
+        let private tryDecode (options: JsonSerializerOptions) =
+            fun (eventType, data: JsonElement) ->
+                match eventType with
+                | "contactPreferencesChanged" -> Some (Updated <| JsonSerializer.DeserializeElement<Value>(data, options))
+                | _ -> None
+        
+        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
 
 module Fold =
 
