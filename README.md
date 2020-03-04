@@ -502,9 +502,15 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
 
 ## Access Strategies
 
-### `Equinox.Cosmos.AccessStrategy` cheat sheet
+An Access Strategy in Equinox defines any optimizations regarding how one arrives at a State based on the Events stored in a Stream.
 
-TL;DR (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive) `Equinox.Cosmos`
+The specifics of an Access Strategy depend on what makes sense for a specific Store, i.e. `Equinox.Cosmos` necessarily has a different set than `Equinox.EventStore`.
+
+Note its not important to select a strategy until you've actually actually modelled your aggregate, see [what if I change my access strategy](#changing-access-strategy)
+
+### `Equinox.Cosmos.AccessStrategy`
+
+TL;DR (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive) `Equinox.Cosmos`:
 - keeps all the events for a stream in a single logical partition inside a single CosmosDB _logical partition_
 - always has a special 'index' document per logical partition/stream which is accessible via an efficient _point read_
 - the Access Strategies a) define what we put in the `Tip` b) how we short circuit loading if we have a snapshot c) allows us to post-process the events we are writing as required for reasons of optimization
