@@ -530,7 +530,7 @@ TL;DR `Equinox.Cosmos` (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-
 #### Glossary
 - `state`: the state which our `decide` or `interpret` inspected to determine the proposed `events`
 - `events`: the changes the `decide`/`interpret` is proposing as a result of this attempt to `Transact`
-- `fold`: TODO finish typing
+- `fold`: standard function, supplied per Aggregate, which is used to apply Events to a given State in order to [`evolve`](http://thinkbeforecoding.github.io/FsUno.Prod/Dynamical%20Systems.html) the State per implications of each Event that has occurred
 - `state'`: the post-state derived from the current `state` + the proposed `events` being written
 - `Tip`: Special document with `id = "-1"` maintained in same logical partition as event documents are for this _stream_
 - `unfold`: JSON objects maintained in the `Tip`, which represent Snapshots taken at a given point in the event timeline. NOTE: the `fold`/`evolve` is presented snapshots as yet-another-Event; the only differences are a) they are not stored as events b) every write replaces all the `unfold`s in `Tip` with the result of the `toSnapshot` or `toSnapshots` function as defined in the given Access Strategy
