@@ -510,7 +510,7 @@ Note its not important to select a strategy until you've actually actually model
 
 ### `Equinox.Cosmos.AccessStrategy`
 
-TL;DR `Equinox.Cosmos` (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, see [Glossary, below the table)[ccess-strategy-glossary] for definition of terms):
+TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, and [glossary, below the table)[#access-strategy-glossary] for definition of terms)
 - keeps all the events for a stream in a single single [CosmosDB _logical partition_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data)
 - always has a special 'index' document (we term it the `Tip` document), per logical partition/stream which is accessible via an efficient _point read_
 - the Access Strategies a) define what we put in the `Tip` b) how we short circuit loading if we have a snapshot c) allows us to post-process the events we are writing as required for reasons of optimization
