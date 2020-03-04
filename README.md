@@ -500,6 +500,36 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
 - after the push has resulted in a successful build, click through from the commit on github thru to the Azure Pipelines build state and verify _all_ artifacts bear the correct version suffix (if the tags were not pushed alongside the commit, they can be wrong). Then, and only then, do the Release (which will upload to nuget.org using a nuget API key that has upload permissions for the packages)
 - _When adding new packages_: For safety, the NuGet API Key used by the Azure DevOps Releases step can only upload new versions of existing packages. As a result, the first version of any new package needs to be manually uploaded out of band. (then invite jet.com to become owner so subsequent releases can do an automated upload [after the request has been (manually) accepted])
 
+## Access Strategies
+
+### `Equinox.Cosmos.AccessStrategy` cheat sheet
+
+TL;DR (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive) `Equinox.Cosmos`
+- keeps all the events for a stream in a single logical partition inside a single CosmosDB _logical partition_
+- always has a special 'index' document per logical partition/stream which is accessible via an efficient _point read_
+- the Access Strategies a) define what we put in the `Tip` b) how we short circuit loading if we have a snapshot c) allows us to post-process the events we are writing as required for reasons of optimization
+- only affect performance; you should still be able to infer the state of the aggregate based on the `fold` of all the `events` ever written on top of an `initial` state
+
+| Strategy | TL;DR | `Tip` document maintains | Reads involve | Writes involve | Suitable for |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `Unoptimized` | Store keep Events only (but there's still a `Tip` document) | count of events only | queries for and folds all events (though the cache means it only reads events it has not seen) - the `Tip` is never read, even e.g. if someone previously put a snapshot in there | inserts a document with the events, updates `Tip` to reflect updated event count | Low load, initial implementations |
+| `LatestKnownEvent` | Special mode for when every event is independent | A copy of the most recent event, together with the count | Reading the `Tip` (never the events) | Inserting a document with the new event, updating the Tip to a) up count b) CC the event for efficient access | Tracking changes to a document where we're not really modelling events as such |
+| `Snapshot` | Keep a consistent (single) snapshot in `Tip` at all times | A single unfold produced by `toSnapshot` based on the state including any events being written every time, together with the event count | 1) read Tip; stop if `isOrigin` accepts it <br/> 2) read backwards until `isOrigin` likes an event, or we hit start of stream | 1) Produce proposed `state'` <br/> 2) write events to new document + `toSnapshot state'` result into Tip with new event count | Typical event-sourced usage patterns |
+| `MultiSnapshot` | As per `Snapshot` but `toSnapshots` can return arbitrary number of `unfold`s | Multiple (consistent) snapshots, together with event count | As per `Snapshot`, stop if `isOrigin` yields `true` for any `unfold` (then fall back to folding from base event or a reset event) | 1) Produce `state'` <br/> 2) Write events to new document + `toSnapshots state'` to `Tip` _(could be 0 or many rather than one) | Blue-green deployments where an old version and a new version of the app cannot share a single snapshot schema | 
+| `RollingState` | Perf like `Snapshot`, but don't even store the events | `toSnapshot state` - the squashed `state` + `events` | Read `Tip` (can fall back to building from events as per `Snapshot` mode if nothing in Tip, but normally there are no events) | 1) produce `state'` <br/> 2) update `Tip` with `toSnapshot state'` <br/> 3) **no events are written** <br/> 4) Concurrency Control is based on the `_etag` of the Tip, not an expectedVersion / event count | Maintaining state of an Aggregate with lots of changes that a) you don't need a record of the individual changes of yet b) would like to model, test and develop as if one did |
+| `Custom` | General form, which all the preceding strategies are implemented in terms of | What `transmute` yields as the `fst` of its result | as per `Snapshot` or `MultiSnapshot` - see if any `unfold`s pass the `isOrigin` test, otherwise work backward until a _Reset Event_ or start of stream | 1) produce `state'` <br/> 2) a) use `transmute events state` to determine the `unfold`s (if any to write), and the `events` (if any) to emit b) execute the insert and/or upsert operations, contingent on the `_etag` of the opening `state` |
+
+Where:
+- `state`: the state which our `decide` or `interpret` inspected to determine the proposed `events`
+- `events`: the changes the `decide`/`interpret` is proposing as a result of this attempt to `Transact`
+- `state'`: the post-state derived from the current `state` + the proposed `events` being written
+- `Tip`: Special document with `id = "-1"` maintained in same logical partition as event documents are for this _stream_
+- `unfold`: JSON objects maintained in the `Tip`, which represent Snapshots taken at a given point in the event timeline. NOTE: the `fold`/`evolve` is presented snapshots as yet-another-Event; the only differences are a) they are not stored as events b) every write replaces all the `unfold`s in `Tip` with the result of the `toSnapshot` or `toSnapshots` function as defined in the given Access Strategy
+- `isOrigin`: predicate function supplied to an Access Strategy which is reponsible for identifying the starting point from which we'll build state. Needs to yield `true` for relevant Snapshots or Reset Events
+- `initial`: the _state_ we fold all the events we load into, if loading does not encounter an `isOrigin` event
+- Snapshot: a single serializable representation of the `state'`, facilitating optimal retrieval patterns when a stream contains a significant number of events. NOTE snapshots should not ever yield an observable difference in the observed `state` when compared to building it from the record of events; it should be solely a behavior-preserving optimization.
+- Reset Event: an permanent event (not a Snapshot) for which an `isOrigin` predicate yields `true` (example, a CartCleared event means there is no point in looking at _any_ preceding events in order to determine what's in the cart; we can start folding from that point)
+
 ## FAQ
 
 ### What _is_ Equinox?
