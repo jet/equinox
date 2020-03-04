@@ -512,8 +512,14 @@ Note its not important to select a strategy until you've actually actually model
 
 TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, and [glossary, below the table](#access-strategy-glossary) for definition of terms)
 - keeps all the events for a stream in a single single [CosmosDB _logical partition_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data)
-- always has a special 'index' document (we term it the `Tip` document), per logical partition/stream which is accessible via an efficient _point read_
-- the Access Strategies a) define what we put in the `Tip` b) how we short circuit loading if we have a snapshot c) allows us to post-process the events we are writing as required for reasons of optimization
+- always has a special 'index' document (we term it the `Tip` document), per logical partition/stream that is accessible via an efficient _point read_
+- all writes touch the `Tip`, so we have a natural way to invalidate any cached State for a given Stream - we retain the `_etag` of the `Tip` document, and updates (or consistent reads) are contingent on it not having changed
+- the Access Strategies
+  
+  a. define what we put in the `Tip`
+  b. how we short circuit loading if we have a snapshot
+  c. allows us to post-process the events we are writing as required for reasons of optimization
+  
 - Concurrency control of updates is by virtue of the fact that every update to the `Tip` touches the document and thus alters the `_etag` value (we don't need to rely on uniqueness constraints blocking inserts of documents with Events). This is critical for the `RollingState` and `Custom` strategies.
 - The `Tip` document, and the fact we hold it's `_etag` in our cache, is at the heart of why consistent reads are guaranteed to be efficient (Equinox does the read of the `Tip` document contingent on the `_etag` not having changed; a read of any size costs only 1 RU if the result is `304 NOT Modified`)
 - only affect performance; you should still be able to infer the state of the aggregate based on the `fold` of all the `events` ever written on top of an `initial` state
