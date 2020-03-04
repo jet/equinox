@@ -510,10 +510,11 @@ Note its not important to select a strategy until you've actually actually model
 
 ### `Equinox.Cosmos.AccessStrategy`
 
-TL;DR (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive) `Equinox.Cosmos`:
+TL;DR `Equinox.Cosmos` (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, see [Glossary, below the table)[ccess-strategy-glossary] for definition of terms):
 - keeps all the events for a stream in a single single [CosmosDB _logical partition_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data)
-- always has a special 'index' document per logical partition/stream which is accessible via an efficient _point read_
+- always has a special 'index' document (we term it the `Tip` document), per logical partition/stream which is accessible via an efficient _point read_
 - the Access Strategies a) define what we put in the `Tip` b) how we short circuit loading if we have a snapshot c) allows us to post-process the events we are writing as required for reasons of optimization
+- Concurrency control of updates is by virtue of the fact that every update to the `Tip` touches the document and thus alters the `_etag` value (we don't need to rely on uniqueness constraints blocking inserts of documents with Events)
 - only affect performance; you should still be able to infer the state of the aggregate based on the `fold` of all the `events` ever written on top of an `initial` state
 
 | Strategy | TL;DR | `Tip` document maintains | Reads involve | Writes involve | Suitable for |
@@ -525,9 +526,11 @@ TL;DR (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep
 | `RollingState` | Perf like `Snapshot`, but don't even store the events | `toSnapshot state` - the squashed `state` + `events` | Read `Tip` (can fall back to building from events as per `Snapshot` mode if nothing in Tip, but normally there are no events) | 1) produce `state'` <br/> 2) update `Tip` with `toSnapshot state'` <br/> 3) **no events are written** <br/> 4) Concurrency Control is based on the `_etag` of the Tip, not an expectedVersion / event count | Maintaining state of an Aggregate with lots of changes that a) you don't need a record of the individual changes of yet b) would like to model, test and develop as if one did |
 | `Custom` | General form, which all the preceding strategies are implemented in terms of | What `transmute` yields as the `fst` of its result | as per `Snapshot` or `MultiSnapshot` - see if any `unfold`s pass the `isOrigin` test, otherwise work backward until a _Reset Event_ or start of stream | 1) produce `state'` <br/> 2) a) use `transmute events state` to determine the `unfold`s (if any to write), and the `events` (if any) to emit b) execute the insert and/or upsert operations, contingent on the `_etag` of the opening `state` |
 
-Where:
+<a name="access-strategy-glossary"></a>
+#### Glossary
 - `state`: the state which our `decide` or `interpret` inspected to determine the proposed `events`
 - `events`: the changes the `decide`/`interpret` is proposing as a result of this attempt to `Transact`
+- `fold`: TODO finish typing
 - `state'`: the post-state derived from the current `state` + the proposed `events` being written
 - `Tip`: Special document with `id = "-1"` maintained in same logical partition as event documents are for this _stream_
 - `unfold`: JSON objects maintained in the `Tip`, which represent Snapshots taken at a given point in the event timeline. NOTE: the `fold`/`evolve` is presented snapshots as yet-another-Event; the only differences are a) they are not stored as events b) every write replaces all the `unfold`s in `Tip` with the result of the `toSnapshot` or `toSnapshots` function as defined in the given Access Strategy
