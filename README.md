@@ -502,15 +502,15 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
 
 ## Access Strategies
 
-An Access Strategy in Equinox defines any optimizations regarding how one arrives at a State based on the Events stored in a Stream.
+An Access Strategy in Equinox defines any optimizations regarding how one arrives at a State of an Aggregate based on the Events stored in a Stream in an Event Store.
 
-The specifics of an Access Strategy depend on what makes sense for a specific Store, i.e. `Equinox.Cosmos` necessarily has a different set than `Equinox.EventStore`.
+The specifics of an Access Strategy depend on what makes sense for a specific Store, i.e. `Equinox.Cosmos` necessarily has a significantly different set than `Equinox.EventStore` even if there is an intersection.
 
 Note its not important to select a strategy until you've actually actually modelled your aggregate, see [what if I change my access strategy](#changing-access-strategy)
 
 ### `Equinox.Cosmos.AccessStrategy`
 
-TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, and [glossary, below the table)[#access-strategy-glossary] for definition of terms)
+TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, and [glossary, below the table](#access-strategy-glossary) for definition of terms)
 - keeps all the events for a stream in a single single [CosmosDB _logical partition_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data)
 - always has a special 'index' document (we term it the `Tip` document), per logical partition/stream which is accessible via an efficient _point read_
 - the Access Strategies a) define what we put in the `Tip` b) how we short circuit loading if we have a snapshot c) allows us to post-process the events we are writing as required for reasons of optimization
