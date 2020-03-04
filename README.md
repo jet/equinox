@@ -502,21 +502,22 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
 
 ## Access Strategies
 
-An Access Strategy in Equinox defines any optimizations regarding how one arrives at a State of an Aggregate based on the Events stored in a Stream in an Event Store.
+An Access Strategy defines any optimizations regarding how one arrives at a State of an Aggregate based on the Events stored in a Stream in a Store.
 
-The specifics of an Access Strategy depend on what makes sense for a specific Store, i.e. `Equinox.Cosmos` necessarily has a significantly different set than `Equinox.EventStore` even if there is an intersection.
+The specifics of an Access Strategy depend on what makes sense for a given Store, i.e. `Equinox.Cosmos` necessarily has a significantly different set of strategies than `Equinox.EventStore` (although there is an intersection).
 
 Access Strategies only affect performance; you should still be able to infer the state of the aggregate based on the `fold` of all the `events` ever written on top of an `initial` state
 
-Note its not important to select a strategy until you've actually actually modelled your aggregate, see [what if I change my access strategy](#changing-access-strategy)
+NOTE: its not important to select a strategy until you've actually actually modelled your aggregate, see [what if I change my access strategy](#changing-access-strategy)
 
 ### `Equinox.Cosmos.AccessStrategy`
 
 TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, and [glossary, below the table](#access-strategy-glossary) for definition of terms)
 - keeps all the events for a stream in a single single [CosmosDB _logical partition_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data)
-- always has a special 'index' document (we term it the `Tip` document), per logical partition/stream that is accessible via an efficient _point read_
+- always has a special 'index' document (we term it the `Tip` document), per logical partition/stream that is accessible via an efficient _point read_ (it always has a CosmosDB `id` value of `"-1"`)
+- Events are stored in immutable documents in the logical partition, the `Tip` document is the only document that's ever updated. 
 - all writes touch the `Tip`, so we have a natural way to invalidate any cached State for a given Stream - we retain the `_etag` of the `Tip` document, and updates (or consistent reads) are contingent on it not having changed
-- Concurrency control of updates is by virtue of the fact that every update to the `Tip` touches the document _and thus alters (invalidates) the `_etag` value_. We thus don't rely on uniqueness constraints blocking inserts of documents with Events and/or having to add a new Event every time we are updating something. (This fact is critical for the `RollingState` and `Custom` strategies).
+- Concurrency control of updates is by virtue of the fact that every update to the `Tip` touches the document _and thus alters (invalidates) the `_etag` value_. This means we don't rely on uniqueness constraints blocking inserts of Event documents and/or having to add a new Event every time we are updating something. (This fact is crucial for the `RollingState` and `Custom` strategies).
 - The `Tip` document, (and the fact we hold its `_etag` in our cache alongside the State we have derived from the Events), is at the heart of why consistent reads are guaranteed to be efficient (Equinox does the read of the `Tip` document contingent on the `_etag` not having changed; a read of any size costs only 1 RU if the result is `304 NOT Modified`)
 - Specific Access Strategies:
   - define what we put in the `Tip`
@@ -534,16 +535,26 @@ TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-S
 
 <a name="access-strategy-glossary"></a>
 #### Glossary
-- `state`: the state which our `decide` or `interpret` inspected to determine the proposed `events`
-- `events`: the changes the `decide`/`interpret` is proposing as a result of this attempt to `Transact`
+- `decide`/`interpret`: Application function that inspects a `state` to propose `events`, under control of a `Transact` loop.
+- `Transact` loop: Equinox Core function that runs your `decide`/`interpret`, and then `sync`s any generated `events` to the Store.
+- `state`: The (potentially cached) version of the State of the Aggregate that `Transact` supplied to your `decide`/ `interpret`.
+- `events`: The changes the `decide`/`interpret` generated (that `Transact` is trying to `sync` to the Store).
 - `fold`: standard function, supplied per Aggregate, which is used to apply Events to a given State in order to [`evolve`](http://thinkbeforecoding.github.io/FsUno.Prod/Dynamical%20Systems.html) the State per implications of each Event that has occurred
-- `state'`: the post-state derived from the current `state` + the proposed `events` being written
-- `Tip`: Special document with `id = "-1"` maintained in same logical partition as event documents are for this _stream_
-- `unfold`: JSON objects maintained in the `Tip`, which represent Snapshots taken at a given point in the event timeline. NOTE: the `fold`/`evolve` is presented snapshots as yet-another-Event; the only differences are a) they are not stored as events b) every write replaces all the `unfold`s in `Tip` with the result of the `toSnapshot` or `toSnapshots` function as defined in the given Access Strategy
-- `isOrigin`: predicate function supplied to an Access Strategy which is reponsible for identifying the starting point from which we'll build state. Needs to yield `true` for relevant Snapshots or Reset Events
-- `initial`: the _state_ we fold all the events we load into, if loading does not encounter an `isOrigin` event
-- Snapshot: a single serializable representation of the `state'`, facilitating optimal retrieval patterns when a stream contains a significant number of events. NOTE snapshots should not ever yield an observable difference in the observed `state` when compared to building it from the record of events; it should be solely a behavior-preserving optimization.
-- Reset Event: an permanent event (not a Snapshot) for which an `isOrigin` predicate yields `true` (example, a CartCleared event means there is no point in looking at _any_ preceding events in order to determine what's in the cart; we can start folding from that point)
+- `state'`: The State of an Aggregate (post-state in FP terms), derived from the current `state` + the proposed `events` being `sync`ed.
+- `Tip`: Special document stored alongside the Events (in the same logical partition) which holds the `unfolds` associated with the current State of the _stream_.
+- `sync`: [Stored procedure we use to manage consistent update of the Tip alongside insertion of Event Batch Documents](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#sync-stored-procedure) (contingent on the Tip's `_etag` not having changed)
+- `unfold`: JSON objects maintained in the `Tip`, which represent Snapshots taken at a given point in the event timeline for this stream.
+  - the `fold`/`evolve` function is presented Snapshots as if it was yet-another-Event
+  - the only differences are
+    - a) they are not stored as in (immutable) Event documents as other Events are
+    - b) every write replaces all the `unfold`s in `Tip` with the result of the `toSnapshot`(s) function as defined in the given Access Strategy.
+- `isOrigin`: A predicate function supplied to an Access Strategy that defines the starting point from which we'll build a `state`.
+  - Must yield `true` for relevant Snapshots or Reset Events.
+- `initial`: The (Application-defined) _state_ value all loaded events `fold` into, if an `isOrigin` event is not encountered while walking back through th `unfolds` and Events and instead hit the start of the stream.
+- Snapshot: a single serializable representation of the `state'`
+  - Facilitates optimal retrieval patterns when a stream contains a significant number of events
+  - NOTE: Snapshots should not ever yield an observable difference in the `state` when compared to building it from the timeline of events; it should be solely a behavior-preserving optimization.
+- Reset Event: an permanent event (not a Snapshot) for which an `isOrigin` predicate yields `true` (example, a CartCleared event means there is no point in looking at _any_ preceding events in order to determine what's in the cart; we can start folding from that point).
 
 ## FAQ
 
