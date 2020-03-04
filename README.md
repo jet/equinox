@@ -511,7 +511,7 @@ Note its not important to select a strategy until you've actually actually model
 ### `Equinox.Cosmos.AccessStrategy`
 
 TL;DR (see [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive) `Equinox.Cosmos`:
-- keeps all the events for a stream in a single logical partition inside a single CosmosDB _logical partition_
+- keeps all the events for a stream in a single single [CosmosDB _logical partition_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data)
 - always has a special 'index' document per logical partition/stream which is accessible via an efficient _point read_
 - the Access Strategies a) define what we put in the `Tip` b) how we short circuit loading if we have a snapshot c) allows us to post-process the events we are writing as required for reasons of optimization
 - only affect performance; you should still be able to infer the state of the aggregate based on the `fold` of all the `events` ever written on top of an `initial` state
