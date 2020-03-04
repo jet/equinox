@@ -524,14 +524,16 @@ TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-S
   - control how we short circuit loading if we have a Snapshot or Reset Event
   - allow one to post-process the events we are writing as required for reasons of optimization
 
-| Strategy | TL;DR | `Tip` document maintains | Reads involve | Writes involve | Suitable for |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `Unoptimized` | Store keep Events only (but there's still a `Tip` document) | count of events only | queries for and folds all events (though the cache means it only reads events it has not seen) - the `Tip` is never read, even e.g. if someone previously put a snapshot in there | inserts a document with the events, updates `Tip` to reflect updated event count | Low load, initial implementations |
-| `LatestKnownEvent` | Special mode for when every event is independent | A copy of the most recent event, together with the count | Reading the `Tip` (never the events) | Inserting a document with the new event, updating the Tip to a) up count b) CC the event for efficient access | Tracking changes to a document where we're not really modelling events as such |
-| `Snapshot` | Keep a consistent (single) snapshot in `Tip` at all times | A single unfold produced by `toSnapshot` based on the state including any events being written every time, together with the event count | 1) read Tip; stop if `isOrigin` accepts it <br/> 2) read backwards until `isOrigin` likes an event, or we hit start of stream | 1) Produce proposed `state'` <br/> 2) write events to new document + `toSnapshot state'` result into Tip with new event count | Typical event-sourced usage patterns |
-| `MultiSnapshot` | As per `Snapshot` but `toSnapshots` can return arbitrary number of `unfold`s | Multiple (consistent) snapshots, together with event count | As per `Snapshot`, stop if `isOrigin` yields `true` for any `unfold` (then fall back to folding from base event or a reset event) | 1) Produce `state'` <br/> 2) Write events to new document + `toSnapshots state'` to `Tip` _(could be 0 or many rather than one) | Blue-green deployments where an old version and a new version of the app cannot share a single snapshot schema | 
-| `RollingState` | Perf like `Snapshot`, but don't even store the events | `toSnapshot state` - the squashed `state` + `events` | Read `Tip` (can fall back to building from events as per `Snapshot` mode if nothing in Tip, but normally there are no events) | 1) produce `state'` <br/> 2) update `Tip` with `toSnapshot state'` <br/> 3) **no events are written** <br/> 4) Concurrency Control is based on the `_etag` of the Tip, not an expectedVersion / event count | Maintaining state of an Aggregate with lots of changes that a) you don't need a record of the individual changes of yet b) would like to model, test and develop as if one did |
-| `Custom` | General form, which all the preceding strategies are implemented in terms of | What `transmute` yields as the `fst` of its result | as per `Snapshot` or `MultiSnapshot` - see if any `unfold`s pass the `isOrigin` test, otherwise work backward until a _Reset Event_ or start of stream | 1) produce `state'` <br/> 2) a) use `transmute events state` to determine the `unfold`s (if any to write), and the `events` (if any) to emit b) execute the insert and/or upsert operations, contingent on the `_etag` of the opening `state` |
+#### `Cosmos` Access Strategy overviews
+
+| Strategy | TL;DR | `Tip` document maintains | Best suited for |
+| :--- | :--- | :--- | :--- |
+| `Unoptimized` | Store keep Events only (but there's still a `Tip` document) | Count of events only | No load, event counts or event sizes worth talking about, initial implementations |
+| `LatestKnownEvent` | Special mode for when every event is independent | A copy of the most recent event, together with the count | Tracking changes to a document where we're not really modelling events as such |
+| `Snapshot` | Keep a consistent (single) snapshot in `Tip` at all times | A single unfold produced by `toSnapshot` based on the state including any events being written every time, together with the event count | Typical event-sourced usage patterns |
+| `MultiSnapshot` | As per `Snapshot` but `toSnapshots` can return arbitrary number of `unfold`s | Multiple (consistent) snapshots, together with event count | Blue-green deployments where an old version and a new version of the app cannot share a single snapshot schema | 
+| `RollingState` | Perf as good as `Snapshot`, but don't even store the events so we will never hit CosmosDB stream size limits | `toSnapshot state` - the squashed `state` + `events` | Maintaining state of an Aggregate with lots of changes that a) you don't need a record of the individual changes of yet b) would like to model, test and develop as if one did |
+| `Custom` | General form, which all the preceding strategies are implemented in terms of | What `transmute` yields as the `fst` of its result | Limited by your imagination, e.g. [emitting events once per hour but otherwise like `RollingState`](https://github.com/jet/propulsion/search?q=transmute&unscoped_q=transmute) |
 
 <a name="access-strategy-glossary"></a>
 #### Glossary
@@ -555,6 +557,17 @@ TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-S
   - Facilitates optimal retrieval patterns when a stream contains a significant number of events
   - NOTE: Snapshots should not ever yield an observable difference in the `state` when compared to building it from the timeline of events; it should be solely a behavior-preserving optimization.
 - Reset Event: an permanent event (not a Snapshot) for which an `isOrigin` predicate yields `true` (example, a CartCleared event means there is no point in looking at _any_ preceding events in order to determine what's in the cart; we can start folding from that point).
+
+#### `Cosmos` Read and Write policies
+
+| Strategy | Reads involve | Writes involve |
+| :--- | :--- | :--- |
+| `Unoptimized` | queries for and `fold`s all events (although the cache means it only reads events it has not seen) - the `Tip` is never read, even e.g. if someone previously put a snapshot in there | inserts a document with the events, updates `Tip` to reflect updated event count |
+| `LatestKnownEvent` | Reading the `Tip` (never the events) | Inserting a document with the new event, updating the Tip to a) up count b) CC the event for efficient access |
+| `Snapshot` | 1) read Tip; stop if `isOrigin` accepts it <br/> 2) read backwards until `isOrigin` likes an event, or we hit start of stream | 1) Produce proposed `state'` <br/> 2) write events to new document + `toSnapshot state'` result into Tip with new event count |
+| `MultiSnapshot` | As per `Snapshot`, stop if `isOrigin` yields `true` for any `unfold` (then fall back to folding from base event or a reset event) | 1) Produce `state'` <br/> 2) Write events to new document + `toSnapshots state'` to `Tip` _(could be 0 or many rather than one) |
+| `RollingState` | Read `Tip` (can fall back to building from events as per `Snapshot` mode if nothing in Tip, but normally there are no events) | 1) produce `state'` <br/> 2) update `Tip` with `toSnapshot state'` <br/> 3) **no events are written** <br/> 4) Concurrency Control is based on the `_etag` of the Tip, not an expectedVersion / event count |
+| `Custom` | as per `Snapshot` or `MultiSnapshot` - see if any `unfold`s pass the `isOrigin` test, otherwise work backward until a _Reset Event_ or start of stream | 1) produce `state'` <br/> 2) a) use `transmute events state` to determine the `unfold`s (if any to write), and the `events` (if any) to emit b) execute the insert and/or upsert operations, contingent on the `_etag` of the opening `state` |
 
 ## FAQ
 
