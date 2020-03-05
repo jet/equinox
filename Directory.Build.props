@@ -21,9 +21,6 @@
     <!-- disable sourcelink on mono, to workaround https://github.com/dotnet/sourcelink/issues/155 -->
     <EnableSourceLink Condition=" '$(OS)' != 'Windows_NT' AND '$(MSBuildRuntimeType)' != 'Core' ">false</EnableSourceLink>
 
-    <!-- suppress false positive warning FS2003 about invalid version of AssemblyInformationalVersionAttribute -->
-    <!-- supress NU5105 triggered by trailing dotted elements such as .43 and .2 in e.g.: pr.43-rc1.2: The package version '<X>' uses SemVer 2.0.0 or components of SemVer 1.0.0 that are not supported on legacy clients. Change the package version to a SemVer 1.0.0 string. If the version contains a release label it must start with a letter. This message can be ignored if the package is not intended for older clients. -->
-    <NoWarn>$(NoWarn);FS2003;NU5105</NoWarn>
   </PropertyGroup>
   <ItemGroup> <!-- net461 ref assemblies https://stackoverflow.com/a/57384175/11635 -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="All" />
