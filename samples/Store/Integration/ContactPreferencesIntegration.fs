@@ -2,26 +2,24 @@
 
 open Equinox
 open Equinox.Cosmos.Integration
-open FsCodec.SystemTextJson.Serialization
 open Swensen.Unquote
-open Xunit
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
 
 let createMemoryStore () =
-    new MemoryStore.VolatileStore<_>()
+     MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
     Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
-let eventStoreCodec = Domain.ContactPreferences.Events.Utf8ArrayCodec.codec
+let eventStoreCodec = Domain.ContactPreferences.Events.codecNewtonsoft
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
     EventStore.Resolver(gateway 1, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
     EventStore.Resolver(gateway defaultBatchSize, eventStoreCodec, fold, initial).Resolve
 
-let cosmosCodec = Domain.ContactPreferences.Events.JsonElementCodec.codec JsonSerializer.defaultOptions
+let cosmosCodec = Domain.ContactPreferences.Events.codecStj
 let resolveStreamCosmosWithLatestKnownEventSemantics gateway =
     Cosmos.Resolver(gateway 1, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamCosmosUnoptimized gateway =
@@ -76,7 +74,7 @@ type Tests(testOutputHelper) =
         let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosWithLatestKnownEventSemantics
         do! act service args
     }
-    
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosRollingUnfolds

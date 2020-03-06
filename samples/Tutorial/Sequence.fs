@@ -26,23 +26,8 @@ module Events =
         | Reserved of Reserved
         interface TypeShape.UnionContract.IUnionContract
 
-    module Utf8ArrayCodec =
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-
-    module JsonElementCodec =
-        open FsCodec.SystemTextJson
-        open System.Text.Json
-
-        let private encode (options: JsonSerializerOptions) = fun (evt: Event) ->
-            match evt with
-            | Reserved reserved -> "Reserved", JsonSerializer.SerializeToElement(reserved, options)
-
-        let private tryDecode (options: JsonSerializerOptions) = fun (eventType, data: JsonElement) ->
-            match eventType with
-            | "Reserved" -> Some (Reserved <| JsonSerializer.DeserializeElement<Reserved>(data, options))
-            | _ -> None
-
-        let codec options= FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
 
@@ -71,12 +56,10 @@ let create resolve = Service(Serilog.Log.ForContext<Service>(), resolve, maxAtte
 module Cosmos =
 
     open Equinox.Cosmos
-    open FsCodec.SystemTextJson.Serialization
 
     let private createService (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let codec = Events.JsonElementCodec.codec JsonSerializer.defaultOptions
-        let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
+        let resolve = Resolver(context, Events.codecStj, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
         create resolve
 
     module LatestKnownEvent =

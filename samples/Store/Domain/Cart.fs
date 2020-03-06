@@ -25,33 +25,8 @@ module Events =
         | ItemWaiveReturnsChanged   of ItemWaiveReturnsInfo
         interface TypeShape.UnionContract.IUnionContract
 
-    module Utf8ArrayCodec =
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-
-    module JsonElementCodec =
-        open FsCodec.SystemTextJson
-        open System.Text.Json
-
-        let private encode (options: JsonSerializerOptions) =
-            fun (evt: Event) ->
-                match evt with
-                | Snapshotted state -> "Snapshotted", JsonSerializer.SerializeToElement(state, options)
-                | ItemAdded addInfo -> "ItemAdded", JsonSerializer.SerializeToElement(addInfo, options)
-                | ItemRemoved removeInfo -> "ItemRemoved", JsonSerializer.SerializeToElement(removeInfo, options)
-                | ItemQuantityChanged changeInfo -> "ItemQuantityChanged", JsonSerializer.SerializeToElement(changeInfo, options)
-                | ItemWaiveReturnsChanged waiveInfo -> "ItemWaiveReturnsChanged", JsonSerializer.SerializeToElement(waiveInfo, options)
-    
-        let private tryDecode (options: JsonSerializerOptions) =
-            fun (eventType, data: JsonElement) ->
-                match eventType with
-                | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Compaction.State>(data, options))
-                | "ItemAdded" -> Some (ItemAdded <| JsonSerializer.DeserializeElement<ItemAddInfo>(data, options))
-                | "ItemRemoved" -> Some (ItemRemoved <| JsonSerializer.DeserializeElement<ItemRemoveInfo>(data, options))
-                | "ItemQuantityChanged" -> Some (ItemQuantityChanged <| JsonSerializer.DeserializeElement<ItemQuantityChangeInfo>(data, options))
-                | "ItemWaiveReturnsChanged" -> Some (ItemWaiveReturnsChanged <| JsonSerializer.DeserializeElement<ItemWaiveReturnsInfo>(data, options))
-                | _ -> None
-
-        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }
@@ -106,4 +81,4 @@ module Commands =
                 match waived with
                 | Some waived when itemExistsWithDifferentWaiveStatus skuId waived ->
                      yield Events.ItemWaiveReturnsChanged { context = c; skuId = skuId; waived = waived }
-                | _ -> () ] 
+                | _ -> () ]
