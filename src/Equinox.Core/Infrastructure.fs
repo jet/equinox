@@ -73,6 +73,9 @@ type Async with
                     sc ())
             |> ignore)
 
+    static member map (f:'a -> 'b) (a:Async<'a>) : Async<'b> = async.Bind(a, f >> async.Return)
+    static member bind (f:'a -> Async<'b>) (a:Async<'a>) : Async<'b> = async.Bind(a, f)
+
 #if NETSTANDARD2_1
     static member inline AwaitValueTask (vtask: ValueTask<'T>) : Async<'T> = vtask.AsTask() |> Async.AwaitTaskCorrect
 #endif

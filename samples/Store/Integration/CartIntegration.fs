@@ -55,7 +55,7 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrange connect choose resolve = async {
+    let arrangeEs connect choose resolve = async {
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn defaultBatchSize
@@ -63,24 +63,29 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithoutCustomAccessStrategy
+        let! service = arrangeEs connectToLocalEventStoreNode createGesGateway resolveGesStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with RollingSnapshots`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithRollingSnapshots
+        let! service = arrangeEs connectToLocalEventStoreNode createGesGateway resolveGesStreamWithRollingSnapshots
         do! act service args
     }
 
+    let arrangeCosmos connect resolve =
+        let log = createLog ()
+        let ctx: Cosmos.Context = connect log defaultBatchSize
+        Backend.Cart.Service(log, resolve ctx)
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveCosmosStreamWithoutCustomAccessStrategy
+        let service = arrangeCosmos connectToSpecifiedCosmosOrSimulator resolveCosmosStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with With Snapshotting`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveCosmosStreamWithSnapshotStrategy
+        let service = arrangeCosmos connectToSpecifiedCosmosOrSimulator resolveCosmosStreamWithSnapshotStrategy
         do! act service args
     }
