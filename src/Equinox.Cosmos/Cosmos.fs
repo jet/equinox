@@ -444,9 +444,10 @@ module CancellationToken =
     let useOrCreate = function Some ct -> async.Return ct | _ -> Async.CancellationToken
 
 type EquinoxCosmosDatabaseClient (db: CosmosDatabase) =
-    abstract member GetOrCreateContainer: props: ContainerProperties * throughput: ResourceThroughput * ?cancellationToken: CancellationToken -> Async<EquinoxCosmosContainerClient>
+    abstract member GetOrCreateContainer: props: ContainerProperties * ?throughput: ResourceThroughput * ?cancellationToken: CancellationToken -> Async<EquinoxCosmosContainerClient>
     default __.GetOrCreateContainer(props, throughput, cancellationToken) = async {
         let! ct = CancellationToken.useOrCreate cancellationToken
+        let throughput = defaultArg throughput Default
         let! response = 
             match throughput with
             | Default -> db.CreateContainerIfNotExistsAsync(props, cancellationToken = ct) |> Async.AwaitTaskCorrect
@@ -459,9 +460,9 @@ type EquinoxCosmosDatabaseClient (db: CosmosDatabase) =
             
         return EquinoxCosmosContainerClient(response.Container) }
 
-    abstract member GetOrCreateBatchAndTipContainer: containerName: string * throughput: ResourceThroughput * ?cancellationToken: CancellationToken -> Async<EquinoxCosmosContainerClient>
-    default __.GetOrCreateBatchAndTipContainer(containerName, throughput, cancellationToken) = async {
+    member internal __.GetOrCreateBatchAndTipContainer(containerName: string, ?throughput: ResourceThroughput, ?cancellationToken: CancellationToken) = async {
         let! ct = CancellationToken.useOrCreate cancellationToken
+        let throughput = defaultArg throughput Default
         let props = ContainerProperties(id = containerName, partitionKeyPath = sprintf "/%s" Batch.PartitionKeyField)
         props.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
         props.IndexingPolicy.Automatic <- true
@@ -470,12 +471,7 @@ type EquinoxCosmosDatabaseClient (db: CosmosDatabase) =
         props.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
         // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
         for k in Batch.IndexedFields do props.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
-        return! __.GetOrCreateContainer(props, throughput, cancellationToken = ct)
-    }
-
-    abstract member GetContainer: containerName: string -> EquinoxCosmosContainerClient
-    default __.GetContainer(containerName) =
-        EquinoxCosmosContainerClient(db.GetContainer(containerName))
+        return! __.GetOrCreateContainer(props, throughput, cancellationToken = ct) }
 
 and EquinoxCosmosContainerClient (container: CosmosContainer) =
     member val SdkClient = container with get
@@ -520,8 +516,7 @@ and EquinoxCosmosContainerClient (container: CosmosContainer) =
         return! container.Scripts.ExecuteStoredProcedureAsync<SyncResponse>(storedProcedureName, partitionKey, args, cancellationToken = ct) |> Async.AwaitTaskCorrect }
 
 type EquinoxCosmosClient (logger: ILogger, sdk: CosmosClient) =
-    abstract member InitializeContainer: dbName: string * containerName: string * mode: Provisioning * createSyncStoredProcedure: bool * ?syncStoredProcedureName: string * ?cancellationToken: CancellationToken -> Async<unit>
-    default __.InitializeContainer (dbName, containerName, mode, createSyncStoredProcedure, syncStoredProcedureName, cancellationToken) = async {
+    member internal __.InitializeContainer (dbName: string, containerName: string, mode: Provisioning, createSyncStoredProcedure: bool, ?syncStoredProcedureName: string, ?cancellationToken: CancellationToken) = async {
         let! ct = CancellationToken.useOrCreate cancellationToken
         let dbThroughput = match mode with Provisioning.Database throughput -> throughput | _ -> Default
         let containerThroughput = match mode with Provisioning.Container throughput -> throughput | _ -> Default
@@ -532,9 +527,10 @@ type EquinoxCosmosClient (logger: ILogger, sdk: CosmosClient) =
             let syncStoredProcedureName = defaultArg syncStoredProcedureName SyncStoredProcedure.defaultName
             do! container.CreateSyncStoredProcedure(syncStoredProcedureName) |> Async.Ignore }
         
-    abstract member GetOrCreateDatabase: dbName: string * throughput: ResourceThroughput * ?cancellationToken: CancellationToken -> Async<EquinoxCosmosDatabaseClient>
+    abstract member GetOrCreateDatabase: dbName: string * ?throughput: ResourceThroughput * ?cancellationToken: CancellationToken -> Async<EquinoxCosmosDatabaseClient>
     default __.GetOrCreateDatabase(dbName, throughput, cancellationToken) = async {
         let! ct = CancellationToken.useOrCreate cancellationToken
+        let throughput = defaultArg throughput Default
         let! response = 
             match throughput with
             | Default -> sdk.CreateDatabaseIfNotExistsAsync(id = dbName, cancellationToken = ct) |> Async.AwaitTaskCorrect
@@ -546,11 +542,6 @@ type EquinoxCosmosClient (logger: ILogger, sdk: CosmosClient) =
                     response.Database.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect |> Async.map (fun _ -> response))
 
         return EquinoxCosmosDatabaseClient(response.Database) }
-
-    abstract member GetDatabase: dbName: string -> EquinoxCosmosDatabaseClient
-    default __.GetDatabase(dbName) =
-        EquinoxCosmosDatabaseClient(sdk.GetDatabase(dbName))
-
 
 module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
@@ -935,7 +926,9 @@ type Containers(categoryAndIdToDatabaseContainerStream : string -> string -> str
     member internal __.Resolve(client : EquinoxCosmosClient, categoryName, id, init) : (EquinoxCosmosContainerClient*string) * (unit -> Async<unit>) option =
         let databaseId, containerName, streamName = categoryAndIdToDatabaseContainerStream categoryName id
         let init = match disableInitialization with Some true -> None | _ -> Some init
-        let wrapped = wrappers.GetOrAdd((databaseId,containerName), fun (d,c) -> ContainerWrapper(client.GetDatabase(d).GetContainer(c), ?initContainer = init))
+        let db = client.GetOrCreateDatabase(databaseId) |> Async.RunSynchronously
+        let container = db.GetOrCreateBatchAndTipContainer(containerName) |> Async.RunSynchronously
+        let wrapped = wrappers.GetOrAdd((databaseId,containerName), fun (d,c) -> ContainerWrapper(container, ?initContainer = init))
         (wrapped.Container,streamName),wrapped.InitializationGate
 
 namespace Equinox.Cosmos
@@ -1182,15 +1175,9 @@ type ClientFactory
         /// consistency mode  (default: ConsistencyLevel.Session)
         [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
 
-        /// Retries for read requests, over and above those defined by the mandatory policies
-        [<O; D(null)>]?readRetryPolicy,
-        /// Retries for write requests, over and above those defined by the mandatory policies
-        [<O; D(null)>]?writeRetryPolicy,
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
-        [<O; D(null)>]?tags : (string*string) seq,
-        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
-        [<O; D(null)>]?bypassCertificateValidation : bool) =
+        [<O; D(null)>]?tags : (string*string) seq) =
     do if log = null then nullArg "log"
 
     let logName (uri : Uri) name =
