@@ -74,40 +74,40 @@ type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
     static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
 
-    /// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
-    /// Only applied to snapshots in the Tip
-    type JsonCompressedBase64Converter() =
-        inherit JsonConverter<JsonElement>()
+/// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
+/// Only applied to snapshots in the Tip
+type JsonCompressedBase64Converter() =
+    inherit JsonConverter<JsonElement>()
     
-        override __.Read (reader, _typeToConvert, options) =
-            if reader.TokenType = JsonTokenType.Null then
-                JsonSerializer.Deserialize<JsonElement>(&reader, options)
-            else
-                let compressedBytes = reader.GetBytesFromBase64()
-                use input = new MemoryStream(compressedBytes)
-                use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
-                use output = new MemoryStream()
-                decompressor.CopyTo(output)
-                JsonSerializer.Deserialize<JsonElement>(ReadOnlySpan.op_Implicit(output.ToArray()), options)
+    override __.Read (reader, _typeToConvert, options) =
+        if reader.TokenType = JsonTokenType.Null then
+            JsonSerializer.Deserialize<JsonElement>(&reader, options)
+        else
+            let compressedBytes = reader.GetBytesFromBase64()
+            use input = new MemoryStream(compressedBytes)
+            use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
+            use output = new MemoryStream()
+            decompressor.CopyTo(output)
+            JsonSerializer.Deserialize<JsonElement>(ReadOnlySpan.op_Implicit(output.ToArray()), options)
     
-        override __.Write (writer, value, _options) =
-            if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
-                writer.WriteNullValue()
-            else
-                let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
-                use output = new MemoryStream()
-                use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
-                compressor.Write(input, 0, input.Length)
-                compressor.Close()
-                writer.WriteBase64StringValue(ReadOnlySpan.op_Implicit(output.ToArray()))
+    override __.Write (writer, value, _options) =
+        if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
+            writer.WriteNullValue()
+        else
+            let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
+            use output = new MemoryStream()
+            use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
+            compressor.Write(input, 0, input.Length)
+            compressor.Close()
+            writer.WriteBase64StringValue(ReadOnlySpan.op_Implicit(output.ToArray()))
+
+type JsonCompressedBase64ConverterAttribute () =
+    inherit JsonConverterAttribute(typeof<JsonCompressedBase64Converter>)
     
-    type JsonCompressedBase64ConverterAttribute () =
-        inherit JsonConverterAttribute(typeof<JsonCompressedBase64Converter>)
+    static let converter = JsonCompressedBase64Converter()
     
-        static let converter = JsonCompressedBase64Converter()
-    
-        override __.CreateConverter _typeToConvert =
-            converter :> JsonConverter
+    override __.CreateConverter _typeToConvert =
+        converter :> JsonConverter
     
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoComparison>]
