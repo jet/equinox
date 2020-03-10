@@ -449,13 +449,13 @@ type EquinoxCosmosClient (cosmosClient: CosmosClient, containerClient: CosmosCon
     member val CosmosSdkClient = cosmosClient with get
     member val ContainerSdkClient = containerClient with get
 
-    abstract member QueryPageable<'T> : query: QueryDefinition * ?options: QueryRequestOptions -> AsyncSeq<Page<'T>>
-    default __.QueryPageable<'T>(query, ?options) =
+    abstract member GetQueryIteratorByPage<'T> : query: QueryDefinition * ?options: QueryRequestOptions -> AsyncSeq<Page<'T>>
+    default __.GetQueryIteratorByPage<'T>(query, ?options) =
         containerClient.GetItemQueryIterator<'T>(query, requestOptions = defaultArg options null).AsPages() |> AsyncSeq.ofAsyncEnum
 
-    abstract member TryReadItem<'T> : docId: string * stream: string * ?options: ItemRequestOptions * ?cancellationToken : CancellationToken -> Async<float * ReadResult<'T>>
-    default __.TryReadItem<'T>(docId, stream, ?options, ?cancellationToken) = async {
-        let partitionKey = PartitionKey stream
+    abstract member TryReadItem<'T> : docId: string * partitionKey: string * ?options: ItemRequestOptions * ?cancellationToken : CancellationToken -> Async<float * ReadResult<'T>>
+    default __.TryReadItem<'T>(docId, partitionKey, ?options, ?cancellationToken) = async {
+        let partitionKey = PartitionKey partitionKey
         let options = defaultArg options null
         let! ct =
             match cancellationToken with
@@ -473,12 +473,11 @@ type EquinoxCosmosClient (cosmosClient: CosmosClient, containerClient: CosmosCon
             // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
             | CosmosException (CosmosStatusCode sc as e) when sc = int System.Net.HttpStatusCode.PreconditionFailed -> return e.Response.Headers.GetRequestCharge(), NotModified }
 
-    abstract member Sync: stream: string * tip: Tip * index: int64 * ?storedProcedureName: string * ?etag: string * ?cancellationToken : CancellationToken -> Async<Scripts.StoredProcedureExecuteResponse<SyncResponse>>
-    default __.Sync(stream, tip, index, ?storedProcedureName, ?etag, ?cancellationToken) = async {
+    abstract member ExecuteStoredProcedure: storedProcedureName: string * partitionKey: string * args: obj[] * ?cancellationToken : CancellationToken -> Async<Scripts.StoredProcedureExecuteResponse<SyncResponse>>
+    default __.ExecuteStoredProcedure(storedProcedureName, partitionKey, args, ?cancellationToken) = async {
         let! ct = CancellationToken.useOrCreate cancellationToken
-        let storedProcedureName = defaultArg storedProcedureName SyncStoredProcedure.defaultName
-        let partitionKey = PartitionKey stream
-        let args = [| box tip; box index; box (Option.toObj etag)|]
+        let partitionKey = PartitionKey partitionKey
+        //let args = [| box tip; box index; box (Option.toObj etag)|]
         return! containerClient.Scripts.ExecuteStoredProcedureAsync<SyncResponse>(storedProcedureName, partitionKey, args, cancellationToken = ct) |> Async.AwaitTaskCorrect }
 
 module Sync =
@@ -495,7 +494,8 @@ module Sync =
     let private run (container : EquinoxCosmosClient, stream : string) (exp, req: Tip)
         : Async<float*Result> = async {
         let ep = match exp with Exp.Version ev -> Position.fromI ev | Exp.Etag et -> Position.fromEtag et | Exp.Any -> Position.fromAppendAtEnd
-        let! res = container.Sync(stream, req, ep.index, ?etag = ep.etag)
+        let args = [| box req; box ep.index; box (Option.toObj ep.etag)|]
+        let! res = container.ExecuteStoredProcedure(SyncStoredProcedure.defaultName, stream, args)
         let newPos = { index = res.Value.n; etag = Option.ofObj res.Value.etag }
         return res.GetRawResponse().Headers.GetRequestCharge(), res.Value.conflicts |> function
             | null -> Result.Written newPos
@@ -586,7 +586,7 @@ module internal Tip =
                 let cond = if direction = Direction.Forward then "c.n > @startPos" else "c.i < @startPos"
                 QueryDefinition(sprintf "%s AND %s %s" root cond tail).WithParameter("@startPos", positionSoExclusiveWhenBackward)
         let qro = new QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
-        container.QueryPageable<Batch>(query, options = qro)
+        container.GetQueryIteratorByPage<Batch>(query, options = qro)
 
     // Unrolls the Batches in a response - note when reading backwards, the events are emitted in reverse order of index
     let private processNextPage direction (streamName: string) startPos (enumerator: IAsyncEnumerator<Page<Batch>>) (log: ILogger)
