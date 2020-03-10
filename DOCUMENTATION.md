@@ -1018,7 +1018,10 @@ TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-S
 - Snapshot: a single serializable representation of the `state'`
   - Facilitates optimal retrieval patterns when a stream contains a significant number of events
   - NOTE: Snapshots should not ever yield an observable difference in the `state` when compared to building it from the timeline of events; it should be solely a behavior-preserving optimization.
-- Reset Event: an permanent event (not a Snapshot) for which an `isOrigin` predicate yields `true` (example, a CartCleared event means there is no point in looking at _any_ preceding events in order to determine what's in the cart; we can start folding from that point).
+- Reset Event: an event (i.e. a permanent event, not a Snapshot) for which an `isOrigin` predicate yields `true`
+  - e.g., for a Cart aggregate, a CartCleared event means there is no point in looking at _any_ preceding events in order to determine what's in the cart; we can start `fold`ing from that point.)
+  - Multiple Reset Event Types are possible per Category, and a stream can often have multiple reset points (e.g., each time a Cart is `Cleared`, we enter a known state)
+  - A _Tombstone Event_ can also be viewed as a Reset Event, e.g. if you have long running back account split into a Stream per year, one might write a `ClosingBalance` event which a) bears everything we care about (the final balance) b) signifies the fact that this tranche is now in a read-only mode. Conversely, a `Closed` event is not by itself a _Tombstone Event_ - while you can infer the Open/Closed State of the Stream, you would still need to look further back in the history to be able to determine the balance that applied at the point the period was Closed. 
 
 #### `Cosmos` Read and Write policies
 
