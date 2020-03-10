@@ -1198,13 +1198,17 @@ type EquinoxCosmosClientFactory
 //            co.TransportClientHandlerFactory <- inhibitCertCheck
         co
 
-    member __.CreateClient
+    abstract member CreateClient: name: string * discovery: Discovery * dbName: string * containerName: string * ?provisioningMode: Provisioning * ?createStoredProcedure: bool * ?storedProcedureName: string * ?skipLog: bool -> EquinoxCosmosClient
+    default __.CreateClient
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery,
             dbName: string,
             containerName: string,
+            /// If provided, the database and container will be initialized based on the provided values
             ?provisioningMode: Provisioning,
+            /// <c>true</c> to create the sync stored procedure during initialization
             ?createStoredProcedure: bool,
+            /// If provided along with <c>createStoredProcedure</c> being set to true, will create the stored procedure with a custom name
             ?storedProcedureName: string,
             /// <c>true</c> to inhibit logging of client name
             [<O; D null>]?skipLog) : EquinoxCosmosClient =
