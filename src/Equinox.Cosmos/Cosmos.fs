@@ -1150,7 +1150,7 @@ type Discovery =
             UriAndKey (Uri uri, key)
         | _ -> invalidArg "connectionString" "unrecognized connection string format; must be `AccountEndpoint=https://...;AccountKey=...=;`"
 
-type ClientFactory
+type EquinoxCosmosClientFactory
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
