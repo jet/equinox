@@ -304,22 +304,21 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
 module CosmosInit =
     open Equinox.Cosmos.Store
 
-    let conn (log,verboseConsole,maybeSeq) (sargs : ParseResults<Storage.Cosmos.Arguments>) = async {
+    let conn (log,verboseConsole,maybeSeq) (sargs : ParseResults<Storage.Cosmos.Arguments>) = 
         let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
         let discovery, dName, cName, factory = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
-        let client = factory.CreateClient(appName, discovery)
-        return storeLog, client, dName, cName }
+        storeLog, factory, discovery, dName, cName
 
-    let containerAndOrDb (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitArguments>) = async {
+    let containerAndOrDb (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitArguments>) =
         match iargs.TryGetSubCommand() with
         | Some (InitArguments.Cosmos sargs) ->
             let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
             let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database (ReplaceAlways rus) else Provisioning.Container (ReplaceAlways rus)
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
-            let! _storeLog,client,dName,cName = conn (log,verboseConsole,maybeSeq) sargs
+            let _storeLog, factory, discovery, dName, cName = conn (log,verboseConsole,maybeSeq) sargs
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            return! client.InitializeContainer(dName, cName, mode, not skipStoredProc)
-        | _ -> failwith "please specify a `cosmos` endpoint" }
+            factory.CreateClient(appName, discovery, dName, cName, mode, not skipStoredProc) |> ignore
+        | _ -> failwith "please specify a `cosmos` endpoint"
 
 module SqlInit =
     let databaseOrSchema (log: ILogger) (iargs: ParseResults<ConfigArguments>) = async {
@@ -347,8 +346,8 @@ module CosmosStats =
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let! _storeLog,client,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
-            let container = client.GetDatabase(dName).GetContainer(cName)
+            let _storeLog,factory,discovery,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
+            let container = factory.CreateClient(appName, discovery, dName, cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
@@ -356,7 +355,7 @@ module CosmosStats =
             log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name,sql) -> async {
                     log.Debug("Running query: {sql}", sql)
-                    let res = container.SdkClient.QueryValue<int>(sql)
+                    let res = container.ContainerSdkClient.QueryValue<int>(sql)
                     log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.ParallelThrottled 1 // TOCONSIDER replace with Async.Sequence when using new enough FSharp.Core
                 |> Async.Ignore
@@ -461,7 +460,7 @@ let main argv =
         let verbose = args.Contains Verbose
         use log = createDomainLog verbose verboseConsole maybeSeq
         try match args.GetSubCommand() with
-            | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
+            | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs
             | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
             | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
             | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously

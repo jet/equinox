@@ -30,7 +30,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit log defaultBatchSize =
-        Context(createSpecifiedCosmosOrSimulatorClient log, dbId, cId, log, ?defaultMaxItems = defaultBatchSize)
+        Context(createSpecifiedCosmosOrSimulatorClient log, log, ?defaultMaxItems = defaultBatchSize)
     let mkContext log = mkContextWithItemLimit log None
 
     let verifyRequestChargesMax rus =

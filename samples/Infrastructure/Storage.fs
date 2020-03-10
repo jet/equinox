@@ -79,7 +79,7 @@ module Cosmos =
         discovery, a.Database, a.Container, ClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
         let discovery, dName, cName, factory = connection (log, storeLog) info
-        let ctx = Context(factory.CreateClient(appName, discovery), dName, cName, log = log, defaultMaxItems = batchSize)
+        let ctx = Context(factory.CreateClient(appName, discovery, dName, cName), log = log, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, dName, cName)
 

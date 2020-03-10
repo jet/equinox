@@ -17,12 +17,12 @@ let dbId = read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test"
 let cId = read "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test"
 
 let private connectToCosmos (log: Serilog.ILogger) batchSize client  =
-    Context(client, dbId, cId, log = log, defaultMaxItems = batchSize)
+    Context(client, log = log, defaultMaxItems = batchSize)
 
 let createSpecifiedCosmosOrSimulatorClient log =
     let createClient name discovery =
         ClientFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-            .CreateClient(name, discovery)
+            .CreateClient(name, discovery, dbId, cId)
 
     match read "EQUINOX_COSMOS_CONNECTION" with
     | None ->
