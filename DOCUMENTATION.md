@@ -958,6 +958,81 @@ match res with
 | AppendResult.Ok -> ()
 | c -> failwithf "conflict %A" c
 ```
+## Access Strategies
+
+An Access Strategy defines any optimizations regarding how one arrives at a State of an Aggregate based on the Events stored in a Stream in a Store.
+
+The specifics of an Access Strategy depend on what makes sense for a given Store, i.e. `Equinox.Cosmos` necessarily has a significantly different set of strategies than `Equinox.EventStore` (although there is an intersection).
+
+Access Strategies only affect performance; you should still be able to infer the state of the aggregate based on the `fold` of all the `events` ever written on top of an `initial` state
+
+NOTE: its not important to select a strategy until you've actually actually modelled your aggregate, see [what if I change my access strategy](#changing-access-strategy)
+
+### `Equinox.Cosmos.AccessStrategy`
+
+TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, and [glossary, below the table](#access-strategy-glossary) for definition of terms)
+- keeps all the Events for a Stream in a single [CosmosDB _logical partition_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data)
+- Transaction guarantees are provided at the logical partition level only. As for most typical Event Stores, the mechanism is based on [Optimistic Concurrency Control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control). _There's no holding of a lock involved - it's based on conveying your premise alongside with the proposed change_; In terms of what we are doing, you observe a `state`, propose `events`, and the store is responsible for applying the change, or rejecting it if the `state` turns out to longer be the case when you get around to `sync`ing the change. The change is rejected if your premise (things have not changed since I saw them) is invalidated (whereupon you loop, working from the updated state). 
+- always has a special 'index' document (we term it the `Tip` document), per logical partition/stream that is accessible via an efficient _point read_ (it always has a CosmosDB `id` value of `"-1"`)
+- Events are stored in Batches in immutable documents in the logical partition, the `Tip` document is the only document that's ever updated (it's _always_ updated, as it happens...).
+- As all writes touch the `Tip`, we have a natural way to invalidate any cached State for a given Stream; we retain the `_etag` of the `Tip` document, and updates (or consistent reads) are contingent on it not having changed. 
+- The (optimistic) concurrency control of updates is by virtue of the fact that every update to the `Tip` touches the document _and thus alters (invalidates) the `_etag` value_. This means that, in contrast to how many SQL based stores (and most CosmosDB based ones) implement concurrency control, we don't rely on primary key constraint to prevent two writers writing conflicting events to the same stream.
+ - A secondary benefit of not basing consistency control on a primary key constraint or equivalent, is that we no longer having to insert an Event every time we are updating something. (This fact is crucial for the `RollingState` and `Custom` strategies).
+- The `interpret`/`decide` function is expected to deduplicate writes by not producing `events` if the `state` implies such updates would be redundant. Equinox does not have any internal mechanism to deduplicate events, thus having correct deduplication is the key to reducing round-trips and hence minimizing RU consumption (and the adverse effects that the retry cycles due to contention have, which will most likely arise when load is at its highest).
+- The `unfolds` maintained in `Tip` have the bodies (the `d` and `m` fields) 1) deflated 2) base64 encoded (as everyone is reading the Tip, its worthwhile having the writer take on the burden of compressing, with the payback being that write amplification effects are reduced by readers paying less RUs to read them). The snapshots can be inspected securely via the `eqx` tool's `dump` facility, or _unsecurely_ online via the [**decode** button on this tool, _if the data is not sensitive_](https://jgraph.github.io/drawio-tools/tools/convert.html).
+- The `Tip` document, (and the fact we hold its `_etag` in our cache alongside the State we have derived from the Events), is at the heart of why consistent reads are guaranteed to be efficient (Equinox does the read of the `Tip` document contingent on the `_etag` not having changed; a read of any size costs only 1 RU if the result is `304 NOT Modified`)
+- Specific Access Strategies:
+  - define what we put in the `Tip`
+  - control how we short circuit the process of loading all the Events and `fold`ing them from the start, if we encounter a Snapshot or Reset Event
+  - allow one to post-process the events we are writing as required for reasons of optimization
+
+#### `Cosmos` Access Strategy overviews
+
+| Strategy | TL;DR | `Tip` document maintains | Best suited for |
+| :--- | :--- | :--- | :--- |
+| `Unoptimized` | Keep Events only (but there's still an (empty) `Tip` document) | Count of event (and ability to have any insertion invalidate the cache for any reader) | No load, event counts or event sizes worth talking about. <br/> initial implementations. |
+| `LatestKnownEvent` | Special mode for when every event is completely independent, so we completely short-circuit loading the events and folding them and instead only use the latest event (if any) | A copy of the most recent event, together with the count | 1) Maintaining a local copy of a Summary Event representing information obtained from a partner service that is authoritative for that data <br/> 2) Tracking changes to a document where we're not really modelling events as such, but with optimal efficiency (every read is a point read of a single document) |
+| `Snapshot` | Keep a (single) snapshot in `Tip` at all times, guaranteed to include _all_ events | A single unfold produced by `toSnapshot` based on the `state'` (i.e., including any events being written) every time, together with the event count | Typical event-sourced usage patterns. <br/> Good default approach. <br/> Very applicable where you have lots of small 'delta' events that you only consider collectively. |
+| `MultiSnapshot` | As per `Snapshot`, but `toSnapshots` can return arbitrary (0, one or many) `unfold`s | Multiple (consistent) snapshots (and `_etag`/event count for concurrency control as per other strategies) | Blue-green deployments where an old version and a new version of the app cannot share a single snapshot schema | 
+| `RollingState` | "No event sourcing" mode - no events, just `state`. Perf as good as `Snapshot`, but don't even store the events so we will never hit CosmosDB stream size limits | `toSnapshot state'`: the squashed `state` + `events` which replace the incoming `state` | Maintaining state of an Aggregate with lots of changes <br/> a) that you don't need a record of the individual changes of yet <br/> b) you would like to model, test and develop as if one did <br/> DO NOT use if <br> a) you want to be able to debug state transitions by looking at individual change events <br/> b) you need to react to and/or project events relating to individual updates (CosmosDB does not provide a way to provide a notification of every single update, even if it does have a guarantee of always showing the final state on the Change Feed eventually)|
+| `Custom` | General form that all the preceding strategies are implemented in terms of | Anything `transmute` yields as the `fst` of its result (but, typically the equivalent of what Snapshot writes) | Limited by your imagination, e.g. [emitting events once per hour but otherwise like `RollingState`](https://github.com/jet/propulsion/search?q=transmute&unscoped_q=transmute) |
+
+<a name="access-strategy-glossary"></a>
+#### Glossary
+- `decide`/`interpret`: Application function that inspects a `state` to propose `events`, under control of a `Transact` loop.
+- `Transact` loop: Equinox Core function that runs your `decide`/`interpret`, and then `sync`s any generated `events` to the Store.
+- `state`: The (potentially cached) version of the State of the Aggregate that `Transact` supplied to your `decide`/ `interpret`.
+- `events`: The changes the `decide`/`interpret` generated (that `Transact` is trying to `sync` to the Store).
+- `fold`: standard function, supplied per Aggregate, which is used to apply Events to a given State in order to [`evolve`](http://thinkbeforecoding.github.io/FsUno.Prod/Dynamical%20Systems.html) the State per implications of each Event that has occurred
+- `state'`: The State of an Aggregate (post-state in FP terms), derived from the current `state` + the proposed `events` being `sync`ed.
+- `Tip`: Special document stored alongside the Events (in the same logical partition) which holds the `unfolds` associated with the current State of the _stream_.
+- `sync`: [Stored procedure we use to manage consistent update of the Tip alongside insertion of Event Batch Documents](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#sync-stored-procedure) (contingent on the Tip's `_etag` not having changed)
+- `unfold`: JSON objects maintained in the `Tip`, which represent Snapshots taken at a given point in the event timeline for this stream.
+  - the `fold`/`evolve` function is presented Snapshots as if it was yet-another-Event
+  - the only differences are
+    - a) they are not stored as in (immutable) Event documents as other Events are
+    - b) every write replaces all the `unfold`s in `Tip` with the result of the `toSnapshot`(s) function as defined in the given Access Strategy.
+- `isOrigin`: A predicate function supplied to an Access Strategy that defines the starting point from which we'll build a `state`.
+  - Must yield `true` for relevant Snapshots or Reset Events.
+- `initial`: The (Application-defined) _state_ value all loaded events `fold` into, if an `isOrigin` event is not encountered while walking back through th `unfolds` and Events and instead hit the start of the stream.
+- Snapshot: a single serializable representation of the `state'`
+  - Facilitates optimal retrieval patterns when a stream contains a significant number of events
+  - NOTE: Snapshots should not ever yield an observable difference in the `state` when compared to building it from the timeline of events; it should be solely a behavior-preserving optimization.
+- Reset Event: an event (i.e. a permanent event, not a Snapshot) for which an `isOrigin` predicate yields `true`
+  - e.g., for a Cart aggregate, a CartCleared event means there is no point in looking at _any_ preceding events in order to determine what's in the cart; we can start `fold`ing from that point.)
+  - Multiple Reset Event Types are possible per Category, and a stream can often have multiple reset points (e.g., each time a Cart is `Cleared`, we enter a known state)
+  - A _Tombstone Event_ can also be viewed as a Reset Event, e.g. if you have a (long running) bank account represented as a Stream per year, one might annually write a `TrancheCarriedForwardAndClosed` event which a) bears everything we care about (the final balance) b) signifies the fact that this tranche has now transitioned to read-only mode. Conversely, a `Closed` event is not by itself a _Tombstone Event_ - while you can infer the Open/Closed mode aspect of the Stream's State, you would still need to look further back through its history to be able to determine the balance that applied at the point the period was marked `Closed`. 
+
+#### `Cosmos` Read and Write policies
+
+| Strategy | Reads involve | Writes involve |
+| :--- | :--- | :--- |
+| `Unoptimized` | Querying for, and `fold`ing all events (although the cache means it only reads events it has not seen) <br/> the `Tip` is never read, even e.g. if someone previously put a snapshot in there | 1) Insert a document with the events <br/> 2) Update `Tip` to reflect updated event count (as a transaction, as with all updates) |
+| `LatestKnownEvent` | Reading the `Tip` (never the events) | 1) Inserting a document with the new event. <br/> 2) Updating the Tip to a) up count/invalidate the `_etag` b) CC the event for efficient access |
+| `Snapshot` | 1) read Tip; stop if `isOrigin` accepts a snapshot from within <br/> 2) read backwards until the provided `isOrigin` function returns `true` for an Event, or we hit start of stream | 1) Produce proposed `state'` <br/> 2) write events to new document + `toSnapshot state'` result into Tip with new event count |
+| `MultiSnapshot` | As per `Snapshot`, stop if `isOrigin` yields `true` for any `unfold` (then fall back to folding from base event or a reset event) | 1) Produce `state'` <br/> 2) Write events to new document + `toSnapshots state'` to `Tip` _(could be 0 or many, vs exactly one)_ |
+| `RollingState` | Read `Tip` <br/> (can fall back to building from events as per `Snapshot` mode if nothing in Tip, but normally there are no events) | 1) produce `state'` <br/> 2) update `Tip` with `toSnapshot state'` <br/> 3) **no events are written** <br/> 4) Concurrency Control is based on the `_etag` of the Tip, not an expectedVersion / event count |
+| `Custom` | As per `Snapshot` or `MultiSnapshot` <br/> 1) see if any `unfold`s pass the `isOrigin` test <br/> 2) Otherwise, work backward until a _Reset Event_ or start of stream | 1) produce `state'` <br/> 2) use `transmute events state` to determine a) the `unfold`s (if any) to write b) the `events` _(if any)_ to emit <br/> 3) execute the insert and/or upsert operations, contingent on the `_etag` of the opening `state` |
 
 # Ideas
 
