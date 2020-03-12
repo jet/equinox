@@ -2,7 +2,6 @@
 
 open Domain
 open FsCodec
-open FsCodec.SystemTextJson.Serialization
 open Microsoft.Extensions.DependencyInjection
 open System
 open System.Text.Json
@@ -49,24 +48,24 @@ type ServiceBuilder(storageConfig, handlerLog) =
         let snapshot = Favorites.Fold.isOrigin,Favorites.Fold.snapshot
 
         match storageConfig with
-        | Storage.StorageConfig.Cosmos _ -> Backend.Favorites.Service(handlerLog, resolver.ResolveWithJsonElementCodec(Favorites.Events.JsonElementCodec.codec JsonSerializer.defaultOptions, fold, initial, snapshot))
-        | _ -> Backend.Favorites.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(Favorites.Events.Utf8ArrayCodec.codec, fold, initial, snapshot))
+        | Storage.StorageConfig.Cosmos _ -> Backend.Favorites.Service(handlerLog, resolver.ResolveWithJsonElementCodec(Favorites.Events.codecStj, fold, initial, snapshot))
+        | _ -> Backend.Favorites.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(Favorites.Events.codecNewtonsoft, fold, initial, snapshot))
 
      member __.CreateSaveForLaterService() =
         let fold, initial = SavedForLater.Fold.fold, SavedForLater.Fold.initial
         let snapshot = SavedForLater.Fold.isOrigin,SavedForLater.Fold.compact
 
         match storageConfig with
-        | Storage.StorageConfig.Cosmos _ -> Backend.SavedForLater.Service(handlerLog, resolver.ResolveWithJsonElementCodec(SavedForLater.Events.JsonElementCodec.codec JsonSerializer.defaultOptions,fold,initial,snapshot), maxSavedItems=50)
-        | _ -> Backend.SavedForLater.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(SavedForLater.Events.Utf8ArrayCodec.codec,fold,initial,snapshot), maxSavedItems=50)
+        | Storage.StorageConfig.Cosmos _ -> Backend.SavedForLater.Service(handlerLog, resolver.ResolveWithJsonElementCodec(SavedForLater.Events.codecStj,fold,initial,snapshot), maxSavedItems=50)
+        | _ -> Backend.SavedForLater.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(SavedForLater.Events.codecNewtonsoft,fold,initial,snapshot), maxSavedItems=50)
 
      member __.CreateTodosService() =
         let fold, initial = TodoBackend.Fold.fold, TodoBackend.Fold.initial
         let snapshot = TodoBackend.Fold.isOrigin, TodoBackend.Fold.snapshot
 
         match storageConfig with
-        | Storage.StorageConfig.Cosmos _ -> TodoBackend.Service(handlerLog, resolver.ResolveWithJsonElementCodec(TodoBackend.Events.JsonElementCodec.codec JsonSerializer.defaultOptions,fold,initial,snapshot))
-        | _ -> TodoBackend.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(TodoBackend.Events.Utf8ArrayCodec.codec,fold,initial,snapshot))
+        | Storage.StorageConfig.Cosmos _ -> TodoBackend.Service(handlerLog, resolver.ResolveWithJsonElementCodec(TodoBackend.Events.codecStj,fold,initial,snapshot))
+        | _ -> TodoBackend.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(TodoBackend.Events.codecNewtonsoft,fold,initial,snapshot))
 
 let register (services : IServiceCollection, storageConfig, handlerLog) =
     let regF (factory : IServiceProvider -> 'T) = services.AddSingleton<'T>(fun (sp: IServiceProvider) -> factory sp) |> ignore

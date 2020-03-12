@@ -15,27 +15,8 @@ module Events =
         | Unfavorited                           of Unfavorited
         interface TypeShape.UnionContract.IUnionContract
 
-    module Utf8ArrayCodec =
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-
-    module JsonElementCodec =
-        open FsCodec.SystemTextJson
-        open System.Text.Json
-
-        let private encode (options: JsonSerializerOptions) = fun (evt: Event) ->
-            match evt with
-            | Snapshotted snapshotted -> "Snapshotted", JsonSerializer.SerializeToElement(snapshotted, options)
-            | Favorited favorited -> "Favorited", JsonSerializer.SerializeToElement(favorited, options)
-            | Unfavorited unfavorited -> "Unfavorited", JsonSerializer.SerializeToElement(unfavorited, options)
-
-        let private tryDecode (options: JsonSerializerOptions) = fun (eventType, data: JsonElement) ->
-            match eventType with
-            | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Snapshotted>(data, options))
-            | "Favorited" -> Some (Favorited <| JsonSerializer.DeserializeElement<Favorited>(data, options))
-            | "Unfavorited" -> Some (Unfavorited <| JsonSerializer.DeserializeElement<Unfavorited>(data, options))
-            | _ -> None
-
-        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
 

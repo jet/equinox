@@ -30,7 +30,7 @@ type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless
 
         /// Optional causationId
         causationId : string // TODO for STJ v5: Optional, not serialized if missing
-    } 
+    }
 
     interface IEventData<JsonElement> with
         member __.EventType = __.c
@@ -749,7 +749,7 @@ module internal Tip =
                 let! page = retryingLoggingReadPage e batchLog
 
                 match page with
-                | Some (evts, _pos, rus) -> 
+                | Some (evts, _pos, rus) ->
                     ru <- ru + rus
                     allEvents.AddRange(evts)
 
@@ -798,7 +798,6 @@ open Equinox
 open Equinox.Core
 open Equinox.Cosmos.Store
 open FsCodec
-open FsCodec.SystemTextJson.Serialization
 open FSharp.Control
 open Serilog
 open System
@@ -1141,7 +1140,10 @@ type Connector
     /// ClientOptions for this Connector as configured
     member val ClientOptions =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
-        let co = CosmosClientOptions(MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout, Serializer = CosmosJsonSerializer(JsonSerializer.defaultOptions))
+        let co =
+            CosmosClientOptions(
+                MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout,
+                Serializer = CosmosJsonSerializer(FsCodec.SystemTextJson.Options.CreateDefault(converters=[|FsCodec.SystemTextJson.Converters.JsonRecordConverter()|])))
         match mode with
         | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https

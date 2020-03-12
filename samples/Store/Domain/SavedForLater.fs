@@ -30,31 +30,8 @@ module Events =
         | Added of Added
         interface TypeShape.UnionContract.IUnionContract
 
-    module Utf8ArrayCodec =
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-
-    module JsonElementCodec =
-        open FsCodec.SystemTextJson
-        open System.Text.Json
-
-        let private encode (options: JsonSerializerOptions) =
-            fun (evt: Event) ->
-                match evt with
-                | Compacted compacted -> Compaction.EventType, JsonSerializer.SerializeToElement(compacted, options)
-                | Merged merged -> "Merged", JsonSerializer.SerializeToElement(merged, options)
-                | Removed removed -> "Removed", JsonSerializer.SerializeToElement(removed, options)
-                | Added added -> "Added", JsonSerializer.SerializeToElement(added, options)
-    
-        let private tryDecode (options: JsonSerializerOptions) =
-            fun (eventType, data: JsonElement) ->
-                match eventType with
-                | Compaction.EventType -> Some (Compacted <| JsonSerializer.DeserializeElement<Compaction.Compacted>(data, options))
-                | "Merged" -> Some (Merged <| JsonSerializer.DeserializeElement<Merged>(data, options))
-                | "Removed" -> Some (Removed <| JsonSerializer.DeserializeElement<Removed>(data, options))
-                | "Added" -> Some (Added <| JsonSerializer.DeserializeElement<Added>(data, options))
-                | _ -> None
-
-        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
     open Events
@@ -129,4 +106,4 @@ module Commands =
             let index = Index state
             let net = skus |> Array.filter (index.DoesNotAlreadyContainSameOrMoreRecent dateSaved)
             if Array.isEmpty net then true, []
-            else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ] 
+            else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]

@@ -41,23 +41,8 @@ module Events =
         | IdAssigned of IdAssigned
         interface TypeShape.UnionContract.IUnionContract
 
-    module Utf8ArrayCodec =
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-
-    module JsonElementCodec =
-        open FsCodec.SystemTextJson
-        open System.Text.Json
-
-        let encode (options: JsonSerializerOptions) = fun (evt: Event) ->
-            match evt with
-            | IdAssigned id -> "IdAssigned", JsonSerializer.SerializeToElement(id, options)
-
-        let tryDecode (options: JsonSerializerOptions) = fun (eventType, data: JsonElement) ->
-            match eventType with
-            | "IdAssigned" -> Some (IdAssigned <| JsonSerializer.DeserializeElement<IdAssigned>(data, options))
-            | _ -> None
-
-        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
 
@@ -86,16 +71,14 @@ let create resolve = Service(Serilog.Log.ForContext<Service>(), resolve, 3)
 module Cosmos =
 
     open Equinox.Cosmos
-    open FsCodec.SystemTextJson.Serialization
 
     let createService (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let codec = Events.JsonElementCodec.codec JsonSerializer.defaultOptions
-        let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
+        let resolve = Resolver(context, Events.codecStj, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent).Resolve
         create resolve
 
 module EventStore =
     open Equinox.EventStore
     let createService context =
-        let resolve = Resolver(context, Events.Utf8ArrayCodec.codec, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent).Resolve
+        let resolve = Resolver(context, Events.codecNewtonsoft, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent).Resolve
         create resolve

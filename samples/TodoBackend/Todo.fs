@@ -20,33 +20,8 @@ module Events =
         | Snapshotted   of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
 
-    module Utf8ArrayCodec =
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-
-    module JsonElementCodec =
-        open FsCodec.SystemTextJson
-        open System.Text.Json
-
-        let private encode (options: JsonSerializerOptions) =
-            fun (evt: Event) ->
-                match evt with
-                | Added todo -> "Added", JsonSerializer.SerializeToElement(todo, options)
-                | Updated todo -> "Updated", JsonSerializer.SerializeToElement(todo, options)
-                | Deleted deleted -> "Deleted", JsonSerializer.SerializeToElement(deleted, options)
-                | Cleared -> "Cleared", Unchecked.defaultof<JsonElement>
-                | Snapshotted snapshotted -> "Snapshotted", JsonSerializer.SerializeToElement(snapshotted, options)
-    
-        let private tryDecode (options: JsonSerializerOptions) =
-            fun (eventType, data: JsonElement) ->
-                match eventType with
-                | "Added" -> Some (Added <| JsonSerializer.DeserializeElement<Todo>(data, options))
-                | "Updated" -> Some (Updated <| JsonSerializer.DeserializeElement<Todo>(data, options))
-                | "Deleted" -> Some (Deleted <| JsonSerializer.DeserializeElement<Deleted>(data, options))
-                | "Cleared" -> Some Cleared
-                | "Snapshotted" -> Some (Snapshotted <| JsonSerializer.DeserializeElement<Snapshotted>(data, options))
-                | _ -> None
-
-        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
     type State = { items : Events.Todo list; nextId : int }

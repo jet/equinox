@@ -16,8 +16,8 @@ type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
         EventData.FromUtf8Bytes
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
-                IntegrationJsonSerializer.deserialize<JsonElement>(defaultArg json "{\"d\":\"d\"}"),
-                IntegrationJsonSerializer.deserialize<JsonElement>("{\"m\":\"m\"}")    )
+                FsCodec.NewtonsoftJson.Serdes.Deserialize(defaultArg json "{\"d\":\"d\"}"),
+                FsCodec.NewtonsoftJson.Serdes.Deserialize("{\"m\":\"m\"}"))
     static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
 
 type Tests(testOutputHelper) =
