@@ -82,7 +82,7 @@ Term | Description
 -----|------------
 Cache | `System.Net.MemoryCache` or equivalent holding _State_ and/or `etag` information for a Stream with a view to reducing roundtrips, latency and/or Request Charges
 Rolling Snapshot | Event written to an EventStore stream in order to ensure minimal roundtrips to EventStore when there is a Cache miss
-Unfolds | Snapshot information, represented as Events that are stored in an appropriate storage location (outside of a Stream's actual events) to minimize Queries and the attendant Request Charges when there is a Cache miss
+Unfolds | Snapshot information, stored in an appropriate storage location (outside of a Stream's actual events), _but represented as Events_, to minimize Queries and the attendant Request Charges when there is a Cache miss
 
 # Programming Model
 
@@ -90,8 +90,12 @@ NB this has lots of room for improvement, having started as a placeholder in [#5
 
 In F#, independent of the Store being used, the Equinox programming model involves (largely by convention, see [FAQ](README.md#FAQ)), per aggregation of events on a given category of stream:
 
-- `'state`: the rolling state maintained to enable Decisions or Queries to be made given a command and/or other context (not expected to be serializable or stored directly in a Store; can be held in a [.NET `MemoryCache`](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.caching.memorycache))
+- `Category`: the common part of the [Stream Name](https://github.com/fscodec#streamname), i.e., the `"Favorites"` part of the `"Favorites-clientId"`
+- `streamName`: function responsible for mapping from the input elements aside from the `Category` (i.e., the `id` portion that you pass to `StreamName.create` or the elements one passes to `StreamName.compose` to generate a `FsCodec.StreamName`. In general, the inputs should be [strongly typed ids](https://github.com/jet/FsCodec#strongly-typed-stream-ids-using-fsharpumx))
+
 - `'event`: a discriminated union representing all the possible Events from which a state can be `evolve`d (see `e`vents and `u`nfolds in the [Storage Model](#cosmos-storage-model)). Typically the mapping of the json to an `'event` `c`ase is [driven by a `UnionContractEncoder`](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/)
+
+- `'state`: the rolling state maintained to enable Decisions or Queries to be made given a command and/or other context (not expected to be serializable or stored directly in a Store; can be held in a [.NET `MemoryCache`](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.caching.memorycache))
 
 - `initial: 'state`: the [implied] state of an empty stream. See also [Null Object Pattern](https://en.wikipedia.org/wiki/Null_object_pattern), [Identity element](https://en.wikipedia.org/wiki/Identity_element)
 
@@ -132,7 +136,8 @@ The following example is a minimal version of [the Favorites model](samples/Stor
 ```fsharp
 (* Event stream naming + schemas *)
 
-let streamName (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
+let [<Literal>] Category = "Favorites"
+let streamName (id : ClientId) = FsCodec.StreamName.create Category (ClientId.toString id)
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -170,8 +175,9 @@ let interpret command state =
 
 let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
 
-(* The Service defines operations in business terms with minimal reference to Equinox terms
-   or need to talk in terms of infrastructure; typically the service is stateless and can be a Singleton *)
+(* The Service defines operations in business terms, neutral to any concrete store selection or implementation
+   supplied only a `resolve` function that can be used to map from ids (as supplied to the `streamName` function) to an Equinox Stream
+   typically the service should be a stateless Singleton *)
 
 type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
@@ -190,6 +196,10 @@ type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.S
         execute clientId (Command.Unfavorite skus)
     member __.List clientId : Async<Events.Favorited []> =
         read clientId
+
+let create resolve : Service =
+    let resolve id = Equinox.Stream(Serilog.Log.ForContext<Service>(), resolve (streamName id), maxAttempts = 3) 
+    Service(resolve)
 ```
 
 <a name="api"></a>
