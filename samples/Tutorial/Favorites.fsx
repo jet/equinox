@@ -1,6 +1,6 @@
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#I "bin/Debug/netstandard2.0/"
+#I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"
@@ -23,7 +23,8 @@ type Event =
 // No IUnionContract or Codec required as we're using a custom encoder in this example
 //    interface TypeShape.UnionContract.IUnionContract
 
-let initial : string list = []
+type State = string list
+let initial : State = []
 let evolve state = function
     | Added sku -> sku :: state
     | Removed sku -> state |> List.filter (fun x -> x <> sku)
@@ -72,11 +73,11 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
     b) a maximum number of attempts to make if we clash with a conflicting write *)
 
 // Example of wrapping Stream to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
-type Handler(stream : Equinox.Stream<Events.Event, Fold.State>) =
+type Handler(stream : Equinox.Stream<Event, State>) =
     member __.Execute command : Async<unit> =
-        inner.Transact(interpret command)
+        stream.Transact(interpret command)
     member __.Read : Async<string list> =
-        inner.Query id
+        stream.Query id
 
 (* When we Execute a command, Equinox.Stream will use `fold` and `interpret` to Decide whether Events need to be written
     Normally, we'll let failures percolate via exceptions, but not return a result (i.e. we don't say "your command caused 1 event") *)
@@ -110,7 +111,7 @@ let stream streamName = Equinox.Stream(log, resolver.Resolve streamName, maxAtte
 // We hand the streamId to the resolver
 let clientAStream = stream clientAFavoritesStreamName
 // ... and pass the stream to the Handler
-let handler = Handler(log, clientAStream)
+let handler = Handler(clientAStream)
 
 (* Run some commands *)
 
@@ -131,7 +132,7 @@ handler.Read |> Async.RunSynchronously
 (* Building a service to package Command Handling and related functions
     No, this is not doing CQRS! *)
 
-type Service(streamFor : string -> Equinox.Stream<Events.Event, Folds.fold>) =
+type Service(streamFor : string -> Handler) =
 
     member __.Favorite(clientId, sku) =
         let stream = streamFor clientId
@@ -148,8 +149,8 @@ type Service(streamFor : string -> Equinox.Stream<Events.Event, Folds.fold>) =
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
 let streamFor (clientId: string) =
     let streamName = FsCodec.StreamName.create "Favorites" clientId
-    let stream = resolver.Resolve streamName
-    Handler(log, stream)
+    let stream = Equinox.Stream(log, resolver.Resolve streamName, maxAttempts = 3)
+    Handler(stream)
 
 let service = Service(streamFor)
 

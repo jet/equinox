@@ -1,4 +1,4 @@
-#I "bin/Debug/netstandard2.0/"
+#I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
@@ -8,7 +8,7 @@
 #r "FSharp.UMX.dll"
 #r "FSCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
-#r "Microsoft.Azure.DocumentDb.Core.dll"
+#r "Microsoft.Azure.Cosmos.Client.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.Cosmos.dll"
@@ -134,7 +134,8 @@ module Store =
 open FulfilmentCenter
 
 let resolver = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
-let service = Service(Log.log, resolver.Resolve)
+let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
+let service = Service(resolve)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously
@@ -154,7 +155,8 @@ module FulfilmentCenterSummary =
             interface TypeShape.UnionContract.IUnionContract
         let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
 
-    type State = { version : int64; state : Types.Summary }
+    type StateSummary = { version : int64; state : Types.Summary }
+    type State = StateSummary option
     let initial = None
     let evolve _state = function
         | Events.Updated v -> Some v
@@ -162,12 +164,12 @@ module FulfilmentCenterSummary =
 
     type Command =
         | Update of version : int64 * Types.Summary
-    let interpret command (state : State option) =
+    let interpret command (state : State) =
         match command with
         | Update (uv,_us) when state |> Option.exists (fun s -> s.version > uv) -> []
         | Update (uv,us) -> [Events.Updated { version = uv; state = us }]
 
-    type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
+    type Service internal (resolve : string -> Equinox.Stream<Events.Event, State>) =
 
         let execute fc command : Async<unit> =
             let stream = resolve fc

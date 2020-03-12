@@ -3,7 +3,7 @@
 #if VISUALSTUDIO
 #r "netstandard"
 #endif
-#I "bin/Debug/netstandard2.0/"
+#I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
@@ -14,8 +14,10 @@
 #r "FsCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
-#r "Microsoft.Azure.DocumentDb.Core.dll"
+#r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.Cosmos.dll"
+
+open System
 
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
@@ -59,7 +61,7 @@ let interpret c (state : State) =
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted { id=id }] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
-type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (resolve : string -> Equinox.Stream<Event, State>) =
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
@@ -116,7 +118,7 @@ let cache = Equinox.Cache(appName, 20)
 
 open Equinox.Cosmos
 module Store =
-    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
+    let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
     let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=log)
     let conn = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
@@ -128,8 +130,9 @@ module Store =
 module TodosCategory = 
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
     let resolver = Resolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access)
+    let resolve id = Equinox.Stream(log, resolver.Resolve(streamName id), maxAttempts = 3)
 
-let service = Service(log, TodosCategory.resolver.Resolve)
+let service = Service(TodosCategory.resolve)
 
 let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }

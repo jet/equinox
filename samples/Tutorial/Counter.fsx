@@ -1,7 +1,7 @@
 ﻿// Compile Tutorial.fsproj before attempting to send this to FSI with Alt-Enter by either:
 // a) right-clicking or 
 // b) typing dotnet build samples/Tutorial 
-#I "bin/Debug/netstandard2.0/"
+#I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"
@@ -56,7 +56,7 @@ let decide command (State state) =
     | Clear i -> 
         if state = i then [] else [Cleared {value = i}]
 
-type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (resolve : string -> Equinox.Stream<Event, State>) =
 
     let execute counterId command : Async<unit> =
         let stream = resolve counterId
@@ -78,7 +78,7 @@ let codec = FsCodec.Box.Codec.Create()
 let resolver = Equinox.MemoryStore.Resolver(store, codec, fold, initial)
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
-let service = Service(log, resolver.Resolve, maxAttempts = 3)
+let service = Service(fun id -> Equinox.Stream(log, streamName id |> resolver.Resolve, maxAttempts = 3))
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously
 service.Execute(clientId, Increment) |> Async.RunSynchronously

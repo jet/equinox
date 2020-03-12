@@ -3,7 +3,7 @@
 #if VISUALSTUDIO
 #r "netstandard"
 #endif
-#I "bin/Debug/netstandard2.0/"
+#I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
@@ -14,7 +14,7 @@
 #r "FsCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
-#r "Microsoft.Azure.DocumentDb.Core.dll"
+#r "Microsoft.Azure.Cosmos.Client.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.Cosmos.dll"
@@ -30,7 +30,8 @@ module Favorites =
         | Removed of Item
         interface TypeShape.UnionContract.IUnionContract
     let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let initial : string list = []
+    type State = string list
+    let initial : State = []
     let evolve state = function
         | Added {sku = sku } -> sku :: state
         | Removed {sku = sku } -> state |> List.filter (fun x -> x <> sku)
@@ -44,7 +45,7 @@ module Favorites =
         | Add sku -> if state |> List.contains sku then [] else [Added {sku = sku}]
         | Remove sku -> if state |> List.contains sku then [Removed {sku = sku}] else []
 
-    type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
+    type Service internal (resolve : string -> Equinox.Stream<Event, State>) =
 
         let execute clientId command : Async<unit> =
             let stream = resolve clientId
@@ -63,15 +64,17 @@ module Log =
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(Store.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
-    let dumpMetrics () = Store.Log.InternalMetrics.dump log
+    let dumpMetrics () = Equinox.Cosmos.Store.Log.InternalMetrics.dump log
 
 let [<Literal>] appName = "equinox-tutorial"
 let cache = Equinox.Cache(appName, 20)
 
+open Equinox.Cosmos
+open System
 module Store =
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
@@ -84,12 +87,12 @@ module Store =
 
 module FavoritesCategory = 
     let resolver = Resolver(Store.context, Favorites.codec, Favorites.fold, Favorites.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
-
-let service resolve =
     let resolve clientId =
         let streamName = streamName clientId
-        Equinox.Stream(Log.log, FavoritesCategory.resolver.Resolve streamName, maxAttempts = 3)
-    Favorites.Service resolve
+        Equinox.Stream(Log.log, resolver.Resolve streamName, maxAttempts = 3)
+
+let service =
+    Favorites.Service(FavoritesCategory.resolve)
 
 let client = "ClientJ"
 service.Favorite(client, "a") |> Async.RunSynchronously
