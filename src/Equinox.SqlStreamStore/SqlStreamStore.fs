@@ -298,7 +298,8 @@ module Token =
         {   value = box {
                 stream = { name = streamName}
                 pos = { streamVersion = streamVersion; compactionEventNumber = compactionEventNumber; batchCapacityLimit = batchCapacityLimit } }
-            version = streamVersion }
+            version = streamVersion
+            sessionToken = null }
     /// No batching / compaction; we only need to retain the StreamVersion
     let ofNonCompacting streamName streamVersion : StreamToken =
         create None None streamName streamVersion

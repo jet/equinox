@@ -752,8 +752,9 @@ module internal Tip =
 type [<NoComparison>] Token = { container: Container; stream: string; pos: Position }
 module Token =
     let create (container,stream) pos : StreamToken =
-        {  value = box { container = container; stream = stream; pos = pos }
-           version = pos.index }
+        {   value = box { container = container; stream = stream; pos = pos }
+            version = pos.index
+            sessionToken = null }
     let (|Unpack|) (token: StreamToken) : Container*string*Position = let t = unbox<Token> token.value in t.container,t.stream,t.pos
     let supersedes (Unpack (_,_,currentPos)) (Unpack (_,_,xPos)) =
         let currentVersion, newVersion = currentPos.index, xPos.index

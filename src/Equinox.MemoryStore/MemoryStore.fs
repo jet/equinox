@@ -45,7 +45,8 @@ module private Token =
 
     let private streamTokenOfIndex streamName (streamVersion : int) : StreamToken =
         {   value = box { streamName = streamName; streamVersion = streamVersion }
-            version = int64 streamVersion }
+            version = int64 streamVersion
+            sessionToken = null }
     let (|Unpack|) (token: StreamToken) : Token = unbox<Token> token.value
     /// Represent a stream known to be empty
     let ofEmpty streamName initial = streamTokenOfIndex streamName -1, initial
