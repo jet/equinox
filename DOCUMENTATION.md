@@ -88,6 +88,50 @@ Unfolds | Snapshot information, stored in an appropriate storage location (outsi
 
 NB this has lots of room for improvement, having started as a placeholder in [#50](https://github.com/jet/equinox/issues/50); **improvements are absolutely welcome, as this is intended for an audience with diverse levels of familiarity with event sourcing in general, and Equinox in particular**.
 
+## Aggregate module
+
+In code handling a given Aggregate’s Commands and Synchronous Queries, the code you write divides into the following canonical organization:
+
+```fsharp
+module Aggregate
+
+(* StreamName section *)
+
+let [<Literal>] Category = "category"
+let streamName id = FsCodec.StreamName.create Category (Id.toString id)
+
+(* Optionally, Helpers/Types *)
+
+module Events =
+
+    type Event =
+        | ...
+    // optionally: `encode`, `tryDecode` (only if you're doing manual decoding)
+    let codec = FsCodec ... Codec.Create<Event>(...)
+    
+module Fold =
+
+    type State =
+    let initial : State = ... 
+    let evolve state = function
+        | Events.X -> (state update)
+        | Events.Y -> (state update)
+    let fold events = Seq.fold evolve events
+    (* Storage Model helpers, e.g. isOrigin, toSnapshot etc *)
+
+let interpretX ... (state : Fold.State) : Events list = ...
+let decideY ... (state : Fold.State) : 'result * Events list = ...
+
+type Service internal (resolve : Id -> Equinox.Stream<Events.Event, Fold.State) = ...`
+
+    member __.Run() =
+          
+```
+
+While these are not omnipresent, for the purposes of this discussion we’ll treat them as that. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.
+
+## Core concepts
+
 In F#, independent of the Store being used, the Equinox programming model involves (largely by convention, see [FAQ](README.md#FAQ)), per aggregation of events on a given category of stream:
 
 - `Category`: the common part of the [Stream Name](https://github.com/fscodec#streamname), i.e., the `"Favorites"` part of the `"Favorites-clientId"`
@@ -226,26 +270,6 @@ At a high level we have:
 - Queries - as part of the processing, one might wish to expose the state before or after the Decision and/or a computation based on that to the caller as a result. In its simplest form (just reading the value and emitting it without any potential Decision/Command even applying), such a _Synchronous Query_ is a gross violation of CQRS - reads should ideally be served from a Read Model_ 
 
 ## Programming Model walkthrough
-
-### Core elements
-
-In the code handling a given Aggregate’s Commands and Synchronous Queries, the code you write divide into:
-
-- StreamName section
-  - `Category`
-  -`streamName`
-- Helpers/Types
-- Events
-    - `type Event`
-    - optionally: `encode`, `tryDecode`
-    - `codec`
-- Fold 
-  - `type State`
-  - `initial`
-  - (`evolve` +) `fold`
-  - Storage Model helpers (`isOrigin`,`unfold`,`toSnapshot` etc)
-
-while these are not omnipresent, for the purposes of this discussion we’ll treat them as that. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.
 
 ### Flows and Streams
 
