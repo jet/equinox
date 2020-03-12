@@ -3,10 +3,10 @@ module Domain.InventoryItem
 
 open System
 
+let streamName (id : InventoryItemId) = FsCodec.StreamName.create "InventoryItem" (InventoryItemId.toString id)
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    let (|ForInventoryItemId|) (id : InventoryItemId) = FsCodec.StreamName.create "InventoryItem" (InventoryItemId.toString id)
 
     type Event =
         | Created of name: string
@@ -55,4 +55,4 @@ module Commands =
             [ Events.CheckedIn count ]
         | Deactivate ->
             if not state.active then invalidOp "Already deactivated"
-            [ Events.Deactivated ] 
+            [ Events.Deactivated ]

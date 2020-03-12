@@ -36,9 +36,9 @@
 
 open System
 
-module Events =
+let streamName clientId = FsCodec.StreamName.create "Account" clientId
 
-    let (|ForClientId|) clientId = FsCodec.StreamName.create "Account" clientId
+module Events =
 
     type Delta = { count : int }
     type SnapshotInfo = { balanceLog : int[] }
@@ -103,9 +103,7 @@ module Commands =
             if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
             else [-1L,Events.Removed {count = delta}]
 
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
@@ -152,7 +150,7 @@ module EventStore =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
+    let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
 
 module Cosmos =
     open Equinox.Cosmos
@@ -163,10 +161,10 @@ module Cosmos =
     let context = Context(conn, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
+    let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
 
-let serviceES = Service(Log.log, EventStore.resolve)
-let serviceCosmos = Service(Log.log, Cosmos.resolve)
+let serviceES = Service(Log.log, EventStore.resolver.Resolve)
+let serviceCosmos = Service(Log.log, Cosmos.resolver.Resolve)
 
 let client = "ClientA"
 serviceES.Add(client, 1) |> Async.RunSynchronously

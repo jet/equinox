@@ -132,7 +132,7 @@ The following example is a minimal version of [the Favorites model](samples/Stor
 ```fsharp
 (* Event stream naming + schemas *)
 
-let (|ForClientId|) (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
+let streamName (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -173,9 +173,7 @@ let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
 (* The Service defines operations in business terms with minimal reference to Equinox terms
    or need to talk in terms of infrastructure; typically the service is stateless and can be a Singleton *)
 
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
@@ -223,9 +221,19 @@ At a high level we have:
 
 In the code handling a given Aggregate’s Commands and Synchronous Queries, the code you write divide into:
 
-- Events (`codec`, `encode`, `tryDecode`, `categoryId`, `(|For...|)` etc.)
-- State/Fold (`evolve`, `fold`, `initial`)
-- Storage Model helpers (`isOrigin`,`unfold`,`toSnapshot` etc)
+- StreamName section
+  - `Category`
+  -`streamName`
+- Helpers/Types
+- Events
+    - `type Event`
+    - optionally: `encode`, `tryDecode`
+    - `codec`
+- Fold 
+  - `type State`
+  - `initial`
+  - (`evolve` +) `fold`
+  - Storage Model helpers (`isOrigin`,`unfold`,`toSnapshot` etc)
 
 while these are not omnipresent, for the purposes of this discussion we’ll treat them as that. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.
 
@@ -242,8 +250,8 @@ Its recommended to read the examples in conjunction with perusing the code in or
 #### Stream Members
 
 ```fsharp
-type Equinox.Stream(stream, log, maxAttempts) =
-
+type Equinox.Stream(stream : IStream<'event, 'state>, log, maxAttempts) =
+StoreIntegration
     // Run interpret function with present state, retrying with Optimistic Concurrency
     member __.Transact(interpret : State -> Event list) : Async<unit>
 
@@ -313,20 +321,24 @@ A final consideration to mention is that, even when correct idempotent handling 
 #### `Stream` usage
 
 ```fsharp
-type Service(log, resolve, ?maxAttempts) =
-
-    let streamFor (clientId: string) =
-        let streamName = FsCodec.StreamName.create "Favorites" clientId
-        let stream = resolve streamName
-        Equinox.Stream(log, stream, defaultArg maxAttempts 3)
+let [<Literal>] Category = Favorites
+let streamName (clientId : String) = FsCodec.StreamName.create Category clientId
+ 
+type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
-        let stream = streamFor clientId
+        let stream = resolve clientId
         stream.Transact(interpret command)
 
     let read clientId : Async<string list> =
-        let stream = streamFor clientId
+        let stream = resolve clientId
         inner.Query id
+
+let create resolve =
+    let resolve clientId =
+        let streamName = streamName clientId
+        Equinox.Stream(log, resolve streamName, maxAttempts = 3)
+    Service(resolve)
 ```
 
 The `Stream`-related functions in a given Aggregate establish the access patterns used across when Service methods access streams (see below). Typically these are relatively straightforward calls forwarding to a `Equinox.Stream` equivalent (see [`src/Equinox/Equinox.fs`](src/Equinox/Equinox.fs)), which in turn use the Optimistic Concurrency retry-loop  in [`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
@@ -372,15 +384,14 @@ See [the TodoBackend.com sample](README.md#TodoBackend) for reference info regar
 #### `Event`s
 
 ```fsharp
-let (|ForClientId|) (id : string) = FsCodec.StreamName.create "Todos" id
-
-type Todo = { id: int; order: int; title: string; completed: bool }
-type Event =
-    | Added     of Todo
-    | Updated   of Todo
-    | Deleted   of int
-    | Cleared
-    | Compacted of Todo[]
+module Events =
+    type Todo = { id: int; order: int; title: string; completed: bool }
+    type Event =
+        | Added     of Todo
+        | Updated   of Todo
+        | Deleted   of int
+        | Cleared
+        | Compacted of Todo[]
 ```
 
 The fact that we have a `Cleared` Event stems from the fact that the spec defines such an operation. While one could implement this by emitting a `Deleted` event per currently existing item, there many reasons to do model this as a first class event:-
@@ -433,9 +444,7 @@ let interpret c (state : State) =
 #### `Service`
 
 ```fsharp
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
@@ -520,22 +529,20 @@ let interpret (context, command) state : Events.Event list =
     | Some eventDetails -> // accepted, mapped to event details record
         [Event.HandledCommand eventDetails]
 
-type Service(...)
+type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>)
 
-/// ...
+    // Given the supplied context, apply the command for the specified clientId
+    member __.Execute(clientId, context, command) : Async<unit> =
+        let stream = resolve clientId
+        stream.Transact(fun state -> interpretCommand (context, command) state)
 
-// Given the supplied context, apply the command for the specified clientId
-member __.Execute(clientId, context, command) : Async<unit> =
-    let stream = resolve clientId
-    stream.Transact(fun state -> interpretCommand (context, command) state)
-
-// Given the supplied context, apply the command for the specified clientId
-// Throws if this client's data is marked Read Only
-member __.Execute(clientId, context, command) : Async<unit> =
-    let stream = resolve clientId
-    stream.Transact(fun state ->
-        if state.isReadOnly then raise AccessDeniedException() // Mapped to 403 externally
-        interpretCommand (context, command) state)
+    // Given the supplied context, apply the command for the specified clientId
+    // Throws if this client's data is marked Read Only
+    member __.Execute(clientId, context, command) : Async<unit> =
+        let stream = resolve clientId
+        stream.Transact(fun state ->
+            if state.isReadOnly then raise AccessDeniedException() // Mapped to 403 externally
+            interpretCommand (context, command) state)
 ```
 
 ## Decisions (`Transact`ing Commands that also emit a result using the `decide` signature)
@@ -555,17 +562,15 @@ let decide (context, command) state : int * Events.Event list =
    // ... if `snd` contains event, they are written
    // `fst` (an `int` in this instance) is returned as the outcome to the caller
 
-type Service(...)
+type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
-/// ...
-
-// Given the supplied context, attempt to apply the command for the specified clientId
-// NOTE Try will return the `fst` of the tuple that `decide` returned
-// If >1 attempt was necessary (e.g., due to conflicting events), the `fst` from the last attempt is the outcome
-member __.Try(clientId, context, command) : Async<int> =
-    let stream = resolve clientId
-    stream.Transact(fun state ->
-        decide (context, command) state)
+    // Given the supplied context, attempt to apply the command for the specified clientId
+    // NOTE Try will return the `fst` of the tuple that `decide` returned
+    // If >1 attempt was necessary (e.g., due to conflicting events), the `fst` from the last attempt is the outcome
+    member __.Try(clientId, context, command) : Async<int> =
+        let stream = resolve clientId
+        stream.Transact(fun state ->
+            decide (context, command) state)
 ```
 
 ## DOs
@@ -646,7 +651,8 @@ let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
         let state' = fold state events
         state', acc @ events)
 
-type Service ... =
+type Service internal (resolve : CartId -> Equinox.Stream<Events.Event, Fold.State>) =
+
     member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
         stream.TransactAsync(fun state -> async {

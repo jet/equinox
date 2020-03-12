@@ -3,10 +3,10 @@
 open System
 open System.Collections.Generic
 
+let streamName (id: ClientId) = FsCodec.StreamName.create "SavedForLater" (ClientId.toString id)
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    let (|ForClientId|) (id: ClientId) = FsCodec.StreamName.create "SavedForLater" (ClientId.toString id)
 
     type Item =             { skuId : SkuId; dateSaved : DateTimeOffset }
 
@@ -104,4 +104,4 @@ module Commands =
             let index = Index state
             let net = skus |> Array.filter (index.DoesNotAlreadyContainSameOrMoreRecent dateSaved)
             if Array.isEmpty net then true, []
-            else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ] 
+            else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]

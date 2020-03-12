@@ -1,11 +1,10 @@
 ﻿module Domain.ContactPreferences
 
 type Id = Id of email: string
+let streamName (Id email) = FsCodec.StreamName.create "ContactPreferences" email // TODO hash >> base64
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    let (|ForClientId|) (email: string) = FsCodec.StreamName.create "ContactPreferences" email // TODO hash >> base64
 
     type Preferences = { manyPromotions : bool; littlePromotions : bool; productReview : bool; quickSurveys : bool }
     type Value = { email : string; preferences : Preferences }
@@ -37,4 +36,4 @@ module Commands =
         match command with
         | Update ({ preferences = preferences } as value) ->
             if state = preferences then [] else
-            [ Events.Updated value ] 
+            [ Events.Updated value ]

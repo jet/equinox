@@ -19,12 +19,10 @@
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.Cosmos.dll"
 
-open Equinox.Cosmos
-open System
+let Category = "Favorites"
+let streamName clientId = FsCodec.StreamName.create Category clientId
 
 module Favorites =
-
-    let (|ForClientId|) clientId = FsCodec.StreamName.create "Favorites" clientId
 
     type Item = { sku : string }
     type Event =
@@ -46,9 +44,7 @@ module Favorites =
         | Add sku -> if state |> List.contains sku then [] else [Added {sku = sku}]
         | Remove sku -> if state |> List.contains sku then [Removed {sku = sku}] else []
 
-    type Service(log, resolve, maxAttempts) =
-
-        let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts)
+    type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
         let execute clientId command : Async<unit> =
             let stream = resolve clientId
@@ -87,9 +83,13 @@ module Store =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
 module FavoritesCategory = 
-    let resolve = Resolver(Store.context, Favorites.codec, Favorites.fold, Favorites.initial, Store.cacheStrategy, AccessStrategy.Unoptimized).Resolve
+    let resolver = Resolver(Store.context, Favorites.codec, Favorites.fold, Favorites.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
 
-let service = Favorites.Service(Log.log, FavoritesCategory.resolve, maxAttempts=3)
+let service resolve =
+    let resolve clientId =
+        let streamName = streamName clientId
+        Equinox.Stream(Log.log, FavoritesCategory.resolver.Resolve streamName, maxAttempts = 3)
+    Favorites.Service resolve
 
 let client = "ClientJ"
 service.Favorite(client, "a") |> Async.RunSynchronously

@@ -1,11 +1,10 @@
 ﻿module Backend.Favorites
 
+open Domain
 open Domain.Favorites
 open System
 
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 2)
+type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
@@ -24,4 +23,8 @@ type Service(log, resolve, ?maxAttempts) =
         execute clientId (Command.Unfavorite skus)
 
     member __.List clientId : Async<Events.Favorited []> =
-        read clientId 
+        read clientId
+
+let create log resolve =
+    let resolve id = Equinox.Stream(log, resolve (streamName id), maxAttempts  = 3)
+    Service(resolve)

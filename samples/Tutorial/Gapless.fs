@@ -4,11 +4,11 @@ module Gapless
 
 open System
 
+let [<Literal>] Category = "Gapless"
+let streamName id = FsCodec.StreamName.create Category (SequenceId.toString id)
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    let [<Literal>] categoryId = "Gapless"
-    let (|ForSequenceId|) id = FsCodec.StreamName.create categoryId (SequenceId.toString id)
 
     type Item = { id : int64 }
     type Snapshotted = { reservations : int64[];  nextId : int64 }
@@ -54,9 +54,7 @@ let decideConfirm item (state : Fold.State) : Events.Event list =
 let decideRelease item (state : Fold.State) : Events.Event list =
     failwith "TODO"
 
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (Events.ForSequenceId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+type Service internal (resolve : SequenceId -> Equinox.Stream<Events.Event, Fold.State>) =
 
     member __.ReserveMany(series,count) : Async<int64 list> =
         let stream = resolve series
@@ -79,19 +77,22 @@ let [<Literal>] appName = "equinox-tutorial-gapless"
 module Cosmos =
 
     open Equinox.Cosmos
-    let private createService (context,cache,accessStrategy) =
+    let private create (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
-        Service(Serilog.Log.Logger, resolve)
+        let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        let resolve sequenceId =
+            let streamName = streamName sequenceId
+            Equinox.Stream(Serilog.Log.Logger, resolver.Resolve streamName, maxAttempts = 3)
+        Service(resolve)
 
     module Snapshot =
 
-        let createService (context,cache) =
+        let create (context,cache) =
             let accessStrategy = AccessStrategy.Snapshot (Fold.isOrigin,Fold.snapshot)
-            createService(context,cache,accessStrategy)
+            create(context,cache,accessStrategy)
 
     module RollingUnfolds =
 
-        let createService (context,cache) =
+        let create (context,cache) =
             let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-            createService(context,cache,accessStrategy)
+            create(context,cache,accessStrategy)

@@ -4,11 +4,12 @@ open Swensen.Unquote
 open Equinox.MemoryStore
 
 let createMemoryStore () =
-    new VolatileStore<_>()
+    VolatileStore<_>()
 
 let createServiceMemory log store =
-    let resolve (id,opt) = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Cart.Fold.fold, Domain.Cart.Fold.initial).Resolve(id,?option=opt)
-    Backend.Cart.Service(log, resolve)
+    let resolver = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Cart.Fold.fold, Domain.Cart.Fold.initial)
+    let resolve (id,opt) = resolver.Resolve(id,?option=opt)
+    Backend.Cart.create log resolve
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

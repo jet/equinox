@@ -24,7 +24,7 @@ type Event =
     | Cleared of Cleared
     interface TypeShape.UnionContract.IUnionContract
 (* Kind of DDD aggregate ID *)
-let (|ForCounterId|) (id : string) = FsCodec.StreamName.create "Counter" id
+let streamName (id : string) = FsCodec.StreamName.create "Counter" id
 
 type State = State of int
 let initial : State = State 0
@@ -56,9 +56,7 @@ let decide command (State state) =
     | Clear i -> 
         if state = i then [] else [Cleared {value = i}]
 
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (ForCounterId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute counterId command : Async<unit> =
         let stream = resolve counterId
@@ -77,10 +75,10 @@ type Service(log, resolve, ?maxAttempts) =
 
 let store = Equinox.MemoryStore.VolatileStore()
 let codec = FsCodec.Box.Codec.Create()
-let resolve = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve
+let resolver = Equinox.MemoryStore.Resolver(store, codec, fold, initial)
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
-let service = Service(log, resolve, maxAttempts=3)
+let service = Service(log, resolver.Resolve, maxAttempts = 3)
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously
 service.Execute(clientId, Increment) |> Async.RunSynchronously
