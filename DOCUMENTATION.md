@@ -536,7 +536,7 @@ member __.Read(clientId) =
 <a name="commands"></a>
 # Command+Decision Handling functions
 
-Commands or Decisions are handled via `Equinox.Stream`'s `Transact' method
+Commands or Decisions are handled via `Equinox.Stream`'s `Transact` method
 
 ## Commands (`interpret` signature)
 
