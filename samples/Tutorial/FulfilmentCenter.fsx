@@ -40,9 +40,9 @@ module Types =
 
 module FulfilmentCenter =
 
-    module Events =
+    let streamName id = FsCodec.StreamName.create "FulfilmentCenter" id
 
-        let (|ForFcId|) id = FsCodec.StreamName.create "FulfilmentCenter" id
+    module Events =
 
         type AddressData = { address : Address }
         type ContactInformationData = { contact : ContactInformation }
@@ -84,9 +84,7 @@ module FulfilmentCenter =
         | UpdateDetails c when state.details = Some c -> []
         | UpdateDetails c -> [Events.FcDetailsChanged { details = c }]
 
-    type Service(log, resolve, ?maxAttempts) =
-
-        let resolve (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+    type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
 
         let execute fc command : Async<unit> =
             let stream = resolve fc
@@ -135,8 +133,8 @@ module Store =
 
 open FulfilmentCenter
 
-let resolve = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized).Resolve
-let service = Service(Log.log, resolve)
+let resolver = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
+let service = Service(Log.log, resolver.Resolve)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously
@@ -147,7 +145,7 @@ Log.dumpMetrics ()
 /// Manages ingestion of summary events tagged with the version emitted from FulmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
-    let (|ForFcId|) id = FsCodec.StreamName.create "FulfilmentCenterSummary" id
+    let streamName id = FsCodec.StreamName.create "FulfilmentCenterSummary" id
 
     module Events =
         type UpdatedData = { version : int64; state : Summary }
@@ -169,9 +167,7 @@ module FulfilmentCenterSummary =
         | Update (uv,_us) when state |> Option.exists (fun s -> s.version > uv) -> []
         | Update (uv,us) -> [Events.Updated { version = uv; state = us }]
 
-    type Service(log, resolve, ?maxAttempts) =
-
-        let resolve (Events.ForFcId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+    type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
 
         let execute fc command : Async<unit> =
             let stream = resolve fc

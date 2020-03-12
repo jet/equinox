@@ -1,5 +1,6 @@
 ﻿module Backend.Cart
 
+open Domain
 open Domain.Cart
 
 #if ACCUMULATOR
@@ -44,9 +45,7 @@ let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
         state', acc @ events)
 #endif
 
-type Service(log, resolve) =
-
-    let resolve (Events.ForCartId streamId, opt) = Equinox.Stream(log, resolve (streamId,opt), maxAttempts = 3)
+type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equinox.Stream<Events.Event, Fold.State>) =
 
     member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
@@ -73,3 +72,9 @@ type Service(log, resolve) =
     member __.ReadStale cartId =
         let stream = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
         stream.Query id
+
+let create log resolve =
+    let resolve (id, opt) =
+        let stream = resolve (streamName id, opt)
+        Equinox.Stream(log, stream, maxAttempts = 3)
+    Service(resolve)

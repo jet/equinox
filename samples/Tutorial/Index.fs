@@ -1,10 +1,10 @@
 module Index
 
+let [<Literal>] Category = "Index"
+let streamName indexId = FsCodec.StreamName.create Category (IndexId.toString indexId)
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    let [<Literal>] categoryId = "Index"
-    let (|ForIndexId|) indexId = FsCodec.StreamName.create categoryId (IndexId.toString indexId)
 
     type ItemIds = { items : string[] }
     type Items<'v> = { items : Map<string,'v> }
@@ -38,30 +38,30 @@ let interpret add remove (state : Fold.State<'v>) =
         [   if adds.Length <> 0 then yield Events.Added { items = Map.ofSeq adds }
             if removes.Length <> 0 then yield Events.Deleted { items = removes } ]
 
-type Service<'t> internal (indexId, resolve, maxAttempts) =
-
-    let log = Serilog.Log.ForContext<Service<'t>>()
-    let resolve (Events.ForIndexId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts)
-    let stream = resolve indexId
+type Service<'t> internal (stream : Equinox.Stream<Events.Event<'t>, Fold.State<'t>>) =
 
     member __.Ingest(adds : seq<string*'t>, removes : string seq) : Async<int*int> =
         stream.Transact(interpret adds removes)
     member __.Read() : Async<Map<string,'t>> =
         stream.Query id
 
-let create resolve indexId = Service(indexId, resolve, maxAttempts = 3)
+let create<'t> resolve indexId =
+    let log = Serilog.Log.ForContext<Service<'t>>()
+    let streamName = streamName indexId
+    let stream = Equinox.Stream(log, resolve streamName, maxAttempts = 3)
+    Service(stream)
 
 module Cosmos =
 
     open Equinox.Cosmos
-    let createService<'v> (context,cache) =
+    let create<'v> (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
-        create resolve
+        let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        create resolver.Resolve
 
 module MemoryStore =
 
-    let createService store =
-        let resolve = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial).Resolve
-        create resolve
+    let create store =
+        let resolver = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial)
+        create resolver.Resolve

@@ -12,7 +12,7 @@ let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferenc
 let createMemoryStore () =
     new MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
+    Backend.ContactPreferences.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.ContactPreferences.Events.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
@@ -33,10 +33,9 @@ type Tests(testOutputHelper) =
     let createLog () = createLogger testOutput
 
     let act (service : Backend.ContactPreferences.Service) (id,value) = async {
-        let (Domain.ContactPreferences.Id email) = id
-        do! service.Update email value
+        do! service.Update(id, value)
 
-        let! actual = service.Read email
+        let! actual = service.Read id
         test <@ value = actual @> }
 
     [<AutoData>]
@@ -49,7 +48,7 @@ type Tests(testOutputHelper) =
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn
-        return Backend.ContactPreferences.Service(log, resolve gateway) }
+        return Backend.ContactPreferences.create log (resolve gateway) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
@@ -74,7 +73,7 @@ type Tests(testOutputHelper) =
         let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosWithLatestKnownEventSemantics
         do! act service args
     }
-    
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosRollingUnfolds

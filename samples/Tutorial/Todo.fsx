@@ -17,13 +17,11 @@
 #r "Microsoft.Azure.DocumentDb.Core.dll"
 #r "Equinox.Cosmos.dll"
 
-open Equinox.Cosmos
-open System
-
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork
    This tutorial stresses different aspects *)
 
-let (|ForClientId|) (id : string) = FsCodec.StreamName.create "Todos" id
+let Category = "Todos"
+let streamName (id : string) = FsCodec.StreamName.create Category id
 
 type Todo =             { id: int; order: int; title: string; completed: bool }
 type DeletedInfo =      { id: int }
@@ -61,9 +59,7 @@ let interpret c (state : State) =
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted { id=id }] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
@@ -118,6 +114,7 @@ let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let [<Literal>] appName = "equinox-tutorial"
 let cache = Equinox.Cache(appName, 20)
 
+open Equinox.Cosmos
 module Store =
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
@@ -130,9 +127,9 @@ module Store =
 
 module TodosCategory = 
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
-    let resolve = Resolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access).Resolve
+    let resolver = Resolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access)
 
-let service = Service(log, TodosCategory.resolve)
+let service = Service(log, TodosCategory.resolver.Resolve)
 
 let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }

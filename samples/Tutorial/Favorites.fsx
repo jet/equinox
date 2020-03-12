@@ -72,8 +72,7 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
     b) a maximum number of attempts to make if we clash with a conflicting write *)
 
 // Example of wrapping Stream to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
-type Handler(log, stream, ?maxAttempts) =
-    let inner = Equinox.Stream(log, stream, maxAttempts = defaultArg maxAttempts 2)
+type Handler(stream : Equinox.Stream<Events.Event, Fold.State>) =
     member __.Execute command : Async<unit> =
         inner.Transact(interpret command)
     member __.Read : Async<string list> =
@@ -87,8 +86,8 @@ open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
 // related streams are termed a Category; Each client will have it's own Stream.
-let categoryId = "Favorites"
-let clientAFavoritesStreamId = FsCodec.StreamName.create categoryId "ClientA"
+let Category = "Favorites"
+let clientAFavoritesStreamName = FsCodec.StreamName.create Category "ClientA"
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
@@ -103,12 +102,13 @@ let codec =
         | "Remove", (:? string as x) -> Removed x |> Some
         | _ -> None
     FsCodec.Codec.Create(encode,tryDecode)
-// Each store has a Resolver which provides an IStream instance which binds to a specific stream in a specific store
+// Each store has a Resolver that generates IStream instances binding to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
-let stream streamName = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve(streamName)
+let resolver = Equinox.MemoryStore.Resolver(store, codec, fold, initial)
+let stream streamName = Equinox.Stream(log, resolver.Resolve streamName, maxAttempts = 2)
 
 // We hand the streamId to the resolver
-let clientAStream = stream clientAFavoritesStreamId
+let clientAStream = stream clientAFavoritesStreamName
 // ... and pass the stream to the Handler
 let handler = Handler(log, clientAStream)
 
@@ -131,12 +131,7 @@ handler.Read |> Async.RunSynchronously
 (* Building a service to package Command Handling and related functions
     No, this is not doing CQRS! *)
 
-type Service(log, resolve) =
-    (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
-    let streamFor (clientId: string) =
-        let streamName = FsCodec.StreamName.create "Favorites" clientId
-        let stream = resolve streamName
-        Handler(log, stream)
+type Service(streamFor : string -> Equinox.Stream<Events.Event, Folds.fold>) =
 
     member __.Favorite(clientId, sku) =
         let stream = streamFor clientId
@@ -150,9 +145,13 @@ type Service(log, resolve) =
         let stream = streamFor clientId
         stream.Read
 
-let resolve = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve
+(* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
+let streamFor (clientId: string) =
+    let streamName = FsCodec.StreamName.create "Favorites" clientId
+    let stream = resolver.Resolve streamName
+    Handler(log, stream)
 
-let service = Service(log, resolve)
+let service = Service(streamFor)
 
 let client = "ClientB"
 service.Favorite(client, "a") |> Async.RunSynchronously
