@@ -15,42 +15,42 @@ module Cart =
     let createServiceWithoutOptimization connection batchSize log =
         let store = createCosmosContext connection batchSize
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
-        Backend.Cart.Service(log, resolve)
+        Backend.Cart.create log resolve
     let projection = "Compacted",snd snapshot
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds connection batchSize log =
         let store = createCosmosContext connection batchSize
         let unfArgs = Domain.Cart.Fold.isOrigin, fun _ -> Seq.empty
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
-        Backend.Cart.Service(log, resolve)
+        Backend.Cart.create log resolve
     let createServiceWithSnapshotStrategy connection batchSize log =
         let store = createCosmosContext connection batchSize
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
-        Backend.Cart.Service(log, resolve)
+        Backend.Cart.create log resolve
     let createServiceWithSnapshotStrategyAndCaching connection batchSize log cache =
         let store = createCosmosContext connection batchSize
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         let resolve (id,opt) = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
-        Backend.Cart.Service(log, resolve)
+        Backend.Cart.create log resolve
     let createServiceWithRollingState connection log =
         let store = createCosmosContext connection 1
         let access = AccessStrategy.RollingState Domain.Cart.Fold.snapshot
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
-        Backend.Cart.Service(log, resolve)
+        Backend.Cart.create log resolve
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codecStj
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolve = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
-        Backend.ContactPreferences.Service(log, resolve)
+        let resolver = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized)
+        Backend.ContactPreferences.create log resolver.Resolve
     let createService log createGateway =
-        let resolve = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
-        Backend.ContactPreferences.Service(log, resolve)
+        let resolver = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent)
+        Backend.ContactPreferences.create log resolver.Resolve
     let createServiceWithLatestKnownEvent createGateway log cachingStrategy =
-        let resolve = Resolver(createGateway 1, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
-        Backend.ContactPreferences.Service(log, resolve)
+        let resolver = Resolver(createGateway 1, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent)
+        Backend.ContactPreferences.create log resolver.Resolve
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -197,19 +197,19 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createService log (createCosmosContext conn)
 
-        let email = let g = System.Guid.NewGuid() in g.ToString "N"
+        let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
         //let (Domain.ContactPreferences.Id email) = id ()
         // Feed some junk into the stream
         for i in 0..11 do
             let quickSurveysValue = i % 2 = 0
-            do! service.Update email { value with quickSurveys = quickSurveysValue }
+            do! service.Update(id, { value with quickSurveys = quickSurveysValue })
         // Ensure there will be something to be changed by the Update below
-        do! service.Update email { value with quickSurveys = not value.quickSurveys }
+        do! service.Update(id, { value with quickSurveys = not value.quickSurveys })
 
         capture.Clear()
-        do! service.Update email value
+        do! service.Update(id, value)
 
-        let! result = service.Read email
+        let! result = service.Read id
         test <@ value = result @>
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
@@ -220,18 +220,18 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createServiceWithLatestKnownEvent (createCosmosContext conn) log CachingStrategy.NoCaching
 
-        let email = let g = System.Guid.NewGuid() in g.ToString "N"
+        let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
         // Feed some junk into the stream
         for i in 0..11 do
             let quickSurveysValue = i % 2 = 0
-            do! service.Update email { value with quickSurveys = quickSurveysValue }
+            do! service.Update(id, { value with quickSurveys = quickSurveysValue })
         // Ensure there will be something to be changed by the Update below
-        do! service.Update email { value with quickSurveys = not value.quickSurveys }
+        do! service.Update(id, { value with quickSurveys = not value.quickSurveys })
 
         capture.Clear()
-        do! service.Update email value
+        do! service.Update(id, value)
 
-        let! result = service.Read email
+        let! result = service.Read id
         test <@ value = result @>
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>

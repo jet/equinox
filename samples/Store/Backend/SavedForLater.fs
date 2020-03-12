@@ -4,11 +4,9 @@ open Domain
 open Domain.SavedForLater
 open System
 
-type Service(handlerLog, resolve, maxSavedItems : int, ?maxAttempts) =
+type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>, maxSavedItems) =
 
     do if maxSavedItems < 0 then invalidArg "maxSavedItems" "must be non-negative value."
-
-    let resolve (Events.ForClientId streamId) = Equinox.Stream(handlerLog, resolve streamId, defaultArg maxAttempts 3)
 
     let execute clientId command : Async<bool> =
         let stream = resolve clientId
@@ -40,3 +38,7 @@ type Service(handlerLog, resolve, maxSavedItems : int, ?maxAttempts) =
     member __.Merge(clientId, targetId) : Async<bool> = async {
         let! state = read clientId
         return! execute targetId (Merge state) }
+
+let create maxSavedItems log resolve =
+    let resolve id = Equinox.Stream(log, resolve (streamName id), maxAttempts = 3)
+    Service(resolve, maxSavedItems)

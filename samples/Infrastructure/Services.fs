@@ -48,24 +48,27 @@ type ServiceBuilder(storageConfig, handlerLog) =
         let snapshot = Favorites.Fold.isOrigin,Favorites.Fold.snapshot
 
         match storageConfig with
-        | Storage.StorageConfig.Cosmos _ -> Backend.Favorites.Service(handlerLog, resolver.ResolveWithJsonElementCodec(Favorites.Events.codecStj, fold, initial, snapshot))
-        | _ -> Backend.Favorites.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(Favorites.Events.codecNewtonsoft, fold, initial, snapshot))
+        | Storage.StorageConfig.Cosmos _ -> resolver.ResolveWithJsonElementCodec(Favorites.Events.codecStj, fold, initial, snapshot)
+        | _ -> resolver.ResolveWithUtf8ArrayCodec(Favorites.Events.codecNewtonsoft, fold, initial, snapshot)
+        |> Backend.Favorites.create handlerLog
 
      member __.CreateSaveForLaterService() =
         let fold, initial = SavedForLater.Fold.fold, SavedForLater.Fold.initial
         let snapshot = SavedForLater.Fold.isOrigin,SavedForLater.Fold.compact
 
         match storageConfig with
-        | Storage.StorageConfig.Cosmos _ -> Backend.SavedForLater.Service(handlerLog, resolver.ResolveWithJsonElementCodec(SavedForLater.Events.codecStj,fold,initial,snapshot), maxSavedItems=50)
-        | _ -> Backend.SavedForLater.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(SavedForLater.Events.codecNewtonsoft,fold,initial,snapshot), maxSavedItems=50)
+        | Storage.StorageConfig.Cosmos _ -> resolver.ResolveWithJsonElementCodec(SavedForLater.Events.codecStj,fold,initial,snapshot)
+        | _ -> resolver.ResolveWithUtf8ArrayCodec(SavedForLater.Events.codecNewtonsoft,fold,initial,snapshot)
+        |> Backend.SavedForLater.create 50 handlerLog
 
      member __.CreateTodosService() =
         let fold, initial = TodoBackend.Fold.fold, TodoBackend.Fold.initial
         let snapshot = TodoBackend.Fold.isOrigin, TodoBackend.Fold.snapshot
 
         match storageConfig with
-        | Storage.StorageConfig.Cosmos _ -> TodoBackend.Service(handlerLog, resolver.ResolveWithJsonElementCodec(TodoBackend.Events.codecStj,fold,initial,snapshot))
-        | _ -> TodoBackend.Service(handlerLog, resolver.ResolveWithUtf8ArrayCodec(TodoBackend.Events.codecNewtonsoft,fold,initial,snapshot))
+        | Storage.StorageConfig.Cosmos _ -> resolver.ResolveWithJsonElementCodec(TodoBackend.Events.codecStj,fold,initial,snapshot)
+        | _ -> resolver.ResolveWithUtf8ArrayCodec(TodoBackend.Events.codecNewtonsoft,fold,initial,snapshot)
+        |> TodoBackend.create handlerLog
 
 let register (services : IServiceCollection, storageConfig, handlerLog) =
     let regF (factory : IServiceProvider -> 'T) = services.AddSingleton<'T>(fun (sp: IServiceProvider) -> factory sp) |> ignore

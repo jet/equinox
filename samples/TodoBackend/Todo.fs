@@ -1,13 +1,14 @@
-﻿namespace TodoBackend
+﻿module TodoBackend
 
 open Domain
 
+// The TodoBackend spec does not dictate having multiple lists, tenants or clients
+// Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
+let Category = "Todos"
+let streamName (id : ClientId) = FsCodec.StreamName.create Category (ClientId.toString id)
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    // The TodoBackend spec does not dictate having multiple lists, tenants or clients
-    // Here, we implement such a discriminator in order to allow each virtual client to maintain independent state
-    let (|ForClientId|) (id : ClientId) = FsCodec.StreamName.create "Todos" (ClientId.toString id)
 
     type Todo =         { id: int; order: int; title: string; completed: bool }
     type Deleted =      { id: int }
@@ -51,9 +52,7 @@ module Commands =
         | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Events.Deleted {id=id}] else []
         | Clear -> if state.items |> List.isEmpty then [] else [Events.Cleared]
 
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts = defaultArg maxAttempts 2)
+type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command =
         let stream = resolve clientId
@@ -84,3 +83,5 @@ type Service(log, resolve, ?maxAttempts) =
     member __.Patch(clientId, item: Events.Todo) : Async<Events.Todo> = async {
         let! state' = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }
+
+let create log resolve = Service(fun id -> Equinox.Stream(log, resolve (streamName id), maxAttempts = 3))

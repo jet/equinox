@@ -1,9 +1,9 @@
 ﻿module Domain.Favorites
 
+let streamName (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    let (|ForClientId|) (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
 
     type Favorited =                            { date: System.DateTimeOffset; skuId: SkuId }
     type Unfavorited =                          { skuId: SkuId }

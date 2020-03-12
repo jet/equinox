@@ -1,9 +1,9 @@
 ﻿module Domain.Cart
 
+let streamName (id: CartId) = FsCodec.StreamName.create "Cart" (CartId.toString id)
+
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    let (|ForCartId|) (id: CartId) = FsCodec.StreamName.create "Cart" (CartId.toString id)
 
     type ContextInfo =              { time: System.DateTime; requestId: RequestId }
 
@@ -29,6 +29,7 @@ module Events =
     let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
+
     type ItemInfo =                 { skuId: SkuId; quantity: int; returnsWaived: bool }
     type State =                    { items: ItemInfo list }
     module State =

@@ -111,7 +111,7 @@ type Tests() =
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToLocalEventStoreNode log
         let gateway = createGesGateway conn batchSize
-        let service = Backend.Cart.Service(log, CartIntegration.resolveGesStreamWithRollingSnapshots gateway)
+        let service = Backend.Cart.create log (CartIntegration.resolveGesStreamWithRollingSnapshots gateway)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
@@ -124,7 +124,7 @@ type Tests() =
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let gateway = createCosmosContext conn batchSize
-        let service = Backend.Cart.Service(log, CartIntegration.resolveCosmosStreamWithSnapshotStrategy gateway)
+        let service = Backend.Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy gateway)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount context cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200
