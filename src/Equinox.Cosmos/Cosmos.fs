@@ -1126,7 +1126,10 @@ type Connector
         match defaultConsistencyLevel with
         | Some x -> co.ConsistencyLevel <- Nullable x
         | None -> ()
-        // TODO translate
+        // TODO translate, or not
+        // https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1232
+        // https://github.com/Azure/azure-cosmos-dotnet-v2/issues/605
+        // https://docs.microsoft.com/en-us/azure/cosmos-db/local-emulator#running-on-mac-or-linux
 //        if defaultArg bypassCertificateValidation false then
 //            let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
 //            co.TransportClientHandlerFactory <- inhibitCertCheck
