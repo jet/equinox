@@ -1122,7 +1122,7 @@ type Connector
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
         match gatewayModeMaxConnectionLimit with
         | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
-        | x -> co.GatewayModeMaxConnectionLimit <- defaultArg x 1000
+        | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 1000
         match defaultConsistencyLevel with
         | Some x -> co.ConsistencyLevel <- Nullable x
         | None -> ()
