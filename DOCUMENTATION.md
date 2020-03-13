@@ -88,9 +88,9 @@ Unfolds | Snapshot information, stored in an appropriate storage location (outsi
 
 NB this has lots of room for improvement, having started as a placeholder in [#50](https://github.com/jet/equinox/issues/50); **improvements are absolutely welcome, as this is intended for an audience with diverse levels of familiarity with event sourcing in general, and Equinox in particular**.
 
-## Aggregate module
+## Aggregate Module
 
-In code handling a given Aggregate’s Commands and Synchronous Queries, the code you write divides into the following canonical organization:
+All the code handling any given Aggregate’s Invariants, Commands and Synchronous Queries should be [encapsulated within a single `module`](https://en.wikipedia.org/wiki/Cohesion_(computer_science). It's highly recommended to use the following canonical skeleton layout:
 
 ```fsharp
 module Aggregate
@@ -102,13 +102,21 @@ let streamName id = FsCodec.StreamName.create Category (Id.toString id)
 
 (* Optionally, Helpers/Types *)
 
+// NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
+[<RequiredQualifiedAccess>]
 module Events =
 
     type Event =
         | ...
     // optionally: `encode`, `tryDecode` (only if you're doing manual decoding)
     let codec = FsCodec ... Codec.Create<Event>(...)
-    
+```    
+
+Some notes about the intents being satisfied here:
+
+- types and cases in `Events` cannot be used without prefixing with `Events.` - while it can make sense to assert in terms of them in tests, in general sibling code in adjacent `module`s should not be using them directly (in general interaction should be via the `type Service`)
+
+```fsharp
 module Fold =
 
     type State =
@@ -117,18 +125,85 @@ module Fold =
         | Events.X -> (state update)
         | Events.Y -> (state update)
     let fold events = Seq.fold evolve events
-    (* Storage Model helpers, e.g. isOrigin, toSnapshot etc *)
+    
+    (* Storage Model helpers *)
+
+    let isOrigin : Events.Event = function
+       | Events.Snapshotted -> true
+       | _ -> false
+    let snapshot (state : State) : Event =
+       Events.Snapshotted { ... }
 
 let interpretX ... (state : Fold.State) : Events list = ...
-let decideY ... (state : Fold.State) : 'result * Events list = ...
 
-type Service internal (resolve : Id -> Equinox.Stream<Events.Event, Fold.State) = ...`
+type Decision =
+    | Accepted
+    | Failed of Reason
 
-    member __.Run() =
-          
+let decideY ... (state : Fold.State) : Decision * Events list = ...
 ```
 
-While these are not omnipresent, for the purposes of this discussion we’ll treat them as that. See the [Programming Model](#programming-model) for a drilldown into these elements and their roles.
+- `interpret`, `decide` _and related input and output types / interfaces_ are public and top-level for use in unit tests (often unit tests will `open` the `module Fold` to use `initial` and `fold`)
+
+```
+type Service internal (resolve : Id -> Equinox.Stream<Events.Event, Fold.State) = ...`
+
+    member __.Execute(id, command) : Async<unit> =
+        let stream = resolve id
+        stream.Transact(interpretX command)
+
+    member __.Decide(id, inputs) : Async<Decision> =
+        let stream = resolve id
+        stream.Transact(decideX inputs)
+
+let create resolve =
+    let resolve id =
+        let stream = resolve (streamName id)
+        Equinox.Stream(Serilog.Log.ForContext<Service>(), stream, maxAttempts = 3)
+    Service(resolve)
+```
+
+- `Service`'s constructor is `internal`; `create` is the main way in which one wires things up (using either a concrete store or a `MemoryStore`) - there should not be a need to have it implement an interface and/or go down mocking rabbit holes.
+
+While not all sections are omnipresent, significant thought and discussion has gone into arriving at this layout. Having everything laid out consistently is a big win, so customizing your layout / grouping is something to avoid doing until you have [at least 3](https://en.wikipedia.org/wiki/Rule_of_three_(computer_programming) representative aggregates of your own implemented.
+
+### Storage Binding Module
+
+Over the top of the Aggregate Module structure, one then binds this to a concrete storage subsystem. For example:
+
+Depending on how you structure your app, you may opt to maintain such module either within the `module Aggregate`, or somewhere outside closer to the [_Composition Root_](https://blog.ploeh.dk/2011/07/28/CompositionRoot/).
+
+```fsharp
+module EventStore =
+
+    let accessStrategy = Equinox.EventStore.AccessStrategy.RollingSnapshots (Fold.isOrigin, Fold.snapshot)
+    let create (context, cache) =
+        let cacheStrategy = Equinox.EventStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
+        let resolver = Equinox.EventStore.Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        create resolver.Resolve
+
+module Cosmos =
+
+    let accessStrategy = Equinox.Cosmos.AccessStrategy.Snapshot (Fold.isOrigin, Fold.snapshot)
+    let create (context, cache) =
+        let cacheStrategy = Equinox.Cosmos.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
+        let resolver = Equinox.Cosmos.Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        create resolver.Resolve
+```
+
+### `MemoryStore` Storage Binding Module
+
+For integration testing higher level functionality in Application Services (straddling multiple Domain `Service`s and/or layering behavior over them), you can use the `MemoryStore` in the context of your tests:
+
+```fsharp
+module MemoryStore =
+
+    let create (store : Equinox.MemoryStore.VolatileStore) =
+        let resolver = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial)
+        create resolver.Resolve
+```
+
+Typically that binding module can live with your test helpers rather than making your Domain Assemblies depend on it.
 
 ## Core concepts
 
