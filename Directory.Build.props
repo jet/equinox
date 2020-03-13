@@ -21,6 +21,8 @@
     <!-- disable sourcelink on mono, to workaround https://github.com/dotnet/sourcelink/issues/155 -->
     <EnableSourceLink Condition=" '$(OS)' != 'Windows_NT' AND '$(MSBuildRuntimeType)' != 'Core' ">false</EnableSourceLink>
 
+    <!-- suppress false positive warning FS2003 about invalid version of AssemblyInformationalVersionAttribute -->
+    <NoWarn>$(NoWarn);FS2003</NoWarn>
   </PropertyGroup>
   <ItemGroup> <!-- net461 ref assemblies https://stackoverflow.com/a/57384175/11635 -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="All" />
