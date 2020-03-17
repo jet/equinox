@@ -26,7 +26,7 @@ module Events =
         interface TypeShape.UnionContract.IUnionContract
 
     let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
+    let codecStj options = FsCodec.SystemTextJson.Codec.Create<Event>(options = options)
 
 module Fold =
 

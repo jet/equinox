@@ -13,7 +13,7 @@ type Union =
     | B of Embedded
     interface TypeShape.UnionContract.IUnionContract
 
-let defaultOptions = FsCodec.SystemTextJson.Options.CreateDefault()
+let defaultOptions = FsCodec.SystemTextJson.Options.Create()
 
 type Base64ZipUtf8Tests() =
     let eventCodec = FsCodec.SystemTextJson.Codec.Create<Union>(defaultOptions)
