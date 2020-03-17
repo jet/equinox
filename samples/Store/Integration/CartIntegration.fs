@@ -23,7 +23,7 @@ let resolveGesStreamWithRollingSnapshots gateway =
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial).Resolve(id,?option=opt)
 
-let cosmosCodec = Domain.Cart.Events.codecStj
+let cosmosCodec = Domain.Cart.Events.codecStj (FsCodec.SystemTextJson.Options.Create())
 let resolveCosmosStreamWithSnapshotStrategy gateway =
     fun (id,opt) -> Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =

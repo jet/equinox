@@ -19,7 +19,7 @@ let resolveStreamGesWithOptimizedStorageSemantics gateway =
 let resolveStreamGesWithoutAccessStrategy gateway =
     EventStore.Resolver(gateway defaultBatchSize, eventStoreCodec, fold, initial).Resolve
 
-let cosmosCodec = Domain.ContactPreferences.Events.codecStj
+let cosmosCodec = Domain.ContactPreferences.Events.codecStj (FsCodec.SystemTextJson.Options.Create())
 let resolveStreamCosmosWithLatestKnownEventSemantics gateway =
     Cosmos.Resolver(gateway 1, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamCosmosUnoptimized gateway =
