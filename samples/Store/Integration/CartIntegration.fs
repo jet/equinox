@@ -4,7 +4,6 @@ open Equinox
 open Equinox.Cosmos.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
-open FsCodec.SystemTextJson.Serialization
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -16,15 +15,15 @@ let createMemoryStore () =
     // we want to validate that the JSON UTF8 is working happily
     VolatileStore<byte[]>()
 let createServiceMemory log store =
-    Backend.Cart.Service(log, fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.Utf8ArrayCodec.codec, fold, initial).Resolve(id,?option=opt))
+    Backend.Cart.create log (fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.codecNewtonsoft, fold, initial).Resolve(id,?option=opt))
 
-let eventStoreCodec = Domain.Cart.Events.Utf8ArrayCodec.codec
+let eventStoreCodec = Domain.Cart.Events.codecNewtonsoft
 let resolveGesStreamWithRollingSnapshots gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial).Resolve(id,?option=opt)
 
-let cosmosCodec = Domain.Cart.Events.JsonElementCodec.codec JsonSerializer.defaultOptions
+let cosmosCodec = Domain.Cart.Events.codecStj (FsCodec.SystemTextJson.Options.Create())
 let resolveCosmosStreamWithSnapshotStrategy gateway =
     fun (id,opt) -> Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
@@ -59,7 +58,7 @@ type Tests(testOutputHelper) =
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn defaultBatchSize
-        return Backend.Cart.Service(log, resolve gateway) }
+        return Backend.Cart.create log (resolve gateway) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
@@ -76,7 +75,7 @@ type Tests(testOutputHelper) =
     let arrangeCosmos connect resolve =
         let log = createLog ()
         let ctx: Cosmos.Context = connect log defaultBatchSize
-        Backend.Cart.Service(log, resolve ctx)
+        Backend.Cart.create log (resolve ctx)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {

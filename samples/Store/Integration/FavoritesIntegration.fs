@@ -2,7 +2,6 @@
 
 open Equinox
 open Equinox.Cosmos.Integration
-open FsCodec.SystemTextJson.Serialization
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -13,22 +12,22 @@ let snapshot = Domain.Favorites.Fold.isOrigin, Domain.Favorites.Fold.snapshot
 let createMemoryStore () =
     new MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    Backend.Favorites.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
+    Backend.Favorites.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
-let eventStoreCodec = Domain.Favorites.Events.Utf8ArrayCodec.codec
+let eventStoreCodec = Domain.Favorites.Events.codecNewtonsoft
 let createServiceGes gateway log =
-    let resolve = EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
-    Backend.Favorites.Service(log, resolve)
+    let resolver = EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
+    Backend.Favorites.create log resolver.Resolve
 
-let cosmosCodec = Domain.Favorites.Events.JsonElementCodec.codec JsonSerializer.defaultOptions
+let cosmosCodec = Domain.Favorites.Events.codecStj
 let createServiceCosmos gateway log =
-    let resolve = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve
-    Backend.Favorites.Service(log, resolve)
+    let resolver = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot)
+    Backend.Favorites.create log resolver.Resolve
 
 let createServiceCosmosRollingState gateway log =
     let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
-    let resolve = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
-    Backend.Favorites.Service(log, resolve)
+    let resolver = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access)
+    Backend.Favorites.create log resolver.Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -67,7 +66,7 @@ type Tests(testOutputHelper) =
         let service = createServiceCosmos store log
         do! act service args
     }
-    
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = Async.RunSynchronously <| async {
         let log = createLog ()

@@ -16,7 +16,7 @@
 #if VISUALSTUDIO
 #r "netstandard"
 #endif
-#I "bin/Debug/netstandard2.0/"
+#I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
@@ -31,14 +31,15 @@
 #r "Serilog.Sinks.Seq.dll"
 #r "Eventstore.ClientAPI.dll"
 #r "Equinox.EventStore.dll"
-#r "Microsoft.Azure.DocumentDb.Core.dll"
+#r "Microsoft.Azure.Cosmos.Direct.dll"
+#r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.Cosmos.dll"
 
 open System
 
-module Events =
+let streamName clientId = FsCodec.StreamName.create "Account" clientId
 
-    let (|ForClientId|) clientId = FsCodec.StreamName.create "Account" clientId
+module Events =
 
     type Delta = { count : int }
     type SnapshotInfo = { balanceLog : int[] }
@@ -103,9 +104,7 @@ module Commands =
             if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
             else [-1L,Events.Removed {count = delta}]
 
-type Service(log, resolve, ?maxAttempts) =
-
-    let resolve (Events.ForClientId streamId) = Equinox.Stream(log, resolve streamId, defaultArg maxAttempts 3)
+type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
@@ -152,21 +151,23 @@ module EventStore =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
+    let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
 
 module Cosmos =
     open Equinox.Cosmos
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
-    let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=Log.log, mode=ConnectionMode.Gateway)
+    let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=Log.log, mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
     let conn = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
     let context = Context(conn, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let resolve = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
+    let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
 
-let serviceES = Service(Log.log, EventStore.resolve)
-let serviceCosmos = Service(Log.log, Cosmos.resolve)
+let serviceES = Service(EventStore.resolve)
+let serviceCosmos = Service(Cosmos.resolve)
 
 let client = "ClientA"
 serviceES.Add(client, 1) |> Async.RunSynchronously

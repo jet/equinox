@@ -13,21 +13,10 @@ type Union =
     | B of Embedded
     interface TypeShape.UnionContract.IUnionContract
 
-let defaultSettings = FsCodec.NewtonsoftJson.Settings.CreateDefault()
-
-let encode (evt: Union) =
-    match evt with
-    | A e -> "A", IntegrationJsonSerializer.serializeToElement(e)
-    | B e -> "B", IntegrationJsonSerializer.serializeToElement(e)
-        
-let tryDecode (eventType, data: JsonElement) =
-    match eventType with
-    | "A" -> Some (A <| IntegrationJsonSerializer.deserializeElement<Embedded>(data))
-    | "B" -> Some (B <| IntegrationJsonSerializer.deserializeElement<Embedded>(data))
-    | _ -> None
+let defaultOptions = FsCodec.SystemTextJson.Options.Create()
 
 type Base64ZipUtf8Tests() =
-    let eventCodec = FsCodec.Codec.Create<Union, JsonElement>(encode, tryDecode)
+    let eventCodec = FsCodec.SystemTextJson.Codec.Create<Union>(defaultOptions)
 
     [<Fact>]
     let ``serializes, achieving compression`` () =
@@ -38,7 +27,7 @@ type Base64ZipUtf8Tests() =
                 d = encoded.Data
                 m = Unchecked.defaultof<JsonElement>
                 t = DateTimeOffset.MinValue }
-        let res = IntegrationJsonSerializer.serialize(e)
+        let res = FsCodec.SystemTextJson.Serdes.Serialize(e, defaultOptions)
         test <@ res.Contains("\"d\":\"") && res.Length < 138 @>
 
     [<Property>]
@@ -56,9 +45,9 @@ type Base64ZipUtf8Tests() =
                 d = encoded.Data
                 m = Unchecked.defaultof<JsonElement>
                 t = DateTimeOffset.MinValue }
-        let ser = IntegrationJsonSerializer.serialize(e)
+        let ser = FsCodec.SystemTextJson.Serdes.Serialize(e, defaultOptions)
         test <@ ser.Contains("\"d\":\"") @>
-        let des = IntegrationJsonSerializer.deserialize<Store.Unfold>(ser)
+        let des = FsCodec.SystemTextJson.Serdes.Deserialize<Store.Unfold>(ser, defaultOptions)
         let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
         let decoded = eventCodec.TryDecode d |> Option.get
         test <@ value = decoded @>

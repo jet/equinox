@@ -24,7 +24,7 @@
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
 <!--    only uses FsCodec.Box, which happens to be housed in the NewtonsoftJson package-->
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.0.1" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.0.2-alpha.0.6" />
   </ItemGroup>
 
 </Project>

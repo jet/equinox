@@ -4,6 +4,9 @@ module Sequence
 
 open System
 
+let [<Literal>] Category = "Sequence"
+let streamName id = FsCodec.StreamName.create Category (SequenceId.toString id)
+
 // shim for net461
 module Seq =
     let tryLast (source : seq<_>) =
@@ -18,31 +21,13 @@ module Seq =
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
 
-    let [<Literal>] categoryId = "Sequence"
-    let (|ForSequenceId|) id = FsCodec.StreamName.create categoryId (SequenceId.toString id)
-
     type Reserved = { next : int64 }
     type Event =
         | Reserved of Reserved
         interface TypeShape.UnionContract.IUnionContract
 
-    module Utf8ArrayCodec =
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-
-    module JsonElementCodec =
-        open FsCodec.SystemTextJson
-        open System.Text.Json
-
-        let private encode (options: JsonSerializerOptions) = fun (evt: Event) ->
-            match evt with
-            | Reserved reserved -> "Reserved", JsonSerializer.SerializeToElement(reserved, options)
-
-        let private tryDecode (options: JsonSerializerOptions) = fun (eventType, data: JsonElement) ->
-            match eventType with
-            | "Reserved" -> Some (Reserved <| JsonSerializer.DeserializeElement<Reserved>(data, options))
-            | _ -> None
-
-        let codec options= FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
 
@@ -57,35 +42,34 @@ module Fold =
 let decideReserve (count : int) (state : Fold.State) : int64 * Events.Event list =
     state.next,[Events.Reserved { next = state.next + int64 count }]
 
-type Service internal (log, resolve, maxAttempts) =
-
-    let resolve (Events.ForSequenceId streamId) = Equinox.Stream(log, resolve streamId, maxAttempts)
+type Service internal (resolve : SequenceId -> Equinox.Stream<Events.Event, Fold.State>) =
 
     /// Reserves an id, yielding the reserved value. Optional <c>count</c> enables reserving more than the default count of <c>1</c> in a single transaction
     member __.Reserve(series,?count) : Async<int64> =
         let stream = resolve series
         stream.Transact(decideReserve (defaultArg count 1))
 
-let create resolve = Service(Serilog.Log.ForContext<Service>(), resolve, maxAttempts = 3)
+let create resolve =
+    let resolve sequenceId =
+        let streamName = streamName sequenceId
+        Equinox.Stream(Serilog.Log.ForContext<Service>(), resolve streamName, maxAttempts = 3)
+    Service(resolve)
 
 module Cosmos =
 
     open Equinox.Cosmos
-    open FsCodec.SystemTextJson.Serialization
-
-    let private createService (context,cache,accessStrategy) =
+    let private create (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let codec = Events.JsonElementCodec.codec JsonSerializer.defaultOptions
-        let resolve = Resolver(context, codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy).Resolve
-        create resolve
+        let resolver = Resolver(context, Events.codecStj, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        create resolver.Resolve
 
     module LatestKnownEvent =
 
-        let createService (context,cache) =
+        let create (context,cache) =
             let accessStrategy = AccessStrategy.LatestKnownEvent
-            createService (context,cache,accessStrategy)
+            create (context,cache,accessStrategy)
 
     module RollingUnfolds =
 
-        let createService (context,cache) =
-            createService (context,cache,AccessStrategy.RollingState Fold.snapshot)
+        let create (context,cache) =
+            create (context,cache,AccessStrategy.RollingState Fold.snapshot)

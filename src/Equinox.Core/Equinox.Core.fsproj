@@ -17,10 +17,6 @@
     <Compile Include="Retry.fs" />
     <Compile Include="AsyncCacheCell.fs" />
     <Compile Include="Cache.fs" />
-    <Compile Include="Json\JsonElementHelpers.fs" />
-    <Compile Include="Json\Utf8JsonReaderExtensions.fs" />
-    <Compile Include="Json\JsonRecordConverter.fs" />
-    <Compile Include="Json\Options.fs" />
   </ItemGroup>
 
   <ItemGroup>

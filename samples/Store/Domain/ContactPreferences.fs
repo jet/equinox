@@ -1,11 +1,10 @@
 ﻿module Domain.ContactPreferences
 
 type Id = Id of email: string
+let streamName (Id email) = FsCodec.StreamName.create "ContactPreferences" email // TODO hash >> base64
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
-
-    let (|ForClientId|) (email: string) = FsCodec.StreamName.create "ContactPreferences" email // TODO hash >> base64
 
     type Preferences = { manyPromotions : bool; littlePromotions : bool; productReview : bool; quickSurveys : bool }
     type Value = { email : string; preferences : Preferences }
@@ -14,25 +13,8 @@ module Events =
         | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
         interface TypeShape.UnionContract.IUnionContract
 
-    module Utf8ArrayCodec =
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-
-    module JsonElementCodec =
-        open FsCodec.SystemTextJson
-        open System.Text.Json
-
-        let private encode (options: JsonSerializerOptions) =
-            fun (evt: Event) ->
-                match evt with
-                | Updated value -> "contactPreferencesChanged", JsonSerializer.SerializeToElement(value, options)
-
-        let private tryDecode (options: JsonSerializerOptions) =
-            fun (eventType, data: JsonElement) ->
-                match eventType with
-                | "contactPreferencesChanged" -> Some (Updated <| JsonSerializer.DeserializeElement<Value>(data, options))
-                | _ -> None
-        
-        let codec options = FsCodec.Codec.Create<Event, JsonElement>(encode options, tryDecode options)
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj options = FsCodec.SystemTextJson.Codec.Create<Event>(options = options)
 
 module Fold =
 
@@ -56,4 +38,4 @@ module Commands =
         match command with
         | Update ({ preferences = preferences } as value) ->
             if state = preferences then [] else
-            [ Events.Updated value ] 
+            [ Events.Updated value ]
