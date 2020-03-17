@@ -78,7 +78,7 @@ type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless
 /// Only applied to snapshots in the Tip
 type JsonCompressedBase64Converter() =
     inherit JsonConverter<JsonElement>()
-    
+
     override __.Read (reader, _typeToConvert, options) =
         if reader.TokenType = JsonTokenType.Null then
             JsonSerializer.Deserialize<JsonElement>(&reader, options)
@@ -89,7 +89,7 @@ type JsonCompressedBase64Converter() =
             use output = new MemoryStream()
             decompressor.CopyTo(output)
             JsonSerializer.Deserialize<JsonElement>(ReadOnlySpan.op_Implicit(output.ToArray()), options)
-    
+
     override __.Write (writer, value, _options) =
         if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
             writer.WriteNullValue()
@@ -103,12 +103,12 @@ type JsonCompressedBase64Converter() =
 
 type JsonCompressedBase64ConverterAttribute () =
     inherit JsonConverterAttribute(typeof<JsonCompressedBase64Converter>)
-    
+
     static let converter = JsonCompressedBase64Converter()
-    
+
     override __.CreateConverter _typeToConvert =
         converter :> JsonConverter
-    
+
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoComparison>]
 type Unfold =
@@ -354,16 +354,16 @@ module MicrosoftAzureCosmosWrappers =
     // CosmosDB Error HttpStatusCode extractor
     let (|CosmosStatusCode|) (e : CosmosException) =
         e.Response.Status
-            
+
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
-            
+
     type Azure.Core.ResponseHeaders with
         member headers.GetRequestCharge () =
             match headers.TryGetValue("x-ms-request-charge") with
             | true, charge when not <| String.IsNullOrEmpty charge -> float charge
             | _ -> 0.
-            
-            
+
+
 
 [<CLIMutable; NoEquality; NoComparison>]
 type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
@@ -968,33 +968,30 @@ type private Folder<'event, 'state, 'context>
 module EquinoxCosmosInitialization =
     let internal getOrCreateDatabase (sdk: CosmosClient) (dbName: string) (throughput: ResourceThroughput) (cancellationToken: CancellationToken option) = async {
         let! ct = CancellationToken.useOrCreate cancellationToken
-        let! response = 
+        let! response =
             match throughput with
             | Default -> sdk.CreateDatabaseIfNotExistsAsync(id = dbName, cancellationToken = ct) |> Async.AwaitTaskCorrect
             | SetIfCreating value -> sdk.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | ReplaceAlways value ->
-                sdk.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct)
-                |> Async.AwaitTaskCorrect
-                |> Async.bind (fun response ->
-                    response.Database.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect |> Async.map (fun _ -> response))
+            | ReplaceAlways value -> async {
+                let! response = sdk.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+                let! _ = response.Database.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
+                return response }
 
         return response.Database }
 
     let internal getOrCreateContainer (db: CosmosDatabase) (props: ContainerProperties) (throughput: ResourceThroughput) (cancellationToken: CancellationToken option) = async {
         let! ct = CancellationToken.useOrCreate cancellationToken
-        let! response = 
+        let! response =
             match throughput with
             | Default -> db.CreateContainerIfNotExistsAsync(props, cancellationToken = ct) |> Async.AwaitTaskCorrect
             | SetIfCreating value -> db.CreateContainerIfNotExistsAsync(props, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | ReplaceAlways value ->
-                db.CreateContainerIfNotExistsAsync(props, throughput = Nullable(value), cancellationToken = ct)
-                |> Async.AwaitTaskCorrect
-                |> Async.bind (fun response ->
-                    response.Container.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect |> Async.map (fun _ -> response))
-        
+            | ReplaceAlways value -> async {
+                let! response = db.CreateContainerIfNotExistsAsync(props, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+                let! _ = response.Container.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
+                return response }
         return response.Container }
 
-    let internal getBatchAndTipContainerProps (containerName: string) = 
+    let internal getBatchAndTipContainerProps (containerName: string) =
         let props = ContainerProperties(id = containerName, partitionKeyPath = sprintf "/%s" Batch.PartitionKeyField)
         props.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
         props.IndexingPolicy.Automatic <- true
@@ -1012,15 +1009,15 @@ module EquinoxCosmosInitialization =
         with CosmosException ((CosmosStatusCode sc) as e) when sc = int System.Net.HttpStatusCode.Conflict -> return e.Response.Headers.GetRequestCharge() }
 
     let initializeContainer (sdk: CosmosClient) (dbName: string) (containerName: string) (mode: Provisioning) (createStoredProcedure: bool) (storedProcedureName: string option) (cancellationToken: CancellationToken option) = async {
-        let! ct = CancellationToken.useOrCreate cancellationToken |> Async.map Some
+        let! ct = CancellationToken.useOrCreate cancellationToken
         let dbThroughput = match mode with Provisioning.Database throughput -> throughput | _ -> Default
         let containerThroughput = match mode with Provisioning.Container throughput -> throughput | _ -> Default
-        let! db = getOrCreateDatabase sdk dbName dbThroughput ct
-        let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerName) containerThroughput ct
+        let! db = getOrCreateDatabase sdk dbName dbThroughput (Some ct)
+        let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerName) containerThroughput (Some ct)
 
         if createStoredProcedure then
             let syncStoredProcedureName = storedProcedureName |> Option.defaultValue SyncStoredProcedure.defaultName
-            do! createSyncStoredProcedure container syncStoredProcedureName ct |> Async.Ignore
+            do! createSyncStoredProcedure container syncStoredProcedureName (Some ct) |> Async.Ignore
 
         return container }
 
