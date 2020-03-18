@@ -79,8 +79,19 @@ type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless
 type JsonCompressedBase64Converter() =
     inherit JsonConverter<JsonElement>()
 
+    static member Compress (value: JsonElement) =
+        if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
+            value
+        else
+            let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
+            use output = new MemoryStream()
+            use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
+            compressor.Write(input, 0, input.Length)
+            compressor.Close()
+            JsonDocument.Parse("\"" + System.Convert.ToBase64String(output.ToArray()) + "\"").RootElement
+
     override __.Read (reader, _typeToConvert, options) =
-        if reader.TokenType = JsonTokenType.Null then
+        if reader.TokenType <> JsonTokenType.String then
             JsonSerializer.Deserialize<JsonElement>(&reader, options)
         else
             let compressedBytes = reader.GetBytesFromBase64()
@@ -90,16 +101,8 @@ type JsonCompressedBase64Converter() =
             decompressor.CopyTo(output)
             JsonSerializer.Deserialize<JsonElement>(ReadOnlySpan.op_Implicit(output.ToArray()), options)
 
-    override __.Write (writer, value, _options) =
-        if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
-            writer.WriteNullValue()
-        else
-            let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
-            use output = new MemoryStream()
-            use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
-            compressor.Write(input, 0, input.Length)
-            compressor.Close()
-            writer.WriteBase64StringValue(ReadOnlySpan.op_Implicit(output.ToArray()))
+    override __.Write (writer, value, options) =
+        JsonSerializer.Serialize<JsonElement>(writer, value, options)
 
 type JsonCompressedBase64ConverterAttribute () =
     inherit JsonConverterAttribute(typeof<JsonCompressedBase64Converter>)
@@ -536,12 +539,22 @@ module Sync =
     let batch (log : ILogger) retryPolicy containerStream batch: Async<Result> =
         let call = logged containerStream batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
+
     let mkBatch (stream: string) (events: IEventData<_>[]) unfolds: Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId } |]
             u = Array.ofSeq unfolds }
-    let mkUnfold baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
-        unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta; t = DateTimeOffset.UtcNow } : Unfold)
+
+    let mkUnfold compress baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
+        unfolds
+        |> Seq.mapi (fun offset x ->
+            {
+                i = baseIndex + int64 offset
+                c = x.EventType
+                d = x.Data |> if compress then JsonCompressedBase64Converter.Compress else id
+                m = x.Meta |> if compress then JsonCompressedBase64Converter.Compress else id
+                t = DateTimeOffset.UtcNow
+            } : Unfold)
 
 module internal Tip =
     let private get (container : EquinoxCosmosClient, stream : string) (maybePos: Position option) =
@@ -891,7 +904,7 @@ type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IEven
         match res with
         | LoadFromTokenResult.Unchanged -> return current
         | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
-    member __.Sync(Token.Unpack (container,stream,pos), state as current, events, mapUnfolds, fold, isOrigin, log, context): Async<SyncResult<'state>> = async {
+    member __.Sync(Token.Unpack (container,stream,pos), state as current, events, mapUnfolds, fold, isOrigin, compress, log, context): Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
         let encode e = codec.Encode(context,e)
         let exp,events,eventsEncoded,projectionsEncoded =
@@ -902,7 +915,7 @@ type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IEven
                 let events', unfolds = transmute events state'
                 Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
-        let projections = Sync.mkUnfold baseIndex projectionsEncoded
+        let projections = Sync.mkUnfold compress baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
         let! res = gateway.Sync log (container,stream) (exp,batch)
         match res with
@@ -922,9 +935,9 @@ module Caching =
         interface ICategory<'event, 'state, EquinoxCosmosClient*string, 'context> with
             member __.Load(log, (container,streamName), opt) : Async<StreamToken * 'state> =
                 loadAndIntercept (inner.Load(log, (container,streamName), opt)) streamName
-            member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list, context)
+            member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list, context, compress)
                 : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync(log, streamToken, state, events, context)
+                let! syncRes = inner.TrySync(log, streamToken, state, events, context, compress)
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict(loadAndIntercept resync stream)
                 | SyncResult.Written(token', state') ->
@@ -958,9 +971,9 @@ type private Folder<'event, 'state, 'context>
                 | None -> return! batched log (container,streamName)
                 | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
                 | Some tokenAndState -> return! category.LoadFromToken tokenAndState fold isOrigin log }
-        member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context)
+        member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context, compress)
             : Async<SyncResult<'state>> = async {
-            let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, log, context)
+            let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, compress, log, context)
             match res with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
@@ -1109,28 +1122,29 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         | CachingStrategy.SlidingWindow(cache, window) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
 
-    let resolveStream (streamId, maybeContainerInitializationGate) opt context =
+    let resolveStream (streamId, maybeContainerInitializationGate) opt context compress =
         { new IStream<'event, 'state> with
             member __.Load log = category.Load(log, streamId, opt)
             member __.TrySync(log: ILogger, token: StreamToken, originState: 'state, events: 'event list) =
                 match maybeContainerInitializationGate with
-                | None -> category.TrySync(log, token, originState, events, context)
+                | None -> category.TrySync(log, token, originState, events, context, compress)
                 | Some init -> async {
                     do! init ()
-                    return! category.TrySync(log, token, originState, events, context) } }
+                    return! category.TrySync(log, token, originState, events, context, compress) } }
 
     let resolveTarget = function
         | StreamName.CategoryAndId (categoryName, streamId) -> context.ResolveContainerStream(categoryName, streamId)
 
-    member __.Resolve(streamName : StreamName, [<O; D null>]?option, [<O; D null>]?context) =
+    member __.Resolve(streamName : StreamName, [<O; D null>]?option, [<O; D null>]?context, [<O; D true>]?compress) =
+        let compress = defaultArg compress true
         match resolveTarget streamName, option with
-        | streamArgs,(None|Some AllowStale) -> resolveStream streamArgs option context
+        | streamArgs,(None|Some AllowStale) -> resolveStream streamArgs option context compress
         | (containerStream,maybeInit),Some AssumeEmpty ->
-            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit) option context)
+            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit) option context compress)
 
-    member __.FromMemento(Token.Unpack (container,stream,_pos) as streamToken,state) =
+    member __.FromMemento(Token.Unpack (container,stream,_pos) as streamToken,state, [<O; D true>]?compress) =
         let skipInitialization = None
-        Stream.ofMemento (streamToken,state) (resolveStream ((container,stream),skipInitialization) None None)
+        Stream.ofMemento (streamToken,state) (resolveStream ((container,stream),skipInitialization) None None (defaultArg compress true))
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
