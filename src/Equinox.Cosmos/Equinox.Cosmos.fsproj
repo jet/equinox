@@ -6,7 +6,6 @@
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
-    <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">$(DefineConstants);NET461</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,7 +25,7 @@
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.1' " />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="1.1.0" />
 
-    <PackageReference Include="FsCodec.SystemTextJson" Version="2.0.2-alpha.0.6" />
+    <PackageReference Include="FsCodec.SystemTextJson" Version="2.0.2-alpha.0.8" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
     <PackageReference Include="Azure.Cosmos" Version="4.0.0-preview3" />
     <PackageReference Include="System.Runtime.Caching" Version="4.5.0" />
