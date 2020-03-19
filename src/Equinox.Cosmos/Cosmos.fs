@@ -515,7 +515,7 @@ type EquinoxCosmosClient (cosmosClient: CosmosClient, databaseId: string, contai
 
     abstract member GetContainer: unit -> CosmosContainer
     default __.GetContainer() =
-        containerClient.Force()
+        containerClient.Value
 
     abstract member GetQueryIteratorByPage<'T> : query: QueryDefinition * ?options: QueryRequestOptions -> AsyncSeq<Page<'T>>
     default __.GetQueryIteratorByPage<'T>(query, ?options) =
