@@ -546,13 +546,14 @@ module Sync =
             u = Array.ofSeq unfolds }
 
     let mkUnfold compress baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
+        let compressor = if compress then JsonCompressedBase64Converter.Compress else id
         unfolds
         |> Seq.mapi (fun offset x ->
             {
                 i = baseIndex + int64 offset
                 c = x.EventType
-                d = x.Data |> if compress then JsonCompressedBase64Converter.Compress else id
-                m = x.Meta |> if compress then JsonCompressedBase64Converter.Compress else id
+                d = compressor x.Data
+                m = compressor x.Meta
                 t = DateTimeOffset.UtcNow
             } : Unfold)
 
