@@ -16,13 +16,13 @@ let (|Default|) def name = (read name),def ||> defaultArg
 let dbId = read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test"
 let cId = read "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test"
 
-let private connectToCosmos (log: Serilog.ILogger) batchSize client  =
-    Context(client, log = log, defaultMaxItems = batchSize)
+let private connectToCosmos batchSize client  =
+    Context(client, defaultMaxItems = batchSize)
 
 let createSpecifiedCosmosOrSimulatorClient log =
     let createClient name discovery =
-        EquinoxCosmosOperationsFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-            .CreateOperationsClient(name, discovery, dbId, cId)
+        CosmosOperationsFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
+            .Create(name, discovery, dbId, cId)
 
     match read "EQUINOX_COSMOS_CONNECTION" with
     | None ->
@@ -34,6 +34,6 @@ let createSpecifiedCosmosOrSimulatorClient log =
 
 let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) batchSize =
     createSpecifiedCosmosOrSimulatorClient log
-    |> connectToCosmos log batchSize
+    |> connectToCosmos batchSize
 
 let defaultBatchSize = 500
