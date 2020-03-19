@@ -21,7 +21,7 @@ let private connectToCosmos batchSize client  =
 
 let createSpecifiedCosmosOrSimulatorClient log =
     let createClient name discovery =
-        CosmosOperationsFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
+        StoreOperationsFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
             .Create(name, discovery, dbId, cId)
 
     match read "EQUINOX_COSMOS_CONNECTION" with
