@@ -502,7 +502,7 @@ module EquinoxCosmosInitialization =
 
         return container }
 
-type EquinoxCosmosClient (cosmosClient: CosmosClient, databaseId: string, containerId: string) =
+type EquinoxCosmosOperations (cosmosClient: CosmosClient, databaseId: string, containerId: string) =
     let containerClient = lazy(cosmosClient.GetContainer(databaseId, containerId))
 
     member val DatabaseId = databaseId with get
@@ -559,7 +559,7 @@ module Sync =
         | ConflictUnknown of Position
 
     type [<RequireQualifiedAccess>] Exp = Version of int64 | Etag of string | Any
-    let private run (container : EquinoxCosmosClient, stream : string) (exp, req: Tip)
+    let private run (container : EquinoxCosmosOperations, stream : string) (exp, req: Tip)
         : Async<float*Result> = async {
         let ep = match exp with Exp.Version ev -> Position.fromI ev | Exp.Etag et -> Position.fromEtag et | Exp.Any -> Position.fromAppendAtEnd
         let args = [| box req; box ep.index; box (Option.toObj ep.etag)|]
@@ -623,10 +623,10 @@ module Sync =
             } : Unfold)
 
 module internal Tip =
-    let private get (container : EquinoxCosmosClient, stream : string) (maybePos: Position option) =
+    let private get (container : EquinoxCosmosOperations, stream : string) (maybePos: Position option) =
         let ro = match maybePos with Some { etag=Some etag } -> ItemRequestOptions(IfNoneMatch=Nullable(Azure.ETag(etag))) | _ -> null
         container.TryReadItem(Tip.WellKnownDocumentId, stream, options = ro)
-    let private loggedGet (get : EquinoxCosmosClient * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
+    let private loggedGet (get : EquinoxCosmosOperations * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
         let! t, (ru, res : ReadResult<Tip>) = get (container,stream) maybePos |> Stopwatch.Time
         let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
@@ -655,7 +655,7 @@ module internal Tip =
 
  module internal Query =
     open FSharp.Control
-    let private mkQuery (container : EquinoxCosmosClient, stream: string) maxItems (direction: Direction) startPos : AsyncSeq<Page<Batch>> =
+    let private mkQuery (container : EquinoxCosmosOperations, stream: string) maxItems (direction: Direction) startPos : AsyncSeq<Page<Batch>> =
         let query =
             let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.id!=\"%s\"" Tip.WellKnownDocumentId
             let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
@@ -817,12 +817,12 @@ module internal Tip =
             let t = StopwatchInterval(startTicks, endTicks)
             log |> logQuery direction maxItems stream t (!responseCount,allEvents.ToArray()) -1L ru }
 
-type [<NoComparison>] Token = { container: EquinoxCosmosClient; stream: string; pos: Position }
+type [<NoComparison>] Token = { container: EquinoxCosmosOperations; stream: string; pos: Position }
 module Token =
     let create (container,stream) pos : StreamToken =
         {  value = box { container = container; stream = stream; pos = pos }
            version = pos.index }
-    let (|Unpack|) (token: StreamToken) : EquinoxCosmosClient*string*Position = let t = unbox<Token> token.value in t.container,t.stream,t.pos
+    let (|Unpack|) (token: StreamToken) : EquinoxCosmosOperations*string*Position = let t = unbox<Token> token.value in t.container,t.stream,t.pos
     let supersedes (Unpack (_,_,currentPos)) (Unpack (_,_,xPos)) =
         let currentVersion, newVersion = currentPos.index, xPos.index
         let currentETag, newETag = currentPos.etag, xPos.etag
@@ -850,7 +850,7 @@ open System.Collections.Concurrent
 open System.Text.Json
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type Connection(client: EquinoxCosmosClient, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type Connection(client: EquinoxCosmosOperations, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.Client = client
     member __.TipRetryPolicy = readRetryPolicy
     member __.QueryRetryPolicy = readRetryPolicy
@@ -922,7 +922,7 @@ type Gateway(conn : Connection, batching : BatchingPolicy) =
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create containerStream pos') }
 
 /// Holds Container state, coordinating initialization activities
-type private ContainerWrapper(container : EquinoxCosmosClient, ?initContainer : unit -> Async<unit>) =
+type private ContainerWrapper(container : EquinoxCosmosOperations, ?initContainer : unit -> Async<unit>) =
     let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init ()))
 
     member __.Container = container
@@ -937,7 +937,7 @@ type Containers(categoryAndIdToDatabaseContainerStream : string -> string -> str
         let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         Containers(fun categoryName streamId -> databaseId, containerId, genStreamName categoryName streamId)
 
-    member internal __.Resolve(client : EquinoxCosmosClient, categoryName, id, init) : (EquinoxCosmosClient*string) * (unit -> Async<unit>) option =
+    member internal __.Resolve(client : EquinoxCosmosOperations, categoryName, id, init) : (EquinoxCosmosOperations*string) * (unit -> Async<unit>) option =
         let databaseId, containerName, streamName = categoryAndIdToDatabaseContainerStream categoryName id
         let init = match disableInitialization with Some true -> None | _ -> Some init
         let wrapped = wrappers.GetOrAdd((databaseId,containerName), fun _ -> ContainerWrapper(client, ?initContainer = init))
@@ -991,14 +991,14 @@ type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IEven
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, EquinoxCosmosClient*string,'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
+    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, EquinoxCosmosOperations*string,'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
         let intercept streamName tokenAndState = async {
             let! _ = tee streamName tokenAndState
             return tokenAndState }
         let loadAndIntercept load streamName = async {
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
-        interface ICategory<'event, 'state, EquinoxCosmosClient*string, 'context> with
+        interface ICategory<'event, 'state, EquinoxCosmosOperations*string, 'context> with
             member __.Load(log, (container,streamName), opt) : Async<StreamToken * 'state> =
                 loadAndIntercept (inner.Load(log, (container,streamName), opt)) streamName
             member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list, context, compress)
@@ -1014,8 +1014,8 @@ module Caching =
             (cache : ICache)
             (prefix : string)
             (slidingExpiration : TimeSpan)
-            (category : ICategory<'event, 'state, EquinoxCosmosClient*string, 'context>)
-            : ICategory<'event, 'state, EquinoxCosmosClient*string, 'context> =
+            (category : ICategory<'event, 'state, EquinoxCosmosOperations*string, 'context>)
+            : ICategory<'event, 'state, EquinoxCosmosOperations*string, 'context> =
         let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
         let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
@@ -1028,7 +1028,7 @@ type private Folder<'event, 'state, 'context>
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     let batched log containerStream = category.Load inspectUnfolds containerStream fold initial isOrigin log
-    interface ICategory<'event, 'state, EquinoxCosmosClient*string, 'context> with
+    interface ICategory<'event, 'state, EquinoxCosmosOperations*string, 'context> with
         member __.Load(log, (container,streamName), opt): Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log (container,streamName)
@@ -1046,7 +1046,7 @@ type private Folder<'event, 'state, 'context>
 
 /// Pairs a Gateway, defining the retry policies for CosmosDb with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type Context
-    (   client: EquinoxCosmosClient,
+    (   client: EquinoxCosmosOperations,
         ?log: ILogger,
         ?defaultMaxItems: int,
         ?getDefaultMaxItems: unit -> int,
@@ -1062,7 +1062,7 @@ type Context
 
     member __.Gateway = gateway
     member __.Containers = containers
-    member internal __.ResolveContainerStream(categoryName, id) : (EquinoxCosmosClient*string) * (unit -> Async<unit>) option =
+    member internal __.ResolveContainerStream(categoryName, id) : (EquinoxCosmosOperations*string) * (unit -> Async<unit>) option =
         containers.Resolve(gateway.Client, categoryName, id, init)
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
@@ -1126,7 +1126,7 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         Choice3Of3 transmute
     let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
     let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
-    let category : ICategory<_, _, EquinoxCosmosClient*string, 'context> =
+    let category : ICategory<_, _, EquinoxCosmosOperations*string, 'context> =
         match caching with
         | CachingStrategy.NoCaching -> folder :> _
         | CachingStrategy.SlidingWindow(cache, window) ->
@@ -1178,7 +1178,7 @@ type Discovery =
             UriAndKey (Uri uri, key)
         | _ -> invalidArg "connectionString" "unrecognized connection string format; must be `AccountEndpoint=https://...;AccountKey=...=;`"
 
-type EquinoxCosmosClientFactory
+type EquinoxCosmosOperationsFactory
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
@@ -1208,7 +1208,7 @@ type EquinoxCosmosClientFactory
         log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
 
     /// ClientOptions for this Connector as configured
-    member val ClientOptions =
+    member val CosmosClientOptions =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
         let co =
             CosmosClientOptions(
@@ -1232,20 +1232,20 @@ type EquinoxCosmosClientFactory
 //            co.TransportClientHandlerFactory <- inhibitCertCheck
         co
 
-    abstract member CreateClient: name: string * discovery: Discovery * dbName: string * containerName: string * ?skipLog: bool -> EquinoxCosmosClient
-    default __.CreateClient
+    abstract member CreateOperationsClient: name: string * discovery: Discovery * dbName: string * containerName: string * ?skipLog: bool -> EquinoxCosmosOperations
+    default __.CreateOperationsClient
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery,
             dbName: string,
             containerName: string,
             /// <c>true</c> to inhibit logging of client name
-            [<O; D null>]?skipLog) : EquinoxCosmosClient =
+            [<O; D null>]?skipLog) : EquinoxCosmosOperations =
 
         let (Discovery.UriAndKey (databaseUri=uri; key=key)) = discovery
         if skipLog <> Some true then logName uri name
-        let cosmosClient = new CosmosClient(string uri, key, __.ClientOptions)
+        let cosmosClient = new CosmosClient(string uri, key, __.CosmosClientOptions)
 
-        new EquinoxCosmosClient(cosmosClient, dbName, containerName)
+        new EquinoxCosmosOperations(cosmosClient, dbName, containerName)
 
 namespace Equinox.Cosmos.Core
 
@@ -1266,7 +1266,7 @@ type AppendResult<'t> =
 
 /// Encapsulates the core facilities Equinox.Cosmos offers for operating directly on Events in Streams.
 type Context
-    (   client: EquinoxCosmosClient,
+    (   client: EquinoxCosmosOperations,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events

@@ -21,8 +21,8 @@ let private connectToCosmos (log: Serilog.ILogger) batchSize client  =
 
 let createSpecifiedCosmosOrSimulatorClient log =
     let createClient name discovery =
-        EquinoxCosmosClientFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-            .CreateClient(name, discovery, dbId, cId)
+        EquinoxCosmosOperationsFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
+            .CreateOperationsClient(name, discovery, dbId, cId)
 
     match read "EQUINOX_COSMOS_CONNECTION" with
     | None ->

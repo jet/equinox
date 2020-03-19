@@ -76,10 +76,10 @@ module Cosmos =
             a.Mode, endpointUri, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
-        discovery, a.Database, a.Container, EquinoxCosmosClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
+        discovery, a.Database, a.Container, EquinoxCosmosOperationsFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
         let discovery, dName, cName, factory = connection (log, storeLog) info
-        let ctx = Context(factory.CreateClient(appName, discovery, dName, cName), log = log, defaultMaxItems = batchSize)
+        let ctx = Context(factory.CreateOperationsClient(appName, discovery, dName, cName), log = log, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, dName, cName)
 

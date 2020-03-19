@@ -317,7 +317,7 @@ module CosmosInit =
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
             let _storeLog, factory, discovery, dName, cName = conn (log,verboseConsole,maybeSeq) sargs
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            factory.CreateClient(appName, discovery, dName, cName).InitializeContainer(mode, not skipStoredProc) |> ignore
+            factory.CreateOperationsClient(appName, discovery, dName, cName).InitializeContainer(mode, not skipStoredProc) |> ignore
         | _ -> failwith "please specify a `cosmos` endpoint"
 
 module SqlInit =
@@ -347,7 +347,7 @@ module CosmosStats =
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
             let _storeLog,factory,discovery,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
-            let container = factory.CreateClient(appName, discovery, dName, cName)
+            let client = factory.CreateOperationsClient(appName, discovery, dName, cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
@@ -355,7 +355,7 @@ module CosmosStats =
             log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name,sql) -> async {
                     log.Debug("Running query: {sql}", sql)
-                    let res = container.GetContainer().QueryValue<int>(sql)
+                    let res = client.GetContainer().QueryValue<int>(sql)
                     log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.ParallelThrottled 1 // TOCONSIDER replace with Async.Sequence when using new enough FSharp.Core
                 |> Async.Ignore
