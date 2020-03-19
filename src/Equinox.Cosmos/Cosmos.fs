@@ -7,9 +7,7 @@ open FsCodec
 open FSharp.Control
 open Serilog
 open System
-open System.IO
 open System.Text.Json
-open System.Text.Json.Serialization
 open System.Threading
 
 /// A single Domain Event from the array held in a Batch
@@ -74,44 +72,6 @@ type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
     static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
 
-/// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
-/// Only applied to snapshots in the Tip
-type JsonCompressedBase64Converter() =
-    inherit JsonConverter<JsonElement>()
-
-    static member Compress (value: JsonElement) =
-        if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
-            value
-        else
-            let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
-            use output = new MemoryStream()
-            use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
-            compressor.Write(input, 0, input.Length)
-            compressor.Close()
-            JsonDocument.Parse("\"" + System.Convert.ToBase64String(output.ToArray()) + "\"").RootElement
-
-    override __.Read (reader, _typeToConvert, options) =
-        if reader.TokenType <> JsonTokenType.String then
-            JsonSerializer.Deserialize<JsonElement>(&reader, options)
-        else
-            let compressedBytes = reader.GetBytesFromBase64()
-            use input = new MemoryStream(compressedBytes)
-            use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
-            use output = new MemoryStream()
-            decompressor.CopyTo(output)
-            JsonSerializer.Deserialize<JsonElement>(ReadOnlySpan.op_Implicit(output.ToArray()), options)
-
-    override __.Write (writer, value, options) =
-        JsonSerializer.Serialize<JsonElement>(writer, value, options)
-
-type JsonCompressedBase64ConverterAttribute () =
-    inherit JsonConverterAttribute(typeof<JsonCompressedBase64Converter>)
-
-    static let converter = JsonCompressedBase64Converter()
-
-    override __.CreateConverter _typeToConvert =
-        converter :> JsonConverter
-
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoComparison>]
 type Unfold =
@@ -136,8 +96,7 @@ type Unfold =
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
 /// NB the type does double duty as a) model for when we read it b) encoding a batch being sent to the stored proc
-type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless explicitly optional
-    Tip =
+type [<NoEquality; NoComparison>] Tip = // TODO for STJ v5: All fields required unless explicitly optional
     {
         /// Partition key, as per Batch
         p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
@@ -851,7 +810,7 @@ type BatchingPolicy
     member __.MaxRequests = maxRequests
 
 type StoreClient(conn : StoreConnection, batching : BatchingPolicy) =
-    let (|FromUnfold|_|) (tryDecode: #FsCodec.IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#FsCodec.IEventData<_>[]) : Option<'event[]> =
+    let (|FromUnfold|_|) (tryDecode: #IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#IEventData<_>[]) : Option<'event[]> =
         let items = ResizeArray()
         let isOrigin' e =
             match tryDecode e with
@@ -870,7 +829,7 @@ type StoreClient(conn : StoreConnection, batching : BatchingPolicy) =
     member __.Read log (container,stream) direction startPos (tryDecode,isOrigin) : Async<StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log (container,stream) conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
         return Token.create (container,stream) pos, events }
-    member __.ReadLazy (batching: BatchingPolicy) log (container,stream) direction startPos (tryDecode,isOrigin) : FSharp.Control.AsyncSeq<'event[]> =
+    member __.ReadLazy (batching: BatchingPolicy) log (container,stream) direction startPos (tryDecode,isOrigin) : AsyncSeq<'event[]> =
         Query.walkLazy log (container,stream) conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
     member __.LoadFromUnfoldsOrRollingSnapshots log (containerStream,maybePos) (tryDecode,isOrigin): Async<StreamToken * 'event[]> = async {
         let! res = Tip.tryLoad log conn.TipRetryPolicy containerStream maybePos
@@ -917,10 +876,10 @@ type Containers(categoryAndIdToDatabaseContainerStream : string -> string -> str
         let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         Containers(fun categoryName streamId -> databaseId, containerId, genStreamName categoryName streamId)
 
-    member internal __.Resolve(ops : StoreGateway, categoryName, id, init) : (StoreGateway*string) * (unit -> Async<unit>) option =
+    member internal __.Resolve(gateway : StoreGateway, categoryName, id, init) : (StoreGateway*string) * (unit -> Async<unit>) option =
         let databaseId, containerName, streamName = categoryAndIdToDatabaseContainerStream categoryName id
         let init = match disableInitialization with Some true -> None | _ -> Some init
-        let wrapped = wrappers.GetOrAdd((databaseId,containerName), fun _ -> ContainerWrapper(ops, ?initContainer = init))
+        let wrapped = wrappers.GetOrAdd((databaseId,containerName), fun _ -> ContainerWrapper(gateway, ?initContainer = init))
         (wrapped.Gateway,streamName),wrapped.InitializationGate
 
 namespace Equinox.Cosmos
