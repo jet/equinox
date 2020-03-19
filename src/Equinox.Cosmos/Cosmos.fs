@@ -507,7 +507,7 @@ type EquinoxCosmosOperations (cosmosClient: CosmosClient, databaseId: string, co
 
     member val DatabaseId = databaseId with get
     member val ContainerId = containerId with get
-    member val CosmosSdkClient = cosmosClient with get
+    member val CosmosClient = cosmosClient with get
 
     abstract member InitializeContainer: mode: Provisioning * createStoredProcedure: bool * ?storedProcedureName: string -> Async<CosmosContainer>
     default __.InitializeContainer(mode, createStoredProcedure, storedProcedureName) =
