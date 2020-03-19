@@ -11,8 +11,8 @@ open System.Text.Json
 open System.Threading
 
 /// A single Domain Event from the array held in a Batch
-type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless explicitly optional
-    Event =
+[<NoEquality; NoComparison>]
+type Event = // TODO for STJ v5: All fields required unless explicitly optional
     {   /// Creation datetime (as opposed to system-defined _lastUpdated which is touched by triggers, replication etc.)
         t: DateTimeOffset // ISO 8601
 
@@ -42,8 +42,8 @@ type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless
         member __.Timestamp = __.t
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
-type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless explicitly optional
-    Batch =
+[<NoEquality; NoComparison>]
+type Batch = // TODO for STJ v5: All fields required unless explicitly optional
     {   /// CosmosDB-mandated Partition Key, must be maintained within the document
         /// Not actually required if running in single partition mode, but for simplicity, we always write it
         p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
@@ -73,7 +73,7 @@ type [<NoEquality; NoComparison>] // TODO for STJ v5: All fields required unless
     static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
 
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
-[<NoComparison>]
+[<NoEquality; NoComparison>]
 type Unfold =
     {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
         i: int64
@@ -96,7 +96,8 @@ type Unfold =
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
 /// NB the type does double duty as a) model for when we read it b) encoding a batch being sent to the stored proc
-type [<NoEquality; NoComparison>] Tip = // TODO for STJ v5: All fields required unless explicitly optional
+[<NoEquality; NoComparison>]
+type Tip = // TODO for STJ v5: All fields required unless explicitly optional
     {
         /// Partition key, as per Batch
         p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
@@ -123,8 +124,8 @@ type [<NoEquality; NoComparison>] Tip = // TODO for STJ v5: All fields required 
     static member internal WellKnownDocumentId = "-1"
 
 /// Position and Etag to which an operation is relative
-type [<NoComparison>]
-    Position = { index: int64; etag: string option }
+[<NoComparison>]
+type Position = { index: int64; etag: string option }
 
 module internal Position =
     /// NB very inefficient compared to FromDocument or using one already returned to you
@@ -821,7 +822,7 @@ type StoreClient(conn : StoreConnection, batching : BatchingPolicy) =
         match Array.tryFindIndexBack isOrigin' xs with
         | None -> None
         | Some _ -> items.ToArray() |> Some
-    member __.Operations = conn.Gateway
+    member __.Gateway = conn.Gateway
     member __.LoadBackwardsStopping log (container, stream) (tryDecode,isOrigin): Async<StreamToken * 'event[]> = async {
         let! pos, events = Query.walk log (container,stream) conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward None (tryDecode,isOrigin)
         System.Array.Reverse events
@@ -995,10 +996,9 @@ type Context
     let init = fun () -> Initialization.createSyncStoredProcedure (gateway.GetContainer()) SyncStoredProcedure.defaultName None |> Async.Ignore
     let containers = Containers(gateway.DatabaseId, gateway.ContainerId)
 
-    member __.Gateway = client
-    member __.Containers = containers
+    member __.Client = client
     member internal __.ResolveContainerStream(categoryName, id) : (StoreGateway*string) * (unit -> Async<unit>) option =
-        containers.Resolve(client.Operations, categoryName, id, init)
+        containers.Resolve(client.Gateway, categoryName, id, init)
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
@@ -1059,7 +1059,7 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state  -> unfold state)
         | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
         | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         Choice3Of3 transmute
-    let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
+    let cosmosCat = Category<'event, 'state, 'context>(context.Client, codec)
     let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
     let category : ICategory<_, _, StoreGateway*string, 'context> =
         match caching with
@@ -1200,7 +1200,7 @@ type AppendResult<'t> =
 
 /// Encapsulates the core facilities Equinox.Cosmos offers for operating directly on Events in Streams.
 type Context
-    (   ops: StoreGateway,
+    (   gateway : StoreGateway,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
@@ -1210,11 +1210,11 @@ type Context
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
 
     do if log = null then nullArg "log"
-    let conn = Equinox.Cosmos.Store.StoreConnection(ops)
-    let containers = Containers(ops.DatabaseId, ops.ContainerId)
+    let conn = Equinox.Cosmos.Store.StoreConnection(gateway)
+    let containers = Containers(gateway.DatabaseId, gateway.ContainerId)
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
     let batching = BatchingPolicy(getDefaultMaxItems=getDefaultMaxItems)
-    let init = fun () -> Initialization.createSyncStoredProcedure (ops.GetContainer()) SyncStoredProcedure.defaultName None |> Async.Ignore
+    let init = fun () -> Initialization.createSyncStoredProcedure (gateway.GetContainer()) SyncStoredProcedure.defaultName None |> Async.Ignore
     let client = StoreClient(conn, batching)
 
     let maxCountPredicate count =
