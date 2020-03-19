@@ -10,7 +10,7 @@ type StorageConfig =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
     | Memory of Equinox.MemoryStore.VolatileStore<byte[]>
     | Es     of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
-    | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
+    | Cosmos of Equinox.Cosmos.Context * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
     | Sql    of Equinox.SqlStreamStore.Context * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
@@ -70,19 +70,18 @@ module Cosmos =
     open Equinox.Cosmos
     open Serilog
 
-    let private createGateway connection maxItems = Gateway(connection, BatchingPolicy(defaultMaxItems=maxItems))
     let connection (log: ILogger, storeLog: ILogger) (a : Info) =
         let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection |> Discovery.FromConnectionString
         log.Information("CosmosDb {mode} {connection} Database {database} Container {container}",
             a.Mode, endpointUri, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
-        discovery, a.Database, a.Container, Connector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
+        discovery, a.Database, a.Container, EquinoxCosmosOperationsFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
-        let discovery, dName, cName, connector = connection (log, storeLog) info
-        let conn = connector.Connect(appName, discovery) |> Async.RunSynchronously
+        let discovery, dName, cName, factory = connection (log, storeLog) info
+        let ctx = Context(factory.CreateOperationsClient(appName, discovery, dName, cName), log = log, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dName, cName)
+        StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, dName, cName)
 
 /// To establish a local node to run the tests against:
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows

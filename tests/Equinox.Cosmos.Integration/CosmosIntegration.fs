@@ -12,28 +12,23 @@ module Cart =
     let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
     let codec = Domain.Cart.Events.codecStj IntegrationJsonSerializer.options
-    let createServiceWithoutOptimization connection batchSize log =
-        let store = createCosmosContext connection batchSize
+    let createServiceWithoutOptimization store log =
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
     let projection = "Compacted",snd snapshot
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
-    let createServiceWithEmptyUnfolds connection batchSize log =
-        let store = createCosmosContext connection batchSize
+    let createServiceWithEmptyUnfolds store log =
         let unfArgs = Domain.Cart.Fold.isOrigin, fun _ -> Seq.empty
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
-    let createServiceWithSnapshotStrategy connection batchSize log =
-        let store = createCosmosContext connection batchSize
+    let createServiceWithSnapshotStrategy store log =
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
-    let createServiceWithSnapshotStrategyAndCaching connection batchSize log cache =
-        let store = createCosmosContext connection batchSize
+    let createServiceWithSnapshotStrategyAndCaching store log cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         let resolve (id,opt) = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
-    let createServiceWithRollingState connection log =
-        let store = createCosmosContext connection 1
+    let createServiceWithRollingState store log =
         let access = AccessStrategy.RollingState Domain.Cart.Fold.snapshot
         let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
@@ -43,14 +38,14 @@ module ContactPreferences =
     let codec = Domain.ContactPreferences.Events.codecStj IntegrationJsonSerializer.options
     let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let gateway = createGateway defaultBatchSize
-        let resolver = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized)
-        Backend.ContactPreferences.create log resolver.Resolve
-    let createService log createGateway =
-        let resolver = Resolver(createGateway 1, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent)
-        Backend.ContactPreferences.create log resolver.Resolve
-    let createServiceWithLatestKnownEvent createGateway log cachingStrategy =
-        let resolver = Resolver(createGateway 1, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent)
-        Backend.ContactPreferences.create log resolver.Resolve
+        let resolve = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
+        Backend.ContactPreferences.create log resolve
+    let createService log store =
+        let resolve = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
+        Backend.ContactPreferences.create log resolve
+    let createServiceWithLatestKnownEvent store log cachingStrategy =
+        let resolve = Resolver(store, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
+        Backend.ContactPreferences.create log resolve
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -77,10 +72,10 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` context skuId = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-
         let maxItemsPerRequest = 2
-        let service = Cart.createServiceWithoutOptimization conn maxItemsPerRequest log
+        let store = connectToSpecifiedCosmosOrSimulator log maxItemsPerRequest
+
+        let service = Cart.createServiceWithoutOptimization store log
         capture.Clear() // for re-runs of the test
 
         let cartId = % Guid.NewGuid()
@@ -110,15 +105,15 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log1
-        // Ensure batching is included at some point in the proceedings
         let batchSize = 3
+        let store = connectToSpecifiedCosmosOrSimulator log1 batchSize
+        // Ensure batching is included at some point in the proceedings
 
         let context, (sku11, sku12, sku21, sku22) = ctx
         let cartId = % Guid.NewGuid()
 
         // establish base stream state
-        let service1 = Cart.createServiceWithEmptyUnfolds conn batchSize log1
+        let service1 = Cart.createServiceWithEmptyUnfolds store log1
         let! maybeInitialSku =
             let (streamEmpty, skuId) = initialState
             async {
@@ -151,7 +146,7 @@ type Tests(testOutputHelper) =
             do! s4 }
         let log2, capture2 = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
         use _flush = log2
-        let service2 = Cart.createServiceWithEmptyUnfolds conn batchSize log2
+        let service2 = Cart.createServiceWithEmptyUnfolds store log2
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
@@ -194,8 +189,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` value = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let service = ContactPreferences.createService log (createCosmosContext conn)
+        let store = connectToSpecifiedCosmosOrSimulator log 1
+        let service = ContactPreferences.createService log store
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
         //let (Domain.ContactPreferences.Id email) = id ()
@@ -217,8 +212,8 @@ type Tests(testOutputHelper) =
 
      [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update Contacts against Cosmos with RollingUnfolds Access Strategy`` value = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let service = ContactPreferences.createServiceWithLatestKnownEvent (createCosmosContext conn) log CachingStrategy.NoCaching
+        let store = connectToSpecifiedCosmosOrSimulator log 1
+        let service = ContactPreferences.createServiceWithLatestKnownEvent store log CachingStrategy.NoCaching
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
         // Feed some junk into the stream
@@ -241,13 +236,13 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log1
+        let store = connectToSpecifiedCosmosOrSimulator log1 1
 
         let context, (sku11, sku12, sku21, sku22) = ctx
         let cartId = % Guid.NewGuid()
 
         // establish base stream state
-        let service1 = Cart.createServiceWithRollingState conn log1
+        let service1 = Cart.createServiceWithRollingState store log1
         let! maybeInitialSku =
             let (streamEmpty, skuId) = initialState
             async {
@@ -280,7 +275,7 @@ type Tests(testOutputHelper) =
             do! s4 }
         let log2, capture2 = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
         use _flush = log2
-        let service2 = Cart.createServiceWithRollingState conn log2
+        let service2 = Cart.createServiceWithRollingState store log2
         let t2 = async {
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
@@ -314,9 +309,9 @@ type Tests(testOutputHelper) =
 
      [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` context skuId = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
-        let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy conn batchSize log
+        let store = connectToSpecifiedCosmosOrSimulator log batchSize
+        let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy store log
         let service1, service2 = createServiceIndexed (), createServiceIndexed ()
         capture.Clear()
 
@@ -341,10 +336,10 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
         let batchSize = 10
+        let store = connectToSpecifiedCosmosOrSimulator log batchSize
         let cache = Equinox.Cache("cart", sizeMb = 50)
-        let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching conn batchSize log cache
+        let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching store log cache
         let service1, service2 = createServiceCached (), createServiceCached ()
         capture.Clear()
 

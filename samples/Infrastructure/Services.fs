@@ -18,8 +18,7 @@ type StreamResolver(storage) =
             initial: 'state,
             snapshot: (('event -> bool) * ('state -> 'event))) =
         match storage with
-        | Storage.StorageConfig.Cosmos (gateway, caching, unfolds, databaseId, containerId) ->
-            let store = Equinox.Cosmos.Context(gateway, databaseId, containerId)
+        | Storage.StorageConfig.Cosmos (store, caching, unfolds, _databaseId, _containerId) ->
             let accessStrategy = if unfolds then Equinox.Cosmos.AccessStrategy.Snapshot snapshot else Equinox.Cosmos.AccessStrategy.Unoptimized
             Equinox.Cosmos.Resolver<'event,'state,_>(store, codec, fold, initial, caching, accessStrategy).Resolve
         | _ -> failwith "Currently, only Cosmos can be used with a JsonElement codec."

@@ -21,12 +21,12 @@ let resolveStreamGesWithoutAccessStrategy gateway =
 
 let cosmosCodec = Domain.ContactPreferences.Events.codecStj (FsCodec.SystemTextJson.Options.Create())
 let resolveStreamCosmosWithLatestKnownEventSemantics gateway =
-    Cosmos.Resolver(gateway 1, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
+    Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamCosmosUnoptimized gateway =
-    Cosmos.Resolver(gateway defaultBatchSize, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve
+    Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve
 let resolveStreamCosmosRollingUnfolds gateway =
     let access = Cosmos.AccessStrategy.Custom(Domain.ContactPreferences.Fold.isOrigin, Domain.ContactPreferences.Fold.transmute)
-    Cosmos.Resolver(gateway defaultBatchSize, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
+    Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -44,7 +44,7 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrange connect choose resolve = async {
+    let arrangeEs connect choose resolve = async {
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn
@@ -52,30 +52,35 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutAccessStrategy
+        let! service = arrangeEs connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveStreamGesWithOptimizedStorageSemantics
+        let! service = arrangeEs connectToLocalEventStoreNode createGesGateway resolveStreamGesWithOptimizedStorageSemantics
         do! act service args
     }
 
+    let arrangeCosmos connect resolve batchSize = async {
+        let log = createLog ()
+        let ctx: Cosmos.Context = connect log batchSize
+        return Backend.ContactPreferences.create log (resolve ctx) }
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosUnoptimized
+        let! service = arrangeCosmos connectToSpecifiedCosmosOrSimulator resolveStreamCosmosUnoptimized defaultBatchSize
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with LatestKnownEvent semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosWithLatestKnownEventSemantics
+        let! service = arrangeCosmos connectToSpecifiedCosmosOrSimulator resolveStreamCosmosWithLatestKnownEventSemantics 1
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosRollingUnfolds
+        let! service = arrangeCosmos connectToSpecifiedCosmosOrSimulator resolveStreamCosmosRollingUnfolds defaultBatchSize
         do! act service args
     }
