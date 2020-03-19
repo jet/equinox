@@ -88,30 +88,22 @@ type Unfold =
         /// The Case (Event Type) of this compaction/snapshot, used to drive deserialization
         c: string // required
 
-        /// Event body - Json -> UTF-8 -> Deflate -> Base64
-        [<JsonConverter(typeof<Base64DeflateUtf8JsonConverter>)>]
+        /// UTF-8 JSON OR Event body - Json -> UTF-8 -> Deflate -> Base64
+        [<JsonConverter(typeof<Base64MaybeDeflateUtf8JsonConverter>)>]
         d: byte[] // required
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
-        [<JsonConverter(typeof<Base64DeflateUtf8JsonConverter>)>]
+        [<JsonConverter(typeof<Base64MaybeDeflateUtf8JsonConverter>)>]
         [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
         m: byte[] } // optional
 
-/// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
-/// Only applied to snapshots in the Tip
-and Base64DeflateUtf8JsonConverter() =
+/// Transparently encodes/decodes fields that can optionally by compressed by
+/// 1. Writing outgoing JSON string values (which may be JSON string, JSON object, or null) from a UTF-8 JSON array representation as per VerbatimUtf8Converter
+/// 2a. Decoding incoming JSON string values by Decompressing it to a UTF-8 JSON array representation
+/// 2b. Decoding incoming JSON non-string values by reading the raw value directly into a UTF-8 JSON array as per VerbatimUtf8Converter
+and Base64MaybeDeflateUtf8JsonConverter() =
     inherit JsonConverter()
-    let pickle (input : byte[]) : string =
-        if input = null then null else
-
-        use output = new MemoryStream()
-        use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
-        compressor.Write(input,0,input.Length)
-        compressor.Close()
-        System.Convert.ToBase64String(output.ToArray())
-    let unpickle str : byte[] =
-        if str = null then null else
-
+    let inflate str : byte[] =
         let compressedBytes = System.Convert.FromBase64String str
         use input = new MemoryStream(compressedBytes)
         use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
@@ -119,14 +111,27 @@ and Base64DeflateUtf8JsonConverter() =
         decompressor.CopyTo(output)
         output.ToArray()
 
+    static member Compress (input : byte[]) : byte[] =
+        if input = null || input.Length = 0 then null else
+
+        use output = new System.IO.MemoryStream()
+        use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
+        compressor.Write(input,0,input.Length)
+        compressor.Close()
+        String.Concat("\"", System.Convert.ToBase64String(output.ToArray()), "\"")
+        |> System.Text.Encoding.UTF8.GetBytes
+
     override __.CanConvert(objectType) =
         typeof<byte[]>.Equals(objectType)
     override __.ReadJson(reader, _, _, serializer) =
-        //(   if reader.TokenType = JsonToken.Null then null else
-        serializer.Deserialize(reader, typedefof<string>) :?> string |> unpickle |> box
+        match reader.TokenType with
+        | JsonToken.Null -> null
+        | JsonToken.String -> serializer.Deserialize(reader, typedefof<string>) :?> string |> inflate |> box
+        | _ -> Newtonsoft.Json.Linq.JToken.Load reader |> string |> System.Text.Encoding.UTF8.GetBytes |> box
     override __.WriteJson(writer, value, serializer) =
-        let pickled = value |> unbox |> pickle
-        serializer.Serialize(writer, pickled)
+        let array = value :?> byte[]
+        if array = null || array.Length = 0 then serializer.Serialize(writer, null)
+        else array |> System.Text.Encoding.UTF8.GetString |> writer.WriteRawValue
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
@@ -539,12 +544,21 @@ function sync(req, expIndex, expEtag) {
     let batch (log : ILogger) retryPolicy containerStream batch: Async<Result> =
         let call = logged containerStream batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
+
+    let private mkEvent (e : IEventData<_>) =
+        {   t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId }
     let mkBatch (stream: string) (events: IEventData<_>[]) unfolds: Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
-            e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId } |]
-            u = Array.ofSeq unfolds }
-    let mkUnfold baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
-        unfolds |> Seq.mapi (fun offset x -> { i = baseIndex + int64 offset; c = x.EventType; d = x.Data; m = x.Meta; t = DateTimeOffset.UtcNow } : Unfold)
+            e = Array.map mkEvent events; u = Array.ofSeq unfolds }
+    let mkUnfold compressor baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
+        unfolds
+        |> Seq.mapi (fun offset x ->
+                {   i = baseIndex + int64 offset
+                    c = x.EventType
+                    d = compressor x.Data
+                    m = compressor x.Meta
+                    t = DateTimeOffset.UtcNow
+                } : Unfold)
 
     module Initialization =
         open System.Linq
@@ -1037,7 +1051,7 @@ type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IEven
                 let events', unfolds = transmute events state'
                 Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
-        let projections = Sync.mkUnfold baseIndex projectionsEncoded
+        let projections = Sync.mkUnfold Base64MaybeDeflateUtf8JsonConverter.Compress baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
         let! res = gateway.Sync log (container,stream) (exp,batch)
         match res with
