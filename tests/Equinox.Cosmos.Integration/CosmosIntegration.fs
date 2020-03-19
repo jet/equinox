@@ -36,9 +36,9 @@ module Cart =
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codecStj IntegrationJsonSerializer.options
-    let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
-        let gateway = createGateway defaultBatchSize
-        let resolve = Resolver(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
+    let createServiceWithoutOptimization createContext defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
+        let context = createContext defaultBatchSize
+        let resolve = Resolver(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Backend.ContactPreferences.create log resolve
     let createService log store =
         let resolve = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
