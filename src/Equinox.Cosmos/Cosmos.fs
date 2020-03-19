@@ -1140,7 +1140,7 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         (   streamName : StreamName,
             [<O; D null>]?option,
             [<O; D null>]?context,
-            /// Determines whether the data and metadata payloads on the Tip document are base64 encoded and compressed; defaults to true
+            /// Determines whether the data and metadata payloads of the `u`nfolds in the Tip document are base64 encoded and compressed; defaults to true
             [<O; D true>]?compress) =
         let compress = defaultArg compress true
         match resolveTarget streamName, option with
@@ -1151,7 +1151,7 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
     member __.FromMemento
         (   Token.Unpack (container,stream,_pos) as streamToken,
             state,
-            /// Determines whether the data and metadata payloads on the Tip document are base64 encoded and compressed; defaults to true
+            /// Determines whether the data and metadata payloads of the `u`nfolds in the Tip document are base64 encoded and compressed; defaults to true
             [<O; D true>]?compress) =
         let skipInitialization = None
         Stream.ofMemento (streamToken,state) (resolveStream ((container,stream),skipInitialization) None None (defaultArg compress true))
