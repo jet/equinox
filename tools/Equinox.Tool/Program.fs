@@ -304,7 +304,7 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
 module CosmosInit =
     open Equinox.Cosmos.Store
 
-    let conn (log,verboseConsole,maybeSeq) (sargs : ParseResults<Storage.Cosmos.Arguments>) = 
+    let conn (log,verboseConsole,maybeSeq) (sargs : ParseResults<Storage.Cosmos.Arguments>) =
         let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
         let discovery, dName, cName, factory = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
         storeLog, factory, discovery, dName, cName
@@ -317,7 +317,7 @@ module CosmosInit =
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
             let _storeLog, factory, discovery, dName, cName = conn (log,verboseConsole,maybeSeq) sargs
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            factory.CreateOperationsClient(appName, discovery, dName, cName).InitializeContainer(mode, not skipStoredProc) |> ignore
+            factory.Create(appName, discovery, dName, cName).InitializeContainer(mode, not skipStoredProc) |> ignore
         | _ -> failwith "please specify a `cosmos` endpoint"
 
 module SqlInit =
@@ -347,7 +347,7 @@ module CosmosStats =
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
             let _storeLog,factory,discovery,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
-            let client = factory.CreateOperationsClient(appName, discovery, dName, cName)
+            let client = factory.Create(appName, discovery, dName, cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
