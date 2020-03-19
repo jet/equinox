@@ -76,7 +76,7 @@ module Cosmos =
             a.Mode, endpointUri, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
-        discovery, a.Database, a.Container, StoreOperationsFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
+        discovery, a.Database, a.Container, StoreGatewayFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
     let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
         let discovery, dName, cName, factory = connection (log, storeLog) info
         let ctx = Context(factory.Create(appName, discovery, dName, cName), defaultMaxItems = batchSize)

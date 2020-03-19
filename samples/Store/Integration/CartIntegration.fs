@@ -24,10 +24,10 @@ let resolveGesStreamWithoutCustomAccessStrategy gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial).Resolve(id,?option=opt)
 
 let cosmosCodec = Domain.Cart.Events.codecStj (FsCodec.SystemTextJson.Options.Create())
-let resolveCosmosStreamWithSnapshotStrategy gateway =
-    fun (id,opt) -> Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
-let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    fun (id,opt) -> Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
+let resolveCosmosStreamWithSnapshotStrategy context =
+    fun (id,opt) -> Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
+let resolveCosmosStreamWithoutCustomAccessStrategy context =
+    fun (id,opt) -> Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {

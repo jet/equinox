@@ -10,23 +10,23 @@ let fold, initial = Domain.Favorites.Fold.fold, Domain.Favorites.Fold.initial
 let snapshot = Domain.Favorites.Fold.isOrigin, Domain.Favorites.Fold.snapshot
 
 let createMemoryStore () =
-    new MemoryStore.VolatileStore<_>()
+    MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
     Backend.Favorites.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let eventStoreCodec = Domain.Favorites.Events.codecNewtonsoft
-let createServiceGes gateway log =
-    let resolver = EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
+let createServiceGes context log =
+    let resolver = EventStore.Resolver(context, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
     Backend.Favorites.create log resolver.Resolve
 
 let cosmosCodec = Domain.Favorites.Events.codecStj
-let createServiceCosmos gateway log =
-    let resolver = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot)
+let createServiceCosmos context log =
+    let resolver = Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot)
     Backend.Favorites.create log resolver.Resolve
 
-let createServiceCosmosRollingState gateway log =
+let createServiceCosmosRollingState context log =
     let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
-    let resolver = Cosmos.Resolver(gateway, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access)
+    let resolver = Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access)
     Backend.Favorites.create log resolver.Resolve
 
 type Tests(testOutputHelper) =
