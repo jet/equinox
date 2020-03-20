@@ -846,6 +846,32 @@ type ContainerClient(gateway : ContainerGateway, batching : BatchingPolicy, retr
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
+/// Holds Container state, coordinating initialization activities
+type internal ContainerInitializerGuard(gateway : ContainerGateway, ?initContainer : CosmosContainer -> Async<unit>) =
+    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init gateway.CosmosContainer))
+
+    member __.Gateway = gateway
+    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
+
+/// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
+type Containers(categoryAndStreamNameToDatabaseContainerStream : string * string -> string*string*string, [<O; D(null)>]?disableInitialization) =
+    // Index of database*collection -> Initialization Context
+    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
+
+    new (databaseId, containerId, [<O; D(null)>]?disableInitialization) =
+        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
+        let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
+        Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
+
+    member private __.Resolve(createGateway : string * string -> ContainerGateway, (categoryName, streamId), init) = // : string * ContainerInitializerGuard =
+        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
+        let initContainer = match disableInitialization with Some true -> None | _ -> Some init
+        let g = containerInitGuards.GetOrAdd((databaseId, containerId), fun key -> ContainerInitializerGuard(createGateway key, ?initContainer = initContainer))
+        (g.Gateway, streamName), g.InitializationGate
+    member internal __.ResolveContainerAndStreamId(createGateway, categoryName, streamId) = // : string * Store.ContainerInitializerGuard =
+        let init (cosmosContainer : CosmosContainer) = Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore
+        __.Resolve(createGateway, (categoryName, streamId), init)
+
 type internal Category<'event, 'state, 'context>(container : ContainerClient, codec : IEventCodec<'event,JsonElement,'context>) =
     let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: ITimelineEvent<JsonElement> seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
     member __.Load(includeUnfolds, stream, fold, initial, isOrigin, log : ILogger): Async<StreamToken * 'state> = async {
@@ -876,32 +902,6 @@ type internal Category<'event, 'state, 'context>(container : ContainerClient, co
         | InternalSyncResult.Conflict (token',TryDecodeFold fold state events') -> return SyncResult.Conflict (async { return token', events' })
         | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (__.LoadFromToken current fold isOrigin log)
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
-
-/// Holds Container state, coordinating initialization activities
-type internal ContainerInitializerGuard(gateway : ContainerGateway, ?initContainer : CosmosContainer -> Async<unit>) =
-    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init gateway.CosmosContainer))
-
-    member __.Gateway = gateway
-    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
-
-/// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type Containers(categoryAndStreamNameToDatabaseContainerStream : string * string -> string*string*string, [<O; D(null)>]?disableInitialization) =
-    // Index of database*collection -> Initialization Context
-    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
-
-    new (databaseId, containerId, [<O; D(null)>]?disableInitialization) =
-        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
-        Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
-
-    member private __.Resolve(createGateway : string * string -> ContainerGateway, (categoryName, streamId), init) = // : string * ContainerInitializerGuard =
-        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
-        let initContainer = match disableInitialization with Some true -> None | _ -> Some init
-        let g = containerInitGuards.GetOrAdd((databaseId, containerId), fun key -> ContainerInitializerGuard(createGateway key, ?initContainer = initContainer))
-        (g.Gateway, streamName), g.InitializationGate
-    member internal __.ResolveContainerAndStreamId(createGateway, categoryName, streamId) = // : string * Store.ContainerInitializerGuard =
-        let init (cosmosContainer : CosmosContainer) = Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore
-        __.Resolve(createGateway, (categoryName, streamId), init)
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
