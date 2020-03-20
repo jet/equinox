@@ -341,7 +341,7 @@ module CosmosStats =
         member container.QueryValue<'T>(sqlQuery : string) =
             let query : seq<'T> = container.GetItemQueryIterator<'T>(sqlQuery) |> AsyncSeq.ofAsyncEnum |> AsyncSeq.toBlockingSeq
             query |> Seq.exactlyOne
-    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
+    let run (log : ILogger) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
         | Some (StatsArguments.Cosmos sargs) ->
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
@@ -465,7 +465,7 @@ let main argv =
             | Init iargs -> CosmosInit.containerAndOrDb log iargs
             | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
             | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
-            | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
+            | Stats sargs -> CosmosStats.run log sargs |> Async.RunSynchronously
             | Run rargs ->
                 let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
                 LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs
