@@ -65,7 +65,7 @@ type Startup() =
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("CosmosDb Storage options: {options:l}", options)
-                Storage.Cosmos.config (log,storeLog) (cache, unfolds, defaultBatchSize) (Storage.Cosmos.Info sargs), storeLog
+                Storage.Cosmos.config log (cache, unfolds, defaultBatchSize) (Storage.Cosmos.Info sargs), storeLog
             | Some (Es sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
                 log.Information("EventStore Storage options: {options:l}", options)

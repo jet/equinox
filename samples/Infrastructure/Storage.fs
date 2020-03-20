@@ -70,16 +70,18 @@ module Cosmos =
     open Equinox.Cosmos
     open Serilog
 
-    let connection (log: ILogger, storeLog: ILogger) (a : Info) =
-        let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection |> Discovery.FromConnectionString
+    let connection (log: ILogger) (a : Info) =
+        let discovery = Discovery.ConnectionString a.Connection
+        let cosmosClient = CosmosClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(discovery)
         log.Information("CosmosDb {mode} {connection} Database {database} Container {container}",
-            a.Mode, endpointUri, a.Database, a.Container)
+            a.Mode, cosmosClient.Endpoint, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
-        discovery, a.Database, a.Container, StoreGatewayFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
-    let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
-        let discovery, dName, cName, factory = connection (log, storeLog) info
-        let ctx = Context(factory.Create(appName, discovery, dName, cName), defaultMaxItems = batchSize)
+        cosmosClient, a.Database, a.Container
+    let config (log: ILogger) (cache, unfolds, batchSize) info =
+        let cosmosClient, dName, cName = connection log info
+        let client = Client(cosmosClient, dName, cName)
+        let ctx = Context(client, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, dName, cName)
 

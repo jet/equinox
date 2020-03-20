@@ -19,17 +19,19 @@ let cId = read "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test"
 let private connectToCosmos batchSize client  =
     Context(client, defaultMaxItems = batchSize)
 
-let createSpecifiedCosmosOrSimulatorClient log =
+let createSpecifiedCosmosOrSimulatorClient (log : Serilog.ILogger) : Client =
     let createClient name discovery =
-        StoreGatewayFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-            .Create(name, discovery, dbId, cId)
+        let factory = CosmosClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
+        let cosmosClient = factory.Create discovery
+        log.Information("Connection {name} to {endpoint}", name, cosmosClient.Endpoint)
+        Client(cosmosClient, dbId, cId)
 
     match read "EQUINOX_COSMOS_CONNECTION" with
     | None ->
-        Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
+        Discovery.AccountUriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
         |> createClient "localDocDbSim"
     | Some connectionString ->
-        Discovery.FromConnectionString connectionString
+        Discovery.ConnectionString connectionString
         |> createClient "EQUINOX_COSMOS_CONNECTION"
 
 let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) batchSize =
