@@ -30,8 +30,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit log defaultBatchSize =
-        let cc = Equinox.Cosmos.Context(createSpecifiedCosmosOrSimulatorClient log)
-        Context(cc, log, ?defaultMaxItems = defaultBatchSize)
+        createSpecifiedCoreContext log defaultBatchSize
     let mkContext log = mkContextWithItemLimit log None
 
     let verifyRequestChargesMax rus =
