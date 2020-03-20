@@ -796,6 +796,35 @@ type BatchingPolicy
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
 
+/// Holds Container state, coordinating initialization activities
+type internal ContainerInitializerGuard(gateway : ContainerGateway, ?initContainer : CosmosContainer -> Async<unit>) =
+    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init gateway.CosmosContainer))
+
+    member __.Gateway = gateway
+    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
+
+/// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
+type Containers(categoryAndStreamNameToDatabaseContainerStream : string * string -> string*string*string, [<O; D(null)>]?disableInitialization) =
+    // Index of database*collection -> Initialization Context
+    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
+
+    new (databaseId, containerId, [<O; D(null)>]?disableInitialization) =
+        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
+        let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
+        Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
+
+    member internal __.ResolveContainerGuardAndStreamName(cosmosClient : CosmosClient, categoryName, streamId) : ContainerInitializerGuard * string =
+        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
+        let createContainerInitializerGuard (d, c) =
+            let init =
+                if Some true = disableInitialization then None
+                else Some (fun cosmosContainer -> Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore)
+            ContainerInitializerGuard
+                (   ContainerGateway(cosmosClient.GetDatabase(d).GetContainer(c)),
+                    ?initContainer = init)
+        let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
+        g, streamName
+
 type ContainerClient(gateway : ContainerGateway, batching : BatchingPolicy, retry: RetryPolicy) =
     let (|FromUnfold|_|) (tryDecode: #IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#IEventData<_>[]) : Option<'event[]> =
         let items = ResizeArray()
@@ -845,32 +874,6 @@ type ContainerClient(gateway : ContainerGateway, batching : BatchingPolicy, retr
         | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (Token.create stream pos',events)
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
-
-/// Holds Container state, coordinating initialization activities
-type internal ContainerInitializerGuard(gateway : ContainerGateway, ?initContainer : CosmosContainer -> Async<unit>) =
-    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init gateway.CosmosContainer))
-
-    member __.Gateway = gateway
-    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
-
-/// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type Containers(categoryAndStreamNameToDatabaseContainerStream : string * string -> string*string*string, [<O; D(null)>]?disableInitialization) =
-    // Index of database*collection -> Initialization Context
-    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
-
-    new (databaseId, containerId, [<O; D(null)>]?disableInitialization) =
-        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
-        Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
-
-    member private __.Resolve(createGateway : string * string -> ContainerGateway, (categoryName, streamId), init) = // : string * ContainerInitializerGuard =
-        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
-        let initContainer = match disableInitialization with Some true -> None | _ -> Some init
-        let g = containerInitGuards.GetOrAdd((databaseId, containerId), fun key -> ContainerInitializerGuard(createGateway key, ?initContainer = initContainer))
-        (g.Gateway, streamName), g.InitializationGate
-    member internal __.ResolveContainerAndStreamId(createGateway, categoryName, streamId) = // : string * Store.ContainerInitializerGuard =
-        let init (cosmosContainer : CosmosContainer) = Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore
-        __.Resolve(createGateway, (categoryName, streamId), init)
 
 type internal Category<'event, 'state, 'context>(container : ContainerClient, codec : IEventCodec<'event,JsonElement,'context>) =
     let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: ITimelineEvent<JsonElement> seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
@@ -1022,7 +1025,8 @@ type Client(cosmosClient : CosmosClient, containers : Containers) =
     new (cosmosClient, databaseId : string, containerId : string, [<O; D(null)>]?disableInitialization) =
         Client(cosmosClient, Containers(databaseId, containerId, ?disableInitialization = disableInitialization))
     member __.CosmosClient = cosmosClient
-    member __.Containers = containers
+    member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) =
+        containers.ResolveContainerGuardAndStreamName(cosmosClient, categoryName, streamId)
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type Context(client : Client, batchingPolicy, retryPolicy) =
@@ -1032,11 +1036,10 @@ type Context(client : Client, batchingPolicy, retryPolicy) =
         Context(client, batching, retry)
     member __.Batching = batchingPolicy
     member __.Retries = retryPolicy
-    member __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
-        let createContainerGateway (d, c) = ContainerGateway(client.CosmosClient.GetDatabase(d).GetContainer(c))
-        let (cg, streamId), init = client.Containers.ResolveContainerAndStreamId(createContainerGateway, categoryName, streamId)
-        let cc = ContainerClient(cg, batchingPolicy, retryPolicy)
-        cc, streamId, init
+    member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
+        let cg, streamId = client.ResolveContainerGuardAndStreamName(categoryName, streamId)
+        let cc = ContainerClient(cg.Gateway, batchingPolicy, retryPolicy)
+        cc, streamId, cg.InitializationGate
 
 type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, access) =
     let readCacheOption =
@@ -1074,8 +1077,8 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
 
     let resolveStreamConfig = function
         | StreamName.CategoryAndId (categoryName, streamId) ->
-            let cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
-            categoryName, cc, streamId, init
+            let containerClient, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
+            categoryName, containerClient, streamId, init
 
     member __.Resolve
         (   streamName : StreamName,
