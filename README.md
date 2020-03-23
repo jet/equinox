@@ -16,9 +16,11 @@ Some aspects of the implementation are distilled from [`Jet.com` systems dating 
 - [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore): Bindings for the powerful and widely used SQL-backed Event Storage system. [See SqlStreamStore docs](https://sqlstreamstore.readthedocs.io/en/latest/#introduction). :pray: [@rajivhost](https://github.com/rajivhost)
 
 <a name="tldr"></a>
-# TL;DR :fast_forward:
+# TL;DR Can we cut to the chase? :fast_forward:
 
-- **Dev that wants a slab of code instead of a wall of text and will guess the rest** ? :point_right: <100 LOC end to end 'tutorial' using CosmosDB: https://github.com/jet/equinox/blob/master/samples/Tutorial/Cosmos.fsx#L36 
+- I'm a dev that wants to a flavour via _code_, any code, now! (with light commentary) :point_right: [There's a simple `Counter` example using `Equinox.MemoryStore` for you](https://github.com/jet/equinox/blob/master/samples/Tutorial/Counter.fsx#L16)
+- I'm a dev that knows about event sourcing, CosmosDB and F#; Throw me a terse slab of code instead of a wall of text and let me work from that! :point_right: [~100 LOC end-to-end using CosmosDB](https://github.com/jet/equinox/blob/master/samples/Tutorial/Cosmos.fsx#L36) 
+- I understand CosmosDB backwards, show me what Equinox is going to enable that something simple I write in a few hours, or [CosmoStore](https://github.com/Dzoukr/CosmoStore) doesn't already do? :point_right: [Access Strategies guide](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies)
 
 # Features
 

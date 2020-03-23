@@ -58,27 +58,30 @@ let decide command (State state) =
 
 type Service internal (resolve : string -> Equinox.Stream<Event, State>) =
 
-    let execute counterId command : Async<unit> =
-        let stream = resolve counterId
-        stream.Transact(decide command)
-    let read counterId : Async<int> =
-        let stream = resolve counterId
-        stream.Query(fun (State value) -> value)
-
     member __.Execute(instanceId, command) : Async<unit> =
-        execute instanceId command
+        let stream = resolve instanceId
+        stream.Transact(decide command)
     member __.Reset(instanceId, value) : Async<unit> =
-        execute instanceId (Clear value)
+        __.Execute(instanceId, Clear value)
 
     member __.Read instanceId : Async<int> =
-        read instanceId 
+        let stream = resolve instanceId
+        stream.Query(fun (State value) -> value)
+
+(* Out of the box, logging is via Serilog (can be wired to anything imaginable)
+   Here we send it to the console (there's not much to see as `MemoryStore` does not do much logging) *)
+open Serilog
+let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
+
+(* We can integration test using an in-memory store
+   See other examples such as Cosmos.fsx to see how we integrate with CosmosDB and/or other concrete stores *)
 
 let store = Equinox.MemoryStore.VolatileStore()
 let codec = FsCodec.Box.Codec.Create()
 let resolver = Equinox.MemoryStore.Resolver(store, codec, fold, initial)
-open Serilog
-let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
-let service = Service(fun id -> Equinox.Stream(log, streamName id |> resolver.Resolve, maxAttempts = 3))
+let resolve instanceId = Equinox.Stream(log, streamName instanceId |> resolver.Resolve, maxAttempts = 3)
+let service = Service(resolve)
+
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously
 service.Execute(clientId, Increment) |> Async.RunSynchronously
