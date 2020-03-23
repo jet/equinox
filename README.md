@@ -15,6 +15,11 @@ Some aspects of the implementation are distilled from [`Jet.com` systems dating 
 - `MemoryStore`: In-memory store (volatile, for unit or integration test purposes). Fulfils the full contract Equinox imposes on a store, but without I/O costs [(it's ~100 LOC wrapping a `ConcurrentDictionary`)](https://github.com/jet/equinox/blob/master/src/Equinox.MemoryStore/MemoryStore.fs), and the ability to [take serialization/deserialization cost out of the picture](https://github.com/jet/FsCodec#boxcodec).
 - [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore): Bindings for the powerful and widely used SQL-backed Event Storage system. [See SqlStreamStore docs](https://sqlstreamstore.readthedocs.io/en/latest/#introduction). :pray: [@rajivhost](https://github.com/rajivhost)
 
+<a name="tldr"></a>
+# TL;DR :fast_forward:
+
+- **Dev that wants a slab of code instead of a wall of text and will guess the rest** ? :point_right: <100 LOC end to end 'tutorial' using CosmosDB: https://github.com/jet/equinox/blob/master/samples/Tutorial/Cosmos.fsx#L36 
+
 # Features
 
 - Designed not to invade application code; Domain tests can be written directly against your models without any need to involve or understand Equinox assemblies or constructs as part of writing those tests.
