@@ -88,6 +88,5 @@ type Startup() =
         if env.IsDevelopment() then app.UseDeveloperExceptionPage() |> ignore
         else app.UseHsts() |> ignore
 
-        app.UseHttpsRedirection()
-            .UseCors(fun x -> x.WithOrigins([|"https://www.todobackend.com"|]).AllowAnyHeader().AllowAnyMethod() |> ignore)
+        app.UseCors(fun x -> x.WithOrigins([|"https://www.todobackend.com"|]).AllowAnyHeader().AllowAnyMethod() |> ignore)
             .UseMvc() |> ignore

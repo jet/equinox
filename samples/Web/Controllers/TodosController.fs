@@ -6,6 +6,7 @@ open TodoBackend
 
 type FromClientIdHeaderAttribute() = inherit FromHeaderAttribute(Name="COMPLETELY_INSECURE_CLIENT_ID")
 
+[<CLIMutable>]
 type TodoView =
     {   id: int
         url: string
