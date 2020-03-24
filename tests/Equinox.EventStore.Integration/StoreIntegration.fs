@@ -20,7 +20,7 @@ open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MsSql
 
 let connectToLocalStore (_ : ILogger) =
-    Connector(sprintf "Server=localhost,1433;User=sa;Password=p@ssw0rd;Database=test",autoCreate=true).Establish()
+    Connector(sprintf "Server=localhost,1433;User=sa;Password=!Passw0rd;Database=test",autoCreate=true).Establish()
 #else
 #if STORE_MYSQL
 open Equinox.SqlStreamStore
