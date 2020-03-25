@@ -41,7 +41,8 @@ type Startup() =
     // This method gets called by the runtime. Use this method to add services to the container.
     static member ConfigureServices(services: IServiceCollection, args: ParseResults<Arguments>) : unit =
         services
-            .AddMvc(fun opt -> opt.EnableEndpointRouting <- false)
+            .AddMvc()
+            .AddNewtonsoftJson()
             .SetCompatibilityVersion(CompatibilityVersion.Latest) |> ignore
 
         let verbose = args.Contains Verbose
@@ -88,5 +89,7 @@ type Startup() =
         if env.IsDevelopment() then app.UseDeveloperExceptionPage() |> ignore
         else app.UseHsts() |> ignore
 
-        app.UseCors(fun x -> x.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod() |> ignore)
-            .UseMvc() |> ignore
+        app
+            .UseCors(fun x -> x.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod() |> ignore)
+            .UseRouting()
+            .UseEndpoints(fun endpoints -> endpoints.MapControllers() |> ignore) |> ignore
