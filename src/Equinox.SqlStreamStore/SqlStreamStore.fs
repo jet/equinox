@@ -284,11 +284,13 @@ module UnionEncoderAdapters =
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
         FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, e.MessageId, null, null, let ts = e.CreatedUtc in DateTimeOffset ts)
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
-        let str = function null -> "()" | s -> System.Text.Encoding.UTF8.GetString s
+        let str = function null -> null | s -> System.Text.Encoding.UTF8.GetString s
+        // SQLStreamStore rejects IsNullOrEmpty data value.
+        // TODO: Follow up on inconsistency with ES
+        let str2 = function null -> "{}" | s -> System.Text.Encoding.UTF8.GetString s
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        // SQLStreamStore rejects NULL data argument.
-        NewStreamMessage(x.EventId, x.EventType, str x.Data, str x.Meta)
+        NewStreamMessage(x.EventId, x.EventType, str2 x.Data, str x.Meta)
 
 type Stream = { name: string }
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }
