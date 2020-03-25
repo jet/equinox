@@ -40,7 +40,10 @@ type App = class end
 type Startup() =
     // This method gets called by the runtime. Use this method to add services to the container.
     static member ConfigureServices(services: IServiceCollection, args: ParseResults<Arguments>) : unit =
-        services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Latest) |> ignore
+        services
+            .AddMvc()
+            .AddNewtonsoftJson() // TODO swap to FsCodec.SystemTextJson when it's ready https://github.com/jet/FsCodec/pull/38
+            .SetCompatibilityVersion(CompatibilityVersion.Latest) |> ignore
 
         let verbose = args.Contains Verbose
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None
@@ -86,6 +89,8 @@ type Startup() =
         if env.IsDevelopment() then app.UseDeveloperExceptionPage() |> ignore
         else app.UseHsts() |> ignore
 
-        app.UseHttpsRedirection()
-            .UseCors(fun x -> x.WithOrigins([|"https://www.todobackend.com"|]).AllowAnyHeader().AllowAnyMethod() |> ignore)
-            .UseMvc() |> ignore
+        app
+            .UseHttpsRedirection()
+            .UseCors(fun x -> x.WithOrigins("https://www.todobackend.com").AllowAnyHeader().AllowAnyMethod() |> ignore)
+            .UseRouting()
+            .UseEndpoints(fun endpoints -> endpoints.MapControllers() |> ignore) |> ignore

@@ -16,11 +16,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - Update to `3.1.101` SDK
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1`
+- Retarget Todobackend to `aspnetcore` v `3.1`
 - Target `FSharp.Control.AsyncSeq` v `2.0.23`
 - Updated AzDO CI/CD to use `windows-latest`
 
 ### Removed
 ### Fixed
+
+- `SqlStreamStore.MsSql`: Initial Append when stream empty on MsSql was perpetually failing :pray: [#209](https://github.com/jet/equinox/pull/209) [@Kimserey](https://github.com/kimserey)
 
 <a name="2.0.0"></a>
 ## [2.0.0] - 2020-02-19
