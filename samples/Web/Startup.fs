@@ -90,6 +90,7 @@ type Startup() =
         else app.UseHsts() |> ignore
 
         app
-            .UseCors(fun x -> x.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod() |> ignore)
+            .UseHttpsRedirection()
+            .UseCors(fun x -> x.WithOrigins("https://www.todobackend.com").AllowAnyHeader().AllowAnyMethod() |> ignore)
             .UseRouting()
             .UseEndpoints(fun endpoints -> endpoints.MapControllers() |> ignore) |> ignore
