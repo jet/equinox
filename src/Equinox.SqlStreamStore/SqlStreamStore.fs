@@ -134,7 +134,7 @@ module private Write =
     let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> = async {
         try
-            let! wr = conn.AppendToStream(StreamId streamName, int version, events) |> Async.AwaitTaskCorrect
+            let! wr = conn.AppendToStream(StreamId streamName, (if version = -1L then ExpectedVersion.NoStream else int version), events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? WrongExpectedVersionException as ex ->
             log.Information(ex, "SqlEs TrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
@@ -285,9 +285,12 @@ module UnionEncoderAdapters =
         FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, e.MessageId, null, null, let ts = e.CreatedUtc in DateTimeOffset ts)
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
         let str = function null -> null | s -> System.Text.Encoding.UTF8.GetString s
+        // SQLStreamStore rejects IsNullOrEmpty data value.
+        // TODO: Follow up on inconsistency with ES
+        let str2 = function null -> "{}" | s -> System.Text.Encoding.UTF8.GetString s
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        NewStreamMessage(x.EventId, x.EventType, str x.Data, str x.Meta)
+        NewStreamMessage(x.EventId, x.EventType, str2 x.Data, str x.Meta)
 
 type Stream = { name: string }
 type Position = { streamVersion: int64; compactionEventNumber: int64 option; batchCapacityLimit: int option }
