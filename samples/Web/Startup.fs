@@ -42,7 +42,7 @@ type Startup() =
     static member ConfigureServices(services: IServiceCollection, args: ParseResults<Arguments>) : unit =
         services
             .AddMvc()
-            .AddNewtonsoftJson()
+            .AddNewtonsoftJson() // TODO swap to FsCodec.SystemTextJson when it's ready https://github.com/jet/FsCodec/pull/38
             .SetCompatibilityVersion(CompatibilityVersion.Latest) |> ignore
 
         let verbose = args.Contains Verbose
