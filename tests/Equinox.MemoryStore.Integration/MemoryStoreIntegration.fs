@@ -16,13 +16,15 @@ let createServiceMemory log store =
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput
-    let (|NonZero|) = function None -> Some 1 | Some c when c <= 0 -> Some 1 | Some c -> Some c
-    [<AutoData>]
+    let (|NonZero|) = function
+        | None -> Some 1
+        | Some c -> Some (max 1 c)
+    [<AutoData(MaxTest = 1000)>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
-            cartId1 cartId2 ((_,skuId,NonZero quantity,waive) as args) = Async.RunSynchronously <| async {
+            cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
         let service = let log = createLog () in createServiceMemory log store
-        let command = Domain.Cart.SyncItem args
+        let command = Domain.Cart.SyncItem (ctx,skuId,quantity,waive)
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =

@@ -39,13 +39,18 @@ module Fold =
     let evolve (state : State) event =
         let updateItems f = { state with items = f state.items }
         match event with
-        | Events.Snapshotted s -> State.ofSnapshot s
+        | Events.Snapshotted s ->
+            State.ofSnapshot s
         | Events.ItemAdded e ->
             updateItems (fun current ->
                 { skuId = e.skuId; quantity = e.quantity; returnsWaived = e.waived }
                 :: current)
-        | Events.ItemRemoved e -> updateItems (List.filter (fun x -> x.skuId <> e.skuId))
-        | Events.ItemQuantityChanged e -> updateItems (List.map (function i when i.skuId = e.skuId -> { i with quantity = e.quantity } | i -> i))
+        | Events.ItemRemoved e ->
+            updateItems (List.filter (fun x -> x.skuId <> e.skuId))
+        | Events.ItemQuantityChanged e ->
+            updateItems (List.map (function
+                | i when i.skuId = e.skuId -> { i with quantity = e.quantity }
+                | i -> i))
         | Events.ItemPropertiesChanged e ->
             updateItems (List.map (function
                 | i when i.skuId = e.skuId -> { i with returnsWaived = Some e.waived }
@@ -62,7 +67,7 @@ let interpret command (state : Fold.State) =
     let itemExists f                                    = state.items |> List.exists f
     let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> Some waive)
     let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)
-    let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId && x.quantity <> 0)
+    let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId)
     let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
     let (|Context|) (context : Context)                 = toEventContext context
     let maybePropChanges c skuId = function
