@@ -8,7 +8,7 @@ type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.S
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
-        stream.Transact(Commands.interpret command)
+        stream.Transact(interpret command)
     let read clientId : Async<Events.Favorited []> =
         let stream = resolve clientId
         stream.Query id

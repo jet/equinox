@@ -91,30 +91,28 @@ module Fold =
     // Recognize a relevant snapshot when we meet one in the chain
     let isValid : Events.Event -> bool = function (_,Events.Snapshot _) -> true | _ -> false
 
-module Commands =
-
-    type Command =
-        | Add of int
-        | Remove of int
-    let interpret command state =
-        match command with
-        | Add delta -> [-1L,Events.Added { count = delta}]
-        | Remove delta ->
-            let bal = state |> Fold.State.balance
-            if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
-            else [-1L,Events.Removed {count = delta}]
+type Command =
+    | Add of int
+    | Remove of int
+let interpret command state =
+    match command with
+    | Add delta -> [-1L,Events.Added { count = delta}]
+    | Remove delta ->
+        let bal = state |> Fold.State.balance
+        if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
+        else [-1L,Events.Removed {count = delta}]
 
 type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let stream = resolve clientId
-        stream.Transact(Commands.interpret command)
+        stream.Transact(interpret command)
     let query clientId projection : Async<int> =
         let stream = resolve clientId
         stream.Query projection
 
-    member __.Add(clientId, count) = execute clientId (Commands.Add count)
-    member __.Remove(clientId, count) = execute clientId (Commands.Remove count)
+    member __.Add(clientId, count) = execute clientId (Add count)
+    member __.Remove(clientId, count) = execute clientId (Remove count)
     member __.Read(clientId) = query clientId (Fold.State.balance)
     member __.AsAt(clientId,index) = query clientId (fun state -> state.[index])
 

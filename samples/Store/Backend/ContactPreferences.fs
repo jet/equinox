@@ -7,7 +7,7 @@ type Service internal (resolve : Id -> Equinox.Stream<Events.Event, Fold.State>)
     let update email value : Async<unit> =
         let stream = resolve email
         let command = let (Id email) = email in Update { email = email; preferences = value }
-        stream.Transact(Commands.interpret command)
+        stream.Transact(interpret command)
 
     member __.Update(email, value) =
         update email value

@@ -53,31 +53,30 @@ type Command =
     | PatchItem             of Context * SkuId * quantity: int option * waived: bool option
     | RemoveItem            of Context * SkuId
 
-module Commands =
-    let interpret command (state : Fold.State) =
-        let itemExists f                                    = state.items |> List.exists f
-        let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
-        let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)
-        let itemExistsWithSameQuantity skuId quantity       = itemExists (fun x -> x.skuId = skuId && x.quantity = quantity)
-        let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId && x.quantity <> 0)
-        let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
-        let (|Context|) (context : Context)                 = toEventContext context
-        match command with
-        | AddItem (Context c, skuId, quantity) ->
-            if itemExistsWithSameQuantity skuId quantity then [] else
-            [ Events.ItemAdded { context = c; skuId = skuId; quantity = quantity } ]
-        | RemoveItem (Context c, skuId)
-        | PatchItem (Context c, skuId, Some 0, _) ->
-            if not (itemExistsWithSkuId skuId) then [] else
-            [ Events.ItemRemoved { context = c; skuId = skuId } ]
-        | PatchItem (_, skuId, _, _) when not (itemExistsWithSkuId skuId) ->
-            []
-        | PatchItem (Context c, skuId, quantity, waived) ->
-            [   match quantity  with
-                | Some quantity when itemExistsWithDifferentQuantity skuId quantity ->
-                    yield Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity }
-                | _ -> ()
-                match waived with
-                | Some waived when itemExistsWithDifferentWaiveStatus skuId waived ->
-                     yield Events.ItemWaiveReturnsChanged { context = c; skuId = skuId; waived = waived }
-                | _ -> () ]
+let interpret command (state : Fold.State) =
+    let itemExists f                                    = state.items |> List.exists f
+    let itemExistsWithDifferentWaiveStatus skuId waive  = itemExists (fun x -> x.skuId = skuId && x.returnsWaived <> waive)
+    let itemExistsWithDifferentQuantity skuId quantity  = itemExists (fun x -> x.skuId = skuId && x.quantity <> quantity)
+    let itemExistsWithSameQuantity skuId quantity       = itemExists (fun x -> x.skuId = skuId && x.quantity = quantity)
+    let itemExistsWithSkuId skuId                       = itemExists (fun x -> x.skuId = skuId && x.quantity <> 0)
+    let toEventContext (reqContext: Context)            = { requestId = reqContext.requestId; time = reqContext.time } : Events.ContextInfo
+    let (|Context|) (context : Context)                 = toEventContext context
+    match command with
+    | AddItem (Context c, skuId, quantity) ->
+        if itemExistsWithSameQuantity skuId quantity then [] else
+        [ Events.ItemAdded { context = c; skuId = skuId; quantity = quantity } ]
+    | RemoveItem (Context c, skuId)
+    | PatchItem (Context c, skuId, Some 0, _) ->
+        if not (itemExistsWithSkuId skuId) then [] else
+        [ Events.ItemRemoved { context = c; skuId = skuId } ]
+    | PatchItem (_, skuId, _, _) when not (itemExistsWithSkuId skuId) ->
+        []
+    | PatchItem (Context c, skuId, quantity, waived) ->
+        [   match quantity  with
+            | Some quantity when itemExistsWithDifferentQuantity skuId quantity ->
+                yield Events.ItemQuantityChanged { context = c; skuId = skuId; quantity = quantity }
+            | _ -> ()
+            match waived with
+            | Some waived when itemExistsWithDifferentWaiveStatus skuId waived ->
+                 yield Events.ItemWaiveReturnsChanged { context = c; skuId = skuId; waived = waived }
+            | _ -> () ]

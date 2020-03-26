@@ -19,6 +19,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Retarget Todobackend to `aspnetcore` v `3.1`
 - Target `FSharp.Control.AsyncSeq` v `2.0.23`
 - Updated AzDO CI/CD to use `windows-latest`
+- Remove `module Commands` convention from in examples
 
 ### Removed
 ### Fixed

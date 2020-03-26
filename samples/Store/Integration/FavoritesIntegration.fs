@@ -10,7 +10,7 @@ let fold, initial = Domain.Favorites.Fold.fold, Domain.Favorites.Fold.initial
 let snapshot = Domain.Favorites.Fold.isOrigin, Domain.Favorites.Fold.snapshot
 
 let createMemoryStore () =
-    new MemoryStore.VolatileStore<_>()
+    MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
     Backend.Favorites.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 

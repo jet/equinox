@@ -515,7 +515,7 @@ OK, I've read the README and the tagline. I still don't know what it does! Reall
 
 - supports storing events in [EventStore](https://eventstore.org), including working with existing data you may have (that's where it got its start)
 - includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDb account to get going
-- provides all the necessary infrastructure to build idempotent synchronous command processing against all of the stores; your Domain code intentionally doesn't need to reference *any* Equinox modules whatsoever (although for smaller systems, you'll often group `Events`+`Fold`+`Commands`+`Service` in a single `module`, which implies a reference to [the core `Equinox` package](src/Equinox)).
+- provides all the necessary infrastructure to build idempotent synchronous command processing against all of the stores; your Domain code intentionally doesn't need to reference *any* Equinox modules whatsoever (although for smaller systems, you'll often group `Events`+`Fold`+`interpret`/`decide`+`Service` in a single `module`, which implies a reference to [the core `Equinox` package](src/Equinox)).
 - following on from the previous point: you just write the unit tests without any Equinox-specific hoops to jump through; this really works very well indeed, assuming you're writing the domain code and the tests in F#. If you're working in a more verbose language, you may end up building some test helpers. We don't envisage Equinox mandating a specific pattern on the unit testing side (consistent naming such as `Events.Event`+`evolve`+`fold`+`Command`+`interpret`/`decide` can help though).
 - it helps with integration testing decision processes by
   - staying out of your way as much as possible

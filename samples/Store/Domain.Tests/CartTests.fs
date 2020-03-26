@@ -3,7 +3,6 @@
 open Domain.Cart
 open Domain.Cart.Events
 open Domain.Cart.Fold
-open Domain.Cart.Commands
 open Swensen.Unquote
 open TypeShape.Empty
 
@@ -78,7 +77,7 @@ let verifyIdempotency (cmd: Command) (originState: State) =
 /// These cases are assumed to be covered by external validation, so logic can treat them as hypotheticals rather than have to reject
 let isValid = function
     | PatchItem (_, _, Some quantity, _)
-    | AddItem (_, _, quantity) -> quantity >= 0 
+    | AddItem (_, _, quantity) -> quantity >= 0
     | _ -> true
 
 [<DomainProperty>]

@@ -16,7 +16,7 @@ let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
         | Unfavorite skuId ->                       [ mkFavorite skuId ]
         | Favorite _ ->                             []
     let state = fold originState initialEvents
-    let events = Commands.interpret command state
+    let events = interpret command state
     let state' = fold state events
 
     let hadSkuId, hasSkuId =
@@ -41,7 +41,7 @@ let verifyIdempotency (command: Command) (originState: State) =
         | Unfavorite _ ->                           []
         | Favorite (_,skuIds) ->                    [| for sku in skuIds -> mkFavorite sku |] |> knuthShuffle |> List.ofArray
     let state = fold originState initialEvents
-    let events = Commands.interpret command state
+    let events = interpret command state
     // Assert we decided nothing needs to happen
     test <@ List.isEmpty events @>
 

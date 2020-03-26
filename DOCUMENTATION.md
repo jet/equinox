@@ -766,7 +766,7 @@ type Service internal (resolve : CartId -> Equinox.Stream<Events.Event, Fold.Sta
         let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
-            return interpretMany Fold.fold (Seq.map Commands.interpret commands) state })
+            return interpretMany Fold.fold (Seq.map interpret commands) state })
 ```
 
 <a name="accumulator"></a>
@@ -814,7 +814,7 @@ type Service ... =
             match prepare with None -> () | Some prep -> do! prep
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
-                acc.Transact(Commands.interpret cmd)
+                acc.Transact(interpret cmd)
             return acc.State, acc.Accumulated
         })
 ```

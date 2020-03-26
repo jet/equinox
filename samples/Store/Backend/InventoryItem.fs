@@ -7,7 +7,7 @@ type Service internal (resolve : InventoryItemId -> Equinox.Stream<Events.Event,
 
     member __.Execute(itemId, command) =
         let stream = resolve itemId
-        stream.Transact(Commands.interpret command)
+        stream.Transact(interpret command)
 
     member __.Read(itemId) =
         let stream = resolve itemId

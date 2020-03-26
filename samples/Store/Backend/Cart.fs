@@ -54,10 +54,10 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
 #if ACCUMULATOR
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
-                acc.Transact(Commands.interpret cmd)
+                acc.Transact(interpret cmd)
             return acc.State, acc.Accumulated })
 #else
-            return interpretMany Fold.fold (Seq.map Commands.interpret commands) state })
+            return interpretMany Fold.fold (Seq.map interpret commands) state })
 #endif
 
     member __.ExecuteManyAsync(cartId, optimistic, commands : Command seq, ?prepare) : Async<unit> =

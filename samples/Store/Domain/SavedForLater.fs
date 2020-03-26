@@ -73,35 +73,34 @@ type Command =
     | Remove of skuIds : SkuId []
     | Add of dateSaved : DateTimeOffset * skuIds : SkuId []
 
-module Commands =
-    type private Index(state : Events.Item seq) =
-        let index = Dictionary<_,_>()
-        do for i in state do do index.[i.skuId] <- i
+type private Index(state : Events.Item seq) =
+    let index = Dictionary<_,_>()
+    do for i in state do do index.[i.skuId] <- i
 
-        member __.DoesNotAlreadyContainSameOrMoreRecent effectiveDate sku =
-            match index.TryGetValue sku with
-            | true,item when item.dateSaved >= effectiveDate -> false
-            | _ -> true
-        member this.DoesNotAlreadyContainItem(item : Events.Item) =
-            this.DoesNotAlreadyContainSameOrMoreRecent item.dateSaved item.skuId
+    member __.DoesNotAlreadyContainSameOrMoreRecent effectiveDate sku =
+        match index.TryGetValue sku with
+        | true,item when item.dateSaved >= effectiveDate -> false
+        | _ -> true
+    member this.DoesNotAlreadyContainItem(item : Events.Item) =
+        this.DoesNotAlreadyContainSameOrMoreRecent item.dateSaved item.skuId
 
-    // yields true if the command was executed, false if it would have breached the invariants
-    let decide (maxSavedItems : int) (cmd : Command) (state : Fold.State) : bool * Events.Event list =
-        let validateAgainstInvariants events =
-            if Fold.proposedEventsWouldExceedLimit maxSavedItems events state then false, []
-            else true, events
-        match cmd with
-        | Merge merges ->
-            let net = merges |> Array.filter (Index state).DoesNotAlreadyContainItem
-            if Array.isEmpty net then true, []
-            else validateAgainstInvariants [ Events.Merged { items = net } ]
-        | Remove skuIds ->
-            let content = seq { for item in state -> item.skuId } |> set
-            let net = skuIds |> Array.filter content.Contains
-            if Array.isEmpty net then true, []
-            else true, [ Events.Removed { skus = net } ]
-        | Add (dateSaved, skus) ->
-            let index = Index state
-            let net = skus |> Array.filter (index.DoesNotAlreadyContainSameOrMoreRecent dateSaved)
-            if Array.isEmpty net then true, []
-            else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
+// yields true if the command was executed, false if it would have breached the invariants
+let decide (maxSavedItems : int) (cmd : Command) (state : Fold.State) : bool * Events.Event list =
+    let validateAgainstInvariants events =
+        if Fold.proposedEventsWouldExceedLimit maxSavedItems events state then false, []
+        else true, events
+    match cmd with
+    | Merge merges ->
+        let net = merges |> Array.filter (Index state).DoesNotAlreadyContainItem
+        if Array.isEmpty net then true, []
+        else validateAgainstInvariants [ Events.Merged { items = net } ]
+    | Remove skuIds ->
+        let content = seq { for item in state -> item.skuId } |> set
+        let net = skuIds |> Array.filter content.Contains
+        if Array.isEmpty net then true, []
+        else true, [ Events.Removed { skus = net } ]
+    | Add (dateSaved, skus) ->
+        let index = Index state
+        let net = skus |> Array.filter (index.DoesNotAlreadyContainSameOrMoreRecent dateSaved)
+        if Array.isEmpty net then true, []
+        else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
