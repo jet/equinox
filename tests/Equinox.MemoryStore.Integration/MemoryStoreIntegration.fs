@@ -19,7 +19,7 @@ type Tests(testOutputHelper) =
     let (|NonZero|) = function
         | None -> Some 1
         | Some c -> Some (max 1 c)
-    [<AutoData(MaxTest = 1000)>]
+    [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
