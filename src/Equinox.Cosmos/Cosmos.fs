@@ -804,23 +804,28 @@ type internal ContainerInitializerGuard(gateway : ContainerGateway, ?initContain
     member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type Containers(categoryAndStreamNameToDatabaseContainerStream : string * string -> string*string*string, [<O; D(null)>]?disableInitialization) =
+type Containers
+    (    /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
+         categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
+         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
+         [<O; D(null)>]?disableInitialization) =
     // Index of database*collection -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
 
+    /// Create a Container Map where all streams are stored within a single global <c>CosmosContainer</c>.
     new (databaseId, containerId, [<O; D(null)>]?disableInitialization) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
 
-    member internal __.ResolveContainerGuardAndStreamName(cosmosClient : CosmosClient, categoryName, streamId) : ContainerInitializerGuard * string =
+    member internal __.ResolveContainerGuardAndStreamName(cosmosClient : CosmosClient, createGateway, categoryName, streamId) : ContainerInitializerGuard * string =
         let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let createContainerInitializerGuard (d, c) =
             let init =
                 if Some true = disableInitialization then None
                 else Some (fun cosmosContainer -> Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore)
             ContainerInitializerGuard
-                (   ContainerGateway(cosmosClient.GetDatabase(d).GetContainer(c)),
+                (   createGateway (cosmosClient.GetDatabase(d).GetContainer(c)),
                     ?initContainer = init)
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
@@ -1020,13 +1025,23 @@ type AccessStrategy<'event,'state> =
 
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The (singleton) CosmosDB CosmosClient (there should be a single one of these per process)
-/// - The (cached) initialization state per container
-type Client(cosmosClient : CosmosClient, containers : Containers) =
-    new (cosmosClient, databaseId : string, containerId : string, [<O; D(null)>]?disableInitialization) =
-        Client(cosmosClient, Containers(databaseId, containerId, ?disableInitialization = disableInitialization))
+type Client
+    (   cosmosClient : CosmosClient,
+        /// Singleton used to cache initialization state per <c>CosmosContainer</c>.
+        containers : Containers,
+        /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+        ?createGateway) =
+    let createGateway = match createGateway with Some creator -> creator | None -> ContainerGateway
+    new (cosmosClient, databaseId : string, containerId : string,
+         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
+         [<O; D(null)>]?disableInitialization,
+         /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+         [<O; D(null)>]?createGateway : CosmosContainer -> ContainerGateway) =
+        let containers = Containers(databaseId, containerId, ?disableInitialization = disableInitialization)
+        Client(cosmosClient, containers, ?createGateway = createGateway)
     member __.CosmosClient = cosmosClient
     member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) =
-        containers.ResolveContainerGuardAndStreamName(cosmosClient, categoryName, streamId)
+        containers.ResolveContainerGuardAndStreamName(cosmosClient, createGateway, categoryName, streamId)
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type Context(client : Client, batchingPolicy, retryPolicy) =
