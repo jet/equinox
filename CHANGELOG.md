@@ -20,6 +20,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Target `FSharp.Control.AsyncSeq` v `2.0.23`
 - Updated AzDO CI/CD to use `windows-latest`
 - Remove `module Commands` convention from in examples
+- Revise semantics of Cart Sample Command handling
 
 ### Removed
 ### Fixed
