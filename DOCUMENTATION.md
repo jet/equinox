@@ -26,12 +26,12 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 ![c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
 
-## Compomnent Diagram for `Equinox.MemoryStore`
+## Component Diagram for `Equinox.MemoryStore`
 
 ![c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml)
 
-## Compomnent Diagram for `Equinox.EventStore`
-## Compomnent Diagram for `Equinox.Cosmos`
+## Component Diagram for `Equinox.EventStore`
+## Component Diagram for `Equinox.Cosmos`
 
 # Glossary
 

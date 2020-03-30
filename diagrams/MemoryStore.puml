@@ -1,10 +1,8 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
 
-title Component diagram for Equinox with Equinox.MemoryStore
+title Component diagram for Equinox.MemoryStore
 caption Moving parts for an integration test scenario using MemoryStore in lieu of a Durable Store
-
-actor "App Integration\nTests" <<External Person>> as tests
 
 rectangle "Application's Consistent Processing Logic" <<Expanded>> {
     rectangle aggregate <<Component>> [
@@ -21,6 +19,8 @@ rectangle "Application's Consistent Processing Logic" <<Expanded>> {
     interface IStream <<Component>>
 }
 
+actor "Integration\nTests" <<Person>> as tests
+
 rectangle "System Under Test + Simulators" <<External Container>> {
     rectangle reactors <<Container>> [
         **Reactors Under Test**
@@ -28,45 +28,41 @@ rectangle "System Under Test + Simulators" <<External Container>> {
     rectangle ingesters <<Container>> [
         **Ingesters Under Test**
     ]
-
-    rectangle inputs <<Component>> [
-        **Input Simulators**
-    ]
     database caches <<External Container>> [
         **Read Model Simulators**
     ]
     rectangle "Memory Store" <<Container>> {
-
-        rectangle equinoxms <<Component>> [
+        interface IObservable <<Component>>
+        rectangle eqxms <<Component>> [
             Equinox.MemoryStore
         ]
-        interface IObservable <<Component>>
-        database equinoxmsdict <<Component>> [
+        database eqxmsdict <<Component>> [
             **ConcurrentDictionary**
-            StreamName
-            ->
-            TimelineEvent<T>
+            StreamName -> TimelineEvent<T>
         ]
     }
+    rectangle inputs <<Component>> [
+        **Input Simulators**
+    ]
 }
 
-tests       <-->  aggregate     : transact\nagainst
-tests       <..    caches      : validate\neventually\nconsistent
-tests       -->  equinoxms     : can validate
+tests     <-->  aggregate    : transact\nagainst
+tests     <..   caches      : may probe\neventually\nconsistent
+tests       --> eqxms       : may validate\nby probing
 
-aggregate  <.R.>  stream        : Transact/\nQuery
-stream      .R.>  IStream       : Load/\nTrySync
+aggregate <.R.> stream      : Transact/\nQuery
+stream     .R.> IStream     : Load/\nTrySync
 
-equinoxms   .U.>  IStream        : implements
-equinoxms   -->  equinoxmsdict : has a\nvolatile
-equinoxms   .L.>  IObservable   : feeds
+eqxms      .U.> IStream     : implements
+eqxms       -R-> eqxmsdict   : has a\nvolatile
+eqxms      .L.> IObservable : feeds
 
-ingesters  <-U->   aggregate     : run transactions against
-ingesters   -->   caches        : maintain\nviews\nin
-ingesters  <-- inputs       : feed into
+ingesters <-U-> aggregate   : run transactions against
+ingesters   --> caches      : maintain\nviews\nin
+ingesters <--   inputs      : feed into
 
-reactors   <-R-     IObservable  : subscribe to\n(TODO)
-reactors   <-U->    aggregate    : run transactions against
-reactors   -->   caches        : maintain\nviews\nin
+reactors  <-R-  IObservable  : can subscribe to\n(TODO)
+reactors  <--> aggregate   : run transactions against
+reactors    --> caches      : maintain\nviews\nin
 
 @enduml
