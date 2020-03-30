@@ -14,6 +14,25 @@ _Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Wo
 
 - **Your link here** - Please add materials that helped you on your journey so far here via PRs!
 
+# Overview diagrams
+
+The following diagrams are based on the style defined in [@simonbrowndotje](https://github.com/simonbrowndotje)'s [C4 model](https://c4model.com/), rendered using [@skleanthous](https://github.com/skleanthous)'s [PlantUmlSkin](https://github.com/skleanthous/C4-PlantumlSkin/blob/master/README.md). It's highly recommended to view [the talk linked from `c4model.com`](https://www.youtube.com/watch?v=x2-rSnhpw0g&feature=emb_logo)
+
+## High level Context Diagram
+
+![c4model.com High Level System Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml)
+
+## Container diagram
+
+![c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
+
+## Compomnent Diagram for `Equinox.MemoryStore`
+
+![c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml)
+
+## Compomnent Diagram for `Equinox.EventStore`
+## Compomnent Diagram for `Equinox.Cosmos`
+
 # Glossary
 
 Event Sourcing is easier _and harder_ than you think. This document is not a tutorial, and you can and will make a mess on your first forays. This glossary attempts to map terminology from established documentation outside to terms used in this documentation.
@@ -145,7 +164,7 @@ let decideY ... (state : Fold.State) : Decision * Events list = ...
 
 - `interpret`, `decide` _and related input and output types / interfaces_ are public and top-level for use in unit tests (often unit tests will `open` the `module Fold` to use `initial` and `fold`)
 
-```
+```fsharp
 type Service internal (resolve : Id -> Equinox.Stream<Events.Event, Fold.State) = ...`
 
     member __.Execute(id, command) : Async<unit> =

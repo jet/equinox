@@ -106,6 +106,8 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 
 # Context diagram
 
+[See `DOCUMENTATION`.md for further drill down](https://github.com/jet/equinox/blob/diag/DOCUMENTATION.md)
+
 ![High level c4model.com System Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml)
 
 ## TEMPLATES
