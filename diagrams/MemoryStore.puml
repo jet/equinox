@@ -54,7 +54,7 @@ aggregate <.R.> stream      : Transact/\nQuery
 stream     .R.> IStream     : Load/\nTrySync
 
 eqxms      .U.> IStream     : implements
-eqxms       -R-> eqxmsdict   : has a\nvolatile
+eqxms       --ß> eqxmsdict   : has a\nvolatile
 eqxms      .L.> IObservable : feeds
 
 ingesters <-U-> aggregate   : run transactions against
