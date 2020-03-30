@@ -1,0 +1,73 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
+
+title Component diagram for Equinox.EventStore
+caption Moving parts for an Equinox app using integrated projections in EventStore / SqlStreamStore etc
+
+actor "Applications" <<External Person>> as apps
+
+rectangle "Consistent Processing" <<Expanded>> {
+    together {
+        rectangle aggregate <<Component>> [
+            Aggregate / Service
+
+            Events: codec
+            Fold: initial, fold
+            interpret / decide
+            Service
+        ]
+        rectangle stream <<Component>> [
+            Equinox.Stream
+        ]
+        interface IStream <<Component>>
+    }
+    rectangle eqxes <<Component>> [
+        Equinox.EventStore OR
+        Equinox.SqlStreamStore
+    ]
+    database esstore <<Component>> [
+        **Event Store**
+        __EventStore/SqlStreamStore__
+        App Streams
+    ]
+    database memorycache <<Component>> [
+        **System.MemoryCache**
+        StreamName -> version+state
+    ]
+}
+database esproj <<External Component>> [
+    **Store Projections**
+    $all streams (SSS + ES)
+    $ec, $et streams (ES only)
+]
+database caches <<External Component>> [
+    **Read Models**
+]
+rectangle reactors <<Component>> [
+    **Reactors**
+]
+rectangle projectors <<Component>> [
+    **Projectors**
+]
+rectangle outputs <<External Component>> [
+    **Output Feeds**
+]
+
+apps      <-D-> aggregate   : transact\nagainst
+apps      <.R.   caches      : reference\neventually\nconsistent
+
+aggregate <-L-> stream      : Transact/\nQuery
+stream     -L-> IStream     : Load/\nTrySync
+
+eqxes      .U.> IStream     : implements
+eqxes      <--> memorycache : TryGet/\nUpdate
+eqxes     <-R-> esstore     : ReadStreamEvents/\nAppendEvents\n[EventStore.ClientAPI]
+
+esstore    .R.> esproj      : feeds into
+
+esproj      ..> projectors  : handle events fed from
+esproj     .U.> reactors    : track relevant events fed from
+reactors   .U.> caches      : maintain\nviews\nin
+projectors  ..> outputs     : emit to
+
+@enduml

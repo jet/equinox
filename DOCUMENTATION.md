@@ -24,13 +24,16 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 ## Container diagram
 
-![c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
+![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
 
 ## Component Diagram for `Equinox.MemoryStore`
 
-![c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml)
+![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml)
 
 ## Component Diagram for `Equinox.EventStore`
+
+![Equinox.EventStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
+
 ## Component Diagram for `Equinox.Cosmos`
 
 # Glossary
