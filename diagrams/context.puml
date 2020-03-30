@@ -1,0 +1,79 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
+
+title System Context for Equinox (+Propulsion)
+caption High level organization of an event sourced system using Equinox (aspects typically not using Equinox are marked External)
+
+together {
+    actor "Applications" <<Person>> as apps
+    rectangle services <<System>> [
+        **Consistent processing**
+        __Equinox__
+        Making Decisions
+        Executing Commands
+        Querying synchronously
+    ]
+    database stores <<System>> [
+        **Consistent Event Stores**
+        __Events / Unfolds__
+        EventStore / SqlStreamStore
+        CosmosDB / MemoryStore
+    ]
+}
+
+database caches <<System>> [
+    **Read Models**
+    ____  
+    Document Stores 
+    SQL DBs etc
+]
+
+together {
+    rectangle ingesters <<System>> [
+        **Ingestion**
+        __Propulsion/Equinox/FsKafka__
+        Sync from Inputs
+    ]
+    rectangle reactors <<System>> [
+        **Reaction Processing**
+        __Propulsion/Equinox__
+        Driving Reactions
+        Complex Notifications
+    ]
+    rectangle projectors <<External System>> [
+        **Projection**
+        __Propulsion/FsKafka__
+        Simple Notifications
+    ]
+}
+
+rectangle sources <<External System>> [
+    **Input Feeds**
+
+    Topics / ATOM 
+]
+rectangle sinks <<External System>> [
+    **Output Feeds**
+
+    Topics / ATOM
+]
+
+apps       <--   caches     : reference\neventually\nconsistent
+apps       <-R-> services   : transact\nagainst
+
+services   <-R-> stores     : Query/\nTransact\n[events]
+
+stores     ..>   projectors : are followed by
+stores     ..>   reactors   : trigger
+
+projectors ..>   sinks      : emit notifications to
+
+reactors   -->   services   : feed back into
+reactors   ..>   sinks      : emit summaries to
+reactors   .U.>   caches    : maintain views in
+
+ingesters  <..   sources    : consume
+ingesters  -->   services   : ingest into
+ingesters  .U.>   caches    : ingest into
+
+@enduml
