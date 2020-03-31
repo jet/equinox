@@ -48,7 +48,7 @@ This diagram walks through the basic sequence of operations, where:
 
 Next, we extend the scenario to show:
 - how state held in the Cache influences the EventStore APIs used
-- how writes are managed:-
+- how writes are managed:
   - when there's no conflict
   - when there's conflict and we're retrying (handle `WrongExpectedVersionException`, read the conflicting, loop using those)
   - when there's conflict and we're giving up (throw `MaxAttemptsExceededExcveption`; no need to read the conflicting events)
@@ -81,7 +81,7 @@ Next, we extend the scenario to show:
 - how state held in the Cache influences the Cosmos APIs used
 - How reads work when a snapshot is held within the _Tip_
 - How reads work when the state is built form the events via a Query
-- how writes are managed:-
+- how writes are managed:
   - when there's no conflict (`Sync` stored procedure returns no conflicting events)
   - when there's conflict and we're retrying (re-run the decision the conflicting events the call to `Sync` yielded)
   - when there's conflict and we're giving up (throw `MaxAttemptsExceededExcveption`)
@@ -92,7 +92,9 @@ After the write, we circle back to illustrate the effect of the caching when we 
 
 ![Equinox.Cosmos c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=2&fmt=svg)
 
-In other processes (when a cache is not fully in sync), the sequence runs slightly differently - we read the _Tip_ document, and can work from that snapshot (the same fallback sequence shown in the initial read will take place if no suitable snapshot that passes the `isOrigin` predicate is found within the _Tip_) :
+In other processes (when a cache is not fully in sync), the sequence runs slightly differently
+- we read the _Tip_ document, and can work from that snapshot
+- the same fallback sequence shown in the initial read will take place if no suitable snapshot that passes the `isOrigin` predicate is found within the _Tip_
 
 ![Equinox.Cosmos c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=3&fmt=svg)
 
