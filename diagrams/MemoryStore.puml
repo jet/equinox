@@ -4,7 +4,7 @@
 title Component diagram for Equinox.MemoryStore
 caption Moving parts for an integration test scenario using MemoryStore in lieu of a Durable Store
 
-rectangle "Application's Consistent Processing Logic" <<Expanded>> {
+rectangle "Application's Consistent Processing Logic" <<External Container>> {
     rectangle aggregate <<Component>> [
         Aggregate / Service
 
@@ -21,7 +21,7 @@ rectangle "Application's Consistent Processing Logic" <<Expanded>> {
 
 actor "Integration\nTests" <<Person>> as tests
 
-rectangle "System Under Test + Simulators" <<External Container>> {
+rectangle "System Under Test + Simulators" <<Expanded>> {
     rectangle reactors <<Container>> [
         **Reactors Under Test**
     ]
@@ -54,7 +54,7 @@ aggregate <.R.> stream      : Transact/\nQuery
 stream     .R.> IStream     : Load/\nTrySync
 
 eqxms      .U.> IStream     : implements
-eqxms       --> eqxmsdict   : has a\nvolatile
+eqxms      -R-> eqxmsdict   : has a\nvolatile
 eqxms      .L.> IObservable : feeds
 
 ingesters <-U-> aggregate   : run transactions against
@@ -62,7 +62,7 @@ ingesters   --> caches      : maintain\nviews\nin
 ingesters <--   inputs      : feed into
 
 reactors  <-R-  IObservable : can subscribe to\n(TODO)
-reactors  <--> aggregate    : run transactions against
+reactors  <-->  aggregate   : run transactions against
 reactors    --> caches      : maintain\nviews\nin
 
 @enduml
