@@ -1,5 +1,5 @@
 @startuml
-title Code diagram for Equinox.EventStore Read (first time; i.e. when stream empty)
+title Code diagram for Equinox.EventStore Query operation, with empty cache and nothing written to the stream yet
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -30,7 +30,7 @@ Stream -> Caller: {result = list }
 @enduml
 
 @startuml
-title Code diagram for Equinox.Cosmos Read (with cache, snapshotting)
+title Code diagram for Equinox.Cosmos Transact operation, with cache up to date using Snapshotting Access Strategy
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -105,7 +105,7 @@ Stream -> Caller: proposedResult
 @enduml
 
 @startuml
-title Code diagram for Equinox.Cosmos Read (next time; same node, i.e. cached)
+title Code diagram for Equinox.Cosmos Query operation immediately following a Query/Transact on the same node, i.e. cached
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -134,7 +134,7 @@ Aggregate -> Caller: result
 @enduml
 
 @startuml
-title Code diagram for Equinox.Cosmos Read (Another node; using snapshotting)
+title Code diagram for Equinox.Cosmos Query operation on a node without an in-sync cached value (with snapshotting Access Strategy)
 
 actor Caller order 20
 box "Equinox.Stream"

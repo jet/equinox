@@ -51,7 +51,7 @@ Next, we extend the scenario to show:
 - how writes are managed:
   - when there's no conflict
   - when there's conflict and we're retrying (handle `WrongExpectedVersionException`, read the conflicting, loop using those)
-  - when there's conflict and we're giving up (throw `MaxAttemptsExceededExcveption`; no need to read the conflicting events)
+  - when there's conflict and we're giving up (throw `MaxAttemptsExceededException`; no need to read the conflicting events)
 
 ![Equinox.EventStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=1&fmt=svg)
 
@@ -84,7 +84,7 @@ Next, we extend the scenario to show:
 - how writes are managed:
   - when there's no conflict (`Sync` stored procedure returns no conflicting events)
   - when there's conflict and we're retrying (re-run the decision the conflicting events the call to `Sync` yielded)
-  - when there's conflict and we're giving up (throw `MaxAttemptsExceededExcveption`)
+  - when there's conflict and we're giving up (throw `MaxAttemptsExceededException`)
 
 ![Equinox.Cosmos c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=1&fmt=svg)
 
