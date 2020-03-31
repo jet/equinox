@@ -66,6 +66,28 @@ In other processes (when a cache is not fully in sync), the sequence runs slight
 
 ![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml)
 
+## Code Diagrams for `Equinox.Cosmos`
+
+This diagram walks through the basic sequence of operations, where:
+- this node has not yet read this stream (i.e. there's nothing in the Cache)
+- when we do read it, it's empty (no events):
+
+![Equinox.Cosmos c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=0&fmt=svg)
+
+Next, we extend the scenario to show:
+- how state held in the Cache influences the Cosmos APIs used
+- how writes are managed
+
+![Equinox.Cosmos c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=1&fmt=svg)
+
+After the write, we circle back to illustrate the effect of the caching when we have correct state
+
+![Equinox.Cosmos c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=2&fmt=svg)
+
+In other processes (when a cache is not fully in sync), the sequence runs slightly differently:
+
+![Equinox.Cosmos c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=3&fmt=svg)
+
 # Glossary
 
 Event Sourcing is easier _and harder_ than you think. This document is not a tutorial, and you can and will make a mess on your first forays. This glossary attempts to map terminology from established documentation outside to terms used in this documentation.
