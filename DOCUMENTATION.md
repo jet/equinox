@@ -56,9 +56,9 @@ After the write, we circle back to illustrate the effect of the caching when we 
 
 ![Equinox.EventStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=2&fmt=svg)
 
-## Code Diagram for `Equinox.EventStore`
+In other processes (when a cache is not fully in sync), the sequence runs slightly differently:
 
-![Equinox.EventStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=3)
+![Equinox.EventStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=3&fmt=svg)
 
 # Equinox.Cosmos
 
