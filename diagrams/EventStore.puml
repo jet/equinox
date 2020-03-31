@@ -6,7 +6,7 @@ caption Moving parts for an Equinox app using integrated projections in EventSto
 
 actor "Applications" <<External Person>> as apps
 
-rectangle "Application's Consistent Processing Logic" <<External Container>> {
+rectangle "Application Consistent Processing Logic" <<External Container>> {
     rectangle aggregate <<Component>> [
         Aggregate / Service
 
@@ -21,7 +21,7 @@ rectangle "Application's Consistent Processing Logic" <<External Container>> {
     interface IStream <<Component>>
 }
 
-rectangle [Equinox.EventStore] <<Container>> {
+rectangle "Equinox.EventStore" <<Container>> {
     rectangle eqxes <<Component>> [
         Equinox.EventStore OR
         Equinox.SqlStreamStore

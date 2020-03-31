@@ -32,9 +32,11 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 ## Component Diagram for `Equinox.EventStore`
 
-![Equinox.EventStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
+![Equinox.EventStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
 
-## Component Diagram for `Equinox.Cosmos`
+## Container Diagram for `Equinox.Cosmos`
+
+![Equinox.EventStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml)
 
 # Glossary
 
