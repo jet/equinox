@@ -21,7 +21,18 @@ rectangle "Application's Consistent Processing Logic" <<External Container>> {
 
 actor "Integration\nTests" <<Person>> as tests
 
-rectangle "System Under Test + Simulators" <<Expanded>> {
+rectangle "Memory Store" <<Container>> {
+    interface IObservable <<Component>>
+    rectangle eqxms <<Component>> [
+        Equinox.MemoryStore
+    ]
+    database eqxmsdict <<Component>> [
+        **ConcurrentDictionary**
+        StreamName -> TimelineEvent<T>
+    ]
+}
+
+rectangle "System Under Test + Simulators" <<Container>> {
     rectangle reactors <<Container>> [
         **Reactors Under Test**
     ]
@@ -31,16 +42,6 @@ rectangle "System Under Test + Simulators" <<Expanded>> {
     database caches <<External Container>> [
         **Read Model Simulators**
     ]
-    rectangle "Memory Store" <<Container>> {
-        interface IObservable <<Component>>
-        rectangle eqxms <<Component>> [
-            Equinox.MemoryStore
-        ]
-        database eqxmsdict <<Component>> [
-            **ConcurrentDictionary**
-            StreamName -> TimelineEvent<T>
-        ]
-    }
     rectangle inputs <<Component>> [
         **Input Simulators**
     ]
