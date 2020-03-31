@@ -38,23 +38,23 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 ![Equinox.EventStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
 
-## First Read of an empty stream
+## Code Diagrams for `Equinox.EventStore`
 
 This diagram walks through the basic sequence of operations, where:
 - this node has not yet read this stream (i.e. there's nothing in the Cache)
 - when we do read it, it's empty (no events):
 
-![Equinox.EventStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=0)
+![Equinox.EventStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=0&fmt=svg)
 
 Next, we extend the scenario to show:
 - how state held in the Cache influences the EventStore APIs used
 - how writes are managed
 
-![Equinox.EventStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=1)
+![Equinox.EventStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=1&fmt=svg)
 
 After the write, we circle back to illustrate the effect of the caching when we have correct state
 
-![Equinox.EventStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=2)
+![Equinox.EventStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=2&fmt=svg)
 
 ## Code Diagram for `Equinox.EventStore`
 
