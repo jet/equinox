@@ -24,19 +24,41 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 ## Container diagram
 
-![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
+![TODO Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
+
+# Equinox.MemoryStore
 
 ## Component Diagram for `Equinox.MemoryStore`
 
 ![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml)
 
+# Equinox.EventStore
+
 ## Component Diagram for `Equinox.EventStore`
 
 ![Equinox.EventStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
 
+## Code Diagram for `Equinox.EventStore`
+
+![Equinox.EventStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&index=0)
+
+## Code Diagram for `Equinox.EventStore`
+
+![Equinox.EventStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&index=1)
+
+## Code Diagram for `Equinox.EventStore`
+
+![Equinox.EventStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&index=2)
+
+## Code Diagram for `Equinox.EventStore`
+
+![Equinox.EventStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&index=3)
+
+# Equinox.Cosmos
+
 ## Container Diagram for `Equinox.Cosmos`
 
-![Equinox.EventStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml)
+![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml)
 
 # Glossary
 
