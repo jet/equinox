@@ -28,6 +28,10 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 # Equinox.MemoryStore
 
+## Container Diagram for `Equinox.MemoryStore`
+
+![Equinox.MemoryStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStoreContainer.puml)
+
 ## Component Diagram for `Equinox.MemoryStore`
 
 ![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml)
