@@ -19,9 +19,9 @@ Service -> Stream: Query(id, renderList)
 Stream -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: None
-IStream -> CosmosDB: ReadSingleDocument (NoEtag, "Favorites-clientId", "-1")
+IStream -> CosmosDB: ReadItem(NoEtag, "Favorites-clientId", "-1")
 CosmosDB -[#blue]-> IStream: 404 Not Found
-note over IStream: Charge = 1 RU
+note right IStream #lightblue: Charge = 1 RU
 IStream <- Aggregate: initial
 IStream -> Stream: { state = initial; version = -1 }
 IStream --> Cache: Update("Favorites-clientId", { etag = null, version = -1, state = initial })
@@ -50,47 +50,57 @@ Service -> Stream: maxAttempts
 Stream -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: None
-IStream -> CosmosDB: ReadSingleDocument(etag, "Favorites-clientId", "-1")
+IStream -> CosmosDB: ReadItem(etag, "Favorites-clientId", "-1")
+
 alt Stream Empty (initial state)
 CosmosDB -[#blue]-> IStream: 404 Not Found
-note over IStream: Charge = 1 RU
+note right IStream #lightblue: Charge = 1 RU
 Stream -> IStream: initial
 IStream -> Stream: { state = initial; events = [] }
 Stream -> Aggregate: fold initial events
 else load from snapshot
-CosmosDB -[#green]-> IStream: 200, etag, u = [Snapshotted {state = snapshottedValue}])
-note over IStream #lightblue: charge = f(READ * length(compressedTipDocument)
-IStream -> Aggregate: isOrigin(Snapshotted { state = snapshottedValue})
+CosmosDB -[#green]-> IStream: 200, etag, u = [{c:"Snapshotted", d: {state = snapshottedValue}}])
+note right IStream #lightblue: charge = f(READ * length(compressedTipDocument)
+IStream -> Aggregate: codec.TryDecode("Snapshotted", snapshottedJsonElement)
+IStream -> Aggregate: isOrigin (Snapshotted { state = snapshottedValue})
 IStream -> Aggregate: fold initial snapshottedValue
 else load from events
-CosmosDB -[#green]-> IStream: 200, etag; version = version; u = [OldSnapshot])
-note over IStream #lightblue: charge = f(READ * length(compressedTipDocument)
-note over IStream #orange: here we illustrate what happens if isOrigin rejects the OldSnapShot
-IStream -> Aggregate: isOrigin(OldSnapshot)
-Aggregate -[#red]> IStream: false
-IStream -> CosmosDB: ReadMany(version <= version, "Favorites-Client")
-CosmosDB --> IStream: [event4; event3]
-IStream -> Aggregate: isOrigin event4
+CosmosDB -[#green]-> IStream: 200, etag; version = version; u = [{c: "OldSnapshot", d: { ... }}])
+note right IStream #lightblue: charge = f(READ * length(compressedTipDocument)
+note over IStream: here we illustrate what happens if isOrigin rejects the OldSnapShot
+IStream -> Aggregate: codec.TryDecode("OldSnapshot", oldSnapshotJsonElement)
+IStream -> Aggregate: isOrigin OldSnapshot
+Aggregate --[#red]> IStream: false
+IStream -> CosmosDB: GetItemQueryIterator(version: <= version, "Favorites-Client")
+CosmosDB --> IStream: [{ c: "EventType4"; d: "{ eventBody4}"}\n { c: "EventType3"; d: "{ eventBody3}"}]
+note right IStream #orange: Charge = Query overhead + size-based charge
+IStream -> Aggregate: codec.TryDecode("EventType4", eventBody4JsonElement)
+note over IStream: Each event coming back from the query is decoded by the codec each time\nTryDecode is permitted to return None to signal event can be ignored
+IStream -> Aggregate: isOrigin decEvent4; isOrigin decEvent3
 note over IStream: Each event is tested one by one; Lets say it returns false every time
 CosmosDB --> IStream: [event2; event1] 
-IStream -> Aggregate: fold initial [event1; event2; event3; event4]]
+IStream -> Aggregate: isOrigin decEvent2; isOrigin decEvent1
+IStream -> Aggregate: fold initial [decEvent1; decEvent2; decEvent3; decEvent4]]
 end // initial stream load cases
 Aggregate --> IStream: state
+
 loop Optimistic Concurrency Control loop driven by consistency check on etag, attempts times; INPUT: state
 Stream -> Aggregate: interpret state
-Aggregate --> Stream: (result = proposedResult, events proposedEvents)
+Aggregate --> Stream: { result = proposedResult\n  events proposedEvents }
 Stream -> IStream: TrySync token state proposedEvents
-IStream <- Aggregate: fold state proposedEvents
+IStream -> Aggregate: fold state proposedEvents
 Aggregate --> IStream: state'
-IStream <- Aggregate: snapshot state'
-IStream <-- IStream: { unfolds = [snapshot] }
-IStream -> CosmosDB: RunSyncStoredProcedure ("Favorites-clientId", token, events, unfolds = [Snapshotted { state'}])
+IStream -> Aggregate: snapshot state'
+Aggregate --> IStream: { snapshot = Snapshotted (encoded(state')) }
+IStream -> Aggregate: codec.Encode snapshot
+Aggregate --> IStream: { eventType = "Snapshotted"; body : JsonElement }
+IStream -> CosmosDB: ExecuteStoredProcedure("Sync", "Favorites-clientId", token,\n        events, unfolds = [{ c: eventType, d: body }])
 alt Normal, conflict-free case
 CosmosDB -[#green]-> IStream: {result = 200; etag = etag'; version = version' }
-note over IStream #FFAAAA: Charge = f(READ* length(compressedTipDocument)+WRITE*(length(compressedTipDocument))+length(eventsDocument)))
+note over IStream #FFAAAA: Charge = f(READ* length(compressedTipDocument)\n                  +WRITE*(length(compressedTipDocument))+length(eventsDocument)))
 else Database detects etag has deviated from etag 
 CosmosDB -[#red]-> IStream: {result = CONFLICT; etag = etag'; events = conflictingEvents }
-note over IStream: Charge = f(READ * length(compressedTipDocument))
+note right IStream: Charge = f(READ * length(compressedTipDocument))
 alt RETRY CASE; attempts > 1
 Aggregate --> IStream: conflictingState
 note over IStream #orange: RESTART OCC LOOP with {state = conflictingState; attempts = attempts - 1 }
@@ -125,10 +135,10 @@ Service -> Stream: Query(id, renderList)
 Stream -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: { state = cachedState; etag = cachedEtag }
-IStream -> CosmosDB: ReadSingleDocument (cachedEtag, "Favorites-clientId", "-1")
+IStream -> CosmosDB: ReadItem(cachedEtag, "Favorites-clientId", "-1")
 CosmosDB -[#blue]->  IStream: 304 Not Modified
-note over IStream #lightblue: Charge = 1 RU
-IStream -> Stream: { state = cachedState; version = version; etag = cachedEtag }
+note right IStream #lightblue: Charge = 1 RU
+IStream -> Stream: { state = cachedState\n  version = version\n  etag = cachedEtag }
 Aggregate <-> IStream: { result = renderList version state }
 Aggregate -> Caller: result
 @enduml
@@ -154,10 +164,13 @@ Service -> Stream: Query(id, renderList)
 Stream -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: None
-IStream -> CosmosDB: ReadSingleDocument (NoEtag, "Favorites-clientId", "-1")
+IStream -> CosmosDB: ReadItem(NoEtag, "Favorites-clientId", "-1")
 CosmosDB -[#green]-> IStream: 200, etag, u = [Snapshotted {state = snapshottedValue}])
-note over IStream #lightblue: charge = f(READ * length(compressedTipDocument)
-IStream -> Aggregate: isOrigin(Snapshotted { state = snapshottedValue})
+note right IStream #lightblue: charge = f(READ * length(compressedTipDocument)
+IStream -> Aggregate: codec.TryDecode("Snapshotted",\n    jsonElement: "{state = snapshottedValue}"")
+Aggregate --> IStream: { snapshot = Snapshotted { state = snapshottedValue} }
+IStream -> Aggregate: isOrigin snapshot
+Aggregate -[#green]-> IStream: true
 IStream -> Aggregate: fold initial snapshottedValue
 Aggregate --> IStream: state
 IStream --> Cache: Update("Favorites-clientId", { etag, state, version })
