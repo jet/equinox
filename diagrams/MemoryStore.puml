@@ -6,21 +6,44 @@ caption Detailed moving parts for an integration test scenario using MemoryStore
 
 actor "Integration\nTests" <<Person>> as tests
 
-rectangle "Equinox.MemoryStore" <<Expanded>> {
-    interface IObservable <<Component>>
-    rectangle eqxms <<Component>> [
-        Equinox.MemoryStore
+together {
+    rectangle "Equinox.MemoryStore" <<Expanded>> {
+        interface IObservable <<Component>>
+        rectangle eqxms <<Component>> [
+            Equinox.MemoryStore
+        ]
+        database eqxmsdict <<Component>> [
+            **ConcurrentDictionary**
+            StreamName -> TimelineEvent<T>
+        ]
+    }
+    database caches <<External Container>> [
+        **Read Model Simulators**
+        **and/or Concrete Stores**
     ]
-    database eqxmsdict <<Component>> [
-        **ConcurrentDictionary**
-        StreamName -> TimelineEvent<T>
-    ]
-}
+    rectangle "Application Consistent Processing Logic" <<External Container>> as app {
+        rectangle aggregate <<Component>> [
+            Aggregate / Service
 
-database caches <<External Container>> [
-    **Read Model Simulators**
-    **and/or Concrete Stores**
-]
+            Events: codec
+            Fold: initial, fold
+            interpret / decide
+            Service
+        ]
+        rectangle aggregate2 <<Component>> [
+            Aggregate / Service
+
+            Events: codec
+            Fold: initial, fold
+            interpret / decide
+            Service
+        ]
+        rectangle stream <<Component>> [
+            Equinox.Stream
+        ]
+        interface IStream <<Component>>
+    }
+}
 
 rectangle "System Under Test + Simulators" <<Expanded>> {
     rectangle ingesters <<Container>> [
@@ -34,47 +57,24 @@ rectangle "System Under Test + Simulators" <<Expanded>> {
     ]
 }
 
-rectangle "Application Consistent Processing Logic" <<Container>> {
-    rectangle aggregate <<Component>> [
-        Aggregate / Service
-
-        Events: codec
-        Fold: initial, fold
-        interpret / decide
-        Service
-    ]
-    rectangle aggregate2 <<Component>> [
-        Aggregate / Service
-
-        Events: codec
-        Fold: initial, fold
-        interpret / decide
-        Service
-    ]
-    rectangle stream <<Component>> [
-        Equinox.Stream
-    ]
-    interface IStream <<Component>>
-}
-
-tests        <-> aggregate   : transact\nagainst
-tests      <.    caches      : may probe\neventually\nconsistent
+tests        <-> app         : transact\nagainst
+tests      <..   caches      : may probe\neventually\nconsistent
 tests         -> eqxms       : may validate\nby probing
 
 aggregate  <-R-> stream      : Transact
 aggregate2 <-R-> stream      : Transact/\nQuery
 stream      -R-> IStream     : Load/\nTrySync
 
-eqxms        --> IStream     : implements
-eqxms        ..> eqxmsdict   : has a\nvolatile
-eqxms        --> IObservable : feeds
+eqxms         -> IStream     : implements
+eqxms       .> eqxmsdict   : has a\nvolatile
+eqxms       -R-> IObservable : feeds
 
 ingesters   -U-> aggregate   : run transactions against
-ingesters   .U.> caches      : maintain\nviews\nin
+ingesters   .R.> caches      : maintain\nviews\nin
 ingesters  <.R.  inputs      : feed into
 
-reactors   <-    IObservable : can subscribe to\n(TODO)
+reactors   <-L-    IObservable : can subscribe to\n(TODO)
 reactors   <-U-> aggregate2  : run transactions against
-reactors      .> caches      : maintain\nviews\nin
+reactors      .U.> caches      : maintain\nviews\nin
 
 @enduml

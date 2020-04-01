@@ -4,19 +4,24 @@
 title Container diagram for Equinox.MemoryStore
 caption High level layout of an integration test scenario using MemoryStore in lieu of a Durable Store
 
-actor "Integration\nTests" <<Person>> as tests
+rectangle inputs <<External Component>> [
+    **Input Simulators**
+]
 
-rectangle "Equinox.MemoryStore" <<Container>> {
-    rectangle eqxms <<Component>> [
-        Equinox.MemoryStore
-    ]
-}
-
-rectangle "System Under Test + Simulators" <<Container>> {
+together {
+    rectangle "Equinox.MemoryStore" <<Container>> {
+        rectangle eqxms <<Component>> [
+            Equinox.MemoryStore
+        ]
+    }
+    actor "Integration\nTests" <<Person>> as tests
     database caches <<Container>> [
         **Read Model Simulators**
         **and/or Concrete Stores**
     ]
+}
+
+rectangle "System Under Test + Simulators" <<Container>> {
     rectangle "Application Under Test" <<Container>> as aggregate {
         rectangle aggregate1 <<Component>> [
             Aggregate / Service 1
@@ -28,26 +33,23 @@ rectangle "System Under Test + Simulators" <<Container>> {
     rectangle ingesters <<Container>> [
         **Ingesters Under Test**
     ]
-    rectangle inputs <<External Component>> [
-        **Input Simulators**
-    ]
     rectangle reactors <<Container>> [
         **Reactors Under Test**
     ]
 }
 
-tests     <-->  aggregate   : transact\nagainst
-tests     <-R-  caches      : may probe\neventually\nconsistent
-tests       --> eqxms       : may validate\nby probing
+tests     <-D->  aggregate  : transact\nagainst
+tests     <-     caches     : may probe\neventually\nconsistent
+tests       -L-> eqxms      : may validate\nby probing
 
-aggregate <.R.> eqxms       : Transact/\nQuery
+aggregate <.L.>  eqxms      : Transact/\nQuery
 
-ingesters  -U-> aggregate1  : run transactions against
-ingesters  -U-> caches      : maintain\nviews\nin
-ingesters <.L.  inputs      : feed into
+ingesters  ->    aggregate1 : run transactions against
+ingesters  -U->  caches     : maintain\nviews\nin
+ingesters <.U.   inputs     : feed into
 
-reactors  <-U-  eqxms       : can subscribe to\n(TODO)
-reactors  <-U-> aggregate2  : run transactions against
-reactors   -U-> caches      : maintain\nviews\nin
+reactors  <-     eqxms      : can subscribe to\n(TODO)
+reactors  <->    aggregate2 : run transactions against
+reactors  -U->   caches     : maintain\nviews\nin
 
 @enduml

@@ -37,7 +37,7 @@ However, the Equinox `MemoryStore` package can also be relevant as part of your 
 - allow one to validate the above logic works well independent of the effects of any of the stores
 - allow one to reduce reliance on mechanisms such as the CosmosDB simulator
 
-** NOTE: `MemoryStore` is a complement to testing with a real store - it's absolutely not a substitute for testing how your app really performs with your load against your actual store **
+**NOTE: `MemoryStore` is a complement to testing with a real store - it's absolutely not a substitute for testing how your app really performs with your load against your actual store**
 
 A primary supported pattern is to be able to be able to define a test suite and then run the suite with the right store for the context - e.g.:
 -  for unit tests, you might opt to run some important scenarios with a `MemoryStore`
@@ -56,7 +56,7 @@ This diagram shows the high level building blocks used in constructing an integr
 
 This breaks down the components involved internally with the layout above in terms of the actual structures involved:
 
-![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml)
+![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml?fmt=svg)
 
 # Equinox.EventStore
 
