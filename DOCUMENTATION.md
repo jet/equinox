@@ -28,11 +28,33 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 # Equinox.MemoryStore
 
+Equinox encourages sticking with [Test Pyramid principles](https://martinfowler.com/articles/practical-test-pyramid.html): focus on unit testing things by default (based on calling `interpret`/`decide`, `initial` and `fold` from the [Aggregate module](#aggregate-module))
+
+However, the Equinox `MemoryStore` package can also be relevant as part of your overall testing strategy. The aims are to:
+- provide a mechanism where one can provide an empty and/or specifically prepared set of streams initialized in ways that make sense for your test suite
+- allow one to test with fully configured `Service` types if necessary
+- enable one to test flows or scenarios (e.g. Process Managers) crossing multiple `Service` types
+- allow one to validate the above logic works well independent of the effects of any of the stores
+- allow one to reduce reliance on mechanisms such as the CosmosDB simulator
+
+** NOTE: `MemoryStore` is a complement to testing with a real store - it's absolutely not a substitute for testing how your app really performs with your load against your actual store **
+
+A primary supported pattern is to be able to be able to define a test suite and then run the suite with the right store for the context - e.g.:
+-  for unit tests, you might opt to run some important scenarios with a `MemoryStore`
+- for integration tests, you might run lots of iterations of a Property Based Test against a memory store, and a reduced number of iterations of the same test against your concrete store
+- for acceptance Tests, you'll likely primarily focus on using your concrete store
+
 ## Container Diagram for `Equinox.MemoryStore`
+
+This diagram shows the high level building blocks used in constructing an integration test using `Equinox.MemoryStore`
+
+**NOTE: There's one critical lie to declare: [#205](https://github.com/jet/equinox/issues/205) is not yet implemented**
 
 ![Equinox.MemoryStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStoreContainer.puml)
 
 ## Component Diagram for `Equinox.MemoryStore`
+
+This breaks down the components involved internally with the layout above in terms of the actual structures involved:
 
 ![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml)
 
