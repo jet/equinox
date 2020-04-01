@@ -66,15 +66,15 @@ aggregate2 <-R-> stream      : Transact/\nQuery
 stream      -R-> IStream     : Load/\nTrySync
 
 eqxms         -> IStream     : implements
-eqxms       .> eqxmsdict   : has a\nvolatile
+eqxms         .> eqxmsdict   : has a\nvolatile
 eqxms       -R-> IObservable : feeds
 
 ingesters   -U-> aggregate   : run transactions against
 ingesters   .R.> caches      : maintain\nviews\nin
 ingesters  <.R.  inputs      : feed into
 
-reactors   <-L-    IObservable : can subscribe to\n(TODO)
+reactors   <-L-  IObservable : can subscribe to\n(TODO)
 reactors   <-U-> aggregate2  : run transactions against
-reactors      .U.> caches      : maintain\nviews\nin
+reactors    .U.> caches      : maintain\nviews\nin
 
 @enduml

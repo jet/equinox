@@ -1,0 +1,72 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
+
+title Containers Diagram for Equinox (+Propulsion)
+caption Packages / Elements breakdown of an event sourced system using Equinox
+
+actor "Applications" as apps <<Person>>
+
+frame "Caches" <<Expanded>> as caches {
+    database "REDIS"
+    database "SQL"
+}
+rectangle "Services" <<Expanded>> as services {
+    rectangle "Equinox" <<Component>> as equinox
+    rectangle "FsCodec" <<Component>>
+}
+together {
+    rectangle ingesters <<External System>> 
+    rectangle reactors <<External System>> 
+    rectangle projectors <<External System>> 
+
+    rectangle "Input Feeds" as sources <<External System>> 
+    rectangle "Output Feeds" as sinks <<External System>> 
+}
+together {
+    frame "Stores" as stores {
+        together {
+            rectangle "Equinox.MemoryStore" <<Component>> as ms 
+            rectangle "Equinox.Cosmos" <<Component>> as cs
+        }
+        frame "EventStore-style Store Adapters" as ssss {
+            rectangle "Equinox.EventStore" <<Component>> as es
+            together {
+                rectangle "Equinox.SqlStreamStore.MsSql" <<Component>> as ssm
+                rectangle "Equinox.SqlStreamStore.MySql" <<Component>> as ssy
+                rectangle "Equinox.SqlStreamStore.Postgres" <<Component>> as ssp
+            }
+            rectangle "Equinox.SqlStreamStore" <<Component>> as sss
+        }
+        rectangle "Equinox.Core" as core <<Component>> {
+            rectangle "System.MemoryCache"
+        }
+    }
+}
+apps       <-R-  caches     : reference\neventually\nconsistent
+apps       <-D-> services   : transact\nagainst
+
+equinox    <->  stores     : Query/\nTransact\n[events]
+
+stores     .U.>   projectors : are followed by
+stores     .U.>   reactors   : trigger
+
+projectors ..>   sinks      : emit notifications to
+
+reactors   -L->   services   : feed back into
+reactors   ..>   sinks      : emit summaries to
+reactors   .U.>  caches    : maintain views in
+
+ingesters  <..   sources    : consume
+ingesters  -L->   services   : ingest into
+ingesters  .U.>   caches    : ingest into
+
+stores -[hidden]-> ssss
+
+ssm -D-> sss
+ssy -D-> sss
+ssp -D-> sss
+sss -D-> core
+cs -D-> core
+es -D-> core
+
+@enduml

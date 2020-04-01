@@ -18,13 +18,17 @@ _Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Wo
 
 The following diagrams are based on the style defined in [@simonbrowndotje](https://github.com/simonbrowndotje)'s [C4 model](https://c4model.com/), rendered using [@skleanthous](https://github.com/skleanthous)'s [PlantUmlSkin](https://github.com/skleanthous/C4-PlantumlSkin/blob/master/README.md). It's highly recommended to view [the talk linked from `c4model.com`](https://www.youtube.com/watch?v=x2-rSnhpw0g&feature=emb_logo)
 
-## High level Context Diagram
+## Equinox + Propulsion Context Diagram
+
+Equinox and Propulsion together provide a loosely related set of libraries that you can leverage in an application as you see fit. These diagrams are intended to give a rough orientation; what you actually build is up to you...
 
 ![c4model.com High Level System Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml)
 
-## Container diagram
+## Overall Container diagram
 
-![TODO Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
+The Systems and Components involved break out roughly like this:
+
+![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
 
 # Equinox.MemoryStore
 
@@ -48,9 +52,9 @@ A primary supported pattern is to be able to be able to define a test suite and 
 
 This diagram shows the high level building blocks used in constructing an integration test using `Equinox.MemoryStore`
 
-**NOTE: There's one critical lie to declare: [#205](https://github.com/jet/equinox/issues/205) is not yet implemented**
-
 ![Equinox.MemoryStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStoreContainer.puml)
+
+**NOTE: There's one critical lie to declare: [#205](https://github.com/jet/equinox/issues/205) is not yet implemented**
 
 ## Component Diagram for `Equinox.MemoryStore`
 
