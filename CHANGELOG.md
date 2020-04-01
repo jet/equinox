@@ -11,6 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - now targets `Microsoft.Azure.Cosmos` v `3.1.1` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
+- Add `eqx dump -b`, enabling overriding of Max Events per Batch
 
 ### Changed
 
