@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- Add `eqx dump -b`, enabling overriding of Max Events per Batch
+
 ### Changed
 
 - `MemoryStore`: Target `FsCodec` v `2.0.0` [#219](https://github.com/jet/equinox/pull/219)
@@ -26,7 +29,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
-- `SqlStreamStore.MsSql`: Initial Append when stream empty on MsSql was perpetually failing :pray: [#209](https://github.com/jet/equinox/pull/209) [@Kimserey](https://github.com/kimserey)
+- `SqlStreamStore.MsSql`: Initial Append when stream empty on MsSql was perpetually failing [#209](https://github.com/jet/equinox/pull/209) :pray: [@Kimserey](https://github.com/kimserey)
 
 <a name="2.0.0"></a>
 ## [2.0.0] - 2020-02-19
