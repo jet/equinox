@@ -9,7 +9,7 @@ open Swensen.Unquote
 let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
 
 let createMemoryStore () =
-     MemoryStore.VolatileStore<_>()
+    MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
     Backend.ContactPreferences.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 

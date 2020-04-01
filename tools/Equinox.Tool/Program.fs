@@ -3,6 +3,7 @@
 open Argu
 open Domain.Infrastructure
 open Equinox.Tool.Infrastructure
+open FSharp.Control
 open FSharp.UMX
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure
@@ -78,6 +79,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-T"; Unique>]       TimeRegular
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
     | [<AltCommandLine "-E"; Unique >]      EventsOnly
+    | [<AltCommandLine "-b"; Unique >]      BatchSize of int
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
@@ -92,6 +94,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | TimeRegular ->                "Don't humanize time intervals between events"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
+            | BatchSize ->                  "Maximum number of documents to request per batch. Default 1000."
             | Es _ ->                       "Parameters for EventStore."
             | Cosmos _ ->                   "Parameters for CosmosDb."
             | MsSql _ ->                    "Parameters for Sql Server."
@@ -99,7 +102,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | Postgres _ ->                 "Parameters for Postgres."
 and DumpInfo(args: ParseResults<DumpArguments>) =
     member __.ConfigureStore(log : ILogger, createStoreLog) =
-        let storeConfig = None,true,1000
+        let storeConfig = None, true, args.GetResult(DumpArguments.BatchSize,1000)
         match args.TryGetSubCommand() with
         | Some (DumpArguments.Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
@@ -338,7 +341,7 @@ module CosmosStats =
     type Azure.Cosmos.CosmosContainer with
         // NB DO NOT CONSIDER PROMULGATING THIS HACK
         member container.QueryValue<'T>(sqlQuery : string) =
-            let query : seq<'T> = failwith "TODO translate" //container.ReadItemAsync(sqlQuery) :> _
+            let query : Microsoft.Azure.Cosmos.FeedResponse<'T> = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
             query |> Seq.exactlyOne
     let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
@@ -357,7 +360,7 @@ module CosmosStats =
                     log.Debug("Running query: {sql}", sql)
                     let res = client.GetContainer().QueryValue<int>(sql)
                     log.Information("{stat}: {result:N0}", name, res)})
-                |> if inParallel then Async.Parallel else Async.ParallelThrottled 1 // TOCONSIDER replace with Async.Sequence when using new enough FSharp.Core
+                |> if inParallel then Async.Parallel else Async.Sequential
                 |> Async.Ignore
                 |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint" }

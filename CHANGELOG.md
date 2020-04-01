@@ -11,17 +11,27 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - now targets `Microsoft.Azure.Cosmos` v `3.1.1` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
+- Add `eqx dump -b`, enabling overriding of Max Events per Batch
 
 ### Changed
 
 - Update to `3.1.101` SDK
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1`
+- Retarget Todobackend to `aspnetcore` v `3.1`
 - Target `FSharp.Control.AsyncSeq` v `2.0.23`
 - Updated AzDO CI/CD to use `windows-latest`
+- Remove `module Commands` convention from in examples
+- Revise semantics of Cart Sample Command handling
 
 ### Removed
 ### Fixed
 
+<a name="2.0.1"></a>
+## [2.0.1] - 2020-03-25
+
+- `SqlStreamStore.MsSql`: Initial Append when stream empty on MsSql was perpetually failing :pray: [#209](https://github.com/jet/equinox/pull/209) [@Kimserey](https://github.com/kimserey)
+
+### Fixed
 <a name="2.0.0"></a>
 ## [2.0.0] - 2020-02-19
 
@@ -376,7 +386,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.1...HEAD
+[2.0.1]: https://github.com/jet/equinox/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/jet/equinox/compare/2.0.0-rc9...2.0.0
 [2.0.0-rc9]: https://github.com/jet/equinox/compare/2.0.0-rc8...2.0.0-rc9
 [2.0.0-rc8]: https://github.com/jet/equinox/compare/2.0.0-rc7...2.0.0-rc8

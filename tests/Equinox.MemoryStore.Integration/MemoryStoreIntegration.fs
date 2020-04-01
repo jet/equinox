@@ -16,13 +16,15 @@ let createServiceMemory log store =
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput
-
+    let (|NonZero|) = function
+        | None -> Some 1
+        | Some c -> Some (max 1 c)
     [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
-            cartId1 cartId2 ((_,skuId,quantity) as args) = Async.RunSynchronously <| async {
+            cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
         let service = let log = createLog () in createServiceMemory log store
-        let command = Domain.Cart.AddItem args
+        let command = Domain.Cart.SyncItem (ctx,skuId,quantity,waive)
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
@@ -40,7 +42,7 @@ type Tests(testOutputHelper) =
         // Assert 2. Verify that the Command got correctly reflected in the state, with no extraneous effects
         let verifyFoldedStateReflectsCommand = function
             | { Domain.Cart.Fold.State.items = [ item ] } ->
-                let expectedItem : Domain.Cart.Fold.ItemInfo = { skuId = skuId; quantity = quantity; returnsWaived = false }
+                let expectedItem : Domain.Cart.Fold.ItemInfo = { skuId = skuId; quantity = quantity.Value; returnsWaived = waive }
                 test <@ expectedItem = item @>
             | x -> x |> failwithf "Expected to find item, got %A"
         verifyFoldedStateReflectsCommand expected

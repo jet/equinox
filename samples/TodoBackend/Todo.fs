@@ -40,30 +40,28 @@ module Fold =
 
 type Command = Add of Events.Todo | Update of Events.Todo | Delete of id: int | Clear
 
-module Commands =
-
-    let interpret c (state : Fold.State) =
-        match c with
-        | Add value -> [Events.Added { value with id = state.nextId }]
-        | Update value ->
-            match state.items |> List.tryFind (function { id = id } -> id = value.id) with
-            | Some current when current <> value -> [Events.Updated value]
-            | _ -> []
-        | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Events.Deleted {id=id}] else []
-        | Clear -> if state.items |> List.isEmpty then [] else [Events.Cleared]
+let interpret c (state : Fold.State) =
+    match c with
+    | Add value -> [Events.Added { value with id = state.nextId }]
+    | Update value ->
+        match state.items |> List.tryFind (function { id = id } -> id = value.id) with
+        | Some current when current <> value -> [Events.Updated value]
+        | _ -> []
+    | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Events.Deleted {id=id}] else []
+    | Clear -> if state.items |> List.isEmpty then [] else [Events.Cleared]
 
 type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
     let execute clientId command =
         let stream = resolve clientId
-        stream.Transact(Commands.interpret command)
+        stream.Transact(interpret command)
     let query clientId projection =
         let stream = resolve clientId
         stream.Query projection
     let handle clientId command =
         let stream = resolve clientId
         stream.Transact(fun state ->
-            let events = Commands.interpret command state
+            let events = interpret command state
             let state' = Fold.fold state events
             state'.items,events)
 

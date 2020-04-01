@@ -48,14 +48,13 @@ type Command =
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
     | Unfavorite    of skuId : SkuId
 
-module Commands =
-    let interpret command (state : Fold.State) =
-        let doesntHave skuId = state |> Array.exists (fun x -> x.skuId = skuId) |> not
-        match command with
-        | Favorite (date = date; skuIds = skuIds) ->
-            [ for skuId in Seq.distinct skuIds do
-                if doesntHave skuId then
-                    yield Events.Favorited { date = date; skuId = skuId } ]
-        | Unfavorite skuId ->
-            if doesntHave skuId then [] else
-            [ Events.Unfavorited { skuId = skuId } ]
+let interpret command (state : Fold.State) =
+    let doesntHave skuId = state |> Array.exists (fun x -> x.skuId = skuId) |> not
+    match command with
+    | Favorite (date = date; skuIds = skuIds) ->
+        [ for skuId in Seq.distinct skuIds do
+            if doesntHave skuId then
+                yield Events.Favorited { date = date; skuId = skuId } ]
+    | Unfavorite skuId ->
+        if doesntHave skuId then [] else
+        [ Events.Unfavorited { skuId = skuId } ]

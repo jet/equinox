@@ -90,7 +90,7 @@ NB this has lots of room for improvement, having started as a placeholder in [#5
 
 ## Aggregate Module
 
-All the code handling any given Aggregate’s Invariants, Commands and Synchronous Queries should be [encapsulated within a single `module`](https://en.wikipedia.org/wiki/Cohesion_(computer_science). It's highly recommended to use the following canonical skeleton layout:
+All the code handling any given Aggregate’s Invariants, Commands and Synchronous Queries should be [encapsulated within a single `module`](https://en.wikipedia.org/wiki/Cohesion_(computer_science)). It's highly recommended to use the following canonical skeleton layout:
 
 ```fsharp
 module Aggregate
@@ -165,7 +165,7 @@ let create resolve =
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one wires things up (using either a concrete store or a `MemoryStore`) - there should not be a need to have it implement an interface and/or go down mocking rabbit holes.
 
-While not all sections are omnipresent, significant thought and discussion has gone into arriving at this layout. Having everything laid out consistently is a big win, so customizing your layout / grouping is something to avoid doing until you have [at least 3](https://en.wikipedia.org/wiki/Rule_of_three_(computer_programming) representative aggregates of your own implemented.
+While not all sections are omnipresent, significant thought and discussion has gone into arriving at this layout. Having everything laid out consistently is a big win, so customizing your layout / grouping is something to avoid doing until you have [at least 3](https://en.wikipedia.org/wiki/Rule_of_three_(computer_programming)) representative aggregates of your own implemented.
 
 ### Storage Binding Module
 
@@ -766,7 +766,7 @@ type Service internal (resolve : CartId -> Equinox.Stream<Events.Event, Fold.Sta
         let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
         stream.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
-            return interpretMany Fold.fold (Seq.map Commands.interpret commands) state })
+            return interpretMany Fold.fold (Seq.map interpret commands) state })
 ```
 
 <a name="accumulator"></a>
@@ -814,7 +814,7 @@ type Service ... =
             match prepare with None -> () | Some prep -> do! prep
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
-                acc.Transact(Commands.interpret cmd)
+                acc.Transact(interpret cmd)
             return acc.State, acc.Accumulated
         })
 ```
@@ -1151,7 +1151,7 @@ TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-S
 
 # Ideas
 
-# Things that are incomplete and/or require work
+## Things that are incomplete and/or require work
 
 This is a very loose laundry list of items that have occurred to us to do, given infinite time. No conclusions of likelihood of starting, finishing, or even committing to adding a feature should be inferred, but most represent things that would be likely to be accepted into the codebase (please [read and] raise Issues first though ;) ).
 

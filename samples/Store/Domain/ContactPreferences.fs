@@ -33,9 +33,8 @@ module Fold =
 type Command =
     | Update of Events.Value
 
-module Commands =
-    let interpret command (state : Fold.State) =
-        match command with
-        | Update ({ preferences = preferences } as value) ->
-            if state = preferences then [] else
-            [ Events.Updated value ]
+let interpret command (state : Fold.State) =
+    match command with
+    | Update ({ preferences = preferences } as value) ->
+        if state = preferences then [] else
+        [ Events.Updated value ]

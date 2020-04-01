@@ -11,7 +11,7 @@ open Xunit
 (* Test execution helpers *)
 
 let decide cmd state: bool * Events.Event list =
-    Commands.decide Int32.MaxValue cmd state
+    decide Int32.MaxValue cmd state
 let interpret cmd state: Events.Event list =
     decide cmd state |> snd
 let run (commands : Command list) : State * Events.Event list =
@@ -69,7 +69,7 @@ let ``Adding the same sku many times should surface the most recent date`` (date
 [<DomainProperty>]
 let ``Commands that push saves above the limit should fail to process`` (state : State) (command : Command) =
     let maxItems = state.Length
-    let result = Commands.decide maxItems command state
+    let result = SavedForLater.decide maxItems command state
     test <@ match result with
             | true, events -> (fold state events).Length <= maxItems
             | false, _ -> true @>

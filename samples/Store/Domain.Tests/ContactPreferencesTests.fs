@@ -1,7 +1,6 @@
 ﻿module Samples.Store.Domain.Tests.ContactPreferencesTests
 
 open Domain.ContactPreferences
-open Domain.ContactPreferences.Commands
 open Domain.ContactPreferences.Events
 open Domain.ContactPreferences.Fold
 open Swensen.Unquote
