@@ -3,6 +3,7 @@
 open Argu
 open Domain.Infrastructure
 open Equinox.Tool.Infrastructure
+open FSharp.Control
 open FSharp.UMX
 open Microsoft.Extensions.DependencyInjection
 open Samples.Infrastructure
@@ -337,7 +338,7 @@ module CosmosStats =
     type Microsoft.Azure.Cosmos.Container with
         // NB DO NOT CONSIDER PROMULGATING THIS HACK
         member container.QueryValue<'T>(sqlQuery : string) =
-            let query : seq<'T> = failwith "TODO translate" //container.ReadItemAsync(sqlQuery) :> _
+            let query : Microsoft.Azure.Cosmos.FeedResponse<'T> = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
             query |> Seq.exactlyOne
     let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
