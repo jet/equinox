@@ -104,9 +104,9 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 - [`samples/TodoBackend` (in this repo)](/samples/TodoBackend): Standard https://todobackend.com compliant backend
 - [`samples/Tutorial` (in this repo)](/samples/Tutorial): Annotated `.fsx` files with sample Aggregate impls
 
-# Context diagram
+# Overview
 
-[See `DOCUMENTATION`.md for further drill down](https://github.com/jet/equinox/blob/diag/DOCUMENTATION.md)
+[See Overview in `DOCUMENTATION`.md for further drill down](https://github.com/jet/equinox/blob/diag/DOCUMENTATION.md#overview)
 
 ![High level c4model.com System Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml)
 
