@@ -78,7 +78,7 @@ IStream -> Aggregate: codec.TryDecode("EventType4", eventBody4JsonElement)
 note over IStream: Each event coming back from the query is decoded by the codec each time\nTryDecode is permitted to return None to signal event can be ignored
 IStream -> Aggregate: isOrigin decEvent4; isOrigin decEvent3
 note over IStream: Each event is tested one by one; Lets say it returns false every time
-CosmosDB --> IStream: [event2; event1] 
+CosmosDB --> IStream: [{ c: "EventType2"; d: "{ eventBody2 }"}\n { c: "EventType1"; d: "{ eventBody1}"}]
 IStream -> Aggregate: isOrigin decEvent2; isOrigin decEvent1
 IStream -> Aggregate: fold initial [decEvent1; decEvent2; decEvent3; decEvent4]]
 end // initial stream load cases
