@@ -4,7 +4,7 @@
 title Component diagram for Equinox.EventStore / Equinox.SqlStreamStore
 caption Moving parts for an Equinox app using integrated projections in EventStore / SqlStreamStore etc
 
-actor "Applications" <<External Person>> as apps
+actor "Applications" <<Internal>> as apps
 
 rectangle "Application Consistent Processing Logic" <<External Container>> {
     rectangle aggregate <<Component>> [
@@ -26,22 +26,22 @@ rectangle "Equinox.EventStore" <<Container>> {
         Equinox.EventStore OR
         Equinox.SqlStreamStore
     ]
-    database esstore <<Component>> [
+    database esstore <<Internal>> [
         **Consistent Store**
         __EventStore/SqlStreamStore__
         App Streams
     ]
-    database memorycache <<Component>> [
+    database memorycache <<Internal>> [
         **System.MemoryCache**
         StreamName -> version+state
     ]
-    database esproj <<External Component>> [
+    database esproj <<External>> [
         **Store Projections**
         $all streams (SSS + ES)
         $ec, $et streams (ES only)
     ]
 }
-database caches <<External Component>> [
+database caches <<External>> [
     **Read Models**
 ]
 rectangle reactors <<Component>> [

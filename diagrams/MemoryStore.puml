@@ -4,7 +4,7 @@
 title Component diagram for Equinox.MemoryStore
 caption Detailed moving parts for an integration test scenario using MemoryStore in lieu of a Durable Store
 
-actor "Integration\nTests" <<Person>> as tests
+actor "Integration\nTests" <<Internal>> as tests
 
 together {
     rectangle "Equinox.MemoryStore" <<Expanded>> {
@@ -12,12 +12,12 @@ together {
         rectangle eqxms <<Component>> [
             Equinox.MemoryStore
         ]
-        database eqxmsdict <<Component>> [
+        database eqxmsdict <<Internal>> [
             **ConcurrentDictionary**
             StreamName -> TimelineEvent<T>
         ]
     }
-    database caches <<External Container>> [
+    database caches <<External>> [
         **Read Model Simulators**
         **and/or Concrete Stores**
     ]

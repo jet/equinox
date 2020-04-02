@@ -9,10 +9,8 @@ actor "Applications" <<External Person>> as apps
 rectangle "Consistent Processing" <<Container>> {
     frame Domain {
         rectangle "Equinox" as eqx <<Component>> {
-            rectangle stream [
-                Equinox.Stream
-            ]
-            interface IStream
+            rectangle "Equinox.Stream" as stream <<Component>>
+            interface IStream <<Internal>>
         }
         rectangle aggregate <<Component>> [
             Aggregate / Service
@@ -26,7 +24,7 @@ rectangle "Consistent Processing" <<Container>> {
     }
     frame Store {
         rectangle "Equinox.Cosmos" <<Component>> {
-            database memorycache <<Component>> [
+            database memorycache <<Internal>> [
                 **System.MemoryCache**
                 StreamName ->
                 etag+version+state
@@ -38,10 +36,10 @@ rectangle "Consistent Processing" <<Container>> {
     }
 }
 
-cloud "CosmosDB Database D" as cosmos <<Exernal System>> {
-    node [Sync SP] as sync
-    database "Container C Range 0" as cosmos0 <<External Container>>
-    database "Container C Range 1" as cosmos1 <<External Container>>
+cloud "CosmosDB Database D" as cosmos <<Exernal>> {
+    node [Sync SP] as sync <<Internal>>
+    database "Container C Range 0" as cosmos0 <<External>>
+    database "Container C Range 1" as cosmos1 <<External>>
 }
 
 together {
@@ -55,7 +53,7 @@ together {
             ]
         }
     }
-    database aux <<External Container>> [
+    database aux <<External>> [
         **Aux CosmosDB**
         CheckpointA0 CheckpointA1
         CheckpointB0 CheckpointB1
@@ -80,14 +78,14 @@ rectangle outputs <<External System>> [
     Topics / ATOM
 ]
 
-database caches <<External Container>> [
+database caches <<External>> [
     **Read Models**
 ]
 
 apps      <.    caches      : reference\neventually\nconsistent
 apps      <->   aggregate   : transact\nagainst
 aggregate   <-> stream      : Transact/\nQuery
-stream       -> IStream   : Load/\nTrySync
+stream       -> IStream     : Load/\nTrySync
 eqxcosmos <->   memorycache : TryGet/\nUpdate
 eqxcosmos <->   sync        : ExecuteStoredProc\n[Azure.Cosmos TCP]
 eqxcosmos <->   cosmos      : ReadItem/\nQueryDocuments\n[Azure.Cosmos TCP]

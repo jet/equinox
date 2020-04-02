@@ -1,7 +1,7 @@
 @startuml
 title Code diagram for Equinox.EventStore Query operation, with empty cache and nothing written to the stream yet
 
-actor Caller order 20
+actor Caller order 20 
 box "Equinox.Stream"
     participant Stream order 40
 end box

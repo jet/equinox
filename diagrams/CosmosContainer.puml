@@ -4,7 +4,7 @@
 title Container diagram for Equinox.Cosmos (+ Propulsion.Cosmos)
 caption Moving parts for an Equinox app using a CosmosDB container that presently has 2 physical partitions
 
-actor "Applications" <<External Person>> as apps
+actor "Applications" <<External>> as apps
 
 rectangle "Consistent Processing" <<Expanded>> {
     together {
@@ -22,7 +22,7 @@ rectangle "Consistent Processing" <<Expanded>> {
         ]
     }
 
-    database memorycache <<Component>> [
+    database memorycache <<Internal>> [
         **System.MemoryCache**
         StreamName ->
         etag+version+state
@@ -32,19 +32,19 @@ rectangle "Consistent Processing" <<Expanded>> {
         Equinox.Cosmos
     ]
 
-    cloud "CosmosDB Database D" {
+    cloud "CosmosDB Database D" as db {
         rectangle "Container C" as cosmos <<Container>> {
             node "D\C\Range 0" {
-                rectangle [Sync SP] as sync0
-                database range0 <<Component>> [
+                rectangle [Sync SP] as sync0 <<Internal>>
+                database range0 <<Internal>> [
                     **Range0**
                     RangeA-M Tip Documents
                     RangeA-M Stream Events
                 ]
             }
             node "D\C\Range 1" {
-                rectangle [Sync SP] as sync1
-                database range1 <<Component>> [
+                rectangle [Sync SP] as sync1 <<Internal>>
+                database range1 <<Internal>> [
                     **Range1**
                     RangeN-Z Tip Documents
                     RangeN-Z Stream Events
@@ -54,23 +54,26 @@ rectangle "Consistent Processing" <<Expanded>> {
     }
 }
 
-together {
-    rectangle "**Projectors**" <<External Container>> as projectors {
-        rectangle cfp0 <<External Component>> [
-            **ChangeFeedProcessor A**
-        ]
-        rectangle projector <<External Component>> [
-            **Projector**
-        ]
-    }
-    database aux <<External Container>> [
-        **Aux CosmosDB**
-        CheckpointA0 CheckpointA1
-        CheckpointB0 CheckpointB1
-        HostALease0 HostALease1
-        HostBLease0 HostBLease1
+rectangle "**Projectors**" as projectors <<External Container>> {
+    rectangle cfp0 <<External Component>> [
+        **ChangeFeedProcessor A**
+    ]
+    rectangle projector <<External Component>> [
+        **Projector**
     ]
 }
+
+rectangle "**Reactors**" as reactors <<External Container>> {
+    rectangle cfp1 <<External Component>> [
+        **ChangeFeedProcessor B**
+    ]
+    rectangle reactor <<External Component>> [
+        **Reactor**
+    ]
+}
+database caches <<External>> [
+    **Read Models**
+]
 
 rectangle outputs <<External System>> [
     **Output Feeds**
@@ -78,30 +81,24 @@ rectangle outputs <<External System>> [
     Topics / ATOM
 ]
 
-together {
-    rectangle "**Reactors**" <<External Container>> as reactors {
-        rectangle cfp1 <<External Component>> [
-            **ChangeFeedProcessor B**
-        ]
-        rectangle reactor <<External Component>> [
-            **Reactor**
-        ]
-    }
-    database caches <<External Container>> [
-        **Read Models**
-    ]
-}
+database aux <<External>> [
+    **Aux CosmosDB**
+    CheckpointA0 CheckpointA1
+    CheckpointB0 CheckpointB1
+    HostALease0 HostALease1
+    HostBLease0 HostBLease1
+]
 
-apps      <-L-> aggregate   : transact\nagainst
-apps      <.D.   caches      : reference\neventually\nconsistent
+apps      <->   aggregate   : transact\nagainst
+apps      <.    caches      : reference\neventually\nconsistent
 
 aggregate <-L-> stream      : Transact/\nQuery
 stream     -L-> eqxcosmos   : Load/\nTrySync
 
 eqxcosmos <-L-> memorycache : TryGet/\nUpdate
-eqxcosmos <-->  sync0       : ExecuteStoredProc\n[Azure.Cosmos TCP]
-eqxcosmos <-R-> cosmos      : ReadItem/\nQueryDocuments\n[Azure.Cosmos TCP]
-eqxcosmos <-->  sync1       : ExecuteStoredProc\n[Azure.Cosmos TCP]
+eqxcosmos <->   sync0       : ExecuteStoredProc\n[Azure.Cosmos TCP]
+eqxcosmos <->   cosmos      : ReadItem/\nQueryDocuments\n[Azure.Cosmos TCP]
+eqxcosmos <->   sync1       : ExecuteStoredProc\n[Azure.Cosmos TCP]
 
 range0     ..>  cfp0        : continuously queries
 range1     ..>  cfp0        : continuously queries
@@ -109,11 +106,18 @@ range1     ..>  cfp0        : continuously queries
 range0     ..>  cfp1        : continuously queries
 range1     ..>  cfp1        : continuously queries
 
-cfp0      <-->  aux         : keeps checkpoints in\nnegotiates leases via
-cfp1      <-->  aux         : keeps checkpoints in\nnegotiates leases via
-cfp0      <..>  projector   : projects events from
-cfp1      <..>  reactor     : tracks relevant events filtered from
-reactor   .U.>  caches      : maintains views in
-reactor    ..>  outputs     : emits to
-projector  ..>  outputs     : emits to
+cfp0      <->   aux         : keeps checkpoints in\nnegotiates leases via
+cfp1      <->   aux         : keeps checkpoints in\nnegotiates leases via
+cfp0      <.>   projector   : projects events from
+cfp1      <.>   reactor     : tracks relevant events filtered from
+reactor     .>  caches      : maintains views in
+reactor     .>  outputs     : emits to
+projector   .>  outputs     : emits to
+
+eqxcosmos -[hidden]D-> sync0
+cfp0      -[hidden]D-> aux
+reactor   -[hidden]D-> outputs
+reactor   -[hidden]U-> caches
+caches    -[hidden]U-> apps
+
 @enduml

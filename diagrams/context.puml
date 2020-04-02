@@ -5,7 +5,7 @@ title System Context for Equinox (+Propulsion)
 caption High level organization of an event sourced system using Equinox (aspects typically not using Equinox are marked External)
 
 together {
-    actor "Applications" <<Person>> as apps
+    actor "Applications" <<Internal>> as apps
     rectangle services <<System>> [
         **Consistent processing**
         __Equinox__
@@ -13,7 +13,7 @@ together {
         Executing Commands
         Querying synchronously
     ]
-    database stores <<System>> [
+    database stores <<Internal>> [
         **Consistent Event Stores**
         __Events / Unfolds__
         EventStore / SqlStreamStore
@@ -21,7 +21,7 @@ together {
     ]
 }
 
-database caches <<System>> [
+database caches <<External>> [
     **Read Models**
     ____  
     Document Stores 

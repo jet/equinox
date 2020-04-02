@@ -6,15 +6,15 @@ caption Packages / Elements breakdown of an event sourced system using Equinox
 
 together {
     frame "Caches" <<Expanded>> as caches {
-        database "REDIS"
-        database "SQL"
+        database "REDIS" <<External>>
+        database "SQL"   <<External>>
     }
     frame "Services" <<Expanded>> as services {
         rectangle "Equinox" <<Component>> as equinox
         rectangle "AggregateA" <<Component>>
         rectangle "AggregateB" <<Component>>
     }
-    actor "Applications" as apps <<Person>>
+    actor "Applications" as apps <<Internal>>
 }
 
 rectangle ingesters <<External System>> 
@@ -36,9 +36,9 @@ frame "Stores" as stores <<Expanded>> {
         rectangle "Equinox.MemoryStore" <<Component>> as ms 
     }
     interface IStream <<Component>>
-    rectangle "Equinox.Core" as core <<Component>> {
-        rectangle "System.MemoryCache"
-        interface ICache
+    rectangle "Equinox.Core" as core <<Container>> {
+        rectangle "System.MemoryCache" <<Component>>
+        interface ICache <<Component>>
     }
     frame "SqlStreamStore" as ssss {
         rectangle "Equinox.SqlStreamStore.MsSql" <<Component>> as ssm
