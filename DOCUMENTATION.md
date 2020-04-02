@@ -101,6 +101,10 @@ In other processes (when a cache is not fully in sync), the sequence runs slight
 
 ![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml?fmt=svg)
 
+## Component Diagram for `Equinox.Cosmos`
+
+![Equinox.Cosmos c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosComponent.puml?fmt=svg)
+
 ## Code Diagrams for `Equinox.Cosmos`
 
 This diagram walks through the basic sequence of operations, where:
