@@ -14,7 +14,7 @@ _Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Wo
 
 - **Your link here** - Please add materials that helped you on your journey so far here via PRs!
 
-# Overview diagrams
+# Overview
 
 The following diagrams are based on the style defined in [@simonbrowndotje](https://github.com/simonbrowndotje)'s [C4 model](https://c4model.com/), rendered using [@skleanthous](https://github.com/skleanthous)'s [PlantUmlSkin](https://github.com/skleanthous/C4-PlantumlSkin/blob/master/README.md). It's highly recommended to view [the talk linked from `c4model.com`](https://www.youtube.com/watch?v=x2-rSnhpw0g&feature=emb_logo)
 
