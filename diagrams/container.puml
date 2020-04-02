@@ -4,69 +4,90 @@
 title Containers Diagram for Equinox (+Propulsion)
 caption Packages / Elements breakdown of an event sourced system using Equinox
 
-actor "Applications" as apps <<Person>>
-
-frame "Caches" <<Expanded>> as caches {
-    database "REDIS"
-    database "SQL"
-}
-rectangle "Services" <<Expanded>> as services {
-    rectangle "Equinox" <<Component>> as equinox
-    rectangle "FsCodec" <<Component>>
-}
 together {
-    rectangle ingesters <<External System>> 
-    rectangle reactors <<External System>> 
-    rectangle projectors <<External System>> 
-
-    rectangle "Input Feeds" as sources <<External System>> 
-    rectangle "Output Feeds" as sinks <<External System>> 
+    frame "Caches" <<Expanded>> as caches {
+        database "REDIS"
+        database "SQL"
+    }
+    frame "Services" <<Expanded>> as services {
+        rectangle "Equinox" <<Component>> as equinox
+        rectangle "AggregateA" <<Component>>
+        rectangle "AggregateB" <<Component>>
+    }
+    actor "Applications" as apps <<Person>>
 }
-together {
-    frame "Stores" as stores {
-        together {
-            rectangle "Equinox.MemoryStore" <<Component>> as ms 
-            rectangle "Equinox.Cosmos" <<Component>> as cs
-        }
-        frame "EventStore-style Store Adapters" as ssss {
-            rectangle "Equinox.EventStore" <<Component>> as es
-            together {
-                rectangle "Equinox.SqlStreamStore.MsSql" <<Component>> as ssm
-                rectangle "Equinox.SqlStreamStore.MySql" <<Component>> as ssy
-                rectangle "Equinox.SqlStreamStore.Postgres" <<Component>> as ssp
-            }
-            rectangle "Equinox.SqlStreamStore" <<Component>> as sss
-        }
-        rectangle "Equinox.Core" as core <<Component>> {
-            rectangle "System.MemoryCache"
-        }
+
+rectangle ingesters <<External System>> 
+rectangle "Input Feeds" as sources <<External System>> 
+rectangle projectors <<External System>> 
+rectangle "Output Feeds" as sinks <<External System>> 
+rectangle reactors <<External System>> 
+
+frame "Stores" as stores <<Expanded>> {
+    frame "Cosmos" as cosmos {
+        rectangle "Equinox.Cosmos" <<Component>> as cs
+        rectangle "Propulsion".Cosmos" <<Component>> as cfp
+    }
+    frame "EventStore" {
+        rectangle "Equinox.EventStore" <<Component>> as es
+        rectangle "Propulsion.EventStore" <<Component>> as all
+    }
+    frame "Integration Test Support" {
+        rectangle "Equinox.MemoryStore" <<Component>> as ms 
+    }
+    interface IStream <<Component>>
+    rectangle "Equinox.Core" as core <<Component>> {
+        rectangle "System.MemoryCache"
+        interface ICache
+    }
+    frame "SqlStreamStore" as ssss {
+        rectangle "Equinox.SqlStreamStore.MsSql" <<Component>> as ssm
+        rectangle "Equinox.SqlStreamStore.MySql" <<Component>> as ssy
+        rectangle "Equinox.SqlStreamStore.Postgres" <<Component>> as ssp
+        rectangle "Equinox.SqlStreamStore" <<Component>> as sss
     }
 }
-apps       <-R-  caches     : reference\neventually\nconsistent
-apps       <-D-> services   : transact\nagainst
 
-equinox    <->  stores     : Query/\nTransact\n[events]
+AggregateB -R-> equinox    : uses
+equinox     <-> IStream    : Query/\nTransact
+AggregateA -L-> equinox    : uses
 
-stores     .U.>   projectors : are followed by
-stores     .U.>   reactors   : trigger
+ingesters  <.R. sources    : consume
+ingesters    -> AggregateA : ingest into
+ingesters  .D.> caches     : ingest into
 
-projectors ..>   sinks      : emit notifications to
+apps       <.   caches     : reference\neventually\nconsistent
+apps        <-> AggregateB : transact\nagainst
 
-reactors   -L->   services   : feed back into
-reactors   ..>   sinks      : emit summaries to
-reactors   .U.>  caches    : maintain views in
+stores     .U.> projectors : are followed by
+stores     .U.> reactors   : trigger
 
-ingesters  <..   sources    : consume
-ingesters  -L->   services   : ingest into
-ingesters  .U.>   caches    : ingest into
+projectors   .> sinks      : emit notifications to
+projectors <--  cfp        : can feed from
+projectors <--  all        : can feed from
 
-stores -[hidden]-> ssss
+reactors  <-U-> AggregateB : feed back into
+reactors   .L.> sinks      : emit summaries to
+reactors   .U.> caches     : maintain views in
+reactors   <-   ms         : can react to
+reactors   <-   cfp        : can react to
+reactors   <-   all        : can react to
 
-ssm -D-> sss
-ssy -D-> sss
-ssp -D-> sss
-sss -D-> core
-cs -D-> core
-es -D-> core
+ms         .L.> IStream    : implements
+es           -> ICache
+es           .> IStream    : implements
+cs          --> ICache
+cs           .> IStream    : implements
+sss          -> ICache
+sss          .> IStream    : implements
+
+ssm          -> sss
+ssy          -> sss
+ssp          -> sss
+
+ingesters  -[hidden]D-> apps
+projectors -[hidden]D-> es
+projectors -[hidden]U-> services
+IStream    -[hidden]D-> ssss
 
 @enduml
