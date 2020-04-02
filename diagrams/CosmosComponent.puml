@@ -85,11 +85,10 @@ database caches <<External Container>> [
 ]
 
 apps      <.    caches      : reference\neventually\nconsistent
-apps      <-->  aggregate   : transact\nagainst
-
-aggregate <-L-> stream      : Transact/\nQuery
-stream       -> eqxcosmos   : Load/\nTrySync
-eqxcosmos <-> memorycache : TryGet/\nUpdate
+apps      <->   aggregate   : transact\nagainst
+aggregate   <-> stream      : Transact/\nQuery
+stream       -> IStream   : Load/\nTrySync
+eqxcosmos <->   memorycache : TryGet/\nUpdate
 eqxcosmos <->   sync        : ExecuteStoredProc\n[Azure.Cosmos TCP]
 eqxcosmos <->   cosmos      : ReadItem/\nQueryDocuments\n[Azure.Cosmos TCP]
 eqxcosmos    .> IStream     : implements
