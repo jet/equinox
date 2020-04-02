@@ -1,0 +1,121 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
+
+title Component diagram for Equinox.Cosmos (+ Propulsion.Cosmos)
+caption Moving parts breakdown for an Equinox app using a CosmosDB container
+
+actor "Applications" <<External Person>> as apps
+
+rectangle "Consistent Processing" <<Container>> {
+    frame Domain {
+        rectangle "Equinox" as eqx <<Component>> {
+            rectangle stream [
+                Equinox.Stream
+            ]
+            interface IStream
+        }
+        rectangle aggregate <<Component>> [
+            Aggregate / Service
+
+            Events: codec
+            Fold: initial, fold
+            interpret / decide
+            snapshot / isOrigin
+            Service
+        ]
+    }
+    frame Store {
+        rectangle "Equinox.Cosmos" <<Component>> {
+            database memorycache <<Component>> [
+                **System.MemoryCache**
+                StreamName ->
+                etag+version+state
+            ]
+            rectangle eqxcosmos <<Component>> [
+                Equinox.Cosmos
+            ]
+        }
+    }
+}
+
+cloud "CosmosDB Database D" as cosmos <<Exernal System>> {
+    node [Sync SP] as sync
+    database "Container C Range 0" as cosmos0 <<External Container>>
+    database "Container C Range 1" as cosmos1 <<External Container>>
+}
+
+together {
+    rectangle "**Projectors**" <<External Container>> as projectors {
+        rectangle projector <<External Component>> [
+            **Projector**
+        ]
+        rectangle Propulsion.Cosmos as pc1 <<Component>> {
+            rectangle cfp0 <<External Component>> [
+                **ChangeFeedProcessor A**
+            ]
+        }
+    }
+    database aux <<External Container>> [
+        **Aux CosmosDB**
+        CheckpointA0 CheckpointA1
+        CheckpointB0 CheckpointB1
+        HostALease0 HostALease1
+        HostBLease0 HostBLease1
+    ]
+    rectangle "**Reactors**" <<External Container>> as reactors {
+        rectangle reactor <<External Component>> [
+            **Reactor**
+        ]
+        rectangle "Propulsion.Cosmos" as pc2 <<Component>> {
+            rectangle cfp1 <<External Component>> [
+                **ChangeFeedProcessor B**
+            ]
+        }
+    }
+}
+
+rectangle outputs <<External System>> [
+    **Output Feeds**
+
+    Topics / ATOM
+]
+
+database caches <<External Container>> [
+    **Read Models**
+]
+
+apps      <.    caches      : reference\neventually\nconsistent
+apps      <-->  aggregate   : transact\nagainst
+
+aggregate <-L-> stream      : Transact/\nQuery
+stream       -> eqxcosmos   : Load/\nTrySync
+eqxcosmos <-> memorycache : TryGet/\nUpdate
+eqxcosmos <->   sync        : ExecuteStoredProc\n[Azure.Cosmos TCP]
+eqxcosmos <->   cosmos      : ReadItem/\nQueryDocuments\n[Azure.Cosmos TCP]
+eqxcosmos    .> IStream     : implements
+
+cosmos0      -> cfp0        : continuously queries
+cosmos0      -> cfp1        : continuously queries
+cosmos1      -> cfp0        : continuously queries
+cosmos1      -> cfp1        : continuously queries
+
+cfp0      <->   aux         : keeps checkpoints in\nnegotiates leases via
+cfp1      <->   aux         : keeps checkpoints in\nnegotiates leases via
+cfp0      <.>   projector   : projects events from
+cfp1      <.>   reactor     : tracks relevant events filtered from
+
+projector    -> outputs     : emits to
+
+reactor      .> caches      : maintains views in
+reactor      -> outputs     : emits to
+
+apps      <-[hidden]L-> aggregate
+aggregate <-[hidden]L-> eqx
+eqxcosmos <-[hidden]L-> stream
+eqxcosmos <-[hidden]L-> memorycache
+stream    <-[hidden]D-> cosmos
+reactor   <-[hidden]U-> caches
+projector <-[hidden]U-> aux
+cosmos0   <-[hidden]D-> reactors
+
+@enduml

@@ -99,7 +99,7 @@ In other processes (when a cache is not fully in sync), the sequence runs slight
 
 ## Container Diagram for `Equinox.Cosmos`
 
-![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml)
+![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml?fmt=svg)
 
 ## Code Diagrams for `Equinox.Cosmos`
 
