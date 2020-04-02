@@ -18,13 +18,13 @@ _Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Wo
 
 The following diagrams are based on the style defined in [@simonbrowndotje](https://github.com/simonbrowndotje)'s [C4 model](https://c4model.com/), rendered using [@skleanthous](https://github.com/skleanthous)'s [PlantUmlSkin](https://github.com/skleanthous/C4-PlantumlSkin/blob/master/README.md). It's highly recommended to view [the talk linked from `c4model.com`](https://www.youtube.com/watch?v=x2-rSnhpw0g&feature=emb_logo). See [README.md acknowledgments section](README.md#acknowledgements)
 
-## Equinox + Propulsion Context Diagram
+## Context Diagram
 
 Equinox and Propulsion together provide a loosely related set of libraries that you can leverage in an application as you see fit. These diagrams are intended to give a rough orientation; what you actually build is up to you...
 
 ![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
 
-## Overall Container diagram
+## Container diagram
 
 The Systems and Components involved break out roughly like this:
 
@@ -62,36 +62,38 @@ This breaks down the components involved internally with the layout above in ter
 
 ![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml?fmt=svg)
 
-# Equinox.EventStore
+# Equinox.EventStore / Equinox.SqlStreamStore
 
-## Component Diagram for `Equinox.EventStore`
+From the point of view of Equinox, SqlStreamStore and EventStore have a lot in common in terms of how Equinox interacts with them. For this reason, it's safe to treat them as equivalent for the purposes of this overview.
 
-![Equinox.EventStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
+## Component Diagram for Equinox.EventStore / Equinox.SqlStreamStore
 
-## Code Diagrams for `Equinox.EventStore`
+![Equinox.EventStore/SqlStreamStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
+
+## Code Diagrams for Equinox.EventStore / Equinox.SqlStreamStore
 
 This diagram walks through the basic sequence of operations, where:
 - this node has not yet read this stream (i.e. there's nothing in the Cache)
 - when we do read it, it's empty (no events):
 
-![Equinox.EventStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=0&fmt=svg)
+![Equinox.EventStore/SqlStreamStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=0&fmt=svg)
 
 Next, we extend the scenario to show:
-- how state held in the Cache influences the EventStore APIs used
+- how the State held in the Cache influences the EventStore/SqlStreamStore APIs used
 - how writes are managed:
   - when there's no conflict
   - when there's conflict and we're retrying (handle `WrongExpectedVersionException`, read the conflicting, loop using those)
   - when there's conflict and we're giving up (throw `MaxAttemptsExceededException`; no need to read the conflicting events)
 
-![Equinox.EventStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=1&fmt=svg)
+![Equinox.EventStore/SqlStreamStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=1&fmt=svg)
 
 After the write, we circle back to illustrate the effect of the caching when we have correct state
 
-![Equinox.EventStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=2&fmt=svg)
+![Equinox.EventStore/SqlStreamStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=2&fmt=svg)
 
 In other processes (when a cache is not fully in sync), the sequence runs slightly differently:
 
-![Equinox.EventStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=3&fmt=svg)
+![Equinox.EventStore/SqlStreamStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=3&fmt=svg)
 
 # Equinox.Cosmos
 
