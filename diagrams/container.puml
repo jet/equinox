@@ -26,7 +26,7 @@ rectangle reactors <<External System>>
 frame "Stores" as stores <<Expanded>> {
     frame "Cosmos" as cosmos {
         rectangle "Equinox.Cosmos" <<Component>> as cs
-        rectangle "Propulsion".Cosmos" <<Component>> as cfp
+        rectangle "Propulsion.Cosmos" <<Component>> as cfp
     }
     frame "EventStore" {
         rectangle "Equinox.EventStore" <<Component>> as es
