@@ -1,7 +1,7 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
 
-title Component diagram for Equinox.EventStore
+title Component diagram for Equinox.EventStore / Equinox.SqlStreamStore
 caption Moving parts for an Equinox app using integrated projections in EventStore / SqlStreamStore etc
 
 actor "Applications" <<External Person>> as apps

@@ -1,5 +1,5 @@
 @startuml
-title Code diagram for Equinox.EventStore Query operation with a cold cache and an empty stream
+title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query operation\nwith a cold cache and an empty stream
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -31,7 +31,7 @@ Stream -> Caller: {result = list }
 @enduml
 
 @startuml
-title Code diagram for Equinox.EventStore Transact operation with an-in sync cache and snapshotting Access Strategy
+title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Transact operation\nwith an-in sync cache and snapshotting Access Strategy
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -98,7 +98,7 @@ Stream -> Caller: proposedResult
 @enduml
 
 @startuml
-title Code diagram for Equinox.EventStore Query e.g. following a Query or Transact on same node, i.e. in sync cache, events on stream
+title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query\nfollowing a Query or Transact on same node, i.e. in sync cache, events on stream
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -128,7 +128,7 @@ Aggregate -> Caller: result
 @enduml
 
 @startuml
-title Code diagram for Equinox.EventStore Query with out of sync cache e.g. another process (when using a snapshotting Access Strategy)
+title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query\nwith out of sync cache e.g. another process (when using a snapshotting Access Strategy)
 
 actor Caller order 20
 box "Equinox.Stream"
