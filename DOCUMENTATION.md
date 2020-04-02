@@ -22,13 +22,13 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 Equinox and Propulsion together provide a loosely related set of libraries that you can leverage in an application as you see fit. These diagrams are intended to give a rough orientation; what you actually build is up to you...
 
-![c4model.com High Level System Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml)
+![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
 
 ## Overall Container diagram
 
 The Systems and Components involved break out roughly like this:
 
-![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml)
+![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml&fmt=svg)
 
 # Equinox.MemoryStore
 
