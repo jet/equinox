@@ -14,8 +14,8 @@ together {
             Equinox.MemoryStore
         ]
     }
-    actor "Integration\nTests" <<Person>> as tests
-    database caches <<Container>> [
+    actor "Integration\nTests" <<Internal>> as tests
+    database caches <<External>> [
         **Read Model Simulators**
         **and/or Concrete Stores**
     ]

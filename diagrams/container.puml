@@ -13,40 +13,43 @@ together {
     }
     frame "Services" <<Expanded>> as services {
         rectangle "Equinox" <<Component>> as equinox
-        rectangle "AggregateA" <<Component>>
-        rectangle "AggregateB" <<Component>>
+        rectangle "AggregateA" <<Container>>
+        rectangle "AggregateB" <<Container>>
     }
     actor "Applications" as apps <<Internal>>
 }
 
-rectangle ingesters <<External System>> 
+rectangle "Ingesters" as ingesters <<External System>> 
 rectangle "Input Feeds" as sources <<External System>> 
-rectangle projectors <<External System>> 
+rectangle "Publishers" as projectors <<External System>> 
 rectangle "Output Feeds" as sinks <<External System>> 
-rectangle reactors <<External System>> 
+rectangle "Reactors" as reactors <<External System>> 
 
 frame "Stores" as stores <<Expanded>> {
-    frame "Cosmos" as cosmos {
+    frame "Cosmos" as cosmos <<Internal>> {
         rectangle "Equinox.Cosmos" <<Component>> as cs
-        rectangle "Propulsion.Cosmos" <<Component>> as cfp
+        rectangle "Propulsion.Cosmos" <<External Component>> as cfp
+        rectangle "Azure.Cosmos" <<ExternalComponent>> as cc
     }
-    frame "EventStore" {
+    frame "EventStore" <<Internal>> {
         rectangle "Equinox.EventStore" <<Component>> as es
-        rectangle "Propulsion.EventStore" <<Component>> as all
+        rectangle "Propulsion.EventStore" <<External Component>> as all
+        rectangle "EventStore.ClientAPI" <<External Component>> as esc
     }
-    frame "Integration Test Support" {
+    frame "Integration Test Support" <<Internal>> {
         rectangle "Equinox.MemoryStore" <<Component>> as ms 
     }
     interface IStream <<Component>>
-    rectangle "Equinox.Core" as core <<Container>> {
-        rectangle "System.MemoryCache" <<Component>>
+    rectangle "Equinox.Core" as core <<External>> {
+        rectangle "System.MemoryCache" <<External Container>>
         interface ICache <<Component>>
     }
-    frame "SqlStreamStore" as ssss {
+    frame "SqlStreamStore" as ssss <<Internal>> {
         rectangle "Equinox.SqlStreamStore.MsSql" <<Component>> as ssm
         rectangle "Equinox.SqlStreamStore.MySql" <<Component>> as ssy
         rectangle "Equinox.SqlStreamStore.Postgres" <<Component>> as ssp
-        rectangle "Equinox.SqlStreamStore" <<Component>> as sss
+        rectangle "Equinox.SqlStreamStore" <<External Component>> as sss
+        rectangle "SqlStreamStore" <<External Component>>
     }
 }
 
@@ -78,14 +81,17 @@ reactors   <-   all        : can react to
 ms         .L.> IStream    : implements
 es           -> ICache
 es           .> IStream    : implements
+es           -> esc
 cs          --> ICache
 cs           .> IStream    : implements
+cs          <-> cc
 sss          -> ICache
 sss          .> IStream    : implements
 
 ssm          -> sss
 ssy          -> sss
 ssp          -> sss
+sss         <-> SqlStreamStore
 
 ingesters  -[hidden]D-> apps
 projectors -[hidden]D-> es

@@ -21,9 +21,9 @@ together {
         **Read Model Simulators**
         **and/or Concrete Stores**
     ]
-    rectangle "Application Consistent Processing Logic" <<External Container>> as app {
+    rectangle "Application Consistent Processing /System Under Test" <<External Container>> as app {
         rectangle aggregate <<Component>> [
-            Aggregate / Service
+            Aggregate / Service A
 
             Events: codec
             Fold: initial, fold
@@ -31,7 +31,7 @@ together {
             Service
         ]
         rectangle aggregate2 <<Component>> [
-            Aggregate / Service
+            Aggregate / Service B
 
             Events: codec
             Fold: initial, fold

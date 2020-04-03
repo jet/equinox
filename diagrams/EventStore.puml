@@ -6,7 +6,7 @@ caption Moving parts for an Equinox app using integrated projections in EventSto
 
 actor "Applications" <<Internal>> as apps
 
-rectangle "Application Consistent Processing Logic" <<External Container>> {
+rectangle "Application Consistent Processing" <<External Container>> {
     rectangle aggregate <<Component>> [
         Aggregate / Service
 
@@ -48,7 +48,7 @@ rectangle reactors <<Component>> [
     **Reactors**
 ]
 rectangle projectors <<Component>> [
-    **Projectors**
+    **Publishers**
 ]
 rectangle outputs <<External Component>> [
     **Output Feeds**

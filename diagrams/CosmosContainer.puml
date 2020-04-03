@@ -54,12 +54,12 @@ rectangle "Consistent Processing" <<Expanded>> {
     }
 }
 
-rectangle "**Projectors**" as projectors <<External Container>> {
+rectangle "**Publishers**" as projectors <<External Container>> {
     rectangle cfp0 <<External Component>> [
         **ChangeFeedProcessor A**
     ]
     rectangle projector <<External Component>> [
-        **Projector**
+        **Publisher**
     ]
 }
 

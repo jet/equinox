@@ -10,7 +10,7 @@ rectangle "Consistent Processing" <<Container>> {
     frame Domain {
         rectangle "Equinox" as eqx <<Component>> {
             rectangle "Equinox.Stream" as stream <<Component>>
-            interface IStream <<Internal>>
+            interface "IStream" <<Component>>
         }
         rectangle aggregate <<Component>> [
             Aggregate / Service
@@ -43,9 +43,9 @@ cloud "CosmosDB Database D" as cosmos <<Exernal>> {
 }
 
 together {
-    rectangle "**Projectors**" <<External Container>> as projectors {
+    rectangle "**Publishers**" <<External Container>> as projectors {
         rectangle projector <<External Component>> [
-            **Projector**
+            **Publisher**
         ]
         rectangle Propulsion.Cosmos as pc1 <<Component>> {
             rectangle cfp0 <<External Component>> [
