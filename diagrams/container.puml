@@ -4,27 +4,26 @@
 title Containers Diagram for Equinox (+Propulsion)
 caption Packages / Elements breakdown of an event sourced system using Equinox
 
+actor "Applications" as apps <<Internal>>
 together {
-    frame "Caches" <<External Container>> as caches {
-        database "REDIS"    as red <<External>>
-        database "SQL"      as sql <<External>>
-        database "CosmosDB" as cdb <<External>>
-        database "etc etc"  as etc <<External>>
-    }
-    frame "Services" <<Expanded>> as services {
-        rectangle "Equinox" <<Component>> as equinox
-        rectangle "Aggregate Roots" as Aggregates <<Container>>
-    }
-    actor "Applications" as apps <<Internal>>
+frame "Read Models" <<External Container>> as caches {
+    database "REDIS"    as red <<External>>
+    database "SQL"      as sql <<External>>
+    database "CosmosDB" as cdb <<External>>
+    database "etc etc"  as etc <<External>>
 }
-
+frame "Consistent Processing" <<Container>> as services {
+    rectangle "Equinox" <<Component>> as equinox
+    rectangle "Aggregate Roots" as Aggregates <<Container>>
+}
+}
 rectangle "Ingesters" as ingesters <<External System>> 
 rectangle "Input Feeds" as sources <<External System>> 
 rectangle "Publishers" as projectors <<External System>> 
 rectangle "Output Feeds" as sinks <<External System>> 
 rectangle "Reactors" as reactors <<External System>> 
 
-frame "Stores" as stores <<Expanded>> {
+frame "Consistent Event Stores" as stores <<Expanded>> {
     frame "Cosmos" as cosmos <<Internal>> {
         rectangle "Equinox.Cosmos" <<Component>> as cs
         rectangle "Propulsion.Cosmos" <<External Component>> as cfp
@@ -55,11 +54,11 @@ frame "Stores" as stores <<Expanded>> {
 Aggregates   -> equinox    : use
 equinox     <-> IStream    : Query/\nTransact
 
-ingesters  <.R. sources    : consume
-ingesters    -> Aggregates : ingest into
-ingesters  .D.> caches     : ingest into
+ingesters  <.R. sources    : sync from external
+ingesters    --> Aggregates : reconcile into
+ingesters  .> caches     : push into
 
-apps       <.   caches     : reference\neventually\nconsistent
+apps       <.   caches     : reference eventually consistent
 apps        <-> Aggregates : transact\nagainst
 
 stores     .U.> projectors : are followed by
@@ -91,6 +90,8 @@ ssy          -> sss
 ssp          -> sss
 sss         <-> SqlStreamStore
 
+caches     -[hidden]R-> stores
+apps       -[hidden]R-> services
 ingesters  -[hidden]D-> apps
 projectors -[hidden]D-> es
 projectors -[hidden]U-> services
