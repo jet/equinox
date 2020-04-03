@@ -106,11 +106,21 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 
 # Overview
 
+## The Propulsion Perspective
+
+Equinox and Propulsion have a [Yin and yang](https://en.wikipedia.org/wiki/Yin_and_yang) relationship; the use cases for both naturally interlock and overlap.
+
+It can be relevant to peruse [the Propulsion Documentation's Overview Diagrams](https://github.com/jet/propulsion/blob/master/DOCUMENTATION.md#overview) for the perspective from the other side (TL;DR its largely the same topology, with elements that are de-emphasized here central over there, and vice versa)
+
 ## [C4](https://c4model.com) Context diagram
+
+Equinox focuses on the *Consistent Processing* element of building an event-sourced system, offering tailored components that interact with a specific *Consistent Event Store*, as laid out here in this [C4](https://c4model.com) System Context Diagram:
 
 ![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
 
 ## [C4](https://c4model.com) Container diagram
+
+The relevant pieces of the above break down as follows, when we emphasize the [Containers](https://c4model.com) aspects relevant to Equinox:
 
 ![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml&fmt=svg)
 
@@ -651,13 +661,13 @@ Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's
 
 😲Please raise a question-Issue, and we'll be delighted to either answer directly, or incorporate the question and answer here
 
-# FURTHER READING
-
-See [`DOCUMENTATION.md`](DOCUMENTATION.md)
-
 # Acknowledgements
 
 The diagrams in this README.md and the DOCUMENTATION.md would not and could not have happened without the hard work and assistance of at least:
 - [@simonbrowndotje](https://github.com/simonbrowndotje) taking the time to define and evangelize the [C4 model](https://c4model.com/). It's highly recommended to view [the talk linked from `c4model.com`](https://www.youtube.com/watch?v=x2-rSnhpw0g&feature=emb_logo).
 - the wonder that is [PlantUml](https://plantuml.com/); authoring them [in text](https://github.com/jet/equinox/tree/diag/diagrams) is a delight. The images are also presently rendered by the [PlantUml proxy](https://plantuml.com/server)
 - [@skleanthous](https://github.com/skleanthous) for making _and documenting_ [C4-PlantUmlSkin](https://github.com/skleanthous/C4-PlantumlSkin/blob/master/README.md)
+
+# FURTHER READING
+
+See [`DOCUMENTATION.md`](DOCUMENTATION.md) and [Propulsion's `DOCUMENTATION.md`](https://github.com/jet/propulsion/blob/diag/DOCUMENTATION.md)
