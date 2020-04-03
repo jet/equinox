@@ -31,20 +31,20 @@ database caches <<External>> [
 
 together {
     rectangle ingesters <<System>> [
-        **Ingestion**
+        **Ingesters**
         __Propulsion / Equinox / FsKafka__
         Sync from reference data
         Change Data Capture
         Event Carried State Transfer
     ]
     rectangle reactors <<System>> [
-        **Reactions**
+        **Reactors**
         __Propulsion / Equinox__
         Drive Reactions
         Compose Notifications
     ]
     rectangle projectors <<External System>> [
-        **Publishing**
+        **Publishers**
         __Propulsion / FsKafka__
         Publish Simple Notifications
         Emit Composed Notifications
