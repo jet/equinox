@@ -4,24 +4,22 @@
 title Containers Diagram for Equinox (+Propulsion)
 caption Packages / Elements breakdown of an event sourced system using Equinox
 
-actor "Applications" as apps <<Internal>>
-together {
-frame "Read Models" <<External Container>> as caches {
-    database "REDIS"    as red <<External>>
-    database "SQL"      as sql <<External>>
-    database "CosmosDB" as cdb <<External>>
-    database "etc etc"  as etc <<External>>
-}
-frame "Consistent Processing" <<Container>> as services {
-    rectangle "Equinox" <<Component>> as equinox
-    rectangle "Aggregate Roots" as Aggregates <<Container>>
-}
-}
 rectangle "Ingesters" as ingesters <<External System>> 
-rectangle "Input Feeds" as sources <<External System>> 
-rectangle "Publishers" as projectors <<External System>> 
-rectangle "Output Feeds" as sinks <<External System>> 
-rectangle "Reactors" as reactors <<External System>> 
+rectangle "Input Feeds" as inputs <<External System>> 
+actor "Applications" as apps <<Internal>>
+
+together {
+    frame "Consistent Processing" <<Container>> as services {
+        rectangle "Equinox" <<Component>> as equinox
+        rectangle "Aggregate Roots" as aggs <<Container>>
+    }
+    frame "Read Models" <<External Container>> as caches {
+        database "REDIS"    as red <<External>>
+        database "SQL"      as sql <<External>>
+        database "CosmosDB" as cdb <<External>>
+        database "etc etc"  as etc <<External>>
+    }
+}
 
 frame "Consistent Event Stores" as stores <<Expanded>> {
     frame "Cosmos" as cosmos <<Internal>> {
@@ -51,31 +49,35 @@ frame "Consistent Event Stores" as stores <<Expanded>> {
     }
 }
 
-Aggregates   -> equinox    : use
+rectangle "Reactors" as reactors <<External System>> 
+rectangle "Publishers" as publishers <<External System>> 
+rectangle "Output Feeds" as outputs <<External System>> 
+
+apps         .> caches     : reference\neventually consistent
+apps        <-> aggs       : transact\nagainst
+
+aggs         -> equinox    : use
 equinox     <-> IStream    : Query/\nTransact
 
-ingesters  <.R. sources    : sync from external
-ingesters    --> Aggregates : reconcile into
-ingesters  .> caches     : push into
+ingesters  <.   inputs     : sync from external
+ingesters    -> aggs       : reconcile into
+ingesters    .> caches     : push into
 
-apps       <.   caches     : reference eventually consistent
-apps        <-> Aggregates : transact\nagainst
-
-stores     .U.> projectors : are followed by
+stores     .>   publishers : are followed by
 stores     .U.> reactors   : trigger
 
-projectors   .> sinks      : emit notifications to
-projectors <--  cfp        : can feed from
-projectors <--  all        : can feed from
+publishers   .> outputs    : emit notifications to
+publishers <--  cfp        : can feed from
+publishers <--  all        : can feed from
 
-reactors  <-U-> Aggregates : feed back into
-reactors   .L.> sinks      : emit summaries to
-reactors   .U.> caches     : maintain views in
+reactors  <-U-> aggs       : feed back into
+reactors     .> outputs    : emit summaries to
+reactors     .> caches     : maintain views in
 reactors   <-   ms         : can react to
 reactors   <-   cfp        : can react to
 reactors   <-   all        : can react to
 
-ms         .L.> IStream    : implements
+ms           .> IStream    : implements
 es           -> ICache
 es           .> IStream    : implements
 es           -> esc
@@ -85,17 +87,17 @@ cs          <-> cc
 sss          -> ICache
 sss          .> IStream    : implements
 
-ssm          -> sss
-ssy          -> sss
-ssp          -> sss
+ssm          -> sss        : is a
+ssy          -> sss        : is a
+ssp          -> sss        : is a
 sss         <-> SqlStreamStore
 
-caches     -[hidden]R-> stores
-apps       -[hidden]R-> services
-ingesters  -[hidden]D-> apps
-projectors -[hidden]D-> es
-projectors -[hidden]U-> services
+services   -[hidden]D-> reactors
+ingesters  -[hidden]D-> services
+
+publishers -[hidden]D-> es
 IStream    -[hidden]D-> ssss
+
 red        -[hidden]R-> sql
 sql        -[hidden]R-> cdb
 cdb        -[hidden]R-> etc

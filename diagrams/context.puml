@@ -4,21 +4,23 @@
 title System Context Diagram for Equinox (+Propulsion)
 caption High level organization of an event sourced system using Equinox (aspects typically not using Equinox directly are marked External)
 
-    actor "Applications" <<Internal>> as apps
-    rectangle services <<System>> [
-        **Consistent Processing**
-        __Equinox__
-        Executing Commands
-        Making Decisions
-        Querying Synchronously
-    ]
-    database stores <<Internal>> [
-        **Consistent Event Store**
-        ____
-        EventStore / SqlStreamStore
-        CosmosDB / MemoryStore
-        (snapshots / unfolds)
-    ]
+actor "Applications" <<Internal>> as apps
+
+rectangle services <<System>> [
+    **Consistent Processing**
+    __Equinox__
+    Executing Commands
+    Making Decisions
+    Querying syßnchronously
+]
+
+database stores <<Internal>> [
+    **Consistent Event Store**
+    ____
+    EventStore / SqlStreamStore
+    CosmosDB / MemoryStore
+    (snapshots / unfolds)
+]
 
 database caches <<External>> [
     **Read Model**
@@ -41,7 +43,7 @@ together {
         Drive Reactions
         Compose Notifications
     ]
-    rectangle projectors <<External System>> [
+    rectangle publishers <<External System>> [
         **Publishers**
         __Propulsion / FsKafka__
         Publish Simple Notifications
@@ -49,39 +51,37 @@ together {
     ]
 }
 
-rectangle sources <<External System>> [
+rectangle inputs <<External System>> [
     **Input Feeds**
     ____
     Topics / Buses
     ATOM feeds 
 ]
-rectangle sinks <<External System>> [
+
+rectangle outputs <<External System>> [
     **Output Feeds**
     ____
     Topics / Buses
     ATOM feeds
 ]
 
-apps       ->   caches     : reference\neventually\nconsistent
+apps          -> caches     : reference\neventually\nconsistent
 apps       <-L-> services   : transact against /\nsynchronously query
 
 services   <-R-> stores     : Query/Transact\n[in terms of events]
 
-stores     ..>   projectors : are followed by
-stores     ..>   reactors   : trigger
+stores       ..> publishers : are followed by
+stores       ..> reactors   : trigger
 
-reactors   -->   services   : feed back into
-reactors   ..>   sinks      : emit complex summaries to
-reactors   .U.>   caches    : maintain views in
+reactors     --> services   : feed back into
+reactors     ..> outputs    : generate complex\nnotifications for
+reactors    .U.> caches     : maintain views in
 
-projectors ..>   sinks      : emit complex notifications to
-projectors ..>   sinks      : publish some events to
+publishers   ..> outputs    : emit complex notifications to
+publishers   ..> outputs    : render some events to
 
-ingesters  <..   sources    : pull external\ndata from
-ingesters  -->   services   : reconcile changes into
-ingesters  .U.>   caches    : push reference data into
-
-apps -[hidden]R-> caches
-projectors -[hidden]R-> ingesters
+ingesters  <..   inputs     : pull external\ndata from
+ingesters    --> services   : reconcile changes into
+ingesters   .U.> caches     : push reference data into
 
 @enduml
