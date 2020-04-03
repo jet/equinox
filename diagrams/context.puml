@@ -1,0 +1,87 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
+
+title System Context Diagram for Equinox (+Propulsion)
+caption High level organization of an event sourced system using Equinox (aspects typically not using Equinox directly are marked External)
+
+actor "Applications" <<Internal>> as apps
+
+rectangle services <<System>> [
+    **Consistent Processing**
+    __Equinox__
+    Executing Commands
+    Making Decisions
+    Querying syßnchronously
+]
+
+database stores <<Internal>> [
+    **Consistent Event Store**
+    ____
+    EventStore / SqlStreamStore
+    CosmosDB / MemoryStore
+    (snapshots / unfolds)
+]
+
+database caches <<External>> [
+    **Read Model**
+    ____
+    Document Stores 
+    SQL DBs, REDIS, etc
+]
+
+together {
+    rectangle ingesters <<System>> [
+        **Ingesters**
+        __Propulsion / FsKafka / Equinox__
+        Sync from reference data
+        Change Data Capture
+        Event Carried State Transfer
+    ]
+    rectangle reactors <<System>> [
+        **Reactors**
+        __Propulsion / Equinox__
+        Drive Reactions
+        Compose Notifications
+    ]
+    rectangle publishers <<External System>> [
+        **Publishers**
+        __Propulsion / FsKafka__
+        Publish Simple Notifications
+        Emit Composed Notifications
+    ]
+}
+
+rectangle inputs <<External System>> [
+    **Input Feeds**
+    ____
+    Topics / Buses
+    ATOM feeds 
+]
+
+rectangle outputs <<External System>> [
+    **Output Feeds**
+    ____
+    Topics / Buses
+    ATOM feeds
+]
+
+apps          -> caches     : reference\neventually\nconsistent
+apps       <-L-> services   : transact against /\nsynchronously query
+
+services   <-R-> stores     : Query/Transact\n[in terms of events]
+
+stores       ..> publishers : are followed by
+stores       ..> reactors   : trigger
+
+reactors     --> services   : feed back into
+reactors     ..> outputs    : generate complex\nnotifications for
+reactors    .U.> caches     : maintain views in
+
+publishers   ..> outputs    : emit complex notifications to
+publishers   ..> outputs    : render some events to
+
+ingesters  <..   inputs     : pull external\ndata from
+ingesters    --> services   : reconcile changes into
+ingesters   .U.> caches     : push reference data into
+
+@enduml

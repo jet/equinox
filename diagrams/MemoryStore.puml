@@ -1,0 +1,80 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
+
+title Component diagram for Equinox.MemoryStore
+caption Detailed moving parts for an integration test scenario using MemoryStore in lieu of a Durable Store
+
+actor "Integration\nTests" <<Internal>> as tests
+
+together {
+    rectangle "Equinox.MemoryStore" <<Expanded>> {
+        interface IObservable <<Component>>
+        rectangle eqxms <<Component>> [
+            Equinox.MemoryStore
+        ]
+        database eqxmsdict <<Internal>> [
+            **ConcurrentDictionary**
+            StreamName -> TimelineEvent<T>
+        ]
+    }
+    database caches <<External>> [
+        **Read Model Simulators**
+        **and/or Concrete Stores**
+    ]
+    rectangle "Application Consistent Processing /System Under Test" <<External Container>> as app {
+        rectangle aggregate <<Component>> [
+            Aggregate / Service A
+
+            Events: codec
+            Fold: initial, fold
+            interpret / decide
+            Service
+        ]
+        rectangle aggregate2 <<Component>> [
+            Aggregate / Service B
+
+            Events: codec
+            Fold: initial, fold
+            interpret / decide
+            Service
+        ]
+        rectangle stream <<Component>> [
+            Equinox.Stream
+        ]
+        interface IStream <<Component>>
+    }
+}
+
+rectangle "System Under Test + Simulators" <<Expanded>> {
+    rectangle ingesters <<Container>> [
+        **Ingesters Under Test**
+    ]
+    rectangle reactors <<Container>> [
+        **Reactors Under Test**
+    ]
+    rectangle inputs <<External Component>> [
+        **Input Simulators**
+    ]
+}
+
+tests        <-> app         : transact\nagainst
+tests      <..   caches      : may probe\neventually\nconsistent
+tests         -> eqxms       : may validate\nby probing
+
+aggregate  <-R-> stream      : Transact
+aggregate2 <-R-> stream      : Transact/\nQuery
+stream      -R-> IStream     : Load/\nTrySync
+
+eqxms         -> IStream     : implements
+eqxms         .> eqxmsdict   : has a\nvolatile
+eqxms       -R-> IObservable : feeds
+
+ingesters   -U-> aggregate   : run transactions against
+ingesters   .R.> caches      : maintain\nviews\nin
+ingesters  <.R.  inputs      : feed into
+
+reactors   <-L-  IObservable : can subscribe to\n(TODO)
+reactors   <-U-> aggregate2  : run transactions against
+reactors    .U.> caches      : maintain\nviews\nin
+
+@enduml

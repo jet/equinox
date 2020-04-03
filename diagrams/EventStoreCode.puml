@@ -1,0 +1,163 @@
+@startuml
+title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query operation\nwith a cold cache and an empty stream
+
+actor Caller order 20
+box "Equinox.Stream"
+    participant Stream order 40
+end box
+participant Aggregate order 50
+participant Service order 60
+box "Equinox.EventStore / EventStore"
+  participant IStream order 80
+  collections Cache order 90
+  database EventStore order 100
+end box
+
+Caller -> Service: Read("clientId")
+participant Aggregate
+Service -> Stream: Query(id, renderList)
+Stream -> IStream: Load("Favorites-clientId")
+IStream -> Cache: TryGet("Favorites-clientId")
+note left of Cache #yellow: Cache Keeps Folded State (and the Version) per Stream\nin memory - GC can release if total RAM use overflows defined limit
+Cache --> IStream: None
+IStream -> EventStore: ReadStreamEventsForward (-1, "Favorites-clientId", batchSize)
+EventStore -[#blue]-> IStream: { version = -1; [No events] }
+IStream <- Aggregate: initial
+IStream -> Stream: { state = initial; version = -1 }
+IStream --> Cache: Update("Favorites-clientId", { version = -1, state = initial })
+note left of Cache: Even if we write a stale version to the cache, each Query or Transact will do a Sync with the Store\nso we will end up with a correct state -- we just need to establish a valid starting point
+Stream -> Aggregate: renderList version state
+Stream -> Caller: {result = list }
+@enduml
+
+@startuml
+title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Transact operation\nwith an-in sync cache and snapshotting Access Strategy
+
+actor Caller order 20
+box "Equinox.Stream"
+    participant Stream order 40
+end box
+participant Aggregate order 50
+participant Service order 60
+box "Equinox.EventStore / EventStore"
+  participant IStream order 80
+  collections Cache order 90
+  database EventStore order 100
+end box
+
+Caller -> Service: Execute("clientId", Favorite "A")
+Service -> Stream: Transact(interpret (Favorite "A"))
+Service -> Stream: maxAttempts
+Stream -> IStream: Load("Favorites-clientId")
+IStream -> Cache: TryGet("Favorites-clientId")
+Cache --> IStream: None
+IStream -> EventStore: ReadStreamEventsForward (-1, "Favorites-clientId", batchSize)
+alt load from snapshot
+  EventStore -[#green]-> IStream: {version, [...; Snapshotted {state = snapshottedValue}]}
+  IStream -> Aggregate: isOrigin(Snapshotted { state = snapshottedValue })
+  IStream -> Aggregate: fold initial [Snapshotted snapshottedValue]
+  Aggregate --> IStream: state
+else load from events (backward)
+  IStream -> EventStore:  ReadStreamEventBackwards (End, "Favorites-clientId", 2)
+  EventStore -[#green]-> IStream: [event4; event3]
+  IStream -> Aggregate: isOrigin event4
+  note over IStream: Each event is tested one by one; Lets say it returns false every time
+  IStream -> EventStore:  ReadStreamEventBackwards (End-2, "Favorites-clientId", 2)
+  EventStore -[#green]-> IStream: [event2; event1] 
+  IStream -> Aggregate: fold initial [event1; event2; event3; event4]]
+  Aggregate --> IStream: state
+end // initial stream load cases
+loop Optimistic Concurrency Control loop driven by consistency check on version, attempts times; INPUT: state
+Stream -> Aggregate: interpret state
+Aggregate --> Stream: (result = proposedResult, events = proposedEvents)
+Stream -> IStream: Sync version state proposedEvents
+IStream <- Aggregate: fold state proposedEvents
+Aggregate --> IStream: state'
+note over IStream: Every (batchSize - 1) events, a Snapshot Event is appended with the application events\nto ensure a single roundtrip will always return a snapshot plus successor events
+IStream <- Aggregate: snapshot state'
+IStream <- IStream: appendingEvents = [proposedEvents ; Snapshotted snapshot ]
+IStream -> EventStore: AppendEvents("Favorites-clientId", version, appendingEvents)
+alt Normal, conflict-free case
+EventStore -[#green]-> IStream: { version = version' }
+else Database detects conflicting writes have moved version forward
+EventStore -[#red]-> IStream: throw WrongExpectedVersionException
+alt RETRY CASE; attempts > 1
+IStream -> EventStore:  ReadStreamEventsForwards (version, "Favorites-clientId", batchSize)
+EventStore -[#green]-> IStream: conflictingEvents
+IStream -> IStream: conflictingState = fold state conflictingEvents
+Aggregate --> IStream: conflictingState
+note over IStream #orange: RESTART OCC LOOP with {state = conflictingState; attempts = attempts - 1 }
+else LAST ATTEMPT; attempts = 1
+note over IStream #red: Throw MaxAttemptsExceededException, "Favorites-client"
+end // alt throw
+end // alt ok or conflict
+end // loop
+IStream --> Cache: Update("Favorites-clientId", { state', version' })
+IStream -> Stream: { state = state' }
+Stream -> Caller: proposedResult
+@enduml
+
+@startuml
+title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query\nfollowing a Query or Transact on same node, i.e. in sync cache, events on stream
+
+actor Caller order 20
+box "Equinox.Stream"
+    participant Stream order 40
+end box
+participant Aggregate order 50
+participant Service order 60
+box "Equinox.EventStore / EventStore"
+  participant IStream order 80
+  collections Cache order 90
+  database EventStore order 100
+end box
+
+actor Caller
+Caller -> Service: Read("clientId")
+participant Aggregate
+Service -> Stream: Query(id, renderList)
+Stream -> IStream: Load("Favorites-clientId")
+IStream -> Cache: TryGet("Favorites-clientId")
+Cache --> IStream: { state = cachedState; version = cachedVersion }
+IStream -> EventStore: ReadStreamEventsForward (version, "Favorites-clientId", batchSize)
+EventStore -[#blue]-> IStream: (no events)
+IStream -> Cache: { state = fold cachedState []; version = version }
+IStream -> Stream: { state = fold cachedState []; version = version }
+Aggregate <-> IStream: { result = renderList version state }
+Aggregate -> Caller: result
+@enduml
+
+@startuml
+title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query\nwith out of sync cache e.g. another process (when using a snapshotting Access Strategy)
+
+actor Caller order 20
+box "Equinox.Stream"
+    participant Stream order 40
+end box
+participant Aggregate order 50
+participant Service order 60
+box "Equinox.EventStore / EventStore"
+  participant IStream order 80
+  collections Cache order 90
+  database EventStore order 100
+end box
+
+actor Caller
+Caller -> Service: Read("clientId")
+participant Aggregate
+Service -> Stream: Query(id, renderList)
+Stream -> IStream: Load("Favorites-clientId")
+IStream -> Cache: TryGet("Favorites-clientId")
+Cache --> IStream: None
+IStream -> EventStore: ReadStreamEventsBackward (End, "Favorites-clientId", batchSize)
+EventStore -[#green]-> IStream: [Added; Added; Removed; Snapshotted {state = snapshottedValue}])
+IStream -> Aggregate: isOrigin(Snapshotted { state = snapshottedValue})
+note over IStream: returns true (we'd otherwise keep walking back and then folds from event 0 forward)
+IStream -> Aggregate: fold initial [Snapshotted snapshottedValue]
+Aggregate --> IStream: state
+IStream --> Cache: Update("Favorites-clientId", { state, version })
+IStream -> Stream: {state = state; version = version }
+Stream -> Aggregate: let result = renderList version, state
+Stream -> Caller: result
+
+@enduml

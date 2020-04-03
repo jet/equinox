@@ -1,0 +1,55 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
+
+title Container diagram for Equinox.MemoryStore
+caption High level layout of an integration test scenario using MemoryStore in lieu of a Durable Store
+
+rectangle inputs <<External Component>> [
+    **Input Simulators**
+]
+
+together {
+    rectangle "Equinox.MemoryStore" <<Container>> {
+        rectangle eqxms <<Component>> [
+            Equinox.MemoryStore
+        ]
+    }
+    actor "Integration\nTests" <<Internal>> as tests
+    database caches <<External>> [
+        **Read Model Simulators**
+        **and/or Concrete Stores**
+    ]
+}
+
+rectangle "System Under Test + Simulators" <<Container>> {
+    rectangle "Application Under Test" <<Container>> as aggregate {
+        rectangle aggregate1 <<Component>> [
+            Aggregate / Service 1
+        ]
+        rectangle aggregate2 <<Component>> [
+            Aggregate / Service 2
+        ]
+    }
+    rectangle ingesters <<Container>> [
+        **Ingesters Under Test**
+    ]
+    rectangle reactors <<Container>> [
+        **Reactors Under Test**
+    ]
+}
+
+tests     <-D->  aggregate  : transact\nagainst
+tests     <-     caches     : may probe\neventually\nconsistent
+tests       -L-> eqxms      : may validate\nby probing
+
+aggregate <.L.>  eqxms      : Transact/\nQuery
+
+ingesters  ->    aggregate1 : run transactions against
+ingesters  -U->  caches     : maintain\nviews\nin
+ingesters <.U.   inputs     : feed into
+
+reactors  <-     eqxms      : can subscribe to\n(TODO)
+reactors  <->    aggregate2 : run transactions against
+reactors  -U->   caches     : maintain\nviews\nin
+
+@enduml
