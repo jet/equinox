@@ -73,12 +73,12 @@ services   <-R-> stores     : Query/Transact\n[in terms of events]
 stores       ..> publishers : are followed by
 stores       ..> reactors   : trigger
 
-reactors     --> services   : feed back into
+reactors     --> services   : feed data back into
 reactors     ..> outputs    : generate complex\nnotifications for
 reactors    .U.> caches     : maintain views in
 
 publishers   ..> outputs    : emit complex notifications to
-publishers   ..> outputs    : render some events to
+publishers   ..> outputs    : render events to
 
 ingesters  <..   inputs     : pull external\ndata from
 ingesters    --> services   : reconcile changes into
