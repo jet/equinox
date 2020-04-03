@@ -5,9 +5,11 @@ title Containers Diagram for Equinox (+Propulsion)
 caption Packages / Elements breakdown of an event sourced system using Equinox
 
 together {
-    frame "Caches" <<Expanded>> as caches {
-        database "REDIS" <<External>>
-        database "SQL"   <<External>>
+    frame "Caches" <<External Container>> as caches {
+        database "REDIS"    as red <<External>>
+        database "SQL"      as sql <<External>>
+        database "CosmosDB" as cdb <<External>>
+        database "etc etc"  as etc <<External>>
     }
     frame "Services" <<Expanded>> as services {
         rectangle "Equinox" <<Component>> as equinox
@@ -89,5 +91,8 @@ ingesters  -[hidden]D-> apps
 projectors -[hidden]D-> es
 projectors -[hidden]U-> services
 IStream    -[hidden]D-> ssss
+red        -[hidden]R-> sql
+sql        -[hidden]R-> cdb
+cdb        -[hidden]R-> etc
 
 @enduml

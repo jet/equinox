@@ -106,11 +106,11 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 
 # Overview
 
-## Context diagram
+## [C4](https://c4model.com) Context diagram
 
 ![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
 
-## Container diagram
+## [C4](https://c4model.com) Container diagram
 
 ![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml&fmt=svg)
 
@@ -660,4 +660,4 @@ See [`DOCUMENTATION.md`](DOCUMENTATION.md)
 The diagrams in this README.md and the DOCUMENTATION.md would not and could not have happened without the hard work and assistance of at least:
 - [@simonbrowndotje](https://github.com/simonbrowndotje) taking the time to define and evangelize the [C4 model](https://c4model.com/). It's highly recommended to view [the talk linked from `c4model.com`](https://www.youtube.com/watch?v=x2-rSnhpw0g&feature=emb_logo).
 - the wonder that is [PlantUml](https://plantuml.com/); authoring them [in text](https://github.com/jet/equinox/tree/diag/diagrams) is a delight. The images are also presently rendered by the [PlantUml proxy](https://plantuml.com/server)
-- [@skleanthous](https://github.com/skleanthous) for making _and documenting_ [PlantUmlSkin](https://github.com/skleanthous/C4-PlantumlSkin/blob/master/README.md)
+- [@skleanthous](https://github.com/skleanthous) for making _and documenting_ [C4-PlantUmlSkin](https://github.com/skleanthous/C4-PlantumlSkin/blob/master/README.md)
