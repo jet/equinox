@@ -108,13 +108,11 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 
 ## The Propulsion Perspective
 
-Equinox and Propulsion have a [Yin and yang](https://en.wikipedia.org/wiki/Yin_and_yang) relationship; the use cases for both naturally interlock and overlap.
-
-It can be relevant to peruse [the Propulsion Documentation's Overview Diagrams](https://github.com/jet/propulsion/blob/master/DOCUMENTATION.md#overview) for the perspective from the other side (TL;DR its largely the same topology, with elements that are de-emphasized here central over there, and vice versa)
+Equinox and Propulsion have a [Yin and yang](https://en.wikipedia.org/wiki/Yin_and_yang) relationship; the use cases for both naturally interlock and overlap. It can be relevant to peruse [the Propulsion Documentation's Overview Diagrams](https://github.com/jet/propulsion/blob/master/DOCUMENTATION.md#overview) for the complementary perspective (TL;DR its largely the same topology, with elements that are central here de-emphasized over there, and vice versa)
 
 ## [C4](https://c4model.com) Context diagram
 
-Equinox focuses on the *Consistent Processing* element of building an event-sourced system, offering tailored components that interact with a specific *Consistent Event Store*, as laid out here in this [C4](https://c4model.com) System Context Diagram:
+Equinox focuses on the **Consistent Processing** element of building an event-sourced system, offering tailored components that interact with a specific **Consistent Event Store**, as laid out here in this [C4](https://c4model.com) System Context Diagram:
 
 ![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
 

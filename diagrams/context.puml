@@ -14,7 +14,7 @@ together {
         Querying synchronously
     ]
     database stores <<Internal>> [
-        **Consistent Event Stores**
+        **Consistent Event Store**
         ____
         EventStore / SqlStreamStore
         CosmosDB / MemoryStore
