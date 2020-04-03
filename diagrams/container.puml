@@ -13,8 +13,7 @@ together {
     }
     frame "Services" <<Expanded>> as services {
         rectangle "Equinox" <<Component>> as equinox
-        rectangle "AggregateA" <<Container>>
-        rectangle "AggregateB" <<Container>>
+        rectangle "Aggregate Roots" as Aggregates <<Container>>
     }
     actor "Applications" as apps <<Internal>>
 }
@@ -53,16 +52,15 @@ frame "Stores" as stores <<Expanded>> {
     }
 }
 
-AggregateB -R-> equinox    : uses
+Aggregates   -> equinox    : use
 equinox     <-> IStream    : Query/\nTransact
-AggregateA -L-> equinox    : uses
 
 ingesters  <.R. sources    : consume
-ingesters    -> AggregateA : ingest into
+ingesters    -> Aggregates : ingest into
 ingesters  .D.> caches     : ingest into
 
 apps       <.   caches     : reference\neventually\nconsistent
-apps        <-> AggregateB : transact\nagainst
+apps        <-> Aggregates : transact\nagainst
 
 stores     .U.> projectors : are followed by
 stores     .U.> reactors   : trigger
@@ -71,7 +69,7 @@ projectors   .> sinks      : emit notifications to
 projectors <--  cfp        : can feed from
 projectors <--  all        : can feed from
 
-reactors  <-U-> AggregateB : feed back into
+reactors  <-U-> Aggregates : feed back into
 reactors   .L.> sinks      : emit summaries to
 reactors   .U.> caches     : maintain views in
 reactors   <-   ms         : can react to

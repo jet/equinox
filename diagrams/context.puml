@@ -4,14 +4,13 @@
 title System Context Diagram for Equinox (+Propulsion)
 caption High level organization of an event sourced system using Equinox (aspects typically not using Equinox directly are marked External)
 
-together {
     actor "Applications" <<Internal>> as apps
     rectangle services <<System>> [
         **Consistent Processing**
         __Equinox__
-        Making Decisions
         Executing Commands
-        Querying synchronously
+        Making Decisions
+        Querying Synchronously
     ]
     database stores <<Internal>> [
         **Consistent Event Store**
@@ -20,11 +19,10 @@ together {
         CosmosDB / MemoryStore
         (snapshots / unfolds)
     ]
-}
 
 database caches <<External>> [
-    **Read Models**
-    ____  
+    **Read Model**
+    ____
     Document Stores 
     SQL DBs, REDIS, etc
 ]
@@ -32,7 +30,7 @@ database caches <<External>> [
 together {
     rectangle ingesters <<System>> [
         **Ingesters**
-        __Propulsion / Equinox / FsKafka__
+        __Propulsion / FsKafka / Equinox__
         Sync from reference data
         Change Data Capture
         Event Carried State Transfer
@@ -64,23 +62,26 @@ rectangle sinks <<External System>> [
     ATOM feeds
 ]
 
-apps       <--   caches     : reference\neventually\nconsistent
-apps       <-R-> services   : transact against /\nsynchronously query
+apps       ->   caches     : reference\neventually\nconsistent
+apps       <-L-> services   : transact against /\nsynchronously query
 
 services   <-R-> stores     : Query/Transact\n[in terms of events]
 
 stores     ..>   projectors : are followed by
 stores     ..>   reactors   : trigger
 
-projectors ..>   sinks      : emit complex notifications to
-projectors ..>   sinks      : publish some events to
-
 reactors   -->   services   : feed back into
 reactors   ..>   sinks      : emit complex summaries to
 reactors   .U.>   caches    : maintain views in
 
-ingesters  <..   sources    : consume
-ingesters  -->   services   : ingest into
-ingesters  .U.>   caches    : ingest into
+projectors ..>   sinks      : emit complex notifications to
+projectors ..>   sinks      : publish some events to
+
+ingesters  <..   sources    : pull external\ndata from
+ingesters  -->   services   : reconcile changes into
+ingesters  .U.>   caches    : push reference data into
+
+apps -[hidden]R-> caches
+projectors -[hidden]R-> ingesters
 
 @enduml
