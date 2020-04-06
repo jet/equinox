@@ -81,8 +81,8 @@ reactors     --> services   : feed reactions\nback into
 reactors     ..> outputs    : can lead to\nnotifications for\ndownstream
 reactors    .U.> caches     : maintain views in
 
-publishers   ..> outputs    : emit complex notifications to
-publishers   ..> outputs    : selectively render\nevents to downstream
+publishers   ..> outputs    : can emit complex notifications from reactors to
+publishers   ..> outputs    : can render some\nevents directly to downstream
 
 ingesters  -[hidden]R-> reactors
 
