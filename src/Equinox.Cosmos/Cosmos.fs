@@ -545,7 +545,16 @@ function sync(req, expIndex, expEtag) {
             // Given how long and variable the blacklist would be, we whitelist instead
             def.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
             // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
-            for k in Batch.IndexedFields do def.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
+            for kos in
+                [ [ Batch.PartitionKeyField, CompositePathSortOrder.Ascending
+                    "i", CompositePathSortOrder.Ascending ]
+                  [ Batch.PartitionKeyField, CompositePathSortOrder.Ascending
+                    "n", CompositePathSortOrder.Descending
+                    "i", CompositePathSortOrder.Descending ]
+            ] do
+                let c = System.Collections.ObjectModel.Collection()
+                for k, o in kos do c.Add(CompositePath(Path = sprintf "/%s/?" k, Order = o))
+                def.IndexingPolicy.CompositeIndexes.Add c
             createOrProvisionContainer (client.GetDatabase dName) def mode
         let createSyncStoredProcIfNotExists (log: ILogger option) container = async {
             let! t, ru = createStoredProcIfNotExists container (sprocName,sprocBody) |> Stopwatch.Time
@@ -604,13 +613,16 @@ module internal Tip =
     open FSharp.Control
     let private mkQuery (container : Container, stream: string) maxItems (direction: Direction) startPos : FeedIterator<Batch>=
         let query =
+//            let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.p = @stream AND c.id!=\"%s\"" Tip.WellKnownDocumentId
             let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.id!=\"%s\"" Tip.WellKnownDocumentId
-            let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
             match startPos with
-            | None -> QueryDefinition(sprintf "%s %s" root tail)
+            | None ->
+                let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
+                QueryDefinition(sprintf "%s %s" root tail)//.WithParameter("@stream", stream)
             | Some { index = positionSoExclusiveWhenBackward } ->
                 let cond = if direction = Direction.Forward then "c.n > @startPos" else "c.i < @startPos"
-                QueryDefinition(sprintf "%s AND %s %s" root cond tail).WithParameter("@startPos", positionSoExclusiveWhenBackward)
+                let tail = if direction = Direction.Forward then "ORDER BY c.n ASC" else sprintf "ORDER BY c.i DESC"
+                QueryDefinition(sprintf "%s AND %s %s" root cond tail).WithParameter("@startPos", positionSoExclusiveWhenBackward)//.WithParameter("@stream", stream)
         let qro = new QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
         container.GetItemQueryIterator<Batch>(query, requestOptions = qro)
 
