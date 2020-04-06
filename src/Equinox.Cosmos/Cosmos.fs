@@ -614,16 +614,17 @@ module internal Tip =
     let private mkQuery (container : Container, stream: string) maxItems (direction: Direction) startPos : FeedIterator<Batch>=
         let query =
 //            let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.p = @stream AND c.id!=\"%s\"" Tip.WellKnownDocumentId
-            let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.id!=\"%s\"" Tip.WellKnownDocumentId
+            let root = "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE "
+            let notTip = sprintf "c.id!=\"%s\"" Tip.WellKnownDocumentId
             match startPos with
             | None ->
                 let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
-                QueryDefinition(sprintf "%s %s" root tail)//.WithParameter("@stream", stream)
+                QueryDefinition(sprintf "%s %s %s" root notTip tail)//.WithParameter("@stream", stream)
             | Some { index = positionSoExclusiveWhenBackward } ->
                 let cond = if direction = Direction.Forward then "c.n > @startPos" else "c.i < @startPos"
                 let tail = if direction = Direction.Forward then "ORDER BY c.n ASC" else sprintf "ORDER BY c.i DESC"
-                QueryDefinition(sprintf "%s AND %s %s" root cond tail).WithParameter("@startPos", positionSoExclusiveWhenBackward)//.WithParameter("@stream", stream)
-        let qro = new QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
+                QueryDefinition(sprintf "%s %s AND %s %s" root cond notTip tail).WithParameter("@startPos", positionSoExclusiveWhenBackward)//.WithParameter("@stream", stream)
+        let qro = QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
         container.GetItemQueryIterator<Batch>(query, requestOptions = qro)
 
     // Unrolls the Batches in a response - note when reading backwards, the events are emitted in reverse order of index
