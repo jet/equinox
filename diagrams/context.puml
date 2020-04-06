@@ -73,12 +73,12 @@ services   <-R-> stores     : Query/Transact\n[in terms of events]
 stores       ..> publishers : are followed by
 stores       ..> reactors   : fresh\nwrites trigger
 
-ingesters  <..   inputs     : pull external\ndata from
+ingesters  <..   inputs     : pull external\ndata from\nupstream
 ingesters    --> services   : reconcile upstream\nchanges into
 ingesters   .U.> caches     : push reference data into
 
 reactors     --> services   : feed reactions\nback into
-reactors     ..> outputs    : sometimes generate or yield\nnotifications for\ndownstream
+reactors     ..> outputs    : can lead to\nnotifications for\ndownstream
 reactors    .U.> caches     : maintain views in
 
 publishers   ..> outputs    : emit complex notifications to
