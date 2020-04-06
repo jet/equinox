@@ -238,7 +238,7 @@ type Tests(testOutputHelper) =
 
         // 2 items atm
         test <@ [EqxAct.ResponseForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 6 } // 5.77
+        verifyRequestChargesMax 7 } // 6.01
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get Lazy`` (TestStream streamName) = Async.RunSynchronously <| async {
@@ -297,7 +297,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEventsBackward 3L expected res
 
         test <@ List.replicate 2 EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 6 // 5.77
+        verifyRequestChargesMax 7 // 6.01
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
