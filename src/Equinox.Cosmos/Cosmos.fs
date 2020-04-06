@@ -1213,7 +1213,7 @@ type Context
         let! (Token.Unpack (_,pos')), data = res
         return pos', data }
 
-    new (client : Azure.Cosmos.CosmosClient, log, databaseId, containerId, ?defaultMaxItems, ?getDefaultMaxItems) =
+    new (client : Azure.Cosmos.CosmosClient, log, databaseId : string, containerId : string, ?defaultMaxItems, ?getDefaultMaxItems) =
         let inner = Equinox.Cosmos.Context(Equinox.Cosmos.Client(client, databaseId, containerId))
         let cc, _streamId, _init = inner.ResolveContainerClientAndStreamIdAndInit(null, null)
         Context(inner, cc, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
