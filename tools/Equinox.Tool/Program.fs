@@ -77,8 +77,8 @@ and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-P"; Unique>]       PrettySkip
     | [<AltCommandLine "-T"; Unique>]       TimeRegular
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
-    | [<AltCommandLine "-E"; Unique>]      EventsOnly
-    | [<AltCommandLine "-b"; Unique>]      BatchSize of int
+    | [<AltCommandLine "-E"; Unique >]      EventsOnly
+    | [<AltCommandLine "-b"; Unique >]      BatchSize of int
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
