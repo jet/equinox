@@ -348,7 +348,7 @@ module CosmosStats =
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
             let cosmosClient, dName, cName = CosmosInit.conn log sargs
-            let container = cosmosClient.GetDatabase(dName).GetContainer(cName)
+            let container = cosmosClient.GetContainer(dName, cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
