@@ -1,4 +1,4 @@
-@startuml
+    @startuml
 !includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
 
 title System Context Diagram for Equinox (+Propulsion)
@@ -15,8 +15,8 @@ rectangle services <<System>> [
 ]
 
 database stores <<Internal>> [
-    **Consistent Event Store**
-    ____
+    **Event Store**
+    __(consistent)__
     EventStore / SqlStreamStore
     CosmosDB / MemoryStore
     (snapshots / unfolds)
@@ -24,7 +24,7 @@ database stores <<Internal>> [
 
 database caches <<External>> [
     **Read Model**
-    ____
+    __(eventually consistent)__
     Document Stores 
     SQL DBs, REDIS, etc
 ]
@@ -71,17 +71,19 @@ apps       <-L-> services   : transact against /\nsynchronously query
 services   <-R-> stores     : Query/Transact\n[in terms of events]
 
 stores       ..> publishers : are followed by
-stores       ..> reactors   : trigger
+stores       ..> reactors   : fresh\nwrites trigger
 
 ingesters  <..   inputs     : pull external\ndata from
-ingesters    --> services   : reconcile changes into
+ingesters    --> services   : reconcile upstream\nchanges into
 ingesters   .U.> caches     : push reference data into
 
-reactors     --> services   : feed back into
-reactors     ..> outputs    : generate complex\nnotifications for
+reactors     --> services   : feed reactions\nback into
+reactors     ..> outputs    : sometimes generate or yield\nnotifications for\ndownstream
 reactors    .U.> caches     : maintain views in
 
 publishers   ..> outputs    : emit complex notifications to
-publishers   ..> outputs    : render some events to
+publishers   ..> outputs    : selectively render\nevents to downstream
+
+ingesters  -[hidden]R-> reactors
 
 @enduml
