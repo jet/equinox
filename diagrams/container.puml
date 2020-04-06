@@ -24,12 +24,12 @@ together {
 frame "Consistent Event Stores" as stores <<Expanded>> {
     frame "Cosmos" as cosmos <<Internal>> {
         rectangle "Equinox.Cosmos" <<Component>> as cs
-        rectangle "Propulsion.Cosmos" <<External Component>> as cfp
+        rectangle "Propulsion.Cosmos" <<External Component>> as cr
         rectangle "Azure.Cosmos" <<ExternalComponent>> as cc
     }
     frame "EventStore" <<Internal>> {
         rectangle "Equinox.EventStore" <<Component>> as es
-        rectangle "Propulsion.EventStore" <<External Component>> as all
+        rectangle "Propulsion.EventStore" <<External Component>> as er
         rectangle "EventStore.ClientAPI" <<External Component>> as esc
     }
     frame "Integration Test Support" <<Internal>> {
@@ -59,23 +59,23 @@ apps        <-> aggs       : transact\nagainst
 aggs         -> equinox    : use
 equinox     <-> IStream    : Query/\nTransact
 
-ingesters  <.   inputs     : sync from external
-ingesters    -> aggs       : reconcile into
-ingesters    .> caches     : push into
-
 stores     .>   publishers : are followed by
 stores     .U.> reactors   : trigger
 
-publishers   .> outputs    : emit notifications to
-publishers <--  cfp        : can feed from
-publishers <--  all        : can feed from
+ingesters  <.   inputs     : sync from external
+ingesters    -> aggs       : reconcile into
+ingesters    .> caches     : push into
 
 reactors  <-U-> aggs       : feed back into
 reactors     .> outputs    : emit summaries to
 reactors     .> caches     : maintain views in
 reactors   <-   ms         : can react to
-reactors   <-   cfp        : can react to
-reactors   <-   all        : can react to
+reactors   <-   cr         : can react to
+reactors   <-   er        : can react to
+
+publishers   .> outputs    : emit notifications to
+publishers <--  cr        : can feed from
+publishers <--  er        : can feed from
 
 ms           .> IStream    : implements
 es           -> ICache
@@ -93,9 +93,10 @@ ssp          -> sss        : is a
 sss         <-> SqlStreamStore
 
 services   -[hidden]D-> reactors
-ingesters  -[hidden]D-> services
 
+ingesters  -[hidden]D-> services
 publishers -[hidden]D-> es
+
 IStream    -[hidden]D-> ssss
 
 red        -[hidden]R-> sql

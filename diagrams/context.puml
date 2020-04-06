@@ -11,7 +11,7 @@ rectangle services <<System>> [
     __Equinox__
     Executing Commands
     Making Decisions
-    Querying syßnchronously
+    Querying synchronously
 ]
 
 database stores <<Internal>> [
@@ -30,14 +30,14 @@ database caches <<External>> [
 ]
 
 together {
-    rectangle ingesters <<System>> [
+    rectangle ingesters <<External System>> [
         **Ingesters**
         __Propulsion / FsKafka / Equinox__
         Sync from reference data
         Change Data Capture
         Event Carried State Transfer
     ]
-    rectangle reactors <<System>> [
+    rectangle reactors <<External System>> [
         **Reactors**
         __Propulsion / Equinox__
         Drive Reactions
@@ -73,15 +73,15 @@ services   <-R-> stores     : Query/Transact\n[in terms of events]
 stores       ..> publishers : are followed by
 stores       ..> reactors   : trigger
 
+ingesters  <..   inputs     : pull external\ndata from
+ingesters    --> services   : reconcile changes into
+ingesters   .U.> caches     : push reference data into
+
 reactors     --> services   : feed back into
 reactors     ..> outputs    : generate complex\nnotifications for
 reactors    .U.> caches     : maintain views in
 
 publishers   ..> outputs    : emit complex notifications to
 publishers   ..> outputs    : render some events to
-
-ingesters  <..   inputs     : pull external\ndata from
-ingesters    --> services   : reconcile changes into
-ingesters   .U.> caches     : push reference data into
 
 @enduml
