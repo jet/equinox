@@ -14,6 +14,126 @@ _Implementing Domain Driven Design, Vaughn Vernon, 2013_; aka 'The Red Book'. Wo
 
 - **Your link here** - Please add materials that helped you on your journey so far here via PRs!
 
+# Overview
+
+The following diagrams are based on the style defined in [@simonbrowndotje](https://github.com/simonbrowndotje)'s [C4 model](https://c4model.com/), rendered using [@skleanthous](https://github.com/skleanthous)'s [PlantUmlSkin](https://github.com/skleanthous/C4-PlantumlSkin/blob/master/README.md). It's highly recommended to view [the talk linked from `c4model.com`](https://www.youtube.com/watch?v=x2-rSnhpw0g&feature=emb_logo). See [README.md acknowledgments section](README.md#acknowledgements)
+
+## Context Diagram
+
+Equinox and Propulsion together provide a loosely related set of libraries that you can leverage in an application as you see fit. These diagrams are intended to give a rough orientation; what you actually build is up to you...
+
+![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
+
+## Container diagram
+
+The Systems and Components involved break out roughly like this:
+
+![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml&fmt=svg)
+
+# Equinox.MemoryStore
+
+Equinox encourages sticking with [Test Pyramid principles](https://martinfowler.com/articles/practical-test-pyramid.html): focus on unit testing things by default (based on calling `interpret`/`decide`, `initial` and `fold` from the [Aggregate module](#aggregate-module))
+
+However, the Equinox `MemoryStore` package can also be relevant as part of your overall testing strategy. The aims are to:
+- provide a mechanism where one can provide an empty and/or specifically prepared set of streams initialized in ways that make sense for your test suite
+- allow one to test with fully configured `Service` types if necessary
+- enable one to test flows or scenarios (e.g. Process Managers) crossing multiple `Service` types
+- allow one to validate the above logic works well independent of the effects of any of the stores
+- allow one to reduce reliance on mechanisms such as the CosmosDB simulator
+
+**NOTE: `MemoryStore` is a complement to testing with a real store - it's absolutely not a substitute for testing how your app really performs with your load against your actual store**
+
+A primary supported pattern is to be able to be able to define a test suite and then run the suite with the right store for the context - e.g.:
+-  for unit tests, you might opt to run some important scenarios with a `MemoryStore`
+- for integration tests, you might run lots of iterations of a Property Based Test against a memory store, and a reduced number of iterations of the same test against your concrete store
+- for acceptance Tests, you'll likely primarily focus on using your concrete store
+
+## Container Diagram for `Equinox.MemoryStore`
+
+This diagram shows the high level building blocks used in constructing an integration test using `Equinox.MemoryStore`
+
+![Equinox.MemoryStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStoreContainer.puml)
+
+**NOTE: There's one critical lie to declare: [#205](https://github.com/jet/equinox/issues/205) is not yet implemented**
+
+## Component Diagram for `Equinox.MemoryStore`
+
+This breaks down the components involved internally with the layout above in terms of the actual structures involved:
+
+![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml?fmt=svg)
+
+# Equinox.EventStore / Equinox.SqlStreamStore
+
+From the point of view of Equinox, SqlStreamStore and EventStore have a lot in common in terms of how Equinox interacts with them. For this reason, it's safe to treat them as equivalent for the purposes of this overview.
+
+## Component Diagram for Equinox.EventStore / Equinox.SqlStreamStore
+
+![Equinox.EventStore/SqlStreamStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
+
+## Code Diagrams for Equinox.EventStore / Equinox.SqlStreamStore
+
+This diagram walks through the basic sequence of operations, where:
+- this node has not yet read this stream (i.e. there's nothing in the Cache)
+- when we do read it, it's empty (no events):
+
+![Equinox.EventStore/SqlStreamStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=0&fmt=svg)
+
+Next, we extend the scenario to show:
+- how the State held in the Cache influences the EventStore/SqlStreamStore APIs used
+- how writes are managed:
+  - when there's no conflict
+  - when there's conflict and we're retrying (handle `WrongExpectedVersionException`, read the conflicting, loop using those)
+  - when there's conflict and we're giving up (throw `MaxAttemptsExceededException`; no need to read the conflicting events)
+
+![Equinox.EventStore/SqlStreamStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=1&fmt=svg)
+
+After the write, we circle back to illustrate the effect of the caching when we have correct state
+
+![Equinox.EventStore/SqlStreamStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=2&fmt=svg)
+
+In other processes (when a cache is not fully in sync), the sequence runs slightly differently:
+
+![Equinox.EventStore/SqlStreamStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=3&fmt=svg)
+
+# Equinox.Cosmos
+
+## Container Diagram for `Equinox.Cosmos`
+
+![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml?fmt=svg)
+
+## Component Diagram for `Equinox.Cosmos`
+
+![Equinox.Cosmos c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosComponent.puml?fmt=svg)
+
+## Code Diagrams for `Equinox.Cosmos`
+
+This diagram walks through the basic sequence of operations, where:
+- this node has not yet read this stream (i.e. there's nothing in the Cache)
+- when we do read it, the Read call returns `404` (with a charge of `1 RU`)
+
+![Equinox.Cosmos c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=0&fmt=svg)
+
+Next, we extend the scenario to show:
+- how state held in the Cache influences the Cosmos APIs used
+- How reads work when a snapshot is held within the _Tip_
+- How reads work when the state is built form the events via a Query
+- how writes are managed:
+  - when there's no conflict (`Sync` stored procedure returns no conflicting events)
+  - when there's conflict and we're retrying (re-run the decision the conflicting events the call to `Sync` yielded)
+  - when there's conflict and we're giving up (throw `MaxAttemptsExceededException`)
+
+![Equinox.Cosmos c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=1&fmt=svg)
+
+After the write, we circle back to illustrate the effect of the caching when we have correct state (we get a `304 Not Mofified` and pay only `1 RU`)
+
+![Equinox.Cosmos c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=2&fmt=svg)
+
+In other processes (when a cache is not fully in sync), the sequence runs slightly differently
+- we read the _Tip_ document, and can work from that snapshot
+- the same fallback sequence shown in the initial read will take place if no suitable snapshot that passes the `isOrigin` predicate is found within the _Tip_
+
+![Equinox.Cosmos c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=3&fmt=svg)
+
 # Glossary
 
 Event Sourcing is easier _and harder_ than you think. This document is not a tutorial, and you can and will make a mess on your first forays. This glossary attempts to map terminology from established documentation outside to terms used in this documentation.
@@ -145,7 +265,7 @@ let decideY ... (state : Fold.State) : Decision * Events list = ...
 
 - `interpret`, `decide` _and related input and output types / interfaces_ are public and top-level for use in unit tests (often unit tests will `open` the `module Fold` to use `initial` and `fold`)
 
-```
+```fsharp
 type Service internal (resolve : Id -> Equinox.Stream<Events.Event, Fold.State) = ...`
 
     member __.Execute(id, command) : Async<unit> =
@@ -1094,7 +1214,8 @@ TL;DR `Equinox.Cosmos`: (see also: [the storage model](DOCUMENTATION.md#Cosmos-S
 - The (optimistic) concurrency control of updates is by virtue of the fact that every update to the `Tip` touches the document _and thus alters (invalidates) the `_etag` value_. This means that, in contrast to how many SQL based stores (and most CosmosDB based ones) implement concurrency control, we don't rely on primary key constraint to prevent two writers writing conflicting events to the same stream.
  - A secondary benefit of not basing consistency control on a primary key constraint or equivalent, is that we no longer having to insert an Event every time we are updating something. (This fact is crucial for the `RollingState` and `Custom` strategies).
 - The `interpret`/`decide` function is expected to deduplicate writes by not producing `events` if the `state` implies such updates would be redundant. Equinox does not have any internal mechanism to deduplicate events, thus having correct deduplication is the key to reducing round-trips and hence minimizing RU consumption (and the adverse effects that the retry cycles due to contention have, which will most likely arise when load is at its highest).
-- The `unfolds` maintained in `Tip` have the bodies (the `d` and `m` fields) 1) deflated 2) base64 encoded (as everyone is reading the Tip, its worthwhile having the writer take on the burden of compressing, with the payback being that write amplification effects are reduced by readers paying less RUs to read them). The snapshots can be inspected securely via the `eqx` tool's `dump` facility, or _unsecurely_ online via the [**decode** button on this tool, _if the data is not sensitive_](https://jgraph.github.io/drawio-tools/tools/convert.html).
+- The `unfolds` maintained in `Tip` have the bodies (the `d` and `m` fields) 1) deflated 2) base64 encoded (as everyone is reading the Tip, its worthwhile having the writer take on the burden of compressing, with the payback being that write amplification effects are reduced by readers paying less RUs to read them). The snapshots can be inspected securely via the `eqx` tool's `dump` facility, or _unsecurely_ online via the [**decode** button on `jgraph`'s `drawio-tools` at https://jgraph.github.io/drawio-tools/tools/convert.html, _if the data is not sensitive_](https://jgraph.github.io/drawio-tools/tools/convert.html).
+
 - The `Tip` document, (and the fact we hold its `_etag` in our cache alongside the State we have derived from the Events), is at the heart of why consistent reads are guaranteed to be efficient (Equinox does the read of the `Tip` document contingent on the `_etag` not having changed; a read of any size costs only 1 RU if the result is `304 NOT Modified`)
 - Specific Access Strategies:
   - define what we put in the `Tip`

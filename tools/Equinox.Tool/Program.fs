@@ -12,7 +12,6 @@ open Serilog.Events
 open System
 open System.Net.Http
 open System.Threading
-open System.Text.Json
 
 let [<Literal>] appName = "equinox-tool"
 
@@ -78,8 +77,8 @@ and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-P"; Unique>]       PrettySkip
     | [<AltCommandLine "-T"; Unique>]       TimeRegular
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
-    | [<AltCommandLine "-E"; Unique >]      EventsOnly
-    | [<AltCommandLine "-b"; Unique >]      BatchSize of int
+    | [<AltCommandLine "-E"; Unique>]      EventsOnly
+    | [<AltCommandLine "-b"; Unique>]      BatchSize of int
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
@@ -94,7 +93,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | TimeRegular ->                "Don't humanize time intervals between events"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
-            | BatchSize ->                  "Maximum number of documents to request per batch. Default 1000."
+            | BatchSize _ ->                "Maximum number of documents to request per batch. Default 1000."
             | Es _ ->                       "Parameters for EventStore."
             | Cosmos _ ->                   "Parameters for CosmosDb."
             | MsSql _ ->                    "Parameters for Sql Server."
@@ -341,7 +340,7 @@ module CosmosStats =
     type Azure.Cosmos.CosmosContainer with
         // NB DO NOT CONSIDER PROMULGATING THIS HACK
         member container.QueryValue<'T>(sqlQuery : string) =
-            let query : Microsoft.Azure.Cosmos.FeedResponse<'T> = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
+            let query : seq<'T> = container.GetItemQueryIterator<'T>(sqlQuery) |> AsyncSeq.ofAsyncEnum |> AsyncSeq.toBlockingSeq
             query |> Seq.exactlyOne
     let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
@@ -412,6 +411,7 @@ module Dump =
         |> Async.Parallel
         |> Async.Ignore
 
+    open System.Text.Json
     let dumpJsonElementStorage (log: ILogger) (storeLog: ILogger) doU doE doC doJ _doP doT (resolver: Services.StreamResolver) (streams: FsCodec.StreamName list) =
         let initial = List.empty
         let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
