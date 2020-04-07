@@ -81,9 +81,7 @@ reactors     --> services   : manage follow-on reactions via
 reactors    .U.> caches     : maintain views in
 reactors      .> publishers : trigger
 
-publishers   ..> outputs    : may emit generated\nnotifications composed by reactors to
-publishers   ..> outputs    : can render some\nevents directly to downstream
-
-reactors  -[hidden]R-> publishers
+publishers   ..> outputs    : emit notifications composed by\nreactors to
+publishers   ..> outputs    : render some\nevents directly to downstream
 
 @enduml

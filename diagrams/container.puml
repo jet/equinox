@@ -73,8 +73,7 @@ reactors   <-   cr         : can react to
 reactors   <-   er         : can react to
 reactors     .> publishers : trigger
 
-publishers   .> outputs    : emit notifications to
-publishers   .> outputs    : render events to
+publishers   .> outputs    : emit notifications to\nrender events to
 publishers <--  cr         : can feed from
 publishers <--  er         : can feed from
 
@@ -94,9 +93,7 @@ ssp          -> sss        : is a
 sss         <-> SqlStreamStore
 
 services   -[hidden]D-> reactors
-
 ingesters  -[hidden]D-> services
-publishers -[hidden]D-> es
 
 IStream    -[hidden]D-> ssss
 

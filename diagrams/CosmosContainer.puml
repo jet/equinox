@@ -54,7 +54,7 @@ rectangle "Consistent Processing" <<Expanded>> {
     }
 }
 
-rectangle "**Publishers**" as projectors <<External Container>> {
+rectangle "**Publishers**" as publishers <<External Container>> {
     rectangle cfp0 <<External Component>> [
         **ChangeFeedProcessor A**
     ]
@@ -108,16 +108,16 @@ range1     ..>  cfp1        : continuously queries
 
 cfp0      <->   aux         : keeps checkpoints in\nnegotiates leases via
 cfp1      <->   aux         : keeps checkpoints in\nnegotiates leases via
-cfp0      <.>   projector   : projects events from
-cfp1      <.>   reactor     : tracks relevant events filtered from
-reactor     .>  caches      : maintains views in
-reactor     .>  outputs     : emits to
+cfp0      <.>   publishers  : projects events
+cfp1      <.>   reactors    : tracks relevant events
+reactors    .>  caches      : maintains views in
+reactors    .>  publishers  : compose notificatons for
 projector   .>  outputs     : emits to
 
 eqxcosmos -[hidden]D-> sync0
 cfp0      -[hidden]D-> aux
-reactor   -[hidden]D-> outputs
-reactor   -[hidden]U-> caches
+publishers-[hidden]D-> outputs
+reactors  -[hidden]U-> caches
 caches    -[hidden]U-> apps
 
 @enduml

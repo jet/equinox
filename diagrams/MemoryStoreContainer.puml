@@ -49,7 +49,8 @@ ingesters  -U->  caches     : maintain\nviews\nin
 ingesters <.U.   inputs     : feed into
 
 reactors  <-     eqxms      : can subscribe to\n(TODO)
-reactors  <->    aggregate2 : run transactions against
+reactors  <-D->  aggregate2 : run transactions against
 reactors  -U->   caches     : drive reactions by writing into
+ingesters -[hidden]R--> reactors
 
 @enduml
