@@ -15,15 +15,15 @@ rectangle services <<System>> [
 ]
 
 database stores <<Internal>> [
-    **Event Store**
-    __(consistent)__
+    **Consistent Event Store**
+    ____
     EventStore / SqlStreamStore
     CosmosDB / MemoryStore
     (snapshots / unfolds)
 ]
 
 database caches <<External>> [
-    **Read Model**
+    **Read Models**
     __(eventually consistent)__
     Document Stores 
     SQL DBs, REDIS, etc
@@ -77,13 +77,13 @@ ingesters  <..   inputs     : pull external\ndata from\nupstream
 ingesters    --> services   : reconcile upstream\nchanges into
 ingesters   .U.> caches     : push reference data into
 
-reactors     --> services   : feed reactions\nback into
-reactors     ..> outputs    : can lead to\nnotifications for\ndownstream
+reactors     --> services   : manage follow-on reactions via
 reactors    .U.> caches     : maintain views in
+reactors      .> publishers : trigger
 
-publishers   ..> outputs    : can emit complex notifications from reactors to
+publishers   ..> outputs    : may emit generated\nnotifications composed by reactors to
 publishers   ..> outputs    : can render some\nevents directly to downstream
 
-ingesters  -[hidden]R-> reactors
+reactors  -[hidden]R-> publishers
 
 @enduml

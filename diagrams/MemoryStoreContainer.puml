@@ -38,7 +38,7 @@ rectangle "System Under Test + Simulators" <<Container>> {
     ]
 }
 
-tests     <-D->  aggregate  : transact\nagainst
+tests      -D->  aggregate  : act on
 tests     <-     caches     : may probe\neventually\nconsistent
 tests       -L-> eqxms      : may validate\nby probing
 
@@ -50,6 +50,6 @@ ingesters <.U.   inputs     : feed into
 
 reactors  <-     eqxms      : can subscribe to\n(TODO)
 reactors  <->    aggregate2 : run transactions against
-reactors  -U->   caches     : maintain\nviews\nin
+reactors  -U->   caches     : drive reactions by writing into
 
 @enduml

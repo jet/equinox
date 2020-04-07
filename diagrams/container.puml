@@ -57,7 +57,7 @@ apps         .> caches     : reference\neventually consistent
 apps        <-> aggs       : transact\nagainst
 
 aggs         -> equinox    : use
-equinox     <-> IStream    : Query/\nTransact
+equinox      -> IStream    : Query/\nTransact
 
 stores     .>   publishers : are followed by
 stores     .U.> reactors   : trigger
@@ -67,15 +67,16 @@ ingesters    -> aggs       : reconcile into
 ingesters    .> caches     : push into
 
 reactors  <-U-> aggs       : feed back into
-reactors     .> outputs    : emit summaries to
 reactors     .> caches     : maintain views in
 reactors   <-   ms         : can react to
 reactors   <-   cr         : can react to
-reactors   <-   er        : can react to
+reactors   <-   er         : can react to
+reactors     .> publishers : trigger
 
 publishers   .> outputs    : emit notifications to
-publishers <--  cr        : can feed from
-publishers <--  er        : can feed from
+publishers   .> outputs    : render events to
+publishers <--  cr         : can feed from
+publishers <--  er         : can feed from
 
 ms           .> IStream    : implements
 es           -> ICache
