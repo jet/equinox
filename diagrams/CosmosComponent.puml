@@ -24,13 +24,13 @@ rectangle "Consistent Processing" <<Container>> {
     }
     frame Store {
         rectangle "Equinox.Cosmos" <<Component>> {
+            rectangle eqxcosmos <<Component>> [
+                Equinox.Cosmos
+            ]
             database memorycache <<Internal>> [
                 **System.MemoryCache**
                 StreamName ->
                 etag+version+state
-            ]
-            rectangle eqxcosmos <<Component>> [
-                Equinox.Cosmos
             ]
         }
     }
@@ -43,7 +43,7 @@ cloud "CosmosDB Database D" as cosmos <<Exernal>> {
 }
 
 together {
-    rectangle "**Publishers**" <<External Container>> as projectors {
+    rectangle "**Publishers**" <<External Container>> as publishers {
         rectangle projector <<External Component>> [
             **Publisher**
         ]
@@ -55,10 +55,7 @@ together {
     }
     database aux <<External>> [
         **Aux CosmosDB**
-        CheckpointA0 CheckpointA1
-        CheckpointB0 CheckpointB1
-        HostALease0 HostALease1
-        HostBLease0 HostBLease1
+        Checkpoints/Leases
     ]
     rectangle "**Reactors**" <<External Container>> as reactors {
         rectangle reactor <<External Component>> [
@@ -98,21 +95,22 @@ cosmos1      -> cfp1        : continuously queries
 
 cfp0      <->   aux         : keeps checkpoints in\nnegotiates leases via
 cfp1      <->   aux         : keeps checkpoints in\nnegotiates leases via
-cfp0      <.>   projector   : projects events from
-cfp1      <.>   reactor     : tracks relevant events filtered from
+cfp0      <.>   publishers  : projects events from
+cfp1      <.>   reactors    : tracks relevant events filtered from
 
-projector    -> outputs     : emits to
+publishers -> outputs     : emits to
 
-reactor      .> caches      : maintains views in
-reactor      -> outputs     : emits to
+reactors     .> caches      : maintains views in
+reactors     .> publishers  : compose notificatons for
 
-apps      <-[hidden]L-> aggregate
+apps      <-[hidden]U-> aggregate
+apps      <-[hidden]D-> caches
 aggregate <-[hidden]L-> eqx
 eqxcosmos <-[hidden]L-> stream
 eqxcosmos <-[hidden]L-> memorycache
 stream    <-[hidden]D-> cosmos
-reactor   <-[hidden]U-> caches
-projector <-[hidden]U-> aux
-cosmos0   <-[hidden]D-> reactors
+cosmos0   <-[hidden]D-> publishers
+publishers<-[hidden]D-> aux
+publishers<-[hidden]U-> outputs
 
 @enduml

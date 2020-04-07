@@ -22,7 +22,16 @@ The following diagrams are based on the style defined in [@simonbrowndotje](http
 
 Equinox and Propulsion together provide a loosely related set of libraries that you can leverage in an application as you see fit. These diagrams are intended to give a rough orientation; what you actually build is up to you...
 
+Equinox focuses on the **Consistent Processing** elements of building an event-sourced system, offering tailored components that interact with a specific **Consistent Event Store**, as laid out here in this [C4](https://c4model.com) System Context Diagram:
+
 ![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
+
+:point_up: Propulsion elements (which we consider External to Equinox) support the building of complementary facilities as part of an overall Application:
+
+- **Ingesters**: read stuff from outside the Bounded Context of the System. This kind of service covers aspects such as feeding reference data into **Read Models**, ingesting changes into a consistent model via **Consistent Processing**. _These services are not acting in reaction to events emanating from the **Consistent Event Store**, as opposed to..._
+- **Publishers**: react to events as they are arrive from the **Consistent Event Store** by filtering, rendering and producing to feeds for downstreams. _While these services may in some cases rely on synchronous queries via **Consistent Processing**, it's never transacting or driving follow-on work; which brings us to..._
+- **Reactors**: drive reactive actions triggered by either upstream feeds, or events observed in the **Consistent Event Store**. _These services handle anything beyond the duties of **Ingesters** or **Publishers**, and will often drive follow-on processing via Process Managers and/or transacting via **Consistent Processing**. In some cases, a reactor app's function may be to progressively compose a notification for a **Publisher** to eventually publish._
+
 
 ## Container diagram
 

@@ -1,4 +1,4 @@
-@startuml
+    @startuml
 !includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
 
 title System Context Diagram for Equinox (+Propulsion)
@@ -11,7 +11,7 @@ rectangle services <<System>> [
     __Equinox__
     Executing Commands
     Making Decisions
-    Querying syßnchronously
+    Querying synchronously
 ]
 
 database stores <<Internal>> [
@@ -23,21 +23,21 @@ database stores <<Internal>> [
 ]
 
 database caches <<External>> [
-    **Read Model**
-    ____
+    **Read Models**
+    __(eventually consistent)__
     Document Stores 
     SQL DBs, REDIS, etc
 ]
 
 together {
-    rectangle ingesters <<System>> [
+    rectangle ingesters <<External System>> [
         **Ingesters**
         __Propulsion / FsKafka / Equinox__
         Sync from reference data
         Change Data Capture
         Event Carried State Transfer
     ]
-    rectangle reactors <<System>> [
+    rectangle reactors <<External System>> [
         **Reactors**
         __Propulsion / Equinox__
         Drive Reactions
@@ -71,17 +71,17 @@ apps       <-L-> services   : transact against /\nsynchronously query
 services   <-R-> stores     : Query/Transact\n[in terms of events]
 
 stores       ..> publishers : are followed by
-stores       ..> reactors   : trigger
+stores       ..> reactors   : fresh\nwrites trigger
 
-reactors     --> services   : feed back into
-reactors     ..> outputs    : generate complex\nnotifications for
-reactors    .U.> caches     : maintain views in
-
-publishers   ..> outputs    : emit complex notifications to
-publishers   ..> outputs    : render some events to
-
-ingesters  <..   inputs     : pull external\ndata from
-ingesters    --> services   : reconcile changes into
+ingesters  <..   inputs     : pull external\ndata from\nupstream
+ingesters    --> services   : reconcile upstream\nchanges into
 ingesters   .U.> caches     : push reference data into
+
+reactors     --> services   : manage follow-on reactions via
+reactors    .U.> caches     : maintain views in
+reactors      .> publishers : trigger
+
+publishers   ..> outputs    : emit notifications composed by\nreactors to
+publishers   ..> outputs    : render some\nevents directly to downstream
 
 @enduml
