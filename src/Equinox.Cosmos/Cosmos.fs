@@ -405,21 +405,20 @@ module private CancellationToken =
     let useOrCreate = function Some ct -> async.Return ct | _ -> Async.CancellationToken
 
 module Initialization =
-    let internal getOrCreateDatabase (sdk: CosmosClient) (dbName: string) (throughput: ResourceThroughput) (cancellationToken: CancellationToken option) = async {
-        let! ct = CancellationToken.useOrCreate cancellationToken
+    let internal getOrCreateDatabase (cosmosClient: CosmosClient) (dbName: string) (throughput: ResourceThroughput) = async {
+        let! ct = Async.CancellationToken
         let! response =
             match throughput with
-            | Default -> sdk.CreateDatabaseIfNotExistsAsync(id = dbName, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | SetIfCreating value -> sdk.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | Default -> cosmosClient.CreateDatabaseIfNotExistsAsync(id = dbName, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | SetIfCreating value -> cosmosClient.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
             | ReplaceAlways value -> async {
-                let! response = sdk.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+                let! response = cosmosClient.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
                 let! _ = response.Database.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
                 return response }
-
         return response.Database }
 
-    let internal getOrCreateContainer (db: CosmosDatabase) (props: ContainerProperties) (throughput: ResourceThroughput) (cancellationToken: CancellationToken option) = async {
-        let! ct = CancellationToken.useOrCreate cancellationToken
+    let internal getOrCreateContainer (db: CosmosDatabase) (props: ContainerProperties) (throughput: ResourceThroughput) = async {
+        let! ct = Async.CancellationToken
         let! response =
             match throughput with
             | Default -> db.CreateContainerIfNotExistsAsync(props, cancellationToken = ct) |> Async.AwaitTaskCorrect
@@ -441,51 +440,39 @@ module Initialization =
         for k in Batch.IndexedFields do props.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
         props
 
-    let createSyncStoredProcedure (container: CosmosContainer) (name) (cancellationToken) = async {
-        let! ct = CancellationToken.useOrCreate cancellationToken
+    let createSyncStoredProcedure (container: CosmosContainer) nameOverride = async {
+        let! ct = Async.CancellationToken
+        let name = nameOverride |> Option.defaultValue SyncStoredProcedure.defaultName
         try let! r = container.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(name, SyncStoredProcedure.body), cancellationToken = ct) |> Async.AwaitTaskCorrect
             return r.GetRawResponse().Headers.GetRequestCharge()
         with CosmosException ((CosmosStatusCode sc) as e) when sc = int System.Net.HttpStatusCode.Conflict -> return e.Response.Headers.GetRequestCharge() }
 
-    let initializeContainer (sdk: CosmosClient) (dbName: string) (containerName: string) (mode: Provisioning) (createStoredProcedure: bool) (storedProcedureName: string option) (cancellationToken: CancellationToken option) = async {
-        let! ct = CancellationToken.useOrCreate cancellationToken
+    let initializeContainer (cosmosClient: CosmosClient) (dbName: string) (containerName: string) (mode: Provisioning) (createStoredProcedure: bool, nameOverride: string option) = async {
         let dbThroughput = match mode with Provisioning.Database throughput -> throughput | _ -> Default
         let containerThroughput = match mode with Provisioning.Container throughput -> throughput | _ -> Default
-        let! db = getOrCreateDatabase sdk dbName dbThroughput (Some ct)
-        let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerName) containerThroughput (Some ct)
+        let! db = getOrCreateDatabase cosmosClient dbName dbThroughput
+        let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerName) containerThroughput
 
         if createStoredProcedure then
-            let syncStoredProcedureName = storedProcedureName |> Option.defaultValue SyncStoredProcedure.defaultName
-            do! createSyncStoredProcedure container syncStoredProcedureName (Some ct) |> Async.Ignore
+            let! (_ru : float) = createSyncStoredProcedure container nameOverride in ()
 
         return container }
 
-type StoreGateway(cosmosClient: CosmosClient, databaseId: string, containerId: string) =
-    let containerClient = lazy(cosmosClient.GetContainer(databaseId, containerId))
+type ContainerGateway(cosmosContainer : CosmosContainer) =
 
-    member val DatabaseId = databaseId with get
-    member val ContainerId = containerId with get
-    member val CosmosClient = cosmosClient with get
-
-    abstract member InitializeContainer: mode: Provisioning * createStoredProcedure: bool * ?storedProcedureName: string -> Async<CosmosContainer>
-    default __.InitializeContainer(mode, createStoredProcedure, storedProcedureName) =
-        Initialization.initializeContainer cosmosClient databaseId containerId mode createStoredProcedure storedProcedureName None
-
-    abstract member GetContainer: unit -> CosmosContainer
-    default __.GetContainer() =
-        containerClient.Value
+    member val CosmosContainer = cosmosContainer with get
 
     abstract member GetQueryIteratorByPage<'T> : query: QueryDefinition * ?options: QueryRequestOptions -> AsyncSeq<Page<'T>>
     default __.GetQueryIteratorByPage<'T>(query, ?options) =
-        __.GetContainer().GetItemQueryIterator<'T>(query, requestOptions = defaultArg options null).AsPages() |> AsyncSeq.ofAsyncEnum
+        cosmosContainer.GetItemQueryIterator<'T>(query, requestOptions = defaultArg options null).AsPages() |> AsyncSeq.ofAsyncEnum
 
-    abstract member TryReadItem<'T> : docId: string * partitionKey: string * ?options: ItemRequestOptions * ?cancellationToken : CancellationToken -> Async<float * ReadResult<'T>>
+    abstract member TryReadItem<'T> : docId: string * partitionKey: string * ?options: ItemRequestOptions * ?cancellationToken: CancellationToken -> Async<float * ReadResult<'T>>
     default __.TryReadItem<'T>(docId, partitionKey, ?options, ?cancellationToken) = async {
         let partitionKey = PartitionKey partitionKey
         let options = defaultArg options null
         let! ct = CancellationToken.useOrCreate cancellationToken
         // TODO use TryReadItemStreamAsync to avoid the exception https://github.com/Azure/azure-cosmos-dotnet-v3/issues/692#issuecomment-521936888
-        try let! item = async { return! __.GetContainer().ReadItemAsync<'T>(docId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
+        try let! item = async { return! cosmosContainer.ReadItemAsync<'T>(docId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
             // if item.StatusCode = System.Net.HttpStatusCode.NotModified then return item.RequestCharge, NotModified
             // NB `.Document` will NRE if a IfNoneModified precondition triggers a NotModified result
             // else
@@ -501,7 +488,7 @@ type StoreGateway(cosmosClient: CosmosClient, databaseId: string, containerId: s
         let! ct = CancellationToken.useOrCreate cancellationToken
         let partitionKey = PartitionKey partitionKey
         //let args = [| box tip; box index; box (Option.toObj etag)|]
-        return! __.GetContainer().Scripts.ExecuteStoredProcedureAsync<SyncResponse>(storedProcedureName, partitionKey, args, cancellationToken = ct) |> Async.AwaitTaskCorrect }
+        return! cosmosContainer.Scripts.ExecuteStoredProcedureAsync<SyncResponse>(storedProcedureName, partitionKey, args, cancellationToken = ct) |> Async.AwaitTaskCorrect }
 
 module Sync =
 
@@ -513,7 +500,7 @@ module Sync =
         | ConflictUnknown of Position
 
     type [<RequireQualifiedAccess>] Exp = Version of int64 | Etag of string | Any
-    let private run (gateway : StoreGateway, stream : string) (exp, req: Tip)
+    let private run (gateway : ContainerGateway, stream : string) (exp, req: Tip)
         : Async<float*Result> = async {
         let ep = match exp with Exp.Version ev -> Position.fromI ev | Exp.Etag et -> Position.fromEtag et | Exp.Any -> Position.fromAppendAtEnd
         let args = [| box req; box ep.index; box (Option.toObj ep.etag)|]
@@ -577,10 +564,10 @@ module Sync =
             } : Unfold)
 
 module internal Tip =
-    let private get (gateway : StoreGateway, stream : string) (maybePos: Position option) =
+    let private get (gateway : ContainerGateway, stream : string) (maybePos: Position option) =
         let ro = match maybePos with Some { etag=Some etag } -> ItemRequestOptions(IfNoneMatch=Nullable(Azure.ETag(etag))) | _ -> null
         gateway.TryReadItem(Tip.WellKnownDocumentId, stream, options = ro)
-    let private loggedGet (get : StoreGateway * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
+    let private loggedGet (get : ContainerGateway * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
         let! t, (ru, res : ReadResult<Tip>) = get (container,stream) maybePos |> Stopwatch.Time
         let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
@@ -608,7 +595,7 @@ module internal Tip =
         | ReadResult.Found tip -> return Result.Found (Position.fromTip tip, Enum.EventsAndUnfolds tip |> Array.ofSeq) }
 
  module internal Query =
-    let private mkQuery (gateway : StoreGateway, stream: string) maxItems (direction: Direction) startPos : AsyncSeq<Page<Batch>> =
+    let private mkQuery (gateway : ContainerGateway, stream: string) maxItems (direction: Direction) startPos : AsyncSeq<Page<Batch>> =
         let query =
             let root = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE c.id!=\"%s\"" Tip.WellKnownDocumentId
             let tail = sprintf "ORDER BY c.i %s" (if direction = Direction.Forward then "ASC" else "DESC")
@@ -617,7 +604,7 @@ module internal Tip =
             | Some { index = positionSoExclusiveWhenBackward } ->
                 let cond = if direction = Direction.Forward then "c.n > @startPos" else "c.i < @startPos"
                 QueryDefinition(sprintf "%s AND %s %s" root cond tail).WithParameter("@startPos", positionSoExclusiveWhenBackward)
-        let qro = new QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
+        let qro = QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
         gateway.GetQueryIteratorByPage<Batch>(query, options = qro)
 
     // Unrolls the Batches in a response - note when reading backwards, the events are emitted in reverse order of index
@@ -770,13 +757,13 @@ module internal Tip =
             let t = StopwatchInterval(startTicks, endTicks)
             log |> logQuery direction maxItems stream t (!responseCount,allEvents.ToArray()) -1L ru }
 
-type [<NoComparison>] Token = { gateway: StoreGateway; stream: string; pos: Position }
+type [<NoComparison>] Token = { stream: string; pos: Position }
 module Token =
-    let create (gateway,stream) pos : StreamToken =
-        {  value = box { gateway = gateway; stream = stream; pos = pos }
+    let create stream pos : StreamToken =
+        {  value = box { stream = stream; pos = pos }
            version = pos.index }
-    let (|Unpack|) (token: StreamToken) : StoreGateway*string*Position = let t = unbox<Token> token.value in t.gateway,t.stream,t.pos
-    let supersedes (Unpack (_,_,currentPos)) (Unpack (_,_,xPos)) =
+    let (|Unpack|) (token: StreamToken) : string*Position = let t = unbox<Token> token.value in t.stream,t.pos
+    let supersedes (Unpack (_,currentPos)) (Unpack (_,xPos)) =
         let currentVersion, newVersion = currentPos.index, xPos.index
         let currentETag, newETag = currentPos.etag, xPos.etag
         newVersion > currentVersion || currentETag <> newETag
@@ -790,8 +777,7 @@ module Internal =
     type LoadFromTokenResult<'event> = Unchanged | Found of StreamToken * 'event[]
 
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type StoreConnection(gateway: StoreGateway, [<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    member __.Gateway = gateway
+type RetryPolicy([<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.TipRetryPolicy = readRetryPolicy
     member __.QueryRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
@@ -810,7 +796,41 @@ type BatchingPolicy
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
 
-type StoreClient(conn : StoreConnection, batching : BatchingPolicy) =
+/// Holds Container state, coordinating initialization activities
+type internal ContainerInitializerGuard(gateway : ContainerGateway, ?initContainer : CosmosContainer -> Async<unit>) =
+    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init gateway.CosmosContainer))
+
+    member __.Gateway = gateway
+    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
+
+/// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
+type Containers
+    (    /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
+         categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
+         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
+         [<O; D(null)>]?disableInitialization) =
+    // Index of database*collection -> Initialization Context
+    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
+
+    /// Create a Container Map where all streams are stored within a single global <c>CosmosContainer</c>.
+    new (databaseId, containerId, [<O; D(null)>]?disableInitialization) =
+        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
+        let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
+        Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
+
+    member internal __.ResolveContainerGuardAndStreamName(cosmosClient : CosmosClient, createGateway, categoryName, streamId) : ContainerInitializerGuard * string =
+        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
+        let createContainerInitializerGuard (d, c) =
+            let init =
+                if Some true = disableInitialization then None
+                else Some (fun cosmosContainer -> Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore)
+            ContainerInitializerGuard
+                (   createGateway (cosmosClient.GetDatabase(d).GetContainer(c)),
+                    ?initContainer = init)
+        let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
+        g, streamName
+
+type ContainerClient(gateway : ContainerGateway, batching : BatchingPolicy, retry: RetryPolicy) =
     let (|FromUnfold|_|) (tryDecode: #IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#IEventData<_>[]) : Option<'event[]> =
         let items = ResizeArray()
         let isOrigin' e =
@@ -822,92 +842,57 @@ type StoreClient(conn : StoreConnection, batching : BatchingPolicy) =
         match Array.tryFindIndexBack isOrigin' xs with
         | None -> None
         | Some _ -> items.ToArray() |> Some
-    member __.Gateway = conn.Gateway
-    member __.LoadBackwardsStopping log (container, stream) (tryDecode,isOrigin): Async<StreamToken * 'event[]> = async {
-        let! pos, events = Query.walk log (container,stream) conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward None (tryDecode,isOrigin)
+    member __.LoadBackwardsStopping(log, stream, (tryDecode,isOrigin)): Async<StreamToken * 'event[]> = async {
+        let! pos, events = Query.walk log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward None (tryDecode,isOrigin)
         System.Array.Reverse events
-        return Token.create (container,stream) pos, events }
-    member __.Read log (container,stream) direction startPos (tryDecode,isOrigin) : Async<StreamToken * 'event[]> = async {
-        let! pos, events = Query.walk log (container,stream) conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
-        return Token.create (container,stream) pos, events }
-    member __.ReadLazy (batching: BatchingPolicy) log (container,stream) direction startPos (tryDecode,isOrigin) : AsyncSeq<'event[]> =
-        Query.walkLazy log (container,stream) conn.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
-    member __.LoadFromUnfoldsOrRollingSnapshots log (containerStream,maybePos) (tryDecode,isOrigin): Async<StreamToken * 'event[]> = async {
-        let! res = Tip.tryLoad log conn.TipRetryPolicy containerStream maybePos
+        return Token.create stream pos, events }
+    member __.Read(log, stream, direction, startPos, (tryDecode,isOrigin)) : Async<StreamToken * 'event[]> = async {
+        let! pos, events = Query.walk log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
+        return Token.create stream pos, events }
+    member __.ReadLazy(batching: BatchingPolicy, log, stream, direction, startPos, (tryDecode,isOrigin)) : AsyncSeq<'event[]> =
+        Query.walkLazy log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
+    member __.LoadFromUnfoldsOrRollingSnapshots(log, (stream,maybePos), (tryDecode,isOrigin)): Async<StreamToken * 'event[]> = async {
+        let! res = Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) maybePos
         match res with
-        | Tip.Result.NotFound -> return Token.create containerStream Position.fromKnownEmpty, Array.empty
+        | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
         | Tip.Result.NotModified -> return invalidOp "Not handled"
-        | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return Token.create containerStream pos, span
-        | _ -> return! __.LoadBackwardsStopping log containerStream (tryDecode,isOrigin) }
-    member __.GetPosition(log, containerStream, ?pos): Async<StreamToken> = async {
-        let! res = Tip.tryLoad log conn.TipRetryPolicy containerStream pos
+        | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return Token.create stream pos, span
+        | _ -> return! __.LoadBackwardsStopping(log,stream, (tryDecode,isOrigin)) }
+    member __.GetPosition(log, stream, ?pos): Async<StreamToken> = async {
+        let! res = Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) pos
         match res with
-        | Tip.Result.NotFound -> return Token.create containerStream Position.fromKnownEmpty
-        | Tip.Result.NotModified -> return Token.create containerStream pos.Value
-        | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create containerStream pos }
-    member __.LoadFromToken(log, (container,stream,pos), (tryDecode, isOrigin)): Async<LoadFromTokenResult<'event>> = async {
-        let! res = Tip.tryLoad log conn.TipRetryPolicy (container,stream) (Some pos)
+        | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
+        | Tip.Result.NotModified -> return Token.create stream pos.Value
+        | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create stream pos }
+    member __.LoadFromToken(log, (stream,pos), (tryDecode, isOrigin)): Async<LoadFromTokenResult<'event>> = async {
+        let! res = Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) (Some pos)
         match res with
-        | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create (container,stream) Position.fromKnownEmpty,Array.empty)
+        | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty,Array.empty)
         | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
-        | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return LoadFromTokenResult.Found (Token.create (container,stream) pos, span)
-        | _ ->  let! res = __.Read log (container,stream) Direction.Forward (Some pos) (tryDecode,isOrigin)
+        | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return LoadFromTokenResult.Found (Token.create stream pos, span)
+        | _ ->  let! res = __.Read(log, stream, Direction.Forward, Some pos, (tryDecode,isOrigin))
                 return LoadFromTokenResult.Found res }
-    member __.Sync log containerStream (exp, batch: Tip): Async<InternalSyncResult> = async {
+    member __.Sync(log, stream, (exp, batch: Tip)): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
-        let! wr = Sync.batch log conn.WriteRetryPolicy containerStream (exp,batch)
+        let! wr = Sync.batch log retry.WriteRetryPolicy (gateway,stream) (exp,batch)
         match wr with
-        | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (Token.create containerStream pos',events)
-        | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create containerStream pos')
-        | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create containerStream pos') }
+        | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (Token.create stream pos',events)
+        | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
+        | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
-/// Holds Container state, coordinating initialization activities
-type private ContainerWrapper(gateway : StoreGateway, ?initContainer : unit -> Async<unit>) =
-    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init ()))
-
-    member __.Gateway = gateway
-    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
-
-/// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type Containers(categoryAndIdToDatabaseContainerStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
-    // Index of database*collection -> Initialization Context
-    let wrappers = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerWrapper>()
-    new (databaseId, containerId) =
-        // TOCONSIDER - this works to support the Core.Events APIs
-        let genStreamName categoryName streamId = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        Containers(fun categoryName streamId -> databaseId, containerId, genStreamName categoryName streamId)
-
-    member internal __.Resolve(gateway : StoreGateway, categoryName, id, init) : (StoreGateway*string) * (unit -> Async<unit>) option =
-        let databaseId, containerName, streamName = categoryAndIdToDatabaseContainerStream categoryName id
-        let init = match disableInitialization with Some true -> None | _ -> Some init
-        let wrapped = wrappers.GetOrAdd((databaseId,containerName), fun _ -> ContainerWrapper(gateway, ?initContainer = init))
-        (wrapped.Gateway,streamName),wrapped.InitializationGate
-
-namespace Equinox.Cosmos
-
-open Azure.Cosmos
-open Equinox
-open Equinox.Core
-open Equinox.Cosmos.Store
-open FsCodec
-open FSharp.Control
-open Serilog
-open System
-open System.Text.Json
-
-type private Category<'event, 'state, 'context>(client : StoreClient, codec : IEventCodec<'event,JsonElement,'context>) =
+type internal Category<'event, 'state, 'context>(container : ContainerClient, codec : IEventCodec<'event,JsonElement,'context>) =
     let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: ITimelineEvent<JsonElement> seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
-    member __.Load includeUnfolds containerStream fold initial isOrigin (log : ILogger): Async<StreamToken * 'state> = async {
+    member __.Load(includeUnfolds, stream, fold, initial, isOrigin, log : ILogger): Async<StreamToken * 'state> = async {
         let! token, events =
-            if not includeUnfolds then client.LoadBackwardsStopping log containerStream (codec.TryDecode,isOrigin)
-            else client.LoadFromUnfoldsOrRollingSnapshots log (containerStream,None) (codec.TryDecode,isOrigin)
+            if not includeUnfolds then container.LoadBackwardsStopping(log, stream, (codec.TryDecode,isOrigin))
+            else container.LoadFromUnfoldsOrRollingSnapshots(log, (stream, None), (codec.TryDecode,isOrigin))
         return token, fold initial events }
-    member __.LoadFromToken (Token.Unpack streamPos, state: 'state as current) fold isOrigin (log : ILogger): Async<StreamToken * 'state> = async {
-        let! res = client.LoadFromToken(log, streamPos, (codec.TryDecode,isOrigin))
+    member __.LoadFromToken(Token.Unpack (stream,pos), state: 'state as current) fold isOrigin (log : ILogger): Async<StreamToken * 'state> = async {
+        let! res = container.LoadFromToken(log, (stream, pos), (codec.TryDecode,isOrigin))
         match res with
         | LoadFromTokenResult.Unchanged -> return current
         | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
-    member __.Sync(Token.Unpack (container,stream,pos), state as current, events, mapUnfolds, fold, isOrigin, compress, log, context): Async<SyncResult<'state>> = async {
+    member __.Sync(Token.Unpack (stream,pos), state as current, events, mapUnfolds, fold, isOrigin, compress, log, context): Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
         let encode e = codec.Encode(context,e)
         let exp,events,eventsEncoded,projectionsEncoded =
@@ -920,7 +905,7 @@ type private Category<'event, 'state, 'context>(client : StoreClient, codec : IE
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkUnfold compress baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
-        let! res = client.Sync log (container,stream) (exp,batch)
+        let! res = container.Sync(log, stream, (exp,batch))
         match res with
         | InternalSyncResult.Conflict (token',TryDecodeFold fold state events') -> return SyncResult.Conflict (async { return token', events' })
         | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (__.LoadFromToken current fold isOrigin log)
@@ -928,17 +913,17 @@ type private Category<'event, 'state, 'context>(client : StoreClient, codec : IE
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, StoreGateway*string,'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
+    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, string,'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
         let intercept streamName tokenAndState = async {
             let! _ = tee streamName tokenAndState
             return tokenAndState }
         let loadAndIntercept load streamName = async {
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
-        interface ICategory<'event, 'state, StoreGateway*string, 'context> with
-            member __.Load(log, (container,streamName), opt) : Async<StreamToken * 'state> =
-                loadAndIntercept (inner.Load(log, (container,streamName), opt)) streamName
-            member __.TrySync(log : ILogger, (Token.Unpack (_container,stream,_) as streamToken), state, events : 'event list, context, compress)
+        interface ICategory<'event, 'state, string, 'context> with
+            member __.Load(log, streamName, opt) : Async<StreamToken * 'state> =
+                loadAndIntercept (inner.Load(log, streamName, opt)) streamName
+            member __.TrySync(log : ILogger, (Token.Unpack (stream,_) as streamToken), state, events : 'event list, context, compress)
                 : Async<SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync(log, streamToken, state, events, context, compress)
                 match syncRes with
@@ -951,28 +936,28 @@ module Caching =
             (cache : ICache)
             (prefix : string)
             (slidingExpiration : TimeSpan)
-            (category : ICategory<'event, 'state, StoreGateway*string, 'context>)
-            : ICategory<'event, 'state, StoreGateway*string, 'context> =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+            (category : ICategory<'event, 'state, string, 'context>)
+            : ICategory<'event, 'state, string, 'context> =
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
         let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
         CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
-type private Folder<'event, 'state, 'context>
+type internal Folder<'event, 'state, 'context>
     (   category: Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state,
         isOrigin: 'event -> bool,
         mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
-    let batched log containerStream = category.Load inspectUnfolds containerStream fold initial isOrigin log
-    interface ICategory<'event, 'state, StoreGateway*string, 'context> with
-        member __.Load(log, (container,streamName), opt): Async<StreamToken * 'state> =
+    let batched log stream = category.Load(inspectUnfolds, stream, fold, initial, isOrigin, log)
+    interface ICategory<'event, 'state, string, 'context> with
+        member __.Load(log, streamName, opt): Async<StreamToken * 'state> =
             match readCache with
-            | None -> batched log (container,streamName)
+            | None -> batched log streamName
             | Some (cache : ICache, prefix : string) -> async {
                 match! cache.TryGet(prefix + streamName) with
-                | None -> return! batched log (container,streamName)
-                | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
+                | None -> return! batched log streamName
+                | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState
                 | Some tokenAndState -> return! category.LoadFromToken tokenAndState fold isOrigin log }
         member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context, compress)
             : Async<SyncResult<'state>> = async {
@@ -981,24 +966,16 @@ type private Folder<'event, 'state, 'context>
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
-/// Defines a set of related access policies for a given CosmosDb, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type Context
-    (   gateway: StoreGateway,
-        ?defaultMaxItems: int,
-        ?getDefaultMaxItems: unit -> int,
-        ?maxRequests: int,
-        ?readRetryPolicy: IRetryPolicy,
-        ?writeRetryPolicy: IRetryPolicy ) =
+namespace Equinox.Cosmos
 
-    let conn = StoreConnection(gateway, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
-    let batchingPolicy = BatchingPolicy(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
-    let client = StoreClient(conn, batchingPolicy)
-    let init = fun () -> Initialization.createSyncStoredProcedure (gateway.GetContainer()) SyncStoredProcedure.defaultName None |> Async.Ignore
-    let containers = Containers(gateway.DatabaseId, gateway.ContainerId)
-
-    member __.Client = client
-    member internal __.ResolveContainerStream(categoryName, id) : (StoreGateway*string) * (unit -> Async<unit>) option =
-        containers.Resolve(client.Gateway, categoryName, id, init)
+open Azure.Cosmos
+open Equinox
+open Equinox.Core
+open Equinox.Cosmos.Store
+open FsCodec
+open FSharp.Control
+open Serilog
+open System
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
@@ -1046,6 +1023,39 @@ type AccessStrategy<'event,'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
+/// Holds all relevant state for a Store within a given CosmosDB Database
+/// - The (singleton) CosmosDB CosmosClient (there should be a single one of these per process)
+type Client
+    (   cosmosClient : CosmosClient,
+        /// Singleton used to cache initialization state per <c>CosmosContainer</c>.
+        containers : Containers,
+        /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+        ?createGateway) =
+    let createGateway = match createGateway with Some creator -> creator | None -> ContainerGateway
+    new (cosmosClient, databaseId : string, containerId : string,
+         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
+         [<O; D(null)>]?disableInitialization,
+         /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+         [<O; D(null)>]?createGateway : CosmosContainer -> ContainerGateway) =
+        let containers = Containers(databaseId, containerId, ?disableInitialization = disableInitialization)
+        Client(cosmosClient, containers, ?createGateway = createGateway)
+    member __.CosmosClient = cosmosClient
+    member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) =
+        containers.ResolveContainerGuardAndStreamName(cosmosClient, createGateway, categoryName, streamId)
+
+/// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
+type Context(client : Client, batchingPolicy, retryPolicy) =
+    new(client : Client, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
+        let retry = RetryPolicy(?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
+        let batching = BatchingPolicy(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
+        Context(client, batching, retry)
+    member __.Batching = batchingPolicy
+    member __.Retries = retryPolicy
+    member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
+        let cg, streamId = client.ResolveContainerGuardAndStreamName(categoryName, streamId)
+        let cc = ContainerClient(cg.Gateway, batchingPolicy, retryPolicy)
+        cc, streamId, cg.InitializationGate
+
 type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, access) =
     let readCacheOption =
         match caching with
@@ -1059,15 +1069,18 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state  -> unfold state)
         | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
         | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         Choice3Of3 transmute
-    let cosmosCat = Category<'event, 'state, 'context>(context.Client, codec)
-    let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
-    let category : ICategory<_, _, StoreGateway*string, 'context> =
-        match caching with
-        | CachingStrategy.NoCaching -> folder :> _
-        | CachingStrategy.SlidingWindow(cache, window) ->
-            Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+    let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<_, _, string, 'context>>()
+    let resolveCategory (categoryName, container) =
+        let createCategory _name =
+            let cosmosCat = Category<'event, 'state, 'context>(container, codec)
+            let folder = Store.Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
+            match caching with
+            | CachingStrategy.NoCaching -> folder :> ICategory<_, _, string, 'context>
+            | CachingStrategy.SlidingWindow(cache, window) -> Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+        categories.GetOrAdd(categoryName, createCategory)
 
-    let resolveStream (streamId, maybeContainerInitializationGate) opt context compress =
+    let resolveStream (categoryName, container, streamId, maybeContainerInitializationGate) opt context compress =
+        let category = resolveCategory (categoryName, container)
         { new IStream<'event, 'state> with
             member __.Load log = category.Load(log, streamId, opt)
             member __.TrySync(log: ILogger, token: StreamToken, originState: 'state, events: 'event list) =
@@ -1077,79 +1090,67 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
                     do! init ()
                     return! category.TrySync(log, token, originState, events, context, compress) } }
 
-    let resolveTarget = function
-        | StreamName.CategoryAndId (categoryName, streamId) -> context.ResolveContainerStream(categoryName, streamId)
+    let resolveStreamConfig = function
+        | StreamName.CategoryAndId (categoryName, streamId) ->
+            let containerClient, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
+            categoryName, containerClient, streamId, init
 
     member __.Resolve
         (   streamName : StreamName,
+            /// Resolver options
             [<O; D null>]?option,
+            /// Context to be passed to IEventCodec
             [<O; D null>]?context,
             /// Determines whether the data and metadata payloads of the `u`nfolds in the Tip document are base64 encoded and compressed; defaults to true
             [<O; D true>]?compressUnfolds) =
         let compress = defaultArg compressUnfolds true
-        match resolveTarget streamName, option with
-        | streamArgs,(None|Some AllowStale) -> resolveStream streamArgs option context compress
-        | (containerStream,maybeInit),Some AssumeEmpty ->
-            Stream.ofMemento (Token.create containerStream Position.fromKnownEmpty,initial) (resolveStream (containerStream,maybeInit) option context compress)
+        match resolveStreamConfig streamName, option with
+        | streamArgs,(None|Some AllowStale) ->
+            resolveStream streamArgs option context compress
+        | (_, _, streamId, _) as streamArgs,Some AssumeEmpty ->
+            let stream = resolveStream streamArgs option context compress
+            Stream.ofMemento (Token.create streamId Position.fromKnownEmpty,initial) stream
 
     member __.FromMemento
-        (   Token.Unpack (container,stream,_pos) as streamToken,
+        (   Token.Unpack (stream,_pos) as streamToken,
             state,
             /// Determines whether the data and metadata payloads of the `u`nfolds in the Tip document are base64 encoded and compressed; defaults to true
             [<O; D true>]?compressUnfolds) =
         let compress = defaultArg compressUnfolds true
         let skipInitialization = None
-        Stream.ofMemento (streamToken,state) (resolveStream ((container,stream),skipInitialization) None None compress)
+        let (categoryName, container, streamId, _maybeInit) = resolveStreamConfig (StreamName.parse stream)
+        let stream = resolveStream (categoryName, container, streamId, skipInitialization) None None compress
+        Stream.ofMemento (streamToken,state) stream
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
-    | UriAndKey of databaseUri:Uri * key:string
-    /// Implements connection string parsing logic curiously missing from the CosmosDB SDK
-    static member FromConnectionString (connectionString: string) =
-        match connectionString with
-        | _ when String.IsNullOrWhiteSpace connectionString -> nullArg "connectionString"
-        | Regex.Match "^\s*AccountEndpoint\s*=\s*([^;\s]+)\s*;\s*AccountKey\s*=\s*([^;\s]+)\s*;?\s*$" m ->
-            let uri = m.Groups.[1].Value
-            let key = m.Groups.[2].Value
-            UriAndKey (Uri uri, key)
-        | _ -> invalidArg "connectionString" "unrecognized connection string format; must be `AccountEndpoint=https://...;AccountKey=...=;`"
+    /// Separated Account Uri and Key (for interop with previous versions)
+    | AccountUriAndKey of databaseUri: Uri * key:string
+    /// Cosmos SDK Connection String
+    | ConnectionString of connectionString : string
 
-type StoreGatewayFactory
+type CosmosClientFactory
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
         maxRetryAttemptsOnRateLimitedRequests: int,
         /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
-        // naming matches SDK ver >=3
         maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
-        /// Log to emit connection messages to
-        log : ILogger,
         /// Connection limit for Gateway Mode (default 1000)
         [<O; D(null)>]?gatewayModeMaxConnectionLimit,
         /// Connection mode (default: ConnectionMode.Gateway (lowest perf, least trouble))
         [<O; D(null)>]?mode : ConnectionMode,
         /// consistency mode  (default: ConsistencyLevel.Session)
-        [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
+        [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel) =
 
-        /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
-        /// NB as this will enter server and client logs, it should not contain sensitive information
-        [<O; D(null)>]?tags : (string*string) seq) =
-    do if log = null then nullArg "log"
-
-    let logName (uri : Uri) name =
-        let name = String.concat ";" <| seq {
-            yield name
-            match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
-        let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
-        log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
-
-    /// ClientOptions for this Connector as configured
-    member val CosmosClientOptions =
+    /// CosmosClientOptions for this Connector as configured
+    member val Options =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
+        let serializerOptions = FsCodec.SystemTextJson.Options.CreateDefault(converters=[|FsCodec.SystemTextJson.Converters.JsonRecordConverter()|])
         let co =
             CosmosClientOptions(
                 MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout,
-                Serializer = CosmosJsonSerializer(FsCodec.SystemTextJson.Options.CreateDefault(converters=[|FsCodec.SystemTextJson.Converters.JsonRecordConverter()|])))
+                Serializer = CosmosJsonSerializer serializerOptions)
         match mode with
         | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
@@ -1168,20 +1169,10 @@ type StoreGatewayFactory
 //            co.TransportClientHandlerFactory <- inhibitCertCheck
         co
 
-    abstract member Create: name: string * discovery: Discovery * dbName: string * containerName: string * ?skipLog: bool -> StoreGateway
-    default __.Create
-        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
-            name, discovery : Discovery,
-            dbName: string,
-            containerName: string,
-            /// <c>true</c> to inhibit logging of client name
-            [<O; D null>]?skipLog) : StoreGateway =
-
-        let (Discovery.UriAndKey (databaseUri=uri; key=key)) = discovery
-        if skipLog <> Some true then logName uri name
-        let cosmosClient = new CosmosClient(string uri, key, __.CosmosClientOptions)
-
-        StoreGateway(cosmosClient, dbName, containerName)
+    abstract member Create: discovery: Discovery -> CosmosClient
+    default __.Create discovery = discovery |> function
+        | Discovery.AccountUriAndKey (databaseUri=uri; key=key) -> new CosmosClient(string uri, key, __.Options)
+        | Discovery.ConnectionString cs -> new CosmosClient(cs, __.Options)
 
 namespace Equinox.Cosmos.Core
 
@@ -1200,7 +1191,7 @@ type AppendResult<'t> =
 
 /// Encapsulates the core facilities Equinox.Cosmos offers for operating directly on Events in Streams.
 type Context
-    (   gateway : StoreGateway,
+    (   context : Equinox.Cosmos.Context, container : ContainerClient,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
@@ -1208,15 +1199,9 @@ type Context
         [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
         /// Alternate way of specifying defaultMaxItems which facilitates reading it from a cached dynamic configuration
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
-
     do if log = null then nullArg "log"
-    let conn = Equinox.Cosmos.Store.StoreConnection(gateway)
-    let containers = Containers(gateway.DatabaseId, gateway.ContainerId)
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
     let batching = BatchingPolicy(getDefaultMaxItems=getDefaultMaxItems)
-    let init = fun () -> Initialization.createSyncStoredProcedure (gateway.GetContainer()) SyncStoredProcedure.defaultName None |> Async.Ignore
-    let client = StoreClient(conn, batching)
-
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
         fun _ ->
@@ -1225,16 +1210,23 @@ type Context
             false
 
     let yieldPositionAndData res = async {
-        let! (Token.Unpack (_,_,pos')), data = res
+        let! (Token.Unpack (_,pos')), data = res
         return pos', data }
 
-    member __.ResolveStream(streamName) = containers.Resolve(conn.Gateway, null, streamName, init)
-    member __.CreateStream(streamName) = __.ResolveStream streamName |> fst
+    new (client : Azure.Cosmos.CosmosClient, log, databaseId : string, containerId : string, ?defaultMaxItems, ?getDefaultMaxItems) =
+        let inner = Equinox.Cosmos.Context(Equinox.Cosmos.Client(client, databaseId, containerId))
+        let cc, _streamId, _init = inner.ResolveContainerClientAndStreamIdAndInit(null, null)
+        Context(inner, cc, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
+
+    member __.ResolveStream(streamName) =
+        let _cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
+        streamId, init
+    member __.CreateStream(streamName) : string = __.ResolveStream streamName |> fst
 
     member internal __.GetLazy((stream, startPos), ?batchSize, ?direction) : AsyncSeq<ITimelineEvent<JsonElement>[]> =
         let direction = defaultArg direction Direction.Forward
         let batching = BatchingPolicy(defaultArg batchSize batching.MaxItems)
-        client.ReadLazy batching log stream direction startPos (Some,fun _ -> false)
+        container.ReadLazy(batching, log, stream, direction, startPos, (Some,fun _ -> false))
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
         let direction = defaultArg direction Direction.Forward
@@ -1246,12 +1238,12 @@ type Context
                 match maxCount with
                 | Some limit -> maxCountPredicate limit
                 | None -> fun _ -> false
-            return! client.Read log stream direction startPos (Some,isOrigin) }
+            return! container.Read(log, stream, direction, startPos, (Some,isOrigin)) }
 
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
     member __.Sync(stream, ?position: Position) : Async<Position> = async {
-        let! (Token.Unpack (_,_,pos')) = client.GetPosition(log, stream, ?pos=position)
+        let! (Token.Unpack (_,pos')) = container.GetPosition(log, stream, ?pos=position)
         return pos' }
 
     /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
@@ -1265,7 +1257,7 @@ type Context
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
-    member __.Sync((container,stream), position, events: IEventData<_>[]) : Async<AppendResult<Position>> = async {
+    member __.Sync(stream, position, events: IEventData<_>[]) : Async<AppendResult<Position>> = async {
         // Writes go through the stored proc, which we need to provision per-collection
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
         //   to move this about before we reach a final destination in any case
@@ -1273,11 +1265,11 @@ type Context
         | None -> ()
         | Some init -> do! init ()
         let batch = Sync.mkBatch stream events Seq.empty
-        let! res = client.Sync log (container,stream) (Sync.Exp.Version position.index,batch)
+        let! res = container.Sync(log, stream, (Sync.Exp.Version position.index, batch))
         match res with
-        | InternalSyncResult.Written (Token.Unpack (_,_,pos)) -> return AppendResult.Ok pos
-        | InternalSyncResult.Conflict (Token.Unpack (_,_,pos),events) -> return AppendResult.Conflict (pos, events)
-        | InternalSyncResult.ConflictUnknown (Token.Unpack (_,_,pos)) -> return AppendResult.ConflictUnknown pos }
+        | InternalSyncResult.Written (Token.Unpack (_,pos)) -> return AppendResult.Ok pos
+        | InternalSyncResult.Conflict (Token.Unpack (_,pos),events) -> return AppendResult.Conflict (pos, events)
+        | InternalSyncResult.ConflictUnknown (Token.Unpack (_,pos)) -> return AppendResult.ConflictUnknown pos }
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Stream enables building equivalent equivalent idempotent handling with minimal code.

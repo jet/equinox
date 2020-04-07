@@ -77,8 +77,8 @@ and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-P"; Unique>]       PrettySkip
     | [<AltCommandLine "-T"; Unique>]       TimeRegular
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
-    | [<AltCommandLine "-E"; Unique>]      EventsOnly
-    | [<AltCommandLine "-b"; Unique>]      BatchSize of int
+    | [<AltCommandLine "-E"; Unique >]      EventsOnly
+    | [<AltCommandLine "-b"; Unique >]      BatchSize of int
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
@@ -105,7 +105,7 @@ and DumpInfo(args: ParseResults<DumpArguments>) =
         match args.TryGetSubCommand() with
         | Some (DumpArguments.Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-            storeLog, Storage.Cosmos.config (log,storeLog) storeConfig (Storage.Cosmos.Info sargs)
+            storeLog, Storage.Cosmos.config log storeConfig (Storage.Cosmos.Info sargs)
         | Some (DumpArguments.Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             storeLog, Storage.EventStore.config (log,storeLog) storeConfig sargs
@@ -179,7 +179,7 @@ and TestInfo(args: ParseResults<TestArguments>) =
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
             log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", __.Options)
-            storeLog, Storage.Cosmos.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
+            storeLog, Storage.Cosmos.config log (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
         | Some (Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
@@ -306,20 +306,19 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
 module CosmosInit =
     open Equinox.Cosmos.Store
 
-    let conn (log,verboseConsole,maybeSeq) (sargs : ParseResults<Storage.Cosmos.Arguments>) =
-        let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-        let discovery, dName, cName, factory = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
-        storeLog, factory, discovery, dName, cName
+    let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
+        let cosmosClient, dName, cName = Storage.Cosmos.connection log (Storage.Cosmos.Info sargs)
+        cosmosClient, dName, cName
 
-    let containerAndOrDb (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitArguments>) =
+    let containerAndOrDb (log: ILogger) (iargs: ParseResults<InitArguments>) =
         match iargs.TryGetSubCommand() with
         | Some (InitArguments.Cosmos sargs) ->
             let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
             let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database (ReplaceAlways rus) else Provisioning.Container (ReplaceAlways rus)
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
-            let _storeLog, factory, discovery, dName, cName = conn (log,verboseConsole,maybeSeq) sargs
+            let cosmosClient, dName, cName = conn log sargs
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            factory.Create(appName, discovery, dName, cName).InitializeContainer(mode, not skipStoredProc) |> ignore
+            Equinox.Cosmos.Store.Initialization.initializeContainer cosmosClient dName cName mode (not skipStoredProc, None) |> Async.Ignore |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint"
 
 module SqlInit =
@@ -342,14 +341,14 @@ module CosmosStats =
         member container.QueryValue<'T>(sqlQuery : string) =
             let query : seq<'T> = container.GetItemQueryIterator<'T>(sqlQuery) |> AsyncSeq.ofAsyncEnum |> AsyncSeq.toBlockingSeq
             query |> Seq.exactlyOne
-    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
+    let run (log : ILogger) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
         | Some (StatsArguments.Cosmos sargs) ->
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let _storeLog,factory,discovery,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
-            let client = factory.Create(appName, discovery, dName, cName)
+            let cosmosClient, dName, cName = CosmosInit.conn log sargs
+            let container = cosmosClient.GetDatabase(dName).GetContainer(cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
@@ -357,7 +356,7 @@ module CosmosStats =
             log.Information("Computing {measures} ({mode})", Seq.map fst ops, (if inParallel then "in parallel" else "serially"))
             ops |> Seq.map (fun (name,sql) -> async {
                     log.Debug("Running query: {sql}", sql)
-                    let res = client.GetContainer().QueryValue<int>(sql)
+                    let res = container.QueryValue<int>(sql)
                     log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.Sequential
                 |> Async.Ignore
@@ -463,10 +462,10 @@ let main argv =
         let verbose = args.Contains Verbose
         use log = createDomainLog verbose verboseConsole maybeSeq
         try match args.GetSubCommand() with
-            | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs
+            | Init iargs -> CosmosInit.containerAndOrDb log iargs
             | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
             | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
-            | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
+            | Stats sargs -> CosmosStats.run log sargs |> Async.RunSynchronously
             | Run rargs ->
                 let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
                 LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs

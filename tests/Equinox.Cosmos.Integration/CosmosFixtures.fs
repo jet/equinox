@@ -13,27 +13,33 @@ module Option =
 let private read env = Environment.GetEnvironmentVariable env |> Option.ofObj
 let (|Default|) def name = (read name),def ||> defaultArg
 
-let dbId = read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test"
-let cId = read "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test"
+let private databaseId = read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test"
+let private containerId = read "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test"
 
 let private connectToCosmos batchSize client  =
     Context(client, defaultMaxItems = batchSize)
 
-let createSpecifiedCosmosOrSimulatorClient log =
+let createSpecifiedCosmosOrSimulatorClient (log : Serilog.ILogger) =
     let createClient name discovery =
-        StoreGatewayFactory(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-            .Create(name, discovery, dbId, cId)
+        let factory = CosmosClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
+        let cosmosClient = factory.Create discovery
+        log.Information("Connection {name} to {endpoint}", name, cosmosClient.Endpoint)
+        Client(cosmosClient, databaseId, containerId)
 
     match read "EQUINOX_COSMOS_CONNECTION" with
     | None ->
-        Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
+        Discovery.AccountUriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
         |> createClient "localDocDbSim"
     | Some connectionString ->
-        Discovery.FromConnectionString connectionString
+        Discovery.ConnectionString connectionString
         |> createClient "EQUINOX_COSMOS_CONNECTION"
 
 let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) batchSize =
     createSpecifiedCosmosOrSimulatorClient log
     |> connectToCosmos batchSize
+
+let createSpecifiedCoreContext log defaultBatchSize =
+    let client = createSpecifiedCosmosOrSimulatorClient log
+    Equinox.Cosmos.Core.Context(client.CosmosClient, log, databaseId, containerId, ?defaultMaxItems = defaultBatchSize)
 
 let defaultBatchSize = 500

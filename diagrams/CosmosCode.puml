@@ -1,5 +1,5 @@
 @startuml
-title Code diagram for Equinox.EventStore Query operation, with empty cache and nothing written to the stream yet
+title Code diagram for Equinox.Cosmos Query operation, with empty cache and nothing written to the stream yet
 
 actor Caller order 20 
 box "Equinox.Stream"
