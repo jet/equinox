@@ -32,7 +32,6 @@ Equinox focuses on the **Consistent Processing** elements of building an event-s
 - **Publishers**: react to events as they are arrive from the **Consistent Event Store** by filtering, rendering and producing to feeds for downstreams. _While these services may in some cases rely on synchronous queries via **Consistent Processing**, it's never transacting or driving follow-on work; which brings us to..._
 - **Reactors**: drive reactive actions triggered by either upstream feeds, or events observed in the **Consistent Event Store**. _These services handle anything beyond the duties of **Ingesters** or **Publishers**, and will often drive follow-on processing via Process Managers and/or transacting via **Consistent Processing**. In some cases, a reactor app's function may be to progressively compose a notification for a **Publisher** to eventually publish._
 
-
 ## Container diagram
 
 The Systems and Components involved break out roughly like this:
@@ -152,66 +151,68 @@ Event Sourcing is easier _and harder_ than you think. This document is not a tut
 Term | Description
 -----|------------
 Aggregate | Boundary within which a set of Invariants are to be preserved across a set of related Entities and Value Objects
-Append | the act of adding Events reflecting a Decision to a Stream contingent on an Optimistic Concurrency Check
-Command | Details representing intent to run a Decision process based on a Stream; may result in Events being Appended
-CQRS | Command/Query Responsibility Segregation; Architectural principle critical to understand when building an Event Sourced System
-Decision | Application logic which operates on a Command and a State. Can yield a response and/or Events to Append to the Stream in order to manifest the intent implied by the Command on Stream for this Aggregate - the rules it considers in doing so are in effect the Invariants of the Aggregate
-Event | Details representing the facts of something that occurred, or a Decision that was made with regard to an Aggregate state as represented in a Stream
-Eventually Consistent | A Read Model can momentarily lag a Stream's current State as events are being Projected
-Fold | FP Term used to describe process of building State from the seqence of Events observed on a Stream
-[Idempotent](https://en.wikipedia.org/wiki/Idempotence) | Can safely be processed >1 time without adverse effects
-Invariants | Rules that an Aggregate's Fold and Decision process are together trying to uphold
-Optimistic Concurrency Check | Locking/transaction mechanism used to ensure that Appends to a Stream maintain the Aggregate's Invariants, especially in the presence of multiple concurrent writers
-Projection | Process whereby a Read Model tracks the State of Streams - lots of ways of skinning this cat, see Read Model, Query, Synchronous Query, Replication
-Projector | Process tracking new Events, triggering Projection or Replication activities
-Query | Eventually Consistent read from a Read Model
-Synchronous Query | Consistent read direct from Stream State, breaking CQRS and coupling implementation to the Events used to support the Decision process
-Reactions | Work carried out as a Projection which drives ripple effects arising from an Event being Appended
-Read Model | Denormalized data maintained by a Projection for the purposes of providing a Read Model based on a Projection (honoring CQRS) See also Synchronous Query, Replication
-Replication | Emitting Events pretty much directly as they are written (to support an Aggregate's Decision process) with a view to having a consumer traverse them to derive a Read Model or drive some form of synchronization process; aka Database Integration - building a Read Model or exposing Rich Events is preferred
-Rich Events | Building a Projector that prepares a feed of events in the Bounded Context in a form that's not simply Replication (sometimes referred to a Enriching Events)
-State | Information inferred from a Stream as part of a Decision process (or Synchronous Query)
-Store | Holds a set of Streams
+Append | Add Events reflecting a Decision to a Stream, contingent on an Optimistic Concurrency Check
+Bounded Context | Doman Driven Design term for a cohesive set of application functionality. Events should not pass directly between BCs (see Ingestion, Publishing)
+Command | Arguments supplied to one of a Stream's Decision functions; may result in Events being Appended
+CQRS | Command/Query Responsibility Segregation: Architectural principle critical to understand (_but not necessarily slavishly follow_) when building an Event Sourced System
+Decision | Application logic function representing the mapping of an Aggregate State together with arguments reflecting a Command. Yields a response and/or Events to Append to the Stream in order to manifest the intent implied; the rules it considers in doing so are in effect the Invariants of the Aggregate
+Event | Details representing the facts of something that has occurred, or a Decision that was made with regard to an Aggregate state as represented in a Stream
+Eventually Consistent | A Read Model can momentarily lag a Stream's current State as events are being Reacted to
+Fold | FP Term used to describe process of building State from the sequence of Events observed on a Stream
+[Idempotent](https://en.wikipedia.org/wiki/Idempotence) | Multiple executions have the same net effect; can safely be processed >1 time without adverse effects
+Ingestion | The act of importing and reconciling data from external systems into the Models and/or Read Models of a given Bounded Context
+Invariants | Rules that an Aggregate's Fold and Decision process work to uphold
+Optimistic Concurrency Check | (non-) Locking/transaction mechanism used to ensure that Appends to a Stream maintain the Aggregate's Invariants in the presence of multiple concurrent writers
+Projection | Umbrella term for the production, emission or synchronization of models or outputs from the Events being Appended to Streams. Lots of ways of skinning this cat, see Reactions, Read Model, Query, Synchronous Query, Publishing
+Publishing | Selectively rendering Rich Events for a downstream consumer to Ingest into an external Read Model (as opposed to Replication)
+Query | Eventually Consistent read from a Read Model managed via Projections. See also Synchronous Query
+Reactions | Work carried out as a Projection that drives ripple effects, including maintaining Read Models to support Queries or carrying out a chain of activities that conclude in the Publishing of Rich Events
+Read Models | Denormalized data maintained inside a Bounded Context as Reactions, honoring CQRS. As opposed to: Replication, Synchronous Query, Publishing
+Replication | Rendering Events as an unfiltered feed in order to facilitate generic comnsumption/syncing. Can be a useful tool to scale or decouple Publishing / Reactions from a Store's feed; _BUT: can just as easily be abused to be functionally equivalent to Database Integration -- maintaining a Read Model as a Reaction and/or deliberately Publishing Rich Events is preferred_
+Rich Events | Messages deliberately emitted from a Bounded Context (as opposed to Replication) via Publishing
+State | Information inferred from traching the sequence of Events on a Stream in support of Decision (and/or Synchronous Queries)
+Store | Holds Events for a Bounded Context as ordered Streams
 Stream | Ordered sequence of Events in a Store
+Synchronous Query | Consistent read direct from Stream State (breaking CQRS and coupling implementation to the State used to support the Decision process). See CQRS, Query, Reactions
 
 ## CosmosDb
 
 Term | Description
 -----|------------
-Change Feed | set of query patterns allowing one to run a continuous query reading Items (documents) in a Range in order of their last update
-Change Feed Processor | Library from Microsoft exposing facilities to Project from a Change Feed, maintaining Offsets per Physical Partition (Range) in the Lease Container
+Change Feed | set of query patterns enabling the running of continuous queries reading Items (documents) in a Range (physical partition) in order of their last update
+Change Feed Processor | Library from Microsoft exposing facilities to Project from a Change Feed, maintaining Offsets per Range of the Monitored Container in a Lease Container
 Container | logical space in a CosmosDb holding [loosely] related Items (aka Documents). Items bear logical Partition Keys. Formerly Collection. Can be allocated Request Units.
-CosmosDb | Microsoft Azure's managed document database system
+CosmosDB | Microsoft Azure's managed document database system
 Database | Group of Containers. Can be allocated Request Units.
-DocumentDb | Original offering of CosmosDb, now entitled the SQL Query Model, `Microsoft.Azure.DocumentDb.Client[.Core]`
-Document id | Identifier used to load a document (Item) directly without a Query
-Lease Container | Container, outside of the storage Container (to avoid feedback effects) that maintains a set of Offsets per Range, together with leases reflecting instances of the Change Feed Processors and their Range assignments (aka `aux` container)
-Partition Key | Logical key identifying a Stream (maps to a Range)
-Projector | Process running a [set of] Change Feed Processors across the Ranges of a Container in order to perform a global synchronization within the system across Streams
-Query | Using indices to walk a set of relevant items in a Container, yielding Items (documents)
-Range | Subset of the hashed key space of a collection held as a physical partition, can be split as part of scaling up the RUs allocated to a Container
+DocumentDb | Original offering of CosmosDB, now entitled the SQL Query Model, `Microsoft.Azure.DocumentDb.Client[.Core]`
+Document `id` | Identifier used to load a document (Item) directly as a _point read_ without a Query
+Lease Container | Container (separate from the Monitored Container to avoid feedback effects) that maintains a set of Offsets per Range, together with leases reflecting instances of the Change Feed Processors and their Range assignments (aka `aux` container)
+Partition Key | Logical key identifying a Stream (a Range is a set of logical partitions identified by such keys). A Logical Partition is limited to a max of 10GB (as is a Range)
+Projector | Process running a [set of] Change Feed Processors across the Ranges of a Monitored Container
+Query | Using indices to walk a set of relevant items in a Container, yielding Items (documents). Normally confined to a single Partition Key (unless one enters into the parallel universe of _cross-partition queries_)
+Range | Physical Partition managing a subset of the Partition Key space of a Container (based on hashing) consisting of colocated data running as an individual CosmosDB node. Can be split as part of scaling up the RUs allocated to a Container. Typically limited to a maximum capacity of 10 GB.
 Replay | The ability to re-run the processing of the Change Feed from the oldest Item (document) forward at will
-Request Units | Virtual units representing max query processor capacity per second provisioned within CosmosDb to host a Range of a Container
-Request Charge | Number of RUs charged for a specific action, taken from the RUs allocation for the relevant Range
-Stored Procedure | JavaScript code stored in a collection that can translate an input request to a set of actions to be transacted as a group within CosmosDb. Incurs equivalent Request Charges for work performed; can chain to a continuation internally after a read or write.
+Request Units | Pre-provisioned Virtual units representing used to govern the per-second capacity of a Range's query processor (while they are assigned at Container or Database level, the load shedding / rate limiting takes effect at the Range level)
+Request Charge | Number of Request Units charged for a specific action, apportioned against the RU cacity of the relevant Range for that second
+Stored Procedure | JavaScript code stored in a Container that (repeatedly) maps an input request to a set of actions to be transacted as a group within CosmosDB. Incurs equivalent Request Charges for work performed; can chain to a continuation internally after a read or write. Limited to 5 seconds of processing time per action.
 
 ## EventStore
 
 Term | Description
 -----|------------
-Category | Group of Streams bearing a common `CategoryName-<id>` stream name
-Event | json or blob representing an Event
+Category | Group of Streams bearing a common prefix `{Category}-{StreamId}`
+Event | json or blob payload, together with an Event Type name representing an Event
 EventStore | [Open source](https://eventstore.org) Event Sourcing-optimized data store server and programming model with powerful integrated projection facilities
-Stream | Core abstraction presented by the API
-WrongExpectedVersion | Low level exception thrown to communicate an Optimistic Concurrency Violation
+Rolling Snapshot | Event written to an EventStore stream in order to ensure minimal store roundtrips when there is a Cache miss
+Stream | Core abstraction presented by the API - an ordered sequence of Events
+`WrongExpectedVersion` | Low level exception thrown to convey the occurence of an Optimistic Concurrency Violation
 
 ## Equinox
 
 Term | Description
 -----|------------
 Cache | `System.Net.MemoryCache` or equivalent holding _State_ and/or `etag` information for a Stream with a view to reducing roundtrips, latency and/or Request Charges
-Rolling Snapshot | Event written to an EventStore stream in order to ensure minimal roundtrips to EventStore when there is a Cache miss
-Unfolds | Snapshot information, stored in an appropriate storage location (outside of a Stream's actual events), _but represented as Events_, to minimize Queries and the attendant Request Charges when there is a Cache miss
+Unfolds | Snapshot information, stored in an appropriate storage location (not as a Stream's actual Events), _but represented as Events_, to minimize Queries and the attendant Request Charges when there is a Cache miss
 
 # Programming Model
 
