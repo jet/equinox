@@ -6,16 +6,15 @@
 #I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
-#r "Newtonsoft.Json.dll"
+#r "System.Text.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.Core.dll"
 #r "Equinox.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
-#r "FsCodec.NewtonsoftJson.dll"
+#r "FsCodec.SystemTextJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
-#r "Microsoft.Azure.Cosmos.Client.dll"
-#r "Equinox.Cosmos.dll"
+#r "Equinox.CosmosStore.dll"
 
 open System
 
@@ -35,7 +34,7 @@ type Event =
     | Cleared
     | Snapshotted       of Snapshotted
     interface TypeShape.UnionContract.IUnionContract
-let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
@@ -116,21 +115,20 @@ let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let [<Literal>] appName = "equinox-tutorial"
 let cache = Equinox.Cache(appName, 20)
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 module Store =
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
-    let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=log)
-    let conn = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
-    let gateway = Gateway(conn, BatchingPolicy())
-
-    let store = Context(gateway, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
+    let cosmosClient = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
+    let client = CosmosStoreClient(cosmosClient, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let context = CosmosStoreContext(client)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory = 
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
-    let resolver = Resolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access)
-    let resolve id = Equinox.Stream(log, resolver.Resolve(streamName id), maxAttempts = 3)
+    let category = CosmosStoreCategory(Store.context, codec, fold, initial, Store.cacheStrategy, access=access)
+    let resolve id = Equinox.Stream(log, category.Resolve(streamName id), maxAttempts = 3)
 
 let service = Service(TodosCategory.resolve)
 

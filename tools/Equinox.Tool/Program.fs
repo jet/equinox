@@ -209,7 +209,7 @@ and Test = Favorite | SaveForLater | Todo
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes()
     let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let level =
@@ -273,7 +273,7 @@ module LoadTest =
             .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
-        let _ = Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink.Restart()
+        let _ = Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink.Restart()
         let _ = Equinox.EventStore.Log.InternalMetrics.Stats.LogSink.Restart()
         let _ = Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink.Restart()
         let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
@@ -285,7 +285,7 @@ module LoadTest =
 
         match storeConfig with
         | Some (Storage.StorageConfig.Cosmos _) ->
-            Equinox.Cosmos.Store.Log.InternalMetrics.dump log
+            Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Es _) ->
             Equinox.EventStore.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Sql _) ->
@@ -295,7 +295,7 @@ module LoadTest =
 let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"
@@ -304,7 +304,7 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     c.CreateLogger()
 
 module CosmosInit =
-    open Equinox.Cosmos.Store
+    open Equinox.CosmosStore.Core
 
     let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
         let cosmosClient, dName, cName = Storage.Cosmos.connection log (Storage.Cosmos.Info sargs)
@@ -318,7 +318,7 @@ module CosmosInit =
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
             let cosmosClient, dName, cName = conn log sargs
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            Equinox.Cosmos.Store.Initialization.initializeContainer cosmosClient dName cName mode (not skipStoredProc, None) |> Async.Ignore |> Async.RunSynchronously
+            Equinox.CosmosStore.Core.Initialization.initializeContainer cosmosClient dName cName mode (not skipStoredProc, None) |> Async.Ignore |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint"
 
 module SqlInit =

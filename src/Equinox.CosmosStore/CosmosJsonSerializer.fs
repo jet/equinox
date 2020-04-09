@@ -1,4 +1,4 @@
-﻿namespace Equinox.Cosmos.Store
+﻿namespace Equinox.CosmosStore.Core
 
 open Azure.Cosmos.Serialization
 open Equinox.Core

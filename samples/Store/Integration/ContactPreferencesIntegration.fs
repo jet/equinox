@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
 open Equinox
-open Equinox.Cosmos.Integration
+open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -21,12 +21,12 @@ let resolveStreamGesWithoutAccessStrategy gateway =
 
 let cosmosCodec = Domain.ContactPreferences.Events.codecStj (FsCodec.SystemTextJson.Options.Create())
 let resolveStreamCosmosWithLatestKnownEventSemantics context =
-    Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
+    CosmosStore.CosmosStoreCategory(context, cosmosCodec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamCosmosUnoptimized context =
-    Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve
+    CosmosStore.CosmosStoreCategory(context, cosmosCodec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve
 let resolveStreamCosmosRollingUnfolds context =
-    let access = Cosmos.AccessStrategy.Custom(Domain.ContactPreferences.Fold.isOrigin, Domain.ContactPreferences.Fold.transmute)
-    Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
+    let access = CosmosStore.AccessStrategy.Custom(Domain.ContactPreferences.Fold.isOrigin, Domain.ContactPreferences.Fold.transmute)
+    CosmosStore.CosmosStoreCategory(context, cosmosCodec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -64,7 +64,7 @@ type Tests(testOutputHelper) =
 
     let arrangeCosmos connect resolve batchSize = async {
         let log = createLog ()
-        let ctx: Cosmos.Context = connect log batchSize
+        let ctx: CosmosStore.CosmosStoreContext = connect log batchSize
         return Backend.ContactPreferences.create log (resolve ctx) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]

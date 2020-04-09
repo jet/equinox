@@ -6,18 +6,17 @@
 #I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
-#r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
 #r "Equinox.Core.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
-#r "FsCodec.NewtonsoftJson.dll"
+#r "FsCodec.SystemTextJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
-#r "Microsoft.Azure.Cosmos.Client.dll"
+#r "Azure.Cosmos.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
-#r "Equinox.Cosmos.dll"
+#r "Equinox.CosmosStore.dll"
 
 module Log =
 
@@ -27,11 +26,11 @@ module Log =
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
-    let dumpMetrics () = Equinox.Cosmos.Store.Log.InternalMetrics.dump log
+    let dumpMetrics () = Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
 
 module Favorites =
 
@@ -45,7 +44,7 @@ module Favorites =
             | Added of Item
             | Removed of Item
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>() // Coming soon, replace Newtonsoft with SystemTextJson and works same
+        let codec = FsCodec.SystemTextJson.Codec.Create<Event>() // Coming soon, replace Newtonsoft with SystemTextJson and works same
 
     module Fold =
 
@@ -82,21 +81,25 @@ module Favorites =
 
     module Cosmos =
 
-        open Equinox.Cosmos // Everything outside of this module is completely storage agnostic so can be unit tested simply and/or bound to any store
+        open Equinox.CosmosStore // Everything outside of this module is completely storage agnostic so can be unit tested simply and/or bound to any store
         let accessStrategy = AccessStrategy.Unoptimized // Or Snapshot etc https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies
         let create (context, cache) =
             let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-            let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-            create resolver.Resolve
+            let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+            create category.Resolve
 
 let [<Literal>] appName = "equinox-tutorial"
 
 module Store =
+
+    open Equinox.CosmosStore
+
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
-    let connector = Equinox.Cosmos.Connector(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5., log=Log.log)
-    let conn = connector.Connect(appName, Equinox.Cosmos.Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
-    let createContext () = Equinox.Cosmos.Context(conn, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let factory = Equinox.CosmosStore.CosmosStoreClientFactory(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
+    let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
+    let conn = CosmosStoreClient(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let createContext () = CosmosStoreContext(conn)
 
 let context = Store.createContext ()
 let cache = Equinox.Cache(appName, 20)

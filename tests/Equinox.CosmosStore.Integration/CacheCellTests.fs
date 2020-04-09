@@ -1,4 +1,4 @@
-﻿module Equinox.Cosmos.Integration.CacheCellTests
+﻿module Equinox.CosmosStore.Integration.CacheCellTests
 
 open Equinox.Core
 open Swensen.Unquote
@@ -54,7 +54,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
     else
         let! r = cell.AwaitValue()
         test <@ 1 = r @>
-    
+
     incr expectedValue
 
     let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.AwaitValue ()) |> Async.Parallel

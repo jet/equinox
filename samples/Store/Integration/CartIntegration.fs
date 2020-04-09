@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
 open Equinox
-open Equinox.Cosmos.Integration
+open Equinox.CosmosStore.Integration
 open Equinox.EventStore
 open Equinox.MemoryStore
 open Swensen.Unquote
@@ -25,9 +25,9 @@ let resolveGesStreamWithoutCustomAccessStrategy gateway =
 
 let cosmosCodec = Domain.Cart.Events.codecStj (FsCodec.SystemTextJson.Options.Create())
 let resolveCosmosStreamWithSnapshotStrategy context =
-    fun (id,opt) -> Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
+    fun (id,opt) -> CosmosStore.CosmosStoreCategory(context, cosmosCodec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
 let resolveCosmosStreamWithoutCustomAccessStrategy context =
-    fun (id,opt) -> Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
+    fun (id,opt) -> CosmosStore.CosmosStoreCategory(context, cosmosCodec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {
@@ -74,7 +74,7 @@ type Tests(testOutputHelper) =
 
     let arrangeCosmos connect resolve =
         let log = createLog ()
-        let ctx: Cosmos.Context = connect log defaultBatchSize
+        let ctx: CosmosStore.CosmosStoreContext = connect log defaultBatchSize
         Backend.Cart.create log (resolve ctx)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]

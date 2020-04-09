@@ -1,4 +1,4 @@
-﻿namespace Equinox.Cosmos.Store
+﻿namespace Equinox.CosmosStore.Core
 
 open Azure
 open Azure.Cosmos
@@ -966,12 +966,12 @@ type internal Folder<'event, 'state, 'context>
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
-namespace Equinox.Cosmos
+namespace Equinox.CosmosStore
 
 open Azure.Cosmos
 open Equinox
 open Equinox.Core
-open Equinox.Cosmos.Store
+open Equinox.CosmosStore.Core
 open FsCodec
 open FSharp.Control
 open Serilog
@@ -1025,7 +1025,7 @@ type AccessStrategy<'event,'state> =
 
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The (singleton) CosmosDB CosmosClient (there should be a single one of these per process)
-type Client
+type CosmosStoreClient
     (   cosmosClient : CosmosClient,
         /// Singleton used to cache initialization state per <c>CosmosContainer</c>.
         containers : Containers,
@@ -1038,17 +1038,17 @@ type Client
          /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
          [<O; D(null)>]?createGateway : CosmosContainer -> ContainerGateway) =
         let containers = Containers(databaseId, containerId, ?disableInitialization = disableInitialization)
-        Client(cosmosClient, containers, ?createGateway = createGateway)
+        CosmosStoreClient(cosmosClient, containers, ?createGateway = createGateway)
     member __.CosmosClient = cosmosClient
     member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) =
         containers.ResolveContainerGuardAndStreamName(cosmosClient, createGateway, categoryName, streamId)
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type Context(client : Client, batchingPolicy, retryPolicy) =
-    new(client : Client, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
+type CosmosStoreContext(client : CosmosStoreClient, batchingPolicy, retryPolicy) =
+    new(client : CosmosStoreClient, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
         let retry = RetryPolicy(?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
         let batching = BatchingPolicy(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
-        Context(client, batching, retry)
+        CosmosStoreContext(client, batching, retry)
     member __.Batching = batchingPolicy
     member __.Retries = retryPolicy
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
@@ -1056,7 +1056,7 @@ type Context(client : Client, batchingPolicy, retryPolicy) =
         let cc = ContainerClient(cg.Gateway, batchingPolicy, retryPolicy)
         cc, streamId, cg.InitializationGate
 
-type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, access) =
+type CosmosStoreCategory<'event, 'state, 'context>(context : CosmosStoreContext, codec, fold, initial, caching, access) =
     let readCacheOption =
         match caching with
         | CachingStrategy.NoCaching -> None
@@ -1073,7 +1073,7 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
     let resolveCategory (categoryName, container) =
         let createCategory _name =
             let cosmosCat = Category<'event, 'state, 'context>(container, codec)
-            let folder = Store.Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
+            let folder = Core.Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
             match caching with
             | CachingStrategy.NoCaching -> folder :> ICategory<_, _, string, 'context>
             | CachingStrategy.SlidingWindow(cache, window) -> Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
@@ -1129,7 +1129,7 @@ type Discovery =
     /// Cosmos SDK Connection String
     | ConnectionString of connectionString : string
 
-type CosmosClientFactory
+type CosmosStoreClientFactory
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
         requestTimeout: TimeSpan,
         /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
@@ -1174,9 +1174,8 @@ type CosmosClientFactory
         | Discovery.AccountUriAndKey (databaseUri=uri; key=key) -> new CosmosClient(string uri, key, __.Options)
         | Discovery.ConnectionString cs -> new CosmosClient(cs, __.Options)
 
-namespace Equinox.Cosmos.Core
+namespace Equinox.CosmosStore.Core
 
-open Equinox.Cosmos.Store
 open FsCodec
 open FSharp.Control
 open System.Runtime.InteropServices
@@ -1190,8 +1189,8 @@ type AppendResult<'t> =
     | ConflictUnknown of index: 't
 
 /// Encapsulates the core facilities Equinox.Cosmos offers for operating directly on Events in Streams.
-type Context
-    (   context : Equinox.Cosmos.Context, container : ContainerClient,
+type EventsContext
+    (   context : Equinox.CosmosStore.CosmosStoreContext, container : ContainerClient,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
@@ -1214,9 +1213,9 @@ type Context
         return pos', data }
 
     new (client : Azure.Cosmos.CosmosClient, log, databaseId : string, containerId : string, ?defaultMaxItems, ?getDefaultMaxItems) =
-        let inner = Equinox.Cosmos.Context(Equinox.Cosmos.Client(client, databaseId, containerId))
+        let inner = Equinox.CosmosStore.CosmosStoreContext(Equinox.CosmosStore.CosmosStoreClient(client, databaseId, containerId))
         let cc, _streamId, _init = inner.ResolveContainerClientAndStreamIdAndInit(null, null)
-        Context(inner, cc, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
+        EventsContext(inner, cc, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
 
     member __.ResolveStream(streamName) =
         let _cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
@@ -1311,43 +1310,43 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: Context) (streamName: string) (MinPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<ITimelineEvent<JsonElement>[]> =
+    let getAll (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<ITimelineEvent<JsonElement>[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: Context) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<JsonElement>[]> =
+    let get (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<JsonElement>[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: Context) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
+    let append (ctx: EventsContext) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
         ctx.Sync(ctx.CreateStream streamName, Position.fromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx: Context) (streamName: string) (events: IEventData<_>[]): Async<int64> =
+    let appendAtEnd (ctx: EventsContext) (streamName: string) (events: IEventData<_>[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.CreateStream streamName, events) |> stripPosition
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<JsonElement>[]> =
+    let getAllBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<JsonElement>[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<JsonElement>[]> =
+    let getBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<JsonElement>[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position
-    let getNextIndex (ctx: Context) (streamName: string) : Async<int64> =
+    let getNextIndex (ctx: EventsContext) (streamName: string) : Async<int64> =
         ctx.Sync(ctx.CreateStream streamName) |> stripPosition
