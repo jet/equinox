@@ -1,4 +1,4 @@
-    @startuml
+@startuml
 !includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
 
 title System Context Diagram for Equinox (+Propulsion)
