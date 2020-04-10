@@ -137,7 +137,9 @@ let [<Literal>] appName = "equinox-tutorial"
 let cache = Equinox.Cache(appName, 20)
 
 module EventStore =
+
     open Equinox.EventStore
+
     let snapshotWindow = 500
     // see QuickStart for how to run a local instance in a mode that emulates the behavior of a cluster
     let (host,username,password) = "localhost", "admin", "changeit"
@@ -154,13 +156,14 @@ module EventStore =
     let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
 
 module Cosmos =
-    open Equinox.CosmosStore
-    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
+    open Equinox.CosmosStore
+
+    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., mode=Azure.Cosmos.ConnectionMode.Gateway)
-    let cosmosClient = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
-    let client = CosmosStoreClient(cosmosClient, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
-    let context = CosmosStoreContext(client)
+    let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
+    let conn = CosmosStoreConnection(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let context = CosmosStoreContext(conn)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
     let category = CosmosStoreCategory(context, Events.codecStj, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)

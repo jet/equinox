@@ -22,9 +22,9 @@ let private connectToCosmos batchSize client  =
 let createSpecifiedCosmosOrSimulatorClient (log : Serilog.ILogger) =
     let createClient name discovery =
         let factory = CosmosStoreClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-        let cosmosClient = factory.Create discovery
-        log.Information("Connection {name} to {endpoint}", name, cosmosClient.Endpoint)
-        CosmosStoreClient(cosmosClient, databaseId, containerId)
+        let client = factory.Create discovery
+        log.Information("Connection {name} to {endpoint}", name, client.Endpoint)
+        CosmosStoreConnection(client, databaseId, containerId)
 
     match read "EQUINOX_COSMOS_CONNECTION" with
     | None ->
@@ -40,6 +40,6 @@ let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) batchSize =
 
 let createSpecifiedCoreContext log defaultBatchSize =
     let client = createSpecifiedCosmosOrSimulatorClient log
-    Equinox.CosmosStore.Core.EventsContext(client.CosmosClient, log, databaseId, containerId, ?defaultMaxItems = defaultBatchSize)
+    Equinox.CosmosStore.Core.EventsContext(client.Client, log, databaseId, containerId, ?defaultMaxItems = defaultBatchSize)
 
 let defaultBatchSize = 500

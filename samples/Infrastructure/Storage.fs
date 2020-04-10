@@ -70,20 +70,20 @@ module Cosmos =
     open Equinox.CosmosStore
     open Serilog
 
-    let connection (log: ILogger) (a : Info) =
+    let conn (log: ILogger) (a : Info) =
         let discovery = Discovery.ConnectionString a.Connection
-        let cosmosClient = CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(discovery)
+        let client = CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(discovery)
         log.Information("CosmosDb {mode} {connection} Database {database} Container {container}",
-            a.Mode, cosmosClient.Endpoint, a.Database, a.Container)
+            a.Mode, client.Endpoint, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
-        cosmosClient, a.Database, a.Container
+        client, a.Database, a.Container
     let config (log: ILogger) (cache, unfolds, batchSize) info =
-        let cosmosClient, dName, cName = connection log info
-        let client = CosmosStoreClient(cosmosClient, dName, cName)
-        let ctx = CosmosStoreContext(client, defaultMaxItems = batchSize)
+        let client, databaseId, containerName = conn log info
+        let conn = CosmosStoreConnection(client, databaseId, containerName)
+        let ctx = CosmosStoreContext(conn, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, dName, cName)
+        StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, databaseId, containerName)
 
 /// To establish a local node to run the tests against:
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows

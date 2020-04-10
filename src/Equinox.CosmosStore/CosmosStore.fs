@@ -405,14 +405,14 @@ module private CancellationToken =
     let useOrCreate = function Some ct -> async.Return ct | _ -> Async.CancellationToken
 
 module Initialization =
-    let internal getOrCreateDatabase (cosmosClient: CosmosClient) (dbName: string) (throughput: ResourceThroughput) = async {
+    let internal getOrCreateDatabase (client: CosmosClient) (dbName: string) (throughput: ResourceThroughput) = async {
         let! ct = Async.CancellationToken
         let! response =
             match throughput with
-            | Default -> cosmosClient.CreateDatabaseIfNotExistsAsync(id = dbName, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | SetIfCreating value -> cosmosClient.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | Default -> client.CreateDatabaseIfNotExistsAsync(id = dbName, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | SetIfCreating value -> client.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
             | ReplaceAlways value -> async {
-                let! response = cosmosClient.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+                let! response = client.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
                 let! _ = response.Database.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
                 return response }
         return response.Database }
@@ -447,10 +447,10 @@ module Initialization =
             return r.GetRawResponse().Headers.GetRequestCharge()
         with CosmosException ((CosmosStatusCode sc) as e) when sc = int System.Net.HttpStatusCode.Conflict -> return e.Response.Headers.GetRequestCharge() }
 
-    let initializeContainer (cosmosClient: CosmosClient) (dbName: string) (containerName: string) (mode: Provisioning) (createStoredProcedure: bool, nameOverride: string option) = async {
+    let initializeContainer (client: CosmosClient) (dbName: string) (containerName: string) (mode: Provisioning) (createStoredProcedure: bool, nameOverride: string option) = async {
         let dbThroughput = match mode with Provisioning.Database throughput -> throughput | _ -> Default
         let containerThroughput = match mode with Provisioning.Container throughput -> throughput | _ -> Default
-        let! db = getOrCreateDatabase cosmosClient dbName dbThroughput
+        let! db = getOrCreateDatabase client dbName dbThroughput
         let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerName) containerThroughput
 
         if createStoredProcedure then
@@ -818,14 +818,14 @@ type Containers
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
 
-    member internal __.ResolveContainerGuardAndStreamName(cosmosClient : CosmosClient, createGateway, categoryName, streamId) : ContainerInitializerGuard * string =
+    member internal __.ResolveContainerGuardAndStreamName(client : CosmosClient, createGateway, categoryName, streamId) : ContainerInitializerGuard * string =
         let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let createContainerInitializerGuard (d, c) =
             let init =
                 if Some true = disableInitialization then None
                 else Some (fun cosmosContainer -> Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore)
             ContainerInitializerGuard
-                (   createGateway (cosmosClient.GetDatabase(d).GetContainer(c)),
+                (   createGateway (client.GetDatabase(d).GetContainer(c)),
                     ?initContainer = init)
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
@@ -1025,34 +1025,35 @@ type AccessStrategy<'event,'state> =
 
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The (singleton) CosmosDB CosmosClient (there should be a single one of these per process)
-type CosmosStoreClient
-    (   cosmosClient : CosmosClient,
+/// - The (singleton) Core.Containers instance, which maintains the per Container Stored Procedure initialization state
+type CosmosStoreConnection
+    (   client : CosmosClient,
         /// Singleton used to cache initialization state per <c>CosmosContainer</c>.
         containers : Containers,
         /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
         ?createGateway) =
     let createGateway = match createGateway with Some creator -> creator | None -> ContainerGateway
-    new (cosmosClient, databaseId : string, containerId : string,
+    new (client, databaseId : string, containerId : string,
          /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
          [<O; D(null)>]?disableInitialization,
          /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
          [<O; D(null)>]?createGateway : CosmosContainer -> ContainerGateway) =
         let containers = Containers(databaseId, containerId, ?disableInitialization = disableInitialization)
-        CosmosStoreClient(cosmosClient, containers, ?createGateway = createGateway)
-    member __.CosmosClient = cosmosClient
+        CosmosStoreConnection(client, containers, ?createGateway = createGateway)
+    member __.Client = client
     member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) =
-        containers.ResolveContainerGuardAndStreamName(cosmosClient, createGateway, categoryName, streamId)
+        containers.ResolveContainerGuardAndStreamName(client, createGateway, categoryName, streamId)
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(client : CosmosStoreClient, batchingPolicy, retryPolicy) =
-    new(client : CosmosStoreClient, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
+type CosmosStoreContext(connection : CosmosStoreConnection, batchingPolicy, retryPolicy) =
+    new(client : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
         let retry = RetryPolicy(?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
         let batching = BatchingPolicy(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
         CosmosStoreContext(client, batching, retry)
     member __.Batching = batchingPolicy
     member __.Retries = retryPolicy
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
-        let cg, streamId = client.ResolveContainerGuardAndStreamName(categoryName, streamId)
+        let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
         let cc = ContainerClient(cg.Gateway, batchingPolicy, retryPolicy)
         cc, streamId, cg.InitializationGate
 
@@ -1213,7 +1214,7 @@ type EventsContext
         return pos', data }
 
     new (client : Azure.Cosmos.CosmosClient, log, databaseId : string, containerId : string, ?defaultMaxItems, ?getDefaultMaxItems) =
-        let inner = Equinox.CosmosStore.CosmosStoreContext(Equinox.CosmosStore.CosmosStoreClient(client, databaseId, containerId))
+        let inner = Equinox.CosmosStore.CosmosStoreContext(Equinox.CosmosStore.CosmosStoreConnection(client, databaseId, containerId))
         let cc, _streamId, _init = inner.ResolveContainerClientAndStreamIdAndInit(null, null)
         EventsContext(inner, cc, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
 

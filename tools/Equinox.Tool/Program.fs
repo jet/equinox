@@ -307,8 +307,8 @@ module CosmosInit =
     open Equinox.CosmosStore.Core
 
     let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
-        let cosmosClient, dName, cName = Storage.Cosmos.connection log (Storage.Cosmos.Info sargs)
-        cosmosClient, dName, cName
+        let client, databaseId, containerId = Storage.Cosmos.conn log (Storage.Cosmos.Info sargs)
+        client, databaseId, containerId
 
     let containerAndOrDb (log: ILogger) (iargs: ParseResults<InitArguments>) =
         match iargs.TryGetSubCommand() with
@@ -316,9 +316,9 @@ module CosmosInit =
             let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
             let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database (ReplaceAlways rus) else Provisioning.Container (ReplaceAlways rus)
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
-            let cosmosClient, dName, cName = conn log sargs
+            let client, databaseId, containerId = conn log sargs
             log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            Equinox.CosmosStore.Core.Initialization.initializeContainer cosmosClient dName cName mode (not skipStoredProc, None) |> Async.Ignore |> Async.RunSynchronously
+            Equinox.CosmosStore.Core.Initialization.initializeContainer client databaseId containerId mode (not skipStoredProc, None) |> Async.Ignore |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint"
 
 module SqlInit =
@@ -347,8 +347,8 @@ module CosmosStats =
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let cosmosClient, dName, cName = CosmosInit.conn log sargs
-            let container = cosmosClient.GetContainer(dName, cName)
+            let client, databaseId, containerId = CosmosInit.conn log sargs
+            let container = client.GetContainer(databaseId, containerId)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
