@@ -405,14 +405,14 @@ module private CancellationToken =
     let useOrCreate = function Some ct -> async.Return ct | _ -> Async.CancellationToken
 
 module Initialization =
-    let internal getOrCreateDatabase (client: CosmosClient) (dbName: string) (throughput: ResourceThroughput) = async {
+    let internal getOrCreateDatabase (client: CosmosClient) (databaseId: string) (throughput: ResourceThroughput) = async {
         let! ct = Async.CancellationToken
         let! response =
             match throughput with
-            | Default -> client.CreateDatabaseIfNotExistsAsync(id = dbName, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | SetIfCreating value -> client.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | Default -> client.CreateDatabaseIfNotExistsAsync(id = databaseId, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | SetIfCreating value -> client.CreateDatabaseIfNotExistsAsync(id = databaseId, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
             | ReplaceAlways value -> async {
-                let! response = client.CreateDatabaseIfNotExistsAsync(id = dbName, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+                let! response = client.CreateDatabaseIfNotExistsAsync(id = databaseId, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
                 let! _ = response.Database.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
                 return response }
         return response.Database }
@@ -429,8 +429,8 @@ module Initialization =
                 return response }
         return response.Container }
 
-    let internal getBatchAndTipContainerProps (containerName: string) =
-        let props = ContainerProperties(id = containerName, partitionKeyPath = sprintf "/%s" Batch.PartitionKeyField)
+    let internal getBatchAndTipContainerProps (containerId: string) =
+        let props = ContainerProperties(id = containerId, partitionKeyPath = sprintf "/%s" Batch.PartitionKeyField)
         props.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
         props.IndexingPolicy.Automatic <- true
         // Can either do a blacklist or a whitelist
@@ -447,11 +447,11 @@ module Initialization =
             return r.GetRawResponse().Headers.GetRequestCharge()
         with CosmosException ((CosmosStatusCode sc) as e) when sc = int System.Net.HttpStatusCode.Conflict -> return e.Response.Headers.GetRequestCharge() }
 
-    let initializeContainer (client: CosmosClient) (dbName: string) (containerName: string) (mode: Provisioning) (createStoredProcedure: bool, nameOverride: string option) = async {
+    let initializeContainer (client: CosmosClient) (databaseId: string) (containerId: string) (mode: Provisioning) (createStoredProcedure: bool, nameOverride: string option) = async {
         let dbThroughput = match mode with Provisioning.Database throughput -> throughput | _ -> Default
         let containerThroughput = match mode with Provisioning.Container throughput -> throughput | _ -> Default
-        let! db = getOrCreateDatabase client dbName dbThroughput
-        let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerName) containerThroughput
+        let! db = getOrCreateDatabase client databaseId dbThroughput
+        let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerId) containerThroughput
 
         if createStoredProcedure then
             let! (_ru : float) = createSyncStoredProcedure container nameOverride in ()

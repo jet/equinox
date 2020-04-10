@@ -79,11 +79,11 @@ module Cosmos =
             (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
         client, a.Database, a.Container
     let config (log: ILogger) (cache, unfolds, batchSize) info =
-        let client, databaseId, containerName = conn log info
-        let conn = CosmosStoreConnection(client, databaseId, containerName)
+        let client, databaseId, containerId = conn log info
+        let conn = CosmosStoreConnection(client, databaseId, containerId)
         let ctx = CosmosStoreContext(conn, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, databaseId, containerName)
+        StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, databaseId, containerId)
 
 /// To establish a local node to run the tests against:
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
