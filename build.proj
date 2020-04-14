@@ -18,6 +18,7 @@
     <Exec Command="dotnet pack src/Equinox.Core $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.Cosmos $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.EventStore.Grpc $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.SqlStreamStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.SqlStreamStore.MsSql $(Cfg) $(PackOptions)" />
