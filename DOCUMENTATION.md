@@ -104,23 +104,23 @@ In other processes (when a cache is not fully in sync), the sequence runs slight
 
 ![Equinox.EventStore/SqlStreamStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=3&fmt=svg)
 
-# Equinox.Cosmos
+# Equinox.CosmosStore
 
-## Container Diagram for `Equinox.Cosmos`
+## Container Diagram for `Equinox.CosmosStore`
 
-![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml?fmt=svg)
+![Equinox.CosmosStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml?fmt=svg)
 
-## Component Diagram for `Equinox.Cosmos`
+## Component Diagram for `Equinox.CosmosStore`
 
-![Equinox.Cosmos c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosComponent.puml?fmt=svg)
+![Equinox.CosmosStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosComponent.puml?fmt=svg)
 
-## Code Diagrams for `Equinox.Cosmos`
+## Code Diagrams for `Equinox.CosmosStore`
 
 This diagram walks through the basic sequence of operations, where:
 - this node has not yet read this stream (i.e. there's nothing in the Cache)
 - when we do read it, the Read call returns `404` (with a charge of `1 RU`)
 
-![Equinox.Cosmos c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=0&fmt=svg)
+![Equinox.CosmosStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=0&fmt=svg)
 
 Next, we extend the scenario to show:
 - how state held in the Cache influences the Cosmos APIs used
@@ -131,17 +131,17 @@ Next, we extend the scenario to show:
   - when there's conflict and we're retrying (re-run the decision the conflicting events the call to `Sync` yielded)
   - when there's conflict and we're giving up (throw `MaxAttemptsExceededException`)
 
-![Equinox.Cosmos c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=1&fmt=svg)
+![Equinox.CosmosStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=1&fmt=svg)
 
 After the write, we circle back to illustrate the effect of the caching when we have correct state (we get a `304 Not Mofified` and pay only `1 RU`)
 
-![Equinox.Cosmos c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=2&fmt=svg)
+![Equinox.CosmosStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=2&fmt=svg)
 
 In other processes (when a cache is not fully in sync), the sequence runs slightly differently
 - we read the _Tip_ document, and can work from that snapshot
 - the same fallback sequence shown in the initial read will take place if no suitable snapshot that passes the `isOrigin` predicate is found within the _Tip_
 
-![Equinox.Cosmos c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=3&fmt=svg)
+![Equinox.CosmosStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=3&fmt=svg)
 
 # Glossary
 
@@ -1018,7 +1018,7 @@ It can be useful to consider keeping snapshots in the auxiliary collection emplo
 
 This article provides a walkthrough of how `Equinox.Cosmos` encodes, writes and reads records from a stream under its control.
 
-The code (see [source](src/Equinox.Cosmos/Cosmos.fs#L6)) contains lots of comments and is intended to be read - this just provides some background.
+The code (see [source](src/Equinox.CosmosStore/CosmosStore.fs#L6)) contains lots of comments and is intended to be read - this just provides some background.
 
 ## Batches
 
@@ -1171,18 +1171,19 @@ let outputLog = LoggerConfiguration().WriteTo.NLog().CreateLogger()
 let gatewayLog = outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
 // When starting the app, we connect (once)
-let connector : Equinox.Cosmos.Connector =
-    Connector(
+let factory : Equinox.CosmosStore.CosmosStoreClientFactory =
+    CosmosStoreClientFactory(
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnThrottledRequests = 1,
         maxRetryWaitTimeInSeconds = 3,
         log = gatewayLog)
-let cnx = connector.Connect("Application.CommandProcessor", Discovery.FromConnectionString connectionString) |> Async.RunSynchronously
+let client = factory.Create(Discovery.ConnectionString connectionString)
 
 // If storing in a single collection, one specifies the db and collection
 // alternately use the overload that defers the mapping until the stream one is writing to becomes clear
-let containerMap = Containers("databaseName", "containerName")
-let ctx = Context(cnx, containerMap, gatewayLog)
+let connection = CosmosStoreConnection(client, "databaseName", "containerName")
+let storeContext = CosmosStoreContext(connection, "databaseName", "containerName")
+let ctx = EventsContext(storeContext, gatewayLog)
 
 //
 // Write an event

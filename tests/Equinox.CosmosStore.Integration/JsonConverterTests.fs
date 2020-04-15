@@ -1,12 +1,11 @@
-﻿module Equinox.Cosmos.Integration.JsonConverterTests
+﻿module Equinox.CosmosStore.Integration.JsonConverterTests
 
-open Equinox.Cosmos
-open Equinox.Cosmos.Store
+open Equinox.CosmosStore
+open Equinox.CosmosStore.Core
 open FsCheck.Xunit
 open Swensen.Unquote
 open System
 open System.Text.Json
-open Xunit
 
 type Embedded = { embed : string }
 type Union =
@@ -29,14 +28,14 @@ type Base64ZipUtf8Tests() =
 
         let encoded = eventCodec.Encode(None,value)
         let compressor = if compress then JsonCompressedBase64Converter.Compress else id
-        let e : Store.Unfold =
+        let e : Core.Unfold =
             {   i = 42L
                 c = encoded.EventType
                 d = compressor encoded.Data
                 m = Unchecked.defaultof<JsonElement>
                 t = DateTimeOffset.MinValue }
         let ser = FsCodec.SystemTextJson.Serdes.Serialize(e, defaultOptions)
-        let des = FsCodec.SystemTextJson.Serdes.Deserialize<Store.Unfold>(ser, defaultOptions)
+        let des = FsCodec.SystemTextJson.Serdes.Deserialize<Core.Unfold>(ser, defaultOptions)
         let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
         let decoded = eventCodec.TryDecode d |> Option.get
         test <@ value = decoded @>

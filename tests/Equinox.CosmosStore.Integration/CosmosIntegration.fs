@@ -1,8 +1,8 @@
-﻿module Equinox.Cosmos.Integration.CosmosIntegration
+﻿module Equinox.CosmosStore.Integration.CosmosIntegration
 
 open Domain
-open Equinox.Cosmos
-open Equinox.Cosmos.Integration.Infrastructure
+open Equinox.CosmosStore
+open Equinox.CosmosStore.Integration.Infrastructure
 open FSharp.UMX
 open Swensen.Unquote
 open System
@@ -13,24 +13,24 @@ module Cart =
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
     let codec = Domain.Cart.Events.codecStj IntegrationJsonSerializer.options
     let createServiceWithoutOptimization store log =
-        let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
+        let resolve (id,opt) = CosmosStoreCategory(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
     let projection = "Compacted",snd snapshot
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds store log =
         let unfArgs = Domain.Cart.Fold.isOrigin, fun _ -> Seq.empty
-        let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
+        let resolve (id,opt) = CosmosStoreCategory(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
     let createServiceWithSnapshotStrategy store log =
-        let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
+        let resolve (id,opt) = CosmosStoreCategory(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
     let createServiceWithSnapshotStrategyAndCaching store log cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolve (id,opt) = Resolver(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
+        let resolve (id,opt) = CosmosStoreCategory(store, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
     let createServiceWithRollingState store log =
         let access = AccessStrategy.RollingState Domain.Cart.Fold.snapshot
-        let resolve (id,opt) = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
+        let resolve (id,opt) = CosmosStoreCategory(store, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
 
 module ContactPreferences =
@@ -38,13 +38,13 @@ module ContactPreferences =
     let codec = Domain.ContactPreferences.Events.codecStj IntegrationJsonSerializer.options
     let createServiceWithoutOptimization createContext defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
         let context = createContext defaultBatchSize
-        let resolve = Resolver(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
+        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Backend.ContactPreferences.create log resolve
     let createService log store =
-        let resolve = Resolver(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
+        let resolve = CosmosStoreCategory(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
         Backend.ContactPreferences.create log resolve
     let createServiceWithLatestKnownEvent store log cachingStrategy =
-        let resolve = Resolver(store, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
+        let resolve = CosmosStoreCategory(store, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
         Backend.ContactPreferences.create log resolve
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)

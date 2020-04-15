@@ -1,17 +1,16 @@
 #I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
-#r "Newtonsoft.Json.dll"
 #r "TypeShape.dll"
 #r "Equinox.dll"
 #r "Equinox.Core.dll"
 #r "FSharp.UMX.dll"
 #r "FSCodec.dll"
-#r "FsCodec.NewtonsoftJson.dll"
-#r "Microsoft.Azure.Cosmos.Client.dll"
+#r "FsCodec.SystemTextJson.dll"
+#r "Azure.Cosmos.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
-#r "Equinox.Cosmos.dll"
+#r "Equinox.CosmosStore.dll"
 
 open FSharp.UMX
 
@@ -54,7 +53,7 @@ module FulfilmentCenter =
             | FcDetailsChanged of FcData
             | FcRenamed of FcName
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+        let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
 
     module Fold =
 
@@ -103,7 +102,7 @@ module FulfilmentCenter =
         member __.Read id : Async<Summary> = read id
         member __.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 open System
 
 module Log =
@@ -114,27 +113,27 @@ module Log =
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(Store.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Core.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
-    let dumpMetrics () = Store.Log.InternalMetrics.dump log
+    let dumpMetrics () = Core.Log.InternalMetrics.dump log
 
 module Store =
 
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let appName = "equinox-tutorial"
-    let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=Log.log)
-    let conn = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
-    let gateway = Gateway(conn, BatchingPolicy())
-    let context = Context(gateway, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., mode=Azure.Cosmos.ConnectionMode.Gateway)
+    let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
+    let conn = CosmosStoreConnection(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let context = CosmosStoreContext(conn)
     let cache = Equinox.Cache(appName, 20)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
 open FulfilmentCenter
 
-let resolver = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
-let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
+let category = CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
+let resolve id = Equinox.Stream(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 let service = Service(resolve)
 
 let fc = "fc0"

@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
 open Equinox
-open Equinox.Cosmos.Integration
+open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -21,12 +21,12 @@ let createServiceGes context log =
 
 let cosmosCodec = Domain.Favorites.Events.codecStj
 let createServiceCosmos context log =
-    let resolver = Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot)
+    let resolver = CosmosStore.CosmosStoreCategory(context, cosmosCodec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
     Backend.Favorites.create log resolver.Resolve
 
 let createServiceCosmosRollingState context log =
-    let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
-    let resolver = Cosmos.Resolver(context, cosmosCodec, fold, initial, Cosmos.CachingStrategy.NoCaching, access)
+    let access = CosmosStore.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
+    let resolver = CosmosStore.CosmosStoreCategory(context, cosmosCodec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
     Backend.Favorites.create log resolver.Resolve
 
 type Tests(testOutputHelper) =

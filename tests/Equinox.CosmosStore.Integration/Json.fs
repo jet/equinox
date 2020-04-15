@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.Cosmos.Integration.Json
+module Equinox.CosmosStore.Integration.Json
 
 open System
 open System.Text.Json.Serialization

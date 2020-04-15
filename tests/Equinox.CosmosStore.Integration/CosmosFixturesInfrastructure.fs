@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module Equinox.Cosmos.Integration.Infrastructure
+module Equinox.CosmosStore.Integration.Infrastructure
 
 open Domain
 open FsCheck
@@ -49,8 +49,8 @@ module SerilogHelpers =
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
-    open Equinox.Cosmos.Store
-    open Equinox.Cosmos.Store.Log
+    open Equinox.CosmosStore.Core
+    open Equinox.CosmosStore.Core.Log
     [<RequireQualifiedAccess>]
     type EqxAct =
         | Tip | TipNotFound | TipNotModified
@@ -68,7 +68,7 @@ module SerilogHelpers =
         | Event.SyncSuccess _ -> EqxAct.Append
         | Event.SyncResync _ -> EqxAct.Resync
         | Event.SyncConflict _ -> EqxAct.Conflict
-    let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Store.Log.Measurement) = ru
+    let inline (|Stats|) ({ ru = ru }: Equinox.CosmosStore.Core.Log.Measurement) = ru
     let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|) = function
         | Event.Tip (Stats s)
         | Event.TipNotFound (Stats s)
@@ -85,9 +85,9 @@ module SerilogHelpers =
             EquinoxChargeRollup
         | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc as e ->
             CosmosRequestCharge (e,rc)
-    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Store.Log.Event option =
+    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.CosmosStore.Core.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Equinox.Cosmos.Store.Log.Event as e) -> Some e
+            | SerilogScalar (:? Equinox.CosmosStore.Core.Log.Event as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =
