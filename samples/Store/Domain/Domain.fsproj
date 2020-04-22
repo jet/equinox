@@ -24,8 +24,4 @@
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
-  </ItemGroup>
-
 </Project>
