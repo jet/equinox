@@ -715,12 +715,10 @@ follow!
 ```fsharp
 type Equinox.Stream(stream : IStream<'event, 'state>, log, maxAttempts) =
 StoreIntegration
-    // Run interpret function with present state, retrying with Optimistic
-    // Concurrency
+    // Run interpret function with present state, retrying with Optimistic Concurrency
     member __.Transact(interpret : State -> Event list) : Async<unit>
 
-    // Run decide function with present state, retrying with Optimistic
-    // Concurrency, yielding Result on exit
+    // Run decide function with present state, retrying with Optimistic Concurrency, yielding Result on exit
     member __.Transact(decide : State -> Result*Event list) : Async<Result>
 
     // Runs a Null Flow that simply yields a `projection` of `Context.State`
@@ -1210,8 +1208,7 @@ let decide (context, command) state : int * Events.Event list =
 
 type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
 
-    // Given the supplied context, attempt to apply the command for the
-    // specified clientId
+    // Given the supplied context, attempt to apply the command for the specified clientId
     // NOTE Try will return the `fst` of the tuple that `decide` returned
     // If >1 attempt was necessary (e.g., due to conflicting events), the `fst`
     // from the last attempt is the outcome
