@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- `MemoryStore`: Target `FsCodec` v `2.0.0` [#219](https://github.com/jet/equinox/pull/219)
+
 ### Removed
 ### Fixed
 
