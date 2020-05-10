@@ -401,9 +401,6 @@ function sync(req, expIndex, expEtag) {
     }
 }"""
 
-module private CancellationToken =
-    let useOrCreate = function Some ct -> async.Return ct | _ -> Async.CancellationToken
-
 module Initialization =
     let internal getOrCreateDatabase (client: CosmosClient) (databaseId: string) (throughput: ResourceThroughput) = async {
         let! ct = Async.CancellationToken
@@ -466,11 +463,11 @@ type ContainerGateway(cosmosContainer : CosmosContainer) =
     default __.GetQueryIteratorByPage<'T>(query, ?options) =
         cosmosContainer.GetItemQueryIterator<'T>(query, requestOptions = defaultArg options null).AsPages() |> AsyncSeq.ofAsyncEnum
 
-    abstract member TryReadItem<'T> : docId: string * partitionKey: string * ?options: ItemRequestOptions * ?cancellationToken: CancellationToken -> Async<float * ReadResult<'T>>
-    default __.TryReadItem<'T>(docId, partitionKey, ?options, ?cancellationToken) = async {
+    abstract member TryReadItem<'T> : docId: string * partitionKey: string * ?options: ItemRequestOptions -> Async<float * ReadResult<'T>>
+    default __.TryReadItem<'T>(docId, partitionKey, ?options) = async {
         let partitionKey = PartitionKey partitionKey
         let options = defaultArg options null
-        let! ct = CancellationToken.useOrCreate cancellationToken
+        let! ct = Async.CancellationToken
         // TODO use TryReadItemStreamAsync to avoid the exception https://github.com/Azure/azure-cosmos-dotnet-v3/issues/692#issuecomment-521936888
         try let! item = async { return! cosmosContainer.ReadItemAsync<'T>(docId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
             // if item.StatusCode = System.Net.HttpStatusCode.NotModified then return item.RequestCharge, NotModified
@@ -483,9 +480,9 @@ type ContainerGateway(cosmosContainer : CosmosContainer) =
             // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
             | CosmosException (CosmosStatusCode sc as e) when sc = int System.Net.HttpStatusCode.PreconditionFailed -> return e.Response.Headers.GetRequestCharge(), NotModified }
 
-    abstract member ExecuteStoredProcedure: storedProcedureName: string * partitionKey: string * args: obj[] * ?cancellationToken : CancellationToken -> Async<Scripts.StoredProcedureExecuteResponse<SyncResponse>>
-    default __.ExecuteStoredProcedure(storedProcedureName, partitionKey, args, ?cancellationToken) = async {
-        let! ct = CancellationToken.useOrCreate cancellationToken
+    abstract member ExecuteStoredProcedure: storedProcedureName: string * partitionKey: string * args: obj[] -> Async<Scripts.StoredProcedureExecuteResponse<SyncResponse>>
+    default __.ExecuteStoredProcedure(storedProcedureName, partitionKey, args) = async {
+        let! ct = Async.CancellationToken
         let partitionKey = PartitionKey partitionKey
         //let args = [| box tip; box index; box (Option.toObj etag)|]
         return! cosmosContainer.Scripts.ExecuteStoredProcedureAsync<SyncResponse>(storedProcedureName, partitionKey, args, cancellationToken = ct) |> Async.AwaitTaskCorrect }
