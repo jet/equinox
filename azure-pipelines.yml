@@ -42,24 +42,4 @@ jobs:
     displayName: dotnet pack
     env:
       BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
-      BUILD_ID: $(BUILD.BUILDNUMBER) 
-
-- job: MacOS
-  pool:
-    vmImage: 'macOS-latest'
-  steps:
-  - script: dotnet test build.proj -v n
-    displayName: dotnet test build.proj
-    env:
-      EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
-      EQUINOX_INTEGRATION_SKIP_COSMOS: true
-  - task: PublishTestResults@2
-    inputs:
-      testResultsFormat: 'VSTest'
-      testResultsFiles: 'tests/**/*.trx'
-    condition: succeededOrFailed()
-  - script: dotnet pack build.proj
-    displayName: dotnet pack
-    env:
-      BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
-      BUILD_ID: $(BUILD.BUILDNUMBER) 
+      BUILD_ID: $(BUILD.BUILDNUMBER)
