@@ -13,12 +13,18 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+<a name="2.0.2"></a>
+## [2.0.2] - 2020-05-10
+
+- _Rebuilt version of 2.0.1 with new VM image in order to release complete set of nupkg files vs only releasing MsSql_
+
 <a name="2.0.1"></a>
-## [2.0.1] - 2020-03-25
+## [2.0.1] - 2020-03-25 - UNLISTED DUE TO INCOMPLETE PACKAGE SET
+
+### Fixed
 
 - `SqlStreamStore.MsSql`: Initial Append when stream empty on MsSql was perpetually failing :pray: [#209](https://github.com/jet/equinox/pull/209) [@Kimserey](https://github.com/kimserey)
 
-### Fixed
 <a name="2.0.0"></a>
 ## [2.0.0] - 2020-02-19
 
@@ -373,7 +379,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.1...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.0.2...HEAD
+[2.0.2]: https://github.com/jet/equinox/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/jet/equinox/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/jet/equinox/compare/2.0.0-rc9...2.0.0
 [2.0.0-rc9]: https://github.com/jet/equinox/compare/2.0.0-rc8...2.0.0-rc9
