@@ -1147,7 +1147,7 @@ type CosmosStoreClientFactory
     /// CosmosClientOptions for this Connector as configured
     member val Options =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
-        let serializerOptions = FsCodec.SystemTextJson.Options.CreateDefault(converters=[|FsCodec.SystemTextJson.Converters.JsonRecordConverter()|])
+        let serializerOptions = FsCodec.SystemTextJson.Options.CreateDefault()
         let co =
             CosmosClientOptions(
                 MaxRetryAttemptsOnRateLimitedRequests = maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests = maxWait, RequestTimeout = timeout,

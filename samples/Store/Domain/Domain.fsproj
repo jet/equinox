@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1</TargetFrameworks>
+    <TargetFramework>netstandard2.1</TargetFramework>
     <WarningLevel>5</WarningLevel>
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
@@ -18,15 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' == 'net461' " />
-    <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.1' " />
+    <PackageReference Include="FSharp.Core" Version="4.3.4" />
 
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.0.2-alpha.0.8" />
-    <PackageReference Include="FsCodec.SystemTextJson" Version="2.0.2-alpha.0.8" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Equinox.Core\Equinox.Core.fsproj" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.1.0" />
+    <PackageReference Include="FsCodec.SystemTextJson" Version="2.1.0" />
   </ItemGroup>
 
 </Project>
