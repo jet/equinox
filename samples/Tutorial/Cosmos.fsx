@@ -12,7 +12,7 @@
 #r "Equinox.Core.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
-#r "FsCodec.NewtonsoftJson.dll"
+#r "FsCodec.SystemTextJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "System.Net.Http"
