@@ -22,7 +22,7 @@
 
     <PackageReference Include="FSharp.Core" Version="4.3.4" />
 
-    <PackageReference Include="FsCodec.Box" Version="2.1.0" />
+    <PackageReference Include="FsCodec" Version="2.1.0" />
   </ItemGroup>
 
 </Project>
