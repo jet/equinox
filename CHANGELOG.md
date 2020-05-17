@@ -23,12 +23,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Remove `module Commands` convention from in examples
 - Revise semantics of Cart Sample Command handling
 - `MemoryStore`: Target `FsCodec.Box` v `2.1.0` (was `FsCodec.NewtonsoftJson 2.0.0`) [#219](https://github.com/jet/equinox/pull/219)
+- `Cosmos:` Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
 
 ### Removed
 ### Fixed
 
-<a name="2.0.1"></a>
-## [2.0.1] - 2020-03-25
+<a name="2.0.2"></a>
+## [2.0.2] - 2020-03-25
 
 - `SqlStreamStore.MsSql`: Initial Append when stream empty on MsSql was perpetually failing :pray: [#209](https://github.com/jet/equinox/pull/209) [@Kimserey](https://github.com/kimserey)
 

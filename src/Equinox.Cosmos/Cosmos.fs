@@ -1146,16 +1146,13 @@ type Connector
         new CosmosClient(string uri, key, __.ClientOptions)
 
     /// Yields a Connection configured per the specified strategy
+    /// NOTE this is still Async for backcompat, but initialization has been removed per https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436
     member __.Connect
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery,
-            /// <c>true</c> to inhibit OpenAsync call
-            [<O; D null>]?skipOpen,
             /// <c>true</c> to inhibit logging of client name
             [<O; D null>]?skipLog) : Async<Connection> = async {
         let client = __.CreateClient(name, discovery, ?skipLog=skipLog)
-        // TODO validate this is equivalent to forcing a connect
-        if skipOpen <> Some true then let! _ = client.ReadAccountAsync() |> Async.AwaitTaskCorrect in ()
         return Connection(client, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
 namespace Equinox.Cosmos.Core
