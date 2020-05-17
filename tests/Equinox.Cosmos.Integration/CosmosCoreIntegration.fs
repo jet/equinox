@@ -46,7 +46,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 35 // 31.3 // WAS 10
+        verifyRequestChargesMax 32 // 31.22 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -54,7 +54,7 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesMax 41 // observed 40.78 // was 11
+        verifyRequestChargesMax 39 // 38.21 // was 11
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
@@ -121,7 +121,7 @@ type Tests(testOutputHelper) =
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
-            verifyRequestChargesMax 46 // 44.07 observed
+            verifyRequestChargesMax 42 // 41.12 // 46 // 44.07 observed
             capture.Clear()
 
             let! res = Events.getNextIndex ctx streamName
@@ -221,7 +221,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 1L expected res
 
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 13 // 12.81 // was 3 before introduction of multi-event batches
+        verifyRequestChargesMax 5 // (4.15) // WAS 13 with SDK bugs// 12.81 // was 3 before introduction of multi-event batches
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -258,7 +258,7 @@ type Tests(testOutputHelper) =
             | _ -> None
         // validate that, despite only requesting max 1 item, we only needed one trip (which contained only one item)
         [1,1] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 4 // 3.02 // WAS 3 // 2.97
+        verifyRequestChargesMax 4 // 3.23 // WAS 3 // 2.97
     }
 
     (* Backward *)
@@ -279,7 +279,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEventsBackward 4L expected res
 
         test <@ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 4 // 3.04 // WAS 3
+        verifyRequestChargesMax 4 // 3.24 // WAS 3
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -323,5 +323,5 @@ type Tests(testOutputHelper) =
             | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Backward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 4 // 3.04 // WAS 3 // 2.98
+        verifyRequestChargesMax 4 // 3.24 // WAS 3 // 2.98
     }
