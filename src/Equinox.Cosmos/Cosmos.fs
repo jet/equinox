@@ -502,10 +502,10 @@ function sync(req, expIndex, expEtag) {
 
     module Initialization =
         type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int
-        let adjustOfferC (c:Container) rus = async {
+        let adjustOfferC (c:Container) (rus : int) = async {
             let! ct = Async.CancellationToken
             let! _ = c.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
-        let adjustOfferD (d:Database) rus = async {
+        let adjustOfferD (d:Database) (rus : int) = async {
             let! ct = Async.CancellationToken
             let! _ = d.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
         let private createDatabaseIfNotExists (client:CosmosClient) dName maybeRus = async {
