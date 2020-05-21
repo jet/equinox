@@ -12,6 +12,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - now targets `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
 - Add `eqx dump -b`, enabling overriding of Max Events per Batch
+- `MemoryStore`: Add `Committed` event to enable simulating Change Feeds in integration tests re [#205](https://github.com/jet/equinox/issues/205) [#221](https://github.com/jet/equinox/pull/221)
 
 ### Changed
 

@@ -46,8 +46,9 @@ type Command =
     | Clear of int
 
 (* Decide consumes a command and the current state to decide what events actually happened.
-   This particular counter allows numbers from 0 to 100.*)
-let decide command (State state) = 
+   This particular counter allows numbers from 0 to 100. *)
+
+let decide command (State state) =
     match command with
     | Increment -> 
         if state > 100 then [] else [Incremented]
@@ -69,11 +70,12 @@ type Service internal (resolve : string -> Equinox.Stream<Event, State>) =
         stream.Query(fun (State value) -> value)
 
 (* Out of the box, logging is via Serilog (can be wired to anything imaginable).
-   MemoryStore itself has no intrinsic logging; we wire it up here for demo purposes *)
+   We wire up logging for demo purposes using MemoryStore.VolatileStore's Committed event
+   MemoryStore itself, by design, has no intrinsic logging
+   (other store bindings have rich relevant logging about roundtrips to physical stores etc) *)
 
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
-// MemoryStore, as with most Event Stores, provides a way to observe events as they are Committed to the store
 let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
     log.Information("Committed to {stream}, events: {@events}", stream, seq { for x in events -> x.EventType })
 
