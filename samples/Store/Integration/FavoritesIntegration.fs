@@ -9,8 +9,7 @@ open Swensen.Unquote
 let fold, initial = Domain.Favorites.Fold.fold, Domain.Favorites.Fold.initial
 let snapshot = Domain.Favorites.Fold.isOrigin, Domain.Favorites.Fold.snapshot
 
-let createMemoryStore () =
-    new MemoryStore.VolatileStore<_>()
+let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
     Backend.Favorites.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
@@ -44,8 +43,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let store = createMemoryStore ()
-        let service = let log = createLog () in createServiceMemory log store
+        let log, store = createLog (), createMemoryStore ()
+        let service = createServiceMemory log store
         do! act service args
     }
 
@@ -66,7 +65,7 @@ type Tests(testOutputHelper) =
         let service = createServiceCosmos gateway log
         do! act service args
     }
-    
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = Async.RunSynchronously <| async {
         let log = createLog ()

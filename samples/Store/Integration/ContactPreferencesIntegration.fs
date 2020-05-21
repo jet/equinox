@@ -3,14 +3,12 @@
 open Equinox
 open Equinox.Cosmos.Integration
 open Swensen.Unquote
-open Xunit
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
 
-let createMemoryStore () =
-    new MemoryStore.VolatileStore<_>()
+let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
     Backend.ContactPreferences.Service(log, MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
@@ -41,7 +39,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let service = let log, store = createLog (), createMemoryStore () in createServiceMemory log store
+        let log, store = createLog (), createMemoryStore ()
+        let service = createServiceMemory log store
         do! act service args
     }
 
@@ -74,7 +73,7 @@ type Tests(testOutputHelper) =
         let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosWithLatestKnownEventSemantics
         do! act service args
     }
-    
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
         let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosRollingUnfolds

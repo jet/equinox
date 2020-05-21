@@ -359,7 +359,7 @@ module CosmosStats =
                     log.Debug("Running query: {sql}", sql)
                     let res = container.QueryValue<int>(sql, Microsoft.Azure.Documents.Client.FeedOptions(EnableCrossPartitionQuery=true))
                     log.Information("{stat}: {result:N0}", name, res)})
-                |> if inParallel then Async.Parallel else Async.Sequential
+                |> if inParallel then Async.Parallel else Async.ParallelThrottled 1
                 |> Async.Ignore
                 |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint" }

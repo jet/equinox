@@ -46,8 +46,9 @@ type Command =
     | Clear of int
 
 (* Decide consumes a command and the current state to decide what events actually happened.
-   This particular counter allows numbers from 0 to 100.*)
-let decide command (State state) = 
+   This particular counter allows numbers from 0 to 100. *)
+
+let decide command (State state) =
     match command with
     | Increment -> 
         if state > 100 then [] else [Incremented]
@@ -73,9 +74,24 @@ type Service(log, resolve, ?maxAttempts) =
         execute instanceId (Clear value)
 
     member __.Read instanceId : Async<int> =
-        read instanceId 
+        let stream = resolve instanceId
+        stream.Query(fun (State value) -> value)
+
+(* Out of the box, logging is via Serilog (can be wired to anything imaginable).
+   We wire up logging for demo purposes using MemoryStore.VolatileStore's Committed event
+   MemoryStore itself, by design, has no intrinsic logging
+   (other store bindings have rich relevant logging about roundtrips to physical stores etc) *)
+
+open Serilog
+let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
+let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
+    log.Information("Committed to {stream}, events: {@events}", stream, seq { for x in events -> x.EventType })
+
+(* We can integration test using an in-memory store
+   See other examples such as Cosmos.fsx to see how we integrate with CosmosDB and/or other concrete stores *)
 
 let store = Equinox.MemoryStore.VolatileStore()
+let _ = store.Committed.Subscribe(fun (s, xs) -> logEvents s xs)
 let codec = FsCodec.Box.Codec.Create()
 let resolve = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve
 open Serilog

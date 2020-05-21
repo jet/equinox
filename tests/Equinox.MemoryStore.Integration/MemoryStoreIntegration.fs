@@ -1,11 +1,9 @@
 ﻿module Equinox.MemoryStore.Integration.MemoryStoreIntegration
 
-open Swensen.Unquote
 open Equinox.MemoryStore
+open Swensen.Unquote
 
-let createMemoryStore () =
-    new VolatileStore<_>()
-
+let createMemoryStore () = VolatileStore<_>()
 let createServiceMemory log store =
     let resolve (id,opt) = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Cart.Fold.fold, Domain.Cart.Fold.initial).Resolve(id,?option=opt)
     Backend.Cart.Service(log, resolve)
@@ -15,6 +13,10 @@ let createServiceMemory log store =
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput
+
+    let (|NonZero|) = function
+        | None -> Some 1
+        | Some c -> Some (max 1 c)
 
     [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
@@ -45,3 +47,41 @@ type Tests(testOutputHelper) =
         verifyFoldedStateReflectsCommand expected
         verifyFoldedStateReflectsCommand actual
     }
+
+let createFavoritesServiceMemory log store =
+    let resolver = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Favorites.Fold.fold, Domain.Favorites.Fold.initial)
+    Backend.Favorites.Service(log, resolver.Resolve)
+
+type ChangeFeed(testOutputHelper) =
+    let testOutput = TestOutputAdapter testOutputHelper
+    let createLog () = createLogger testOutput
+
+    [<AutoData>]
+    let ``Commits get reported`` (clientId, sku) = Async.RunSynchronously <| async {
+        let log, store = createLog (), createMemoryStore ()
+        let events = ResizeArray()
+        let takeCaptured () =
+            let xs = events.ToArray()
+            events.Clear()
+            List.ofArray xs
+        use _ = store.Committed.Subscribe(fun (s, xs) -> events.Add((s, List.ofArray xs)))
+        let service = createFavoritesServiceMemory log store
+        let (Domain.Favorites.Events.ForClientId expectedStream) = clientId
+
+        do! service.Favorite(clientId, [sku])
+        let written = takeCaptured ()
+        test <@ let stream, xs = written |> List.exactlyOne
+                let env = xs |> List.exactlyOne
+                stream = expectedStream
+                && env.Index = 0L
+                && env.EventType = "Favorited"
+                && env.Data |> unbox<Domain.Favorites.Events.Favorited> |> fun x -> x.skuId = sku @>
+        do! service.Unfavorite(clientId, sku)
+        let written = takeCaptured ()
+        test <@ let stream, xs = written |> List.exactlyOne
+                let env = xs |> List.exactlyOne
+                stream = expectedStream
+                && env.Index = 1L
+                && env.EventType = "Unfavorited"
+                && env.Data |> unbox<Domain.Favorites.Events.Unfavorited> |> fun x -> x.skuId = sku @>
+}
