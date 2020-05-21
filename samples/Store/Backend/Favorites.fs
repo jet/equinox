@@ -19,8 +19,8 @@ type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.S
     member __.Favorite(clientId, skus) =
         execute clientId (Command.Favorite(DateTimeOffset.Now, skus))
 
-    member __.Unfavorite(clientId, skus) =
-        execute clientId (Command.Unfavorite skus)
+    member __.Unfavorite(clientId, sku) =
+        execute clientId (Command.Unfavorite sku)
 
     member __.List clientId : Async<Events.Favorited []> =
         read clientId
