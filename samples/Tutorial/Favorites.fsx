@@ -92,6 +92,10 @@ let clientAFavoritesStreamName = FsCodec.StreamName.create Category "ClientA"
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
+// MemoryStore, as with most Event Stores, provides a way to observe events as they are Committed to the store
+let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
+    log.Information("Committed to {stream}, events: {@events}", stream, seq { for x in events -> x.EventType })
+let _ = store.Committed.Subscribe(fun (s, xs) -> logEvents s xs)
 
 let codec =
     // For this example, we hand-code; normally one uses one of the FsCodec auto codecs, which codegen something similar

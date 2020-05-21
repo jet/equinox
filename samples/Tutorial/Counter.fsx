@@ -68,15 +68,20 @@ type Service internal (resolve : string -> Equinox.Stream<Event, State>) =
         let stream = resolve instanceId
         stream.Query(fun (State value) -> value)
 
-(* Out of the box, logging is via Serilog (can be wired to anything imaginable)
-   Here we send it to the console (there's not much to see as `MemoryStore` does not do much logging) *)
+(* Out of the box, logging is via Serilog (can be wired to anything imaginable).
+   MemoryStore itself has no intrinsic logging; we wire it up here for demo purposes *)
+
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
+// MemoryStore, as with most Event Stores, provides a way to observe events as they are Committed to the store
+let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
+    log.Information("Committed to {stream}, events: {@events}", stream, seq { for x in events -> x.EventType })
 
 (* We can integration test using an in-memory store
    See other examples such as Cosmos.fsx to see how we integrate with CosmosDB and/or other concrete stores *)
 
 let store = Equinox.MemoryStore.VolatileStore()
+let _ = store.Committed.Subscribe(fun (s, xs) -> logEvents s xs)
 let codec = FsCodec.Box.Codec.Create()
 let resolver = Equinox.MemoryStore.Resolver(store, codec, fold, initial)
 let resolve instanceId = Equinox.Stream(log, streamName instanceId |> resolver.Resolve, maxAttempts = 3)
