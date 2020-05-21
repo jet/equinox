@@ -21,10 +21,10 @@ type ConcurrentArraySyncResult<'t> = Written of 't | Conflict of 't
 /// Maintains a dictionary of ITimelineEvent<'Format>[] per stream-name, allowing one to vary the encoding used to match that of a given concrete store, or optimize test run performance
 type VolatileStore<'Format>() =
     let streams = System.Collections.Concurrent.ConcurrentDictionary<string,FsCodec.ITimelineEvent<'Format>[]>()
-    let committed = Event<FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[]>()
+    let committed = Event<_>()
 
     [<CLIEvent>]
-    member __.Committed = committed.Publish
+    member __.Committed : IEvent<FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[]> = committed.Publish
 
     /// Loads state from a given stream
     member __.TryLoad streamName = match streams.TryGetValue streamName with false, _ -> None | true, packed -> Some packed
