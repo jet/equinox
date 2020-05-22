@@ -73,7 +73,7 @@ ingesters   -U-> aggregate   : run transactions against
 ingesters   .R.> caches      : maintain\nviews\nin
 ingesters  <.R.  inputs      : feed into
 
-reactors   <-L-  IObservable : can subscribe to\n(TODO)
+reactors   <-L-  IObservable : can subscribe to
 reactors   <-U-> aggregate2  : run transactions against
 reactors    .U.> caches      : maintain\nviews\nin
 
