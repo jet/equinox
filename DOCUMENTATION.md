@@ -48,7 +48,7 @@ event-sourced system, offering tailored components that interact with a
 specific **Consistent Event Store**, as laid out here in this
 [C4](https://c4model.com) System Context Diagram:
 
-![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
+![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/context.puml&fmt=svg)
 
 :point_up: Propulsion elements (which we consider External to Equinox) support
 the building of complementary facilities as part of an overall Application:
@@ -75,7 +75,7 @@ the building of complementary facilities as part of an overall Application:
 
 The Systems and Components involved break out roughly like this:
 
-![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml&fmt=svg)
+![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/container.puml&fmt=svg)
 
 # Equinox.MemoryStore
 
@@ -115,17 +115,14 @@ then run the suite with the right store for the context - e.g.:
 This diagram shows the high level building blocks used in constructing an
 integration test using `Equinox.MemoryStore`
 
-![Equinox.MemoryStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStoreContainer.puml)
-
-**NOTE: There's one critical lie to declare:
-[#205](https://github.com/jet/equinox/issues/205) is not yet implemented**
+![Equinox.MemoryStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/MemoryStoreContainer.puml)
 
 ## Component Diagram for `Equinox.MemoryStore`
 
 This breaks down the components involved internally with the layout above in
 terms of the actual structures involved:
 
-![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/MemoryStore.puml?fmt=svg)
+![Equinox.MemoryStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/MemoryStore.puml?fmt=svg)
 
 # Equinox.EventStore / Equinox.SqlStreamStore
 
@@ -135,7 +132,7 @@ to treat them as equivalent for the purposes of this overview.
 
 ## Component Diagram for Equinox.EventStore / Equinox.SqlStreamStore
 
-![Equinox.EventStore/SqlStreamStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStore.puml)
+![Equinox.EventStore/SqlStreamStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/EventStore.puml)
 
 ## Code Diagrams for Equinox.EventStore / Equinox.SqlStreamStore
 
@@ -143,7 +140,7 @@ This diagram walks through the basic sequence of operations, where:
 - this node has not yet read this stream (i.e. there's nothing in the Cache)
 - when we do read it, it's empty (no events):
 
-![Equinox.EventStore/SqlStreamStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=0&fmt=svg)
+![Equinox.EventStore/SqlStreamStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/EventStoreCode.puml&idx=0&fmt=svg)
 
 Next, we extend the scenario to show:
 - how the State held in the Cache influences the EventStore/SqlStreamStore APIs
@@ -155,27 +152,27 @@ Next, we extend the scenario to show:
   - when there's conflict and we're giving up (throw
     `MaxAttemptsExceededException`; no need to read the conflicting events)
 
-![Equinox.EventStore/SqlStreamStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=1&fmt=svg)
+![Equinox.EventStore/SqlStreamStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/EventStoreCode.puml&idx=1&fmt=svg)
 
 After the write, we circle back to illustrate the effect of the caching when we
 have correct state
 
-![Equinox.EventStore/SqlStreamStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=2&fmt=svg)
+![Equinox.EventStore/SqlStreamStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/EventStoreCode.puml&idx=2&fmt=svg)
 
 In other processes (when a cache is not fully in sync), the sequence runs
 slightly differently:
 
-![Equinox.EventStore/SqlStreamStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/EventStoreCode.puml&idx=3&fmt=svg)
+![Equinox.EventStore/SqlStreamStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/EventStoreCode.puml&idx=3&fmt=svg)
 
 # Equinox.CosmosStore
 
 ## Container Diagram for `Equinox.CosmosStore`
 
-![Equinox.CosmosStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosContainer.puml?fmt=svg)
+![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosContainer.puml?fmt=svg)
 
 ## Component Diagram for `Equinox.CosmosStore`
 
-![Equinox.CosmosStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosComponent.puml?fmt=svg)
+![Equinox.Cosmos c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosComponent.puml?fmt=svg)
 
 ## Code Diagrams for `Equinox.CosmosStore`
 
@@ -183,7 +180,7 @@ This diagram walks through the basic sequence of operations, where:
 - this node has not yet read this stream (i.e. there's nothing in the Cache)
 - when we do read it, the Read call returns `404` (with a charge of `1 RU`)
 
-![Equinox.CosmosStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=0&fmt=svg)
+![Equinox.Cosmos c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=0&fmt=svg)
 
 Next, we extend the scenario to show:
 - how state held in the Cache influences the Cosmos APIs used
@@ -197,12 +194,12 @@ Next, we extend the scenario to show:
   - when there's conflict and we're giving up (throw
     `MaxAttemptsExceededException`)
 
-![Equinox.CosmosStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=1&fmt=svg)
+![Equinox.Cosmos c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=1&fmt=svg)
 
 After the write, we circle back to illustrate the effect of the caching when we
 have correct state (we get a `304 Not Mofified` and pay only `1 RU`)
 
-![Equinox.CosmosStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=2&fmt=svg)
+![Equinox.Cosmos c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=2&fmt=svg)
 
 In other processes (when a cache is not fully in sync), the sequence runs
 slightly differently:
@@ -211,7 +208,7 @@ slightly differently:
   suitable snapshot that passes the `isOrigin` predicate is found within the
   _Tip_
 
-![Equinox.CosmosStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/CosmosCode.puml&idx=3&fmt=svg)
+![Equinox.Cosmos c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=3&fmt=svg)
 
 # Glossary
 

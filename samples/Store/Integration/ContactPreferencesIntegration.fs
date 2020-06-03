@@ -8,8 +8,7 @@ open Swensen.Unquote
 
 let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
 
-let createMemoryStore () =
-    MemoryStore.VolatileStore<_>()
+let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
     Backend.ContactPreferences.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
@@ -40,7 +39,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let service = let log, store = createLog (), createMemoryStore () in createServiceMemory log store
+        let log, store = createLog (), createMemoryStore ()
+        let service = createServiceMemory log store
         do! act service args
     }
 

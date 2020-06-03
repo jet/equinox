@@ -76,6 +76,19 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.SqlStreamStore.Post
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Core", "src\Equinox.Core\Equinox.Core.fsproj", "{3021659A-5CA4-4E06-AF00-2457ED3F105B}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "diagrams", "diagrams", "{596FFDD5-8B3C-4D5E-865A-962AFBB210FF}"
+ProjectSection(SolutionItems) = preProject
+	diagrams\MemoryStore.puml = diagrams\MemoryStore.puml
+	diagrams\context.puml = diagrams\context.puml
+	diagrams\container.puml = diagrams\container.puml
+	diagrams\MemoryStoreContainer.puml = diagrams\MemoryStoreContainer.puml
+	diagrams\EventStoreCode.puml = diagrams\EventStoreCode.puml
+	diagrams\EventStore.puml = diagrams\EventStore.puml
+	diagrams\CosmosContainer.puml = diagrams\CosmosContainer.puml
+	diagrams\CosmosComponent.puml = diagrams\CosmosComponent.puml
+	diagrams\CosmosCode.puml = diagrams\CosmosCode.puml
+EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -197,6 +210,7 @@ Global
 		{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871} = {8CDE1CC3-8619-44DE-8B4D-4102CE476C35}
 		{8CDE1CC3-8619-44DE-8B4D-4102CE476C35} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
 		{D82AAB2E-7264-421A-A893-63A37E5F08B6} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
+		{596FFDD5-8B3C-4D5E-865A-962AFBB210FF} = {7E3A7020-AE75-4513-B81A-57FD3E0D0D84}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {177E1E7B-E275-4FC6-AE3C-2C651ECCF71E}

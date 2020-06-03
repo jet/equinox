@@ -2,8 +2,6 @@
 
 open Equinox
 open Equinox.CosmosStore.Integration
-open Equinox.EventStore
-open Equinox.MemoryStore
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -11,15 +9,13 @@ open Swensen.Unquote
 let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
 let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
 
-let createMemoryStore () =
-    // we want to validate that the JSON UTF8 is working happily
-    VolatileStore<byte[]>()
+let createMemoryStore () = MemoryStore.VolatileStore<byte[]>()
 let createServiceMemory log store =
     Backend.Cart.create log (fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.codecNewtonsoft, fold, initial).Resolve(id,?option=opt))
 
 let eventStoreCodec = Domain.Cart.Events.codecNewtonsoft
 let resolveGesStreamWithRollingSnapshots gateway =
-    fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
+    fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, eventStoreCodec, fold, initial).Resolve(id,?option=opt)
 

@@ -114,7 +114,7 @@ Equinox and Propulsion have a [Yin and yang](https://en.wikipedia.org/wiki/Yin_a
 
 Equinox focuses on the **Consistent Processing** element of building an event-sourced system, offering tailored components that interact with a specific **Consistent Event Store**, as laid out here in this [C4](https://c4model.com) System Context Diagram:
 
-![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/context.puml&fmt=svg)
+![Equinox c4model.com Context Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/context.puml&fmt=svg)
 
 :point_up: Propulsion elements (which we consider External to Equinox) support the building of complementary facilities as part of an overall Application:
 
@@ -126,9 +126,9 @@ Equinox focuses on the **Consistent Processing** element of building an event-so
 
 The relevant pieces of the above break down as follows, when we emphasize the [Containers](https://c4model.com) aspects relevant to Equinox:
 
-![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/diag/diagrams/container.puml&fmt=svg)
+![Equinox c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/container.puml&fmt=svg)
 
-**[See Overview section in `DOCUMENTATION`.md for further drill down](https://github.com/jet/equinox/blob/diag/DOCUMENTATION.md#overview)**
+**[See Overview section in `DOCUMENTATION`.md for further drill down](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#overview)**
 
 ## TEMPLATES
 

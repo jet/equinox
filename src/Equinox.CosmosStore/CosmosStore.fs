@@ -401,60 +401,6 @@ function sync(req, expIndex, expEtag) {
     }
 }"""
 
-module Initialization =
-    let internal getOrCreateDatabase (client: CosmosClient) (databaseId: string) (throughput: ResourceThroughput) = async {
-        let! ct = Async.CancellationToken
-        let! response =
-            match throughput with
-            | Default -> client.CreateDatabaseIfNotExistsAsync(id = databaseId, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | SetIfCreating value -> client.CreateDatabaseIfNotExistsAsync(id = databaseId, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | ReplaceAlways value -> async {
-                let! response = client.CreateDatabaseIfNotExistsAsync(id = databaseId, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
-                let! _ = response.Database.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
-                return response }
-        return response.Database }
-
-    let internal getOrCreateContainer (db: CosmosDatabase) (props: ContainerProperties) (throughput: ResourceThroughput) = async {
-        let! ct = Async.CancellationToken
-        let! response =
-            match throughput with
-            | Default -> db.CreateContainerIfNotExistsAsync(props, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | SetIfCreating value -> db.CreateContainerIfNotExistsAsync(props, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
-            | ReplaceAlways value -> async {
-                let! response = db.CreateContainerIfNotExistsAsync(props, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
-                let! _ = response.Container.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
-                return response }
-        return response.Container }
-
-    let internal getBatchAndTipContainerProps (containerId: string) =
-        let props = ContainerProperties(id = containerId, partitionKeyPath = sprintf "/%s" Batch.PartitionKeyField)
-        props.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
-        props.IndexingPolicy.Automatic <- true
-        // Can either do a blacklist or a whitelist
-        // Given how long and variable the blacklist would be, we whitelist instead
-        props.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
-        // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
-        for k in Batch.IndexedFields do props.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
-        props
-
-    let createSyncStoredProcedure (container: CosmosContainer) nameOverride = async {
-        let! ct = Async.CancellationToken
-        let name = nameOverride |> Option.defaultValue SyncStoredProcedure.defaultName
-        try let! r = container.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(name, SyncStoredProcedure.body), cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return r.GetRawResponse().Headers.GetRequestCharge()
-        with CosmosException ((CosmosStatusCode sc) as e) when sc = int System.Net.HttpStatusCode.Conflict -> return e.Response.Headers.GetRequestCharge() }
-
-    let initializeContainer (client: CosmosClient) (databaseId: string) (containerId: string) (mode: Provisioning) (createStoredProcedure: bool, nameOverride: string option) = async {
-        let dbThroughput = match mode with Provisioning.Database throughput -> throughput | _ -> Default
-        let containerThroughput = match mode with Provisioning.Container throughput -> throughput | _ -> Default
-        let! db = getOrCreateDatabase client databaseId dbThroughput
-        let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerId) containerThroughput
-
-        if createStoredProcedure then
-            let! (_ru : float) = createSyncStoredProcedure container nameOverride in ()
-
-        return container }
-
 type ContainerGateway(cosmosContainer : CosmosContainer) =
 
     member val CosmosContainer = cosmosContainer with get
@@ -559,6 +505,60 @@ module Sync =
                 m = compressIfRequested x.Meta
                 t = DateTimeOffset.UtcNow
             } : Unfold)
+
+module Initialization =
+    let internal getOrCreateDatabase (client: CosmosClient) (databaseId: string) (throughput: ResourceThroughput) = async {
+        let! ct = Async.CancellationToken
+        let! response =
+            match throughput with
+            | Default -> client.CreateDatabaseIfNotExistsAsync(id = databaseId, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | SetIfCreating value -> client.CreateDatabaseIfNotExistsAsync(id = databaseId, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | ReplaceAlways value -> async {
+                let! response = client.CreateDatabaseIfNotExistsAsync(id = databaseId, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+                let! _ = response.Database.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
+                return response }
+        return response.Database }
+
+    let internal getOrCreateContainer (db: CosmosDatabase) (props: ContainerProperties) (throughput: ResourceThroughput) = async {
+        let! ct = Async.CancellationToken
+        let! response =
+            match throughput with
+            | Default -> db.CreateContainerIfNotExistsAsync(props, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | SetIfCreating value -> db.CreateContainerIfNotExistsAsync(props, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+            | ReplaceAlways value -> async {
+                let! response = db.CreateContainerIfNotExistsAsync(props, throughput = Nullable(value), cancellationToken = ct) |> Async.AwaitTaskCorrect
+                let! _ = response.Container.ReplaceThroughputAsync(value, cancellationToken = ct) |> Async.AwaitTaskCorrect
+                return response }
+        return response.Container }
+
+    let internal getBatchAndTipContainerProps (containerId: string) =
+        let props = ContainerProperties(id = containerId, partitionKeyPath = sprintf "/%s" Batch.PartitionKeyField)
+        props.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
+        props.IndexingPolicy.Automatic <- true
+        // Can either do a blacklist or a whitelist
+        // Given how long and variable the blacklist would be, we whitelist instead
+        props.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
+        // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
+        for k in Batch.IndexedFields do props.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
+        props
+
+    let createSyncStoredProcedure (container: CosmosContainer) nameOverride = async {
+        let! ct = Async.CancellationToken
+        let name = nameOverride |> Option.defaultValue SyncStoredProcedure.defaultName
+        try let! r = container.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(name, SyncStoredProcedure.body), cancellationToken = ct) |> Async.AwaitTaskCorrect
+            return r.GetRawResponse().Headers.GetRequestCharge()
+        with CosmosException ((CosmosStatusCode sc) as e) when sc = int System.Net.HttpStatusCode.Conflict -> return e.Response.Headers.GetRequestCharge() }
+
+    let initializeContainer (client: CosmosClient) (databaseId: string) (containerId: string) (mode: Provisioning) (createStoredProcedure: bool, nameOverride: string option) = async {
+        let dbThroughput = match mode with Provisioning.Database throughput -> throughput | _ -> Default
+        let containerThroughput = match mode with Provisioning.Container throughput -> throughput | _ -> Default
+        let! db = getOrCreateDatabase client databaseId dbThroughput
+        let! container = getOrCreateContainer db (getBatchAndTipContainerProps containerId) containerThroughput
+
+        if createStoredProcedure then
+            let! (_ru : float) = createSyncStoredProcedure container nameOverride in ()
+
+        return container }
 
 module internal Tip =
     let private get (gateway : ContainerGateway, stream : string) (maybePos: Position option) =

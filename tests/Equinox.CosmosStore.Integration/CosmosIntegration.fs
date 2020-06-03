@@ -80,15 +80,15 @@ type Tests(testOutputHelper) =
 
         let cartId = % Guid.NewGuid()
         // The command processing should trigger only a single read and a single write call
-        let addRemoveCount = 2
+        let addRemoveCount = 40
         let eventsPerAction = addRemoveCount * 2 - 1
         let transactions = 6
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service addRemoveCount
             // Extra roundtrip required after maxItemsPerRequest is exceeded
-            let expectedBatchesOf2Items = (i-1) / maxItemsPerRequest + 1
-            test <@ i = i && List.replicate expectedBatchesOf2Items EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 48 // 47.29
+            let expectedBatchesOfItems = max 1 ((i-1) / maxItemsPerRequest)
+            test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
+            verifyRequestChargesMax 61 // 57.09 [5.24 + 54.78] // 5.5 observed for read
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -98,7 +98,7 @@ type Tests(testOutputHelper) =
 
         let expectedResponses = transactions/maxItemsPerRequest + 1
         test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 12 // 11.8
+        verifyRequestChargesMax 11 // 10.01
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -232,7 +232,7 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
     }
 
-     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()

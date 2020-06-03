@@ -10,8 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- now targets `Microsoft.Azure.Cosmos` v `3.1.1` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
-- Add `eqx dump -b`, enabling overriding of Max Events per Batch
+- now targets `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
 
 ### Changed
 
@@ -22,17 +21,35 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Updated AzDO CI/CD to use `windows-latest`
 - Remove `module Commands` convention from in examples
 - Revise semantics of Cart Sample Command handling
-- `MemoryStore`: Target `FsCodec.Box` v `2.1.0` (was `FsCodec.NewtonsoftJson 2.0.0`) [#219](https://github.com/jet/equinox/pull/219)
+- `Cosmos:` Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
 
 ### Removed
 ### Fixed
 
-<a name="2.0.1"></a>
-## [2.0.1] - 2020-03-25
+<a name="2.1.0"></a>
+## [2.1.0] - 2020-05-22
 
-- `SqlStreamStore.MsSql`: Initial Append when stream empty on MsSql was perpetually failing :pray: [#209](https://github.com/jet/equinox/pull/209) [@Kimserey](https://github.com/kimserey)
+### Added
+
+- Add `eqx dump -b`, enabling overriding of Max Events per Batch
+- `MemoryStore`: Add `Committed` event to enable simulating Change Feeds in integration tests re [#205](https://github.com/jet/equinox/issues/205) [#221](https://github.com/jet/equinox/pull/221)
+
+### Changed
+
+- `MemoryStore`: Target `FsCodec` v `2.0.0` [#219](https://github.com/jet/equinox/pull/219)
+
+<a name="2.0.2"></a>
+## [2.0.2] - 2020-05-10
+
+- _Rebuilt version of `2.0.1` with new VM image in order to release complete set of nupkg files vs only releasing MsSql_
+
+<a name="2.0.1"></a>
+## [2.0.1] - 2020-03-25 - unlisted due to incomplete package set
 
 ### Fixed
+
+- `SqlStreamStore.MsSql`: Initial Append when stream empty on MsSql was perpetually failing [#209](https://github.com/jet/equinox/pull/209) :pray: [@Kimserey](https://github.com/kimserey)
+
 <a name="2.0.0"></a>
 ## [2.0.0] - 2020-02-19
 
@@ -387,7 +404,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.0.1...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.1.0...HEAD
+[2.1.0]: https://github.com/jet/equinox/compare/2.0.2...2.1.0
+[2.0.2]: https://github.com/jet/equinox/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/jet/equinox/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/jet/equinox/compare/2.0.0-rc9...2.0.0
 [2.0.0-rc9]: https://github.com/jet/equinox/compare/2.0.0-rc8...2.0.0-rc9
