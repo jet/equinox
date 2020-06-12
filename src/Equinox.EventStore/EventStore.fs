@@ -210,7 +210,7 @@ module private Read =
             let! slice = readSlice pos batchLog
             match slice.Status with
             | SliceReadStatus.StreamDeleted -> raise <| EventStore.ClientAPI.Exceptions.StreamDeletedException(slice.Stream)
-            | SliceReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.EmptyStream), Array.empty // EmptyStream must = -1
+            | SliceReadStatus.StreamNotFound -> yield Some (int64 ExpectedVersion.NoStream), Array.empty // NoStream must = -1
             | SliceReadStatus.Success ->
                 let version = if batchCount = 0 then Some slice.LastEventNumber else None
                 yield version, slice.Events
@@ -641,7 +641,7 @@ type Discovery =
     // Allow Uri-based connection definition (discovery://, tcp:// or
     | Uri of Uri
     /// Supply a set of pre-resolved EndPoints instead of letting Gossip resolution derive from the DNS outcome
-    | GossipSeeded of seedManagerEndpoints : System.Net.IPEndPoint []
+    | GossipSeeded of seedManagerEndpoints : System.Net.EndPoint []
     // Standard Gossip-based discovery based on Dns query and standard manager port
     | GossipDns of clusterDns : string
     // Standard Gossip-based discovery based on Dns query (with manager port overriding default 30778)
@@ -650,19 +650,19 @@ type Discovery =
 module private Discovery =
     let buildDns np (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering()
-        |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferSlaveNode() | _ -> s
+        |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferFollowerNode() | _ -> s
         |> f |> fun s -> s.Build()
 
     let buildSeeded np (f : GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
         ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering()
-        |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferSlaveNode() | _ -> s
+        |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferFollowerNode() | _ -> s
         |> f |> fun s -> s.Build()
 
     let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
         x.SetClusterDns(clusterDns)
         |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
 
-    let inline configureSeeded (seedEndpoints : System.Net.IPEndPoint []) (x : GossipSeedClusterSettingsBuilder) =
+    let inline configureSeeded (seedEndpoints : System.Net.EndPoint []) (x : GossipSeedClusterSettingsBuilder) =
         x.SetGossipSeedEndPoints(seedEndpoints)
 
     // converts a Discovery mode to a ClusterSettings or a Uri as appropriate
@@ -697,11 +697,11 @@ type Connector
         .LimitRetriesForOperationTo(reqRetries) // ES default: 10
         |> fun s ->
             match node with
-            | NodePreference.Master         -> s.PerformOnMasterOnly()                  // explicitly use ES default of requiring master, use default Node preference of Master
+            | NodePreference.Master         -> s.PerformOnLeaderOnly()                  // explicitly use ES default of requiring master, use default Node preference of Master
             | NodePreference.PreferMaster   -> s.PerformOnAnyNode()                     // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
-            // NB .PreferSlaveNode/.PreferRandomNode setting is ignored if using EventStoreConneciton.Create(ConnectionSettings, ClusterSettings) overload but
+            // NB .PreferSlaveNode/.PreferRandomNode setting is ignored if using EventStoreConnection.Create(ConnectionSettings, ClusterSettings) overload but
             // this code is necessary for cases where people are using the discover :// and related URI schemes
-            | NodePreference.PreferSlave    -> s.PerformOnAnyNode().PreferSlaveNode()   // override default PerformOnMasterOnly(), override Master Node preference
+            | NodePreference.PreferSlave    -> s.PerformOnAnyNode().PreferFollowerNode()// override default PerformOnMasterOnly(), override Master Node preference
             | NodePreference.Random         -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
         |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
         |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
