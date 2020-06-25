@@ -411,7 +411,7 @@ module Dump =
         |> Async.Ignore
 
     open System.Text.Json
-    let dumpJsonElementStorage (log: ILogger) (storeLog: ILogger) doU doE doC doJ _doP doT (resolver: Services.StreamResolver) (streams: FsCodec.StreamName list) =
+    let dumpJsonElementStorage (log: ILogger) (storeLog: ILogger) doU doE doC doJ doP doT (resolver: Services.StreamResolver) (streams: FsCodec.StreamName list) =
         let initial = List.empty
         let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
         let mutable unfolds = List.empty
@@ -420,10 +420,10 @@ module Dump =
             Some x
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold),fun _state -> failwith "no snapshot required"
-        let render (data : JsonElement) =
+        let render pretty (data : JsonElement) =
             match data.ValueKind with
             | JsonValueKind.Null | JsonValueKind.Undefined -> null
-            | _ when doJ -> data.GetRawText()
+            | _ when doJ -> if pretty then FsCodec.SystemTextJson.Serdes.Serialize(data, indent=true) else data.GetRawText()
             | _ -> sprintf "(%d chars)" (data.GetRawText().Length)
         let readStream (streamName : FsCodec.StreamName) = async {
             let stream = resolver.ResolveWithJsonElementCodec(idCodec,fold,initial,isOriginAndSnapshot) streamName
@@ -431,7 +431,8 @@ module Dump =
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
             let mutable prevTs = None
             for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
-                prevTs <- Some (logEvent log prevTs doC doT x render) }
+                let pretty = x.IsUnfold || doP
+                prevTs <- Some (logEvent log prevTs doC doT x (render pretty)) }
         streams
         |> Seq.map readStream
         |> Async.Parallel
