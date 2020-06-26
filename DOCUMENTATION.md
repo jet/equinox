@@ -1557,7 +1557,8 @@ employed by the changefeed in order to optimize the interrelated concerns of
 not reading data redundantly, and not feeding back into the oneself (although
 having separate roundtrips obviously has implications).
 
-# Cosmos Storage Model
+<a name="cosmos-storage-model"></a>
+# `Equinox.Cosmos` CosmosDB Storage Model
 
 This article provides a walkthrough of how `Equinox.Cosmos` encodes, writes and
 reads records from a stream under its control.
@@ -1608,7 +1609,7 @@ Batch (`Tip` *isa* `Batch`), adding the following:
   `d`ata and `m`etadata fields are compressed and encoded as base64 (and hence
   can not be queried in any reasonable manner).
 
-# State, Snapshots, Events and Unfolds
+## State, Snapshots, Events and Unfolds
 
 In an Event Sourced system, we typically distinguish between the following
 basic elements
@@ -1668,7 +1669,7 @@ perspective, but is clearly suboptimal due to the extra computational effort
 and network bandwidth consumption. This will likely be optimized by exposing
 controls on the frequency at which `unfold`s are triggered_
 
-# Reading from the Storage Model
+## Reading from the Storage Model
 
 The dominant pattern is that reads request _Tip_  with an `IfNoneMatch`
 precondition citing the _etag_ it bore when we last saw it. That, when combined
@@ -1691,7 +1692,7 @@ establish the _state_ of a _stream_ prior to processing a _Command_:
       establish the `state` without further queries or roundtrips to load and
       fold all preceding events)
 
-## Building a state from the Storage Model and/or the Cache
+### Building a state from the Storage Model and/or the Cache
 
 Given a stream with:
 
@@ -1737,7 +1738,7 @@ data, and a charge of `1.00` RU allowing us to derive the state as:
 See [Programming Model](#programing-model) for what happens in the application
 based on the events presented.
 
-# Sync stored procedure
+## Sync stored procedure
 
 This covers what the most complete possible implementation of the JS Stored
 Procedure (see
@@ -1779,7 +1780,7 @@ stream). The request includes the following elements:
   retrying in the case of conflict, _without any events being written per state
   change_)
 
-# Equinox.Cosmos.Core.Events
+## Equinox.Cosmos.Core.Events
 
 The `Equinox.Cosmos.Core` namespace provides a lower level API that can be used
 to manipulate events stored within a Azure CosmosDb using optimized native
@@ -1802,7 +1803,7 @@ following key benefits:
 - Provides Optimistic Concurrency Control with retries in the case of
   conflicting events
 
-## Example Code
+### Example Code
 
 ```fsharp
 
@@ -1861,7 +1862,7 @@ match res with
 | AppendResult.Ok -> ()
 | c -> failwithf "conflict %A" c
 ```
-## Access Strategies
+# Access Strategies
 
 An Access Strategy defines any optimizations regarding how one arrives at a
 State of an Aggregate based on the Events stored in a Stream in a Store.
@@ -1878,10 +1879,10 @@ NOTE: its not important to select a strategy until you've actually actually
 modelled your aggregate, see [what if I change my access
 strategy](#changing-access-strategy)
 
-### `Equinox.Cosmos.AccessStrategy`
+## `Equinox.Cosmos.AccessStrategy`
 
 TL;DR `Equinox.Cosmos`: (see also: [the storage
-model](DOCUMENTATION.md#Cosmos-Storage-Model) for a deep dive, and [glossary,
+model](cosmos-storage-model) for a deep dive, and [glossary,
 below the table](#access-strategy-glossary) for definition of terms)
 - keeps all the Events for a Stream in a single [CosmosDB _logical
   partition_](https://docs.microsoft.com/en-gb/azure/cosmos-db/partition-data)
@@ -1952,7 +1953,7 @@ below the table](#access-strategy-glossary) for definition of terms)
   - allow one to post-process the events we are writing as required for reasons
     of optimization
 
-#### `Cosmos` Access Strategy overviews
+### `Cosmos` Access Strategy overviews
 
 | Strategy | TL;DR | `Tip` document maintains | Best suited for |
 | :--- | :--- | :--- | :--- |
@@ -2031,7 +2032,7 @@ below the table](#access-strategy-glossary) for definition of terms)
     further back through its history to be able to determine the balance that
     applied at the point the period was marked `Closed`. 
 
-#### `Cosmos` Read and Write policies
+### `Cosmos` Read and Write policies
 
 | Strategy | Reads involve | Writes involve |
 | :--- | :--- | :--- |
