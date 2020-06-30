@@ -2048,11 +2048,13 @@ below the table](#access-strategy-glossary) for definition of terms)
 <a name="hot-cold"></a>
 # Stream Management Policies
 
-Event storage systems supported by Equinox are primarily intended to house _Facts_ in an event-sourced model, not ephemeral events one might find on a bus, queue or generic topic in systems such as Apache Kafka.
+Event storage systems supported by Equinox are primarily intended to house _Facts_ from an event-sourced model; events are retained indefinitely in an immutable form. 
 
-In theory, it can be argued that events that have an ephemeral natural to them are not True Event-Sourcing Events, and as such should be considered entirely separately.
+Managing _Ephemeral Events_ that one might otherwise find on a bus, queue or generic topic in systems such as Apache Kafka has significant overlap with those primary needs. Often there's a point at which maintaining equivalent levels of access to such data is of a significantly lesser value than it is for your Facts.
 
-However, in practice, for myriad reasons, stores such as EventStoreDB, CosmosDB and SqlStreamStore become candidates for and/or victims of the blurring of the divide between ephemeral events and True Events.
+In theory, it can be argued that events that have such an ephemeral natural to them are not True Event-Sourcing Events, and as such should be considered entirely separately.
+
+In practice, for myriad reasons, stores such as EventStoreDB, CosmosDB and SqlStreamStore become candidates for and/or victims of the blurring of the divide between ephemeral events and True Events.
 
 Thus a key aspect of designing, maintaining and evolving an event-sourced system is how one structures the storage of the overall set of events comprising the system's state:
 - grouping into streams in accordance with the goal of the system of a whole (i.e. how one models the system in terms of aggregates), with consideration for how well a given breakdown works for a given store
@@ -2070,7 +2072,7 @@ In considering the events that should be brought together in a stream, some key 
 - Is the state the aggregate is maintaining cohesive, or is it possible to subdivide the stream into more than one? (think [SRP](https://en.wikipedia.org/wiki/Single-responsibility_principle) and [ISP](https://en.wikipedia.org/wiki/Interface_segregation_principle)). 
 - Is there a natural characteristic of the aggregate that bounds the number of events that will occur over its lifetime? (e.g., "the appointments" vs splitting by day/month/year)
 
-## Topic-streams
+## Topic streams
 
 In some cases, a stream may not even have a meaningful state, invariant or a business process that it's supporting:
 
@@ -2082,7 +2084,7 @@ However, they are subject to the same considerations in terms of how we deal wit
 
 ## Store-specific stream bounding / event retention considerations
 
-A central aspect of building event-sourced systems is the fact that your events are conceptually retained indefinitely. In practice, there are a variety of strategies and tactics that one can employ to manage this:
+Across both Aggregate and Topic usecases, there are specific facilities affored by, and restrictions imposed by the specific store you're using. For instance:
 
 - _Stream length limits - EventStoreDB_: EventStore does not impose any limitations on the maximum size or event count that a single stream can bear. This allows one to maintain a perpetual queue and/or an ordered sequence of events, with or without using a retention policy to control the trimming of expired/excess events.
 - _Stream length limits - CosmosDB_: The total size of the events and Tip-document of stream must adhere to the CosmosDB logical partition limit of 20GB.
@@ -2091,7 +2093,120 @@ A central aspect of building event-sourced systems is the fact that your events 
 
 Equinox does not presently expose specific controls to allow specification of either a CosmosDB TTL or EventStoreDB stream metadata.
 
-## Rewriting, deletion and archival of events
+## Mutation, archival and pruning of Events
+
+### Considerations regarding mutation or deletion of events
+
+> _You don't rewrite events or streams in a Store_
+
+For _facts_ in an event-sourced model, their permanence and immutablity is typically considered axiomatic; readers expect to be able to cache them forever etc. Some (rare) corner cases where one might wish to deviate from axiom in terms of the events that are part of your model include:
+
+- rewriting streams: as with the rewriting in history in git, the first rule is: DONT. (But it's possible and in some cases this nuclear option can solve a problem)
+- intentionally removing data: for GDPR or CCPA reasons, you may opt to mutate or remove events as part of of addressing a need to conclusively end-of-life some data.
+
+It should be noted with regard to such requirements:
+- EventStoreDB does not present any APIs for mutation of events. Deleting events is a fully supported operation (though that can be restricted based on permissions). (rewrites are typically approached by doing an offline database rebuild;)
+- `Equinox.Cosmos` does not presently include capabilties for altering or deleting events. (TBD its envisaged that deletion of events from the head of a stream will be added to the Equinox API surface). Obviously, theres nothing stopping you deleting or altering the Batch documents out of band via the underlying CosmosDB APIs directly (Note however that the semantics of document ordering within a logical partition means its strongly advised not to mutate any event Batch documents as this will cause their ordering to become incorrect relative to other events, invalidating a key tenet that Change Feed Processors rely on).
+
+### Growth handling strategies
+
+> _No matter what the vendor tells you, it's literally not going to scale linearly..._
+
+A more typical concern for an event-sourced model is managing what should happen when an Aggregate falls out of scope. For instance, a pick ticket entity in a warehouse is only of historical interest after a certain period of time (the customer's Order History maintains long-lives state pertaining to orders and/or associated returns etc.)
+
+With regard to such needs, the following store-specific considerations should be noted:
+
+- EventStoreDB caches only in-use streams and events. Hosting streams that are no longer relevant is a primary use case.
+  - streams and/or regions of streams that are no longer relevant don't induce a major cost on the system
+  - each client maintains a single connection to the server cluster; there is no incremental cost in terms of the potential network or client process resource consumption related directly to the size of your dataset
+  - However there is a non-zero cost; the overall dataset needs to be colocated and backed up as a whole (there's also index structures to be stored internally, with rebuild times directly related to the event count etc).
+
+- For CosmosDB, the cost of retaining events and/or streams that are no longer relevant is more direct; it manifests in the following ways:
+  - the billing model imposes a linear cost per GB which applies equally to all event-batch documents in your store, plus the size of the associated indexes (strongly related to the number batches stored). This cost is then multiplied by the number of regions to which you replicate.
+  - the total size of your store affects the minimum number of nodes across the data will spread. i.e. 1 TB of data will require > 5,000 RU/s to be allocated to it
+  - the RU/s allocated to your container are spread _equally_ across all nodes. Thus, if you have 100GB over 5 nodes and allocate 10,000 RU/s to the Container, each node gets 2,000 RU/s and callers get 429s if there happen to be more than that incurred for that node in that second (with obvious significant impacts on latency as the reader needs to back off for >=1s).
+  - the more nodes you have, the more TCP connections and other related resources each client requires
+  - the cost of over-provisioning to ensure appropriate capacity for spikes in load and/or to handle hotspots (where one node happens to host a stream that's accessed disproportionately heavily relative to other nodes) is multiplied by the number of nodes. Example: if you have a single node with 5GB of data with 2,000 RU/s allocated and want to double the peak capacity, you simply assign it 4,000 RU/s; if you have 100GB over 5 nodes, you need to double your 5x2,000 to 5x4,000
+  - there are significant jumps in cost for writes based on the [indexing cost](https://docs.microsoft.com/en-us/azure/cosmos-db/index-policy) as the number of items in a logical partition increases (for instance inserts of a a minimal (<100 bytes) event that initially costs ~20RU becomes > 40RU with 128 items, > 50RU with 1600 items, >60 at 2800 items and >110RU at 4900 items). 
+
+There are myriad approaches to resolving these forces. Let's examine the trade-offs of some relevant ones
+
+#### Database epochs
+
+> _Perhaps we can Just move to a new blank database?_
+
+In some systems, where there's a natural cycle to the business, the answer to managing database growth may be simpler than you think. For instance:
+- you may be able to start with a blank database for each trading day for the large proportion of the events your system generate.
+- your domain may have a natural end of year cycle where the business process dictates a formal closing of accounts with selective posting of relevant summarized data to be carried forward into a new epoch. In such instances, each closed year can be managed as a separated (read-only) dataset.
+
+As a fresh epoch of data becomes the primary, other options open up:
+- one might host the now-secondary data on cheaper hardware or network
+- one might archive the database once you've validated the transition has been effected completely
+
+#### Stream epochs
+
+> _Replace a perpetual stream with a series of finite epoch-streams, allowing superseded ones to be archived or deleted_
+
+As covered in _Growth_, long streams bring associated costs. A key one that hasnt been mentioned is that, because the unit of storage is a stream, there's no way to easily  distinguish historic events from current ones. This has various effects on processing costs such as (for Aggregate streams), tha tof loading and folding the state (and/or generating a snapshot).
+
+Anologous to how data can be retired as described in _Database epochs_, it may be possible to manage the growth cycle of continuous streams by having readers and writers coordinate the state of given stream via the following elements:
+- a Series aggregate: references the current active _epoch id_ for the series
+- Epoch streams: independent streams sharing a root name, sufficed by the _epoch id_
+- having an agreed way of coordinating to ensure each independent writer will acknowledge that a given epoch is _closed_ (e.g. based on event count, elapsed time since the epoch started, total event payload bytes, etc.)
+
+Depending on whether there's state associated with a given stream, the system periodically transitions to a new epoch by one of:
+- Topic-stream: write a `Closed` event; have all writers guarantee no such event precedes their write
+- Aggregate stream:
+  1. write a `Closed` event to the outgoing epoch-stream, followed by (as a separate action with idempotent semantics)...
+  2. write a `CarriedForward` event to open the new epoch
+  
+The writing of the event to move the active epoch forward in the _Series_ aggregate can take place at any point after the `Closed` event has been written to the ougoing epoch stream (including concurrently with the writing of the `CarriedForward` event). The reason for this is that the active epoch can be inferred by walking forward from any given epoch until one arrives at an epoch that's not Closed.
+
+[WIP implementation of a `dotnet new` template illustrating the Stream Epochs approach](https://github.com/jet/dotnet-templates/pull/40)
+
+#### Monitoring a primary dataset for Archival/Pruning
+
+> _Move or delete out-of-scope data from a primary (hot) dataset to a cheaper (warm/cold) stream_
+
+As with database epochs, once a given Stream epoch has been marked active, we gain options as to what to do with the preceding ones:
+- we may need to retain them in order to enable replaying of projections for currently-unknown reasons
+- if we intend to retain them for a significant period: we can copy them to an archive, then remove them from the primary dataset
+- if they are only relevant to assist troubleshooting over some short term: we can delete them after a given period (without copying them anywhere)
+
+When writing to a secondary store, there's also an opportunity to adjust the writing process versus the constraints imposed when writing as part of normal online transaction processing:
+- it will often make sense to have the archiver add a minimal placeholder to the secondary store regardless of whether a given stream is being archived, which can then be used to drive the walk of the primary instead of having to continually loop over all the data
+- when copying from primary to secondary, there's an opportunity to optimally pack events into batches (for instance in `Equinox.Cosmos`, batching writes means less documents, which reduces store and index size and hence query costs)
+- when writing to warm secondary storage, it may make sense to compress the events (under normal circumstances, compressing event data is not considered a worthwhile tradeoff).
+- where the nature of traffic on the system has peaks and troughs, there's an opportunity to shift the process of traversing the data for archival purposes to a windows outside of the peak load period (although, in general, the impact of reads for the purposes of archival won't be significant enough to warrant optimizing this factor)
+
+### Archiver + Pruner roles
+
+> _Outlining the roles of the (proposed) `eqxArchiver` and `eqxPruner` templates_
+
+It's concievable that one might establish a single service combining the activities of:
+1. copying (archiving) from the primary store in reaction to changes on the primary
+2a. pruning from the primary when the copying is complete
+2b. deleting immediately
+3. continually visiting all streams in the primary in order to archive and/or prune streams that have fallen out of use
+
+However, splitting the work into two distinct facilities allows to cleanly deliniate individually complex activities, which:
+- clarifies the relative responsibilities
+- allows the load (deletes can be costly in RU terms on CosmosDB) on the primary dataset to be more closely controlled
+
+#### Archiver
+
+An archiver tails a monitored store and bears the following reponsibilities:
+- minimizing the load on the source it's monitoring
+- listens to all event writes (via `$all` in the case of EventStoreDB or a CFP in the case of CosmosDB)
+- ensuring the secondary becomes aware of all new streams (especially in the case of `Equinox.Cosmos` streams in `AccessStrategy.RollingState` mode, which will not produce events)
+
+#### Pruner
+
+The pruner continually (when it reaches the end, it loops back to the start) walks the secondary of the store:
+- walking each stream, identifying the current write position in the secodary
+- use that as input into a decision as to how many events can be trimmed from the primary (deletion does not need to take place right away - Equinox will happily deal with an overlap)
+- (for `Equinox.Cosmos`) can optimize the packing of the events (e.g. if the most recent 4 events have arrived as 2 batches, the pruner can merge the two batches to minimize storage and index size). When writing to a primary collection, batches are never mutated for packing purposes both due to write costs and read amplification.
+- (for `Equinox.Cosmos`) can opt to delete from the primary if one or more full Batches have been copied to the primary (note the unit of deletion is a Batch - mutating a Batch in order to remove an event will trigger a reordering of the document's position in the logical partition)
 
 # Ideas
 
