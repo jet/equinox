@@ -2048,26 +2048,27 @@ below the table](#access-strategy-glossary) for definition of terms)
 <a name="hot-cold"></a>
 # Stream Management Policies
 
-Event storage systems supported by Equinox are primarily intended to house _Facts_ from an event-sourced model; events are retained indefinitely in an immutable form. 
+Event storage systems supported by Equinox are primarily intended to house _Domain Events_ (aka Facts) from an event-sourced model; events are retained indefinitely in an immutable form. 
 
-Managing _Ephemeral Events_ that one might otherwise find on a bus, queue or generic topic in systems such as Apache Kafka has significant overlap with those primary needs. Often there's a point at which maintaining equivalent levels of access to such data is of a significantly lesser value than it is for your Facts.
+Often, the management of _Ephemeral Events_ (that one might equivalently record on a bus, queue or a topic in systems such as Apache Kafka) has needs that overlap significantly with those of managing Domain Events. However, there's a point at which maintaining equivalent levels of access to such data is of a significantly lesser value than it is for Domain Events.
 
-In theory, it can be argued that events that have such an ephemeral natural to them are not True Event-Sourcing Events, and as such should be considered entirely separately.
+In theory, it can be argued that events with an ephemeral aspect are not True Event-Sourcing Events, and as such should be considered entirely separately.
 
-In practice, for myriad reasons, stores such as EventStoreDB, CosmosDB and SqlStreamStore become candidates for and/or victims of the blurring of the divide between ephemeral events and True Events.
+In practice, for myriad reasons, stores such as EventStoreDB, CosmosDB and SqlStreamStore become candidates for and/or victims of the blurring of the divide between ephemeral events and Domain Events.
 
-Thus a key aspect of designing, maintaining and evolving an event-sourced system is how one structures the storage of the overall set of events comprising the system's state:
-- grouping into streams in accordance with the goal of the system of a whole (i.e. how one models the system in terms of aggregates), with consideration for how well a given breakdown works for a given store
-- implementing policies reflecting the relevance of a stream and/or its events over time via a variety of mechanisms from shifting them to lower performance storage, archiving them to a separated store that's not accessible from the current online system all the way to outright deletion
-- considering which state really does not belong alongside your True Events.
+Thus a key aspect of designing, maintaining and evolving an event-sourced system involves the management of the overall set of events comprising the system's state:
+- grouping into streams in accordance with the goal of the system of a whole (i.e. how one models the system in terms of aggregates), with consideration for how well a given structure works for a given Store
+- implementing policies reflecting the relevance of a stream and/or its events over time via a variety of mechanisms; from shifting them to lower performance storage, archiving them to a separated store that's not accessible from the current online system all the way to outright deletion
+- drawing the line with regard to ephemeral events representing state that truly does not belong alongside your Domain Events
 
 ## Aggregate streams
 
 While the store's capabilities and restrictions are where the rubber meets the road in your streams/events layout, it should not be the primary driver.
 
-In considering the events that should be brought together in a stream, some key factors that apply are:
+When considering which events should be brought together in a stream, some key factors are:
 
-- Is there an invariant that the Aggregate is seeking to uphold and/or do all the events belong to a meaningful atomic structure within your system? Remember, the stream is _the_ meaningful consistency control unit.
+- Is there an invariant that the Aggregate is seeking to uphold? remember, the stream is the primary unit of consistency control 
+- do all the events belong to a meaningful atomic structure within your system?
 - When folding all the events, is the resulting state a reasonable size? (this feeds into whether it's feasible to snapshot the state)
 - Is the state the aggregate is maintaining cohesive, or is it possible to subdivide the stream into more than one? (think [SRP](https://en.wikipedia.org/wiki/Single-responsibility_principle) and [ISP](https://en.wikipedia.org/wiki/Interface_segregation_principle)). 
 - Is there a natural characteristic of the aggregate that bounds the number of events that will occur over its lifetime? (e.g., "the appointments" vs splitting by day/month/year)
@@ -2076,22 +2077,22 @@ In considering the events that should be brought together in a stream, some key 
 
 In some cases, a stream may not even have a meaningful state, invariant or a business process that it's supporting:
 
-- One example of such a case is where a stream is used to queue up commands and/or post outcomes as part of some flow. In such a case, the 'state' boils down to checkpointing how far one a given consumer has walked along the topic (as opposed to having a rolling state that one might wish to render and/or need to snapshot).
+- One example of such a case is where a stream is used to queue up commands and/or post outcomes as part of some process. In such a case, the 'state' boils down to checkpointing how far one a given consumer has walked along the topic (as opposed to having a rolling state that one renders, uses to supporting a decision flow, and/or need to snapshot).
 
-Such topic-streams are not really aggregates as such, and are not addressed as a primary use case in the Equinox [Programming Model](#programming-model).
+Such topic-streams are not aggregates as such, and are not addressed as a primary use case in the Equinox [Programming Model](#programming-model); you don't load and fold events to arrive at a state.
 
 However, they are subject to the same considerations in terms of how we deal with managing the lifetime of the data.
 
 ## Store-specific stream bounding / event retention considerations
 
-Across both Aggregate and Topic usecases, there are specific facilities affored by, and restrictions imposed by the specific store you're using. For instance:
+Across both Aggregate and Topic use cases, there are specific facilities afforded by, and restrictions imposed by, the specific store you're using. For instance:
 
 - _Stream length limits - EventStoreDB_: EventStore does not impose any limitations on the maximum size or event count that a single stream can bear. This allows one to maintain a perpetual queue and/or an ordered sequence of events, with or without using a retention policy to control the trimming of expired/excess events.
 - _Stream length limits - CosmosDB_: The total size of the events and Tip-document of stream must adhere to the CosmosDB logical partition limit of 20GB.
-- _Retention policies - EventStoreDB_: streams can have retention policies defined via the stream meta-data. The server cluster manages the application of these rules. The scavenging process removed the events, compacting the data by rewriting chunks with deleted, extraneous or aged-out events elided.
+- _Retention policies - EventStoreDB_: streams can have retention policies defined via each stream's metadata. The server cluster manages the application of these rules. The scavenging process removes the events, compacting the data by rewriting chunks with deleted, extraneous or aged-out events elided.
 - _Retention policies - CosmosDB_: the [CosmosDB TTL facility](https://docs.microsoft.com/en-us/azure/cosmos-db/time-to-live) allows one to define a TTL at the document level. CosmosDB removes expired items automatically (whenever residual RU capacity allows).
 
-Equinox does not presently expose specific controls to allow specification of either a CosmosDB TTL or EventStoreDB stream metadata.
+_NOTE: Equinox does not presently expose specific controls to allow specification of either a CosmosDB TTL or EventStoreDB stream metadata_.
 
 ## Mutation, archival and pruning of Events
 
