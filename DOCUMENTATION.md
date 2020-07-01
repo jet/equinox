@@ -2098,47 +2098,47 @@ _NOTE: Equinox does not presently expose specific controls to allow specificatio
 
 ### Considerations regarding mutation or deletion of events
 
-> _You don't rewrite events or streams in a Store_
+> _You don't rewrite events or streams in a Store, for reasons_
 
-For _facts_ in an event-sourced model, their permanence and immutablity is typically considered axiomatic; readers expect to be able to cache them forever etc. Some (rare) corner cases where one might wish to deviate from axiom in terms of the events that are part of your model include:
+For Domain Events in an event-sourced model, their permanence and immutablity is typically considered axiomatic; readers expect to be able to cache them forever, rely on their stream position being fixed etc. Some (rare) corner cases where one might wish to deviate from such axioms in terms of Domain Events in a model include:
 
-- rewriting streams: as with the rewriting in history in git, the first rule is: DONT. (But it's possible and in some cases this nuclear option can solve a problem)
-- intentionally removing data: for GDPR or CCPA reasons, you may opt to mutate or remove events as part of of addressing a need to conclusively end-of-life some data.
+- rewriting streams as an expedient solution to a bug etc: as with the rewriting in history in git, the first rule is: DONT. (But it's possible and in some cases this nuclear option can solve a problem)
+- intentionally removing data: for GDPR or CCPA reasons, you may opt to mutate or remove events as part of of addressing a need to conclusively end-of-life some data (other solutions are available...)
 
 It should be noted with regard to such requirements:
-- EventStoreDB does not present any APIs for mutation of events. Deleting events is a fully supported operation (though that can be restricted based on permissions). (rewrites are typically approached by doing an offline database rebuild;)
+- EventStoreDB does not present any APIs for mutation of events though deleting events is a fully supported operation (although that can be restricted). Rewrites are typically approached by doing an offline database rebuild.
 - `Equinox.Cosmos` does not presently include capabilties for altering or deleting events. (TBD its envisaged that deletion of events from the head of a stream will be added to the Equinox API surface). Obviously, theres nothing stopping you deleting or altering the Batch documents out of band via the underlying CosmosDB APIs directly (Note however that the semantics of document ordering within a logical partition means its strongly advised not to mutate any event Batch documents as this will cause their ordering to become incorrect relative to other events, invalidating a key tenet that Change Feed Processors rely on).
 
 ### Growth handling strategies
 
 > _No matter what the vendor tells you, it's literally not going to scale linearly..._
 
-A more typical concern for an event-sourced model is managing what should happen when an Aggregate falls out of scope. For instance, a pick ticket entity in a warehouse is only of historical interest after a certain period of time (the customer's Order History maintains long-lives state pertaining to orders and/or associated returns etc.)
+A more typical concern for an event-sourced model is managing what should happen when an Aggregate falls out of scope. For instance, a pick ticket entity in a warehouse is only of historical interest after a certain period of time (the customer's Order History maintains long-lived state pertaining to orders and/or associated returns etc.)
 
-With regard to such needs, the following store-specific considerations should be noted:
+With regard to such needs, here are some store-specific considerations:
 
-- EventStoreDB caches only in-use streams and events. Hosting streams that are no longer relevant is a primary use case.
+- EventStoreDB caches only in-use streams and events. Hosting streams that are no longer relevant is considered a completely acceptable normal use.
   - streams and/or regions of streams that are no longer relevant don't induce a major cost on the system
   - each client maintains a single connection to the server cluster; there is no incremental cost in terms of the potential network or client process resource consumption related directly to the size of your dataset
-  - However there is a non-zero cost; the overall dataset needs to be colocated and backed up as a whole (there's also index structures to be stored internally, with rebuild times directly related to the event count etc).
+  - However there is a non-zero cost; the overall dataset needs to be colocated and backed up as a whole (there are also internal index structures maintained alongside the event chunk files, with rebuild times directly related to the store's event count etc).
 
-- For CosmosDB, the cost of retaining events and/or streams that are no longer relevant is more direct; it manifests in the following ways:
-  - the billing model imposes a linear cost per GB which applies equally to all event-batch documents in your store, plus the size of the associated indexes (strongly related to the number batches stored). This cost is then multiplied by the number of regions to which you replicate.
-  - the total size of your store affects the minimum number of nodes across the data will spread. i.e. 1 TB of data will require > 5,000 RU/s to be allocated to it
-  - the RU/s allocated to your container are spread _equally_ across all nodes. Thus, if you have 100GB over 5 nodes and allocate 10,000 RU/s to the Container, each node gets 2,000 RU/s and callers get 429s if there happen to be more than that incurred for that node in that second (with obvious significant impacts on latency as the reader needs to back off for >=1s).
-  - the more nodes you have, the more TCP connections and other related resources each client requires
-  - the cost of over-provisioning to ensure appropriate capacity for spikes in load and/or to handle hotspots (where one node happens to host a stream that's accessed disproportionately heavily relative to other nodes) is multiplied by the number of nodes. Example: if you have a single node with 5GB of data with 2,000 RU/s allocated and want to double the peak capacity, you simply assign it 4,000 RU/s; if you have 100GB over 5 nodes, you need to double your 5x2,000 to 5x4,000
-  - there are significant jumps in cost for writes based on the [indexing cost](https://docs.microsoft.com/en-us/azure/cosmos-db/index-policy) as the number of items in a logical partition increases (for instance inserts of a a minimal (<100 bytes) event that initially costs ~20RU becomes > 40RU with 128 items, > 50RU with 1600 items, >60 at 2800 items and >110RU at 4900 items). 
+- For CosmosDB, the costs and impacts of retaining events and/or streams that are no longer relevant is more direct; they manifest in ways such as:
+  - the billing model imposes a linear cost per GB that applies equally to all event-batch documents in your store, plus the size of the associated indexes (strongly related to the number batches stored). The base cost is then multiplied by the number of regions to which you replicate.
+  - the total size of your store affects the minimum number of nodes across which the data will spread. i.e. 1 TB of data will require at least 5,000 RU/s to be allocated to it regardless of traffic
+  - the more nodes you have, the more TCP connections and other related fixed resources each client instance requires
+  - the RU/s allocated to your container may only be spread _equally_ across all nodes. Thus, if you have 100GB over 5 nodes and allocate 10,000 RU/s to the Container, each node gets 2,000 RU/s and callers get 429s if there happen to be more than that incurred for that node in that second (with significant latency as the reader needs to back off for >= 1s for each rate-limited attempt).
+  - the cost of over-provisioning to ensure appropriate capacity for spikes in load and/or to handle hotspots (where one node happens to host a stream that's accessed disproportionately heavily relative to data on other nodes) is multiplied by the number of nodes. Example: if you have a single node with 5GB of data with 2,000 RU/s allocated and want to double the peak capacity, you simply assign it 4,000 RU/s; if you have 100GB over 5 nodes, you need to double your 5x2,000 to 5x4,000 to achieve the same effect
+  - there are significant jumps in cost for writes based on the [indexing cost](https://docs.microsoft.com/en-us/azure/cosmos-db/index-policy) as the number of items in a logical partition increases (for instance inserts of a a minimal (<100 bytes) event that initially costs ~20RU becomes > 40RU with 128 items, > 50RU with 1600 items, >60 at 2800 items and >110RU at 4900 items as snapshots or event sizes hit certain thresholds). 
 
-There are myriad approaches to resolving these forces. Let's examine the trade-offs of some relevant ones
+There are myriad approaches to resolving these forces. Let's examine the trade-offs of some relevant ones...
 
 #### Database epochs
 
-> _Perhaps we can Just move to a new blank database?_
+> _Perhaps we can Just leave it all behind and switch to a new blank database?_
 
-In some systems, where there's a natural cycle to the business, the answer to managing database growth may be simpler than you think. For instance:
-- you may be able to start with a blank database for each trading day for the large proportion of the events your system generate.
-- your domain may have a natural end of year cycle where the business process dictates a formal closing of accounts with selective posting of relevant summarized data to be carried forward into a new epoch. In such instances, each closed year can be managed as a separated (read-only) dataset.
+In some systems, where there's a relevant natural cycle in the domain, the answer to managing database growth may be simpler than you think. For instance:
+- you may be able to start with a blank database for each trading day for the bulk of the events your system operates on.
+- your domain may have a natural end of year busines process that dictates a formal closing of accounts with selective posting of relevant summarized data to be carried forward into a new epoch. In such instances, each closed year can be managed as a separated (read-only) dataset.
 
 As a fresh epoch of data becomes the primary, other options open up:
 - one might host the now-secondary data on cheaper hardware or network
@@ -2148,14 +2148,14 @@ As a fresh epoch of data becomes the primary, other options open up:
 
 > _Replace a perpetual stream with a series of finite epoch-streams, allowing superseded ones to be archived or deleted_
 
-As covered in _Growth_, long streams bring associated costs. A key one that hasnt been mentioned is that, because the unit of storage is a stream, there's no way to easily  distinguish historic events from current ones. This has various effects on processing costs such as (for Aggregate streams), tha tof loading and folding the state (and/or generating a snapshot).
+As covered above, long streams bring associated costs. A key one that hasnt been mentioned is that, because the unit of storage is a stream, there's no way to easily  distinguish historic events from current ones. This has various effects on processing costs such as (for Aggregate streams), that of loading and folding the state (or generating a snapshot).
 
-Anologous to how data can be retired as described in _Database epochs_, it may be possible to manage the growth cycle of continuous streams by having readers and writers coordinate the state of given stream via the following elements:
+Anologous to how data can be retired as described in _Database epochs_, it may be possible to manage the growth cycle of continuous streams by having readers and writers coordinate the state of given stream co-operatively via the following elements:
 - a Series aggregate: references the current active _epoch id_ for the series
 - Epoch streams: independent streams sharing a root name, sufficed by the _epoch id_
 - having an agreed way of coordinating to ensure each independent writer will acknowledge that a given epoch is _closed_ (e.g. based on event count, elapsed time since the epoch started, total event payload bytes, etc.)
 
-Depending on whether there's state associated with a given stream, the system periodically transitions to a new epoch by one of:
+Depending on whether there's state associated with a given stream, the system periodically transitions to a new epoch by algorithms such as:
 - Topic-stream: write a `Closed` event; have all writers guarantee no such event precedes their write
 - Aggregate stream:
   1. write a `Closed` event to the outgoing epoch-stream, followed by (as a separate action with idempotent semantics)...
@@ -2174,7 +2174,7 @@ As with database epochs, once a given Stream epoch has been marked active, we ga
 - if we intend to retain them for a significant period: we can copy them to an archive, then remove them from the primary dataset
 - if they are only relevant to assist troubleshooting over some short term: we can delete them after a given period (without copying them anywhere)
 
-When writing to a secondary store, there's also an opportunity to adjust the writing process versus the constraints imposed when writing as part of normal online transaction processing:
+When writing to a secondary store, there's also an opportunity to vary the writing process from that forced by the constraints imposed when writing as part of normal online transaction processing:
 - it will often make sense to have the archiver add a minimal placeholder to the secondary store regardless of whether a given stream is being archived, which can then be used to drive the walk of the primary instead of having to continually loop over all the data
 - when copying from primary to secondary, there's an opportunity to optimally pack events into batches (for instance in `Equinox.Cosmos`, batching writes means less documents, which reduces store and index size and hence query costs)
 - when writing to warm secondary storage, it may make sense to compress the events (under normal circumstances, compressing event data is not considered a worthwhile tradeoff).
@@ -2186,26 +2186,26 @@ When writing to a secondary store, there's also an opportunity to adjust the wri
 
 It's concievable that one might establish a single service combining the activities of:
 1. copying (archiving) from the primary store in reaction to changes on the primary
-2a. pruning from the primary when the copying is complete
-2b. deleting immediately
-3. continually visiting all streams in the primary in order to archive and/or prune streams that have fallen out of use
+2. pruning from the primary when the copying is complete
+3. deleting immediately
+4. continually visiting all streams in the primary in order to archive and/or prune streams that have fallen out of use
 
-However, splitting the work into two distinct facilities allows to cleanly deliniate individually complex activities, which:
-- clarifies the relative responsibilities
+However, splitting the work into two distinct facilities allows cleaner delineation of responsibilities:
+- clarifies the relative responsibilities (and allows them to be considwered individually)
 - allows the load (deletes can be costly in RU terms on CosmosDB) on the primary dataset to be more closely controlled
 
 #### Archiver
 
 An archiver tails a monitored store and bears the following reponsibilities:
 - minimizing the load on the source it's monitoring
-- listens to all event writes (via `$all` in the case of EventStoreDB or a CFP in the case of CosmosDB)
-- ensuring the secondary becomes aware of all new streams (especially in the case of `Equinox.Cosmos` streams in `AccessStrategy.RollingState` mode, which will not produce events)
+- listens to all event writes (via `$all` in the case of EventStoreDB or a ChangeFeed Processor in the case of CosmosDB)
+- ensuring the secondary becomes aware of all new streams (especially in the case of `Equinox.Cosmos` streams in `AccessStrategy.RollingState` mode, which will do not produce events)
 
 #### Pruner
 
-The pruner continually (when it reaches the end, it loops back to the start) walks the secondary of the store:
-- walking each stream, identifying the current write position in the secodary
-- use that as input into a decision as to how many events can be trimmed from the primary (deletion does not need to take place right away - Equinox will happily deal with an overlap)
+The pruner continually (i.e., when it reaches the end, it loops back to the start) walks the secondary of the store:
+- visiting each stream, identifying the current write position in the secondary
+- uses that as input into a decision as to how many events can be trimmed from the primary (deletion does not need to take place right away - Equinox will happily deal with an overlap)
 - (for `Equinox.Cosmos`) can optimize the packing of the events (e.g. if the most recent 4 events have arrived as 2 batches, the pruner can merge the two batches to minimize storage and index size). When writing to a primary collection, batches are never mutated for packing purposes both due to write costs and read amplification.
 - (for `Equinox.Cosmos`) can opt to delete from the primary if one or more full Batches have been copied to the primary (note the unit of deletion is a Batch - mutating a Batch in order to remove an event will trigger a reordering of the document's position in the logical partition)
 
