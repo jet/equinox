@@ -1,6 +1,5 @@
 ﻿module Equinox.Cosmos.Integration.CacheCellTests
 
-open Domain.ContactPreferences.Events
 open Equinox.Core
 open Swensen.Unquote
 open System
@@ -13,9 +12,10 @@ let ``AsyncLazy correctness`` () = async {
     let count = ref 0
     let cell = AsyncLazy (async { return Interlocked.Increment count })
     false =! cell.IsValid()
-    let! accessResult = [|1 .. 100|] |> Array.map (fun i -> cell.AwaitValue ()) |> Async.Parallel
+    let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.AwaitValue()) |> Async.Parallel
     true =! cell.IsValid()
-    test <@ accessResult |> Array.forall ((=) 1) @> }
+    test <@ accessResult |> Array.forall ((=) 1) @>
+}
 
 [<Fact>]
 let ``AsyncCacheCell correctness`` () = async {
@@ -25,13 +25,13 @@ let ``AsyncCacheCell correctness`` () = async {
     let cell = AsyncCacheCell (async { return Interlocked.Increment state }, fun value -> value <> !expectedValue)
     false =! cell.IsValid()
 
-    let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.AwaitValue ()) |> Async.Parallel
+    let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.AwaitValue()) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 1) @>
     true =! cell.IsValid()
 
     incr expectedValue
 
-    let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.AwaitValue ()) |> Async.Parallel
+    let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.AwaitValue()) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 2) @>
     true =! cell.IsValid()
 }
@@ -56,7 +56,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
     // If the runner is throwing, we want to be sure it doesn't place us in a failed state forever, per the semantics of Lazy<T>
     // However, we _do_ want to be sure that the function only runs once
     if initiallyThrowing then
-        let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.AwaitValue () |> Async.Catch) |> Async.Parallel
+        let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.AwaitValue() |> Async.Catch) |> Async.Parallel
         test <@ accessResult |> Array.forall (function Choice2Of2 (:? InvalidOperationException) -> true | _ -> false) @>
         throwing <- false
         false =! cell.IsValid()
@@ -67,7 +67,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
 
     incr expectedValue
 
-    let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.AwaitValue ()) |> Async.Parallel
+    let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.AwaitValue()) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 2) @>
     true =! cell.IsValid()
 
@@ -77,7 +77,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
     // but make the computation ultimately fail
     throwing <- true
     // All share the failure
-    let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.AwaitValue () |> Async.Catch) |> Async.Parallel
+    let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.AwaitValue() |> Async.Catch) |> Async.Parallel
     test <@ accessResult |> Array.forall (function Choice2Of2 (:? InvalidOperationException) -> true | _ -> false) @>
     // Restore normality
     throwing <- false
@@ -85,7 +85,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
 
     incr expectedValue
 
-    let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.AwaitValue ()) |> Async.Parallel
+    let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.AwaitValue()) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 4) @>
     true =! cell.IsValid()
 }
