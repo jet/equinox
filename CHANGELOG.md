@@ -26,6 +26,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `EventStore`: Pin `EventStore.Client` to `[5.0.1,6)` to avoid conflicting changes in `EventStore.Client` v `20.06` [#223](https://github.com/jet/equinox/pull/223)
+
 <a name="2.1.0"></a>
 ## [2.1.0] - 2020-05-22
 
