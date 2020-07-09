@@ -5,11 +5,21 @@ type AsyncLazy<'T>(workflow : Async<'T>) =
     let task = lazy (Async.StartAsTask workflow)
 
     member __.AwaitValue() = Async.AwaitTaskCorrect task.Value
-    // Used to rule out values where the computation yielded an exception or the result has now expired
+    /// Synchronously check whether the value has been computed (and/or remains valid)
+    member this.IsValid(?isExpired) =
+        if not task.IsValueCreated then false else
+
+        let value = task.Value
+        if not value.IsCompleted || value.IsFaulted then false else
+
+        match isExpired with
+        | Some f -> not (f value.Result)
+        | _ -> true
+
+    /// Used to rule out values where the computation yielded an exception or the result has now expired
     member internal this.TryValidate(?isExpired) : Async<'T option> = async {
         // Determines if the last attempt completed, but failed; For TMI see https://stackoverflow.com/a/33946166/11635
-        let value = task.Value
-        if value.IsCompleted && value.Status <> System.Threading.Tasks.TaskStatus.RanToCompletion then return None else
+        if task.Value.IsFaulted then return None else
 
         let! result = this.AwaitValue()
         match isExpired with
@@ -22,6 +32,8 @@ type AsyncLazy<'T>(workflow : Async<'T>) =
 type AsyncCacheCell<'T>(workflow : Async<'T>, ?isExpired : 'T -> bool) =
     let mutable cell = AsyncLazy workflow
 
+    /// Synchronously check the value remains valid (to short-circuit an Async AwaitValue step where value not required)
+    member __.IsValid() = cell.IsValid(?isExpired=isExpired)
     /// Gets or asynchronously recomputes a cached value depending on expiry and availability
     member __.AwaitValue() = async {
         let current = cell
