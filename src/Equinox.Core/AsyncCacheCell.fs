@@ -7,8 +7,6 @@ type AsyncLazy<'T>(workflow : Async<'T>) =
     member __.AwaitValue() = Async.AwaitTaskCorrect task.Value
     // Used to rule out values where the computation yielded an exception or the result has now expired
     member internal this.TryValidate(?isExpired) : Async<'T option> = async {
-        if not task.IsValueCreated then return None else
-
         // Determines if the last attempt completed, but failed; For TMI see https://stackoverflow.com/a/33946166/11635
         let value = task.Value
         if value.IsCompleted && value.Status <> System.Threading.Tasks.TaskStatus.RanToCompletion then return None else
