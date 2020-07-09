@@ -17,6 +17,7 @@
     <Compile Include="Retry.fs" />
     <Compile Include="AsyncCacheCell.fs" />
     <Compile Include="Cache.fs" />
+    <Compile Include="AsyncBatchingGate.fs" />
   </ItemGroup>
 
   <ItemGroup>
