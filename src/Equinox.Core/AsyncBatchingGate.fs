@@ -9,16 +9,16 @@ type internal AsyncBatch<'Req, 'Res>(dispatch : 'Req[] -> Async<'Res>, linger : 
     // Yes, naive impl in the absence of a cleaner way to have callers sharing the AwaitCompletion coordinate the adding
     do if lingerMs < 5 then invalidArg "linger" "must be >= 5ms"
     let queue = new System.Collections.Concurrent.BlockingCollection<'Req>()
-    let dispatch = async {
+    let workflow = async {
         do! Async.Sleep lingerMs
         queue.CompleteAdding()
         let reqs = queue.ToArray()
         return! dispatch reqs
     }
-    let task = lazy (Async.StartAsTask dispatch)
+    let task = lazy (Async.StartAsTask workflow)
 
     /// Attempt to add a request to the flight
-    /// Succeeds during linger interval (which commences when the first caller triggers the dispatch via AwaitResult)
+    /// Succeeds during linger interval (which commences when the first caller triggers the workflow via AwaitResult)
     /// Fails if this flight has closed (caller should generate a fresh, potentially after awaiting this.AwaitCompletion)
     member __.TryAdd(item) =
         if queue.IsAddingCompleted then false else
@@ -28,7 +28,7 @@ type internal AsyncBatch<'Req, 'Res>(dispatch : 'Req[] -> Async<'Res>, linger : 
         try queue.TryAdd(item)
         with :? System.InvalidOperationException -> false
 
-    /// Await the outcome of dispatching the batch (on the basis that the caller has contributed a request to it)
+    /// Await the outcome of dispatching the batch (on the basis that the caller has a stake due to a successful TryAdd)
     member __.AwaitResult() = Async.AwaitTaskCorrect task.Value
 
     /// Wait for dispatch to conclude (for any reason: ok/exn/cancel; we only care about the channel being clear)
