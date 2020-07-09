@@ -2,9 +2,9 @@
 
 open Equinox.Core
 open Swensen.Unquote
+open System
 open System.Threading
 open Xunit
-open System
 
 [<Fact>]
 let ``AsyncLazy correctness`` () = async {
@@ -54,7 +54,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
     else
         let! r = cell.AwaitValue()
         test <@ 1 = r @>
-    
+
     incr expectedValue
 
     let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.AwaitValue ()) |> Async.Parallel
@@ -62,7 +62,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
 
     // invalidate the cached value
     incr expectedValue
-    // but make the comptutation ultimately fail
+    // but make the computation ultimately fail
     throwing <- true
     // All share the failure
     let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.AwaitValue () |> Async.Catch) |> Async.Parallel

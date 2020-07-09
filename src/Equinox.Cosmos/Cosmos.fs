@@ -945,7 +945,7 @@ type private ContainerWrapper(container : Container, ?initContainer : Container 
     let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
 
     member __.Container = container
-    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
+    member internal __.InitializationGate = match initGuard with Some g -> Some g.AwaitValue | _ -> None
 
 /// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
 type Containers(categoryAndIdToDatabaseContainerStream : string -> string -> string*string*string, [<O; D(null)>]?disableInitialization) =
