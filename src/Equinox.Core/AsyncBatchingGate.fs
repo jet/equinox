@@ -7,7 +7,7 @@ namespace Equinox.Core
 type internal AsyncBatch<'Req, 'Res>(dispatch : 'Req[] -> Async<'Res>, linger : System.TimeSpan) =
     let lingerMs = int linger.TotalMilliseconds
     // Yes, naive impl in the absence of a cleaner way to have callers sharing the AwaitCompletion coordinate the adding
-    do if lingerMs < 5 then invalidArg "linger" "must be >= 5ms"
+    do if lingerMs < 1 then invalidArg "linger" "must be >= 1ms"
     let queue = new System.Collections.Concurrent.BlockingCollection<'Req>()
     let workflow = async {
         do! Async.Sleep lingerMs
