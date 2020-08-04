@@ -23,6 +23,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Remove `module Commands` convention from in examples
 - Revise semantics of Cart Sample Command handling
 - `Cosmos:` Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
+- Simplify `AsyncCacheCell` [#229](https://github.com/jet/equinox/pull/229)
 
 ### Removed
 ### Fixed
