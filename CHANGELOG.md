@@ -9,11 +9,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.2.0"></a>
+## [2.2.0] - 2020-08-04
+
+### Added
 
 - Add `AsyncBatchingGate` [#228](https://github.com/jet/equinox/pull/228)
 
-### Changed
-### Removed
 ### Fixed
 
 - `EventStore`: Pin `EventStore.Client` to `[5.0.1,6)` to avoid conflicting changes in `EventStore.Client` v `20.06` [#223](https://github.com/jet/equinox/pull/223)
@@ -396,7 +402,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.1.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.2.0...HEAD
+[2.2.0]: https://github.com/jet/equinox/compare/2.1.0...2.2.0
 [2.1.0]: https://github.com/jet/equinox/compare/2.0.2...2.1.0
 [2.0.2]: https://github.com/jet/equinox/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/jet/equinox/compare/2.0.0...2.0.1
