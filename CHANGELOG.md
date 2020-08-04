@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- Add `AsyncBatchingGate` [#228](https://github.com/jet/equinox/pull/228)
+
 ### Changed
 ### Removed
 ### Fixed

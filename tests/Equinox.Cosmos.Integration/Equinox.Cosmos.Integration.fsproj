@@ -15,6 +15,7 @@
     <Compile Include="CosmosCoreIntegration.fs" />
     <Compile Include="JsonConverterTests.fs" />
     <Compile Include="CacheCellTests.fs" />
+    <Compile Include="AsyncBatchingGateTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
