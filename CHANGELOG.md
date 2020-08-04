@@ -9,17 +9,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
-
-- targets `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
-- targets `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
-
 ### Changed
 
-- Update to `3.1.101` SDK
+- target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
+- target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1` with `SystemTextJson`
 - Retarget Todobackend to `aspnetcore` v `3.1`
 - Target `FSharp.Control.AsyncSeq` v `2.0.23`
-- Updated AzDO CI/CD to use `windows-latest`
+- Update AzDO CI/CD to use `windows-latest`
+- Update to `3.1.101` SDK
 - Remove `module Commands` convention from in examples
 - Revise semantics of Cart Sample Command handling
 - `Cosmos:` Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
@@ -33,7 +31,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- Add `AsyncBatchingGate` [#228](https://github.com/jet/equinox/pull/228)
+- `AsyncBatchingGate` [#228](https://github.com/jet/equinox/pull/228)
 
 ### Fixed
 
@@ -44,7 +42,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- Add `eqx dump -b`, enabling overriding of Max Events per Batch
+- `eqx dump -b`, enabling overriding of Max Events per Batch
 - `MemoryStore`: Add `Committed` event to enable simulating Change Feeds in integration tests re [#205](https://github.com/jet/equinox/issues/205) [#221](https://github.com/jet/equinox/pull/221)
 
 ### Changed
