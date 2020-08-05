@@ -2102,7 +2102,7 @@ _NOTE: Equinox does not presently expose specific controls to allow specificatio
 
 > _You don't rewrite events or streams in a Store, for reasons_
 
-For Domain Events in an event-sourced model, their permanence and immutablity is typically considered axiomatic; readers expect to be able to cache them forever, rely on their stream position being fixed etc. Some (rare) corner cases where one might wish to deviate from such axioms in terms of Domain Events in a model include:
+For Domain Events in an event-sourced model, their permanence and immutability is typically considered axiomatic; readers expect to be able to cache them forever, rely on their stream position being fixed etc. Some (rare) corner cases where one might wish to deviate from such axioms in terms of Domain Events in a model include:
 
 - rewriting streams as an expedient solution to a bug etc: as with the rewriting in history in git, the first rule is: DONT. (But it's possible and in some cases this nuclear option can solve a problem)
 - intentionally removing data: for GDPR or CCPA reasons, you may opt to mutate or remove events as part of addressing a need to conclusively end-of-life some data (other solutions are available...)
@@ -2150,9 +2150,9 @@ As a fresh epoch of data becomes the primary, other options open up:
 
 > _Replace a perpetual stream with a series of finite epoch-streams, allowing superseded ones to be archived or deleted_
 
-As covered above, long streams bring associated costs. A key one that hasn't been mentioned is that, because the unit of storage is a stream, there's no easy way to distinguish historic events from current ones. This has various effects on processing costs such as (for Aggregate streams), that of loading and folding the state (or generating a snapshot).
+As covered above, long streams bring associated costs. A key one that hasn't been mentioned is that, because the unit of storage is a stream, there's no easy way to distinguish historic events from current ones. This has various effects on processing costs such as (for Aggregate streams) and performance concerns from loading and folding the state (or generating a snapshot).
 
-Anologous to how data can be retired (as described in _Database epochs_), it may be possible to manage the growth cycle of continuous streams by having readers and writers coordinate the state of given stream co-operatively via the following elements:
+Similar to how data can be retired (as described in _Database epochs_), it may be possible to manage the growth cycle of continuous streams by having readers and writers coordinate the state of given stream co-operatively via the following elements:
 - one Series aggregate: references the current active _epoch id_ for the series
 - many Epoch streams: independent streams (sharing a root name), sufficed by the _epoch id_
 - having a deterministic way of coordinating to ensure each (independent) writer will recognize that a given epoch is _closed_ (e.g., based on event count, elapsed time since the epoch started, total event payload bytes, etc.)
@@ -2177,16 +2177,16 @@ As with database epochs, once a given Stream epoch has been marked active in a S
 - if they are only relevant to assist troubleshooting over some short term: we can delete them after a given period (without copying them anywhere)
 
 When writing to a secondary store, there's also an opportunity to vary the writing process from that forced by the constraints imposed when writing as part of normal online transaction processing:
-- it will often make sense to have the archiver add a minimal placeholder to the secondary store regardless of whether a given stream is being archived, which can then be used to drive the walk of the primary instead of placing avoidable load on the primary by having to continually loop over all the data in order to re-assess archival criteria over time
+- have the archiver add a minimal placeholder to the secondary store regardless of whether a given stream is being archived. This can then drive the walk of the primary instead of placing load on the primary by having to continually loop over all the data in order to re-assess archival criteria over time
 - when copying from primary to secondary, there's an opportunity to optimally pack events into batches (for instance in `Equinox.Cosmos`, batching writes means less documents, which reduces store and index size and hence query costs)
-- when writing to warm secondary storage, it may make sense to compress the events (under normal circumstances, compressing event data is rarely considered a worthwhile tradeoff).
+- when writing to warm secondary storage, it may make sense to compress the events (under normal circumstances, compressing event data is rarely considered a worthwhile trade off).
 - where the nature of traffic on the system has peaks and troughs, there's an opportunity to shift the process of traversing the data for archival purposes to a window outside of the peak load period (although, in general, the impact of reads for the purposes of archival won't be significant enough to warrant optimizing this factor)
 
 ### Archiver + Pruner roles
 
 > _Outlining the roles of the (proposed) `eqxArchiver` and `eqxPruner` templates_
 
-It's concievable that one might establish a single service combining the activities of:
+It's conceivable that one might establish a single service combining the activities of:
 1. copying (archiving) to the secondary store in reaction to changes in the primary
 2. pruning from the primary when the copying is complete
 3. deleting immediately
@@ -2198,7 +2198,7 @@ However, splitting the work into two distinct facilities allows better delineati
 
 #### Archiver
 
-An archiver tails a monitored store and bears the following reponsibilities:
+An archiver tails a monitored store and bears the following responsibilities:
 - minimizing the load on the source it's monitoring
 - listens to all event writes (via `$all` in the case of EventStoreDB or a ChangeFeed Processor in the case of CosmosDB)
 - ensuring the secondary becomes aware of all new streams (especially in the case of `Equinox.Cosmos` streams in `AccessStrategy.RollingState` mode, which do not yield a new event-batch per write)
