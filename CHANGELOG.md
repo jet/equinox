@@ -16,6 +16,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1` with `SystemTextJson`
 - Retarget Todobackend to `aspnetcore` v `3.1`
 - Target `FSharp.Control.AsyncSeq` v `2.0.23`
+- `Equinox.Tool`: Target `FSharp.Core` v `4.7.1`
 - Update AzDO CI/CD to use `windows-latest`
 - Update to `3.1.101` SDK
 - Remove `module Commands` convention from in examples
