@@ -1,5 +1,55 @@
 namespace Equinox.Core
 
+open System.Threading
+
+[<AllowNullLiteral>]
+type Node<'T>(data: 'T, next: Node<'T>) =
+    member val Data = data with get, set
+    member val Next = next with get, set
+
+/// Lock free queue used to avoid blocking. Due to semantics of AsyncBatch, it accumulates requests until the batch
+/// linger expires, and then is marked done.
+type LockFreeQueue<'T> () =
+    let Done = Node<'T>(Unchecked.defaultof<'T>, null) // On we queue as done no more entries can be accumulated
+    let mutable head: Node<'T> = null
+
+    member __.TryAdd(item) =
+        let mutable prevHead = head
+        if prevHead = Done then
+            false
+        else
+            let n = Node<'T>(item, prevHead)
+            let mutable swapHead = Interlocked.CompareExchange(&head, n, prevHead)
+            let mutable cont = true
+
+            // have to do this twice since F# has no do-while loop
+            while (cont && prevHead <> swapHead) do
+                prevHead <- head
+                if prevHead = Done then
+                    cont <- false
+                else
+                    n.Next <- prevHead
+                    swapHead <- Interlocked.CompareExchange(&head, n, prevHead)
+
+            prevHead <> Done
+
+    member __.GetAll() =
+        let mutable prevHead = head
+        let mutable swapHead = Interlocked.CompareExchange(&head, Done, prevHead)
+
+        while (prevHead <> swapHead) do
+            prevHead <- head
+            swapHead <- Interlocked.CompareExchange(&head, Done, prevHead)
+
+        // will accumulate linked list in reverse order
+        let mutable cur = prevHead
+        let arr = new ResizeArray<'T>()
+        while cur <> null do
+            arr.Add(cur.Data)
+            cur <- cur.Next
+
+        arr.ToArray()
+
 /// Thread-safe coordinator that batches concurrent requests for a single <c>dispatch</> invocation such that:
 /// - requests arriving together can be coalesced into the batch during the linger period via TryAdd
 /// - callers that have had items admitted can concurrently await the shared fate of the dispatch via AwaitResult
@@ -8,11 +58,10 @@ type internal AsyncBatch<'Req, 'Res>(dispatch : 'Req[] -> Async<'Res>, linger : 
     let lingerMs = int linger.TotalMilliseconds
     // Yes, naive impl in the absence of a cleaner way to have callers sharing the AwaitCompletion coordinate the adding
     do if lingerMs < 1 then invalidArg "linger" "must be >= 1ms"
-    let queue = new System.Collections.Concurrent.BlockingCollection<'Req>()
+    let queue = new LockFreeQueue<'Req>()
     let workflow = async {
         do! Async.Sleep lingerMs
-        queue.CompleteAdding()
-        let reqs = queue.ToArray()
+        let reqs = queue.GetAll()
         return! dispatch reqs
     }
     let task = lazy (Async.StartAsTask workflow)
@@ -20,13 +69,7 @@ type internal AsyncBatch<'Req, 'Res>(dispatch : 'Req[] -> Async<'Res>, linger : 
     /// Attempt to add a request to the flight
     /// Succeeds during linger interval (which commences when the first caller triggers the workflow via AwaitResult)
     /// Fails if this flight has closed (caller should generate a fresh, potentially after awaiting this.AwaitCompletion)
-    member __.TryAdd(item) =
-        if queue.IsAddingCompleted then false else
-
-        // there's a race between the IsAddingCompleted check outcome and the CompleteAdding
-        // sadly there's no way to detect without a try/catch
-        try queue.TryAdd(item)
-        with :? System.InvalidOperationException -> false
+    member __.TryAdd(item) = queue.TryAdd(item)
 
     /// Await the outcome of dispatching the batch (on the basis that the caller has a stake due to a successful TryAdd)
     member __.AwaitResult() = Async.AwaitTaskCorrect task.Value
