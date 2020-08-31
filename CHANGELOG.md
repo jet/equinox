@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Cosmos`: `Prune` API to delete events from the head of a stream [#233](https://github.com/jet/equinox/pull/233)
+
 ### Changed
 ### Removed
 ### Fixed
@@ -29,7 +32,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- Add `eqx dump -b`, enabling overriding of Max Events per Batch
+- `eqx dump -b`, enabling overriding of Max Events per Batch
 - `MemoryStore`: Add `Committed` event to enable simulating Change Feeds in integration tests re [#205](https://github.com/jet/equinox/issues/205) [#221](https://github.com/jet/equinox/pull/221)
 
 ### Changed
