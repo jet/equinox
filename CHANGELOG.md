@@ -10,7 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `Cosmos`: `Prune` API to delete events from the head of a stream [#226](https://github.com/jet/equinox/pull/226)
+- `Cosmos`: `Prune` API to delete events from the head of a stream [#233](https://github.com/jet/equinox/pull/233)
 
 ### Changed
 ### Removed
