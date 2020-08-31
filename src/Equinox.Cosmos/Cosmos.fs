@@ -1267,7 +1267,7 @@ type Connector
             yield name
             match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
         let sanitizedName = name.Replace('\'','_').Replace(':','_') // sic; Align with logging for ES Adapter
-        log.ForContext("Uri", uri).Information("CosmosDb Connection Name {connectionName}", sanitizedName)
+        log.ForContext("uri", uri).Information("CosmosDb Connecting {connectionName}", sanitizedName)
 
     /// ClientOptions (ConnectionPolicy with v2 SDK) for this Connector as configured
     member val ClientOptions =
