@@ -24,6 +24,18 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - `Cosmos`: Tweaked log messages
 
+
+<a name="2.3.0-rc1"></a>
+## [2.3.0-rc1] - 2020-08-31
+
+### Added
+
+- `Cosmos`: `Prune` API to delete events from the head of a stream [#233](https://github.com/jet/equinox/pull/233)
+
+### Changed
+
+- `Cosmos`: Tweaked connecting log message
+
 <a name="2.2.0"></a>
 ## [2.2.0] - 2020-08-04
 
