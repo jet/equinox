@@ -27,12 +27,23 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+<a name="2.3.0-rc1"></a>
+## [2.3.0-rc1] - 2020-08-31
+
+### Added
+
+- `Cosmos`: `Prune` API to delete events from the head of a stream [#233](https://github.com/jet/equinox/pull/233)
+
+### Changed
+
+- `Cosmos`: Tweaked log messages
+
 <a name="2.2.0"></a>
 ## [2.2.0] - 2020-08-04
 
 ### Added
 
-- `AsyncBatchingGate` [#228](https://github.com/jet/equinox/pull/228)
+- Add `AsyncBatchingGate` [#228](https://github.com/jet/equinox/pull/228)
 
 ### Fixed
 
@@ -416,7 +427,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.2.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.3.0-rc1...HEAD
+[2.3.0-rc1]: https://github.com/jet/equinox/compare/2.2.0...2.3.0-rc1
 [2.2.0]: https://github.com/jet/equinox/compare/2.1.0...2.2.0
 [2.1.0]: https://github.com/jet/equinox/compare/2.0.2...2.1.0
 [2.0.2]: https://github.com/jet/equinox/compare/2.0.1...2.0.2
