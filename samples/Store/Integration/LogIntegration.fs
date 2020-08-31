@@ -40,6 +40,9 @@ module EquinoxCosmosInterop =
             | Log.SyncSuccess m -> "CosmosSync200", m, None, m.ru
             | Log.SyncConflict m -> "CosmosSync409", m, None, m.ru
             | Log.SyncResync m -> "CosmosSyncResync", m, None, m.ru
+            | Log.PruneResponse m -> "CosmosPruneResponse", m, None, m.ru
+            | Log.Delete m -> "CosmosDelete", m, None, m.ru
+            | Log.Prune (events, m) -> "CosmosPrune", m, Some events, m.ru
         {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; responses = batches
             interval = StopwatchInterval(metric.interval.StartTicks,metric.interval.EndTicks); ru = ru }
 

@@ -57,6 +57,7 @@ module SerilogHelpers =
         | ResponseForward | ResponseBackward
         | QueryForward | QueryBackward
         | Append | Resync | Conflict
+        | PruneResponse | Delete | Prune
     let (|EqxAction|) = function
         | Event.Tip _ -> EqxAct.Tip
         | Event.TipNotFound _ -> EqxAct.TipNotFound
@@ -68,22 +69,28 @@ module SerilogHelpers =
         | Event.SyncSuccess _ -> EqxAct.Append
         | Event.SyncResync _ -> EqxAct.Resync
         | Event.SyncConflict _ -> EqxAct.Conflict
+        | Event.PruneResponse _ -> EqxAct.PruneResponse
+        | Event.Delete _ -> EqxAct.Delete
+        | Event.Prune _ -> EqxAct.Prune
     let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Store.Log.Measurement) = ru
-    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|) = function
+    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|CosmosDeleteRc|CosmosPruneRc|) = function
         | Event.Tip (Stats s)
         | Event.TipNotFound (Stats s)
         | Event.TipNotModified (Stats s)
         // slices are rolled up into batches so be sure not to double-count
+        | Event.PruneResponse (Stats s)
         | Event.Response (_,Stats s) -> CosmosResponseRc s
         | Event.Query (_,_, (Stats s)) -> CosmosReadRc s
         | Event.SyncSuccess (Stats s)
         | Event.SyncConflict (Stats s) -> CosmosWriteRc s
         | Event.SyncResync (Stats s) -> CosmosResyncRc s
+        | Event.Delete (Stats s) -> CosmosDeleteRc s
+        | Event.Prune (_, (Stats s)) -> CosmosPruneRc s
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|CosmosRequestCharge|EquinoxChargeRollup|) = function
         | CosmosResponseRc _ ->
             EquinoxChargeRollup
-        | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc as e ->
+        | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc | CosmosDeleteRc rc | CosmosPruneRc rc as e ->
             CosmosRequestCharge (e,rc)
     let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Store.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
