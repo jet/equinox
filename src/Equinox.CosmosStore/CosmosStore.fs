@@ -1,4 +1,4 @@
-﻿namespace Equinox.CosmosStore.Core
+namespace Equinox.CosmosStore.Core
 
 open Azure
 open Azure.Cosmos
@@ -1027,13 +1027,13 @@ type CosmosStoreConnection
     (   client : CosmosClient,
         /// Singleton used to cache initialization state per <c>CosmosContainer</c>.
         containers : Containers,
-        /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+        /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
         ?createGateway) =
     let createGateway = match createGateway with Some creator -> creator | None -> ContainerGateway
     new (client, databaseId : string, containerId : string,
          /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
          [<O; D(null)>]?disableInitialization,
-         /// Admits a hook to enable customization of how <c>Equinox.Cosmos</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+         /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
          [<O; D(null)>]?createGateway : CosmosContainer -> ContainerGateway) =
         let containers = Containers(databaseId, containerId, ?disableInitialization = disableInitialization)
         CosmosStoreConnection(client, containers, ?createGateway = createGateway)
@@ -1186,7 +1186,7 @@ type AppendResult<'t> =
     | Conflict of index: 't * conflictingEvents: ITimelineEvent<JsonElement>[]
     | ConflictUnknown of index: 't
 
-/// Encapsulates the core facilities Equinox.Cosmos offers for operating directly on Events in Streams.
+/// Encapsulates the core facilities Equinox.CosmosStore offers for operating directly on Events in Streams.
 type EventsContext
     (   context : Equinox.CosmosStore.CosmosStoreContext, container : ContainerClient,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
