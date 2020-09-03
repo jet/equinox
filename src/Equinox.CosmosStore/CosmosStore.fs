@@ -1,4 +1,4 @@
-namespace Equinox.CosmosStore.Core
+﻿namespace Equinox.CosmosStore.Core
 
 open Azure
 open Azure.Cosmos
@@ -815,15 +815,14 @@ type Containers
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
 
-    member internal __.ResolveContainerGuardAndStreamName(client : CosmosClient, createGateway, categoryName, streamId) : ContainerInitializerGuard * string =
+    member internal __.ResolveContainerGuardAndStreamName(client, createGateway, categoryName, streamId) : ContainerInitializerGuard * string =
         let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let createContainerInitializerGuard (d, c) =
             let init =
                 if Some true = disableInitialization then None
                 else Some (fun cosmosContainer -> Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore)
-            ContainerInitializerGuard
-                (   createGateway (client.GetDatabase(d).GetContainer(c)),
-                    ?initContainer = init)
+            let primaryContainer = (client : CosmosClient).GetDatabase(d).GetContainer(c)
+            ContainerInitializerGuard(createGateway primaryContainer, ?initContainer = init)
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
 
