@@ -1129,7 +1129,7 @@ type Discovery =
 type CosmosStoreClientFactory
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
         requestTimeout: TimeSpan,
-        /// Maximum number of times attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
+        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
         maxRetryAttemptsOnRateLimitedRequests: int,
         /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
         maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
@@ -1137,7 +1137,7 @@ type CosmosStoreClientFactory
         [<O; D(null)>]?gatewayModeMaxConnectionLimit,
         /// Connection mode (default: ConnectionMode.Gateway (lowest perf, least trouble))
         [<O; D(null)>]?mode : ConnectionMode,
-        /// consistency mode  (default: ConsistencyLevel.Session)
+        /// consistency mode (default: ConsistencyLevel.Session)
         [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel) =
 
     /// CosmosClientOptions for this Connector as configured
@@ -1193,7 +1193,7 @@ type EventsContext
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
         /// Defaults to 10
         [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
-        /// Alternate way of specifying defaultMaxItems which facilitates reading it from a cached dynamic configuration
+        /// Alternate way of specifying defaultMaxItems that facilitates reading it from a cached dynamic configuration
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
