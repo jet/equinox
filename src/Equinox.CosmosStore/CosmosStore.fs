@@ -8,7 +8,6 @@ open FSharp.Control
 open Serilog
 open System
 open System.Text.Json
-open System.Threading
 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
@@ -606,7 +605,7 @@ module internal Tip =
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * ITimelineEvent<JsonElement>[]
-    /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with IndexResult.NotModified
+    /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
     let tryLoad (log : ILogger) retryPolicy containerStream (maybePos: Position option): Async<Result> = async {
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log
         match res with
@@ -687,10 +686,12 @@ module internal Tip =
             if x.Index = stopIndex then found <- true
         used, dropped
 
+    type [<RequireQualifiedAccess>]WalkResult = Unknown | Found
     let walk<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests direction startPos
         (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
-        : Async<Position * 'event[]> = async {
-        let responseCount = ref 0
+        : Async<WalkResult * Position * 'event[]> = async {
+        let mutable status = WalkResult.Unknown
+        let mutable responseCount = 0
         let mergeBatches (log : ILogger) (batchesBackward: AsyncSeq<ITimelineEvent<JsonElement>[] * Position option * float>) = async {
             let mutable lastResponse, maybeTipPos, ru = None, None, 0.
             let! events =
@@ -698,11 +699,12 @@ module internal Tip =
                 |> AsyncSeq.map (fun (events, maybePos, r) ->
                     if maybeTipPos = None then maybeTipPos <- maybePos
                     lastResponse <- Some events; ru <- ru + r
-                    incr responseCount
+                    responseCount <- responseCount + 1
                     events |> Array.map (fun x -> x, tryDecode x))
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.takeWhileInclusive (function
                     | x, Some e when isOrigin e ->
+                        status <- WalkResult.Found
                         match lastResponse with
                         | None -> log.Information("EqxCosmos Stop stream={stream} at={index} {case}", stream, x.Index, x.EventType)
                         | Some batch ->
@@ -720,11 +722,11 @@ module internal Tip =
         let readlog = log |> Log.prop "direction" direction
         let batches : AsyncSeq<ITimelineEvent<JsonElement>[] * Position option * float> = run readlog retryingLoggingReadPage maxRequests query
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
-        let raws, decoded = (Array.map fst events), (events |> Seq.choose snd |> Array.ofSeq)
+        let raws, decoded = Array.map fst events, Array.choose snd events
         let pos = match maybeTipPos with Some p -> p | None -> Position.fromMaxIndex raws
 
-        log |> logQuery direction maxItems stream t (!responseCount,raws) pos.index ru
-        return pos, decoded }
+        log |> logQuery direction maxItems stream t (responseCount,raws) pos.index ru
+        return status, pos, decoded }
 
     let walkLazy<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests direction startPos
         (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
@@ -897,7 +899,6 @@ module Delete =
     }
 
 type [<NoComparison>] Token = { stream: string; pos: Position }
-//type [<NoComparison>] Token = { container: Container; stream: string; pos: Position }
 module Token =
     let create stream pos : StreamToken =
         {  value = box { stream = stream; pos = pos }
@@ -911,7 +912,7 @@ module Token =
 [<AutoOpen>]
 module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type InternalSyncResult = Written of StreamToken | ConflictUnknown of StreamToken | Conflict of StreamToken * ITimelineEvent<JsonElement>[]
+    type InternalSyncResult = Written of StreamToken | ConflictUnknown of StreamToken | Conflict of Position * ITimelineEvent<JsonElement>[]
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of StreamToken * 'event[]
@@ -970,7 +971,7 @@ type Containers
         g, streamName
 
 type ContainerClient(gateway : ContainerGateway, batching : BatchingPolicy, retry: RetryPolicy) =
-    let (|FromUnfold|_|) (tryDecode: #IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs:#IEventData<_>[]) : Option<'event[]> =
+    let (|FromUnfold|_|) (tryDecode: #IEventData<_> -> 'event option) (isOrigin: 'event -> bool) (xs: #IEventData<_>[]) : Option<'event[]> =
         let items = ResizeArray()
         let isOrigin' e =
             match tryDecode e with
@@ -981,61 +982,74 @@ type ContainerClient(gateway : ContainerGateway, batching : BatchingPolicy, retr
         match Array.tryFindIndexBack isOrigin' xs with
         | None -> None
         | Some _ -> items.ToArray() |> Some
-    member __.LoadBackwardsStopping(log, stream, (tryDecode,isOrigin)): Async<StreamToken * 'event[]> = async {
-        let! pos, events = Query.walk log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward None (tryDecode,isOrigin)
+    let (|FromConflict|_|) stream (tryDecode: #IEventData<JsonElement> -> 'event option) (isOrigin: 'event -> bool) : (Position * #IEventData<JsonElement>[]) -> (StreamToken * 'event[]) option = function
+        | pos, FromUnfold tryDecode isOrigin span -> Some (Token.create stream pos, span)
+        | { index = 0L }, _ -> Some (Token.create stream Position.fromKnownEmpty, Array.empty)
+        | _ -> None
+    let (|FromTipOnly_|_|) stream tryDecode (isOrigin: 'event -> bool) = function
+        | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> Some (Token.create stream pos, span)
+        | Tip.Result.Found ({ index = 0L }, _) -> Some (Token.create stream Position.fromKnownEmpty, Array.empty)
+        | _ -> None
+    let (|FromTip|_|) stream tryDecode (isOrigin: 'event -> bool) = function
+        | FromTipOnly_ stream tryDecode isOrigin res -> Some res
+        | _ -> None
+    member __.LoadBackwardsStopping(log, stream, (tryDecode,isOrigin), ?minPos): Async<StreamToken * 'event[]> = async {
+        let! found, pos, events = Query.walk log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests Direction.Backward None (tryDecode,isOrigin)
         System.Array.Reverse events
+        // TODO if not found then // load others, append lists
         return Token.create stream pos, events }
     member __.Read(log, stream, direction, startPos, (tryDecode,isOrigin)) : Async<StreamToken * 'event[]> = async {
-        let! pos, events = Query.walk log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
+        let! _found, pos, events = Query.walk log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
+        // TODO if not found then // load others, append lists
         return Token.create stream pos, events }
     member __.ReadLazy(batching: BatchingPolicy, log, stream, direction, startPos, (tryDecode,isOrigin)) : AsyncSeq<'event[]> =
         Query.walkLazy log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
-    member __.LoadFromUnfoldsOrRollingSnapshots(log, (stream,maybePos), (tryDecode,isOrigin)): Async<StreamToken * 'event[]> = async {
-        let! res = Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) maybePos
-        match res with
+    member con.LoadInitial(log, (stream,maybePos), (tryDecode,isOrigin), includeUnfolds): Async<StreamToken * 'event[]> = async {
+        if not includeUnfolds then return! con.LoadBackwardsStopping(log, stream, (tryDecode,isOrigin)) else
+
+        match! Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) maybePos with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
         | Tip.Result.NotModified -> return invalidOp "Not handled"
-        | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return Token.create stream pos, span
-        | _ -> return! __.LoadBackwardsStopping(log,stream, (tryDecode,isOrigin)) }
+        | FromTip stream tryDecode isOrigin r -> return r
+        | Tip.Result.Found _ -> return! con.LoadBackwardsStopping(log,stream, (tryDecode,isOrigin)) }
     member __.GetPosition(log, stream, ?pos): Async<StreamToken> = async {
-        let! res = Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) pos
-        match res with
+        match! Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) pos with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
         | Tip.Result.NotModified -> return Token.create stream pos.Value
         | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create stream pos }
-    member __.LoadFromToken(log, (stream,pos), (tryDecode, isOrigin)): Async<LoadFromTokenResult<'event>> = async {
-        let! res = Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) (Some pos)
-        match res with
-        | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty,Array.empty)
+    member con.LoadFromToken(log, (stream,pos), (tryDecode, isOrigin), ?preview): Async<LoadFromTokenResult<'event>> = async {
+        match preview with
+        | Some (FromConflict stream tryDecode isOrigin res) -> return LoadFromTokenResult.Found res
+        | _ ->
+
+        match! Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) (Some pos) with
+        | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty, Array.empty)
         | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
-        | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return LoadFromTokenResult.Found (Token.create stream pos, span)
-        | _ ->  let! res = __.Read(log, stream, Direction.Forward, Some pos, (tryDecode,isOrigin))
-                return LoadFromTokenResult.Found res }
+        | FromTip stream tryDecode isOrigin r -> return LoadFromTokenResult.Found r
+        | Tip.Result.Found _ ->
+            let! res = con.LoadBackwardsStopping(log, stream, (tryDecode,isOrigin), pos.index)
+            return LoadFromTokenResult.Found res }
     member __.Sync(log, stream, (exp, batch: Tip)): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
-        let! wr = Sync.batch log retry.WriteRetryPolicy (gateway,stream) (exp,batch)
-        match wr with
-        | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (Token.create stream pos',events)
+        match! Sync.batch log retry.WriteRetryPolicy (gateway,stream) (exp,batch) with
+        | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (pos',events)
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
     member __.Prune(log, stream, beforeIndex) =
         Delete.pruneBefore log (gateway,stream) batching.MaxItems beforeIndex
 
 type internal Category<'event, 'state, 'context>(container : ContainerClient, codec : IEventCodec<'event,JsonElement,'context>) =
-    let (|TryDecodeFold|) (fold: 'state -> 'event seq -> 'state) initial (events: ITimelineEvent<JsonElement> seq) : 'state = Seq.choose codec.TryDecode events |> fold initial
-    member __.Load(includeUnfolds, stream, fold, initial, isOrigin, log : ILogger): Async<StreamToken * 'state> = async {
-        let! token, events =
-            if not includeUnfolds then container.LoadBackwardsStopping(log, stream, (codec.TryDecode,isOrigin))
-            else container.LoadFromUnfoldsOrRollingSnapshots(log, (stream, None), (codec.TryDecode,isOrigin))
+    member __.LoadInitial(log, stream, initial, includeUnfolds, fold, isOrigin): Async<StreamToken * 'state> = async {
+        let! token, events = container.LoadInitial(log, (stream, None), (codec.TryDecode,isOrigin), includeUnfolds)
         return token, fold initial events }
-    member __.LoadFromToken(Token.Unpack (stream,pos), state: 'state as current) fold isOrigin (log : ILogger): Async<StreamToken * 'state> = async {
-        let! res = container.LoadFromToken(log, (stream, pos), (codec.TryDecode,isOrigin))
-        match res with
-        | LoadFromTokenResult.Unchanged -> return current
-        | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
-    member __.Sync(Token.Unpack (stream,pos), state as current, events, mapUnfolds, fold, isOrigin, compress, log, context): Async<SyncResult<'state>> = async {
+    member __.LoadFromToken(log, (Token.Unpack (stream, pos) as streamToken), state, fold, isOrigin, ?preloaded): Async<StreamToken * 'state> = async {
+        match! container.LoadFromToken(log, (stream, pos), (codec.TryDecode,isOrigin), ?preview=preloaded) with
+        | LoadFromTokenResult.Unchanged -> return streamToken, state
+        | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
+    member cat.Sync(log, token, state, events, mapUnfolds, fold, isOrigin, compress, context): Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
-        let encode e = codec.Encode(context,e)
+        let encode e = codec.Encode(context, e)
+        let (Token.Unpack (stream,pos)) = token
         let exp,events,eventsEncoded,projectionsEncoded =
             match mapUnfolds with
             | Choice1Of3 () ->     Sync.Exp.Version pos.index, events, Seq.map encode events |> Array.ofSeq, Seq.empty
@@ -1046,10 +1060,9 @@ type internal Category<'event, 'state, 'context>(container : ContainerClient, co
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkUnfold compress baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
-        let! res = container.Sync(log, stream, (exp,batch))
-        match res with
-        | InternalSyncResult.Conflict (token',TryDecodeFold fold state events') -> return SyncResult.Conflict (async { return token', events' })
-        | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (__.LoadFromToken current fold isOrigin log)
+        match! container.Sync(log, stream, (exp,batch)) with
+        | InternalSyncResult.Conflict (pos, tipEvents) -> return SyncResult.Conflict (cat.LoadFromToken(log, token, state, fold, isOrigin, (pos, tipEvents)))
+        | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (cat.LoadFromToken(log, token, state, fold, isOrigin))
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 module Caching =
@@ -1090,7 +1103,7 @@ type internal Folder<'event, 'state, 'context>
         mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
-    let batched log stream = category.Load(inspectUnfolds, stream, fold, initial, isOrigin, log)
+    let batched log stream = category.LoadInitial(log, stream, initial, inspectUnfolds, fold, isOrigin)
     interface ICategory<'event, 'state, string, 'context> with
         member __.Load(log, streamName, opt): Async<StreamToken * 'state> =
             match readCache with
@@ -1099,10 +1112,10 @@ type internal Folder<'event, 'state, 'context>
                 match! cache.TryGet(prefix + streamName) with
                 | None -> return! batched log streamName
                 | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState
-                | Some tokenAndState -> return! category.LoadFromToken tokenAndState fold isOrigin log }
+                | Some (token, state) -> return! category.LoadFromToken(log, token, state, fold, isOrigin) }
         member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context, compress)
             : Async<SyncResult<'state>> = async {
-            let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, compress, log, context)
+            let! res = category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, compress, context)
             match res with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
@@ -1410,7 +1423,7 @@ type EventsContext
         let! res = container.Sync(log, stream, (Sync.Exp.Version position.index, batch))
         match res with
         | InternalSyncResult.Written (Token.Unpack (_,pos)) -> return AppendResult.Ok pos
-        | InternalSyncResult.Conflict (Token.Unpack (_,pos),events) -> return AppendResult.Conflict (pos, events)
+        | InternalSyncResult.Conflict (pos,events) -> return AppendResult.Conflict (pos, events)
         | InternalSyncResult.ConflictUnknown (Token.Unpack (_,pos)) -> return AppendResult.ConflictUnknown pos }
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
