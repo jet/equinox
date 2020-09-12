@@ -156,7 +156,7 @@ type internal Enum() =
         Enum.Events(t.i, t.e, defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue)
     static member internal Events(b: Batch, ?minIndex, ?maxIndex) =
         Enum.Events(b.i, b.e, defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue)
-    static member Unfolds(xs: Unfold[], ?minIndex) : ITimelineEvent<JsonElement> seq = seq {
+    static member Unfolds(xs: Unfold[]) : ITimelineEvent<JsonElement> seq = seq {
         for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, Guid.Empty, null, null, x.t, isUnfold=true) }
     static member EventsAndUnfolds(x: Tip, ?minIndex, ?maxIndex): ITimelineEvent<JsonElement> seq =
         Enum.Events(x, ?minIndex=minIndex, ?maxIndex=maxIndex)
@@ -465,7 +465,8 @@ module Sync =
             | null -> Result.Written newPos
             | [||] when newPos.index = 0L -> Result.Conflict (newPos, Array.empty)
             | [||] -> Result.ConflictUnknown newPos
-            | xs -> Result.Conflict (newPos, Enum.Unfolds(xs, minIndex=req.i) |> Array.ofSeq) }
+            | xs -> // stored proc can return events and/or unfolds with i >= req.i - no need to trim to a minIndex
+                Result.Conflict (newPos, Enum.Unfolds xs |> Array.ofSeq) }
 
     let private logged (container,stream) (exp : Exp, req: Tip) (log : ILogger)
         : Async<Result> = async {
@@ -813,15 +814,15 @@ module internal Tip =
                 let! page = retryingLoggingReadPage e batchLog
 
                 match page with
-                | Some (evts, _pos, rus) ->
+                | Some (events, _pos, rus) ->
                     ru <- ru + rus
-                    allEvents.AddRange(evts)
+                    allEvents.AddRange(events)
 
                     let acc = ResizeArray()
-                    for x in evts do
+                    for x in events do
                         match tryDecode x with
                         | Some e when isOrigin e ->
-                            let used, residual = evts |> calculateUsedVersusDroppedPayload x.Index
+                            let used, residual = events |> calculateUsedVersusDroppedPayload x.Index
                             log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
                                 stream, x.Index, x.EventType, used, residual)
                             ok <- false
