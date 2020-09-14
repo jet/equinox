@@ -1841,7 +1841,7 @@ let client = factory.Create(Discovery.ConnectionString connectionString)
 // If storing in a single collection, one specifies the db and collection
 // alternately use the overload that defers the mapping until the stream one is writing to becomes clear
 let connection = CosmosStoreConnection(client, "databaseName", "containerName")
-let storeContext = CosmosStoreContext(connection, "databaseName", "containerName")
+let storeContext = CosmosStoreContext(connection)
 let ctx = EventsContext(storeContext, gatewayLog)
 
 //
