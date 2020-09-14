@@ -995,13 +995,13 @@ module Token =
         let currentETag, newETag = currentPos.etag, xPos.etag
         newVersion > currentVersion || currentETag <> newETag
 
-type ContainerClient(gateway : ContainerGateway, batching : BatchingPolicy, retry: RetryPolicy) =
+type StoreClient(gateway : ContainerGateway, fallback : ContainerGateway, batching : BatchingPolicy, retry: RetryPolicy) =
 
     // Always yields events forward, regardless of direction
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip): Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode,isOrigin))
-        let walkPrimary = Query.scan log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
-        let! pos, events = Query.load (minIndex, maxIndex) tip walkPrimary Query.scanNull
+        let walk gateway = Query.scan log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
+        let! pos, events = Query.load (minIndex, maxIndex) tip (walk gateway) (walk fallback)
         return Token.create stream pos, events }
 
     member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), includeUnfolds): Async<StreamToken * 'event[]> =
@@ -1044,12 +1044,12 @@ type ContainerClient(gateway : ContainerGateway, batching : BatchingPolicy, retr
         | Tip.Result.NotModified -> return Token.create stream pos.Value
         | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create stream pos }
 
-type internal Category<'event, 'state, 'context>(container : ContainerClient, codec : IEventCodec<'event,JsonElement,'context>) =
+type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event,JsonElement,'context>) =
     member __.Load(log, stream, initial, includeUnfolds, fold, isOrigin): Async<StreamToken * 'state> = async {
-        let! token, events = container.Load(log, (stream, None), (codec.TryDecode,isOrigin), includeUnfolds)
+        let! token, events = store.Load(log, (stream, None), (codec.TryDecode,isOrigin), includeUnfolds)
         return token, fold initial events }
     member __.Reload(log, (Token.Unpack (stream, pos) as streamToken), state, fold, isOrigin, ?preloaded): Async<StreamToken * 'state> = async {
-        match! container.Reload(log, (stream, pos), (codec.TryDecode,isOrigin), ?preview=preloaded) with
+        match! store.Reload(log, (stream, pos), (codec.TryDecode,isOrigin), ?preview=preloaded) with
         | LoadFromTokenResult.Unchanged -> return streamToken, state
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     member cat.Sync(log, token, state, events, mapUnfolds, fold, isOrigin, compress, context): Async<SyncResult<'state>> = async {
@@ -1066,43 +1066,10 @@ type internal Category<'event, 'state, 'context>(container : ContainerClient, co
         let baseIndex = pos.index + int64 (List.length events)
         let projections = Sync.mkUnfold compress baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
-        match! container.Sync(log, stream, (exp,batch)) with
+        match! store.Sync(log, stream, (exp,batch)) with
         | InternalSyncResult.Conflict (pos', tipEvents) -> return SyncResult.Conflict (cat.Reload(log, token, state, fold, isOrigin, (pos', tipEvents)))
         | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (cat.Reload(log, token, state, fold, isOrigin))
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
-
-/// Holds Container state, coordinating initialization activities
-type internal ContainerInitializerGuard(gateway : ContainerGateway, ?initContainer : CosmosContainer -> Async<unit>) =
-    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init gateway.CosmosContainer))
-
-    member __.Gateway = gateway
-    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
-
-/// Defines a process for mapping from a Stream Name to the appropriate storage area, allowing control over segregation / co-locating of data
-type Containers
-    (    /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
-         categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
-         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
-         [<O; D(null)>]?disableInitialization) =
-    // Index of database*collection -> Initialization Context
-    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
-
-    /// Create a Container Map where all streams are stored within a single global <c>CosmosContainer</c>.
-    new (databaseId, containerId, [<O; D(null)>]?disableInitialization) =
-        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
-        Containers(catAndStreamToDatabaseContainerStream, ?disableInitialization = disableInitialization)
-
-    member internal __.ResolveContainerGuardAndStreamName(client, createGateway, categoryName, streamId) : ContainerInitializerGuard * string =
-        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
-        let createContainerInitializerGuard (d, c) =
-            let init =
-                if Some true = disableInitialization then None
-                else Some (fun cosmosContainer -> Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore)
-            let primaryContainer = (client : CosmosClient).GetDatabase(d).GetContainer(c)
-            ContainerInitializerGuard(createGateway primaryContainer, ?initContainer = init)
-        let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
-        g, streamName
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
@@ -1216,39 +1183,67 @@ type AccessStrategy<'event,'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
+/// Holds Container state, coordinating initialization activities
+type internal ContainerInitializerGuard(gateway : ContainerGateway, fallback : ContainerGateway, ?initContainer : CosmosContainer -> Async<unit>) =
+    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init gateway.CosmosContainer))
+
+    member __.Gateway = gateway
+    member __.Fallback = fallback
+    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
+
 /// Holds all relevant state for a Store within a given CosmosDB Database
-/// - The (singleton) CosmosDB CosmosClient (there should be a single one of these per process)
-/// - The (singleton) Core.Containers instance, which maintains the per Container Stored Procedure initialization state
+/// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
+/// - The (singleton) per Container Stored Procedure initialization state
 type CosmosStoreConnection
-    (   client : CosmosClient,
-        /// Singleton used to cache initialization state per <c>CosmosContainer</c>.
-        containers : Containers,
+    (   /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
+        categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
+        createContainer : string * string -> CosmosContainer, createSecondaryContainer : string * string -> CosmosContainer,
+        [<O; D(null)>]?primaryDatabaseAndContainerToSecondary : string * string -> string * string,
         /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
-        ?createGateway) =
+        [<O; D(null)>]?createGateway,
+        /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
+        [<O; D(null)>]?disableInitialization) =
     let createGateway = match createGateway with Some creator -> creator | None -> ContainerGateway
-    new (client, databaseId : string, containerId : string,
-         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
-         [<O; D(null)>]?disableInitialization,
-         /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
-         [<O; D(null)>]?createGateway : CosmosContainer -> ContainerGateway) =
-        let containers = Containers(databaseId, containerId, ?disableInitialization = disableInitialization)
-        CosmosStoreConnection(client, containers, ?createGateway = createGateway)
-    member __.Client = client
-    member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) =
-        containers.ResolveContainerGuardAndStreamName(client, createGateway, categoryName, streamId)
+    let primaryDatabaseAndContainerToSecondary = defaultArg primaryDatabaseAndContainerToSecondary id
+    // Index of database*collection -> Initialization Context
+    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
+    new(client, databaseId : string, containerId : string,
+        /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
+        [<O; D(null)>]?disableInitialization,
+        /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+        [<O; D(null)>]?createGateway : CosmosContainer -> ContainerGateway,
+        /// Client to use for fallback Containers. Default: use same as <c>primary</c>
+        ?secondary : CosmosClient) =
+        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
+        let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
+        let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
+        let secondaryContainer (d, c) = (defaultArg secondary client).GetDatabase(d).GetContainer(c)
+        CosmosStoreConnection(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
+            ?disableInitialization=disableInitialization, ?createGateway=createGateway)
+    member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) : ContainerInitializerGuard * string =
+        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
+        let createContainerInitializerGuard (d, c) =
+            let init =
+                if Some true = disableInitialization then None
+                else Some (fun cosmosContainer -> Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore)
+            let secondaryD, secondaryC = primaryDatabaseAndContainerToSecondary (d, c)
+            let primaryContainer, secondaryContainer = createContainer (d, c), createSecondaryContainer (secondaryD, secondaryC)
+            ContainerInitializerGuard(createGateway primaryContainer, createGateway secondaryContainer, ?initContainer = init)
+        let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
+        g, streamName
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type CosmosStoreContext(connection : CosmosStoreConnection, batchingPolicy, retryPolicy) =
-    new(client : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
+    new(conn : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
         let retry = RetryPolicy(?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
         let batching = BatchingPolicy(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
-        CosmosStoreContext(client, batching, retry)
+        CosmosStoreContext(conn, batching, retry)
     member __.Batching = batchingPolicy
     member __.Retries = retryPolicy
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
         let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
-        let cc = ContainerClient(cg.Gateway, batchingPolicy, retryPolicy)
-        cc, streamId, cg.InitializationGate
+        let store = StoreClient(cg.Gateway, cg.Fallback, batchingPolicy, retryPolicy)
+        store, streamId, cg.InitializationGate
 
 type CosmosStoreCategory<'event, 'state, 'context>(context : CosmosStoreContext, codec, fold, initial, caching, access) =
     let readCacheOption =
@@ -1385,7 +1380,7 @@ type AppendResult<'t> =
 
 /// Encapsulates the core facilities Equinox.CosmosStore offers for operating directly on Events in Streams.
 type EventsContext
-    (   context : Equinox.CosmosStore.CosmosStoreContext, container : ContainerClient,
+    (   context : Equinox.CosmosStore.CosmosStoreContext, store : StoreClient,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
@@ -1413,10 +1408,9 @@ type EventsContext
         | Direction.Forward -> startPos, None
         | Direction.Backward -> None, startPos
 
-    new (client : Azure.Cosmos.CosmosClient, log, databaseId : string, containerId : string, ?defaultMaxItems, ?getDefaultMaxItems) =
-        let inner = Equinox.CosmosStore.CosmosStoreContext(Equinox.CosmosStore.CosmosStoreConnection(client, databaseId, containerId))
-        let cc, _streamId, _init = inner.ResolveContainerClientAndStreamIdAndInit(null, null)
-        EventsContext(inner, cc, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
+    new (conn : Equinox.CosmosStore.CosmosStoreContext, log, ?defaultMaxItems, ?getDefaultMaxItems) =
+        let storeClient, _streamId, _ = conn.ResolveContainerClientAndStreamIdAndInit(null, null)
+        EventsContext(conn, storeClient, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
 
     member __.ResolveStream(streamName) =
         let _cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
@@ -1426,7 +1420,7 @@ type EventsContext
     member internal __.GetLazy(stream, ?batchSize, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<JsonElement>[]> =
         let direction = defaultArg direction Direction.Forward
         let batching = BatchingPolicy(defaultArg batchSize batching.MaxItems)
-        container.ReadLazy(batching, log, stream, direction, (Some,fun _ -> false), ?minIndex=minIndex, ?maxIndex=maxIndex)
+        store.ReadLazy(batching, log, stream, direction, (Some,fun _ -> false), ?minIndex=minIndex, ?maxIndex=maxIndex)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
         let direction = defaultArg direction Direction.Forward
@@ -1439,14 +1433,14 @@ type EventsContext
                 | Some limit -> maxCountPredicate limit
                 | None -> fun _ -> false
             let minIndex, maxIndex = getRange direction startPos
-            let! token, events = container.Read(log, stream, direction, (Some, isOrigin), ?minIndex=minIndex, ?maxIndex=maxIndex)
+            let! token, events = store.Read(log, stream, direction, (Some, isOrigin), ?minIndex=minIndex, ?maxIndex=maxIndex)
             if direction = Direction.Backward then System.Array.Reverse events
             return token, events }
 
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
     member __.Sync(stream, ?position: Position) : Async<Position> = async {
-        let! (Token.Unpack (_,pos')) = container.GetPosition(log, stream, ?pos=position)
+        let! (Token.Unpack (_,pos')) = store.GetPosition(log, stream, ?pos=position)
         return pos' }
 
     /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
@@ -1468,7 +1462,7 @@ type EventsContext
         | None -> ()
         | Some init -> do! init ()
         let batch = Sync.mkBatch stream events Seq.empty
-        let! res = container.Sync(log, stream, (Sync.Exp.Version position.index, batch))
+        let! res = store.Sync(log, stream, (Sync.Exp.Version position.index, batch))
         match res with
         | InternalSyncResult.Written (Token.Unpack (_,pos)) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (pos,events) -> return AppendResult.Conflict (pos, events)

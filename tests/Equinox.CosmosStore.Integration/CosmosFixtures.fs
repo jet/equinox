@@ -37,7 +37,8 @@ let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) batchSize =
     CosmosStoreContext(conn, defaultMaxItems = batchSize)
 
 let createSpecifiedCoreContext log defaultBatchSize =
-    let client = createSpecifiedCosmosOrSimulatorConnection log
-    Equinox.CosmosStore.Core.EventsContext(client.Client, log, databaseId, containerId, ?defaultMaxItems = defaultBatchSize)
+    let batchSize = defaultArg defaultBatchSize 500
+    let conn = connectToSpecifiedCosmosOrSimulator log batchSize
+    Equinox.CosmosStore.Core.EventsContext(conn, log, ?defaultMaxItems = defaultBatchSize)
 
 let defaultBatchSize = 500
