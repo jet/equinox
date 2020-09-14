@@ -1830,8 +1830,8 @@ let gatewayLog =
     outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
 // When starting the app, we connect (once)
-let factory : Equinox.CosmosStore.CosmosClientFactory =
-    CosmosClientFactory(
+let factory : Equinox.CosmosStore.CosmosStoreClientFactory =
+    CosmosStoreClientFactory(
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnThrottledRequests = 1,
         maxRetryWaitTimeInSeconds = 3,
@@ -1840,9 +1840,8 @@ let client = factory.Create(Discovery.ConnectionString connectionString)
 
 // If storing in a single collection, one specifies the db and collection
 // alternately use the overload that defers the mapping until the stream one is writing to becomes clear
-let connection = CosmosStoreClient(client, "databaseName", "containerName")
-let storeContext = CosmosStoreContext(connection)
-let ctx = EventsContext(conn, gatewayLog)
+let connection = CosmosStoreConnection(client, "databaseName", "containerName")
+let ctx = EventsContext(connection, gatewayLog)
 
 //
 // Write an event
