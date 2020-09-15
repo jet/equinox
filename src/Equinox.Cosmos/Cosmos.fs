@@ -1255,13 +1255,11 @@ type Connector
         match defaultConsistencyLevel with
         | Some x -> co.ConsistencyLevel <- Nullable x
         | None -> ()
-        // TODO translate, or not
-        // https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1232
-        // https://github.com/Azure/azure-cosmos-dotnet-v2/issues/605
-        // https://docs.microsoft.com/en-us/azure/cosmos-db/local-emulator#running-on-mac-or-linux
-//        if defaultArg bypassCertificateValidation false then
-//            let inhibitCertCheck = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = fun _ _ _ _ -> true)
-//            co.TransportClientHandlerFactory <- inhibitCertCheck
+        // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
+        if bypassCertificateValidation = Some true && co.ConnectionMode = ConnectionMode.Gateway then
+            let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback=cb)
+            co.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
         co
 
     /// Yields a CosmosClient configured and connected the requested `discovery` strategy
