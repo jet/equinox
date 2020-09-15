@@ -5,7 +5,7 @@ A unified programming model for event-sourced processing against stream-based st
 Equinox is focused on remaining a set of low dependency _libraries_ that _you_ compose into an architecture that fits your apps needs. This means that Equinox can also help with general accesss strategies for your storage options. The library is neither a source for Best Practice Architecture/object model/processing pipeline nor is it imposing a one-size-fits-all model on you. You decide what facilities make sense for your context and Equinox covers the infrastructural aspects. If you are new to event-sorucing we do have sample patterns that are located in [`samples`](/samples) or [templates](https://github.com/jet/dotnet-templates). This core repo will never feature tight integration with any specific web or services framework.
 
 # Table of Contents
-* [Quickstart](#quickstart)
+* [Getting Started](#getting-started)
 * [Design Motivation](#design-motivation)
 * [Features](#features)
 * [Currently Supported Data Stores](#currently-supported-data-stores)
@@ -14,7 +14,7 @@ Equinox is focused on remaining a set of low dependency _libraries_ that _you_ c
   * [Serialization Support](#serialization-support)
   * [Data Store Libraries](#data-store-libraries)
   * [Projection Libraries](#projection-libraries)
-  * [Benchmarking Tool](#benchmarking-tool)
+  * [Tools](#tools)
   * [Starter Project Templates and Sample Applications](#starter-project-templates-and-sample-applications)
 * [Overview](#overview)
 * [Templates](#templates)
@@ -25,7 +25,7 @@ Equinox is focused on remaining a set of low dependency _libraries_ that _you_ c
 * [Acknowledgements](#acknowledgements)
 * [Further Reading](#further-reading)
 
-# Quickstart
+# Getting Started
 - If you want to start with code samples, [there's a simple `Counter` example using `Equinox.MemoryStore` for you](https://github.com/jet/equinox/blob/master/samples/Tutorial/Counter.fsx#L16)
 - If you are experienced with event sourcing, CosmosDB and F#, this sample is helpful - [~100 LOC end-to-end using CosmosDB](https://github.com/jet/equinox/blob/master/samples/Tutorial/Cosmos.fsx#L36) 
 - If you are experienced with CosmosDB and [CosmosStore](https://github.com/Dzoukr/CosmoStore), but unsure how Equinox can refer here - [Access Strategies guide](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies)
@@ -57,7 +57,7 @@ Some aspects of the implementation are distilled from [`Jet.com` systems dating 
   - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
   - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore.org article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
 - **`Equinox.Cosmos` 'Tip with Unfolds' schema**: (In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`,) when using `Equinox.Cosmos`, optimized command processing is managed via the `Tip` - a document per stream with an identity enabling Syncing the read/write Position via a single point-read. The `Tip` has the following attributes:
-  - It maintains the present Position of the stream - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
+  - It represents the position of the stream - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
   - It is ephemeral (`deflate+base64` compressed) [_unfolds_](DOCUMENTATION.md#Cosmos-Storage-Model)
   - It can also be a holding buffer for events. Note: [presently removed](https://github.com/jet/equinox/pull/58), but [should return](DOCUMENTATION.md#Roadmap), see [#109](https://github.com/jet/equinox/pull/109)
   
@@ -69,7 +69,7 @@ Some aspects of the implementation are distilled from [`Jet.com` systems dating 
   It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
 - **`Equinox.Cosmos` `RollingState` and `Custom` 'non-event-sourced' modes**: Uses 'Tip with Unfolds' encoding to avoid having to write event documents at all. This options benefits from caching and consistency management mechanisms because the cost of writing and storing infinitely increasing events are removed. Search for `transmute` or `RollingState` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in [the `dotnet-templates` `summaryConsumer` template](https://github.com/jet/dotnet-templates/tree/master/propulsion-summary-consumer).
 
-# Currently supported data stores
+# Currently Supported Data Stores
 
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains code dating back to 2016, however [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking (squash-merged in [#42](https://github.com/jet/equinox/pull/42)).
 - [EventStore](https://eventstore.org/) - this codebase itself has been in production since 2017 (see commit history), with key elements dating back to approx 2016.
@@ -118,9 +118,11 @@ Equinox does not focus on projection logic - each store brings its own strengths
 - `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/v/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
 - `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/v/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new proProjector -k; dotnet new proConsumer`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `FsKafka`)
 
-### Benchmarking Tool
+### Tools
 
-- `Equinox.Tool` [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/): Tool incorporating a benchmark scenario runner, facilitating running representative load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any nominated store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
+- `Equinox.Tool` [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/): Tool incorporating a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
+
+- ``
 
 ### Starter Project Templates and Sample Applications
 
