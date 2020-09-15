@@ -317,7 +317,7 @@ module CosmosInit =
             let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database (ReplaceAlways rus) else Provisioning.Container (ReplaceAlways rus)
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
             let client, databaseId, containerId = conn log sargs
-            log.Information("Provisioning `Equinox.Cosmos` Store collection at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
+            log.Information("Provisioning `Equinox.Cosmos` Store at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
             Equinox.CosmosStore.Core.Initialization.initializeContainer client databaseId containerId mode (not skipStoredProc, None) |> Async.Ignore |> Async.RunSynchronously
         | _ -> failwith "please specify a `cosmos` endpoint"
 

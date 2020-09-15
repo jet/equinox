@@ -315,3 +315,49 @@ type Tests(testOutputHelper) =
         [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 4 // 3.24 // WAS 3 // 2.98
     }
+
+    (* Prune *)
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let prune (TestStream streamName) = Async.RunSynchronously <| async {
+        capture.Clear()
+        let ctx = mkContextWithItemLimit log None
+
+        let! expected = add6EventsIn2Batches ctx streamName
+
+        // Trigger deletion of first batch
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 17 // 13.33 + 2.9
+
+        let! res = Events.get ctx streamName 0L Int32.MaxValue
+        verifyCorrectEvents 1L (Array.skip 1 expected) res
+
+        // Repeat the process, but this time there should be no actual deletes
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 4L
+        test <@ deleted = 0 && deferred = 3 && trimmedPos = 1L @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 3 // 2.86
+
+        let! res = Events.get ctx streamName 0L Int32.MaxValue
+        verifyCorrectEvents 1L (Array.skip 1 expected) res
+
+        // Delete second batch
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
+        test <@ deleted = 5 && deferred = 0 && trimmedPos = 6L @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 17 // 13.33 + 2.86
+
+        let! res = Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [||] = res @>
+
+        // Attempt to repeat
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
+        test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 3 // 2.83
+    }
