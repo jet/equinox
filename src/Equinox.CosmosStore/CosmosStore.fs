@@ -690,7 +690,7 @@ module internal Tip =
         used, dropped
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type ScanResult<'event> = { found : bool; index : int64; maybeTipPos : Position option; events : 'event[] }
+    type ScanResult<'event> = { found : bool; index : int64; next : int64; maybeTipPos : Position option; events : 'event[] }
 
     let scanTip (tryDecode: #IEventData<JsonElement> -> 'event option, isOrigin: 'event -> bool) (pos : Position, xs: #ITimelineEvent<JsonElement>[]) : ScanResult<'event> =
         let items = ResizeArray()
@@ -701,7 +701,7 @@ module internal Tip =
                 items.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
                 isOrigin e
         let f, e = xs |> Seq.tryFindBack isOrigin' |> Option.isSome, items.ToArray()
-        { found = f; maybeTipPos = Some pos; index = pos.index; events = e }
+        { found = f; maybeTipPos = Some pos; index = pos.index; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
     let scan<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests direction
@@ -746,7 +746,7 @@ module internal Tip =
         let maybeIndex, maybeNext = minMax |> Option.map fst, minMax |> Option.map (fun (_, max) -> max + 1L)
         let version = defaultArg maybeNext 0L
         log |> logQuery direction maxItems stream t (responseCount,raws) version ru
-        return maybeIndex |> Option.map (fun i -> { found = found; index = i; maybeTipPos = maybeTipPos; events = decoded }) }
+        return minMax |> Option.map (fun (i,m) -> { found = found; index = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }) }
 
     let load (minIndex, maxIndex) (tip : ScanResult<'event> option)
             (primary : int64 option * int64 option -> Async<ScanResult<'event> option>)
@@ -760,30 +760,27 @@ module internal Tip =
 
         let i, events, pos =
             match tip with
-            | Some { index = i; events = e; maybeTipPos = p } -> Some i, e, p
+            | Some { index = i; maybeTipPos = p; events = e } -> Some i, e, p
             | None -> maxIndex, Array.empty, None
         let! primary = primary (minIndex, i)
         let events, pos =
             match primary with
             | None -> events, pos |> Option.defaultValue Position.fromKnownEmpty
-            | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromI p.index)
+            // TODO pos should be from next
+            | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromI p.next)
 
         match primary with
-        | Some { index = i } when i >= minI -> return pos, events // primary had event 0, no need to look at secondary
+        | Some { index = i } when i >= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
         | Some { found = true } -> return pos, events // origin found in primary, no need to look in secondary
         | None -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
         | _ ->
 
-        failwith "TODO"
-//        let maxIndex = match primary with Some p -> p.index | None -> maxIndex // if no batches in primary, high water mark from tip is max
-//        let! secondary = secondary (minIndex, maxIndex)
-//        let events = match secondary with Some s -> Array.append s.events events | None -> events
+        let maxIndex = match primary with Some p -> Some p.index | None -> maxIndex // if no batches in primary, high water mark from tip is max
+        let! secondary = secondary (minIndex, maxIndex)
+        let events = match secondary with Some s -> Array.append s.events events | None -> events
         // TOCONSIDER log warning if anticipated events not found or index = 0 ?
         return pos, events
     }
-
-//    let scanNullValue : ScanResult<'event> = { found = false; index = None; maybeTipPos = None; events = Array.empty }
-    let scanNull (_min, _max) : Async<ScanResult<'event> option> = async { return None }
 
     let walkLazy<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests
         (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
