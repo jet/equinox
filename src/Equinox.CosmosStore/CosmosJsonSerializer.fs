@@ -37,7 +37,7 @@ type CosmosJsonSerializer (options: JsonSerializerOptions) =
 and JsonCompressedBase64Converter() =
     inherit JsonConverter<JsonElement>()
 
-    static member Compress (value: JsonElement) =
+    static member Compress(value: JsonElement) =
         if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
             value
         else
@@ -48,7 +48,7 @@ and JsonCompressedBase64Converter() =
             compressor.Close()
             JsonDocument.Parse("\"" + System.Convert.ToBase64String(output.ToArray()) + "\"").RootElement
 
-    override __.Read (reader, _typeToConvert, options) =
+    override __.Read(reader, _typeToConvert, options) =
         if reader.TokenType <> JsonTokenType.String then
             JsonSerializer.Deserialize<JsonElement>(&reader, options)
         else
@@ -59,7 +59,7 @@ and JsonCompressedBase64Converter() =
             decompressor.CopyTo(output)
             JsonSerializer.Deserialize<JsonElement>(ReadOnlySpan.op_Implicit(output.ToArray()), options)
 
-    override __.Write (writer, value, options) =
+    override __.Write(writer, value, options) =
         JsonSerializer.Serialize<JsonElement>(writer, value, options)
 
 type JsonCompressedBase64ConverterAttribute () =

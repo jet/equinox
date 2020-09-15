@@ -15,6 +15,10 @@ type Union =
 
 let defaultOptions = FsCodec.SystemTextJson.Options.Create()
 
+module JsonElement =
+    let d = JsonDocument.Parse "null"
+    let Null = d.RootElement
+
 type Base64ZipUtf8Tests() =
     let eventCodec = FsCodec.SystemTextJson.Codec.Create<Union>(defaultOptions)
 
@@ -28,13 +32,15 @@ type Base64ZipUtf8Tests() =
 
         let encoded = eventCodec.Encode(None,value)
         let compressor = if compress then JsonCompressedBase64Converter.Compress else id
+        let compressed = compressor encoded.Data
         let e : Core.Unfold =
             {   i = 42L
                 c = encoded.EventType
-                d = compressor encoded.Data
-                m = Unchecked.defaultof<JsonElement>
+                d = compressed
+                m = JsonElement.Null // TODO find a way to omit the value from rendering
                 t = DateTimeOffset.MinValue }
         let ser = FsCodec.SystemTextJson.Serdes.Serialize(e, defaultOptions)
+        System.Diagnostics.Trace.WriteLine ser
         let des = FsCodec.SystemTextJson.Serdes.Deserialize<Core.Unfold>(ser, defaultOptions)
         let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
         let decoded = eventCodec.TryDecode d |> Option.get
