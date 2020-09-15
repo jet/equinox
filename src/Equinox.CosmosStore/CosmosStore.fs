@@ -1186,7 +1186,7 @@ type internal ContainerInitializerGuard(gateway : ContainerGateway, fallback : C
 
     member __.Gateway = gateway
     member __.Fallback = fallback
-    member internal __.InitializationGate = match initGuard with Some g when g.PeekIsValid() |> not -> Some g.AwaitValue | _ -> None
+    member internal __.InitializationGate = match initGuard with Some g when g.IsValid() |> not -> Some g.AwaitValue | _ -> None
 
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
@@ -1474,7 +1474,7 @@ type EventsContext
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
     member __.Prune(stream, beforeIndex) : Async<int * int * int64> =
-        container.Prune(log, stream, beforeIndex)
+        store.Prune(log, stream, beforeIndex)
 
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
