@@ -1,4 +1,4 @@
-﻿namespace Equinox.CosmosStore.Core
+namespace Equinox.CosmosStore.Core
 
 open Azure
 open Azure.Cosmos
@@ -743,8 +743,7 @@ module internal Tip =
         let raws = Array.map fst events
         let decoded = if direction = Direction.Forward then Array.choose snd events else Seq.choose snd events |> Seq.rev |> Array.ofSeq
         let minMax = (None, raws) ||> Array.fold (fun acc x -> let i = x.Index in Some (match acc with None -> i, i | Some (n, x) -> min n i, max x i))
-        let maybeIndex, maybeNext = minMax |> Option.map fst, minMax |> Option.map (fun (_, max) -> max + 1L)
-        let version = defaultArg maybeNext 0L
+        let version = match minMax with Some (_, max) -> max + 1L | None -> 0L
         log |> logQuery direction maxItems stream t (responseCount,raws) version ru
         return minMax |> Option.map (fun (i,m) -> { found = found; index = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }) }
 
