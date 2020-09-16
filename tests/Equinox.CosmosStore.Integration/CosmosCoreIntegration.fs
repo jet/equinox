@@ -40,6 +40,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let append (TestStream streamName) = Async.RunSynchronously <| async {
         let ctx = mkContext log
+        capture.Clear()
 
         let index = 0L
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
@@ -102,10 +103,11 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``appendAtEnd and getNextIndex`` (extras, TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = mkContextWithItemLimit log (Some 1)
-
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
+
+        let ctx = mkContextWithItemLimit log (Some 1)
+
         let! pos = Events.getNextIndex ctx streamName
         test <@ [EqxAct.TipNotFound] = capture.ExternalCalls @>
         0L =! pos
@@ -157,7 +159,6 @@ type Tests(testOutputHelper) =
         let! _pos = ctx.Sync(stream,pos)
         test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
         verifyRequestChargesMax 1 // for a 302 by definition - when an etag IfNotMatch is honored, you only pay one RU
-        capture.Clear()
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -197,7 +198,6 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Conflict] = capture.ExternalCalls @>
 #endif
         verifyRequestChargesMax 7 // 6.64
-        capture.Clear()
     }
 
     (* Forward *)
@@ -221,6 +221,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
+        capture.Clear()
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
@@ -239,7 +240,6 @@ type Tests(testOutputHelper) =
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
-        capture.Clear()
 
         let! res = Events.getAll ctx streamName 0L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun _ -> false) |> AsyncSeq.toArrayAsync
         let expected = expected |> Array.take 1
@@ -258,7 +258,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getBackwards (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
@@ -296,7 +295,6 @@ type Tests(testOutputHelper) =
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
-        capture.Clear()
 
         let! res =
             Events.getAllBackwards ctx streamName 10L 1
@@ -319,13 +317,11 @@ type Tests(testOutputHelper) =
     (* Prune *)
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
         let ctx = mkContextWithItemLimit log None
 
         let! expected = add6EventsIn2Batches ctx streamName
 
         // Trigger deletion of first batch
-        capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
         test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
