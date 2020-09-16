@@ -1,4 +1,4 @@
-namespace Equinox.CosmosStore.Core
+﻿namespace Equinox.CosmosStore.Core
 
 open Azure
 open Azure.Cosmos
@@ -999,8 +999,13 @@ type StoreClient(gateway : ContainerGateway, fallback : ContainerGateway option,
     // Always yields events forward, regardless of direction
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip): Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode,isOrigin))
-        let walk gateway = Query.scan log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
-        let! pos, events = Query.load (minIndex, maxIndex) tip (walk gateway) (Option.map walk fallback)
+        let walk log gateway = Query.scan log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
+        let walkFallback =
+            match fallback with
+            | None -> None
+            | Some f -> walk (log |> Log.prop "Secondary" true) f |> Some
+
+        let! pos, events = Query.load (minIndex, maxIndex) tip (walk log gateway) walkFallback
         return Token.create stream pos, events }
 
     member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), includeUnfolds): Async<StreamToken * 'event[]> =
