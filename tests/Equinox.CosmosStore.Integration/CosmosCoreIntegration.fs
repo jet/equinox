@@ -315,6 +315,7 @@ type Tests(testOutputHelper) =
     }
 
     (* Prune *)
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (TestStream streamName) = Async.RunSynchronously <| async {
         let ctx = mkContextWithItemLimit log None
