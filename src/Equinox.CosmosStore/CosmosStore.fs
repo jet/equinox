@@ -747,7 +747,11 @@ module internal Tip =
         log |> logQuery direction maxItems stream t (responseCount,raws) version ru
         return minMax |> Option.map (fun (i,m) -> { found = found; index = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }) }
 
-    let load (minIndex, maxIndex) (tip : ScanResult<'event> option)
+    /// Manages coalescing of spans of events obtained from various sources:
+    /// 1) Tip Data and/or Conflicting events
+    /// 2) Querying Primary for predecessors of what's obtained from 1
+    /// 2) Querying Secondary for predecessors of what's obtained from 1
+    let load (log : ILogger) (minIndex, maxIndex) (tip : ScanResult<'event> option)
             (primary : int64 option * int64 option -> Async<ScanResult<'event> option>)
             (secondary : (int64 option * int64 option -> Async<ScanResult<'event> option>) option)
             : Async<Position * 'event[]> = async {
@@ -765,24 +769,33 @@ module internal Tip =
         let events, pos =
             match primary with
             | None -> events, pos |> Option.defaultValue Position.fromKnownEmpty
-            // TODO pos should be from next
             | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromI p.next)
+        let inline logMissing (minIndex, maxIndex) message =
+            (log|> fun log -> match minIndex with None -> log | Some mi -> log |> Log.prop "minIndex" mi
+                |> fun log -> match maxIndex with None -> log | Some mi -> log |> Log.prop "maxIndex" mi)
+                .Information(message)
 
         match primary, secondary with
         | Some { index = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
         | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
         | None, None -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
         | None, Some _ -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
-        | _, None -> // TOCONSIDER log warning if anticipated events not found or index = 0 ?
+        | _, None ->
+            logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
             return pos, events
         | _, Some secondary ->
 
         let maxIndex = match primary with Some p -> Some p.index | None -> maxIndex // if no batches in primary, high water mark from tip is max
         let! secondary = secondary (minIndex, maxIndex)
-        let events = match secondary with Some s -> Array.append s.events events | None -> events
-        // TOCONSIDER log warning if anticipated events not found or index = 0 ?
-        return pos, events
-    }
+        let events =
+            match secondary with
+            | Some s -> Array.append s.events events
+            | None -> events
+        match secondary with
+        | Some { index = i } when i <= minI -> ()
+        | Some { found = true } -> ()
+        | _ -> logMissing (minIndex, maxIndex) "Origin event not found in secondary container"
+        return pos, events }
 
     let walkLazy<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests
         (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
@@ -1005,7 +1018,8 @@ type StoreClient(gateway : ContainerGateway, fallback : ContainerGateway option,
             | None -> None
             | Some f -> walk (log |> Log.prop "Secondary" true) f |> Some
 
-        let! pos, events = Query.load (minIndex, maxIndex) tip (walk log gateway) walkFallback
+        let log = log |> Log.prop "stream" stream
+        let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log gateway) walkFallback
         return Token.create stream pos, events }
 
     member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), includeUnfolds): Async<StreamToken * 'event[]> =
