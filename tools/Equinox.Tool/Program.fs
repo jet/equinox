@@ -307,7 +307,7 @@ module CosmosInit =
     open Equinox.CosmosStore.Core
 
     let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
-        let client, databaseId, containerId = Storage.Cosmos.conn log (Storage.Cosmos.Info sargs)
+        let (client, databaseId, containerId), _ = Storage.Cosmos.conn log (Storage.Cosmos.Info sargs)
         client, databaseId, containerId
 
     let containerAndOrDb (log: ILogger) (iargs: ParseResults<InitArguments>) =

@@ -750,11 +750,11 @@ module internal Tip =
 
     let load (minIndex, maxIndex) (tip : ScanResult<'event> option)
             (primary : int64 option * int64 option -> Async<ScanResult<'event> option>)
-            (secondary : int64 option * int64 option -> Async<ScanResult<'event> option>)
+            (secondary : (int64 option * int64 option -> Async<ScanResult<'event> option>) option)
             : Async<Position * 'event[]> = async {
         let minI = defaultArg minIndex 0L
         match tip with
-        | Some { index = i; maybeTipPos = Some p; events = e } when i >= minI -> return p, e
+        | Some { index = i; maybeTipPos = Some p; events = e } when i <= minI -> return p, e
         | Some { found = true; maybeTipPos = Some p; events = e } -> return p, e
         | _ ->
 
@@ -769,11 +769,14 @@ module internal Tip =
             // TODO pos should be from next
             | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromI p.next)
 
-        match primary with
-        | Some { index = i } when i >= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
-        | Some { found = true } -> return pos, events // origin found in primary, no need to look in secondary
-        | None -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
-        | _ ->
+        match primary, secondary with
+        | Some { index = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
+        | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
+        | None, None -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
+        | None, Some _ -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
+        | _, None -> // TOCONSIDER log warning if anticipated events not found or index = 0 ?
+            return pos, events
+        | _, Some secondary ->
 
         let maxIndex = match primary with Some p -> Some p.index | None -> maxIndex // if no batches in primary, high water mark from tip is max
         let! secondary = secondary (minIndex, maxIndex)
@@ -992,13 +995,13 @@ module Token =
         let currentETag, newETag = currentPos.etag, xPos.etag
         newVersion > currentVersion || currentETag <> newETag
 
-type StoreClient(gateway : ContainerGateway, fallback : ContainerGateway, batching : BatchingPolicy, retry: RetryPolicy) =
+type StoreClient(gateway : ContainerGateway, fallback : ContainerGateway option, batching : BatchingPolicy, retry: RetryPolicy) =
 
     // Always yields events forward, regardless of direction
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip): Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode,isOrigin))
         let walk gateway = Query.scan log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
-        let! pos, events = Query.load (minIndex, maxIndex) tip (walk gateway) (walk fallback)
+        let! pos, events = Query.load (minIndex, maxIndex) tip (walk gateway) (Option.map walk fallback)
         return Token.create stream pos, events }
 
     member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), includeUnfolds): Async<StreamToken * 'event[]> =
@@ -1181,7 +1184,7 @@ type AccessStrategy<'event,'state> =
     | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
 /// Holds Container state, coordinating initialization activities
-type internal ContainerInitializerGuard(gateway : ContainerGateway, fallback : ContainerGateway, ?initContainer : CosmosContainer -> Async<unit>) =
+type internal ContainerInitializerGuard(gateway : ContainerGateway, fallback : ContainerGateway option, ?initContainer : CosmosContainer -> Async<unit>) =
     let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init gateway.CosmosContainer))
 
     member __.Gateway = gateway
@@ -1194,7 +1197,7 @@ type internal ContainerInitializerGuard(gateway : ContainerGateway, fallback : C
 type CosmosStoreConnection
     (   /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
         categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
-        createContainer : string * string -> CosmosContainer, createSecondaryContainer : string * string -> CosmosContainer,
+        createContainer : string * string -> CosmosContainer, createSecondaryContainer : string * string -> CosmosContainer option,
         [<O; D(null)>]?primaryDatabaseAndContainerToSecondary : string * string -> string * string,
         /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
         [<O; D(null)>]?createGateway,
@@ -1210,11 +1213,17 @@ type CosmosStoreConnection
         /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
         [<O; D(null)>]?createGateway : CosmosContainer -> ContainerGateway,
         /// Client to use for fallback Containers. Default: use same as <c>primary</c>
-        ?secondary : CosmosClient) =
+        ?client2 : CosmosClient,
+        /// Database to use for fallback Containers. Default: use same as <c>databaseId</c>
+        ?databaseId2,
+        /// Container to use for fallback Containers. Default: use same as <c>containerId</c>
+        ?containerId2) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
-        let secondaryContainer (d, c) = (defaultArg secondary client).GetDatabase(d).GetContainer(c)
+        let secondaryContainer =
+            if Option.isNone client2 && Option.isNone databaseId2 && Option.isNone containerId2 then fun (_, _) -> None
+            else fun (d, c) -> Some ((defaultArg client2 client).GetDatabase(defaultArg databaseId2 d).GetContainer(defaultArg containerId2 c))
         CosmosStoreConnection(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
             ?disableInitialization=disableInitialization, ?createGateway=createGateway)
     member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) : ContainerInitializerGuard * string =
@@ -1225,7 +1234,7 @@ type CosmosStoreConnection
                 else Some (fun cosmosContainer -> Initialization.createSyncStoredProcedure cosmosContainer None |> Async.Ignore)
             let secondaryD, secondaryC = primaryDatabaseAndContainerToSecondary (d, c)
             let primaryContainer, secondaryContainer = createContainer (d, c), createSecondaryContainer (secondaryD, secondaryC)
-            ContainerInitializerGuard(createGateway primaryContainer, createGateway secondaryContainer, ?initContainer = init)
+            ContainerInitializerGuard(createGateway primaryContainer, Option.map createGateway secondaryContainer, ?initContainer = init)
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
 
