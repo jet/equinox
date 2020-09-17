@@ -75,12 +75,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos connectToSpecifiedCosmosOrSimulator resolveCosmosStreamWithoutCustomAccessStrategy
+        let service = arrangeCosmos createPrimaryContext resolveCosmosStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with With Snapshotting`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos connectToSpecifiedCosmosOrSimulator resolveCosmosStreamWithSnapshotStrategy
+        let service = arrangeCosmos createPrimaryContext resolveCosmosStreamWithSnapshotStrategy
         do! act service args
     }

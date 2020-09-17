@@ -73,7 +73,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` context skuId = Async.RunSynchronously <| async {
         let maxItemsPerRequest = 2
-        let store = connectToSpecifiedCosmosOrSimulator log maxItemsPerRequest
+        let store = createPrimaryContext log maxItemsPerRequest
 
         let service = Cart.createServiceWithoutOptimization store log
         capture.Clear() // for re-runs of the test
@@ -106,7 +106,7 @@ type Tests(testOutputHelper) =
         let log1, capture1 = log, capture
         capture1.Clear()
         let batchSize = 3
-        let store = connectToSpecifiedCosmosOrSimulator log1 batchSize
+        let store = createPrimaryContext log1 batchSize
         // Ensure batching is included at some point in the proceedings
 
         let context, (sku11, sku12, sku21, sku22) = ctx
@@ -189,7 +189,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` value = Async.RunSynchronously <| async {
-        let store = connectToSpecifiedCosmosOrSimulator log 1
+        let store = createPrimaryContext log 1
         let service = ContactPreferences.createService log store
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
@@ -212,7 +212,7 @@ type Tests(testOutputHelper) =
 
      [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update Contacts against Cosmos with RollingUnfolds Access Strategy`` value = Async.RunSynchronously <| async {
-        let store = connectToSpecifiedCosmosOrSimulator log 1
+        let store = createPrimaryContext log 1
         let service = ContactPreferences.createServiceWithLatestKnownEvent store log CachingStrategy.NoCaching
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
@@ -236,7 +236,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
-        let store = connectToSpecifiedCosmosOrSimulator log1 1
+        let store = createPrimaryContext log1 1
 
         let context, (sku11, sku12, sku21, sku22) = ctx
         let cartId = % Guid.NewGuid()
@@ -307,10 +307,10 @@ type Tests(testOutputHelper) =
                 && [EqxAct.Resync] = c2 @>
     }
 
-     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+     [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` context skuId = Async.RunSynchronously <| async {
         let batchSize = 10
-        let store = connectToSpecifiedCosmosOrSimulator log batchSize
+        let store = createPrimaryContext log batchSize
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy store log
         let service1, service2 = createServiceIndexed (), createServiceIndexed ()
         capture.Clear()
@@ -332,12 +332,33 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! _ = service2.Read cartId
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+
+        (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
+
+        let ctx = createPrimaryEventsContext log None
+        let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
+        // Prune all the events
+        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 12L
+        test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
+
+        // Prove they're gone
+        capture.Clear()
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
+
+        // But we can still read (there's no cache so we'll definitely be reading)
+        capture.Clear()
+        let! _ = service2.Read cartId
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+        verifyRequestChargesMax 1
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` context skuId = Async.RunSynchronously <| async {
         let batchSize = 10
-        let store = connectToSpecifiedCosmosOrSimulator log batchSize
+        let store = createPrimaryContext log batchSize
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching store log cache
         let service1, service2 = createServiceCached (), createServiceCached ()
@@ -370,4 +391,25 @@ type Tests(testOutputHelper) =
         capture.Clear()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service1 1
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
+
+        (* Verify pruning does not affect snapshots, and does not touch the Tip *)
+
+        let ctx = createPrimaryEventsContext log None
+        let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
+        // Prune all the events
+        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 13L
+        test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
+
+        // Prove they're gone
+        capture.Clear()
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
+
+        // But we can still read (service2 shares the cache so is aware of the last writes, and pruning does not invalidate the Tip)
+        capture.Clear()
+        let! _ = service2.Read cartId
+        test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
+        verifyRequestChargesMax 1
     }

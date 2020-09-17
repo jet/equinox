@@ -778,8 +778,7 @@ module internal Tip =
         match primary, secondary with
         | Some { index = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
         | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
-        | None, None -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
-        | None, Some _ -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
+        | None, _ when Option.isSome tip -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
         | _, None ->
             logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
             return pos, events

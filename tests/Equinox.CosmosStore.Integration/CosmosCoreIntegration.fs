@@ -30,7 +30,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit log defaultBatchSize =
-        createSpecifiedCoreContext log defaultBatchSize
+        createPrimaryEventsContext log defaultBatchSize
     let mkContext log = mkContextWithItemLimit log None
 
     let verifyRequestChargesMax rus =
@@ -357,4 +357,63 @@ type Tests(testOutputHelper) =
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.83
+    }
+
+    (* Fallback *)
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let fallback (TestStream streamName) = Async.RunSynchronously <| async {
+        let ctx1 = createPrimaryEventsContext log None
+        let ctx2 = createSecondaryEventsContext log None
+        let ctx12 = createFallbackEventsContext log None
+
+        let! expected = add6EventsIn2Batches ctx1 streamName
+        // Add the same events to the secondary container
+        let! _ = add6EventsIn2Batches ctx2 streamName
+
+        // Trigger deletion of first batch from primary
+        let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 5L
+        test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
+
+        // Prove it's gone
+        capture.Clear()
+        let! res = Events.get ctx1 streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        verifyCorrectEvents 1L (Array.skip 1 expected) res
+        verifyRequestChargesMax 4 // 3.04
+
+        // Prove the full set exists in the secondary
+        capture.Clear()
+        let! res = Events.get ctx2 streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        verifyCorrectEvents 0L expected res
+        verifyRequestChargesMax 4 // 3.09
+
+        // Prove we can fallback with full set in secondary
+        capture.Clear()
+        let! res = Events.get ctx12 streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        verifyCorrectEvents 0L expected res
+        verifyRequestChargesMax 7 // 3.04 + 3.06
+
+        // Delete second batch in primary
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 6L
+        test <@ deleted = 5 && deferred = 0 && trimmedPos = 6L @>
+
+        // Nothing left in primary
+        capture.Clear()
+        let! res = Events.get ctx1 streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
+
+        // Fallback still does two queries (the first one is empty) // TODO demonstrate Primary read is only of Tip when using snapshots
+        capture.Clear()
+        let! res = Events.get ctx12 streamName 0L Int32.MaxValue
+//        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        verifyCorrectEvents 0L expected res
+        verifyRequestChargesMax 7 // 2.99+3.09
+
+        // NOTE lazy variants don't presently apply fallback logic
     }
