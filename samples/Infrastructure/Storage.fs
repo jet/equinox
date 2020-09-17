@@ -10,7 +10,7 @@ type StorageConfig =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
     | Memory of Equinox.MemoryStore.VolatileStore<byte[]>
     | Es     of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
-    | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
+    | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
     | Sql    of Equinox.SqlStreamStore.Context * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
@@ -35,7 +35,7 @@ module Cosmos =
 
     type [<NoEquality; NoComparison>] Arguments =
         | [<AltCommandLine "-V">]       VerboseStore
-        | [<AltCommandLine "-m">]       ConnectionMode of Microsoft.Azure.Cosmos.ConnectionMode
+        | [<AltCommandLine "-m">]       ConnectionMode of Azure.Cosmos.ConnectionMode
         | [<AltCommandLine "-o">]       Timeout of float
         | [<AltCommandLine "-r">]       Retries of int
         | [<AltCommandLine "-rt">]      RetriesWaitTimeS of float
@@ -54,7 +54,7 @@ module Cosmos =
                 | Database _ ->         "specify a database name for store. (optional if environment variable EQUINOX_COSMOS_DATABASE specified)"
                 | Container _ ->        "specify a container name for store. (optional if environment variable EQUINOX_COSMOS_CONTAINER specified)"
     type Info(args : ParseResults<Arguments>) =
-        member __.Mode =                args.GetResult(ConnectionMode,Microsoft.Azure.Cosmos.ConnectionMode.Direct)
+        member __.Mode =                args.GetResult(ConnectionMode,Azure.Cosmos.ConnectionMode.Direct)
         member __.Connection =          args.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
         member __.Database =            args.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
         member __.Container =           args.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
@@ -67,22 +67,23 @@ module Cosmos =
     /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
     /// 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net461/eqx.exe `
     ///     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
-    open Equinox.Cosmos
+    open Equinox.CosmosStore
     open Serilog
 
-    let private createGateway connection maxItems = Gateway(connection, BatchingPolicy(defaultMaxItems=maxItems))
-    let connection (log: ILogger, storeLog: ILogger) (a : Info) =
-        let (Discovery.UriAndKey (endpointUri,_)) as discovery = a.Connection |> Discovery.FromConnectionString
+    let conn (log: ILogger) (a : Info) =
+        let discovery = Discovery.ConnectionString a.Connection
+        let client = CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(discovery)
         log.Information("CosmosDb {mode} {connection} Database {database} Container {container}",
-            a.Mode, endpointUri, a.Database, a.Container)
+            a.Mode, client.Endpoint, a.Database, a.Container)
         log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
             (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
-        discovery, a.Database, a.Container, Connector(a.Timeout, a.Retries, a.MaxRetryWaitTime, log=storeLog, mode=a.Mode)
-    let config (log: ILogger, storeLog) (cache, unfolds, batchSize) info =
-        let discovery, dName, cName, connector = connection (log, storeLog) info
-        let conn = connector.Connect(appName, discovery) |> Async.RunSynchronously
+        client, a.Database, a.Container
+    let config (log: ILogger) (cache, unfolds, batchSize) info =
+        let client, databaseId, containerId = conn log info
+        let conn = CosmosStoreConnection(client, databaseId, containerId)
+        let ctx = CosmosStoreContext(conn, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        StorageConfig.Cosmos (createGateway conn batchSize, cacheStrategy, unfolds, dName, cName)
+        StorageConfig.Cosmos (ctx, cacheStrategy, unfolds, databaseId, containerId)
 
 /// To establish a local node to run the tests against:
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows

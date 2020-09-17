@@ -13,7 +13,9 @@ module Events =
         | Deleted of ItemIds
         | Snapshotted of Items<'v>
         interface TypeShape.UnionContract.IUnionContract
-    let codec<'v> = FsCodec.NewtonsoftJson.Codec.Create<Event<'v>>()
+
+    let codecNewtonsoft<'v> = FsCodec.NewtonsoftJson.Codec.Create<Event<'v>>()
+    let codecStj<'v> = FsCodec.SystemTextJson.Codec.Create<Event<'v>>()
 
 module Fold =
 
@@ -53,15 +55,15 @@ let create<'t> resolve indexId =
 
 module Cosmos =
 
-    open Equinox.Cosmos
+    open Equinox.CosmosStore
     let create<'v> (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create resolver.Resolve
+        let category = CosmosStoreCategory(context, Events.codecStj, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        create category.Resolve
 
 module MemoryStore =
 
     let create store =
-        let resolver = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial)
+        let resolver = Equinox.MemoryStore.Resolver(store, Events.codecNewtonsoft, Fold.fold, Fold.initial)
         create resolver.Resolve

@@ -48,10 +48,10 @@ let createGesGateway connection batchSize = Context(connection, BatchingPolicy(m
 
 module Cart =
     let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
-    let codec = Domain.Cart.Events.codec
+    let codec = Domain.Cart.Events.codecNewtonsoft
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
     let createServiceWithoutOptimization log gateway =
-        let resolve (id,opt) = Resolver(gateway, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt)
+        let resolve (id,opt) = Resolver(gateway, Domain.Cart.Events.codecNewtonsoft, fold, initial).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
     let createServiceWithCompaction log gateway =
         let resolve (id,opt) = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
@@ -65,7 +65,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
-    let codec = Domain.ContactPreferences.Events.codec
+    let codec = Domain.ContactPreferences.Events.codecNewtonsoft
     let createServiceWithoutOptimization log connection =
         let gateway = createGesGateway connection defaultBatchSize
         Backend.ContactPreferences.create log (Resolver(gateway, codec, fold, initial).Resolve)
@@ -383,3 +383,4 @@ type Tests(testOutputHelper) =
         let suboptimalExtraSlice = [singleSliceForward]
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }
+

@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Json.fs" />
     <Compile Include="CosmosFixtures.fs" />
     <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
@@ -20,7 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox.Cosmos\Equinox.Cosmos.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>
 
@@ -28,8 +29,9 @@
     <PackageReference Include="FsCheck.xUnit" Version="2.14.0" />
     <PackageReference Include="JsonDiffPatch.Net" Version="2.1.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.3.0" />
-    <PackageReference Include="Microsoft.Azure.Cosmos.Direct" Version="3.9.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="5.0.0-rc.1.20451.14" />
+    <PackageReference Include="System.Text.Json" Version="5.0.0-rc.1.20451.14" />
     <PackageReference Include="unquote" Version="4.0" />
     <PackageReference Include="xunit" Version="2.4.1" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.1" />

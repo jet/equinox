@@ -47,9 +47,9 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.MemoryStore.Integra
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Tool", "tools\Equinox.Tool\Equinox.Tool.fsproj", "{C8992C1C-6DC5-42CD-A3D7-1C5663433FED}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cosmos", "src\Equinox.Cosmos\Equinox.Cosmos.fsproj", "{54EA6187-9F9F-4D67-B602-163D011E43E6}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.CosmosStore", "src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj", "{54EA6187-9F9F-4D67-B602-163D011E43E6}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.Cosmos.Integration", "tests\Equinox.Cosmos.Integration\Equinox.Cosmos.Integration.fsproj", "{DE0FEBF0-72DC-4D4A-BBA7-788D875D6B4B}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Equinox.CosmosStore.Integration", "tests\Equinox.CosmosStore.Integration\Equinox.CosmosStore.Integration.fsproj", "{DE0FEBF0-72DC-4D4A-BBA7-788D875D6B4B}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "TodoBackend", "samples\TodoBackend\TodoBackend.fsproj", "{EC2EC658-3D85-44F3-AD2F-52AFCAFF8871}"
 EndProject

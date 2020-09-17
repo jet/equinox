@@ -477,8 +477,8 @@ module Caching =
         interface ICategory<'event, 'state, string, 'context> with
             member __.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
                 loadAndIntercept (inner.Load(log, streamName, opt)) streamName
-            member __.TrySync(log : ILogger, (Token.StreamPos (stream,_) as token), state, events : 'event list, context) : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync(log, token, state, events, context)
+            member __.TrySync(log : ILogger, (Token.StreamPos (stream,_) as token), state, events : 'event list, context, compress) : Async<SyncResult<'state>> = async {
+                let! syncRes = inner.TrySync(log, token, state, events, context, compress)
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync stream.name)
                 | SyncResult.Written (token',state') ->
@@ -507,7 +507,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
                 | None -> return! batched log streamName
                 | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
                 | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
-        member __.TrySync(log : ILogger, token, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
+        member __.TrySync(log : ILogger, token, initialState, events : 'event list, context, _compress) : Async<SyncResult<'state>> = async {
             let! syncRes = category.TrySync(log, fold, token, initialState, events, context)
             match syncRes with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
@@ -550,12 +550,12 @@ type Resolver<'event, 'state, 'context>
     let loadEmpty sn = context.LoadEmpty sn,initial
     member __.Resolve(streamName : FsCodec.StreamName, [<O; D null>]?option, [<O; D null>]?context) =
         match FsCodec.StreamName.toString streamName, option with
-        | sn, (None|Some AllowStale) -> resolveStream sn option context
-        | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
+        | sn, (None|Some AllowStale) -> resolveStream sn option context true
+        | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context true)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =
-        Stream.ofMemento (streamToken,state) (resolveStream token.stream.name context None)
+        Stream.ofMemento (streamToken,state) (resolveStream token.stream.name context None true)
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

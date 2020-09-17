@@ -25,6 +25,7 @@
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.1.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.3.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
     <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0'" />
     <PackageReference Include="unquote" Version="4.0" />
     <PackageReference Include="xunit" Version="2.4.1" />

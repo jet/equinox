@@ -29,7 +29,9 @@ module Events =
         /// Addition of a collection of skus to the list
         | Added of Added
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
     open Events

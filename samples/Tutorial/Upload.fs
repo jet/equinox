@@ -40,7 +40,9 @@ module Events =
     type Event =
         | IdAssigned of IdAssigned
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
 
@@ -70,14 +72,14 @@ let create resolve =
 
 module Cosmos =
 
-    open Equinox.Cosmos
+    open Equinox.CosmosStore
     let create (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
-        create resolver.Resolve
+        let category = CosmosStoreCategory(context, Events.codecStj, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
+        create category.Resolve
 
 module EventStore =
     open Equinox.EventStore
     let create context =
-        let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent)
+        let resolver = Resolver(context, Events.codecNewtonsoft, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent)
         create resolver.Resolve

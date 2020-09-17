@@ -20,7 +20,9 @@ module Events =
         | Cleared
         | Snapshotted   of Snapshotted
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+
+    let codecNewtonsoft = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
     type State = { items : Events.Todo list; nextId : int }

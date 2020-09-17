@@ -105,7 +105,7 @@ and DumpInfo(args: ParseResults<DumpArguments>) =
         match args.TryGetSubCommand() with
         | Some (DumpArguments.Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-            storeLog, Storage.Cosmos.config (log,storeLog) storeConfig (Storage.Cosmos.Info sargs)
+            storeLog, Storage.Cosmos.config log storeConfig (Storage.Cosmos.Info sargs)
         | Some (DumpArguments.Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             storeLog, Storage.EventStore.config (log,storeLog) storeConfig sargs
@@ -179,7 +179,7 @@ and TestInfo(args: ParseResults<TestArguments>) =
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
             log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", __.Options)
-            storeLog, Storage.Cosmos.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
+            storeLog, Storage.Cosmos.config log (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
         | Some (Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
@@ -209,7 +209,7 @@ and Test = Favorite | SaveForLater | Todo
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes()
     let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let level =
@@ -273,7 +273,7 @@ module LoadTest =
             .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
-        let _ = Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink.Restart()
+        let _ = Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink.Restart()
         let _ = Equinox.EventStore.Log.InternalMetrics.Stats.LogSink.Restart()
         let _ = Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink.Restart()
         let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
@@ -285,7 +285,7 @@ module LoadTest =
 
         match storeConfig with
         | Some (Storage.StorageConfig.Cosmos _) ->
-            Equinox.Cosmos.Store.Log.InternalMetrics.dump log
+            Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Es _) ->
             Equinox.EventStore.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Sql _) ->
@@ -295,7 +295,7 @@ module LoadTest =
 let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"
@@ -304,23 +304,22 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     c.CreateLogger()
 
 module CosmosInit =
-    open Equinox.Cosmos.Store.Sync.Initialization
-    let conn (log,verboseConsole,maybeSeq) (sargs : ParseResults<Storage.Cosmos.Arguments>) = async {
-        let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-        let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
-        let! conn = connector.Connect(appName, discovery)
-        return storeLog, conn, dName, cName }
+    open Equinox.CosmosStore.Core
 
-    let containerAndOrDb (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitArguments>) = async {
+    let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
+        let client, databaseId, containerId = Storage.Cosmos.conn log (Storage.Cosmos.Info sargs)
+        client, databaseId, containerId
+
+    let containerAndOrDb (log: ILogger) (iargs: ParseResults<InitArguments>) =
         match iargs.TryGetSubCommand() with
         | Some (InitArguments.Cosmos sargs) ->
             let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
-            let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database rus else Provisioning.Container rus
+            let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database (ReplaceAlways rus) else Provisioning.Container (ReplaceAlways rus)
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
-            let! _storeLog,conn,dName,cName = conn (log,verboseConsole,maybeSeq) sargs
+            let client, databaseId, containerId = conn log sargs
             log.Information("Provisioning `Equinox.Cosmos` Store at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            return! init log conn.Client (dName,cName) mode skipStoredProc
-        | _ -> failwith "please specify a `cosmos` endpoint" }
+            Equinox.CosmosStore.Core.Initialization.initializeContainer client databaseId containerId mode (not skipStoredProc, None) |> Async.Ignore |> Async.RunSynchronously
+        | _ -> failwith "please specify a `cosmos` endpoint"
 
 module SqlInit =
     let databaseOrSchema (log: ILogger) (iargs: ParseResults<ConfigArguments>) = async {
@@ -337,19 +336,19 @@ module SqlInit =
         | _ -> failwith "please specify a `ms`,`my` or `pg` endpoint" }
 
 module CosmosStats =
-    type Microsoft.Azure.Cosmos.Container with
+    type Azure.Cosmos.CosmosContainer with
         // NB DO NOT CONSIDER PROMULGATING THIS HACK
         member container.QueryValue<'T>(sqlQuery : string) =
-            let query : Microsoft.Azure.Cosmos.FeedResponse<'T> = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
+            let query : seq<'T> = container.GetItemQueryIterator<'T>(sqlQuery) |> AsyncSeq.ofAsyncEnum |> AsyncSeq.toBlockingSeq
             query |> Seq.exactlyOne
-    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
+    let run (log : ILogger) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
         | Some (StatsArguments.Cosmos sargs) ->
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let! _storeLog,conn,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
-            let container = conn.Client.GetContainer(dName, cName)
+            let client, databaseId, containerId = CosmosInit.conn log sargs
+            let container = client.GetContainer(databaseId, containerId)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
@@ -365,16 +364,24 @@ module CosmosStats =
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 module Dump =
-    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) =
-        let a = DumpInfo args
-        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
-        let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
-        let doU,doE = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly)
-        let doC,doJ,doP,doT = args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip),not(args.Contains TimeRegular)
-        let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
+    let logEvent (log: ILogger) (prevTs: DateTimeOffset option) doC doT (event: FsCodec.ITimelineEvent<'format>) (renderer: 'format -> string) =
+        let ty = if event.IsUnfold then "U" else "E"
+        let interval =
+            match prevTs with Some p when not event.IsUnfold -> Some (event.Timestamp - p) | _ -> None
+            |> function
+            | None -> if doT then "n/a" else "0"
+            | Some (i : TimeSpan) when not doT -> i.ToString()
+            | Some (i : TimeSpan) when i.TotalDays >= 1. -> i.ToString "d\dhh\hmm\m"
+            | Some i when i.TotalHours >= 1. -> i.ToString "h\hmm\mss\s"
+            | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\.ff\s"
+            | Some i -> i.ToString("s\.fff\s")
+        if not doC then log.Information("{i,4}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
+                            event.Index, event.Timestamp, interval, ty, event.EventType, renderer event.Data, renderer event.Meta)
+        else log.Information("{i,4}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
+                 event.Index, event.Timestamp, interval, event.CorrelationId, event.CausationId, ty, event.EventType, renderer event.Data, renderer event.Meta)
+        event.Timestamp
 
-        let streams = args.GetResults DumpArguments.Stream
-        log.ForContext("streams",streams).Information("Reading...")
+    let dumpUtf8ArrayStorage (log: ILogger) (storeLog: ILogger) doU doE doC doJ doP doT (resolver: Services.StreamResolver) (streams: FsCodec.StreamName list) =
         let initial = List.empty
         let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
         let mutable unfolds = List.empty
@@ -391,30 +398,60 @@ module Dump =
                 | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (streamName : FsCodec.StreamName) = async {
-            let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
+            let stream = resolver.ResolveWithUtf8ArrayCodec(idCodec,fold,initial,isOriginAndSnapshot) streamName
             let! _token,events = stream.Load storeLog
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
             let mutable prevTs = None
             for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
-                let ty,render = if x.IsUnfold then "U", render Newtonsoft.Json.Formatting.Indented else "E", render fo
-                let interval =
-                    match prevTs with Some p when not x.IsUnfold -> Some (x.Timestamp - p) | _ -> None
-                    |> function
-                    | None -> if doT then "n/a" else "0"
-                    | Some (i : TimeSpan) when not doT -> i.ToString()
-                    | Some (i : TimeSpan) when i.TotalDays >= 1. -> i.ToString "d\dhh\hmm\m"
-                    | Some i when i.TotalHours >= 1. -> i.ToString "h\hmm\mss\s"
-                    | Some i when i.TotalMinutes >= 1. -> i.ToString "m\mss\.ff\s"
-                    | Some i -> i.ToString("s\.fff\s")
-                prevTs <- Some x.Timestamp
-                if not doC then log.Information("{i,4}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
-                                    x.Index, x.Timestamp, interval, ty, x.EventType, render x.Data, render x.Meta)
-                else log.Information("{i,4}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
-                         x.Index, x.Timestamp, interval, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
+                let render = if x.IsUnfold then render Newtonsoft.Json.Formatting.Indented else render fo
+                prevTs <- Some (logEvent log prevTs doC doT x render) }
         streams
         |> Seq.map readStream
         |> Async.Parallel
         |> Async.Ignore
+
+    open System.Text.Json
+    let dumpJsonElementStorage (log: ILogger) (storeLog: ILogger) doU doE doC doJ doP doT (resolver: Services.StreamResolver) (streams: FsCodec.StreamName list) =
+        let initial = List.empty
+        let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
+        let mutable unfolds = List.empty
+        let tryDecode (x : FsCodec.ITimelineEvent<JsonElement>) =
+            if x.IsUnfold then unfolds <- x :: unfolds
+            Some x
+        let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
+        let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold),fun _state -> failwith "no snapshot required"
+        let render pretty (data : JsonElement) =
+            match data.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> null
+            | _ when doJ -> if pretty then FsCodec.SystemTextJson.Serdes.Serialize(data, indent=true) else data.GetRawText()
+            | _ -> sprintf "(%d chars)" (data.GetRawText().Length)
+        let readStream (streamName : FsCodec.StreamName) = async {
+            let stream = resolver.ResolveWithJsonElementCodec(idCodec,fold,initial,isOriginAndSnapshot) streamName
+            let! _token,events = stream.Load storeLog
+            let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
+            let mutable prevTs = None
+            for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
+                let pretty = x.IsUnfold || doP
+                prevTs <- Some (logEvent log prevTs doC doT x (render pretty)) }
+        streams
+        |> Seq.map readStream
+        |> Async.Parallel
+        |> Async.Ignore
+
+    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) =
+        let a = DumpInfo args
+        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
+        let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
+        let doU,doE = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly)
+        let doC,doJ,doP,doT = args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip),not(args.Contains TimeRegular)
+        let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
+
+        let streams = args.GetResults DumpArguments.Stream
+        log.ForContext("streams",streams).Information("Reading...")
+
+        match storeConfig with
+        | Storage.StorageConfig.Cosmos _ -> dumpJsonElementStorage log storeLog doU doE doC doJ doP doT resolver streams
+        | _ -> dumpUtf8ArrayStorage log storeLog doU doE doC doJ doP doT resolver streams
 
 [<EntryPoint>]
 let main argv =
@@ -426,10 +463,10 @@ let main argv =
         let verbose = args.Contains Verbose
         use log = createDomainLog verbose verboseConsole maybeSeq
         try match args.GetSubCommand() with
-            | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
+            | Init iargs -> CosmosInit.containerAndOrDb log iargs
             | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
             | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
-            | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
+            | Stats sargs -> CosmosStats.run log sargs |> Async.RunSynchronously
             | Run rargs ->
                 let reportFilename = args.GetResult(LogFile,programName+".log") |> fun n -> System.IO.FileInfo(n).FullName
                 LoadTest.run log (verbose,verboseConsole,maybeSeq) reportFilename rargs

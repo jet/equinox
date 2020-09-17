@@ -70,7 +70,7 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
             match store.TryLoad streamName with
             | None -> return Token.ofEmpty streamName initial
             | Some (Decode events) -> return Token.ofEventArray streamName fold initial events }
-        member __.TrySync(_log, Token.Unpack token, state, events : 'event list, context : 'context option) = async {
+        member __.TrySync(_log, Token.Unpack token, state, events : 'event list, context : 'context option, _compress) = async {
             let inline map i (e : FsCodec.IEventData<'Format>) =
                 FsCodec.Core.TimelineEvent.Create(int64 i, e.EventType, e.Data, e.Meta, e.EventId, e.CorrelationId, e.CausationId, e.Timestamp)
             let encoded : FsCodec.ITimelineEvent<_>[] = events |> Seq.mapi (fun i e -> map (token.streamVersion+i+1) (codec.Encode(context,e))) |> Array.ofSeq
@@ -88,7 +88,7 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
 
 type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
     let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
-    let resolveStream streamName context = Stream.create category streamName None context
+    let resolveStream streamName context = Stream.create category streamName None context true
     member __.Resolve(streamName : FsCodec.StreamName, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
         match FsCodec.StreamName.toString streamName, option with
         | sn, (None|Some AllowStale) -> resolveStream sn context

@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
 open Equinox.Core
-open Equinox.Cosmos.Integration
+open Equinox.CosmosStore.Integration
 open FSharp.UMX
 open Swensen.Unquote
 open System
@@ -23,7 +23,7 @@ module EquinoxEsInterop =
             | Log.Batch (Direction.Backward,c,m) -> "LoadB", m, Some c
         { action = action; stream = metric.stream; interval = metric.interval; bytes = metric.bytes; count = metric.count; batches = batches }
 module EquinoxCosmosInterop =
-    open Equinox.Cosmos.Store
+    open Equinox.CosmosStore.Core
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" __.action __.stream __.action __.interval.Elapsed __.ru
@@ -65,7 +65,7 @@ type SerilogMetricsExtractor(emit : string -> unit) =
         logEvent.Properties
         |> Seq.tryPick (function
             | KeyValue (k, SerilogScalar (:? Equinox.EventStore.Log.Event as m)) -> Some <| Choice1Of3 (k,m)
-            | KeyValue (k, SerilogScalar (:? Equinox.Cosmos.Store.Log.Event as m)) -> Some <| Choice2Of3 (k,m)
+            | KeyValue (k, SerilogScalar (:? Equinox.CosmosStore.Core.Log.Event as m)) -> Some <| Choice2Of3 (k,m)
             | _ -> None)
         |> Option.defaultValue (Choice3Of3 ())
     let handleLogEvent logEvent =
@@ -125,9 +125,8 @@ type Tests() =
         let batchSize = defaultBatchSize
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createCosmosContext conn batchSize
-        let service = Backend.Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy gateway)
+        let store = connectToSpecifiedCosmosOrSimulator log batchSize
+        let service = Backend.Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy store)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount context cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200
