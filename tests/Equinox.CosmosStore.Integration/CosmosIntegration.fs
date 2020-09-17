@@ -70,7 +70,7 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` context skuId = Async.RunSynchronously <| async {
         let maxItemsPerRequest = 2
         let store = createPrimaryContext log maxItemsPerRequest
@@ -101,7 +101,7 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 11 // 10.01
     }
 
-    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxFail=1, MaxTest=2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
@@ -187,7 +187,7 @@ type Tests(testOutputHelper) =
     let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` value = Async.RunSynchronously <| async {
         let store = createPrimaryContext log 1
         let service = ContactPreferences.createService log store
@@ -212,9 +212,11 @@ type Tests(testOutputHelper) =
         (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
 
         //let ctx = createPrimaryEventsContext log None
-        //do! Async.Sleep 1000
+
         // Needs to share the same client for the session key to be threaded through
         // If we run on an independent context, we won't see (and hence prune) the full set of events
+        // TODO: explain why this sleep is still needed though!
+        do! Async.Sleep 1000
         let ctx = Core.EventsContext(store, log)
         let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
 
@@ -237,7 +239,7 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 1
     }
 
-     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update Contacts against Cosmos with RollingUnfolds Access Strategy`` value = Async.RunSynchronously <| async {
         let store = createPrimaryContext log 1
         let service = ContactPreferences.createServiceWithLatestKnownEvent store log CachingStrategy.NoCaching
@@ -334,7 +336,7 @@ type Tests(testOutputHelper) =
                 && [EqxAct.Resync] = c2 @>
     }
 
-     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` context skuId = Async.RunSynchronously <| async {
         let batchSize = 10
         let store = createPrimaryContext log batchSize
@@ -362,6 +364,8 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
+        // TODO: explain why this sleep is still needed though!
+        do! Async.Sleep 1000
         let ctx = Core.EventsContext(store, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
@@ -421,6 +425,8 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
+        // TODO: explain why this sleep is still needed though!
+        do! Async.Sleep 1000
         let ctx = Core.EventsContext(store, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
