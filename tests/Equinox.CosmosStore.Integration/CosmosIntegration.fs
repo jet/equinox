@@ -208,6 +208,33 @@ type Tests(testOutputHelper) =
         test <@ value = result @>
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
+
+        (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
+
+        //let ctx = createPrimaryEventsContext log None
+        //do! Async.Sleep 1000
+        // Needs to share the same client for the session key to be threaded through
+        // If we run on an independent context, we won't see (and hence prune) the full set of events
+        let ctx = Core.EventsContext(store, log)
+        let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
+
+        // Prune all the events
+        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 14L
+        test <@ deleted = 14 && deferred = 0 && trimmedPos = 14L @>
+
+        // Prove they're gone
+        capture.Clear()
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
+
+        // But we can still read (there's no cache so we'll definitely be reading)
+        capture.Clear()
+        let! _ = service.Read id
+        test <@ value = result @>
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+        verifyRequestChargesMax 1
     }
 
      [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -307,7 +334,7 @@ type Tests(testOutputHelper) =
                 && [EqxAct.Resync] = c2 @>
     }
 
-     [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` context skuId = Async.RunSynchronously <| async {
         let batchSize = 10
         let store = createPrimaryContext log batchSize
@@ -335,7 +362,7 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
-        let ctx = createPrimaryEventsContext log None
+        let ctx = Core.EventsContext(store, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 12L
@@ -394,7 +421,7 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
-        let ctx = createPrimaryEventsContext log None
+        let ctx = Core.EventsContext(store, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 13L
