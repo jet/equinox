@@ -524,8 +524,8 @@ module Sync =
             {
                 i = baseIndex + int64 offset
                 c = x.EventType
-                d = compressIfRequested x.Data
-                m = compressIfRequested x.Meta
+                d = compressIfRequested <| JsonHelper.fixup x.Data
+                m = compressIfRequested <| JsonHelper.fixup x.Meta
                 t = DateTimeOffset.UtcNow
             } : Unfold)
 
