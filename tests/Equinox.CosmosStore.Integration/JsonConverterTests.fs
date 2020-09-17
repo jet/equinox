@@ -24,20 +24,13 @@ type Base64ZipUtf8Tests() =
 
     [<Property>]
     let ``Can read uncompressed and compressed`` compress value =
-        let hasNulls =
-            match value with
-            | A x | B x when obj.ReferenceEquals(null, x) -> true
-            | A { embed = x } | B { embed = x } -> obj.ReferenceEquals(null, x)
-        if hasNulls then () else
-
         let encoded = eventCodec.Encode(None,value)
         let compressor = if compress then JsonCompressedBase64Converter.Compress else id
-        let compressed = compressor encoded.Data
         let e : Core.Unfold =
             {   i = 42L
                 c = encoded.EventType
-                d = compressed
-                m = JsonElement.Null // TODO find a way to omit the value from rendering
+                d = encoded.Data |> JsonHelper.fixup |> compressor
+                m = Unchecked.defaultof<_> |> JsonHelper.fixup
                 t = DateTimeOffset.MinValue }
         let ser = FsCodec.SystemTextJson.Serdes.Serialize(e, defaultOptions)
         System.Diagnostics.Trace.WriteLine ser

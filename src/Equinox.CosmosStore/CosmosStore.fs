@@ -512,13 +512,13 @@ module Sync =
         let call = logged containerStream batch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
-    let mkBatch (stream: string) (events: IEventData<_>[]) unfolds: Tip =
+    let private mkEvent (e : IEventData<_>) =
+        {   t = e.Timestamp; c = e.EventType; d = JsonHelper.fixup e.Data; m = JsonHelper.fixup e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId }
+    let mkBatch (stream: string) (events: IEventData<_>[]) unfolds : Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
-            e = [| for e in events -> { t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId } |]
-            u = Array.ofSeq unfolds }
-
+            e = [| for e in events -> mkEvent e |]; u = Array.ofSeq unfolds }
     let mkUnfold compress baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
-        let compressIfRequested x = if compress then JsonCompressedBase64Converter.Compress x else x
+        let inline compressIfRequested x = if compress then JsonCompressedBase64Converter.Compress x else x
         unfolds
         |> Seq.mapi (fun offset x ->
             {

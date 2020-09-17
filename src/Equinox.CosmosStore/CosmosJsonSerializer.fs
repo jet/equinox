@@ -7,6 +7,13 @@ open System.IO
 open System.Text.Json
 open System.Text.Json.Serialization
 
+module JsonHelper =
+
+    let d = JsonDocument.Parse "null"
+    let private Null = d.RootElement
+    /// System.Text.Json versions > 4.7 reject JsonValueKind.Undefined elements
+    let fixup (e : JsonElement) = if e.ValueKind = JsonValueKind.Undefined then Null else e
+
 type CosmosJsonSerializer (options: JsonSerializerOptions) =
     inherit CosmosSerializer()
 
@@ -38,8 +45,7 @@ and JsonCompressedBase64Converter() =
     inherit JsonConverter<JsonElement>()
 
     static member Compress(value: JsonElement) =
-        if value.ValueKind = JsonValueKind.Null || value.ValueKind = JsonValueKind.Undefined then
-            value
+        if value.ValueKind = JsonValueKind.Null then value
         else
             let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
             use output = new MemoryStream()
