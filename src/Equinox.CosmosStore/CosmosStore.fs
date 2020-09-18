@@ -607,6 +607,18 @@ module internal Tip =
             return Result.Found (Position.fromTip tip, Enum.EventsAndUnfolds(tip, ?maxIndex=maxIndex, ?minIndex=minIndex) |> Array.ofSeq) }
 
  module internal Query =
+    let asyncSeqMapTi (map : int -> StopwatchInterval -> 't -> 'u) (query : AsyncSeq<'t>) =
+        let e = query.GetEnumerator()
+
+        let rec loop i : AsyncSeq<'u> = asyncSeq {
+            let! t, res = e.MoveNext() |> Stopwatch.Time
+            match res with
+            | None -> return None
+            | Some item ->
+
+            yield map i t item
+            yield! loop (i + 1) }
+        loop 0
     let private mkQuery (gateway : ContainerGateway, stream: string) maxItems (direction: Direction, minIndex, maxIndex) : AsyncSeq<Page<Batch>> =
         let order = if direction = Direction.Forward then "ASC" else "DESC"
         let query =
@@ -625,50 +637,30 @@ module internal Tip =
 
     // Unrolls the Batches in a response
     // NOTE when reading backwards, the events are emitted in reverse Index order to suite the takeWhile consumption
-    let private processNextPage direction (streamName: string) (minIndex, maxIndex) (enumerator: IAsyncEnumerator<Page<Batch>>) (log: ILogger)
-        : Async<Option<ITimelineEvent<JsonElement>[] * Position option * float>> = async {
-        let! t, res = enumerator.MoveNext() |> Stopwatch.Time
-
-        match res with
-        | None -> return None
-        | Some page ->
-            let batches, ru = Array.ofSeq page.Values, page.GetRawResponse().Headers.GetRequestCharge()
-            let unwrapBatch (b : Batch) =
-                Enum.Events(b, ?minIndex=minIndex, ?maxIndex=maxIndex)
-                |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
-            let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
-            let (Log.BatchLen bytes), count = events, events.Length
-            let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
-            let log = let evt = Log.Response (direction, reqMetric) in log |> Log.event evt
-            let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
-            let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
-            (log|> Log.prop "bytes" bytes
-                |> match minIndex with None -> id | Some i -> Log.prop "minIndex" i
-                |> match maxIndex with None -> id | Some i -> Log.prop "maxIndex" i)
-                .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
-                    "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
-            let maybePosition = batches |> Array.tryPick Position.tryFromBatch
-            return Some (events, maybePosition, ru) }
-
-    let private run (log : ILogger) (readNextPage: IAsyncEnumerator<Page<Batch>> -> ILogger -> Async<Option<ITimelineEvent<JsonElement>[] * Position option * float>>)
-        (maxPermittedBatchReads: int option)
-        (query: AsyncSeq<Page<Batch>>) =
-
-        let e = query.GetEnumerator()
-
-        let rec loop batchCount : AsyncSeq<ITimelineEvent<JsonElement>[] * Position option * float> = asyncSeq {
-            match maxPermittedBatchReads with
-            | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
-            | _ -> ()
-
-            let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! (page : Option<ITimelineEvent<JsonElement>[] * Position option * float>) = readNextPage e batchLog
-
-            if page |> Option.isSome then
-                yield page.Value
-                yield! loop (batchCount + 1) }
-
-        loop 0
+    let private mapPage direction (streamName: string) (minIndex, maxIndex) (maxPermittedBatchReads: int option)
+            (log: ILogger) i t (page : Page<Batch>)
+        : ITimelineEvent<JsonElement>[] * Position option * float =
+        let log = log |> Log.prop "batchIndex" i
+        match maxPermittedBatchReads with
+        | Some mpbr when i >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
+        | _ -> ()
+        let batches, ru = Array.ofSeq page.Values, page.GetRawResponse().Headers.GetRequestCharge()
+        let unwrapBatch (b : Batch) =
+            Enum.Events(b, ?minIndex=minIndex, ?maxIndex=maxIndex)
+            |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
+        let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
+        let (Log.BatchLen bytes), count = events, events.Length
+        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
+        let log = let evt = Log.Response (direction, reqMetric) in log |> Log.event evt
+        let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
+        let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
+        (log|> Log.prop "bytes" bytes
+            |> match minIndex with None -> id | Some i -> Log.prop "minIndex" i
+            |> match maxIndex with None -> id | Some i -> Log.prop "maxIndex" i)
+            .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
+                "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
+        let maybePosition = batches |> Array.tryPick Position.tryFromBatch
+        events, maybePosition, ru
 
     let private logQuery direction batchSize streamName interval (responsesCount, events : ITimelineEvent<JsonElement>[]) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
@@ -704,7 +696,7 @@ module internal Tip =
         { found = f; maybeTipPos = Some pos; index = pos.index; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
-    let scan<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests direction
+    let scan<'event> (log : ILogger) (container,stream) maxItems maxRequests direction
         (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
         (minIndex, maxIndex)
         : Async<ScanResult<'event> option> = async {
@@ -733,12 +725,11 @@ module internal Tip =
                     | _ -> true)
                 |> AsyncSeq.toArrayAsync
             return events, maybeTipPos, ru }
-        let query = mkQuery (container,stream) maxItems (direction, minIndex, maxIndex)
-        let readPage = processNextPage direction stream (minIndex, maxIndex)
-        let retryingLoggingReadPage e = Log.withLoggedRetries retryPolicy "readAttempt" (readPage e)
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
-        let batches : AsyncSeq<ITimelineEvent<JsonElement>[] * Position option * float> = run readLog retryingLoggingReadPage maxRequests query
+        let batches : AsyncSeq<ITimelineEvent<JsonElement>[] * Position option * float> =
+            mkQuery (container,stream) maxItems (direction, minIndex, maxIndex)
+            |> asyncSeqMapTi (mapPage direction stream (minIndex, maxIndex) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws = Array.map fst events
         let decoded = if direction = Direction.Forward then Array.choose snd events else Seq.choose snd events |> Seq.rev |> Array.ofSeq
@@ -796,57 +787,50 @@ module internal Tip =
         | _ -> logMissing (minIndex, maxIndex) "Origin event not found in secondary container"
         return pos, events }
 
-    let walkLazy<'event> (log : ILogger) (container,stream) retryPolicy maxItems maxRequests
+    let walkLazy<'event> (log : ILogger) (container,stream) maxItems maxRequests
         (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
         (direction, minIndex, maxIndex)
         : AsyncSeq<'event[]> = asyncSeq {
-        let responseCount = ref 0
         let query = mkQuery (container,stream) maxItems (direction, minIndex, maxIndex)
-        let readPage = processNextPage direction stream (minIndex, maxIndex)
-        let retryingLoggingReadPage e = Log.withLoggedRetries retryPolicy "readAttempt" (readPage e)
+        let readPage = mapPage direction stream (minIndex, maxIndex) maxRequests
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
-        let mutable ru = 0.
-        let allEvents = ResizeArray()
+        let readLog = log |> Log.prop "direction" direction
         let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
-
-        let e = query.GetEnumerator()
-
-        try let readLog = log |> Log.prop "direction" direction
-            let mutable ok = true
-
+        let allEvents = ResizeArray()
+        let mutable i, ru = 0, 0.
+        try let mutable ok = true
+            let e = query.GetEnumerator()
             while ok do
-                incr responseCount
-
+                let batchLog = readLog |> Log.prop "batchIndex" i
                 match maxRequests with
-                | Some mpbr when !responseCount >= mpbr -> readLog.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
+                | Some mpbr when i+1 >= mpbr -> batchLog.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
                 | _ -> ()
 
-                let batchLog = readLog |> Log.prop "batchIndex" !responseCount
-                let! page = retryingLoggingReadPage e batchLog
+                match! e.MoveNext() |> Stopwatch.Time with
+                | _t, None -> ok <- false
+                | t, Some page ->
 
-                match page with
-                | Some (events, _pos, rus) ->
-                    ru <- ru + rus
-                    allEvents.AddRange(events)
+                let events, _pos, rus = readPage batchLog i t page
+                ru <- ru + rus
+                allEvents.AddRange(events)
 
-                    let acc = ResizeArray()
-                    for x in events do
-                        match tryDecode x with
-                        | Some e when isOrigin e ->
-                            let used, residual = events |> calculateUsedVersusDroppedPayload x.Index
-                            log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
-                                stream, x.Index, x.EventType, used, residual)
-                            ok <- false
-                            acc.Add e
-                        | Some e -> acc.Add e
-                        | None -> ()
-
-                    yield acc.ToArray()
-                | _ -> ok <- false
+                let acc = ResizeArray()
+                for x in events do
+                    match tryDecode x with
+                    | Some e when isOrigin e ->
+                        let used, residual = events |> calculateUsedVersusDroppedPayload x.Index
+                        log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
+                            stream, x.Index, x.EventType, used, residual)
+                        ok <- false
+                        acc.Add e
+                    | Some e -> acc.Add e
+                    | None -> ()
+                i <- i + 1
+                yield acc.ToArray()
         finally
             let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             let t = StopwatchInterval(startTicks, endTicks)
-            log |> logQuery direction maxItems stream t (!responseCount,allEvents.ToArray()) -1L ru }
+            log |> logQuery direction maxItems stream t (i, allEvents.ToArray()) -1L ru }
 
 // Manages deletion of batches
 // Note: it's critical that we delete individually, in the correct order so as not to leave gaps
@@ -870,34 +854,14 @@ module Delete =
         let query : AsyncSeq<Page<BatchIndices>> =
              let qro = QueryRequestOptions(PartitionKey=Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
              container.GetQueryIteratorByPage<_>(QueryDefinition "SELECT c.id, c.i, c.n FROM c", options=qro)
-        let run (tryReadNextPage: IAsyncEnumerator<Page<BatchIndices>> -> ILogger -> Async<Option<BatchIndices[] * float>>)
-            (query: AsyncSeq<Page<BatchIndices>>) =
-
-            let e = query.GetEnumerator()
-
-            let rec loop batchCount : AsyncSeq<BatchIndices[] * float> = asyncSeq {
-
-                let batchLog = log |> Log.prop "batchIndex" batchCount
-                let! (page : Option<BatchIndices[] * float>) = tryReadNextPage e batchLog
-
-                if page |> Option.isSome then
-                    yield page.Value
-                    yield! loop (batchCount + 1) }
-
-            loop 0
-        let tryReadNextPage (enumerator : IAsyncEnumerator<Page<BatchIndices>>) log = async {
-            let! t, res = enumerator.MoveNext() |> Stopwatch.Time
-            match res with
-            | None -> return None
-            | Some page ->
-
+        let mapPage i (t : StopwatchInterval) (page : Page<BatchIndices>) =
             let batches, rc, ms = Array.ofSeq page.Values, page.GetRawResponse().Headers.GetRequestCharge(), (let e = t.Elapsed in e.TotalMilliseconds)
             let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
             let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
-            let log = let evt = Log.PruneResponse reqMetric in log |> Log.event evt
+            let log = let evt = Log.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
             log.Information("EqxCosmos {action:l} {batches} {ms}ms n={next} rc={ru}", "PruneResponse", batches.Length, ms, next, rc)
-            return Some (batches, rc)
-        }
+            batches, rc
+
         // If we have results: []
         // - deleteBefore  9 would: return 0,0,0
 
@@ -939,7 +903,8 @@ module Delete =
                         lwm <- Some x.n
                 return rc, (tipI, lwm), (delCharges, batchesDeleted, eventsDeleted, eventsDeferred)
             }
-            run tryReadNextPage query
+            query
+            |> Query.asyncSeqMapTi mapPage
             |> AsyncSeq.takeWhile hasRelevantItems
             |> AsyncSeq.mapAsync handle
             |> AsyncSeq.toArrayAsync
@@ -970,7 +935,6 @@ module Delete =
 /// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
 type RetryPolicy([<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.TipRetryPolicy = readRetryPolicy
-    member __.QueryRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
 
 /// Defines the policies in force regarding how to a) split up calls b) limit the number of events per page
@@ -1011,7 +975,7 @@ type StoreClient(gateway : ContainerGateway, fallback : ContainerGateway option,
     // Always yields events forward, regardless of direction
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip): Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode,isOrigin))
-        let walk log gateway = Query.scan log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
+        let walk log gateway = Query.scan log (gateway,stream) batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
             match fallback with
             | None -> None
@@ -1053,7 +1017,7 @@ type StoreClient(gateway : ContainerGateway, fallback : ContainerGateway option,
     (* Helpers for `module Events` *)
 
     member __.ReadLazy(batching: BatchingPolicy, log, stream, direction, (tryDecode,isOrigin), ?minIndex, ?maxIndex) : AsyncSeq<'event[]> =
-        Query.walkLazy log (gateway,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests (tryDecode,isOrigin) (direction, minIndex, maxIndex)
+        Query.walkLazy log (gateway,stream) batching.MaxItems batching.MaxRequests (tryDecode,isOrigin) (direction, minIndex, maxIndex)
 
     member __.GetPosition(log, stream, ?pos): Async<StreamToken> = async {
         match! Tip.tryLoad log retry.TipRetryPolicy (gateway,stream) (pos, None) with
