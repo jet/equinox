@@ -681,6 +681,51 @@ module internal Tip =
             if x.Index = stopIndex then found <- true
         used, dropped
 
+    let walkLazy<'event> (log : ILogger) (container,stream) maxItems maxRequests
+        (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
+        (direction, minIndex, maxIndex)
+        : AsyncSeq<'event[]> = asyncSeq {
+        let query = mkQuery (container,stream) maxItems (direction, minIndex, maxIndex)
+        let readPage = mapPage direction stream (minIndex, maxIndex) maxRequests
+        let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
+        let readLog = log |> Log.prop "direction" direction
+        let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+        let allEvents = ResizeArray()
+        let mutable i, ru = 0, 0.
+        try let mutable ok = true
+            let e = query.GetEnumerator()
+            while ok do
+                let batchLog = readLog |> Log.prop "batchIndex" i
+                match maxRequests with
+                | Some mpbr when i+1 >= mpbr -> batchLog.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
+                | _ -> ()
+
+                match! e.MoveNext() |> Stopwatch.Time with
+                | _t, None -> ok <- false
+                | t, Some page ->
+
+                let events, _pos, rus = readPage batchLog i t page
+                ru <- ru + rus
+                allEvents.AddRange(events)
+
+                let acc = ResizeArray()
+                for x in events do
+                    match tryDecode x with
+                    | Some e when isOrigin e ->
+                        let used, residual = events |> calculateUsedVersusDroppedPayload x.Index
+                        log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
+                            stream, x.Index, x.EventType, used, residual)
+                        ok <- false
+                        acc.Add e
+                    | Some e -> acc.Add e
+                    | None -> ()
+                i <- i + 1
+                yield acc.ToArray()
+        finally
+            let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
+            let t = StopwatchInterval(startTicks, endTicks)
+            log |> logQuery direction maxItems stream t (i, allEvents.ToArray()) -1L ru }
+
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type ScanResult<'event> = { found : bool; index : int64; next : int64; maybeTipPos : Position option; events : 'event[] }
 
@@ -786,51 +831,6 @@ module internal Tip =
         | Some { found = true } -> ()
         | _ -> logMissing (minIndex, maxIndex) "Origin event not found in secondary container"
         return pos, events }
-
-    let walkLazy<'event> (log : ILogger) (container,stream) maxItems maxRequests
-        (tryDecode : ITimelineEvent<JsonElement> -> 'event option, isOrigin: 'event -> bool)
-        (direction, minIndex, maxIndex)
-        : AsyncSeq<'event[]> = asyncSeq {
-        let query = mkQuery (container,stream) maxItems (direction, minIndex, maxIndex)
-        let readPage = mapPage direction stream (minIndex, maxIndex) maxRequests
-        let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
-        let readLog = log |> Log.prop "direction" direction
-        let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
-        let allEvents = ResizeArray()
-        let mutable i, ru = 0, 0.
-        try let mutable ok = true
-            let e = query.GetEnumerator()
-            while ok do
-                let batchLog = readLog |> Log.prop "batchIndex" i
-                match maxRequests with
-                | Some mpbr when i+1 >= mpbr -> batchLog.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
-                | _ -> ()
-
-                match! e.MoveNext() |> Stopwatch.Time with
-                | _t, None -> ok <- false
-                | t, Some page ->
-
-                let events, _pos, rus = readPage batchLog i t page
-                ru <- ru + rus
-                allEvents.AddRange(events)
-
-                let acc = ResizeArray()
-                for x in events do
-                    match tryDecode x with
-                    | Some e when isOrigin e ->
-                        let used, residual = events |> calculateUsedVersusDroppedPayload x.Index
-                        log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
-                            stream, x.Index, x.EventType, used, residual)
-                        ok <- false
-                        acc.Add e
-                    | Some e -> acc.Add e
-                    | None -> ()
-                i <- i + 1
-                yield acc.ToArray()
-        finally
-            let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
-            let t = StopwatchInterval(startTicks, endTicks)
-            log |> logQuery direction maxItems stream t (i, allEvents.ToArray()) -1L ru }
 
 // Manages deletion of batches
 // Note: it's critical that we delete individually, in the correct order so as not to leave gaps
