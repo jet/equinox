@@ -5,7 +5,6 @@ open Equinox.CosmosStore.Core
 open FsCheck.Xunit
 open Swensen.Unquote
 open System
-open System.Text.Json
 
 type Embedded = { embed : string }
 type Union =
@@ -14,10 +13,6 @@ type Union =
     interface TypeShape.UnionContract.IUnionContract
 
 let defaultOptions = FsCodec.SystemTextJson.Options.Create()
-
-module JsonElement =
-    let d = JsonDocument.Parse "null"
-    let Null = d.RootElement
 
 type Base64ZipUtf8Tests() =
     let eventCodec = FsCodec.SystemTextJson.Codec.Create<Union>(defaultOptions)
