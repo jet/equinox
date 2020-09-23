@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- `Cosmos`: Reorganize Sync log message text [#241](https://github.com/jet/equinox/pull/241)
+
 ### Removed
 ### Fixed
 

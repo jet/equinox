@@ -1,4 +1,4 @@
-﻿namespace Equinox.Cosmos.Store
+namespace Equinox.Cosmos.Store
 
 open Equinox.Core
 open FsCodec
@@ -519,7 +519,8 @@ function sync(req, expIndex, expEtag) {
                 logConflict ()
                 let log = if verbose then log |> Log.prop "nextExpectedVersion" pos |> Log.propData "conflicts" xs else log
                 log |> Log.event (Log.SyncResync(mkMetric ru)) |> Log.prop "conflict" true
-        resultLog.Information("EqxCosmos {action:l} {count}+{ucount} {ms}ms rc={ru}", "Sync", req.e.Length, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+        resultLog.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
+                              "Sync", stream, req.e.Length, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
         return result }
 
     let batch (log : ILogger) retryPolicy containerStream batch: Async<Result> =
