@@ -785,7 +785,8 @@ module Delete =
         let! ct = Async.CancellationToken
         let log = log |> Log.prop "stream" stream
         let deleteItem id count : Async<float> = async {
-            let! t, res = container.DeleteItemAsync(id, PartitionKey stream, cancellationToken=ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
+            let ro = ItemRequestOptions(EnableContentResponseOnWrite=Nullable false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
+            let! t, res = container.DeleteItemAsync(id, PartitionKey stream, ro, cancellationToken=ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             let rc, ms = res.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Delete reqMetric in log |> Log.event evt
