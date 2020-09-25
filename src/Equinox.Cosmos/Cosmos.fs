@@ -265,7 +265,7 @@ module Log =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
-    let (|EventLen|) (x: #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes+metaBytes
+    let (|EventLen|) (x: #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes + metaBytes + 80
     let (|BatchLen|) = Seq.sumBy (|EventLen|)
 
     /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
@@ -494,33 +494,27 @@ function sync(req, expIndex, expEtag) {
 
     let private logged (container,stream) (exp : Exp, req: Tip) (log : ILogger)
         : Async<Result> = async {
-        let verbose = log.IsEnabled Serilog.Events.LogEventLevel.Debug
-        let log = if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log
+        let! t, (ru, result) = run (container,stream) (exp, req) |> Stopwatch.Time
         let (Log.BatchLen bytes), count = Enum.Events req, req.e.Length
-        let log = log |> Log.prop "bytes" bytes
-        let writeLog =
-            log |> Log.prop "stream" stream
-                |> Log.prop "count" req.e.Length |> Log.prop "ucount" req.u.Length
-                |> match exp with
-                    | Exp.Etag et ->     Log.prop "expectedEtag" et
-                    | Exp.Version ev ->  Log.prop "expectedVersion" ev
-                    | Exp.Any ->         Log.prop "expectedVersion" -1
-        let! t, (ru,result) = run (container,stream) (exp, req) |> Stopwatch.Time
-        let resultLog =
-            let mkMetric ru : Log.Measurement = { stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
-            let logConflict () = writeLog.Information("EqxCosmos Sync: Conflict writing {eventTypes}", Seq.truncate 5 (seq { for x in req.e -> x.c }))
-            match result with
-            | Result.Written pos ->
-                log |> Log.event (Log.SyncSuccess (mkMetric ru)) |> Log.prop "nextExpectedVersion" pos
-            | Result.ConflictUnknown pos ->
-                logConflict ()
-                log |> Log.event (Log.SyncConflict (mkMetric ru)) |> Log.prop "nextExpectedVersion" pos |> Log.prop "conflict" true
-            | Result.Conflict (pos, xs) ->
-                logConflict ()
-                let log = if verbose then log |> Log.prop "nextExpectedVersion" pos |> Log.propData "conflicts" xs else log
-                log |> Log.event (Log.SyncResync(mkMetric ru)) |> Log.prop "conflict" true
-        resultLog.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
-                              "Sync", stream, req.e.Length, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
+        let log =
+            let inline mkMetric ru : Log.Measurement = { stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
+            let inline propConflict log = log |> Log.prop "conflict" true |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in req.e -> x.c }))
+            let verbose = log.IsEnabled Serilog.Events.LogEventLevel.Debug
+            (if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log)
+            |> match exp with
+                | Exp.Etag et ->     Log.prop "expectedEtag" et
+                | Exp.Version ev ->  Log.prop "expectedVersion" ev
+                | Exp.Any ->         Log.prop "expectedVersion" -1
+            |> match result with
+                | Result.Written pos ->
+                    Log.prop "nextExpectedVersion" pos >> Log.event (Log.SyncSuccess (mkMetric ru))
+                | Result.ConflictUnknown pos ->
+                    Log.prop "nextExpectedVersion" pos >> propConflict >> Log.event (Log.SyncConflict (mkMetric ru))
+                | Result.Conflict (pos, xs) ->
+                    (if verbose then Log.propData "conflicts" xs else id)
+                    >> Log.prop "nextExpectedVersion" pos >> propConflict >> Log.event (Log.SyncResync(mkMetric ru))
+        log.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
+            "Sync", stream, count, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
         return result }
 
     let batch (log : ILogger) retryPolicy containerStream batch: Async<Result> =
