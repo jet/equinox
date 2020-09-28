@@ -1844,7 +1844,7 @@ let cnx =
 // alternately use the overload that defers the mapping until the stream one is
 // writing to becomes clear
 let containerMap = Containers("databaseName", "containerName")
-let ctx = Context(cnx, containerMap, gatewayLog)
+let ctx = EventsContext(cnx, containerMap, gatewayLog)
 
 //
 // Write an event

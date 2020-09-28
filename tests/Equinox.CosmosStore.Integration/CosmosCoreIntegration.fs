@@ -30,7 +30,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit conn defaultBatchSize =
-        Context(conn,containers,log,?defaultMaxItems=defaultBatchSize)
+        EventsContext(conn,containers,log,?defaultMaxItems=defaultBatchSize)
     let mkContext conn = mkContextWithItemLimit conn None
 
     let verifyRequestChargesMax rus =

@@ -1313,7 +1313,7 @@ type AppendResult<'t> =
     | ConflictUnknown of index: 't
 
 /// Encapsulates the core facilities Equinox.CosmosStore offers for operating directly on Events in Streams.
-type Context
+type EventsContext
     (   /// Connection to CosmosDb, includes defined Transient Read and Write Retry policies
         conn : Connection,
         /// Container selector, mapping Stream Categories to Containers
@@ -1435,49 +1435,49 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx: Context) (streamName: string) (MinPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<ITimelineEvent<byte[]>[]> =
+    let getAll (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (batchSize: int): FSharp.Control.AsyncSeq<ITimelineEvent<byte[]>[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx: Context) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
+    let get (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
-    let append (ctx: Context) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
+    let append (ctx: EventsContext) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
         ctx.Sync(ctx.CreateStream streamName, Position.fromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx: Context) (streamName: string) (events: IEventData<_>[]): Async<int64> =
+    let appendAtEnd (ctx: EventsContext) (streamName: string) (events: IEventData<_>[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.CreateStream streamName, events) |> stripPosition
 
     /// Requests deletion of events prior to the specified Index
     /// Due to the need to preserve ordering of data in the stream, only full batches will be removed
     /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number
-    let prune (ctx: Context) (streamName: string) (beforeIndex: int64): Async<int * int * int64> =
+    let prune (ctx: EventsContext) (streamName: string) (beforeIndex: int64): Async<int * int * int64> =
         ctx.Prune(ctx.CreateStream streamName, beforeIndex)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<byte[]>[]> =
+    let getAllBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<byte[]>[]> =
         ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx: Context) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
+    let getBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
         ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position
-    let getNextIndex (ctx: Context) (streamName: string) : Async<int64> =
+    let getNextIndex (ctx: EventsContext) (streamName: string) : Async<int64> =
         ctx.Sync(ctx.CreateStream streamName) |> stripPosition

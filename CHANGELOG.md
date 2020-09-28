@@ -19,6 +19,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
     - `Cosmos:` Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
     - Rename `Equinox.Cosmos` DLL and namespace to `Equinox.CosmosStore` [#243](https://github.com/jet/equinox/pull/243)
     - Rename `Equinox.Cosmos.Store` -> `Equinox.CosmosStore.Core`
+    - Rename `Equinox.Cosmos.Core.Context` -> `Equinox.CosmosStore.Core.EventsContext`
 - target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1` with `SystemTextJson`
 - Retarget Todobackend to `aspnetcore` v `3.1`
