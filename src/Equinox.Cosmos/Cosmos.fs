@@ -410,10 +410,9 @@ module Sync =
 
 // 0 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index)
 
-// 1 if no current Tip, the incoming `req` becomes the Tip batch (the caller is entrusted to provide a valid and complete set of inputs)
-// 2 in some cases, there are only changes to the `u`nfolds and no `e`vents
-// 3 current Tip batch has space to accommodate the incoming unfolds (req.u) and events (req.e) - merge them in, replacing any superseded unfolds
-// 4 current Tip batch would become too large - remove Tip-specific state from active doc by replacing the well known id with a unique id; proceed as per 1
+// 1 if no current Tip -> the incoming `req` becomes the Tip batch (the caller is entrusted to provide a valid and complete set of inputs)
+// 2 in some cases, there are only changes to the `u`nfolds and no `e`vents -> update tip only
+// 3 incoming request includes an event -> generate a batch document + update tip
 function sync(req, expIndex, expEtag) {
     if (!req) throw new Error("Missing req argument");
     const collectionLink = __.getSelfLink();
@@ -449,7 +448,7 @@ function sync(req, expIndex, expEtag) {
         if (tip) {
             Array.prototype.push.apply(tip.e, req.e);
             tip.n = tip.i + tip.e.length;
-            // If we have hit a sensible limit for a slice, swap to a new one
+            // If there are events, calve them to their own batch (this behavior is to simplify CFP consumer impl)
             if (tip.e.length > 0) {
                 const batch = { id: tip.i.toString(), p: tip.p, i: tip.i, n: tip.n, e: tip.e }
                 const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
@@ -458,13 +457,16 @@ function sync(req, expIndex, expEtag) {
                 tip.i = tip.n;
                 tip.e = [];
             }
+
             // TODO Carry forward `u` items not present in `batch`, together with supporting catchup events from preceding batches
+
             // Replace all the unfolds // TODO: should remove only unfolds being superseded
             tip.u = req.u;
             // As we've mutated the document in a manner that can conflict with other writers, our write needs to be contingent on no competing updates having taken place
             const isAccepted = __.replaceDocument(tip._self, tip, { etag: tip._etag }, callback);
             if (!isAccepted) throw new Error("Unable to replace Tip batch.");
         } else {
+            // NOTE we write the batch first (more consistent RU cost than writing tip first)
             if (req.e.length > 0) {
                 const batch = { id: "0", p: req.p, i: 0, n: req.e.length, e: req.e };
                 const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
