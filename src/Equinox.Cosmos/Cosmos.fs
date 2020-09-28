@@ -406,13 +406,18 @@ module Sync =
     type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
     let [<Literal>] private sprocName = "EquinoxRollingUnfolds4"  // NB need to rename/number for any breaking change
     let [<Literal>] private sprocBody = """
-// Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
+// Manages the merging of the supplied Request Batch into the stream
 
 // 0 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index)
 
-// 1 if no current Tip -> the incoming `req` becomes the Tip batch (the caller is entrusted to provide a valid and complete set of inputs)
-// 2 in some cases, there are only changes to the `u`nfolds and no `e`vents -> update tip only
-// 3 incoming request includes an event -> generate a batch document + update tip
+// High level end-states:
+
+// 1a if there is a Tip, but are only changes to the `u`nfolds (and no `e`vents) -> update Tip only
+// 1b if there is a Tip, but incoming request includes an event -> generate a batch document + create empty Tip
+
+// 2a if stream empty, but incoming request includes an event -> generate a batch document + create empty Tip
+// 2b if no current Tip, and no events being written -> the incoming `req` becomes the Tip batch
+
 function sync(req, expIndex, expEtag) {
     if (!req) throw new Error("Missing req argument");
     const collectionLink = __.getSelfLink();
