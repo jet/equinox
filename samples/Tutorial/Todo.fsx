@@ -15,7 +15,7 @@
 #r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
-#r "Equinox.Cosmos.dll"
+#r "Equinox.CosmosStore.dll"
 
 open System
 
@@ -116,7 +116,7 @@ let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let [<Literal>] appName = "equinox-tutorial"
 let cache = Equinox.Cache(appName, 20)
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 module Store =
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 

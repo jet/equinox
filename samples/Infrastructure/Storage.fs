@@ -10,7 +10,7 @@ type StorageConfig =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
     | Memory of Equinox.MemoryStore.VolatileStore<byte[]>
     | Es     of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
-    | Cosmos of Equinox.Cosmos.Gateway * Equinox.Cosmos.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
+    | Cosmos of Equinox.CosmosStore.Gateway * Equinox.CosmosStore.CachingStrategy * unfolds: bool * databaseId: string * containerId: string
     | Sql    of Equinox.SqlStreamStore.Context * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
@@ -67,7 +67,7 @@ module Cosmos =
     /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
     /// 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net461/eqx.exe `
     ///     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
-    open Equinox.Cosmos
+    open Equinox.CosmosStore
     open Serilog
 
     let private createGateway connection maxItems = Gateway(connection, BatchingPolicy(defaultMaxItems=maxItems))

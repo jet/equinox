@@ -1,4 +1,4 @@
-namespace Equinox.Cosmos.Store
+namespace Equinox.CosmosStore.Store
 
 open Equinox.Core
 open FsCodec
@@ -910,11 +910,11 @@ module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of StreamToken * 'event[]
 
-namespace Equinox.Cosmos
+namespace Equinox.CosmosStore
 
 open Equinox
 open Equinox.Core
-open Equinox.Cosmos.Store
+open Equinox.CosmosStore.Store
 open FsCodec
 open FSharp.Control
 open Microsoft.Azure.Cosmos
@@ -1297,10 +1297,10 @@ type Connector
         let client = __.CreateClient(name, discovery, ?skipLog=skipLog)
         return Connection(client, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy) }
 
-namespace Equinox.Cosmos.Core
+namespace Equinox.CosmosStore.Core
 
-open Equinox.Cosmos
-open Equinox.Cosmos.Store
+open Equinox.CosmosStore
+open Equinox.CosmosStore.Store
 open FsCodec
 open FSharp.Control
 open System.Runtime.InteropServices
@@ -1312,7 +1312,7 @@ type AppendResult<'t> =
     | Conflict of index: 't * conflictingEvents: ITimelineEvent<byte[]>[]
     | ConflictUnknown of index: 't
 
-/// Encapsulates the core facilities Equinox.Cosmos offers for operating directly on Events in Streams.
+/// Encapsulates the core facilities Equinox.CosmosStore offers for operating directly on Events in Streams.
 type Context
     (   /// Connection to CosmosDb, includes defined Transient Read and Write Retry policies
         conn : Connection,

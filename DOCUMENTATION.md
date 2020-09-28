@@ -164,23 +164,23 @@ slightly differently:
 
 ![Equinox.EventStore/SqlStreamStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/EventStoreCode.puml&idx=3&fmt=svg)
 
-# Equinox.Cosmos
+# Equinox.CosmosStore
 
-## Container Diagram for `Equinox.Cosmos`
+## Container Diagram for `Equinox.CosmosStore`
 
-![Equinox.Cosmos c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosContainer.puml?fmt=svg)
+![Equinox.CosmosStore c4model.com Container Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosContainer.puml?fmt=svg)
 
-## Component Diagram for `Equinox.Cosmos`
+## Component Diagram for `Equinox.CosmosStore`
 
-![Equinox.Cosmos c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosComponent.puml?fmt=svg)
+![Equinox.CosmosStore c4model.com Component Diagram](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosComponent.puml?fmt=svg)
 
-## Code Diagrams for `Equinox.Cosmos`
+## Code Diagrams for `Equinox.CosmosStore`
 
 This diagram walks through the basic sequence of operations, where:
 - this node has not yet read this stream (i.e. there's nothing in the Cache)
 - when we do read it, the Read call returns `404` (with a charge of `1 RU`)
 
-![Equinox.Cosmos c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=0&fmt=svg)
+![Equinox.CosmosStore c4model.com Code - first Time](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=0&fmt=svg)
 
 Next, we extend the scenario to show:
 - how state held in the Cache influences the Cosmos APIs used
@@ -194,12 +194,12 @@ Next, we extend the scenario to show:
   - when there's conflict and we're giving up (throw
     `MaxAttemptsExceededException`)
 
-![Equinox.Cosmos c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=1&fmt=svg)
+![Equinox.CosmosStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=1&fmt=svg)
 
 After the write, we circle back to illustrate the effect of the caching when we
 have correct state (we get a `304 Not Mofified` and pay only `1 RU`)
 
-![Equinox.Cosmos c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=2&fmt=svg)
+![Equinox.CosmosStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=2&fmt=svg)
 
 In other processes (when a cache is not fully in sync), the sequence runs
 slightly differently:
@@ -208,7 +208,7 @@ slightly differently:
   suitable snapshot that passes the `isOrigin` predicate is found within the
   _Tip_
 
-![Equinox.Cosmos c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=3&fmt=svg)
+![Equinox.CosmosStore c4model.com Code - another process; using snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=3&fmt=svg)
 
 # Glossary
 
@@ -410,12 +410,12 @@ module EventStore =
 
 module Cosmos =
     let accessStrategy =
-        Equinox.Cosmos.AccessStrategy.Snapshot (Fold.isOrigin, Fold.snapshot)
+        Equinox.CosmosStore.AccessStrategy.Snapshot (Fold.isOrigin, Fold.snapshot)
     let create (context, cache) =
         let cacheStrategy =
-            Equinox.Cosmos.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
+            Equinox.CosmosStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let resolver =
-            Equinox.Cosmos.Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+            Equinox.CosmCosmosStoreos.Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
         create resolver.Resolve
 ```
 
@@ -1558,12 +1558,12 @@ not reading data redundantly, and not feeding back into the oneself (although
 having separate roundtrips obviously has implications).
 
 <a name="cosmos-storage-model"></a>
-# `Equinox.Cosmos` CosmosDB Storage Model
+# `Equinox.CosmosStore` CosmosDB Storage Model
 
-This article provides a walkthrough of how `Equinox.Cosmos` encodes, writes and
+This article provides a walkthrough of how `Equinox.CosmosStore` encodes, writes and
 reads records from a stream under its control.
 
-The code (see [source](src/Equinox.Cosmos/Cosmos.fs#L6)) contains lots of
+The code (see [source](src/Equinox.CosmosStore/CosmosStore.fs#L6)) contains lots of
 comments and is intended to be read - this just provides some background.
 
 ## Batches
@@ -1648,7 +1648,7 @@ basic elements
 
 - Unfolds - the term `unfold` is based on the well known 'standard' FP function
   of that name, bearing the signature `'state -> 'event seq`. **=> For
-  `Equinox.Cosmos`, one might say `unfold` yields _projection_ s as _event_ s
+  `Equinox.CosmosStore`, one might say `unfold` yields _projection_ s as _event_ s
   to _snapshot_ the _state_ as at that _position_ in the _stream_**.
 
 ## Generating and saving `unfold`ed events
@@ -1742,9 +1742,9 @@ based on the events presented.
 
 This covers what the most complete possible implementation of the JS Stored
 Procedure (see
-[source](https://github.com/jet/equinox/blob/tip-isa-batch/src/Equinox.Cosmos/Cosmos.fs#L302))
+[source](https://github.com/jet/equinox/blob/tip-isa-batch/src/Equinox.CosmosStore/Cosmos.fs#L302))
 does when presented with a batch to be written. (NB The present implementation
-is slightly simplified; see [source](src/Equinox.Cosmos/Cosmos.fs#L303).
+is slightly simplified; see [source](src/Equinox.CosmosStore/CosmosStore.fs#L303).
 
 The `sync` stored procedure takes as input, a document that is almost identical
 to the format of the _`Tip`_ batch (in fact, if the stream is found to be
@@ -1780,9 +1780,9 @@ stream). The request includes the following elements:
   retrying in the case of conflict, _without any events being written per state
   change_)
 
-## Equinox.Cosmos.Core.Events
+## Equinox.CosmosStore.Core.Events
 
-The `Equinox.Cosmos.Core` namespace provides a lower level API that can be used
+The `Equinox.CosmosStore.Core` namespace provides a lower level API that can be used
 to manipulate events stored within a Azure CosmosDb using optimized native
 access patterns.
 
@@ -1807,7 +1807,7 @@ following key benefits:
 
 ```fsharp
 
-open Equinox.Cosmos.Core
+open Equinox.CosmosStore.Core
 // open MyCodecs.Json // example of using specific codec which can yield UTF-8
                       // byte arrays from a type using `Json.toBytes` via Fleece
                       // or similar
@@ -1830,7 +1830,7 @@ let gatewayLog =
     outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
 // When starting the app, we connect (once)
-let connector : Equinox.Cosmos.Connector =
+let connector : Equinox.CosmosStore.Connector =
     Connector(
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnThrottledRequests = 1,
@@ -1870,7 +1870,7 @@ An Access Strategy defines any optimizations regarding how one arrives at a
 State of an Aggregate based on the Events stored in a Stream in a Store.
 
 The specifics of an Access Strategy depend on what makes sense for a given
-Store, i.e. `Equinox.Cosmos` necessarily has a significantly different set of
+Store, i.e. `Equinox.CosmosStore` necessarily has a significantly different set of
 strategies than `Equinox.EventStore` (although there is an intersection).
 
 Access Strategies only affect performance; you should still be able to infer
@@ -1881,9 +1881,9 @@ NOTE: its not important to select a strategy until you've actually actually
 modelled your aggregate, see [what if I change my access
 strategy](#changing-access-strategy)
 
-## `Equinox.Cosmos.AccessStrategy`
+## `Equinox.CosmosStore.AccessStrategy`
 
-TL;DR `Equinox.Cosmos`: (see also: [the storage
+TL;DR `Equinox.CosmosStore`: (see also: [the storage
 model](cosmos-storage-model) for a deep dive, and [glossary,
 below the table](#access-strategy-glossary) for definition of terms)
 - keeps all the Events for a Stream in a single [CosmosDB _logical
@@ -2073,20 +2073,20 @@ EventStore, and it's Store adapter is the most proven and is pretty feature
 rich relative to the need of consumers to date. Some things remain though:
 
 - Provide a low level walking events in F# API akin to
-  `Equinox.Cosmos.Core.Events`; this would allow consumers to jump from direct
+  `Equinox.CosmosStore.Core.Events`; this would allow consumers to jump from direct
   use of `EventStore.ClientAPI` -> `Equinox.EventStore.Core.Events` ->
   `Equinox.Stream` (with the potential to swap stores once one gets to using
   `Equinox.Stream`)
-- Get conflict handling as efficient and predictable as for `Equinox.Cosmos`
+- Get conflict handling as efficient and predictable as for `Equinox.CosmosStore`
   https://github.com/jet/equinox/issues/28
 - provide for snapshots to be stored out of the stream, and loaded in a
   customizable manner in a manner analogous to
-  [the proposed comparable `Equinox.Cosmos` facility](https://github.com/jet/equinox/issues/61).
+  [the proposed comparable `Equinox.CosmosStore` facility](https://github.com/jet/equinox/issues/61).
 
-## Wouldn't it be nice - `Equinox.Cosmos`
+## Wouldn't it be nice - `Equinox.CosmosStore`
 
 - Enable snapshots to be stored outside of the main collection in
-  `Equinox.Cosmos` [#61](https://github.com/jet/equinox/issues/61)
+  `Equinox.CosmosStore` [#61](https://github.com/jet/equinox/issues/61)
 - Multiple writers support for `u`nfolds (at present a `sync` completely
   replaces the unfolds in the Tip; this will be extended by having the stored
   proc maintain the union of the unfolds in play (both for semi-related

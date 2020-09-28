@@ -1,4 +1,4 @@
-﻿module Equinox.Cosmos.Integration.CacheCellTests
+﻿module Equinox.CosmosStore.Integration.CacheCellTests
 
 open Equinox.Core
 open Swensen.Unquote

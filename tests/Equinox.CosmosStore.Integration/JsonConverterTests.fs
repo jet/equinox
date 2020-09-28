@@ -1,6 +1,6 @@
-﻿module Equinox.Cosmos.Integration.JsonConverterTests
+﻿module Equinox.CosmosStore.Integration.JsonConverterTests
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 open FsCheck.Xunit
 open Newtonsoft.Json
 open Swensen.Unquote

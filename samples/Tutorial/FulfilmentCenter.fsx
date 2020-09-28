@@ -11,7 +11,7 @@
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
-#r "Equinox.Cosmos.dll"
+#r "Equinox.CosmosStore.dll"
 
 open FSharp.UMX
 
@@ -103,7 +103,7 @@ module FulfilmentCenter =
         member __.Read id : Async<Summary> = read id
         member __.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 open System
 
 module Log =

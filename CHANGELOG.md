@@ -14,7 +14,10 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Cosmos`: Reorganize Sync log message text, merge with Sync Conflict message [#241](https://github.com/jet/equinox/pull/241)
 - `Cosmos`: Converge Stored Procedure Impl with `tip-isa-batch` impl from V3 (minor Request Charges cost reduction) [#242](https://github.com/jet/equinox/pull/242)
 
-- target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
+- Fork `Equinox.Cosmos` to `Equinox.CosmosStore`
+    - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
+    - `Cosmos:` Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
+    - Rename `Equinox.Cosmos` DLL and namespace to `Equinox.CosmosStore` [#243](https://github.com/jet/equinox/pull/243)
 - target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1` with `SystemTextJson`
 - Retarget Todobackend to `aspnetcore` v `3.1`
@@ -24,7 +27,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Update to `3.1.101` SDK
 - Remove `module Commands` convention from in examples
 - Revise semantics of Cart Sample Command handling
-- `Cosmos:` Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
 - Simplify `AsyncCacheCell` [#229](https://github.com/jet/equinox/pull/229)
 
 ### Removed

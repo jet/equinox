@@ -1,8 +1,8 @@
-﻿module Equinox.Cosmos.Integration.CosmosIntegration
+﻿module Equinox.CosmosStore.Integration.CosmosIntegration
 
 open Domain
-open Equinox.Cosmos
-open Equinox.Cosmos.Integration.Infrastructure
+open Equinox.CosmosStore
+open Equinox.CosmosStore.Integration.Infrastructure
 open FSharp.UMX
 open Swensen.Unquote
 open System

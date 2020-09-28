@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
 open Equinox
-open Equinox.Cosmos.Integration
+open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -21,9 +21,9 @@ let resolveGesStreamWithoutCustomAccessStrategy gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, codec, fold, initial).Resolve(id,?option=opt)
 
 let resolveCosmosStreamWithSnapshotStrategy gateway =
-    fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
+    fun (id,opt) -> CosmosStore.Resolver(gateway, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
+    fun (id,opt) -> CosmosStore.Resolver(gateway, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {

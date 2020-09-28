@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
-    <Compile Include="Cosmos.fs" />
+    <Compile Include="CosmosStore.fs" />
   </ItemGroup>
 
   <ItemGroup>

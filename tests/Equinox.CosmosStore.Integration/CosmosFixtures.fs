@@ -1,7 +1,7 @@
 ﻿[<AutoOpen>]
-module Equinox.Cosmos.Integration.CosmosFixtures
+module Equinox.CosmosStore.Integration.CosmosFixtures
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 open System
 
 module Option =

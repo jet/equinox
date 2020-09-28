@@ -24,7 +24,7 @@ type SimpleDu =
     | EventD
     // See JsonConverterTests for why these are ruled out atm
     //| EventE of int // works but disabled due to Strings and DateTimes not working
-    //| EventF of string // has wierd semantics, particularly when used with a VerbatimJsonConverter in Equinox.Cosmos
+    //| EventF of string // has wierd semantics, particularly when used with a VerbatimJsonConverter in Equinox.CosmosStore
     interface IUnionContract
 
 let render = function
