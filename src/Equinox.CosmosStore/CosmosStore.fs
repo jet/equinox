@@ -1,4 +1,4 @@
-namespace Equinox.CosmosStore.Store
+namespace Equinox.CosmosStore.Core
 
 open Equinox.Core
 open FsCodec
@@ -914,7 +914,7 @@ namespace Equinox.CosmosStore
 
 open Equinox
 open Equinox.Core
-open Equinox.CosmosStore.Store
+open Equinox.CosmosStore.Core
 open FsCodec
 open FSharp.Control
 open Microsoft.Azure.Cosmos
@@ -1300,7 +1300,7 @@ type Connector
 namespace Equinox.CosmosStore.Core
 
 open Equinox.CosmosStore
-open Equinox.CosmosStore.Store
+open Equinox.CosmosStore.Core
 open FsCodec
 open FSharp.Control
 open System.Runtime.InteropServices

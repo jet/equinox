@@ -114,11 +114,11 @@ module Log =
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(Store.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Core.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
-    let dumpMetrics () = Store.Log.InternalMetrics.dump log
+    let dumpMetrics () = Core.Log.InternalMetrics.dump log
 
 module Store =
 

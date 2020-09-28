@@ -49,8 +49,8 @@ module SerilogHelpers =
     let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
-    open Equinox.CosmosStore.Store
-    open Equinox.CosmosStore.Store.Log
+    open Equinox.CosmosStore.Core
+    open Equinox.CosmosStore.Core.Log
     [<RequireQualifiedAccess>]
     type EqxAct =
         | Tip | TipNotFound | TipNotModified
@@ -72,7 +72,7 @@ module SerilogHelpers =
         | Event.PruneResponse _ -> EqxAct.PruneResponse
         | Event.Delete _ -> EqxAct.Delete
         | Event.Prune _ -> EqxAct.Prune
-    let inline (|Stats|) ({ ru = ru }: Equinox.CosmosStore.Store.Log.Measurement) = ru
+    let inline (|Stats|) ({ ru = ru }: Equinox.CosmosStore.Core.Log.Measurement) = ru
     let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|CosmosDeleteRc|CosmosPruneRc|) = function
         | Event.Tip (Stats s)
         | Event.TipNotFound (Stats s)
@@ -92,9 +92,9 @@ module SerilogHelpers =
             EquinoxChargeRollup
         | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc | CosmosDeleteRc rc | CosmosPruneRc rc as e ->
             CosmosRequestCharge (e,rc)
-    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.CosmosStore.Store.Log.Event option =
+    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.CosmosStore.Core.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Equinox.CosmosStore.Store.Log.Event as e) -> Some e
+            | SerilogScalar (:? Equinox.CosmosStore.Core.Log.Event as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =
