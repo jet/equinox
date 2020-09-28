@@ -446,21 +446,7 @@ function sync(req, expIndex, expEtag) {
             if (err) throw err;
             response.setBody({ etag: doc._etag, n: doc.n, conflicts: null });
         }
-        if (!tip) {
-            if (req.e.length > 0) {
-                const batch = { id: "0", p: req.p, i: 0, n: req.e.length, e: req.e };
-                const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
-                if (!batchAccepted) throw new Error("Unable to create Batch 0.");
-
-                req.i = batch.n;
-                req.e = [];
-            } else {
-                req.i = 0;
-            }
-            req.n = req.i + req.e.length;
-            const isAccepted = __.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
-            if (!isAccepted) throw new Error("Unable to create Tip batch.");
-        } else {
+        if (tip) {
             Array.prototype.push.apply(tip.e, req.e);
             tip.n = tip.i + tip.e.length;
             // If we have hit a sensible limit for a slice, swap to a new one
@@ -478,6 +464,20 @@ function sync(req, expIndex, expEtag) {
             // As we've mutated the document in a manner that can conflict with other writers, our write needs to be contingent on no competing updates having taken place
             const isAccepted = __.replaceDocument(tip._self, tip, { etag: tip._etag }, callback);
             if (!isAccepted) throw new Error("Unable to replace Tip batch.");
+        } else {
+            if (req.e.length > 0) {
+                const batch = { id: "0", p: req.p, i: 0, n: req.e.length, e: req.e };
+                const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
+                if (!batchAccepted) throw new Error("Unable to create Batch 0.");
+
+                req.i = batch.n;
+                req.e = [];
+            } else {
+                req.i = 0;
+            }
+            req.n = req.i + req.e.length;
+            const isAccepted = __.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
+            if (!isAccepted) throw new Error("Unable to create Tip batch.");
         }
     }
 }"""
