@@ -78,6 +78,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
 
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
+[<NoEquality; NoComparison>]
 type Unfold =
     {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
         i: int64
@@ -159,12 +160,11 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
     static member internal WellKnownDocumentId = "-1"
 
 /// Position and Etag to which an operation is relative
-type [<NoComparison>]
-    Position = { index: int64; etag: string option }
+[<NoComparison>]
+type Position = { index: int64; etag: string option }
 
 module internal Position =
-
-        /// NB very inefficient compared to FromDocument or using one already returned to you
+    /// NB very inefficient compared to FromDocument or using one already returned to you
     let fromI (i: int64) = { index = i; etag = None }
     /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
     let fromKnownEmpty = fromI 0L
@@ -214,7 +214,6 @@ type internal Enum() =
 type IRetryPolicy = abstract member Execute: (int -> Async<'T>) -> Async<'T>
 
 module Log =
-
     [<NoEquality; NoComparison>]
     type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int; ru: float }
     [<NoEquality; NoComparison>]
@@ -394,7 +393,6 @@ module private MicrosoftAzureCosmosWrappers =
                 // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
                 | CosmosException (CosmosStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, NotModified }
 
-type [<RequireQualifiedAccess>] SyncExp = Version of int64 | Etag of string | Any
 // NB don't nest in a private module, or serialization will fail miserably ;)
 [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
 type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
@@ -485,6 +483,9 @@ function sync(req, expIndex, expEtag) {
     }
 }"""
 
+[<RequireQualifiedAccess>]
+type internal SyncExp = Version of int64 | Etag of string | Any
+
 module internal Sync =
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -509,7 +510,8 @@ module internal Sync =
             | null -> Result.Written newPos
             | [||] when newPos.index = 0L -> Result.Conflict (newPos, Array.empty)
             | [||] -> Result.ConflictUnknown newPos
-            | xs -> Result.Conflict (newPos, Enum.Unfolds xs |> Array.ofSeq) }
+            | xs ->
+                Result.Conflict (newPos, Enum.Unfolds xs |> Array.ofSeq) }
 
     let private logged (container,stream) (exp : SyncExp, req: Tip) (log : ILogger)
         : Async<Result> = async {
@@ -616,6 +618,14 @@ module Initialization =
         do! createOrProvisionDatabase client dName mode
         return! createAuxContainerIfNotExists client (dName,cName) mode }
 
+    // Holds Container state, coordinating initialization activities
+    type internal ContainerInitializerGuard(container : Container, ?initContainer : Container -> Async<unit>) =
+        let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
+
+        member __.Container = container
+        member internal __.InitializationGate = match initGuard with Some g when not (g.IsValid())  -> Some g.AwaitValue | _ -> None
+
+
 module internal Tip =
 
     let private get (container : Container, stream : string) (maybePos: Position option) =
@@ -646,7 +656,8 @@ module internal Tip =
         match res with
         | ReadResult.NotModified -> return Result.NotModified
         | ReadResult.NotFound -> return Result.NotFound
-        | ReadResult.Found tip -> return Result.Found (Position.fromTip tip, Enum.EventsAndUnfolds tip |> Array.ofSeq) }
+        | ReadResult.Found tip ->
+            return Result.Found (Position.fromTip tip, Enum.EventsAndUnfolds tip |> Array.ofSeq) }
 
  module internal Query =
 
@@ -738,7 +749,7 @@ module internal Tip =
                             log.Information("EqxCosmos Stop stream={stream} at={index} {case} used={used} residual={residual}",
                                 stream, x.Index, x.EventType, used, residual)
                         false
-                    | _ -> true) (*continue the search*)
+                    | _ -> true)
                 |> AsyncSeq.toArrayAsync
             return events, maybeTipPos, ru }
         let query = mkQuery (container,stream) maxItems direction startPos
@@ -961,21 +972,18 @@ type internal StoreClient(container : Container, batching : BatchingPolicy, retr
     member __.ReadLazy(log, batching: BatchingPolicy, stream, direction, startPos, (tryDecode,isOrigin)) : AsyncSeq<'event[]> =
         Query.walkLazy log (container,stream) retry.QueryRetryPolicy batching.MaxItems batching.MaxRequests direction startPos (tryDecode,isOrigin)
     member __.LoadFromUnfoldsOrRollingSnapshots(log, (stream,maybePos), (tryDecode,isOrigin)): Async<StreamToken * 'event[]> = async {
-        let! res = Tip.tryLoad log retry.TipRetryPolicy (container,stream) maybePos
-        match res with
+        match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) maybePos with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
         | Tip.Result.NotModified -> return invalidOp "Not handled"
         | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return Token.create stream pos, span
         | _ -> return! __.LoadBackwardsStopping(log, stream, (tryDecode,isOrigin)) }
     member __.GetPosition(log, stream, ?pos): Async<StreamToken> = async {
-        let! res = Tip.tryLoad log retry.TipRetryPolicy (container,stream) pos
-        match res with
+        match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) pos with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
         | Tip.Result.NotModified -> return Token.create stream pos.Value
         | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create stream pos }
     member __.LoadFromToken(log, (stream,pos), (tryDecode, isOrigin)): Async<LoadFromTokenResult<'event>> = async {
-        let! res = Tip.tryLoad log retry.TipRetryPolicy (container,stream) (Some pos)
-        match res with
+        match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) (Some pos) with
         | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty,Array.empty)
         | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
         | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return LoadFromTokenResult.Found (Token.create stream pos, span)
@@ -983,8 +991,7 @@ type internal StoreClient(container : Container, batching : BatchingPolicy, retr
                 return LoadFromTokenResult.Found res }
     member __.Sync(log, stream, exp : SyncExp, batch: Tip): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
-        let! wr = Sync.batch log retry.WriteRetryPolicy (container,stream) (exp,batch)
-        match wr with
+        match! Sync.batch log retry.WriteRetryPolicy (container,stream) (exp,batch) with
         | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (Token.create stream pos',events)
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
@@ -999,13 +1006,12 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
             else store.LoadFromUnfoldsOrRollingSnapshots(log, (stream,None), (codec.TryDecode,isOrigin))
         return token, fold initial events }
     member __.LoadFromToken(log, (Token.Unpack (stream, pos) as streamToken), state: 'state, fold, isOrigin): Async<StreamToken * 'state> = async {
-        let! res = store.LoadFromToken(log, (stream, pos), (codec.TryDecode,isOrigin))
-        match res with
+        match! store.LoadFromToken(log, (stream, pos), (codec.TryDecode,isOrigin)) with
         | LoadFromTokenResult.Unchanged -> return streamToken, state
-        | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
+        | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     member __.Sync(log, token, state, events, mapUnfolds, fold, isOrigin, context): Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
-        let encode e = codec.Encode(context,e)
+        let encode e = codec.Encode(context, e)
         let (Token.Unpack (stream,pos)) = token
         let exp,events,eventsEncoded,projectionsEncoded =
             match mapUnfolds with
@@ -1036,8 +1042,7 @@ module internal Caching =
                 loadAndIntercept (inner.Load(log, streamName, opt)) streamName
             member __.TrySync(log : ILogger, (Token.Unpack (stream,_) as streamToken), state, events : 'event list, context)
                 : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync(log, streamToken, state, events, context)
-                match syncRes with
+                match! inner.TrySync(log, streamToken, state, events, context) with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict(loadAndIntercept resync stream)
                 | SyncResult.Written(token', state') ->
                     let! intercepted = intercept stream (token', state')
@@ -1072,17 +1077,9 @@ type internal Folder<'event, 'state, 'context>
                 | Some (token, state) -> return! category.LoadFromToken(log, token, state, fold, isOrigin) }
         member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context)
             : Async<SyncResult<'state>> = async {
-            let! res = category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context)
-            match res with
+            match! category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context) with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
-
-// Holds Container state, coordinating initialization activities
-type internal ContainerInitializerGuard(container : Container, ?initContainer : Container -> Async<unit>) =
-    let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
-
-    member __.Container = container
-    member internal __.InitializationGate = match initGuard with Some g when not (g.IsValid())  -> Some g.AwaitValue | _ -> None
 
 namespace Equinox.CosmosStore
 
@@ -1107,7 +1104,7 @@ type CosmosStoreConnection
         [<O; D(null)>]?disableInitialization) =
     let createGateway = match createGateway with Some creator -> creator | None -> id
     // Index of database*collection -> Initialization Context
-    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, ContainerInitializerGuard>()
+    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, Initialization.ContainerInitializerGuard>()
     new(client, databaseId : string, containerId : string,
         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
         [<O; D(null)>]?disableInitialization,
@@ -1118,14 +1115,14 @@ type CosmosStoreConnection
         let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
         CosmosStoreConnection(catAndStreamToDatabaseContainerStream, primaryContainer,
             ?disableInitialization=disableInitialization, ?createGateway=createGateway)
-    member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) : ContainerInitializerGuard * string =
+    member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
         let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let createContainerInitializerGuard (d, c) =
             let init =
                 if Some true = disableInitialization then None
                 else Some (fun cosmosContainer -> Initialization.createSyncStoredProcIfNotExists None cosmosContainer |> Async.Ignore)
             let primaryContainer = createContainer (d, c)
-            ContainerInitializerGuard(createGateway primaryContainer, ?initContainer = init)
+            Initialization.ContainerInitializerGuard(createGateway primaryContainer, ?initContainer = init)
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
 
@@ -1273,7 +1270,11 @@ type CosmosStoreClientFactory
     /// CosmosClientOptions for this Connector as configured
     member val Options =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
-        let co = CosmosClientOptions(MaxRetryAttemptsOnRateLimitedRequests=maxAttempts, MaxRetryWaitTimeOnRateLimitedRequests=maxWait, RequestTimeout=timeout)
+        let co =
+            CosmosClientOptions(
+                MaxRetryAttemptsOnRateLimitedRequests=maxAttempts,
+                MaxRetryWaitTimeOnRateLimitedRequests=maxWait,
+                RequestTimeout=timeout)
         match mode with
         | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
@@ -1339,7 +1340,7 @@ type EventsContext internal
     member __.ResolveStream(streamName) =
         let _cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
         streamId, init
-    member __.CreateStream(streamName) = __.ResolveStream streamName |> fst
+    member __.StreamId(streamName) : string = __.ResolveStream streamName |> fst
 
     member internal __.GetLazy(stream, ?batchSize, ?direction, ?startPos) : AsyncSeq<ITimelineEvent<byte[]>[]> =
         let direction = defaultArg direction Direction.Forward
@@ -1383,8 +1384,7 @@ type EventsContext internal
         | None -> ()
         | Some init -> do! init ()
         let batch = Sync.mkBatch stream events Seq.empty
-        let! res = store.Sync(log, stream, SyncExp.Version position.index, batch)
-        match res with
+        match! store.Sync(log, stream, SyncExp.Version position.index, batch) with
         | InternalSyncResult.Written (Token.Unpack (_,pos)) -> return AppendResult.Ok pos
         | InternalSyncResult.Conflict (Token.Unpack (_,pos),events) -> return AppendResult.Conflict (pos, events)
         | InternalSyncResult.ConflictUnknown (Token.Unpack (_,pos)) -> return AppendResult.ConflictUnknown pos }
@@ -1392,8 +1392,7 @@ type EventsContext internal
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Stream enables building equivalent equivalent idempotent handling with minimal code.
     member __.NonIdempotentAppend(stream, events: IEventData<_>[]) : Async<Position> = async {
-        let! res = __.Sync(stream, Position.fromAppendAtEnd, events)
-        match res with
+        match! __.Sync(stream, Position.fromAppendAtEnd, events) with
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
@@ -1410,8 +1409,7 @@ type EventData() =
 module Events =
     let private (|PositionIndex|) (x: Position) = x.index
     let private stripSyncResult (f: Async<AppendResult<Position>>): Async<AppendResult<int64>> = async {
-        let! res = f
-        match res with
+        match! f with
         | AppendResult.Ok (PositionIndex index)-> return AppendResult.Ok index
         | AppendResult.Conflict (PositionIndex index,events) -> return AppendResult.Conflict (index, events)
         | AppendResult.ConflictUnknown (PositionIndex index) -> return AppendResult.ConflictUnknown index }
@@ -1433,48 +1431,48 @@ module Events =
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
     let getAll (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<byte[]>[]> =
-        ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index)
+        ctx.Walk(ctx.StreamId streamName, batchSize, ?position=index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
     let get (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
-        ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount) |> dropPosition
+        ctx.Read(ctx.StreamId streamName, ?position=index, maxCount=maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
     /// and a failure is returned.
     let append (ctx: EventsContext) (streamName: string) (index: int64) (events: IEventData<_>[]): Async<AppendResult<int64>> =
-        ctx.Sync(ctx.CreateStream streamName, Position.fromI index, events) |> stripSyncResult
+        ctx.Sync(ctx.StreamId streamName, Position.fromI index, events) |> stripSyncResult
 
     /// Appends a batch of events to a stream at the the present Position without any conflict checks.
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
     let appendAtEnd (ctx: EventsContext) (streamName: string) (events: IEventData<_>[]): Async<int64> =
-        ctx.NonIdempotentAppend(ctx.CreateStream streamName, events) |> stripPosition
+        ctx.NonIdempotentAppend(ctx.StreamId streamName, events) |> stripPosition
 
     /// Requests deletion of events prior to the specified Index
     /// Due to the need to preserve ordering of data in the stream, only full batches will be removed
     /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number
     let prune (ctx: EventsContext) (streamName: string) (beforeIndex: int64): Async<int * int * int64> =
-        ctx.Prune(ctx.CreateStream streamName, beforeIndex)
+        ctx.Prune(ctx.StreamId streamName, beforeIndex)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
     let getAllBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<byte[]>[]> =
-        ctx.Walk(ctx.CreateStream streamName, batchSize, ?position=index, direction=Direction.Backward)
+        ctx.Walk(ctx.StreamId streamName, batchSize, ?position=index, direction=Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
     let getBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
-        ctx.Read(ctx.CreateStream streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
+        ctx.Read(ctx.StreamId streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position
     let getNextIndex (ctx: EventsContext) (streamName: string) : Async<int64> =
-        ctx.Sync(ctx.CreateStream streamName) |> stripPosition
+        ctx.Sync(ctx.StreamId streamName) |> stripPosition

@@ -29,9 +29,9 @@ type Tests(testOutputHelper) =
     let (|TestStream|) (name: Guid) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
-    let mkContextWithItemLimit conn defaultBatchSize =
+    let mkContextWithItemLimit log defaultBatchSize =
         createPrimaryEventsContext log defaultBatchSize
-    let mkContext conn = mkContextWithItemLimit conn None
+    let mkContext log = mkContextWithItemLimit log None
 
     let verifyRequestChargesMax rus =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
@@ -54,7 +54,7 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesMax 39 // 38.74 // was 11
+        verifyRequestChargesMax 41 // 40.68 // was 11
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
@@ -103,10 +103,11 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``appendAtEnd and getNextIndex`` (extras, TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = mkContextWithItemLimit log (Some 1)
-
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
+
+        let ctx = mkContextWithItemLimit log (Some 1)
+
         let! pos = Events.getNextIndex ctx streamName
         test <@ [EqxAct.TipNotFound] = capture.ExternalCalls @>
         0L =! pos
@@ -142,12 +143,12 @@ type Tests(testOutputHelper) =
         pos =! res
 
         // Demonstrate benefit/mechanism for using the Position-based API to avail of the etag tracking
-        let stream  = ctx.CreateStream streamName
+        let stream  = ctx.StreamId streamName
 
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 149 // 148.11 // 463.01 observed
+        verifyRequestChargesMax 261 // 260.01 // 463.01 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -158,7 +159,6 @@ type Tests(testOutputHelper) =
         let! _pos = ctx.Sync(stream,pos)
         test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
         verifyRequestChargesMax 1 // for a 302 by definition - when an etag IfNotMatch is honored, you only pay one RU
-        capture.Clear()
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -222,6 +222,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
+        capture.Clear()
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
@@ -240,7 +241,6 @@ type Tests(testOutputHelper) =
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
-        capture.Clear()
 
         let! res = Events.getAll ctx streamName 0L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun _ -> false) |> AsyncSeq.toArrayAsync
         let expected = expected |> Array.take 1
@@ -259,7 +259,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getBackwards (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
@@ -297,7 +296,6 @@ type Tests(testOutputHelper) =
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
-        capture.Clear()
 
         let! res =
             Events.getAllBackwards ctx streamName 10L 1
@@ -318,15 +316,14 @@ type Tests(testOutputHelper) =
     }
 
     (* Prune *)
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
         let ctx = mkContextWithItemLimit log None
 
         let! expected = add6EventsIn2Batches ctx streamName
 
         // Trigger deletion of first batch
-        capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
         test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>

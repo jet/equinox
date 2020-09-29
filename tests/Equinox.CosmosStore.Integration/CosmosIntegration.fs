@@ -36,16 +36,16 @@ module Cart =
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codec
-    let createServiceWithoutOptimization createGateway defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
-        let gateway = createGateway defaultBatchSize
-        let resolver = CosmosStoreCategory(gateway, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized)
-        Backend.ContactPreferences.create log resolver.Resolve
+    let createServiceWithoutOptimization createContext defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
+        let context = createContext defaultBatchSize
+        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
+        Backend.ContactPreferences.create log resolve
     let createService log store =
-        let resolver = CosmosStoreCategory(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent)
-        Backend.ContactPreferences.create log resolver.Resolve
+        let resolve = CosmosStoreCategory(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
+        Backend.ContactPreferences.create log resolve
     let createServiceWithLatestKnownEvent store log cachingStrategy =
-        let resolver = CosmosStoreCategory(store, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent)
-        Backend.ContactPreferences.create log resolver.Resolve
+        let resolve = CosmosStoreCategory(store, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
+        Backend.ContactPreferences.create log resolve
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -70,10 +70,11 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` context skuId = Async.RunSynchronously <| async {
-        let maxItemsPerRequest = 2
+        let maxItemsPerRequest = 5
         let store = createPrimaryContext log maxItemsPerRequest
+
         let service = Cart.createServiceWithoutOptimization log store
         capture.Clear() // for re-runs of the test
 
@@ -100,14 +101,14 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 8 // 7.74 // 10.01
     }
 
-    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxFail=1, MaxTest=2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
         let batchSize = 3
-        let store = createPrimaryContext log batchSize
-
+        let store = createPrimaryContext log1 batchSize
         // Ensure batching is included at some point in the proceedings
+
         let context, (sku11, sku12, sku21, sku22) = ctx
         let cartId = % Guid.NewGuid()
 
@@ -186,7 +187,7 @@ type Tests(testOutputHelper) =
     let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` value = Async.RunSynchronously <| async {
         let store = createPrimaryContext log 1
         let service = ContactPreferences.createService log store
@@ -209,7 +210,7 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
     }
 
-     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update Contacts against Cosmos with RollingUnfolds Access Strategy`` value = Async.RunSynchronously <| async {
         let store = createPrimaryContext log 1
         let service = ContactPreferences.createServiceWithLatestKnownEvent store log CachingStrategy.NoCaching
@@ -306,7 +307,7 @@ type Tests(testOutputHelper) =
                 && [EqxAct.Resync] = c2 @>
     }
 
-     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` context skuId = Async.RunSynchronously <| async {
         let batchSize = 10
         let store = createPrimaryContext log batchSize

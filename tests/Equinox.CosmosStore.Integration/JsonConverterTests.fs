@@ -32,12 +32,6 @@ type Base64ZipUtf8Tests() =
 
     [<Property>]
     let roundtrips value =
-        let hasNulls =
-            match value with
-            | A x | B x when obj.ReferenceEquals(null, x) -> true
-            | A { embed = x } | B { embed = x } -> obj.ReferenceEquals(null, x)
-        if hasNulls then () else
-
         let encoded = eventCodec.Encode(None,value)
         let e : Core.Unfold =
             {   i = 42L
@@ -47,6 +41,7 @@ type Base64ZipUtf8Tests() =
                 t = DateTimeOffset.MinValue }
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
+        System.Diagnostics.Trace.WriteLine ser
         let des = JsonConvert.DeserializeObject<Core.Unfold>(ser)
         let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
         let decoded = eventCodec.TryDecode d |> Option.get

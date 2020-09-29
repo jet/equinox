@@ -617,7 +617,7 @@ General rules:
    a) load and decode unfolds from tip (followed by events, if and only if necessary)
    b) offer the events to an `isOrigin` function to allow us to stop when we've got a start point (a Reset Event, a relevant snapshot, or, failing that, the start of the stream)
 
-It may be helpful to look at [how an `AccessStrategy` is mapped to `isOrigin`, `toSnapshot` and `transmute` lambdas internally](https://github.com/jet/equinox/blob/74129903e85e01ce584b4449f629bf3e525515ea/src/Equinox.CosmosStore/CosmosStore.fs#L1029)
+It may be helpful to look at [how an `AccessStrategy` is mapped to `isOrigin`, `toSnapshot` and `transmute` lambdas internally](https://github.com/jet/equinox/blob/master/src/Equinox.CosmosStore/CosmosStore.fs#L1016)
 
 #### Aaand answering the question
 
@@ -636,7 +636,7 @@ Then, whenever you emit events from a `decide` or `interpret`, the `AccessStrate
 - write updated unfolds/snapshots
 - remove or adjust events before they get passed down to the `sync` stored procedure (`Custom`, `RollingState`, `LatestKnownEvent` modes)
 
-Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's really not that :scream:](https://github.com/jet/equinox/blob/master/src/Equinox.CosmosStore/CosmosStore.fs#L870).
+Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's really not that :scream:](https://github.com/jet/equinox/blob/master/src/Equinox.CosmosStore/CosmosStore.fs#1011).
 
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 

@@ -1744,7 +1744,7 @@ This covers what the most complete possible implementation of the JS Stored
 Procedure (see
 [source](https://github.com/jet/equinox/blob/tip-isa-batch/src/Equinox.CosmosStore/Cosmos.fs#L302))
 does when presented with a batch to be written. (NB The present implementation
-is slightly simplified; see [source](src/Equinox.CosmosStore/CosmosStore.fs#L303).
+is slightly simplified; see [source](src/Equinox.CosmosStore/CosmosStore.fs#L404).
 
 The `sync` stored procedure takes as input, a document that is almost identical
 to the format of the _`Tip`_ batch (in fact, if the stream is found to be

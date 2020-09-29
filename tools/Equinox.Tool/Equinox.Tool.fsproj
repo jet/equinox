@@ -38,6 +38,9 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="2.0.0" PrivateAssets="All" />
 
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.13.0" />
+    <PackageReference Include="Microsoft.Azure.Cosmos.Direct" Version="3.13.3" />
+
 <!--    NOTE cannot be 4.7.0 as Async.Sequential is broken-->
     <PackageReference Include="FSharp.Core" Version="4.7.1" />
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />

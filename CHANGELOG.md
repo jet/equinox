@@ -16,17 +16,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - Fork `Equinox.Cosmos` to `Equinox.CosmosStore`
     - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
-    - `Cosmos:` Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
+    - Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
     - Rename `Equinox.Cosmos` DLL and namespace to `Equinox.CosmosStore` [#243](https://github.com/jet/equinox/pull/243)
-    - Rename `Equinox.Cosmos.Store` -> `Equinox.CosmosStore.Core`
-    - `Core` sub-namespace
-        - Rename `Equinox.Cosmos.Core.Context` -> `Equinox.CosmosStore.Core.EventsContext`
-        - Change `Equinox.Cosmos.Core.Connection` -> `Equinox.CosmosStore.Core.RetryPolicy`
-        - Rename `Equinox.Cosmos.Core.Gateway` -> `Equinox.CosmosStore.Core.StoreClient`
-    - Rename `Equinox.Cosmos.Containers` -> `Equinox.CosmosStore.CosmosStoreConnection`
-    - Rename `Equinox.Cosmos.Context` -> `Equinox.CosmosStore.CosmosStoreContext`
-    - Rename `Equinox.Cosmos.Resolver` -> `Equinox.CosmosStore.CosmosStoreCategory`
-    - Rename `Equinox.Cosmos.Connector` -> `Equinox.CosmosStore.CosmosStoreClientFactory`
+        - Rename `Equinox.Cosmos.Store` -> `Equinox.CosmosStore.Core` 
+        - `Core` sub-namespace
+            - Rename `Equinox.Cosmos.Core.Context` -> `Equinox.CosmosStore.Core.EventsContext`
+            - Change `Equinox.Cosmos.Core.Connection` -> `Equinox.CosmosStore.Core.RetryPolicy`
+            - Rename `Equinox.Cosmos.Core.Gateway` -> `Equinox.CosmosStore.Core.StoreClient`
+        - Rename `Equinox.Cosmos.Containers` -> `Equinox.CosmosStore.CosmosStoreConnection`
+        - Rename `Equinox.Cosmos.Context` -> `Equinox.CosmosStore.CosmosStoreContext`
+        - Rename `Equinox.Cosmos.Resolver` -> `Equinox.CosmosStore.CosmosStoreCategory`
+        - Rename `Equinox.Cosmos.Connector` -> `Equinox.CosmosStore.CosmosStoreClientFactory`
 - target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1` with `SystemTextJson`
 - Retarget Todobackend to `aspnetcore` v `3.1`
