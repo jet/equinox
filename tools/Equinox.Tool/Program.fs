@@ -34,20 +34,26 @@ type Arguments =
             | LogFile _ ->                  "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ ->                      "Run a load test"
             | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
-            | Config _ ->                    "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
+            | Config _ ->                   "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events (supports `cosmos` stores)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality>]InitArguments =
-    | [<AltCommandLine "-ru"; Mandatory>]   Rus of int
-    | [<AltCommandLine "-D">]               Shared
+    | [<AltCommandLine "-ru">]              Rus of int
+    | [<AltCommandLine "-M">]               Mode of CosmosModeType
     | [<AltCommandLine "-P">]               SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Rus _ ->                      "Specify RU/s level to provision for the Container."
-            | Shared ->                     "Use Database-level RU allocations (Default: Use Container-level allocation)."
+            | Mode _ ->                     "Configure RU mode to use Container-level RU, Database-level RU, or Serverless allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
+and CosmosInfo(args : ParseResults<InitArguments>) =
+    member __.Mode =
+        match args.GetResult(Mode, CosmosModeType.Container) with
+        | CosmosModeType.Container ->   Container (args.GetResult(Rus, 400))
+        | CosmosModeType.Db ->          Db (args.GetResult(Rus, 400))
+        | CosmosModeType.Serverless ->  Serverless
 and [<NoComparison; NoEquality>]ConfigArguments =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
@@ -205,6 +211,8 @@ and TestInfo(args: ParseResults<TestArguments>) =
         | SaveForLater -> Tests.SaveForLater
         | Todo ->         Tests.Todo (args.GetResult(Size,100))
 and Test = Favorite | SaveForLater | Todo
+and CosmosModeType = Container | Db | Serverless
+and CosmosModes =  Container of ru: int | Db of ru: int | Serverless
 
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes()
@@ -311,15 +319,30 @@ module CosmosInit =
     let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
         Storage.Cosmos.conn log (Storage.Cosmos.Info sargs)
 
-    let containerAndOrDb log (iargs: ParseResults<InitArguments>) = async {
+    let containerAndOrDb (log : ILogger) (iargs: ParseResults<InitArguments>) = async {
+        let ciargs = CosmosInfo iargs
         match iargs.TryGetSubCommand() with
         | Some (InitArguments.Cosmos sargs) ->
-            let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
-            let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database rus else Provisioning.Container rus
-            let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
+            let skipStoredProc = iargs.Contains InitArguments.SkipStoredProc
             let client,dName,cName = conn log sargs
-            log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            return! init log client (dName,cName) mode skipStoredProc
+            match ciargs.Mode with
+            | Container ru ->
+                let rus = ru;
+                let mode = Provisioning.Container rus
+                let modeStr = "Container"
+                log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
+                return! init log client (dName,cName) mode skipStoredProc
+            | Db ru ->
+                let rus = ru;
+                let mode = Provisioning.Database rus
+                let modeStr = "Container"
+                log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
+                return! init log client (dName,cName) mode skipStoredProc
+            | Serverless ->
+                let mode = Provisioning.Serverless
+                let modeStr = "Serverless"
+                log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for automatic RU/s", modeStr)
+                return! init log client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 module SqlInit =

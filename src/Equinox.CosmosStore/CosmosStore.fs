@@ -550,7 +550,7 @@ module internal Sync =
 
 module Initialization =
 
-    type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int
+    type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int | Serverless
     let adjustOfferC (c:Container) (rus : int) = async {
         let! ct = Async.CancellationToken
         let! _ = c.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
@@ -563,6 +563,8 @@ module Initialization =
         return dbr.Database }
     let private createOrProvisionDatabase (client:CosmosClient) dName mode = async {
         match mode with
+        | Provisioning.Serverless _ ->
+            let! _ = createDatabaseIfNotExists client dName None in ()
         | Provisioning.Database rus ->
             let! db = createDatabaseIfNotExists client dName (Some rus)
             do! adjustOfferD db rus
@@ -574,6 +576,8 @@ module Initialization =
         return c.Container }
     let private createOrProvisionContainer (d:Database) (cp:ContainerProperties) mode = async {
         match mode with
+        | Provisioning.Serverless _ ->
+            return! createContainerIfNotExists d cp None
         | Provisioning.Database _ ->
             return! createContainerIfNotExists d cp None
         | Provisioning.Container rus ->
