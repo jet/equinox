@@ -41,7 +41,7 @@ type Arguments =
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality>]InitArguments =
     | [<AltCommandLine "-ru">]              Rus of int
-    | [<AltCommandLine "-M">]               Mode of CosmosModeType
+    | [<AltCommandLine "-m">]               Mode of CosmosModeType
     | [<AltCommandLine "-P">]               SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
