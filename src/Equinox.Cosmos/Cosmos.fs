@@ -548,7 +548,7 @@ function sync(req, expIndex, expEtag) {
 
     module Initialization =
         open System.Linq
-        type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int
+        type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int | Serverless
         let adjustOffer (c:Client.DocumentClient) resourceLink rus = async {
             let offer = c.CreateOfferQuery().Where(fun r -> r.ResourceLink = resourceLink).AsEnumerable().Single()
             let! _ = c.ReplaceOfferAsync(OfferV2(offer,rus)) |> Async.AwaitTaskCorrect in () }
@@ -561,7 +561,7 @@ function sync(req, expIndex, expEtag) {
             | Provisioning.Database rus ->
                 let! db = createDatabaseIfNotExists client dName (Some rus)
                 return! adjustOffer client db.Resource.SelfLink rus
-            | Provisioning.Container _ ->
+            | Provisioning.Container _ | Provisioning.Serverless ->
                 let! _ = createDatabaseIfNotExists client dName None in () }
         let private createContainerIfNotExists (client:Client.DocumentClient) dName (def: DocumentCollection) maybeRus =
             let dbUri = Client.UriFactory.CreateDatabaseUri dName
@@ -569,11 +569,11 @@ function sync(req, expIndex, expEtag) {
             client.CreateDocumentCollectionIfNotExistsAsync(dbUri, def, opts) |> Async.AwaitTaskCorrect
         let private createOrProvisionContainer (client: Client.DocumentClient) (dName, def: DocumentCollection) mode = async {
             match mode with
-            | Provisioning.Database _ ->
-                let! _ = createContainerIfNotExists client dName def None in ()
             | Provisioning.Container rus ->
                 let! container = createContainerIfNotExists client dName def (Some rus) in ()
-                return! adjustOffer client container.Resource.SelfLink rus }
+                return! adjustOffer client container.Resource.SelfLink rus
+            | Provisioning.Database _  | Provisioning.Serverless ->
+                let! _ = createContainerIfNotExists client dName def None in () }
         let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
             try let! r = c.Client.CreateStoredProcedureAsync(c.CollectionUri, StoredProcedure(Id = name, Body = body)) |> Async.AwaitTaskCorrect
                 return r.RequestCharge
