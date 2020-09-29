@@ -1,7 +1,7 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
 
-title Container diagram for Equinox.Cosmos (+ Propulsion.Cosmos)
+title Container diagram for Equinox.CosmosStore (+ Propulsion.Cosmos)
 caption Moving parts for an Equinox app using a CosmosDB container that presently has 2 physical partitions
 
 actor "Applications" <<External>> as apps
@@ -29,7 +29,7 @@ rectangle "Consistent Processing" <<Expanded>> {
     ]
 
     rectangle eqxcosmos <<Component>> [
-        Equinox.Cosmos
+        Equinox.CosmosStore
     ]
 
     cloud "CosmosDB Database D" as db {

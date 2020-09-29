@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.FavoritesIntegration
 
 open Equinox
-open Equinox.Cosmos.Integration
+open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -19,12 +19,12 @@ let createServiceGes gateway log =
     Backend.Favorites.create log resolver.Resolve
 
 let createServiceCosmos gateway log =
-    let resolver = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot)
+    let resolver = CosmosStore.CosmosStoreCategory(gateway, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
     Backend.Favorites.create log resolver.Resolve
 
 let createServiceCosmosRollingState gateway log =
-    let access = Cosmos.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
-    let resolver = Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access)
+    let access = CosmosStore.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
+    let resolver = CosmosStore.CosmosStoreCategory(gateway, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
     Backend.Favorites.create log resolver.Resolve
 
 type Tests(testOutputHelper) =
@@ -60,17 +60,16 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createCosmosContext conn defaultBatchSize
-        let service = createServiceCosmos gateway log
+        let store = createPrimaryContext log defaultBatchSize
+        let service = createServiceCosmos store log
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createCosmosContext conn defaultBatchSize
-        let service = createServiceCosmosRollingState gateway log
+        let log = createLog ()
+        let store = createPrimaryContext log defaultBatchSize
+        let service = createServiceCosmosRollingState store log
         do! act service args
     }

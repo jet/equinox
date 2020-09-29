@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1</TargetFrameworks>
+    <TargetFramework>netstandard2.1</TargetFramework>
     <WarningLevel>5</WarningLevel>
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
-    <Compile Include="Cosmos.fs" />
+    <Compile Include="CosmosStore.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +23,7 @@
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
     <PackageReference Include="MinVer" Version="2.0.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
+    <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.1' " />
 
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.0.0" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />

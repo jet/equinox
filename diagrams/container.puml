@@ -23,7 +23,7 @@ together {
 
 frame "Consistent Event Stores" as stores <<Expanded>> {
     frame "Cosmos" as cosmos <<Internal>> {
-        rectangle "Equinox.Cosmos" <<Component>> as cs
+        rectangle "Equinox.CosmosStore" <<Component>> as cs
         rectangle "Propulsion.Cosmos" <<External Component>> as cr
         rectangle "Azure.Cosmos" <<ExternalComponent>> as cc
     }

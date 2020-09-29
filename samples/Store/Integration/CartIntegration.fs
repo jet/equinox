@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
 open Equinox
-open Equinox.Cosmos.Integration
+open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -21,9 +21,9 @@ let resolveGesStreamWithoutCustomAccessStrategy gateway =
     fun (id,opt) -> EventStore.Resolver(gateway, codec, fold, initial).Resolve(id,?option=opt)
 
 let resolveCosmosStreamWithSnapshotStrategy gateway =
-    fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
+    fun (id,opt) -> CosmosStore.CosmosStoreCategory(gateway, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
 let resolveCosmosStreamWithoutCustomAccessStrategy gateway =
-    fun (id,opt) -> Cosmos.Resolver(gateway, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
+    fun (id,opt) -> CosmosStore.CosmosStoreCategory(gateway, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {
@@ -50,7 +50,7 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrange connect choose resolve = async {
+    let arrangeEs connect choose resolve = async {
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn defaultBatchSize
@@ -58,24 +58,29 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithoutCustomAccessStrategy
+        let! service = arrangeEs connectToLocalEventStoreNode createGesGateway resolveGesStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with RollingSnapshots`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToLocalEventStoreNode createGesGateway resolveGesStreamWithRollingSnapshots
+        let! service = arrangeEs connectToLocalEventStoreNode createGesGateway resolveGesStreamWithRollingSnapshots
         do! act service args
     }
 
+    let arrangeCosmos connect resolve =
+        let log = createLog ()
+        let ctx : CosmosStore.CosmosStoreContext = connect log defaultBatchSize
+        Backend.Cart.create log (resolve ctx)
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveCosmosStreamWithoutCustomAccessStrategy
+        let service = arrangeCosmos createPrimaryContext resolveCosmosStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with With Snapshotting`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveCosmosStreamWithSnapshotStrategy
+        let service = arrangeCosmos createPrimaryContext resolveCosmosStreamWithSnapshotStrategy
         do! act service args
     }

@@ -1,7 +1,7 @@
-﻿module Equinox.Cosmos.Integration.CoreIntegration
+﻿module Equinox.CosmosStore.Integration.CoreIntegration
 
-open Equinox.Cosmos.Core
-open Equinox.Cosmos.Integration.Infrastructure
+open Equinox.CosmosStore.Core
+open Equinox.CosmosStore.Integration.Infrastructure
 open FsCodec
 open FSharp.Control
 open Newtonsoft.Json.Linq
@@ -29,9 +29,9 @@ type Tests(testOutputHelper) =
     let (|TestStream|) (name: Guid) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
-    let mkContextWithItemLimit conn defaultBatchSize =
-        Context(conn,containers,log,?defaultMaxItems=defaultBatchSize)
-    let mkContext conn = mkContextWithItemLimit conn None
+    let mkContextWithItemLimit log defaultBatchSize =
+        createPrimaryEventsContext log defaultBatchSize
+    let mkContext log = mkContextWithItemLimit log None
 
     let verifyRequestChargesMax rus =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
@@ -39,14 +39,14 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let append (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContext log
+        capture.Clear()
 
         let index = 0L
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 33 // 32.27 // WAS 10
+        verifyRequestChargesMax 34 // 33.07 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -54,15 +54,14 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesMax 39 // 38.74 // was 11
+        verifyRequestChargesMax 41 // 40.68 // was 11
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
     // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContext log
 
         let index = 0L
         let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
@@ -93,22 +92,22 @@ type Tests(testOutputHelper) =
 
     let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<byte[]>[]) =
         let xs, baseIndex =
-            if direction = Equinox.Cosmos.Store.Direction.Forward then xs, baseIndex
+            if direction = Equinox.CosmosStore.Core.Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
         test <@ [for i in 0..expected.Length - 1 -> baseIndex + int64 i] = [for r in xs -> r.Index] @>
         test <@ [for e in expected -> e.EventType] = [ for r in xs -> r.EventType ] @>
         for i,x,y in Seq.mapi2 (fun i x y -> i,x,y) [for e in expected -> e.Data] [for r in xs -> r.Data] do
             verifyUtf8JsonEquals i x y
-    let verifyCorrectEventsBackward = verifyCorrectEventsEx Equinox.Cosmos.Store.Direction.Backward
-    let verifyCorrectEvents = verifyCorrectEventsEx Equinox.Cosmos.Store.Direction.Forward
+    let verifyCorrectEventsBackward = verifyCorrectEventsEx Equinox.CosmosStore.Core.Direction.Backward
+    let verifyCorrectEvents = verifyCorrectEventsEx Equinox.CosmosStore.Core.Direction.Forward
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``appendAtEnd and getNextIndex`` (extras, TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
-
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
+
+        let ctx = mkContextWithItemLimit log (Some 1)
+
         let! pos = Events.getNextIndex ctx streamName
         test <@ [EqxAct.TipNotFound] = capture.ExternalCalls @>
         0L =! pos
@@ -134,7 +133,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 46 // 45.42 // 47.02 // WAS 20
+        verifyRequestChargesMax 47 // 46.52 // 47.02 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -144,12 +143,12 @@ type Tests(testOutputHelper) =
         pos =! res
 
         // Demonstrate benefit/mechanism for using the Position-based API to avail of the etag tracking
-        let stream  = ctx.CreateStream streamName
+        let stream  = ctx.StreamId streamName
 
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 149 // 148.11 // 463.01 observed
+        verifyRequestChargesMax 442 // 441.88 // 463.01 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -160,14 +159,12 @@ type Tests(testOutputHelper) =
         let! _pos = ctx.Sync(stream,pos)
         test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
         verifyRequestChargesMax 1 // for a 302 by definition - when an etag IfNotMatch is honored, you only pay one RU
-        capture.Clear()
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append - fails on non-matching`` (TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContext log
 
         // Attempt to write, skipping Index 0
         let! res = Events.append ctx streamName 1L <| TestEvents.Create(0,1)
@@ -182,7 +179,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 33 // 32.05 WAS 11 // 10.33
+        verifyRequestChargesMax 36 // 35.78 WAS 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
@@ -209,8 +206,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let get (TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 3)
+        let ctx = mkContextWithItemLimit log (Some 3)
 
         // We're going to ignore the first, to prove we can
         let! expected = add6EventsIn2Batches ctx streamName
@@ -226,8 +222,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        capture.Clear()
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
         let expected = expected |> Array.take 3
@@ -242,11 +238,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get Lazy`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
-        capture.Clear()
 
         let! res = Events.getAll ctx streamName 0L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun _ -> false) |> AsyncSeq.toArrayAsync
         let expected = expected |> Array.take 1
@@ -254,7 +248,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 0L expected res
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         let queryRoundTripsAndItemCounts = function
-            | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Forward, responses, { count = c })) -> Some (responses,c)
+            | EqxEvent (Equinox.CosmosStore.Core.Log.Event.Query (Equinox.CosmosStore.Core.Direction.Forward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         // validate that, despite only requesting max 1 item, we only needed one trip (which contained only one item)
         [1,1] =! capture.ChooseCalls queryRoundTripsAndItemCounts
@@ -265,9 +259,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getBackwards (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
 
@@ -284,8 +276,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``getBackwards in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
 
@@ -302,11 +293,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``getBackwards Lazy`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
-        capture.Clear()
 
         let! res =
             Events.getAllBackwards ctx streamName 10L 1
@@ -320,23 +309,21 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
         // validate that, despite only requesting max 1 item, we only needed one trip, bearing 5 items (from which one item was omitted)
         let queryRoundTripsAndItemCounts = function
-            | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Backward, responses, { count = c })) -> Some (responses,c)
+            | EqxEvent (Equinox.CosmosStore.Core.Log.Event.Query (Equinox.CosmosStore.Core.Direction.Backward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 4 // 3.24 // WAS 3 // 2.98
     }
 
     (* Prune *)
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn None
+        let ctx = mkContextWithItemLimit log None
 
         let! expected = add6EventsIn2Batches ctx streamName
 
         // Trigger deletion of first batch
-        capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
         test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>

@@ -15,7 +15,7 @@
 #r "FsCodec.NewtonsoftJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
-#r "Equinox.Cosmos.dll"
+#r "Equinox.CosmosStore.dll"
 
 open System
 
@@ -116,7 +116,7 @@ let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let [<Literal>] appName = "equinox-tutorial"
 let cache = Equinox.Cache(appName, 20)
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 module Store =
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
@@ -129,7 +129,7 @@ module Store =
 
 module TodosCategory = 
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
-    let resolver = Resolver(Store.store, codec, fold, initial, Store.cacheStrategy, access=access)
+    let resolver = CosmosStoreCategory(Store.store, codec, fold, initial, Store.cacheStrategy, access=access)
     let resolve id = Equinox.Stream(log, resolver.Resolve(streamName id), maxAttempts = 3)
 
 let service = Service(TodosCategory.resolve)

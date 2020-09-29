@@ -1,6 +1,6 @@
-﻿module Equinox.Cosmos.Integration.JsonConverterTests
+﻿module Equinox.CosmosStore.Integration.JsonConverterTests
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 open FsCheck.Xunit
 open Newtonsoft.Json
 open Swensen.Unquote
@@ -21,7 +21,7 @@ type Base64ZipUtf8Tests() =
     [<Fact>]
     let ``serializes, achieving compression`` () =
         let encoded = eventCodec.Encode(None,A { embed = String('x',5000) })
-        let e : Store.Unfold =
+        let e : Core.Unfold =
             {   i = 42L
                 c = encoded.EventType
                 d = encoded.Data
@@ -32,14 +32,8 @@ type Base64ZipUtf8Tests() =
 
     [<Property>]
     let roundtrips value =
-        let hasNulls =
-            match value with
-            | A x | B x when obj.ReferenceEquals(null, x) -> true
-            | A { embed = x } | B { embed = x } -> obj.ReferenceEquals(null, x)
-        if hasNulls then () else
-
         let encoded = eventCodec.Encode(None,value)
-        let e : Store.Unfold =
+        let e : Core.Unfold =
             {   i = 42L
                 c = encoded.EventType
                 d = encoded.Data
@@ -47,7 +41,8 @@ type Base64ZipUtf8Tests() =
                 t = DateTimeOffset.MinValue }
         let ser = JsonConvert.SerializeObject(e)
         test <@ ser.Contains("\"d\":\"") @>
-        let des = JsonConvert.DeserializeObject<Store.Unfold>(ser)
+        System.Diagnostics.Trace.WriteLine ser
+        let des = JsonConvert.DeserializeObject<Core.Unfold>(ser)
         let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
         let decoded = eventCodec.TryDecode d |> Option.get
         test <@ value = decoded @>

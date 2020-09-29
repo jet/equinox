@@ -1,5 +1,5 @@
 @startuml
-title Code diagram for Equinox.Cosmos Query operation, with empty cache and nothing written to the stream yet
+title Code diagram for Equinox.CosmosStore Query operation, with empty cache and nothing written to the stream yet
 
 actor Caller order 20 
 box "Equinox.Stream"
@@ -7,7 +7,7 @@ box "Equinox.Stream"
 end box
 participant Aggregate order 50
 participant Service order 60
-box "Equinox.Cosmos / CosmosDB"
+box "Equinox.CosmosStore / CosmosDB"
   participant IStream order 80
   collections Cache order 90
   database CosmosDB order 100
@@ -30,7 +30,7 @@ Stream -> Caller: {result = list }
 @enduml
 
 @startuml
-title Code diagram for Equinox.Cosmos Transact operation, with cache up to date using Snapshotting Access Strategy
+title Code diagram for Equinox.CosmosStore Transact operation, with cache up to date using Snapshotting Access Strategy
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -38,7 +38,7 @@ box "Equinox.Stream"
 end box
 participant Aggregate order 50
 participant Service order 60
-box "Equinox.Cosmos / CosmosDB"
+box "Equinox.CosmosStore / CosmosDB"
   participant IStream order 80
   collections Cache order 90
   database CosmosDB order 100
@@ -115,7 +115,7 @@ Stream -> Caller: proposedResult
 @enduml
 
 @startuml
-title Code diagram for Equinox.Cosmos Query operation immediately following a Query/Transact on the same node, i.e. cached
+title Code diagram for Equinox.CosmosStore Query operation immediately following a Query/Transact on the same node, i.e. cached
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -123,7 +123,7 @@ box "Equinox.Stream"
 end box
 participant Aggregate order 50
 participant Service order 60
-box "Equinox.Cosmos / CosmosDB"
+box "Equinox.CosmosStore / CosmosDB"
   participant IStream order 80
   collections Cache order 90
   database CosmosDB order 100
@@ -144,7 +144,7 @@ Aggregate -> Caller: result
 @enduml
 
 @startuml
-title Code diagram for Equinox.Cosmos Query operation on a node without an in-sync cached value (with snapshotting Access Strategy)
+title Code diagram for Equinox.CosmosStore Query operation on a node without an in-sync cached value (with snapshotting Access Strategy)
 
 actor Caller order 20
 box "Equinox.Stream"
@@ -152,7 +152,7 @@ box "Equinox.Stream"
 end box
 participant Aggregate order 50
 participant Service order 60
-box "Equinox.Cosmos / CosmosDB"
+box "Equinox.CosmosStore / CosmosDB"
   participant IStream order 80
   collections Cache order 90
   database CosmosDB order 100

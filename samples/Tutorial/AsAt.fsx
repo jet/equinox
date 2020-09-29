@@ -33,7 +33,7 @@
 #r "Equinox.EventStore.dll"
 #r "Microsoft.Azure.Cosmos.Direct.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
-#r "Equinox.Cosmos.dll"
+#r "Equinox.CosmosStore.dll"
 
 open System
 
@@ -124,12 +124,12 @@ module Log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
         let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
-        let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
     let dumpMetrics () =
-        Equinox.Cosmos.Store.Log.InternalMetrics.dump log
+        Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
         Equinox.EventStore.Log.InternalMetrics.dump log
 
 let [<Literal>] appName = "equinox-tutorial"
@@ -153,7 +153,7 @@ module EventStore =
     let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
 
 module Cosmos =
-    open Equinox.Cosmos
+    open Equinox.CosmosStore
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
     let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=Log.log, mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
@@ -161,7 +161,7 @@ module Cosmos =
     let context = Context(conn, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let resolver = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
 
 let serviceES = Service(EventStore.resolve)

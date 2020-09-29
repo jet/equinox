@@ -105,7 +105,7 @@ and DumpInfo(args: ParseResults<DumpArguments>) =
         match args.TryGetSubCommand() with
         | Some (DumpArguments.Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-            storeLog, Storage.Cosmos.config (log,storeLog) storeConfig (Storage.Cosmos.Info sargs)
+            storeLog, Storage.Cosmos.config log storeConfig (Storage.Cosmos.Info sargs)
         | Some (DumpArguments.Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             storeLog, Storage.EventStore.config (log,storeLog) storeConfig sargs
@@ -179,7 +179,7 @@ and TestInfo(args: ParseResults<TestArguments>) =
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
             log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", __.Options)
-            storeLog, Storage.Cosmos.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
+            storeLog, Storage.Cosmos.config log (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
         | Some (Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
@@ -209,7 +209,7 @@ and Test = Favorite | SaveForLater | Todo
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes()
     let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let level =
@@ -223,6 +223,7 @@ let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     c.CreateLogger() :> ILogger
 
 module LoadTest =
+
     open Equinox.Tools.TestHarness
 
     let private runLoadTest log testsPerSecond duration errorCutoff reportingIntervals (clients : ClientId[]) runSingleTest =
@@ -273,7 +274,7 @@ module LoadTest =
             .Information("Running {test} for {duration} @ {tps} hits/s across {clients} clients; Max errors: {errorCutOff}, reporting intervals: {ri}, report file: {report}",
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
-        let _ = Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink.Restart()
+        let _ = Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink.Restart()
         let _ = Equinox.EventStore.Log.InternalMetrics.Stats.LogSink.Restart()
         let _ = Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink.Restart()
         let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
@@ -285,7 +286,7 @@ module LoadTest =
 
         match storeConfig with
         | Some (Storage.StorageConfig.Cosmos _) ->
-            Equinox.Cosmos.Store.Log.InternalMetrics.dump log
+            Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Es _) ->
             Equinox.EventStore.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Sql _) ->
@@ -295,7 +296,7 @@ module LoadTest =
 let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verbose then c.MinimumLevel.Debug() else c
-    let c = c.WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"
@@ -304,25 +305,25 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     c.CreateLogger()
 
 module CosmosInit =
-    open Equinox.Cosmos.Store.Sync.Initialization
-    let conn (log,verboseConsole,maybeSeq) (sargs : ParseResults<Storage.Cosmos.Arguments>) = async {
-        let storeLog = createStoreLog (sargs.Contains Storage.Cosmos.Arguments.VerboseStore) verboseConsole maybeSeq
-        let discovery, dName, cName, connector = Storage.Cosmos.connection (log,storeLog) (Storage.Cosmos.Info sargs)
-        let! conn = connector.Connect(appName, discovery)
-        return storeLog, conn, dName, cName }
 
-    let containerAndOrDb (log: ILogger, verboseConsole, maybeSeq) (iargs: ParseResults<InitArguments>) = async {
+    open Equinox.CosmosStore.Core.Initialization
+
+    let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
+        Storage.Cosmos.conn log (Storage.Cosmos.Info sargs)
+
+    let containerAndOrDb log (iargs: ParseResults<InitArguments>) = async {
         match iargs.TryGetSubCommand() with
         | Some (InitArguments.Cosmos sargs) ->
             let rus, skipStoredProc = iargs.GetResult(InitArguments.Rus), iargs.Contains InitArguments.SkipStoredProc
             let mode = if iargs.Contains InitArguments.Shared then Provisioning.Database rus else Provisioning.Container rus
             let modeStr, rus = match mode with Provisioning.Container rus -> "Container",rus | Provisioning.Database rus -> "Database",rus
-            let! _storeLog,conn,dName,cName = conn (log,verboseConsole,maybeSeq) sargs
-            log.Information("Provisioning `Equinox.Cosmos` Store at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
-            return! init log conn.Client (dName,cName) mode skipStoredProc
+            let client,dName,cName = conn log sargs
+            log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, rus)
+            return! init log client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 module SqlInit =
+
     let databaseOrSchema (log: ILogger) (iargs: ParseResults<ConfigArguments>) = async {
         match iargs.TryGetSubCommand() with
         | Some (ConfigArguments.MsSql sargs) ->
@@ -337,6 +338,7 @@ module SqlInit =
         | _ -> failwith "please specify a `ms`,`my` or `pg` endpoint" }
 
 module CosmosStats =
+
     type Microsoft.Azure.Cosmos.Container with
         // NB DO NOT CONSIDER PROMULGATING THIS HACK
         member container.QueryValue<'T>(sqlQuery : string) =
@@ -348,8 +350,8 @@ module CosmosStats =
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let! _storeLog,conn,dName,cName = CosmosInit.conn (log,verboseConsole,maybeSeq) sargs
-            let container = conn.Client.GetContainer(dName, cName)
+            let client,dName,cName = CosmosInit.conn log sargs
+            let container = client.GetContainer(dName, cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
                     if doD then yield "Documents", """SELECT VALUE COUNT(1) FROM c"""
@@ -365,6 +367,7 @@ module CosmosStats =
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 module Dump =
+
     let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<DumpArguments>) =
         let a = DumpInfo args
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
@@ -426,7 +429,7 @@ let main argv =
         let verbose = args.Contains Verbose
         use log = createDomainLog verbose verboseConsole maybeSeq
         try match args.GetSubCommand() with
-            | Init iargs -> CosmosInit.containerAndOrDb (log, verboseConsole, maybeSeq) iargs |> Async.RunSynchronously
+            | Init iargs -> CosmosInit.containerAndOrDb log iargs |> Async.RunSynchronously
             | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
             | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
             | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously

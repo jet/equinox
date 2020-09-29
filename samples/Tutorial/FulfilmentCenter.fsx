@@ -11,7 +11,7 @@
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
-#r "Equinox.Cosmos.dll"
+#r "Equinox.CosmosStore.dll"
 
 open FSharp.UMX
 
@@ -103,7 +103,7 @@ module FulfilmentCenter =
         member __.Read id : Async<Summary> = read id
         member __.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
 
-open Equinox.Cosmos
+open Equinox.CosmosStore
 open System
 
 module Log =
@@ -114,11 +114,11 @@ module Log =
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(Store.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Core.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
-    let dumpMetrics () = Store.Log.InternalMetrics.dump log
+    let dumpMetrics () = Core.Log.InternalMetrics.dump log
 
 module Store =
 
@@ -133,7 +133,7 @@ module Store =
 
 open FulfilmentCenter
 
-let resolver = Resolver(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
+let resolver = CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
 let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
 let service = Service(resolve)
 

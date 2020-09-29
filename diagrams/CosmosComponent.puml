@@ -1,7 +1,7 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/skleanthous/C4-PlantumlSkin/master/build/output/c4.puml
 
-title Component diagram for Equinox.Cosmos (+ Propulsion.Cosmos)
+title Component diagram for Equinox.CosmosStore (+ Propulsion.Cosmos)
 caption Moving parts breakdown for an Equinox app using a CosmosDB container
 
 actor "Applications" <<External Person>> as apps
@@ -23,9 +23,9 @@ rectangle "Consistent Processing" <<Container>> {
         ]
     }
     frame Store {
-        rectangle "Equinox.Cosmos" <<Component>> {
+        rectangle "Equinox.CosmosStore" <<Component>> {
             rectangle eqxcosmos <<Component>> [
-                Equinox.Cosmos
+                Equinox.CosmosStore
             ]
             database memorycache <<Internal>> [
                 **System.MemoryCache**

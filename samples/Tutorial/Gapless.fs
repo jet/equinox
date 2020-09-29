@@ -76,10 +76,10 @@ let [<Literal>] appName = "equinox-tutorial-gapless"
 
 module Cosmos =
 
-    open Equinox.Cosmos
+    open Equinox.CosmosStore
     let private create (context,cache,accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        let resolver = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
         let resolve sequenceId =
             let streamName = streamName sequenceId
             Equinox.Stream(Serilog.Log.Logger, resolver.Resolve streamName, maxAttempts = 3)

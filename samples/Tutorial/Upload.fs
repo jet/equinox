@@ -70,10 +70,10 @@ let create resolve =
 
 module Cosmos =
 
-    open Equinox.Cosmos
+    open Equinox.CosmosStore
     let create (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
+        let resolver = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
         create resolver.Resolve
 
 module EventStore =

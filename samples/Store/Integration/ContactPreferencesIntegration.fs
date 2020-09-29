@@ -1,7 +1,7 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
 open Equinox
-open Equinox.Cosmos.Integration
+open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
@@ -18,13 +18,13 @@ let resolveStreamGesWithOptimizedStorageSemantics gateway =
 let resolveStreamGesWithoutAccessStrategy gateway =
     EventStore.Resolver(gateway defaultBatchSize, codec, fold, initial).Resolve
 
-let resolveStreamCosmosWithLatestKnownEventSemantics gateway =
-    Cosmos.Resolver(gateway 1, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.LatestKnownEvent).Resolve
-let resolveStreamCosmosUnoptimized gateway =
-    Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, Cosmos.AccessStrategy.Unoptimized).Resolve
-let resolveStreamCosmosRollingUnfolds gateway =
-    let access = Cosmos.AccessStrategy.Custom(Domain.ContactPreferences.Fold.isOrigin, Domain.ContactPreferences.Fold.transmute)
-    Cosmos.Resolver(gateway defaultBatchSize, codec, fold, initial, Cosmos.CachingStrategy.NoCaching, access).Resolve
+let resolveStreamCosmosWithLatestKnownEventSemantics context =
+    CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.LatestKnownEvent).Resolve
+let resolveStreamCosmosUnoptimized context =
+    CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve
+let resolveStreamCosmosRollingUnfolds context =
+    let access = CosmosStore.AccessStrategy.Custom(Domain.ContactPreferences.Fold.isOrigin, Domain.ContactPreferences.Fold.transmute)
+    CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access).Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -61,20 +61,25 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
+    let arrangeCosmos connect resolve batchSize =
+        let log = createLog ()
+        let ctx: CosmosStore.CosmosStoreContext = connect log batchSize
+        Backend.ContactPreferences.create log (resolve ctx)
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosUnoptimized
+        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosUnoptimized defaultBatchSize
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with LatestKnownEvent semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosWithLatestKnownEventSemantics
+        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosWithLatestKnownEventSemantics 1
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrange connectToSpecifiedCosmosOrSimulator createCosmosContext resolveStreamCosmosRollingUnfolds
+        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosRollingUnfolds defaultBatchSize
         do! act service args
     }

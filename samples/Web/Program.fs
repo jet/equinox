@@ -29,7 +29,7 @@ module Program =
                     .Enrich.FromLogContext()
                     .WriteTo.Console()
                     // TOCONSIDER log and reset every minute or something ?
-                    .WriteTo.Sink(Equinox.Cosmos.Store.Log.InternalMetrics.Stats.LogSink())
+                    .WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
                     .WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink())
                     .WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
             let c =
