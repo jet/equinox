@@ -12,6 +12,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - `Cosmos`: Reorganize Sync log message text, merge with Sync Conflict message [#241](https://github.com/jet/equinox/pull/241)
+- `Cosmos`: Converge Stored Procedure Impl with `tip-isa-batch` impl from V3 (minor Request Charges cost reduction) [#242](https://github.com/jet/equinox/pull/242)
 
 - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
 - target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
@@ -38,7 +39,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- `Cosmos`: Tweaked log messages
+- `Cosmos`: Tweaked connecting log message
 
 <a name="2.2.0"></a>
 ## [2.2.0] - 2020-08-04

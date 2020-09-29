@@ -396,23 +396,27 @@ module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
     type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
-    let [<Literal>] private sprocName = "EquinoxRollingUnfolds3"  // NB need to rename/number for any breaking change
+    let [<Literal>] private sprocName = "EquinoxRollingUnfolds4"  // NB need to rename/number for any breaking change
     let [<Literal>] private sprocBody = """
-// Manages the merging of the supplied Request Batch, fulfilling one of the following end-states
-// 1 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index)
-// 2a Verify no current Tip; if so - incoming req.e and defines the `n`ext position / unfolds
-// 2b If we already have a tip, move position forward, replace unfolds
-// 3 insert a new document containing the events as part of the same batch of work
-// 3a in some cases, there are only changes to the `u`nfolds and no `e`vents, in which case no write should happen
+// Manages the merging of the supplied Request Batch into the stream
+
+// 0 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index)
+
+// High level end-states:
+
+// 1a if there is a Tip, but are only changes to the `u`nfolds (and no `e`vents) -> update Tip only
+// 1b if there is a Tip, but incoming request includes an event -> generate a batch document + create empty Tip
+
+// 2a if stream empty, but incoming request includes an event -> generate a batch document + create empty Tip
+// 2b if no current Tip, and no events being written -> the incoming `req` becomes the Tip batch
+
 function sync(req, expIndex, expEtag) {
     if (!req) throw new Error("Missing req argument");
-    const collection = getContext().getCollection();
-    const collectionLink = collection.getSelfLink();
+    const collectionLink = __.getSelfLink();
     const response = getContext().getResponse();
-
     // Locate the Tip (-1) batch for this stream (which may not exist)
-    const tipDocId = collection.getAltLink() + "/docs/" + req.id;
-    const isAccepted = collection.readDocument(tipDocId, {}, function (err, current) {
+    const tipDocId = __.getAltLink() + "/docs/" + req.id;
+    const isAccepted = __.readDocument(tipDocId, {}, function (err, current) {
         // Verify we dont have a conflicting write
         if (expIndex === -1) {
             // For Any mode, we always do an append operation
@@ -421,7 +425,10 @@ function sync(req, expIndex, expEtag) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero, and an etag exp must be fulfilled
             response.setBody({ etag: null, n: 0, conflicts: [] });
         } else if (current && ((expIndex === -2 && expEtag !== current._etag) || (expIndex !== -2 && expIndex !== current.n))) {
-            // if we're working based on etags, the `u`nfolds very likely to bear relevant info as state-bearing unfolds
+            // Where possible, we extract conflicting events from e and/or u in order to avoid another read cycle;
+            // yielding [] triggers the client to go loading the events itself
+
+            // if we're working based on etags, the `u`nfolds likely bear relevant info as state-bearing unfolds
             // if there are no `u`nfolds, we need to be careful not to yield `conflicts: null`, as that signals a successful write (see below)
             response.setBody({ etag: current._etag, n: current.n, conflicts: current.u || [] });
         } else {
@@ -430,34 +437,46 @@ function sync(req, expIndex, expEtag) {
     });
     if (!isAccepted) throw new Error("readDocument not Accepted");
 
-    function executeUpsert(current) {
+    function executeUpsert(tip) {
         function callback(err, doc) {
             if (err) throw err;
             response.setBody({ etag: doc._etag, n: doc.n, conflicts: null });
         }
-        var tip;
-        if (!current) {
-            tip = { p: req.p, id: req.id, i: req.e.length, n: req.e.length, e: [], u: req.u };
-            const tipAccepted = collection.createDocument(collectionLink, tip, { disableAutomaticIdGeneration: true }, callback);
-            if (!tipAccepted) throw new Error("Unable to create Tip.");
-        } else {
-            // TODO Carry forward `u` items not in `req`, together with supporting catchup events from preceding batches
-            const n = current.n + req.e.length;
-            tip = { p: current.p, id: current.id, i: n, n: n, e: [], u: req.u };
+        if (tip) {
+            Array.prototype.push.apply(tip.e, req.e);
+            tip.n = tip.i + tip.e.length;
+            // If there are events, calve them to their own batch (this behavior is to simplify CFP consumer impl)
+            if (tip.e.length > 0) {
+                const batch = { id: tip.i.toString(), p: tip.p, i: tip.i, n: tip.n, e: tip.e }
+                const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
+                if (!batchAccepted) throw new Error("Unable to remove Tip markings.");
 
-            // as we've mutated the document in a manner that can conflict with other writers, our write needs to be contingent on no competing updates having taken place
-            const tipAccepted = collection.replaceDocument(current._self, tip, { etag: current._etag }, callback);
-            if (!tipAccepted) throw new Error("Unable to replace Tip.");
-        }
-        // if there's only a state update involved, we don't do an event-batch write (if we did, they'd trigger uniqueness violations)
-        if (req.e.length) {
-            // For now, always do an Insert, as Change Feed mechanism does not yet afford us a way to
-            // a) guarantee an item per write (multiple consecutive updates can be 'squashed')
-            // b) with metadata sufficient for us to determine the items added (only etags, no way to convey i/n in feed item)
-            const i = tip.n - req.e.length;
-            const batch = { p: tip.p, id: i.toString(), i: i, n: tip.n, e: req.e };
-            const batchAccepted = collection.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
-            if (!batchAccepted) throw new Error("Unable to insert Batch.");
+                tip.i = tip.n;
+                tip.e = [];
+            }
+
+            // TODO Carry forward `u` items not present in `batch`, together with supporting catchup events from preceding batches
+
+            // Replace all the unfolds // TODO: should remove only unfolds being superseded
+            tip.u = req.u;
+            // As we've mutated the document in a manner that can conflict with other writers, our write needs to be contingent on no competing updates having taken place
+            const isAccepted = __.replaceDocument(tip._self, tip, { etag: tip._etag }, callback);
+            if (!isAccepted) throw new Error("Unable to replace Tip batch.");
+        } else {
+            // NOTE we write the batch first (more consistent RU cost than writing tip first)
+            if (req.e.length > 0) {
+                const batch = { id: "0", p: req.p, i: 0, n: req.e.length, e: req.e };
+                const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
+                if (!batchAccepted) throw new Error("Unable to create Batch 0.");
+
+                req.i = batch.n;
+                req.e = [];
+            } else {
+                req.i = 0;
+            }
+            req.n = req.i + req.e.length;
+            const isAccepted = __.createDocument(collectionLink, req, { disableAutomaticIdGeneration: true }, callback);
+            if (!isAccepted) throw new Error("Unable to create Tip batch.");
         }
     }
 }"""

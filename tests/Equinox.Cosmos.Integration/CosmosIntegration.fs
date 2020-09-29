@@ -93,7 +93,7 @@ type Tests(testOutputHelper) =
             // Extra roundtrip required after maxItemsPerRequest is exceeded
             let expectedBatchesOfItems = max 1 ((i-1) / maxItemsPerRequest)
             test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 61 // 57.09 [5.24 + 54.78] // 5.5 observed for read
+            verifyRequestChargesMax 60 // 59.27 [3.28; 55.99] // 5.5 observed for read
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -103,7 +103,7 @@ type Tests(testOutputHelper) =
 
         let expectedResponses = transactions/maxItemsPerRequest + 1
         test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 11 // 10.01
+        verifyRequestChargesMax 8 // 7.74 // 10.01
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
