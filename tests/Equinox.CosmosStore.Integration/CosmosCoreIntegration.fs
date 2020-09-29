@@ -30,7 +30,7 @@ type Tests(testOutputHelper) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
     let mkContextWithItemLimit conn defaultBatchSize =
-        EventsContext(conn,containers,log,?defaultMaxItems=defaultBatchSize)
+        createPrimaryEventsContext log defaultBatchSize
     let mkContext conn = mkContextWithItemLimit conn None
 
     let verifyRequestChargesMax rus =
@@ -39,8 +39,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let append (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContext log
+        capture.Clear()
 
         let index = 0L
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
@@ -61,8 +61,7 @@ type Tests(testOutputHelper) =
     // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContext log
 
         let index = 0L
         let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
@@ -104,8 +103,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``appendAtEnd and getNextIndex`` (extras, TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
@@ -166,8 +164,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append - fails on non-matching`` (TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContext conn
+        let ctx = mkContext log
 
         // Attempt to write, skipping Index 0
         let! res = Events.append ctx streamName 1L <| TestEvents.Create(0,1)
@@ -209,8 +206,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let get (TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 3)
+        let ctx = mkContextWithItemLimit log (Some 3)
 
         // We're going to ignore the first, to prove we can
         let! expected = add6EventsIn2Batches ctx streamName
@@ -226,8 +222,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
         let expected = expected |> Array.take 3
@@ -242,8 +237,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get Lazy`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
         capture.Clear()
@@ -266,8 +260,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let getBackwards (TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
 
@@ -284,8 +277,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``getBackwards in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
 
@@ -302,8 +294,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``getBackwards Lazy`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn (Some 1)
+        let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
         capture.Clear()
@@ -330,8 +321,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let ctx = mkContextWithItemLimit conn None
+        let ctx = mkContextWithItemLimit log None
 
         let! expected = add6EventsIn2Batches ctx streamName
 

@@ -125,9 +125,8 @@ type Tests() =
         let batchSize = defaultBatchSize
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
-        let! conn = connectToSpecifiedCosmosOrSimulator log
-        let gateway = createCosmosContext conn batchSize
-        let service = Backend.Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy gateway)
+        let store = createPrimaryContext log batchSize
+        let service = Backend.Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy store)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount context cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200

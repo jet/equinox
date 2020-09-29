@@ -9,29 +9,36 @@ module Option =
 
 /// Standing up an Equinox instance is necessary to run for test purposes; either:
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
-/// - Create a local Equinox via dotnet run cli/Equinox.cli -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_CONTAINER provision -ru 10000
-let private connectToCosmos (log: Serilog.ILogger) name discovery =
-    Connector(log=log, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-       .Connect(name, discovery)
-let private read env = Environment.GetEnvironmentVariable env |> Option.ofObj
-let (|Default|) def name = (read name),def ||> defaultArg
+/// - Create a local Equinox via (e.g.) dotnet run cli/Equinox.Tool init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_CONTAINER
+let private tryRead env = Environment.GetEnvironmentVariable env |> Option.ofObj
+let (|Default|) def name = (tryRead name),def ||> defaultArg
 
-let connectToSpecifiedCosmosOrSimulator (log: Serilog.ILogger) =
-    match read "EQUINOX_COSMOS_CONNECTION" with
-    | None ->
-        Discovery.UriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
-        |> connectToCosmos log "localDocDbSim"
-    | Some connectionString ->
-        Discovery.FromConnectionString connectionString
-        |> connectToCosmos log "EQUINOX_COSMOS_CONNECTION"
+let private databaseId = tryRead "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test"
+let private containerId = tryRead "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test"
+
+let discoverConnection () =
+    match tryRead "EQUINOX_COSMOS_CONNECTION" with
+    | None -> "localDocDbSim", Discovery.AccountUriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
+    | Some connectionString -> "EQUINOX_COSMOS_CONNECTION", Discovery.ConnectionString connectionString
+
+let createClient (log : Serilog.ILogger) name discovery =
+    let factory = CosmosStoreClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
+    let client = factory.Create discovery
+    log.Information("CosmosDb Connecting {name} to {endpoint}", name, client.Endpoint)
+    client
+
+let connectPrimary (log : Serilog.ILogger) =
+    let name, discovery = discoverConnection ()
+    let client = createClient log name discovery
+    CosmosStoreConnection(client, databaseId, containerId)
+
+let createPrimaryContext (log: Serilog.ILogger) batchSize =
+    let conn = connectPrimary log
+    CosmosStoreContext(conn, defaultMaxItems = batchSize)
 
 let defaultBatchSize = 500
 
-let containers =
-    Containers(
-        read "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test",
-        read "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test")
-
-let createCosmosContext connection batchSize =
-    let gateway = Gateway(connection, BatchingPolicy(defaultMaxItems=batchSize))
-    Context(gateway, containers)
+let createPrimaryEventsContext log batchSize =
+    let batchSize = defaultArg batchSize defaultBatchSize
+    let ctx = createPrimaryContext log batchSize
+    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = batchSize)

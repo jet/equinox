@@ -1818,7 +1818,7 @@ type EventData with
 
 // Load connection sring from your Key Vault (example here is the CosmosDb
 // simulator's well known key)
-let connectionString: string =
+let connectionString : string =
     "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;"
 
 // Forward to Log (you can use `Log.Logger` and/or `Log.ForContext` if your app
@@ -1829,22 +1829,22 @@ let outputLog = LoggerConfiguration().WriteTo.NLog().CreateLogger()
 let gatewayLog =
     outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
-// When starting the app, we connect (once)
-let connector : Equinox.CosmosStore.Connector =
-    Connector(
+let factory : Equinox.CosmosStore.CosmosStoreClientFactory =
+    CosmosStoreClientFactory(
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnThrottledRequests = 1,
         maxRetryWaitTimeInSeconds = 3,
         log = gatewayLog)
-let cnx =
-    connector.Connect("Application.CommandProcessor", Discovery.FromConnectionString connectionString)
+let client =
+    factory.Create("Application.CommandProcessor", Discovery.FromConnectionString connectionString)
     |> Async.RunSynchronously
 
+let client = factory.Create(Discovery.ConnectionString connectionString)
+
 // If storing in a single collection, one specifies the db and collection
-// alternately use the overload that defers the mapping until the stream one is
-// writing to becomes clear
-let containerMap = Containers("databaseName", "containerName")
-let ctx = EventsContext(cnx, containerMap, gatewayLog)
+// alternately use the overload that defers the mapping until the stream one is writing to becomes clear
+let connection = CosmosStoreConnection(client, "databaseName", "containerName")
+let ctx = EventsContext(connection, gatewayLog)
 
 //
 // Write an event
