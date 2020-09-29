@@ -46,7 +46,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 32 // 31.22 // WAS 10
+        verifyRequestChargesMax 33 // 32.27 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -54,7 +54,7 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesMax 39 // 38.21 // was 11
+        verifyRequestChargesMax 39 // 38.74 // was 11
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
@@ -121,7 +121,7 @@ type Tests(testOutputHelper) =
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
-            verifyRequestChargesMax 42 // 41.12 // 46 // 44.07 observed
+            verifyRequestChargesMax 46 // 45.16
             capture.Clear()
 
             let! res = Events.getNextIndex ctx streamName
@@ -134,7 +134,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 48 // 47.02 // WAS 20
+        verifyRequestChargesMax 46 // 45.42 // 47.02 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -149,12 +149,12 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 465 // 463.01 observed
+        verifyRequestChargesMax 149 // 148.11 // 463.01 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
-        verifyRequestChargesMax 45 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
+        verifyRequestChargesMax 5 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
         capture.Clear()
 
         let! _pos = ctx.Sync(stream,pos)
@@ -174,7 +174,7 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Resync] = capture.ExternalCalls @>
         // The response aligns with a normal conflict in that it passes the entire set of conflicting events ()
         test <@ AppendResult.Conflict (0L,[||]) = res @>
-        verifyRequestChargesMax 7 // 6.6 // WAS 5
+        verifyRequestChargesMax 6 // 5.5 // WAS 5
         capture.Clear()
 
         // Now write at the correct position
@@ -182,7 +182,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 32 // 30.42 WAS 11 // 10.33
+        verifyRequestChargesMax 33 // 32.05 WAS 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
@@ -200,7 +200,7 @@ type Tests(testOutputHelper) =
 #else
         test <@ [EqxAct.Conflict] = capture.ExternalCalls @>
 #endif
-        verifyRequestChargesMax 7 // 6.64
+        verifyRequestChargesMax 6 // 5.63 // 6.64
         capture.Clear()
     }
 

@@ -12,6 +12,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - `Cosmos`: Reorganize Sync log message text, merge with Sync Conflict message [#241](https://github.com/jet/equinox/pull/241)
+- `Cosmos`: Converge Stored Procedure Impl with `tip-isa-batch` impl from V3 (minor Request Charges cost reduction) [#242](https://github.com/jet/equinox/pull/242)
 
 ### Removed
 ### Fixed
@@ -26,7 +27,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - `Cosmos`: Tweaked log messages
-
 
 <a name="2.3.0-rc1"></a>
 ## [2.3.0-rc1] - 2020-08-31
