@@ -46,7 +46,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 33 // 32.27 // WAS 10
+        verifyRequestChargesMax 34 // 33.07 // WAS 10
         // Clear the counters
         capture.Clear()
 
@@ -133,7 +133,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 46 // 45.42 // 47.02 // WAS 20
+        verifyRequestChargesMax 47 // 46.52 // 47.02 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -148,7 +148,7 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 261 // 260.01 // 463.01 observed
+        verifyRequestChargesMax 442 // 441.88 // 463.01 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -179,7 +179,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 33 // 32.05 WAS 11 // 10.33
+        verifyRequestChargesMax 36 // 35.78 WAS 11 // 10.33
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)

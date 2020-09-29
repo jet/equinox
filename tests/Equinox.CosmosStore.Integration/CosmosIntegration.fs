@@ -70,7 +70,7 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
-    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxFail=1, MaxTest=2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` context skuId = Async.RunSynchronously <| async {
         let maxItemsPerRequest = 5
         let store = createPrimaryContext log maxItemsPerRequest
@@ -98,7 +98,7 @@ type Tests(testOutputHelper) =
 
         let expectedResponses = transactions/maxItemsPerRequest + 1
         test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 8 // 7.74 // 10.01
+        verifyRequestChargesMax 9 // 8.58 // 10.01
     }
 
     [<AutoData(MaxFail=1, MaxTest=2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
