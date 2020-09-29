@@ -550,7 +550,7 @@ module internal Sync =
 
 module Initialization =
 
-    type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int
+    type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int | Serverless
     let adjustOfferC (c:Container) (rus : int) = async {
         let! ct = Async.CancellationToken
         let! _ = c.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
@@ -566,7 +566,7 @@ module Initialization =
         | Provisioning.Database rus ->
             let! db = createDatabaseIfNotExists client dName (Some rus)
             do! adjustOfferD db rus
-        | Provisioning.Container _ ->
+        | Provisioning.Container _ | Provisioning.Serverless ->
             let! _ = createDatabaseIfNotExists client dName None in () }
     let private createContainerIfNotExists (d:Database) (cp:ContainerProperties) maybeRus = async {
         let! ct = Async.CancellationToken
@@ -574,12 +574,12 @@ module Initialization =
         return c.Container }
     let private createOrProvisionContainer (d:Database) (cp:ContainerProperties) mode = async {
         match mode with
-        | Provisioning.Database _ ->
-            return! createContainerIfNotExists d cp None
         | Provisioning.Container rus ->
             let! c = createContainerIfNotExists d cp (Some rus)
             do! adjustOfferC c rus
-            return c }
+            return c
+        | Provisioning.Database _ | Provisioning.Serverless ->
+            return! createContainerIfNotExists d cp None }
     let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id=name, body=body)) |> Async.AwaitTaskCorrect
             return r.RequestCharge
