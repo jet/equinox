@@ -563,12 +563,10 @@ module Initialization =
         return dbr.Database }
     let private createOrProvisionDatabase (client:CosmosClient) dName mode = async {
         match mode with
-        | Provisioning.Serverless _ ->
-            let! _ = createDatabaseIfNotExists client dName None in ()
         | Provisioning.Database rus ->
             let! db = createDatabaseIfNotExists client dName (Some rus)
             do! adjustOfferD db rus
-        | Provisioning.Container _ ->
+        | Provisioning.Container _ | Provisioning.Serverless ->
             let! _ = createDatabaseIfNotExists client dName None in () }
     let private createContainerIfNotExists (d:Database) (cp:ContainerProperties) maybeRus = async {
         let! ct = Async.CancellationToken
@@ -576,14 +574,12 @@ module Initialization =
         return c.Container }
     let private createOrProvisionContainer (d:Database) (cp:ContainerProperties) mode = async {
         match mode with
-        | Provisioning.Serverless _ ->
-            return! createContainerIfNotExists d cp None
-        | Provisioning.Database _ ->
-            return! createContainerIfNotExists d cp None
         | Provisioning.Container rus ->
             let! c = createContainerIfNotExists d cp (Some rus)
             do! adjustOfferC c rus
-            return c }
+            return c
+        | Provisioning.Database _ | Provisioning.Serverless ->
+            return! createContainerIfNotExists d cp None }
     let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id=name, body=body)) |> Async.AwaitTaskCorrect
             return r.RequestCharge
