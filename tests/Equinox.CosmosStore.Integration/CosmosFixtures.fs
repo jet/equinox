@@ -15,6 +15,7 @@ let (|Default|) def name = (tryRead name),def ||> defaultArg
 
 let private databaseId = tryRead "EQUINOX_COSMOS_DATABASE" |> Option.defaultValue "equinox-test"
 let private containerId = tryRead "EQUINOX_COSMOS_CONTAINER" |> Option.defaultValue "equinox-test"
+let private containerId2 = tryRead "EQUINOX_COSMOS_CONTAINER2" |> Option.defaultValue "equinox-test2"
 
 let discoverConnection () =
     match tryRead "EQUINOX_COSMOS_CONNECTION" with
@@ -32,8 +33,26 @@ let connectPrimary (log : Serilog.ILogger) =
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId)
 
+let connectSecondary (log : Serilog.ILogger) =
+    let name, discovery = discoverConnection ()
+    let client = createClient log name discovery
+    CosmosStoreConnection(client, databaseId, containerId2)
+
+let connectWithFallback (log : Serilog.ILogger) =
+    let name, discovery = discoverConnection ()
+    let client = createClient log name discovery
+    CosmosStoreConnection(client, databaseId, containerId, containerId2=containerId2)
+
 let createPrimaryContext (log: Serilog.ILogger) batchSize =
     let conn = connectPrimary log
+    CosmosStoreContext(conn, defaultMaxItems = batchSize)
+
+let createSecondaryContext (log: Serilog.ILogger) batchSize =
+    let conn = connectSecondary log
+    CosmosStoreContext(conn, defaultMaxItems = batchSize)
+
+let createFallbackContext (log: Serilog.ILogger) batchSize =
+    let conn = connectWithFallback log
     CosmosStoreContext(conn, defaultMaxItems = batchSize)
 
 let defaultBatchSize = 500
@@ -42,3 +61,13 @@ let createPrimaryEventsContext log batchSize =
     let batchSize = defaultArg batchSize defaultBatchSize
     let context = createPrimaryContext log batchSize
     Equinox.CosmosStore.Core.EventsContext(context, log, defaultMaxItems = batchSize)
+
+let createSecondaryEventsContext log batchSize =
+    let batchSize = defaultArg batchSize defaultBatchSize
+    let ctx = createSecondaryContext log batchSize
+    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = batchSize)
+
+let createFallbackEventsContext log batchSize =
+    let batchSize = defaultArg batchSize defaultBatchSize
+    let ctx = createFallbackContext log batchSize
+    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = batchSize)

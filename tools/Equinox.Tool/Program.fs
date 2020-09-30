@@ -320,7 +320,7 @@ module CosmosInit =
     open Equinox.CosmosStore.Core.Initialization
 
     let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
-        Storage.Cosmos.conn log (Storage.Cosmos.Info sargs)
+        Storage.Cosmos.conn log (Storage.Cosmos.Info sargs) |> fst
 
     let containerAndOrDb log (iargs: ParseResults<InitArguments>) = async {
         match iargs.TryGetSubCommand() with
