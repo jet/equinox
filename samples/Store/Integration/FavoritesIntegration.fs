@@ -14,15 +14,15 @@ let createServiceMemory log store =
     Backend.Favorites.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.Favorites.Events.codec
-let createServiceGes gateway log =
+let createServiceGes log gateway =
     let resolver = EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
     Backend.Favorites.create log resolver.Resolve
 
-let createServiceCosmos context log =
+let createServiceCosmos log context =
     let category = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
     Backend.Favorites.create log category.Resolve
 
-let createServiceCosmosRollingState context log =
+let createServiceCosmosRollingState log context =
     let access = CosmosStore.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
     let category = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
     Backend.Favorites.create log category.Resolve
@@ -53,22 +53,22 @@ type Tests(testOutputHelper) =
         let log = createLog ()
         let! conn = connectToLocalEventStoreNode log
         let gateway = createGesGateway conn defaultBatchSize
-        let service = createServiceGes gateway log
+        let service = createServiceGes log gateway
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let store = createPrimaryContext log defaultBatchSize
-        let service = createServiceCosmos store log
+        let context = createPrimaryContext log defaultBatchSize
+        let service = createServiceCosmos log context
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let store = createPrimaryContext log defaultBatchSize
-        let service = createServiceCosmosRollingState store log
+        let context = createPrimaryContext log defaultBatchSize
+        let service = createServiceCosmosRollingState log context
         do! act service args
     }

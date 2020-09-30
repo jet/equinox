@@ -40,5 +40,5 @@ let defaultBatchSize = 500
 
 let createPrimaryEventsContext log batchSize =
     let batchSize = defaultArg batchSize defaultBatchSize
-    let ctx = createPrimaryContext log batchSize
-    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = batchSize)
+    let context = createPrimaryContext log batchSize
+    Equinox.CosmosStore.Core.EventsContext(context, log, defaultMaxItems = batchSize)
