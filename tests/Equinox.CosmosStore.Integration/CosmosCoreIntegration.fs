@@ -133,7 +133,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 47 // 46.52 // 47.02 // WAS 20
+        verifyRequestChargesMax 50 // 49.74 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -148,7 +148,7 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 442 // 441.88 // 463.01 observed
+        verifyRequestChargesMax 448 // 447.5 // 463.01 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
