@@ -52,15 +52,15 @@ module Events =
     // unlike most Aggregates, knowing the Event's index is critical - for this reason, we always propagate that index alongside the event body
     type Event = int64 * Contract
 
+    // our upconversion function doesn't actually fit the term - it just tuples the underlying event
+    let up (evt : FsCodec.ITimelineEvent<_>,e) : Event =
+        evt.Index,e
+    // as per the `up`, the downConverter needs to drop the index (which is only there for symmetry), add null metadata
+    let down (_index,e) : Contract * _ option * DateTimeOffset option =
+        e,None,None
+
     // unlike most normal codecs, we have a mapping to supply as we want the Index to be added to each event so we can track it in the State as we fold
-    let codec =
-        // our upconversion function doesn't actually fit the term - it just tuples the underlying event
-        let up (evt : FsCodec.ITimelineEvent<_>,e) : Event =
-            evt.Index,e
-        // as per the `up`, the downConverter needs to drop the index (which is only there for symmetry), add null metadata
-        let down (_index,e) : Contract * _ option * DateTimeOffset option =
-            e,None,None
-        FsCodec.NewtonsoftJson.Codec.Create(up,down)
+    let codec = FsCodec.NewtonsoftJson.Codec.Create(up,down)
 
 module Fold =
 
@@ -136,7 +136,9 @@ let [<Literal>] appName = "equinox-tutorial"
 let cache = Equinox.Cache(appName, 20)
 
 module EventStore =
+
     open Equinox.EventStore
+
     let snapshotWindow = 500
     // see QuickStart for how to run a local instance in a mode that emulates the behavior of a cluster
     let (host,username,password) = "localhost", "admin", "changeit"
@@ -153,16 +155,18 @@ module EventStore =
     let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
 
 module Cosmos =
-    open Equinox.CosmosStore
-    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
 
-    let connector = Connector(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., log=Log.log, mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
-    let conn = connector.Connect(appName, Discovery.FromConnectionString (read "EQUINOX_COSMOS_CONNECTION")) |> Async.RunSynchronously
-    let context = Context(conn, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    open Equinox.CosmosStore
+
+    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
+    let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
+    let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
+    let conn = CosmosStoreConnection(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let context = CosmosStoreContext(conn)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let resolver = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-    let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
+    let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let resolve id = Equinox.Stream(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 
 let serviceES = Service(EventStore.resolve)
 let serviceCosmos = Service(Cosmos.resolve)

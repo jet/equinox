@@ -12,7 +12,7 @@ module Cart =
     let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
     let codec = Domain.Cart.Events.codec
-    let createServiceWithoutOptimization log store =
+    let createServiceWithoutOptimization store log =
         let resolve (id,opt) = CosmosStoreCategory(store, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Backend.Cart.create log resolve
     let projection = "Compacted",snd snapshot
@@ -70,12 +70,12 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
-    [<AutoData(MaxFail=1, MaxTest=2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` context skuId = Async.RunSynchronously <| async {
-        let maxItemsPerRequest = 5
+        let maxItemsPerRequest = 2
         let store = createPrimaryContext log maxItemsPerRequest
 
-        let service = Cart.createServiceWithoutOptimization log store
+        let service = Cart.createServiceWithoutOptimization store log
         capture.Clear() // for re-runs of the test
 
         let cartId = % Guid.NewGuid()

@@ -18,14 +18,14 @@ let createServiceGes gateway log =
     let resolver = EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
     Backend.Favorites.create log resolver.Resolve
 
-let createServiceCosmos gateway log =
-    let resolver = CosmosStore.CosmosStoreCategory(gateway, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
-    Backend.Favorites.create log resolver.Resolve
+let createServiceCosmos context log =
+    let category = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
+    Backend.Favorites.create log category.Resolve
 
-let createServiceCosmosRollingState gateway log =
+let createServiceCosmosRollingState context log =
     let access = CosmosStore.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
-    let resolver = CosmosStore.CosmosStoreCategory(gateway, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
-    Backend.Favorites.create log resolver.Resolve
+    let category = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
+    Backend.Favorites.create log category.Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -67,7 +67,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = Async.RunSynchronously <| async {
-        let log = createLog ()
         let log = createLog ()
         let store = createPrimaryContext log defaultBatchSize
         let service = createServiceCosmosRollingState store log
