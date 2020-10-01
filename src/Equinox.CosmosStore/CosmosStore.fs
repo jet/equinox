@@ -204,7 +204,7 @@ type internal Enum() =
         Enum.Events(b.i, b.e, startPos, direction)
         |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
     static member Unfolds(xs: Unfold[]) : ITimelineEvent<byte[]> seq = seq {
-        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, Guid.Empty, null, null, x.t, isUnfold=true) }
+        for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, Guid.Empty, null, null, x.t, isUnfold = true) }
     static member EventsAndUnfolds(x: Tip): ITimelineEvent<byte[]> seq =
         Enum.Events x
         |> Seq.append (Enum.Unfolds x.u)
@@ -568,7 +568,7 @@ module Initialization =
         let! _ = d.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
     let private createDatabaseIfNotExists (client:CosmosClient) dName maybeRus = async {
         let! ct = Async.CancellationToken
-        let! dbr = client.CreateDatabaseIfNotExistsAsync(id=dName, throughput = Option.toNullable maybeRus, cancellationToken=ct) |> Async.AwaitTaskCorrect
+        let! dbr = client.CreateDatabaseIfNotExistsAsync(id = dName, throughput = Option.toNullable maybeRus, cancellationToken = ct) |> Async.AwaitTaskCorrect
         return dbr.Database }
     let private createOrProvisionDatabase (client:CosmosClient) dName mode = async {
         match mode with
@@ -579,7 +579,7 @@ module Initialization =
             let! _ = createDatabaseIfNotExists client dName None in () }
     let private createContainerIfNotExists (d:Database) (cp:ContainerProperties) maybeRus = async {
         let! ct = Async.CancellationToken
-        let! c = d.CreateContainerIfNotExistsAsync(cp, throughput=Option.toNullable maybeRus, cancellationToken=ct) |> Async.AwaitTaskCorrect
+        let! c = d.CreateContainerIfNotExistsAsync(cp, throughput = Option.toNullable maybeRus, cancellationToken = ct) |> Async.AwaitTaskCorrect
         return c.Container }
     let private createOrProvisionContainer (d:Database) (cp:ContainerProperties) mode = async {
         match mode with
@@ -590,7 +590,7 @@ module Initialization =
         | Provisioning.Database _ | Provisioning.Serverless ->
             return! createContainerIfNotExists d cp None }
     let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
-        try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id=name, body=body)) |> Async.AwaitTaskCorrect
+        try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body)) |> Async.AwaitTaskCorrect
             return r.RequestCharge
         with CosmosException ((CosmosStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
     let private mkContainerProperties containerName partitionKeyFieldName =
@@ -637,7 +637,7 @@ module Initialization =
 module internal Tip =
 
     let private get (container : Container, stream : string) (maybePos: Position option) =
-        let ro = match maybePos with Some { etag=Some etag } -> ItemRequestOptions(IfNoneMatchEtag=etag) | _ -> null
+        let ro = match maybePos with Some { etag = Some etag } -> ItemRequestOptions(IfNoneMatchEtag = etag) | _ -> null
         container.TryReadItem(PartitionKey stream, Tip.WellKnownDocumentId, ro)
     let private loggedGet (get : Container * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
@@ -687,7 +687,7 @@ module internal Tip =
             | Some { index = positionSoExclusiveWhenBackward } ->
                 let cond = if direction = Direction.Forward then "c.n > @startPos" else "c.i < @startPos"
                 QueryDefinition(sprintf "%s AND %s %s" root cond tail).WithParameter("@startPos", positionSoExclusiveWhenBackward)
-        let qro = QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
+        let qro = QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount = Nullable maxItems)
         container.GetItemQueryIterator<Batch>(query, requestOptions = qro)
 
     // Unrolls the Batches in a response
@@ -830,8 +830,8 @@ module Delete =
         let! ct = Async.CancellationToken
         let log = log |> Log.prop "stream" stream
         let deleteItem id count : Async<float> = async {
-            let ro = ItemRequestOptions(EnableContentResponseOnWrite=Nullable false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
-            let! t, res = container.DeleteItemAsync(id, PartitionKey stream, ro, cancellationToken=ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
+            let ro = ItemRequestOptions(EnableContentResponseOnWrite = Nullable false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
+            let! t, res = container.DeleteItemAsync(id, PartitionKey stream, ro, cancellationToken = ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             let rc, ms = res.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Delete reqMetric in log |> Log.event evt
@@ -840,8 +840,8 @@ module Delete =
         }
         let log = log |> Log.prop "beforePos" beforePos
         let query : FeedIterator<BatchIndices> =
-             let qro = QueryRequestOptions(PartitionKey=Nullable(PartitionKey stream), MaxItemCount=Nullable maxItems)
-             container.GetItemQueryIterator<_>(QueryDefinition "SELECT c.id, c.i, c.n FROM c", requestOptions=qro)
+             let qro = QueryRequestOptions(PartitionKey = Nullable(PartitionKey stream), MaxItemCount = Nullable maxItems)
+             container.GetItemQueryIterator<_>(QueryDefinition "SELECT c.id, c.i, c.n FROM c", requestOptions = qro)
         let mapPage i (t : StopwatchInterval) (page : FeedResponse<BatchIndices>) =
             let batches, rc, ms = Array.ofSeq page, page.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
@@ -1123,7 +1123,7 @@ type CosmosStoreConnection
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
         CosmosStoreConnection(catAndStreamToDatabaseContainerStream, primaryContainer,
-            ?disableInitialization=disableInitialization, ?createGateway=createGateway)
+            ?disableInitialization = disableInitialization, ?createGateway = createGateway)
     member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
         let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let createContainerInitializerGuard (d, c) =
@@ -1131,7 +1131,7 @@ type CosmosStoreConnection
                 if Some true = disableInitialization then None
                 else Some (fun cosmosContainer -> Initialization.createSyncStoredProcIfNotExists None cosmosContainer |> Async.Ignore)
             let primaryContainer = createContainer (d, c)
-            Initialization.ContainerInitializerGuard(createGateway primaryContainer, ?initContainer=init)
+            Initialization.ContainerInitializerGuard(createGateway primaryContainer, ?initContainer = init)
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
 
@@ -1281,9 +1281,9 @@ type CosmosStoreClientFactory
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
         let co =
             CosmosClientOptions(
-                MaxRetryAttemptsOnRateLimitedRequests=maxAttempts,
-                MaxRetryWaitTimeOnRateLimitedRequests=maxWait,
-                RequestTimeout=timeout)
+                MaxRetryAttemptsOnRateLimitedRequests = maxAttempts,
+                MaxRetryWaitTimeOnRateLimitedRequests = maxWait,
+                RequestTimeout = timeout)
         match mode with
         | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
@@ -1296,13 +1296,13 @@ type CosmosStoreClientFactory
         // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
         if bypassCertificateValidation = Some true && co.ConnectionMode = ConnectionMode.Gateway then
             let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback=cb)
+            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = cb)
             co.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
         co
 
     abstract member Create: discovery: Discovery -> CosmosClient
     default __.Create discovery = discovery |> function
-        | Discovery.AccountUriAndKey (accountUri=uri; key=key) -> new CosmosClient(string uri, key, __.Options)
+        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, __.Options)
         | Discovery.ConnectionString cs -> new CosmosClient(cs, __.Options)
 
 namespace Equinox.CosmosStore.Core
@@ -1330,7 +1330,7 @@ type EventsContext internal
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let batching = BatchingPolicy(getDefaultMaxItems=getDefaultMaxItems)
+    let batching = BatchingPolicy(getDefaultMaxItems = getDefaultMaxItems)
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
         fun _ ->
@@ -1344,7 +1344,7 @@ type EventsContext internal
 
     new (context : Equinox.CosmosStore.CosmosStoreContext, log, ?defaultMaxItems, ?getDefaultMaxItems) =
         let storeClient, _streamId, _ = context.ResolveContainerClientAndStreamIdAndInit(null, null)
-        EventsContext(context, storeClient, log, ?defaultMaxItems=defaultMaxItems, ?getDefaultMaxItems=getDefaultMaxItems)
+        EventsContext(context, storeClient, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
 
     member __.ResolveStream(streamName) =
         let _cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
@@ -1371,17 +1371,17 @@ type EventsContext internal
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
     member __.Sync(stream, ?position: Position) : Async<Position> = async {
-        let! (Token.Unpack (_,pos')) = store.GetPosition(log, stream, ?pos=position)
+        let! (Token.Unpack (_,pos')) = store.GetPosition(log, stream, ?pos = position)
         return pos' }
 
     /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
     member __.Walk(stream, batchSize, ?position, ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
-        __.GetLazy(stream, batchSize, ?direction=direction, ?startPos=position)
+        __.GetLazy(stream, batchSize, ?direction = direction, ?startPos = position)
 
     /// Reads all Events from a `Position` in a given `direction`
     member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*ITimelineEvent<byte[]>[]> =
-        __.GetInternal((stream, position), ?maxCount=maxCount, ?direction=direction) |> yieldPositionAndData
+        __.GetInternal((stream, position), ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
@@ -1411,7 +1411,7 @@ type EventsContext internal
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
     /// Creates an Event record, suitable for supplying to Append et al
-    static member FromUtf8Bytes(eventType, data, ?meta) : IEventData<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta=meta) :> _
+    static member FromUtf8Bytes(eventType, data, ?meta) : IEventData<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta = meta) :> _
 
 /// Api as defined in the Equinox Specification
 /// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
@@ -1440,14 +1440,14 @@ module Events =
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
     let getAll (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<byte[]>[]> =
-        ctx.Walk(ctx.StreamId streamName, batchSize, ?position=index)
+        ctx.Walk(ctx.StreamId streamName, batchSize, ?position = index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
     let get (ctx: EventsContext) (streamName: string) (MinPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
-        ctx.Read(ctx.StreamId streamName, ?position=index, maxCount=maxCount) |> dropPosition
+        ctx.Read(ctx.StreamId streamName, ?position = index, maxCount = maxCount) |> dropPosition
 
     /// Appends a batch of events to a stream at the specified expected sequence number.
     /// If the specified expected sequence number does not match the stream, the events are not appended
@@ -1473,14 +1473,14 @@ module Events =
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
     let getAllBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (batchSize: int): AsyncSeq<ITimelineEvent<byte[]>[]> =
-        ctx.Walk(ctx.StreamId streamName, batchSize, ?position=index, direction=Direction.Backward)
+        ctx.Walk(ctx.StreamId streamName, batchSize, ?position = index, direction = Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
     let getBackwards (ctx: EventsContext) (streamName: string) (MaxPosition index: int64) (maxCount: int): Async<ITimelineEvent<byte[]>[]> =
-        ctx.Read(ctx.StreamId streamName, ?position=index, maxCount=maxCount, direction=Direction.Backward) |> dropPosition
+        ctx.Read(ctx.StreamId streamName, ?position = index, maxCount = maxCount, direction = Direction.Backward) |> dropPosition
 
     /// Obtains the `index` from the current write Position
     let getNextIndex (ctx: EventsContext) (streamName: string) : Async<int64> =
