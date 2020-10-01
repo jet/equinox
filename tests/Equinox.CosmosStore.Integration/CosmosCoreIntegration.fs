@@ -29,8 +29,8 @@ type Tests(testOutputHelper) =
     let (|TestStream|) (name: Guid) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
-    let mkContextWithItemLimit log defaultBatchSize =
-        createPrimaryEventsContext log defaultBatchSize
+    let mkContextWithItemLimit log batchSize =
+        createPrimaryEventsContext log batchSize
     let mkContext log = mkContextWithItemLimit log None
 
     let verifyRequestChargesMax rus =
