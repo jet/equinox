@@ -671,7 +671,7 @@ module internal Tip =
             if query.HasMoreResults then
                 yield! loop (i + 1) }
         loop 0
-    let private mkQuery (container : Container, stream: string) includeTip maxItems (direction: Direction, minIndex, maxIndex) : FeedIterator<Batch> =
+    let private mkQuery (log : ILogger) (container : Container, stream: string) includeTip maxItems (direction: Direction, minIndex, maxIndex) : FeedIterator<Batch> =
         let order = if direction = Direction.Forward then "ASC" else "DESC"
         let query =
             let args = [
@@ -680,10 +680,12 @@ module internal Tip =
             let whereClause =
                 let notTip = sprintf "c.id!=\"%s\"" Tip.WellKnownDocumentId // until tip-isa-batch, we have a guarantee there are no events in Tip
                 let conditions = Seq.map fst args
-                String.Join(" AND ", if includeTip then conditions else Seq.append conditions (Seq.singleton notTip))
-            let queryString = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE %s ORDER BY c.i %s" (if whereClause.Length = 0 then "1=1" else whereClause) order
+                if List.isEmpty args && includeTip then null
+                else "WHERE " + String.Join(" AND ", if includeTip then conditions else Seq.append conditions (Seq.singleton notTip))
+            let queryString = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s ORDER BY c.i %s" whereClause order
             let prams = Seq.map snd args
             (QueryDefinition queryString, prams) ||> Seq.fold (fun q wp -> q |> wp)
+        log.Debug("EqxCosmos Query {query} on {stream}", query.QueryText, stream)
         let qro = QueryRequestOptions(PartitionKey=Nullable (PartitionKey stream), MaxItemCount=Nullable maxItems)
         container.GetItemQueryIterator<Batch>(query, requestOptions=qro)
 
@@ -780,7 +782,7 @@ module internal Tip =
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
         let batches : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> =
-            mkQuery (container,stream) includeTip maxItems (direction, minIndex, maxIndex)
+            mkQuery readLog (container,stream) includeTip maxItems (direction, minIndex, maxIndex)
             |> feedIteratorMapTi (mapPage direction stream (minIndex, maxIndex) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws = Array.map fst events
@@ -794,7 +796,7 @@ module internal Tip =
         (tryDecode : ITimelineEvent<byte[]> -> 'event option, isOrigin: 'event -> bool)
         (direction, minIndex, maxIndex)
         : AsyncSeq<'event[]> = asyncSeq {
-        let query = mkQuery (container,stream) true maxItems (direction, minIndex, maxIndex)
+        let query = mkQuery log (container,stream) false maxItems (direction, minIndex, maxIndex)
 
         let readPage = mapPage direction stream (minIndex, maxIndex) maxRequests
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
@@ -860,9 +862,10 @@ module internal Tip =
             | None -> events, pos |> Option.defaultValue Position.fromKnownEmpty
             | Some p -> Array.append p.events events, pos |> Option.orElse p.maybeTipPos |> Option.defaultValue (Position.fromI p.next)
         let inline logMissing (minIndex, maxIndex) message =
-            (log|> fun log -> match minIndex with None -> log | Some mi -> log |> Log.prop "minIndex" mi
-                |> fun log -> match maxIndex with None -> log | Some mi -> log |> Log.prop "maxIndex" mi)
-                .Information(message)
+            if log.IsEnabled Events.LogEventLevel.Debug then
+                (log|> fun log -> match minIndex with None -> log | Some mi -> log |> Log.prop "minIndex" mi
+                    |> fun log -> match maxIndex with None -> log | Some mi -> log |> Log.prop "maxIndex" mi)
+                    .Debug(message)
 
         match primary, secondary with
         | Some { index = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
@@ -1016,7 +1019,7 @@ type BatchingPolicy
         [<O; D(null)>]?defaultMaxItems : int,
         // Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default to using `defaultMaxItems`
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
-        /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxSlices`. Default: unlimited.
+        /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
         [<O; D(null)>]?maxRequests) =
     let getDefaultMaxItems = defaultArg getDefaultMaxItems (fun () -> defaultArg defaultMaxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
@@ -1027,9 +1030,10 @@ type BatchingPolicy
 type StoreClient(container : Container, fallback : Container option, batching : BatchingPolicy, retry: RetryPolicy) =
 
     // Always yields events forward, regardless of direction
-    member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip): Async<StreamToken * 'event[]> = async {
+    member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip, ?forceExcludeTip): Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode,isOrigin))
-        let walk log gateway = Query.scan log (gateway,stream) (Option.isNone tip) batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
+        let includeTip = Option.isNone tip && forceExcludeTip <> Some true
+        let walk log gateway = Query.scan log (gateway,stream) includeTip batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
             match fallback with
             | None -> None
@@ -1040,7 +1044,7 @@ type StoreClient(container : Container, fallback : Container option, batching : 
         return Token.create stream pos, events }
 
     member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), includeUnfolds): Async<StreamToken * 'event[]> =
-        if not includeUnfolds then con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin))
+        if not includeUnfolds then con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), forceExcludeTip=true)
         else async {
             match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) (maybePos, None) with
             | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty

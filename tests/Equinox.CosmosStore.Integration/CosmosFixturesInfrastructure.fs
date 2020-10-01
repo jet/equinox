@@ -124,6 +124,7 @@ type TestsWithLogCapture(testOutputHelper) =
         let capture = LogCaptureBuffer()
         let logger =
             Serilog.LoggerConfiguration()
+                .MinimumLevel.Debug()
                 .WriteTo.Seq("http://localhost:5341")
                 .WriteTo.Sink(testOutput)
                 .WriteTo.Sink(capture)
