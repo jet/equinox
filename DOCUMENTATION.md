@@ -414,9 +414,9 @@ module Cosmos =
     let create (context, cache) =
         let cacheStrategy =
             Equinox.CosmosStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-        let resolver =
-            Equinox.CosmCosmosStoreos.Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create resolver.Resolve
+        let category =
+            Equinox.CosmosStore.CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        create category.Resolve
 ```
 
 ### `MemoryStore` Storage Binding Module
@@ -1742,7 +1742,7 @@ based on the events presented.
 
 This covers what the most complete possible implementation of the JS Stored
 Procedure (see
-[source](https://github.com/jet/equinox/blob/tip-isa-batch/src/Equinox.CosmosStore/Cosmos.fs#L302))
+[source](https://github.com/jet/equinox/blob/tip-isa-batch/src/Equinox.Cosmos/Cosmos.fs#L302))
 does when presented with a batch to be written. (NB The present implementation
 is slightly simplified; see [source](src/Equinox.CosmosStore/CosmosStore.fs#L404).
 

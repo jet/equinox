@@ -742,7 +742,7 @@ type Connector
         match strategy with
         | ConnectionStrategy.ClusterSingle nodePreference ->
             let! conn = __.Connect(name, discovery, nodePreference)
-            return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
+            return Connection(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
         | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
             let! masterInParallel = Async.StartChild (__.Connect(name + "-TwinW", discovery, NodePreference.Master))
             let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)

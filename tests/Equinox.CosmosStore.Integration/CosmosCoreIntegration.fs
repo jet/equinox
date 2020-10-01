@@ -1,4 +1,4 @@
-﻿module Equinox.CosmosStore.Integration.CoreIntegration
+﻿module Equinox.CosmosStore.Integration.CosmosCoreIntegration
 
 open Equinox.CosmosStore.Core
 open Equinox.CosmosStore.Integration.Infrastructure
@@ -29,8 +29,8 @@ type Tests(testOutputHelper) =
     let (|TestStream|) (name: Guid) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
-    let mkContextWithItemLimit log defaultBatchSize =
-        createPrimaryEventsContext log defaultBatchSize
+    let mkContextWithItemLimit log batchSize =
+        createPrimaryEventsContext log batchSize
     let mkContext log = mkContextWithItemLimit log None
 
     let verifyRequestChargesMax rus =
@@ -133,7 +133,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 47 // 46.52 // 47.02 // WAS 20
+        verifyRequestChargesMax 50 // 49.74 // WAS 20
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -148,7 +148,7 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 442 // 441.88 // 463.01 observed
+        verifyRequestChargesMax 448 // 447.5 // 463.01 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -198,7 +198,6 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Conflict] = capture.ExternalCalls @>
 #endif
         verifyRequestChargesMax 6 // 5.63 // 6.64
-        capture.Clear()
     }
 
     (* Forward *)
