@@ -813,9 +813,9 @@ module internal Tip =
                 | Some mr when i+1 >= mr -> batchLog.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
                 | _ -> ()
 
-                match! e.MoveNext() |> Stopwatch.Time with
-                | _t, None -> ok <- false
-                | t, Some (events, _pos, rus) ->
+                match! e.MoveNext() with
+                | None -> ok <- false // rest of block does not happen, while exits
+                | Some (events, _pos, rus) ->
 
                 ru <- ru + rus
                 allEvents.AddRange(events)
