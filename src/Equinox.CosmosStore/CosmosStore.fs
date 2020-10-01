@@ -1037,7 +1037,7 @@ type StoreClient(container : Container, fallback : Container option, batching : 
         let walkFallback =
             match fallback with
             | None -> None
-            | Some f -> walk (log |> Log.prop "Secondary" true) f |> Some
+            | Some f -> walk (log |> Log.prop "secondary" true) f |> Some
 
         let log = log |> Log.prop "stream" stream
         let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log container) walkFallback
