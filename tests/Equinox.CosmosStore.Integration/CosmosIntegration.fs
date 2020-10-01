@@ -85,7 +85,7 @@ type Tests(testOutputHelper) =
         let transactions = 6
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
-            // Extra roundtrip required after maxItemsPerRequest isexceeded
+            // Extra roundtrip required after maxItemsPerRequest is exceeded
             let expectedBatchesOfItems = max 1 ((i-1) / maxItemsPerRequest)
             test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
             verifyRequestChargesMax 61 // 60.61 [4.51; 56.1] // 5.5 observed for read

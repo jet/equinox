@@ -1,4 +1,4 @@
-﻿module Equinox.CosmosStore.Integration.CoreIntegration
+﻿module Equinox.CosmosStore.Integration.CosmosCoreIntegration
 
 open Equinox.CosmosStore.Core
 open Equinox.CosmosStore.Integration.Infrastructure
