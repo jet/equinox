@@ -681,7 +681,7 @@ module internal Tip =
                 let notTip = sprintf "c.id!=\"%s\"" Tip.WellKnownDocumentId // until tip-isa-batch, we have a guarantee there are no events in Tip
                 let conditions = Seq.map fst args
                 String.Join(" AND ", if includeTip then conditions else Seq.append conditions (Seq.singleton notTip))
-            let queryString = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE %s ORDER BY c.i %s" whereClause order
+            let queryString = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c WHERE %s ORDER BY c.i %s" (if whereClause.Length = 0 then "1=1" else whereClause) order
             let prams = Seq.map snd args
             (QueryDefinition queryString, prams) ||> Seq.fold (fun q wp -> q |> wp)
         let qro = QueryRequestOptions(PartitionKey=Nullable (PartitionKey stream), MaxItemCount=Nullable maxItems)
