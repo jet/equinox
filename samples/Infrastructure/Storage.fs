@@ -42,6 +42,9 @@ module Cosmos =
         | [<AltCommandLine "-s">]       Connection of string
         | [<AltCommandLine "-d">]       Database of string
         | [<AltCommandLine "-c">]       Container of string
+        | [<AltCommandLine "-s2">]      Connection2 of string
+        | [<AltCommandLine "-d2">]      Database2 of string
+        | [<AltCommandLine "-c2">]      Container2 of string
         interface IArgParserTemplate with
             member a.Usage =
                 match a with
@@ -53,11 +56,20 @@ module Cosmos =
                 | Connection _ ->       "specify a connection string for a Cosmos account. (optional if environment variable EQUINOX_COSMOS_CONNECTION specified)"
                 | Database _ ->         "specify a database name for store. (optional if environment variable EQUINOX_COSMOS_DATABASE specified)"
                 | Container _ ->        "specify a container name for store. (optional if environment variable EQUINOX_COSMOS_CONTAINER specified)"
+                | Connection2 _ ->      "specify a connection string for Secondary Cosmos account. Default: use same as Primary Connection"
+                | Database2 _ ->        "specify a database name for Secondary store. Default: use same as Primary Database"
+                | Container2 _ ->       "specify a container name for store. Default: use same as Primary Container"
     type Info(args : ParseResults<Arguments>) =
         member __.Mode =                args.GetResult(ConnectionMode,Microsoft.Azure.Cosmos.ConnectionMode.Direct)
         member __.Connection =          args.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
         member __.Database =            args.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
         member __.Container =           args.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
+        member private __.Connection2 = args.TryGetResult Connection2
+        member private __.Database2 =   args.TryGetResult Database2  |> Option.defaultWith (fun () -> __.Database)
+        member private __.Container2 =  args.TryGetResult Container2 |> Option.defaultWith (fun () -> __.Container)
+        member __.Secondary =           if args.Contains Connection2 || args.Contains Database2 || args.Contains Container2
+                                        then Some (__.Connection2, __.Database2, __.Container2)
+                                        else None
 
         member __.Timeout =             args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member __.Retries =             args.GetResult(Retries,1)
@@ -70,17 +82,28 @@ module Cosmos =
     open Equinox.CosmosStore
     open Serilog
 
+    let logContainer (log: ILogger) name (mode, endpoint, db, container) =
+        log.Information("CosmosDb {name:l} {mode} {connection} Database {database} Container {container}", name, mode, endpoint, db, container)
+    let connect (a : Info) conn =
+        let discovery = Discovery.ConnectionString conn
+        CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(discovery)
     let conn (log: ILogger) (a : Info) =
-        let discovery = Discovery.ConnectionString a.Connection
-        let client = CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(discovery)
-        log.Information("CosmosDb {mode} {connection} Database {database} Container {container}",
-            a.Mode, client.Endpoint, a.Database, a.Container)
-        log.Information("CosmosDb timeout {timeout}s; Throttling retries {retries}, max wait {maxRetryWaitTime}s",
-            (let t = a.Timeout in t.TotalSeconds), a.Retries, let x = a.MaxRetryWaitTime in x.TotalSeconds)
-        client, a.Database, a.Container
+        let (primaryClient, primaryDatabase, primaryContainer) as primary = connect a a.Connection, a.Database, a.Container
+        logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)
+        let secondary =
+            match a.Secondary with
+            | Some (Some c2, db, container) -> Some (connect a c2, db, container)
+            | Some (None, db, container) -> Some (primaryClient, db, container)
+            | None -> None
+        secondary |> Option.iter (fun (client, db, container) -> logContainer log "Secondary" (a.Mode, client.Endpoint, db, container))
+        primary, secondary
     let config (log: ILogger) (cache, unfolds, batchSize) info =
-        let client, databaseId, containerId = conn log info
-        let conn = CosmosStoreConnection(client, databaseId, containerId)
+        let conn =
+            match conn log info with
+            | (client, databaseId, containerId), None ->
+                CosmosStoreConnection(client, databaseId, containerId)
+            | (client, databaseId, containerId), Some (client2, db2, cont2) ->
+                CosmosStoreConnection(client, databaseId, containerId, client2=client2, databaseId2=db2, containerId2=cont2)
         let ctx = CosmosStoreContext(conn, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Cosmos (ctx, cacheStrategy, unfolds)

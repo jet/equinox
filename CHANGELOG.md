@@ -17,7 +17,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Cosmos`: Reorganize Sync log message text, merge with Sync Conflict message [#241](https://github.com/jet/equinox/pull/241)
 - `Cosmos`: Converge Stored Procedure Impl with `tip-isa-batch` impl from V3 (minor Request Charges cost reduction) [#242](https://github.com/jet/equinox/pull/242)
 
-- Fork `Equinox.Cosmos` to `Equinox.CosmosStore`
+- Fork `Equinox.Cosmos` to `Equinox.CosmosStore`:
     - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
     - Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
     - Rename `Equinox.Cosmos` DLL and namespace to `Equinox.CosmosStore` [#243](https://github.com/jet/equinox/pull/243)
@@ -31,6 +31,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
         - Rename `Equinox.Cosmos.Resolver` -> `Equinox.CosmosStore.CosmosStoreCategory`
         - Rename `Equinox.Cosmos.Connector` -> `Equinox.CosmosStore.CosmosStoreClientFactory`
     - Reorganized `QueryRetryPolicy` to handle `IAsyncEnumerable` coming in Cosmos SDK V4 [#246](https://github.com/jet/equinox/pull/246) :pray: [@ylibrach](https://github.com/ylibrach)
+    - Added Secondary store fallback for Event loading, enabling Streams to be hot-migrated (archived to a secondary/clone, then pruned from the primary/active) between Primary and Secondary stores [#247](https://github.com/jet/equinox/pull/247)
 - target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1` with `SystemTextJson`
 - Retarget Todobackend to `aspnetcore` v `3.1`

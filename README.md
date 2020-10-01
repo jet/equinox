@@ -303,7 +303,6 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
     dotnet run -- -g projector2 cosmos
     ```
-
 7. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
 
     ```powershell	
@@ -341,8 +340,51 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -- -t topic0 -g consumer1
     ```
 
+9. Generate an Archive container; Generate a ChangeFeedProcessor App to mirror desired streams from the Primary to it
+
+   ```powershell
+   # once
+   eqx init -ru 400 cosmos -c equinox-test-archive
+   
+   md archiver | cd
+   
+   # Generate a template app that'll sync from the Primary (i.e. equinox-test)
+   # to the Secondary (i.e. equinox-test-archive)
+   dotnet new proArchiver
+   
+   # TODO edit Handler.fs to add criteria for what to Archive
+   # - Normally you won't want to Archive stuff like e.g. `Sync-` checkppoint streams
+   # - Any other ephemeral application streams can be excluded too
+   
+   # -w 4 # constrain parallel writers in order to leave headroom for readers; Secondary container should be cheaper to run
+   # -S -t 40 # emit log messages for Sync calls costing > 40 RU
+   # -md 20 (or lower) is recommended to be nice to the writers - the archiver can afford to lag
+   dotnet run -c Release -- -w 4 -S -t 40 -g ArchiverConsumer `
+     cosmos -md 20 -c equinox-test -a equinox-test-aux `
+     cosmos -c equinox-test-archive 
+   ``` 
+
+10. Use a ChangeFeedProcessor driven from the Archive Container to Prune the Primary
+
+   ```powershell
+   md pruner | cd
+   
+   # Generate a template app that'll read from the Archive (i.e. equinox-test-archive)
+   # and prune expired events from the Primary (i.e. equinox-test)
+   dotnet new proPruner
+   
+   # TODO edit Handler.fs to add criteria for what to Prune
+   # - While its possible to prune the minute it's archived, normally you'll want to allow a time lag before doing so
+   
+   # -w 2 # constrain parallel pruners in order to not consume RUs excessively on Primary
+   # -md 10 (or lower) is recommended to contrain consumption on the Secondary - Pruners lagging is rarely critical
+   dotnet run -c Release -- -w 2 -g PrunerConsumer `
+     cosmos -md 10 -c equinox-test-archive -a equinox-test-aux `
+     cosmos -c equinox-test
+   ``` 
+
 <a name="sqlstreamstore"></a>
-9. Use [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore)
+11. Use [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore)
    
   The SqlStreamStore consists of:
 
@@ -461,8 +503,11 @@ For EventStore, the tests assume a running local instance configured as follows 
 
 ### Provisioning CosmosDb (when not using -sc)
 
-    dotnet run -f netcoreapp3.1 -p tools/Equinox.Tool -- init -ru 400 `
+    dotnet run -p tools/Equinox.Tool -- init -ru 400 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
+    # Same for a Secondary container for integration testing of the fallback mechanism
+    dotnet run -p tools/Equinox.Tool -- init -ru 400 `
+        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER2
 
 ### Provisioning SqlStreamStore
 
@@ -500,7 +545,8 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
 
   - [Provision](#provisioning):
     - Start Local EventStore running in simulated cluster mode
-    - Set Environment variables X 3 for a CosmosDb database and container (you might need to `eqx init`)
+    - Set environment variables x 4 for a CosmosDB database and container (you might need to `eqx init`)
+    - Add a `EQUINOX_COSMOS_CONTAINER2` environment variable referencing a separate (`eqx init` initialized) CosmosDB Container that will be used to store fallback events in the [Fallback mechanism's tests](https://github.com/jet/equinox/pull/247)
     - `docker-compose up` to start 3 servers for the `SqlStreamStore.*.Integration` test suites
         - [NB `SqlStreamStore.MsSql` has not been tested yet](https://github.com/jet/equinox/issues/175) :see_no_evil: **
   - Run `./build.ps1` in PowerShell (or PowerShell Core on MacOS via `brew install cask pwsh`)

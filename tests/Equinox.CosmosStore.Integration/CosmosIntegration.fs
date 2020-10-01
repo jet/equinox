@@ -208,6 +208,35 @@ type Tests(testOutputHelper) =
         test <@ value = result @>
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
+
+        (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
+
+        //let ctx = createPrimaryEventsContext log None
+
+        // Needs to share the same client for the session key to be threaded through
+        // If we run on an independent context, we won't see (and hence prune) the full set of events
+        // TODO: explain why this sleep is still needed though!
+        do! Async.Sleep 1000
+        let ctx = Core.EventsContext(context, log)
+        let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
+
+        // Prune all the events
+        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 14L
+        test <@ deleted = 14 && deferred = 0 && trimmedPos = 14L @>
+
+        // Prove they're gone
+        capture.Clear()
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
+
+        // But we can still read (there's no cache so we'll definitely be reading)
+        capture.Clear()
+        let! _ = service.Read id
+        test <@ value = result @>
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+        verifyRequestChargesMax 1
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -332,6 +361,29 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! _ = service2.Read cartId
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+
+        (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
+
+        // TODO: explain why this sleep is still needed though!
+        do! Async.Sleep 1000
+        let ctx = Core.EventsContext(context, log)
+        let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
+        // Prune all the events
+        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 12L
+        test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
+
+        // Prove they're gone
+        capture.Clear()
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
+
+        // But we can still read (there's no cache so we'll definitely be reading)
+        capture.Clear()
+        let! _ = service2.Read cartId
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+        verifyRequestChargesMax 1
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -370,4 +422,27 @@ type Tests(testOutputHelper) =
         capture.Clear()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne cartContext cartId skuId service1 1
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
+
+        (* Verify pruning does not affect snapshots, and does not touch the Tip *)
+
+        // TODO: explain why this sleep is still needed though!
+        do! Async.Sleep 1000
+        let ctx = Core.EventsContext(context, log)
+        let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
+        // Prune all the events
+        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 13L
+        test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
+
+        // Prove they're gone
+        capture.Clear()
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
+
+        // But we can still read (service2 shares the cache so is aware of the last writes, and pruning does not invalidate the Tip)
+        capture.Clear()
+        let! _ = service2.Read cartId
+        test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
+        verifyRequestChargesMax 1
     }
