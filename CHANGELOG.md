@@ -9,6 +9,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.3.0-rc2"></a>
+## [2.3.0-rc2] - 2020-10-02
+
+### Added
 
 - `Cosmos`: Support Serverless Account Mode in `eqx init`; default RU/s to 400 if unspecified [#244](https://github.com/jet/equinox/pull/244) :pray: [@OmnipotentOwl](https://github.com/OmnipotentOwl)
 - `Cosmos`: Added ability to turn off compression of Unfolds [#249](https://github.com/jet/equinox/pull/249) :pray: [@ylibrach](https://github.com/ylibrach)
@@ -17,20 +25,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - `Cosmos`: Reorganize Sync log message text, merge with Sync Conflict message [#241](https://github.com/jet/equinox/pull/241)
 - `Cosmos`: Converge Stored Procedure Impl with `tip-isa-batch` impl from V3 (minor Request Charges cost reduction) [#242](https://github.com/jet/equinox/pull/242)
-
-### Removed
-### Fixed
-
-<a name="2.3.0-rc1"></a>
-## [2.3.0-rc1] - 2020-08-31
-
-### Added
-
-- `Cosmos`: `Prune` API to delete events from the head of a stream [#233](https://github.com/jet/equinox/pull/233)
-
-### Changed
-
-- `Cosmos`: Tweaked log messages
 
 <a name="2.3.0-rc1"></a>
 ## [2.3.0-rc1] - 2020-08-31
@@ -432,7 +426,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.3.0-rc1...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.3.0-rc2...HEAD
+[2.3.0-rc2]: https://github.com/jet/equinox/compare/2.3.0-rc1...2.3.0-rc2
 [2.3.0-rc1]: https://github.com/jet/equinox/compare/2.2.0...2.3.0-rc1
 [2.2.0]: https://github.com/jet/equinox/compare/2.1.0...2.2.0
 [2.1.0]: https://github.com/jet/equinox/compare/2.0.2...2.1.0
