@@ -110,8 +110,7 @@ and Base64MaybeDeflateUtf8JsonConverter() =
         use output = new MemoryStream()
         decompressor.CopyTo(output)
         output.ToArray()
-
-    static member Compress (input : byte[]) : byte[] =
+    static member Compress(input : byte[]) : byte[] =
         if input = null || input.Length = 0 then null else
 
         use output = new System.IO.MemoryStream()
@@ -120,7 +119,6 @@ and Base64MaybeDeflateUtf8JsonConverter() =
         compressor.Close()
         String.Concat("\"", System.Convert.ToBase64String(output.ToArray()), "\"")
         |> System.Text.Encoding.UTF8.GetBytes
-
     override __.CanConvert(objectType) =
         typeof<byte[]>.Equals(objectType)
     override __.ReadJson(reader, _, _, serializer) =
@@ -131,7 +129,7 @@ and Base64MaybeDeflateUtf8JsonConverter() =
     override __.WriteJson(writer, value, serializer) =
         let array = value :?> byte[]
         if array = null || array.Length = 0 then serializer.Serialize(writer, null)
-        else array |> System.Text.Encoding.UTF8.GetString |> writer.WriteRawValue
+        else System.Text.Encoding.UTF8.GetString array |> writer.WriteRawValue
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
@@ -1199,8 +1197,8 @@ type AccessStrategy<'event,'state> =
 
 type Resolver<'event, 'state, 'context>
     (   context : Context, codec, fold, initial, caching, access,
-        /// Compress Unfolds in Tip. Default: true.
-        /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
+        /// Compress Unfolds in Tip. Default: <c>true<c>.
+        /// NOTE when set to <c>false</c>, requires Equinox.Cosmos Version >= 2.3.0 to be able to read
         ?compressUnfolds) =
     let compressUnfolds = defaultArg compressUnfolds true
     let readCacheOption =
