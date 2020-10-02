@@ -98,8 +98,8 @@ type Unfold =
         m: byte[] } // optional
 
 /// Transparently encodes/decodes fields that can optionally by compressed by
-/// 1. Writing outgoing JSON string values (which may be JSON string, JSON object, or null) from a UTF-8 JSON array representation as per VerbatimUtf8Converter
-/// 2a. Decoding incoming JSON string values by Decompressing it to a UTF-8 JSON array representation
+/// 1. Writing outgoing values (which may be JSON string, JSON object, or null) from a UTF-8 JSON array representation as per VerbatimUtf8Converter
+/// 2a. Decoding incoming JSON String values by Decompressing it to a UTF-8 JSON array representation
 /// 2b. Decoding incoming JSON non-string values by reading the raw value directly into a UTF-8 JSON array as per VerbatimUtf8Converter
 and Base64MaybeDeflateUtf8JsonConverter() =
     inherit JsonConverter()
@@ -1040,7 +1040,7 @@ type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IEven
         match res with
         | LoadFromTokenResult.Unchanged -> return current
         | LoadFromTokenResult.Found (token', events') -> return token', fold state events' }
-    member __.Sync(Token.Unpack (container,stream,pos), state as current, events, mapUnfolds, fold, isOrigin, log, context): Async<SyncResult<'state>> = async {
+    member __.Sync(Token.Unpack (container,stream,pos), state as current, events, mapUnfolds, fold, isOrigin, log, context, compressUnfolds): Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
         let encode e = codec.Encode(context,e)
         let exp,events,eventsEncoded,projectionsEncoded =
@@ -1051,7 +1051,8 @@ type private Category<'event, 'state, 'context>(gateway : Gateway, codec : IEven
                 let events', unfolds = transmute events state'
                 Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
-        let projections = Sync.mkUnfold Base64MaybeDeflateUtf8JsonConverter.Compress baseIndex projectionsEncoded
+        let compressor = if compressUnfolds then Base64MaybeDeflateUtf8JsonConverter.Compress else id
+        let projections = Sync.mkUnfold compressor baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
         let! res = gateway.Sync log (container,stream) (exp,batch)
         match res with
@@ -1095,6 +1096,7 @@ type private Folder<'event, 'state, 'context>
     (   category: Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state,
         isOrigin: 'event -> bool,
         mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
+        compressUnfolds,
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     let batched log containerStream = category.Load inspectUnfolds containerStream fold initial isOrigin log
@@ -1109,8 +1111,7 @@ type private Folder<'event, 'state, 'context>
                 | Some tokenAndState -> return! category.LoadFromToken tokenAndState fold isOrigin log }
         member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context)
             : Async<SyncResult<'state>> = async {
-            let! res = category.Sync((streamToken,state), events, mapUnfolds, fold, isOrigin, log, context)
-            match res with
+            match! category.Sync((streamToken, state), events, mapUnfolds, fold, isOrigin, log, context, compressUnfolds) with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
@@ -1196,7 +1197,12 @@ type AccessStrategy<'event,'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
-type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial, caching, access) =
+type Resolver<'event, 'state, 'context>
+    (   context : Context, codec, fold, initial, caching, access,
+        /// Compress Unfolds in Tip. Default: true.
+        /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
+        ?compressUnfolds) =
+    let compressUnfolds = defaultArg compressUnfolds true
     let readCacheOption =
         match caching with
         | CachingStrategy.NoCaching -> None
@@ -1210,7 +1216,7 @@ type Resolver<'event, 'state, 'context>(context : Context, codec, fold, initial,
         | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
         | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         Choice3Of3 transmute
     let cosmosCat = Category<'event, 'state, 'context>(context.Gateway, codec)
-    let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
+    let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, compressUnfolds, ?readCache = readCacheOption)
     let category : ICategory<_, _, Container*string, 'context> =
         match caching with
         | CachingStrategy.NoCaching -> folder :> _
