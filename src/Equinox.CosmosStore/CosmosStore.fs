@@ -99,8 +99,8 @@ type Unfold =
         m: byte[] } // optional
 
 /// Transparently encodes/decodes fields that can optionally by compressed by
-/// 1. Writing outgoing JSON string values (which may be JSON string, JSON object, or null) from a UTF-8 JSON array representation as per VerbatimUtf8Converter
-/// 2a. Decoding incoming JSON string values by Decompressing it to a UTF-8 JSON array representation
+/// 1. Writing outgoing values (which may be JSON string, JSON object, or null) from a UTF-8 JSON array representation as per VerbatimUtf8Converter
+/// 2a. Decoding incoming JSON String values by Decompressing it to a UTF-8 JSON array representation
 /// 2b. Decoding incoming JSON non-string values by reading the raw value directly into a UTF-8 JSON array as per VerbatimUtf8Converter
 and Base64MaybeDeflateUtf8JsonConverter() =
     inherit JsonConverter()
@@ -1094,7 +1094,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         match! store.Reload(log, (stream, pos), (codec.TryDecode,isOrigin), ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return streamToken, state
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    member cat.Sync(log, token, state, events, mapUnfolds, fold, isOrigin, context): Async<SyncResult<'state>> = async {
+    member cat.Sync(log, token, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds): Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
         let encode e = codec.Encode(context, e)
         let (Token.Unpack (stream,pos)) = token
@@ -1106,7 +1106,8 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
                 let events', unfolds = transmute events state'
                 SyncExp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
-        let projections = Sync.mkUnfold Base64MaybeDeflateUtf8JsonConverter.Compress baseIndex projectionsEncoded
+        let compressor = if compressUnfolds then Base64MaybeDeflateUtf8JsonConverter.Compress else id
+        let projections = Sync.mkUnfold compressor baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
         match! store.Sync(log, stream, exp, batch) with
         | InternalSyncResult.Conflict (pos', tipEvents) -> return SyncResult.Conflict (cat.Reload(log, token, state, fold, isOrigin, (pos', tipEvents)))
@@ -1148,6 +1149,7 @@ type internal Folder<'event, 'state, 'context>
     (   category: Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state,
         isOrigin: 'event -> bool,
         mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
+        compressUnfolds,
         ?readCache) =
     let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
     let batched log stream = category.Load(log, stream, initial, inspectUnfolds, fold, isOrigin)
@@ -1162,7 +1164,7 @@ type internal Folder<'event, 'state, 'context>
                 | Some (token, state) -> return! category.Reload(log, token, state, fold, isOrigin) }
         member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context)
             : Async<SyncResult<'state>> = async {
-            match! category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context) with
+            match! category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
@@ -1283,7 +1285,12 @@ type AccessStrategy<'event,'state> =
     /// </remarks>
     | Custom of isOrigin: ('event -> bool) * transmute: ('event list -> 'state -> 'event list*'event list)
 
-type CosmosStoreCategory<'event, 'state, 'context>(context : CosmosStoreContext, codec, fold, initial, caching, access) =
+type CosmosStoreCategory<'event, 'state, 'context>
+    (    context : CosmosStoreContext, codec, fold, initial, caching, access,
+         /// Compress Unfolds in Tip. Default: true.
+         /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
+         ?compressUnfolds) =
+    let compressUnfolds = defaultArg compressUnfolds true
     let readCacheOption =
         match caching with
         | CachingStrategy.NoCaching -> None
@@ -1300,7 +1307,7 @@ type CosmosStoreCategory<'event, 'state, 'context>(context : CosmosStoreContext,
     let resolveCategory (categoryName, container) =
         let createCategory _name =
             let cosmosCat = Category<'event, 'state, 'context>(container, codec)
-            let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, ?readCache = readCacheOption)
+            let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, compressUnfolds, ?readCache = readCacheOption)
             match caching with
             | CachingStrategy.NoCaching -> folder :> ICategory<_, _, string, 'context>
             | CachingStrategy.SlidingWindow(cache, window) -> Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
