@@ -1011,16 +1011,11 @@ module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of StreamToken * 'event[]
 
-/// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type RetryPolicy([<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    member __.TipRetryPolicy = readRetryPolicy
-    member __.WriteRetryPolicy = writeRetryPolicy
-
-/// Defines the policies in force regarding how to a) split up calls b) limit the number of events per page
-type BatchingPolicy
-    (   // Max items to request in query response. Defaults to 10.
+/// Defines the policies in force regarding how to split up calls when loading events via queries
+type QueryOptions
+    (   /// Max Batches to request in query response. Defaults: 10.
         [<O; D(null)>]?defaultMaxItems : int,
-        // Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default to using `defaultMaxItems`
+        /// Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default: use `defaultMaxItems` value.
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
         /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
         [<O; D(null)>]?maxRequests) =
@@ -1030,13 +1025,31 @@ type BatchingPolicy
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
 
-type StoreClient(container : Container, fallback : Container option, batching : BatchingPolicy, retry: RetryPolicy) =
+/// Defines the policies in force regarding a) retrying read and write operations for the Tip b) accumulation/retention of Events in Tip
+type TipOptions
+    (   /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0.
+        [<O; D(null)>]?maxEvents,
+        /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
+        [<O; D(null)>]?maxJsonLength,
+        [<O; D(null)>]?readRetryPolicy,
+        [<O; D(null)>]?writeRetryPolicy) =
+    let maxEvents, maxJsonLength = defaultArg maxEvents 0, defaultArg maxJsonLength 30_000
+    /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
+    member __.MaxEvents = maxEvents
+    /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
+    member __.MaxJsonLength = maxJsonLength
+    member __.ReadRetryPolicy = readRetryPolicy
+    member __.WriteRetryPolicy = writeRetryPolicy
+
+type StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
+
+    let loadTip log stream pos = Tip.tryLoad log tip.ReadRetryPolicy (container, stream) (pos, None)
 
     // Always yields events forward, regardless of direction
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip, ?forceExcludeTip): Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode,isOrigin))
         let includeTip = Option.isNone tip && forceExcludeTip <> Some true
-        let walk log gateway = Query.scan log (gateway,stream) includeTip batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
+        let walk log gateway = Query.scan log (gateway,stream) includeTip query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
             match fallback with
             | None -> None
@@ -1049,16 +1062,16 @@ type StoreClient(container : Container, fallback : Container option, batching : 
     member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), includeUnfolds): Async<StreamToken * 'event[]> =
         if not includeUnfolds then con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), forceExcludeTip = true)
         else async {
-            match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) (maybePos, None) with
+            match! loadTip log stream maybePos with
             | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
             | Tip.Result.NotModified -> return invalidOp "Not applicable"
             | Tip.Result.Found (pos, xs) -> return! con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), tip=(pos, xs)) }
 
-    member __.ReadLazy(log, batching: BatchingPolicy, stream, direction, (tryDecode,isOrigin), ?minIndex, ?maxIndex) : AsyncSeq<'event[]> =
+    member __.ReadLazy(log, batching: QueryOptions, stream, direction, (tryDecode,isOrigin), ?minIndex, ?maxIndex) : AsyncSeq<'event[]> =
         Query.walkLazy log (container,stream) batching.MaxItems batching.MaxRequests (tryDecode,isOrigin) (direction, minIndex, maxIndex)
 
     member __.GetPosition(log, stream, ?pos): Async<StreamToken> = async {
-        match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) (pos, None) with
+        match! loadTip log stream pos with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
         | Tip.Result.NotModified -> return Token.create stream pos.Value
         | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create stream pos }
@@ -1070,21 +1083,23 @@ type StoreClient(container : Container, fallback : Container option, batching : 
         match preview with
         | Some (pos, xs) -> query (pos, xs)
         | None -> async {
-            match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) (Some pos, None) with
+            match! loadTip log stream (Some pos) with
             | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty, Array.empty)
             | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
             | Tip.Result.Found (pos,xs) -> return! query (pos, xs) }
 
     member internal __.Sync(log, stream, exp, batch: Tip): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
-        match! Sync.batch log retry.WriteRetryPolicy (container,stream) (exp,batch) with
+        match! Sync.batch log tip.WriteRetryPolicy (container,stream) (exp,batch) with
         | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (pos',events)
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
+
     member __.Prune(log, stream, beforeIndex) =
-        Delete.pruneBefore log (container,stream) batching.MaxItems beforeIndex
+        Delete.pruneBefore log (container,stream) query.MaxItems beforeIndex
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event,byte[],'context>) =
+
     member __.Load(log, stream, initial, includeUnfolds, fold, isOrigin): Async<StreamToken * 'state> = async {
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode,isOrigin), includeUnfolds)
         return token, fold initial events }
@@ -1113,58 +1128,38 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 module internal Caching =
-    /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, string,'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
-        let intercept streamName tokenAndState = async {
-            let! _ = tee streamName tokenAndState
-            return tokenAndState }
-        let loadAndIntercept load streamName = async {
-            let! tokenAndState = load
-            return! intercept streamName tokenAndState }
-        interface ICategory<'event, 'state, string, 'context> with
-            member __.Load(log, streamName, opt) : Async<StreamToken * 'state> =
-                loadAndIntercept (inner.Load(log, streamName, opt)) streamName
-            member __.TrySync(log : ILogger, (Token.Unpack (stream,_) as streamToken), state, events : 'event list, context)
-                : Async<SyncResult<'state>> = async {
-                match! inner.TrySync(log, streamToken, state, events, context) with
-                | SyncResult.Conflict resync -> return SyncResult.Conflict(loadAndIntercept resync stream)
-                | SyncResult.Written(token', state') ->
-                    let! intercepted = intercept stream (token', state')
-                    return SyncResult.Written intercepted }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache : ICache)
             (prefix : string)
-            (slidingExpiration : TimeSpan)
-            (category : ICategory<'event, 'state, string, 'context>)
-            : ICategory<'event, 'state, string, 'context> =
+            (slidingExpiration : TimeSpan) =
         let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
-        let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
-        CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
+        fun streamName value -> cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
 
-type internal Folder<'event, 'state, 'context>
-    (   category: Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state,
-        isOrigin: 'event -> bool,
-        mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
-        compressUnfolds,
-        ?readCache) =
-    let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
-    let batched log stream = category.Load(log, stream, initial, inspectUnfolds, fold, isOrigin)
+type internal CachingCategory<'event, 'state, 'context>
+    (   category: Category<'event, 'state, 'context>,
+        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        tryReadCache, updateCache,
+        loadUnfolds, compressUnfolds, mapUnfolds: Choice<unit, ('event list -> 'state -> 'event seq), ('event list -> 'state -> 'event list * 'event list)>) =
+    let cache streamName inner = async {
+        let! ts = inner
+        do! updateCache streamName ts
+        return ts }
     interface ICategory<'event, 'state, string, 'context> with
-        member __.Load(log, streamName, opt): Async<StreamToken * 'state> =
-            match readCache with
-            | None -> batched log streamName
-            | Some (cache : ICache, prefix : string) -> async {
-                match! cache.TryGet(prefix + streamName) with
-                | None -> return! batched log streamName
-                | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState
-                | Some (token, state) -> return! category.Reload(log, token, state, fold, isOrigin) }
-        member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context)
+        member __.Load(log, streamName, opt): Async<StreamToken * 'state> = async {
+            match! tryReadCache streamName with
+            | None -> return! category.Load(log, streamName, initial, loadUnfolds, fold, isOrigin) |> cache streamName
+            | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState // read already updated TTL, no need to write
+            | Some (token, state) -> return! category.Reload(log, token, state, fold, isOrigin) |> cache streamName }
+        member __.TrySync(log : ILogger, (Token.Unpack (streamName, _) as streamToken), state, events : 'event list, context)
             : Async<SyncResult<'state>> = async {
             match! category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) with
-            | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
-            | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
+            | SyncResult.Conflict resync ->
+                return SyncResult.Conflict (cache streamName resync)
+            | SyncResult.Written (token',state') ->
+                let! res = cache streamName (async { return (token',state') })
+                return SyncResult.Written res }
 
 namespace Equinox.CosmosStore
 
@@ -1225,16 +1220,22 @@ type CosmosStoreConnection
         g, streamName
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(connection : CosmosStoreConnection, batchingPolicy, retryPolicy) =
-    new(connection : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
-        let retry = RetryPolicy(?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
-        let batching = BatchingPolicy(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
-        CosmosStoreContext(connection, batching, retry)
-    member __.Batching = batchingPolicy
-    member __.Retries = retryPolicy
+type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipOptions) =
+    let tipOptions = tipOptions |> Option.defaultWith TipOptions
+    let queryOptions = queryOptions |> Option.defaultWith QueryOptions
+    new(connection : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?tipOptions) =
+        let queryOptions = QueryOptions(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
+        CosmosStoreContext(connection, queryOptions, ?tipOptions = tipOptions)
+    new(connection : CosmosStoreConnection, ?queryMaxItems,
+        /// Maximum serialized size (length of JSON.stringify representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
+        ?tipMaxJson,
+        /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0.
+        ?tipMaxEvents) =
+        let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJson)
+        CosmosStoreContext(connection, tipOptions = tipOptions, ?defaultMaxItems = queryMaxItems)
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
         let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
-        let store = StoreClient(cg.Container, cg.Fallback, batchingPolicy, retryPolicy)
+        let store = StoreClient(cg.Container, cg.Fallback, queryOptions, tipOptions)
         store, streamId, cg.InitializationGate
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
@@ -1289,26 +1290,23 @@ type CosmosStoreCategory<'event, 'state, 'context>
         /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
         ?compressUnfolds) =
     let compressUnfolds = defaultArg compressUnfolds true
-    let readCacheOption =
-        match caching with
-        | CachingStrategy.NoCaching -> None
-        | CachingStrategy.SlidingWindow(cache, _) -> Some(cache, null)
-    let isOrigin, mapUnfolds =
-        match access with
-        | AccessStrategy.Unoptimized ->                      (fun _ -> false), Choice1Of3 ()
-        | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
-        | AccessStrategy.Snapshot (isOrigin,toSnapshot) ->   isOrigin,         Choice2Of3 (fun _ state  -> toSnapshot state |> Seq.singleton)
-        | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state  -> unfold state)
-        | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
-        | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         Choice3Of3 transmute
     let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<_, _, string, 'context>>()
     let resolveCategory (categoryName, container) =
-        let createCategory _name =
+        let createCategory _name : ICategory<_, _, string, 'context> =
+            let tryReadCache, updateCache =
+                match caching with
+                | CachingStrategy.NoCaching -> (fun _ -> async { return None }), fun _ _ -> async { () }
+                | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration cache null window
+            let isOrigin, loadUnfolds, mapUnfolds =
+                match access with
+                | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
+                | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
+                | AccessStrategy.Snapshot (isOrigin,toSnapshot) ->   isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Seq.singleton)
+                | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
+                | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
+                | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         true,  Choice3Of3 transmute
             let cosmosCat = Category<'event, 'state, 'context>(container, codec)
-            let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, compressUnfolds, ?readCache = readCacheOption)
-            match caching with
-            | CachingStrategy.NoCaching -> folder :> ICategory<_, _, string, 'context>
-            | CachingStrategy.SlidingWindow(cache, window) -> Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+            CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, loadUnfolds, compressUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
 
     let resolveStream (categoryName, container, streamId, maybeContainerInitializationGate) opt context =
@@ -1424,7 +1422,7 @@ type EventsContext internal
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let batching = BatchingPolicy(getDefaultMaxItems = getDefaultMaxItems)
+    let batching = QueryOptions(getDefaultMaxItems = getDefaultMaxItems)
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
         fun _ ->
@@ -1453,7 +1451,7 @@ type EventsContext internal
 
     member internal __.GetLazy(stream, ?batchSize, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<byte[]>[]> =
         let direction = defaultArg direction Direction.Forward
-        let batching = BatchingPolicy(defaultArg batchSize batching.MaxItems)
+        let batching = QueryOptions(defaultArg batchSize batching.MaxItems)
         store.ReadLazy(log, batching, stream, direction, (Some,fun _ -> false), ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
