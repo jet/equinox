@@ -36,8 +36,8 @@ module Cart =
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codec
-    let createServiceWithoutOptimization createContext defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
-        let context = createContext defaultBatchSize
+    let createServiceWithoutOptimization createContext queryMaxItems log _ignoreWindowSize _ignoreCompactionPredicate =
+        let context = createContext queryMaxItems
         let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Backend.ContactPreferences.create log resolve
     let createService log context =

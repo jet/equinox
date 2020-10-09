@@ -43,31 +43,31 @@ let connectWithFallback (log : Serilog.ILogger) =
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId, containerId2=containerId2)
 
-let createPrimaryContext (log: Serilog.ILogger) batchSize =
+let createPrimaryContext (log: Serilog.ILogger) queryMaxItems =
     let conn = connectPrimary log
-    CosmosStoreContext(conn, defaultMaxItems = batchSize)
+    CosmosStoreContext(conn, defaultMaxItems = queryMaxItems)
 
-let createSecondaryContext (log: Serilog.ILogger) batchSize =
+let createSecondaryContext (log: Serilog.ILogger) queryMaxItems =
     let conn = connectSecondary log
-    CosmosStoreContext(conn, defaultMaxItems = batchSize)
+    CosmosStoreContext(conn, defaultMaxItems = queryMaxItems)
 
-let createFallbackContext (log: Serilog.ILogger) batchSize =
+let createFallbackContext (log: Serilog.ILogger) queryMaxItems =
     let conn = connectWithFallback log
-    CosmosStoreContext(conn, defaultMaxItems = batchSize)
+    CosmosStoreContext(conn, defaultMaxItems = queryMaxItems)
 
-let defaultBatchSize = 500
+let defaultQueryMaxItems = 10
 
-let createPrimaryEventsContext log batchSize =
-    let batchSize = defaultArg batchSize defaultBatchSize
-    let context = createPrimaryContext log batchSize
-    Equinox.CosmosStore.Core.EventsContext(context, log, defaultMaxItems = batchSize)
+let createPrimaryEventsContext log queryMaxItems =
+    let queryMaxItems = defaultArg queryMaxItems defaultQueryMaxItems
+    let context = createPrimaryContext log queryMaxItems
+    Equinox.CosmosStore.Core.EventsContext(context, log, defaultMaxItems = queryMaxItems)
 
-let createSecondaryEventsContext log batchSize =
-    let batchSize = defaultArg batchSize defaultBatchSize
-    let ctx = createSecondaryContext log batchSize
-    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = batchSize)
+let createSecondaryEventsContext log queryMaxItems =
+    let queryMaxItems = defaultArg queryMaxItems defaultQueryMaxItems
+    let ctx = createSecondaryContext log queryMaxItems
+    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = queryMaxItems)
 
-let createFallbackEventsContext log batchSize =
-    let batchSize = defaultArg batchSize defaultBatchSize
-    let ctx = createFallbackContext log batchSize
-    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = batchSize)
+let createFallbackEventsContext log queryMaxItems =
+    let queryMaxItems = defaultArg queryMaxItems defaultQueryMaxItems
+    let ctx = createFallbackContext log queryMaxItems
+    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = queryMaxItems)
