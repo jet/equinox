@@ -1225,11 +1225,12 @@ type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipO
         let queryOptions = QueryOptions(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
         CosmosStoreContext(connection, queryOptions, ?tipOptions = tipOptions)
     new(connection : CosmosStoreConnection, ?queryMaxItems,
+        /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
+        /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
+        ?tipMaxEvents,
         /// Maximum serialized size (length of JSON.stringify representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
-        ?tipMaxJson,
-        /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0.
-        ?tipMaxEvents) =
-        let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJson)
+        ?tipMaxJsonLength) =
+        let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength)
         CosmosStoreContext(connection, tipOptions = tipOptions, ?defaultMaxItems = queryMaxItems)
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
         let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
@@ -1447,9 +1448,9 @@ type EventsContext internal
         streamId, init
     member __.StreamId(streamName) : string = __.ResolveStream streamName |> fst
 
-    member internal __.GetLazy(stream, ?batchSize, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<byte[]>[]> =
+    member internal __.GetLazy(stream, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<byte[]>[]> =
         let direction = defaultArg direction Direction.Forward
-        let batching = QueryOptions(defaultArg batchSize batching.MaxItems)
+        let batching = match queryMaxItems with Some qmi when batching.MaxItems <> qmi -> QueryOptions(qmi) | _ -> batching
         store.ReadLazy(log, batching, stream, direction, (Some,fun _ -> false), ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
@@ -1473,10 +1474,10 @@ type EventsContext internal
         let! (Token.Unpack (_,pos')) = store.GetPosition(log, stream, ?pos = position)
         return pos' }
 
-    /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
+    /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member __.Walk(stream, batchSize, ?minIndex, ?maxIndex, ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
-        __.GetLazy(stream, batchSize, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
+    member __.Walk(stream, queryMaxItems, ?minIndex, ?maxIndex, ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
+        __.GetLazy(stream, queryMaxItems, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     /// Reads all Events from a `Position` in a given `direction`
     member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*ITimelineEvent<byte[]>[]> =
