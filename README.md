@@ -38,17 +38,20 @@ Some aspects of the implementation are distilled from [`Jet.com` systems dating 
   - support, (via the [`FsCodec.IEventCodec`](https://github.com/jet/FsCodec#IEventCodec)) for the maintenance of multiple co-existing compaction schemas for a given stream (A 'compaction' event/snapshot isa Event)
   - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
   - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore.org article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
-- **`Equinox.CosmosStore` 'Tip with Unfolds' schema**: (In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`,) when using `Equinox.CosmosStore`, optimized command processing is managed via the `Tip`; a document per stream with a well-known identity enabling Syncing the r/w Position via a single point-read by virtue of the fact that the document maintains:
-  a) the present Position of the stream - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
-  b) ephemeral (`deflate+base64` compressed) [_unfolds_](DOCUMENTATION.md#Cosmos-Storage-Model)
-  c) (optionally) a holding buffer for events since those unfolded events ([presently removed](https://github.com/jet/equinox/pull/58), but [should return](DOCUMENTATION.md#Roadmap), see [#109](https://github.com/jet/equinox/pull/109))
+- **`Equinox.CosmosStore` 'Tip with Unfolds' schema**: (In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`) when using `Equinox.CosmosStore`, optimized loading and command processing is managed via the `Tip`; a document per stream that facilitates Syncing via a single point-read as the 'Tip' maintains:
+  a) the present Position of the stream - i.e. the index at which the next events will be appended, which is used for [optimistic concurrency control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control)
+  b) ephemeral (`deflate+base64` compressed by default, in order to optimize RU costs) [_unfolds_](DOCUMENTATION.md#Cosmos-Storage-Model)
+  c) pending events, up to a specified count (or `JSON.stringify` length). When the events in tip accumulation limit is reached, they are shifted out to a thereafter-immutable `Batch`.
   
   This yields many of the benefits of the in-stream Rolling Snapshots approach while reducing latency and RU provisioning requirements due to meticulously tuned Request Charge costs:-
-  - Writes never need to do queries or touch event documents in any way
-  - when coupled with the cache, a typical read is a point read [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response] (when the stream is empty, a `404 NotFound` response, also costing 1.0 RU)
-  - no additional roundtrips to the store needed at either the Load or Sync points in the flow
-
-  It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
+  - when the stream is empty, the intial `Load` operation involves a single point read that yields a `404 NotFound` response, costing 1.0 RU
+  - when coupled with the cache, a typical `Reload` operation is a _point read_ [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response]
+  - when coupled with snapshots/unfolds mechanism, a cache miss on `Reload` only triggers paying the cost for reading of the compressed snapshot stored in the Tip (i.e. instead of a `302`, the `IfNoneMatch` yields a `200` and returns all relevant information in the same roundtrip)
+  - writes are via a single invocation of the `Sync` stored procedure which:
+    a) does a point read
+    b) performs a concurrency check and then either
+    c) applies the write OR returns the conflicting events
+  - no additional round trips to the store needed at either the `Load`, `Reload` or `Sync` points in the flow
 - **`Equinox.CosmosStore` `RollingState` and `Custom` 'non-event-sourced' modes**: Uses 'Tip with Unfolds' encoding to avoid having to write event documents at all - this enables one to build, reason about and test your aggregates in the normal manner, but inhibit event documents from being generated. This enables one to benefit from the caching and consistency management mechanisms without having to bear the cost of writing and storing the events themselves (and/or dealing with an ever-growing store size). Search for `transmute` or `RollingState` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in [the `dotnet-templates` `summaryConsumer` template](https://github.com/jet/dotnet-templates/tree/master/propulsion-summary-consumer).
 
 ## Components

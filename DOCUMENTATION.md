@@ -2259,12 +2259,7 @@ rich relative to the need of consumers to date. Some things remain though:
   services and for blue/green deploy scenarios); TBD how we decide when a union
   that's no longer in use gets removed)
   [#108](https://github.com/jet/equinox/issues/108)
-- performance, efficiency and concurrency improvements based on
-  [`tip-isa-batch`](https://github.com/jet/equinox/tree/tip-isa-batch) schema
-  generalization [#109](https://github.com/jet/equinox/issues/109)
 - performance improvements in loading logic
-- Perf tuning of `JObject` vs `UTF-8` arrays and/or using a different
-  serializer [#79](https://github.com/jet/equinox/issues/79)
 
 ## Wouldn't it be nice - `Equinox.DynamoDb`
 
