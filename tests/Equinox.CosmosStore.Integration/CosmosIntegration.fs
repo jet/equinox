@@ -105,8 +105,8 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` ctx initialState = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
-        let batchSize = 3
-        let context = createPrimaryContext log1 batchSize
+        let queryMaxItems = 3
+        let context = createPrimaryContext log1 queryMaxItems
         // Ensure batching is included at some point in the proceedings
 
         let cartContext, (sku11, sku12, sku21, sku22) = ctx
@@ -340,8 +340,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` cartContext skuId = Async.RunSynchronously <| async {
-        let batchSize = 10
-        let context = createPrimaryContext log batchSize
+        let queryMaxItems = 10
+        let context = createPrimaryContext log queryMaxItems
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy log context
         let service1, service2 = createServiceIndexed (), createServiceIndexed ()
         capture.Clear()

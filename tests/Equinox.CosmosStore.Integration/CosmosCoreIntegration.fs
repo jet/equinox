@@ -126,7 +126,7 @@ type Tests(testOutputHelper) =
 
         let mutable pos = 0L
         for appendBatchSize in [4; 5; 9] do
-            let! res = Events.appendAtEnd ctx streamName <| TestEvents.Create (int pos,appendBatchSize)
+            let! res = Events.appendAtEnd ctx streamName <| TestEvents.Create (int pos, appendBatchSize)
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
