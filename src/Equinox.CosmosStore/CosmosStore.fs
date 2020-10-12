@@ -392,7 +392,7 @@ module private MicrosoftAzureCosmosWrappers =
 type SyncResponse = { etag: string; n: int64; conflicts: Unfold[]; e : Event[] }
 
 module internal SyncStoredProc =
-    let [<Literal>] name = "EquinoxEventsInTip1"  // NB need to rename/number for any breaking change
+    let [<Literal>] name = "EquinoxEventsInTip4"  // NB need to rename/number for any breaking change
     let [<Literal>] body = """
 // Manages the merging of the supplied Request Batch into the stream, potentially storing events in the Tip
 
@@ -419,14 +419,14 @@ function sync(req, expIndex, expEtag, maxEventsInTip, maxStringifyLen) {
             executeUpsert(current);
         } else if (!current && ((expIndex === -2 && expEtag !== null) || expIndex > 0)) {
             // If there is no Tip page, the writer has no possible reason for writing at an index other than zero, and an etag exp must be fulfilled
-            response.setBody({ etag: null, n: 0, conflicts: {} });
+            response.setBody({ etag: null, n: 0, conflicts: [], e: [] });
         } else if (current && ((expIndex === -2 && expEtag !== current._etag) || (expIndex !== -2 && expIndex !== current.n))) {
             // Where possible, we extract conflicting events from e and/or u in order to avoid another read cycle;
             // yielding [] triggers the client to go loading the events itself
 
             // if we're working based on etags, the `u`nfolds likely bear relevant info as state-bearing unfolds
             const recentEvents = expIndex < current.i ? [] : current.e.slice(expIndex - current.i);
-            response.setBody({ etag: current._etag, n: current.n, conflicts: current.u || [], e: recentEvents } });
+            response.setBody({ etag: current._etag, n: current.n, conflicts: current.u || [], e: recentEvents });
         } else {
             executeUpsert(current);
         }
@@ -436,7 +436,7 @@ function sync(req, expIndex, expEtag, maxEventsInTip, maxStringifyLen) {
     function executeUpsert(tip) {
         function callback(err, doc) {
             if (err) throw err;
-            response.setBody({ etag: doc._etag, n: doc.n, conflicts: null });
+            response.setBody({ etag: doc._etag, n: doc.n, conflicts: null, e: [] });
         }
         function shouldCalveBatch(events) {
             return events.length > maxEventsInTip || JSON.stringify(events).length > maxStringifyLen;
@@ -507,7 +507,7 @@ module internal Sync =
         match res.Resource.conflicts with
         | null -> return res.RequestCharge, Result.Written newPos
         | unfolds -> // stored proc only returns events with index >= req.i - no need to trim to a minIndex
-            let events = (Enum.Events(req.i, res.Resource.e), Enum.Unfolds unfolds) ||> Seq.append |> Array.ofSeq
+            let events = (Enum.Events(ep.index, res.Resource.e), Enum.Unfolds unfolds) ||> Seq.append |> Array.ofSeq
             return res.RequestCharge, Result.Conflict (newPos, events) }
 
     let private logged (container,stream) (maxEventsInTip, maxStringifyLen) (exp : SyncExp, req: Tip) (log : ILogger)

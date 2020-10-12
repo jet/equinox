@@ -28,39 +28,45 @@ let createClient (log : Serilog.ILogger) name discovery =
     log.Information("CosmosDb Connecting {name} to {endpoint}", name, client.Endpoint)
     client
 
-let connectPrimary (log : Serilog.ILogger) =
+let connectPrimary log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId)
 
-let connectSecondary (log : Serilog.ILogger) =
+let connectSecondary log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId2)
 
-let connectWithFallback (log : Serilog.ILogger) =
+let connectWithFallback log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
-    CosmosStoreConnection(client, databaseId, containerId, containerId2=containerId2)
+    CosmosStoreConnection(client, databaseId, containerId, containerId2 = containerId2)
 
-let createPrimaryContext (log: Serilog.ILogger) queryMaxItems =
+let createPrimaryContextEx log queryMaxItems tipMaxEvents =
     let conn = connectPrimary log
-    CosmosStoreContext(conn, defaultMaxItems = queryMaxItems)
+    CosmosStoreContext(conn, queryMaxItems = queryMaxItems, tipMaxEvents = tipMaxEvents)
 
-let createSecondaryContext (log: Serilog.ILogger) queryMaxItems =
+let createPrimaryContext log queryMaxItems =
+    createPrimaryContextEx log queryMaxItems 10
+
+let createSecondaryContext log queryMaxItems =
     let conn = connectSecondary log
-    CosmosStoreContext(conn, defaultMaxItems = queryMaxItems)
+    CosmosStoreContext(conn, queryMaxItems = queryMaxItems, tipMaxEvents = 10)
 
-let createFallbackContext (log: Serilog.ILogger) queryMaxItems =
+let createFallbackContext log queryMaxItems =
     let conn = connectWithFallback log
-    CosmosStoreContext(conn, defaultMaxItems = queryMaxItems)
+    CosmosStoreContext(conn, queryMaxItems = queryMaxItems, tipMaxEvents = 10)
 
 let defaultQueryMaxItems = 10
 
-let createPrimaryEventsContext log queryMaxItems =
+let createPrimaryEventsContextEx log queryMaxItems tipMaxItems =
     let queryMaxItems = defaultArg queryMaxItems defaultQueryMaxItems
-    let context = createPrimaryContext log queryMaxItems
+    let context = createPrimaryContextEx log queryMaxItems tipMaxItems
     Equinox.CosmosStore.Core.EventsContext(context, log, defaultMaxItems = queryMaxItems)
+
+let createPrimaryEventsContext log queryMaxItems =
+    createPrimaryEventsContextEx log (Some queryMaxItems) 10
 
 let createSecondaryEventsContext log queryMaxItems =
     let queryMaxItems = defaultArg queryMaxItems defaultQueryMaxItems
