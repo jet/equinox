@@ -38,41 +38,57 @@ This allows *you* to compose the libraries into an architecture that fits your a
 # Design Motivation
 Equinox's design is informed by discussions, talks and countless hours of hard and thoughtful work invested into many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain), the outstanding continuous work of the [EventStore](https://github.com/eventstore) founders and team and the wider [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community. It would be unfair to single out even a small number of people despite the immense credit that is due. Some aspects of the implementation are distilled from [`Jet.com` systems dating all the way back to 2013](http://gorodinski.com/blog/2013/02/17/domain-driven-design-with-fsharp-and-eventstore/).
 
-Event Sourcing 
+An event sourcing system usually has the following attributes:
+1. Storing events with good performance and debugging capabilities
+2. Transaction processing
+    - Optimistic concurrency
+    - Folding events
+3. Decoding events using codecs and formats
+4. Framework/application integration
+5. Projections
+
+Designing something that supports all of these is difficult and results in an inflexible and difficult to use framework/library; 
+thus, Equinox focuses on the core of event sourcing, items 1 and 2, so it can be as non-intrusive to your application's domain. 
+However, since the other attributes are important we've decided that they can be supported via other libraries:
+- [FSCodec](https://github.com/jet/FsCodec) supports encoding and decoding (attribute 3)  
+- [Propulsion](https://github.com/jet/propulsion) supports projections (attribute 5)
+- Since Equinox is a library and is not trying to integrate with frameworks, other wrappers libraries building on top of Equinox will support integrations (attribute 4)
+
+As you can see, the fact Equinox is a library is incredibly powerful as it gives you the ability to pick your preferred way of supporting your event sourcing system.
 
 _If you're looking to learn more about and/or discuss Event Sourcing and it's myriad benefits, tradeoffs and pitfalls as you apply it to your Domain, look no further than the thriving 2000+ member community on the [DDD-CQRS-ES Slack](https://github.com/ddd-cqrs-es/slack-community); you'll get patient and impartial world class advice 24x7 (psst there are [#equinox](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) and [#sql-stream-store](https://app.slack.com/client/T0HCLN01Y) channels where you can ask questions or offer feedback)._ ([invite link](https://j.mp/ddd-es-cqrs))
 
 
 # Features
 
-- Equinox is designed not to invade application code that way your domain tests can be written directly against your models.
-- The core ideas and features of the library are extracted from ideas and lessons learned from existing production software - currently used for all data storage within Jet's API gateway and Cart processing.
-- There is significant test coverage for it's core features. In addition there are baseline and specific tests for each supported storage system and a comprehensive test and benchmarking story
-- Event serialization is fully pluggable. All encoding is specified in terms of the [`FsCodec.IEventCodec` contract](https://github.com/jet/FsCodec#IEventCodec). [FsCodec](https://github.com/jet/FsCodec) provides for pluggable encoding of events based on either:
+- Designed not to invade application code that way your domain tests can be written directly against your models.
+- Core ideas and features of the library are extracted from ideas and lessons learned from existing production software - currently used for all data storage within Jet's API gateway and Cart processing.
+- Test coverage for it's core features. In addition there are baseline and specific tests for each supported storage system and a comprehensive test and benchmarking story
+- Pluggable event serialization. All encoding is specified in terms of the [`FsCodec.IEventCodec` contract](https://github.com/jet/FsCodec#IEventCodec). [FsCodec](https://github.com/jet/FsCodec) provides for pluggable encoding of events based on either:
   - `NewtonsoftJson.Codec`: a [versionable convention-based approach](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) (using `Typeshape`'s `UnionContractEncoder` under the covers), providing for serializer-agnostic schema evolution with minimal boilerplate
   - `Box.Codec`: lightweight [non-serializing substitute equivalent to `NewtonsoftJson.Codec` for use in unit and integration tests](https://github.com/jet/FsCodec#boxcodec)
   - `Codec`: an explicitly coded pair of `encode` and `tryDecode` functions for when you need to customize
-- Independent of the store used, Equinox provides for caching using the .NET `MemoryCache` to:
-  - Minimize roundtrips (pluggable via [`ICache`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/Cache.fs#L22) thanks to [@DSilence](https://github.com/jet/equinox/pull/161)
+- Caching using the .NET `MemoryCache` to:
+  - Minimize round trips (pluggable via [`ICache`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/Cache.fs#L22) thanks to [@DSilence](https://github.com/jet/equinox/pull/161)
   - Minimize latency and bandwidth / Request Charges by maintaining the folded state, without making the Domain Model folded state serializable
-- Logging is mature and comprehensive (using [Serilog](https://github.com/serilog/serilog) internally), with optimal performance and pluggable integration with your apps hosting context (we ourselves typically feed log info to Splunk and the metrics embedded in the `Serilog.Events.LogEvent` Properties to Prometheus; see relevant tests for examples)
-- **`Equinox.EventStore` In-stream Rolling Snapshots**: Command processing can be optimized by means of 'compaction' events, meeting the following ends:
-  - no additional roundtrips to the store needed at either the Load or Sync points in the flow
-  - support, (via the [`FsCodec.IEventCodec`](https://github.com/jet/FsCodec#IEventCodec)) for the maintenance of multiple co-existing compaction schemas for a given stream (A 'compaction' event/snapshot isa Event)
-  - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
-  - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore.org article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
-- **`Equinox.Cosmos` 'Tip with Unfolds' schema**: (In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`,) when using `Equinox.Cosmos`, optimized command processing is managed via the `Tip` - a document per stream with an identity enabling Syncing the read/write Position via a single point-read. The `Tip` has the following attributes:
-  - It represents the position of the stream - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
-  - It is ephemeral (`deflate+base64` compressed) [_unfolds_](DOCUMENTATION.md#Cosmos-Storage-Model)
-  - It can also be a holding buffer for events. Note: [presently removed](https://github.com/jet/equinox/pull/58), but [should return](DOCUMENTATION.md#Roadmap), see [#109](https://github.com/jet/equinox/pull/109)
-  
-  This yields many of the benefits of the in-stream Rolling Snapshots approach while reducing latency and RU provisioning requirements due to meticulously tuned Request Charge costs:-
+- Mature and comprehensive logging (using [Serilog](https://github.com/serilog/serilog) internally), with optimal performance and pluggable integration with your apps hosting context (we ourselves typically feed log info to Splunk and the metrics embedded in the `Serilog.Events.LogEvent` Properties to Prometheus; see relevant tests for examples)
+- **`Equinox.EventStore` In-stream Rolling Snapshots**: 
+  - No additional round trips to the store needed at either the Load or Sync points in the flow
+  - Support for multiple co-existing compaction schemas for a given stream (A 'compaction' event/snapshot is an Event). This is done by the [`FsCodec.IEventCodec`](https://github.com/jet/FsCodec#IEventCodec)
+    - Compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
+  - While snapshotting can deliver excellent performance especially when allied with the Cache, [it's not a panacea, as noted in this excellent EventStore.org article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
+- **`Equinox.Cosmos` 'Tip with Unfolds' schema**: 
+  - In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`, when using `Equinox.Cosmos`, optimized command processing is managed via the `Tip` - a document per stream with an identity enabling syncing the read/write position via a single point-read. The `Tip` has the following attributes:
+    - It represents the position of the stream - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
+    - It is ephemeral (`deflate+base64` compressed) [_unfolds_](DOCUMENTATION.md#Cosmos-Storage-Model)
+    - It can also be a holding buffer for events. Note: [presently removed](https://github.com/jet/equinox/pull/58), but [should return](DOCUMENTATION.md#Roadmap), see [#109](https://github.com/jet/equinox/pull/109)
+  - Has the benefits of the in-stream Rolling Snapshots approach while reducing latency and RU provisioning requirements due to meticulously tuned Request Charge costs:-
   - Writes never need to do queries or touch event documents in any way
   - When coupled with the cache, a typical read is a point read [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response] (when the stream is empty, a `404 NotFound` response, also costing 1.0 RU)
-  - No additional roundtrips to the store needed at either the Load or Sync points in the flow
-
-  It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
-- **`Equinox.Cosmos` `RollingState` and `Custom` 'non-event-sourced' modes**: Uses 'Tip with Unfolds' encoding to avoid having to write event documents at all. This options benefits from caching and consistency management mechanisms because the cost of writing and storing infinitely increasing events are removed. Search for `transmute` or `RollingState` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in [the `dotnet-templates` `summaryConsumer` template](https://github.com/jet/dotnet-templates/tree/master/propulsion-summary-consumer).
+  - No additional round trips to the store needed at either the Load or Sync points in the flow
+  - It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
+- **`Equinox.Cosmos` `RollingState` and `Custom` 'non-event-sourced' modes**: 
+    - Uses 'Tip with Unfolds' encoding to avoid having to write event documents at all. This options benefits from caching and consistency management mechanisms because the cost of writing and storing infinitely increasing events are removed. Search for `transmute` or `RollingState` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in [the `dotnet-templates` `summaryConsumer` template](https://github.com/jet/dotnet-templates/tree/master/propulsion-summary-consumer).
 
 # Currently Supported Data Stores
 
@@ -105,7 +121,7 @@ The components within this repository are delivered as multi-targeted Nuget pack
 ### Data Store libraries
 
 - `Equinox.Core` [![NuGet](https://img.shields.io/nuget/v/Equinox.Core.svg)](https://www.nuget.org/packages/Equinox.Core/): Interfaces and helpers used in the concrete Store implementations, together with the default [`System.Runtime.Caching.Cache`-based] `Cache` implementation . ([depends](https://www.fuget.org/packages/Equinox.Core) on `Equinox`, `System.Runtime.Caching`)
-- `Equinox.MemoryStore` [![MemoryStore NuGet](https://img.shields.io/nuget/v/Equinox.MemoryStore.svg)](https://www.nuget.org/packages/Equinox.MemoryStore/): In-memory store for integration testing/performance baselining/providing out-of-the-box zero dependency storage for examples. ([depends](https://www.fuget.org/packages/Equinox.MemoryStore) on `Equinox.Core`, `FsCodec`)
+- `Equinox.MemoryStore` [![MemoryStore NuGet](https://img.shields.io/nuget/v/Equinox.MemoryStore.svg)](https://www.nuget.org/packages/Equinox.MemoryStore/): In-memory store for integration testing/performance base-lining/providing out-of-the-box zero dependency storage for examples. ([depends](https://www.fuget.org/packages/Equinox.MemoryStore) on `Equinox.Core`, `FsCodec`)
 - `Equinox.EventStore` [![EventStore NuGet](https://img.shields.io/nuget/v/Equinox.EventStore.svg)](https://www.nuget.org/packages/Equinox.EventStore/): Production-strength [EventStoreDB](https://eventstore.org/) Adapter designed to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.EventStore) on `Equinox.Core`, `EventStore.Client >= 20.6`, `FSharp.Control.AsyncSeq >= 2.0.23`)
 - `Equinox.Cosmos` [![Cosmos NuGet](https://img.shields.io/nuget/v/Equinox.Cosmos.svg)](https://www.nuget.org/packages/Equinox.Cosmos/): Production-strength Azure CosmosDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.Cosmos) on `Equinox.Core`, `Microsoft.Azure.Cosmos >= 3.9`, `FsCodec.NewtonsoftJson`, `FSharp.Control.AsyncSeq >= 2.0.23`)
 - `Equinox.SqlStreamStore` [![SqlStreamStore NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore/): Production-strength [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) Adapter derived from `Equinox.EventStore` - provides core facilities (but does not connect to a specific database; see sibling `SqlStreamStore`.* packages). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore) on `Equinox.Core`, `FsCodec`, `SqlStreamStore >= 1.2.0-beta.8`, `FSharp.Control.AsyncSeq`)
@@ -126,8 +142,6 @@ Equinox does not focus on projection logic - each store brings its own strengths
 ### Tools
 
 - `Equinox.Tool` [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/): Tool incorporating a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
-
-- ``
 
 ### Starter Project Templates and Sample Applications
 
