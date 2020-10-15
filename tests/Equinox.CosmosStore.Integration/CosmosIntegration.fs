@@ -70,25 +70,25 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
-    [<AutoData(MaxFail=1, MaxTest=2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` cartContext skuId = Async.RunSynchronously <| async {
-        let maxItemsPerRequest = 5
-        let context = createPrimaryContext log maxItemsPerRequest
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly batching the reads (without special-casing tip)`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
+        capture.Clear() // for re-runs of the test
+        let addRemoveCount = 40
+        let eventsPerAction = addRemoveCount * 2 - 1
+        let queryMaxItems = 5
+        let context = createPrimaryContextEx log queryMaxItems (if eventsInTip then eventsPerAction else 0)
 
         let service = Cart.createServiceWithoutOptimization log context
-        capture.Clear() // for re-runs of the test
 
         let cartId = % Guid.NewGuid()
         // The command processing should trigger only a single read and a single write call
-        let addRemoveCount = 40
-        let eventsPerAction = addRemoveCount * 2 - 1
         let transactions = 6
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
-            // Extra roundtrip required after maxItemsPerRequest is exceeded
-            let expectedBatchesOfItems = (max 1 ((i-1) / maxItemsPerRequest))
-//            test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 61 // 60.61 [4.51; 56.1] // 5.5 observed for read
+            let emptyTip = if eventsInTip then 0 else 1
+            let expectedBatchesOfItems = max 1 (int (ceil <| float (i - 1 + emptyTip) / float queryMaxItems))
+            test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
+            verifyRequestChargesMax 71 // 70.65 [3.58; 67.07]
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -96,17 +96,17 @@ type Tests(testOutputHelper) =
         let expectedEventCount = transactions * eventsPerAction
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        let expectedResponses = transactions/maxItemsPerRequest + 1
+        let expectedResponses = transactions / queryMaxItems + 1
         test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
         verifyRequestChargesMax 9 // 8.58 // 10.01
     }
 
-    [<AutoData(MaxFail=1, MaxTest=2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` ctx initialState = Async.RunSynchronously <| async {
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` (eventsInTip, ctx, initialState) = Async.RunSynchronously <| async {
+        capture.Clear()
         let log1, capture1 = log, capture
-        capture1.Clear()
         let queryMaxItems = 3
-        let context = createPrimaryContext log1 queryMaxItems
+        let context = createPrimaryContextEx log1 queryMaxItems (if eventsInTip then 10 else 0)
         // Ensure batching is included at some point in the proceedings
 
         let cartContext, (sku11, sku12, sku21, sku22) = ctx
@@ -171,25 +171,24 @@ type Tests(testOutputHelper) =
         test <@ maybeInitialSku |> Option.forall (fun (skuId, quantity) -> has skuId quantity)
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
-       // Intended conflicts arose
+        // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
-#if !NO_EVENTS_IN_TIP
-        test <@ let c2 = List.choose conflict capture2.ExternalCalls
-                [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
-                && [EqxAct.Resync] = c2 @>
-#else
-        test <@ let c2 = List.choose conflict capture2.ExternalCalls
-                [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
-                && [EqxAct.Conflict] = c2 @>
-#endif
+        if eventsInTip then
+            test <@ let c2 = List.choose conflict capture2.ExternalCalls
+                    [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
+                    && [EqxAct.Resync] = c2 @>
+        else
+            test <@ let c2 = List.choose conflict capture2.ExternalCalls
+                    [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
+                    && [EqxAct.Conflict] = c2 @>
     }
 
     let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
-    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` value = Async.RunSynchronously <| async {
-        let context = createPrimaryContext log 1
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` (eventsInTip, value) = Async.RunSynchronously <| async {
+        let context = createPrimaryContextEx log 1 (if eventsInTip then 1 else 0)
         let service = ContactPreferences.createService log context
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
@@ -209,36 +208,33 @@ type Tests(testOutputHelper) =
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
 
-#if NO_EVENTS_IN_TIP
-        (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
+        if not eventsInTip then
+            (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
 
-        //let ctx = createPrimaryEventsContext log None
+            let ctx = createPrimaryEventsContext log None 0
 
-        // Needs to share the same client for the session key to be threaded through
-        // If we run on an independent context, we won't see (and hence prune) the full set of events
-        // TODO: explain why this sleep is still needed though!
-        do! Async.Sleep 1000
-        let ctx = Core.EventsContext(context, log)
-        let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
+            // Needs to share the same client for the session key to be threaded through
+            // If we run on an independent context, we won't see (and hence prune) the full set of events
+            let ctx = Core.EventsContext(context, log)
+            let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
 
-        // Prune all the events
-        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 14L
-        test <@ deleted = 14 && deferred = 0 && trimmedPos = 14L @>
+            // Prune all the events
+            let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 14L
+            test <@ deleted = 14 && deferred = 0 && trimmedPos = 14L @>
 
-        // Prove they're gone
-        capture.Clear()
-        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
-        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        test <@ [||] = res @>
-        verifyRequestChargesMax 3 // 2.99
+            // Prove they're gone
+            capture.Clear()
+            let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+            test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+            test <@ [||] = res @>
+            verifyRequestChargesMax 3 // 2.99
 
-        // But we can still read (there's no cache so we'll definitely be reading)
-        capture.Clear()
-        let! _ = service.Read id
-        test <@ value = result @>
-        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
-        verifyRequestChargesMax 1
-#endif
+            // But we can still read (there's no cache so we'll definitely be reading)
+            capture.Clear()
+            let! _ = service.Read id
+            test <@ value = result @>
+            test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+            verifyRequestChargesMax 1
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -264,7 +260,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` ctx initialState = Async.RunSynchronously <| async {
+    let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` (ctx, initialState) = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
         let context = createPrimaryContext log1 1
@@ -339,7 +335,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` cartContext skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` (cartContext, skuId) = Async.RunSynchronously <| async {
         let queryMaxItems = 10
         let context = createPrimaryContext log queryMaxItems
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy log context
@@ -366,8 +362,6 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
-        // TODO: explain why this sleep is still needed though!
-        do! Async.Sleep 1000
         let ctx = Core.EventsContext(context, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
@@ -388,9 +382,9 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 1
     }
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` cartContext skuId = Async.RunSynchronously <| async {
-        let context = createPrimaryContext log 1
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
+        let context = createPrimaryContextEx log 10 (if eventsInTip then 1 else 0)
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching log context cache
         let service1, service2 = createServiceCached (), createServiceCached ()
@@ -424,28 +418,25 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne cartContext cartId skuId service1 1
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
 
-#if NO_EVENTS_IN_TIP
-        (* Verify pruning does not affect snapshots, and does not touch the Tip *)
+        if not eventsInTip then
+            (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
-        // TODO: explain why this sleep is still needed though!
-        do! Async.Sleep 1000
-        let ctx = Core.EventsContext(context, log)
-        let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
-        // Prune all the events
-        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 13L
-        test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
+            let ctx = Core.EventsContext(context, log)
+            let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
+            // Prune all the events
+            let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 13L
+            test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
 
-        // Prove they're gone
-        capture.Clear()
-        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
-        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        test <@ [||] = res @>
-        verifyRequestChargesMax 3 // 2.99
+            // Prove they're gone
+            capture.Clear()
+            let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+            test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+            test <@ [||] = res @>
+            verifyRequestChargesMax 3 // 2.99
 
-        // But we can still read (service2 shares the cache so is aware of the last writes, and pruning does not invalidate the Tip)
-        capture.Clear()
-        let! _ = service2.Read cartId
-        test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
-        verifyRequestChargesMax 1
-#endif
+            // But we can still read (service2 shares the cache so is aware of the last writes, and pruning does not invalidate the Tip)
+            capture.Clear()
+            let! _ = service2.Read cartId
+            test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
+            verifyRequestChargesMax 1
     }

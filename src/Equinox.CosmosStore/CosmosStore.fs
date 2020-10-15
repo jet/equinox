@@ -506,6 +506,9 @@ module internal Sync =
         let newPos = { index = res.Resource.n; etag = Option.ofObj res.Resource.etag }
         match res.Resource.conflicts with
         | null -> return res.RequestCharge, Result.Written newPos
+        // ConflictUnknown is to be yielded if we believe querying is going to be necessary (as there are no unfolds, and no relevant events in the Tip)
+        | [||] when res.Resource.e.Length = 0 && newPos.index > ep.index ->
+            return res.RequestCharge, Result.ConflictUnknown newPos
         | unfolds -> // stored proc only returns events with index >= req.i - no need to trim to a minIndex
             let events = (Enum.Events(ep.index, res.Resource.e), Enum.Unfolds unfolds) ||> Seq.append |> Array.ofSeq
             return res.RequestCharge, Result.Conflict (newPos, events) }
@@ -876,8 +879,8 @@ module internal Tip =
         match primary, secondary with
         | Some { index = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
         | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
-        | None, _ when Option.isSome tip -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
         | _, None ->
+            // TODO Add TipConfig parameter to opt-into this vs throwing
             logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
             return pos, events
         | _, Some secondary ->
