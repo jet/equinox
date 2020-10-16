@@ -25,33 +25,33 @@ let discoverConnection () =
 let createClient (log : Serilog.ILogger) name discovery =
     let factory = CosmosStoreClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
     let client = factory.Create discovery
-    log.Information("CosmosDb Connecting {name} to {endpoint}", name, client.Endpoint)
+    log.Information("CosmosDB Connecting {name} to {endpoint}", name, client.Endpoint)
     client
 
-let connectPrimary (log : Serilog.ILogger) =
+let connectPrimary log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId)
 
-let connectSecondary (log : Serilog.ILogger) =
+let connectSecondary log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId2)
 
-let connectWithFallback (log : Serilog.ILogger) =
+let connectWithFallback log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
-    CosmosStoreConnection(client, databaseId, containerId, containerId2=containerId2)
+    CosmosStoreConnection(client, databaseId, containerId, containerId2 = containerId2)
 
-let createPrimaryContext (log: Serilog.ILogger) batchSize =
+let createPrimaryContext log batchSize =
     let conn = connectPrimary log
     CosmosStoreContext(conn, defaultMaxItems = batchSize)
 
-let createSecondaryContext (log: Serilog.ILogger) batchSize =
+let createSecondaryContext log batchSize =
     let conn = connectSecondary log
     CosmosStoreContext(conn, defaultMaxItems = batchSize)
 
-let createFallbackContext (log: Serilog.ILogger) batchSize =
+let createFallbackContext log batchSize =
     let conn = connectWithFallback log
     CosmosStoreContext(conn, defaultMaxItems = batchSize)
 

@@ -69,11 +69,11 @@ type Startup() =
             match args.TryGetSubCommand() with
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-                log.Information("CosmosDb Storage options: {options:l}", options)
+                log.Information("CosmosDB Storage options: {options:l}", options)
                 Storage.Cosmos.config log (cache, unfolds, defaultBatchSize) (Storage.Cosmos.Info sargs), storeLog
             | Some (Es sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-                log.Information("EventStore Storage options: {options:l}", options)
+                log.Information("EventStoreDB Storage options: {options:l}", options)
                 Storage.EventStore.config (log,storeLog) (cache, unfolds, defaultBatchSize) sargs, storeLog
             | Some (MsSql sargs) ->
                 log.Information("SqlStreamStore MsSql Storage options: {options:l}", options)

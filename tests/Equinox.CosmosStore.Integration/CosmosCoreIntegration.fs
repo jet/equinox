@@ -116,7 +116,7 @@ type Tests(testOutputHelper) =
 
         let mutable pos = 0L
         for appendBatchSize in [4; 5; 9] do
-            let! res = Events.appendAtEnd ctx streamName <| TestEvents.Create (int pos,appendBatchSize)
+            let! res = Events.appendAtEnd ctx streamName <| TestEvents.Create (int pos, appendBatchSize)
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
@@ -168,6 +168,7 @@ type Tests(testOutputHelper) =
 
         // Attempt to write, skipping Index 0
         let! res = Events.append ctx streamName 1L <| TestEvents.Create(0,1)
+        // Resync is returned if no events should need to be re-queried
         test <@ [EqxAct.Resync] = capture.ExternalCalls @>
         // The response aligns with a normal conflict in that it passes the entire set of conflicting events ()
         test <@ AppendResult.Conflict (0L,[||]) = res @>
@@ -204,7 +205,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let get (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
         let ctx = mkContextWithItemLimit log (Some 3)
 
         // We're going to ignore the first, to prove we can
@@ -221,7 +221,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
         let ctx = mkContextWithItemLimit log (Some 1)
 
         let! expected = add6EventsIn2Batches ctx streamName
@@ -233,7 +232,8 @@ type Tests(testOutputHelper) =
 
         // 2 items atm
         test <@ [EqxAct.ResponseForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 7 } // 6.01
+        verifyRequestChargesMax 7 // 6.01
+    }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``get Lazy`` (TestStream streamName) = Async.RunSynchronously <| async {
@@ -408,7 +408,8 @@ type Tests(testOutputHelper) =
         test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
 
-        // Fallback still does two queries (the first one is empty) // TODO demonstrate Primary read is only of Tip when using snapshots
+        // Fallback still does two queries (the first one is empty)
+        // TODO demonstrate Primary read is only of Tip when using snapshots
         capture.Clear()
         let! res = Events.get ctx12 streamName 0L Int32.MaxValue
 //        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
