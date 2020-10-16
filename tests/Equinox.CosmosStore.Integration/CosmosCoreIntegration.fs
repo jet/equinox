@@ -29,8 +29,6 @@ type Tests(testOutputHelper) =
     let (|TestStream|) (name: Guid) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
-    let mkContextWithItemLimit log maxItems =
-        createPrimaryEventsContext log (Some maxItems) 10
 
     let verifyRequestChargesMax rus =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
@@ -40,6 +38,7 @@ type Tests(testOutputHelper) =
     let append (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
         let ctx = createPrimaryEventsContext log (Some 10) (if eventsInTip then 1 else 0)
         capture.Clear()
+        let ctx = createPrimaryEventsContext log (Some defaultQueryMaxItems)
 
         let index = 0L
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
@@ -63,7 +62,7 @@ type Tests(testOutputHelper) =
     // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = mkContextWithItemLimit log 10
+        let ctx = createPrimaryEventsContext log (Some defaultQueryMaxItems)
 
         let index = 0L
         let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
@@ -111,7 +110,6 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         let ctx = createPrimaryEventsContext log (Some 1) (if eventsInTip then 1 else 0)
-        let ctx = mkContextWithItemLimit log 1
 
         let! pos = Events.getNextIndex ctx streamName
         test <@ [EqxAct.TipNotFound] = capture.ExternalCalls @>
@@ -253,7 +251,7 @@ type Tests(testOutputHelper) =
             | EqxEvent (Equinox.CosmosStore.Core.Log.Event.Query (Equinox.CosmosStore.Core.Direction.Forward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         // validate that, because we stopped after 1 item, we only needed one trip (which contained 3 events)
-        if eventsInTip then [1,1] else [1,3] =! capture.ChooseCalls queryRoundTripsAndItemCounts
+        (if eventsInTip then [1,1] else [1,3]) =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 3 // 2.97 (2.88 in Tip)
     }
 
@@ -314,7 +312,7 @@ type Tests(testOutputHelper) =
         let queryRoundTripsAndItemCounts = function
             | EqxEvent (Equinox.CosmosStore.Core.Log.Event.Query (Equinox.CosmosStore.Core.Direction.Backward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
-        let expectedPagesAndEvents = if eventsInTip then [1, 2] else [2, 2]
+        let expectedPagesAndEvents = [pages, 2]
         expectedPagesAndEvents =! capture.ChooseCalls queryRoundTripsAndItemCounts
         if eventsInTip then verifyRequestChargesMax 3 // 2.98
         else verifyRequestChargesMax 6 // 5.66
@@ -417,7 +415,8 @@ type Tests(testOutputHelper) =
         test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
 
-        // Fallback queries secondary (unless we actually delete the Tip too) // TODO demonstrate Primary read is only of Tip when using snapshots
+        // Fallback queries secondary (unless we actually delete the Tip too)
+        // TODO demonstrate Primary read is only of Tip when using snapshots
         capture.Clear()
         let! res = Events.get ctx12 streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>

@@ -441,6 +441,9 @@ function sync(req, expIndex, expEtag, maxEventsInTip, maxStringifyLen) {
         function shouldCalveBatch(events) {
             return events.length > maxEventsInTip || JSON.stringify(events).length > maxStringifyLen;
         }
+        function shouldCalveBatch(events) {
+            return events.length > 0;
+        }
         if (tip) {
             Array.prototype.push.apply(tip.e, req.e);
             tip.n = tip.i + tip.e.length;
@@ -730,7 +733,7 @@ module internal Tip =
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Event.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
-        (log |> Log.prop "bytes" bytes |> Log.prop "batchSize" queryMaxItems |> Log.event evt).Information(
+        (log |> Log.prop "bytes" bytes |> Log.prop "queryMaxItems" queryMaxItems |> Log.event evt).Information(
             "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms rc={ru}",
             action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
@@ -880,7 +883,7 @@ module internal Tip =
         | Some { index = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
         | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
         | _, None ->
-            // TODO Add TipConfig parameter to opt-into this vs throwing
+            // TODO Add TipOptions parameter to opt-into this vs throwing
             logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
             return pos, events
         | _, Some secondary ->
@@ -1017,9 +1020,9 @@ module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of StreamToken * 'event[]
 
-/// Defines the policies in force regarding how to split up calls when loading events via queries
+/// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
 type QueryOptions
-    (   /// Max Batches to request in query response. Defaults: 10.
+    (   /// Max number of Batches to return per paged query response. Default: 10.
         [<O; D(null)>]?defaultMaxItems : int,
         /// Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default: use `defaultMaxItems` value.
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
@@ -1418,7 +1421,7 @@ type EventsContext internal
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
-        /// Defaults to 10
+        /// Default: 10
         [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
         /// Alternate way of specifying defaultMaxItems that facilitates reading it from a cached dynamic configuration
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
