@@ -188,7 +188,7 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         if eventsInTip then verifyRequestChargesMax 27 // 26.4
-        else verifyRequestChargesMax 37 // 36.24
+        else verifyRequestChargesMax 40 // 39.39
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)

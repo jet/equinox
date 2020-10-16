@@ -88,7 +88,7 @@ type Tests(testOutputHelper) =
             let emptyTip = if eventsInTip then 0 else 1
             let expectedBatchesOfItems = max 1 (int (ceil <| float (i - 1 + emptyTip) / float queryMaxItems))
             test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 71 // 70.65 [3.58; 67.07]
+            verifyRequestChargesMax 72 // 71.27 [3.58; 67.69]
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
