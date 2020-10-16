@@ -1018,7 +1018,7 @@ module Internal =
 
 /// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
 type QueryOptions
-    (   /// Max Batches to request in query response. Defaults: 10.
+    (   /// Max number of Batches to return per paged query response. Default: 10.
         [<O; D(null)>]?defaultMaxItems : int,
         /// Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default: use `defaultMaxItems` value.
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
@@ -1403,7 +1403,7 @@ type EventsContext internal
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger,
         /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
-        /// Defaults to 10
+        /// Default: 10
         [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
         /// Alternate way of specifying defaultMaxItems that facilitates reading it from a cached dynamic configuration
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
