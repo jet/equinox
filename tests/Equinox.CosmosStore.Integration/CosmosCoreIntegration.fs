@@ -29,8 +29,6 @@ type Tests(testOutputHelper) =
     let (|TestStream|) (name: Guid) =
         incr testIterations
         sprintf "events-%O-%i" name !testIterations
-    let mkContextWithItemLimit log maxItems =
-        createPrimaryEventsContext log (Some maxItems)
 
     let verifyRequestChargesMax rus =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
@@ -38,8 +36,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let append (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log (Some 10)
         capture.Clear()
+        let ctx = createPrimaryEventsContext log (Some defaultQueryMaxItems)
 
         let index = 0L
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
@@ -60,7 +58,7 @@ type Tests(testOutputHelper) =
     // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = mkContextWithItemLimit log 10
+        let ctx = createPrimaryEventsContext log (Some defaultQueryMaxItems)
 
         let index = 0L
         let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
@@ -108,7 +106,6 @@ type Tests(testOutputHelper) =
         capture.Clear()
 
         let ctx = createPrimaryEventsContext log (Some 1)
-        let ctx = mkContextWithItemLimit log 1
 
         let! pos = Events.getNextIndex ctx streamName
         test <@ [EqxAct.TipNotFound] = capture.ExternalCalls @>
@@ -166,7 +163,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append - fails on non-matching`` (TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let ctx = createPrimaryEventsContext log (Some 10)
+        let ctx = createPrimaryEventsContext log (Some defaultQueryMaxItems)
 
         // Attempt to write, skipping Index 0
         let! res = Events.append ctx streamName 1L <| TestEvents.Create(0,1)
@@ -313,7 +310,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log (Some 10)
+        let ctx = createPrimaryEventsContext log (Some defaultQueryMaxItems)
         let! expected = add6EventsIn2Batches ctx streamName
 
         // Trigger deletion of first batch
