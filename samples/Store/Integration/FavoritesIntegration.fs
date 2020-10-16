@@ -60,7 +60,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let context = createPrimaryContext log defaultBatchSize
+        let context = createPrimaryContext log defaultQueryMaxItems
         let service = createServiceCosmos log context
         do! act service args
     }
@@ -68,7 +68,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let context = createPrimaryContext log defaultBatchSize
+        let context = createPrimaryContext log defaultQueryMaxItems
         let service = createServiceCosmosRollingState log context
         do! act service args
     }

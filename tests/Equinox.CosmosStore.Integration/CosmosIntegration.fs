@@ -36,8 +36,8 @@ module Cart =
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codec
-    let createServiceWithoutOptimization createContext defaultBatchSize log _ignoreWindowSize _ignoreCompactionPredicate =
-        let context = createContext defaultBatchSize
+    let createServiceWithoutOptimization createContext queryMaxItems log _ignoreWindowSize _ignoreCompactionPredicate =
+        let context = createContext queryMaxItems
         let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Backend.ContactPreferences.create log resolve
     let createService log context =
@@ -73,22 +73,22 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly batching the reads (without special-casing tip)`` (cartContext, skuId) = Async.RunSynchronously <| async {
         capture.Clear() // for re-runs of the test
-        let maxItemsPerRequest = 5
-        let context = createPrimaryContext log maxItemsPerRequest
+        let addRemoveCount = 40
+        let eventsPerAction = addRemoveCount * 2 - 1
+        let queryMaxItems = 5
+        let context = createPrimaryContext log queryMaxItems
 
         let service = Cart.createServiceWithoutOptimization log context
 
         let cartId = % Guid.NewGuid()
         // The command processing should trigger only a single read and a single write call
-        let addRemoveCount = 40
-        let eventsPerAction = addRemoveCount * 2 - 1
         let transactions = 6
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
-            // Extra roundtrip required after maxItemsPerRequest is exceeded
-            let expectedBatchesOfItems = max 1 ((i-1) / maxItemsPerRequest)
+            let emptyTip = 0 // in V2 (and V3 master, for now), the Query filters out the Tip
+            let expectedBatchesOfItems = max 1 (int (ceil <| float (i - 1 + emptyTip) / float queryMaxItems))
             test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 61 // 60.61 [4.51; 56.1] // 5.5 observed for read
+            verifyRequestChargesMax 72 // 71.27 [3.58; 67.69]
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -96,7 +96,7 @@ type Tests(testOutputHelper) =
         let expectedEventCount = transactions * eventsPerAction
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        let expectedResponses = transactions / maxItemsPerRequest + 1
+        let expectedResponses = transactions / queryMaxItems + 1
         test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
         verifyRequestChargesMax 9 // 8.58 // 10.01
     }
@@ -105,8 +105,8 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` (ctx, initialState) = Async.RunSynchronously <| async {
         capture.Clear()
         let log1, capture1 = log, capture
-        let batchSize = 3
-        let context = createPrimaryContext log1 batchSize
+        let queryMaxItems = 3
+        let context = createPrimaryContext log1 queryMaxItems
         // Ensure batching is included at some point in the proceedings
 
         let cartContext, (sku11, sku12, sku21, sku22) = ctx
@@ -173,15 +173,9 @@ type Tests(testOutputHelper) =
                 && has sku21 21 && has sku22 22 @>
         // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
-#if EVENTS_IN_TIP
-        test <@ let c2 = List.choose conflict capture2.ExternalCalls
-                [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
-                && [EqxAct.Resync] = c2 @>
-#else
         test <@ let c2 = List.choose conflict capture2.ExternalCalls
                 [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
                 && [EqxAct.Conflict] = c2 @>
-#endif
     }
 
     let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]
@@ -334,7 +328,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` (cartContext, skuId) = Async.RunSynchronously <| async {
-        let context = createPrimaryContext log 10
+        let queryMaxItems = 10
+        let context = createPrimaryContext log queryMaxItems
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy log context
         let service1, service2 = createServiceIndexed (), createServiceIndexed ()
         capture.Clear()
