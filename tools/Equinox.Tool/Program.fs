@@ -88,7 +88,6 @@ and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-T"; Unique>]       TimeRegular
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
     | [<AltCommandLine "-E"; Unique >]      EventsOnly
-    | [<AltCommandLine "-b"; Unique >]      BatchSize of int
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
@@ -103,7 +102,6 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | TimeRegular ->                "Don't humanize time intervals between events"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
-            | BatchSize _ ->                "Maximum number of documents to request per batch. Default 1000."
             | Es _ ->                       "Parameters for EventStore."
             | Cosmos _ ->                   "Parameters for CosmosDb."
             | MsSql _ ->                    "Parameters for Sql Server."
@@ -111,7 +109,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | Postgres _ ->                 "Parameters for Postgres."
 and DumpInfo(args: ParseResults<DumpArguments>) =
     member __.ConfigureStore(log : ILogger, createStoreLog) =
-        let storeConfig = None, true, args.GetResult(DumpArguments.BatchSize,1000)
+        let storeConfig = None, true
         match args.TryGetSubCommand() with
         | Some (DumpArguments.Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
@@ -139,7 +137,6 @@ and [<NoComparison; NoEquality>]TestArguments =
     | [<AltCommandLine "-s">]               Size of int
     | [<AltCommandLine "-C">]               Cached
     | [<AltCommandLine "-U">]               Unfolds
-    | [<AltCommandLine "-m">]               BatchSize of int
     | [<AltCommandLine "-f">]               TestsPerSecond of int
     | [<AltCommandLine "-d">]               DurationM of float
     | [<AltCommandLine "-e">]               ErrorCutoff of int64
@@ -157,7 +154,6 @@ and [<NoComparison; NoEquality>]TestArguments =
             | Size _ ->                     "For `-t Todo`: specify random title length max size to use (default 100)."
             | Cached ->                     "employ a 50MB cache, wire in to Stream configuration."
             | Unfolds ->                    "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
-            | BatchSize _ ->                "Maximum item count to supply when querying. Default: 500"
             | TestsPerSecond _ ->           "specify a target number of requests per second (default: 1000)."
             | DurationM _ ->                "specify a run duration in minutes (default: 30)."
             | ErrorCutoff _ ->              "specify an error cutoff; test ends when exceeded (default: 10000)."
@@ -173,7 +169,6 @@ and TestInfo(args: ParseResults<TestArguments>) =
     member __.Options =                     args.GetResults Cached @ args.GetResults Unfolds
     member __.Cache =                       __.Options |> List.exists (function Cached ->  true | _ -> false)
     member __.Unfolds =                     __.Options |> List.exists (function Unfolds -> true | _ -> false)
-    member __.BatchSize =                   args.GetResult(BatchSize,500)
     member __.Test =                        args.GetResult(Name,Test.Favorite)
     member __.ErrorCutoff =                 args.GetResult(ErrorCutoff,10000L)
     member __.TestsPerSecond =              args.GetResult(TestsPerSecond,1000)
@@ -189,23 +184,23 @@ and TestInfo(args: ParseResults<TestArguments>) =
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
             log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", __.Options)
-            storeLog, Storage.Cosmos.config log (cache, __.Unfolds, __.BatchSize) (Storage.Cosmos.Info sargs)
+            storeLog, Storage.Cosmos.config log (cache, __.Unfolds) (Storage.Cosmos.Info sargs)
         | Some (Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
             log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
-            storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds, __.BatchSize) sargs
+            storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds) sargs
         | Some (MsSql sargs) ->
             let storeLog = createStoreLog false
             log.Information("Running transactions in-process against MsSql with storage options: {options:l}", __.Options)
-            storeLog, Storage.Sql.Ms.config log (cache, __.Unfolds, __.BatchSize) sargs
+            storeLog, Storage.Sql.Ms.config log (cache, __.Unfolds) sargs
         | Some (MySql sargs) ->
             let storeLog = createStoreLog false
             log.Information("Running transactions in-process against MySql with storage options: {options:l}", __.Options)
-            storeLog, Storage.Sql.My.config log (cache, __.Unfolds, __.BatchSize) sargs
+            storeLog, Storage.Sql.My.config log (cache, __.Unfolds) sargs
         | Some (Postgres sargs) ->
             let storeLog = createStoreLog false
             log.Information("Running transactions in-process against Postgres with storage options: {options:l}", __.Options)
-            storeLog, Storage.Sql.Pg.config log (cache, __.Unfolds, __.BatchSize) sargs
+            storeLog, Storage.Sql.Pg.config log (cache, __.Unfolds) sargs
         | _  | Some (Memory _) ->
             log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", __.Options)
             createStoreLog false, Storage.MemoryStore.config ()

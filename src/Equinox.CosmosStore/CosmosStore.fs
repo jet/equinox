@@ -723,12 +723,12 @@ module internal Tip =
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, ru
 
-    let private logQuery direction batchSize streamName interval (responsesCount, events : ITimelineEvent<byte[]>[]) n (ru: float) (log : ILogger) =
+    let private logQuery direction queryMaxItems streamName interval (responsesCount, events : ITimelineEvent<byte[]>[]) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Event.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
-        (log |> Log.prop "bytes" bytes |> Log.prop "batchSize" batchSize |> Log.event evt).Information(
+        (log |> Log.prop "bytes" bytes |> Log.prop "queryMaxItems" queryMaxItems |> Log.event evt).Information(
             "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms rc={ru}",
             action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
@@ -879,6 +879,7 @@ module internal Tip =
         | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
         | None, _ when Option.isSome tip -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
         | _, None ->
+            // TODO Add TipOptions parameter to opt-into this vs throwing
             logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
             return pos, events
         | _, Some secondary ->
@@ -1015,14 +1016,9 @@ module Internal =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of StreamToken * 'event[]
 
-/// Defines policies for retrying with respect to transient failures calling CosmosDb (as opposed to application level concurrency conflicts)
-type RetryPolicy([<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    member __.TipRetryPolicy = readRetryPolicy
-    member __.WriteRetryPolicy = writeRetryPolicy
-
-/// Defines the policies in force regarding how to a) split up calls b) limit the number of events per page
-type BatchingPolicy
-    (   // Max items to request in query response. Defaults to 10.
+/// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
+type QueryOptions
+    (   /// Max Batches to request in query response. Defaults: 10.
         [<O; D(null)>]?defaultMaxItems : int,
         /// Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default: use `defaultMaxItems` value.
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
@@ -1034,15 +1030,22 @@ type BatchingPolicy
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
 
-type StoreClient(container : Container, fallback : Container option, batching : BatchingPolicy, retry: RetryPolicy) =
+/// Defines the policies in force regarding retrying read and write operations for the Tip
+type TipOptions
+    (   [<O; D(null)>]?readRetryPolicy,
+        [<O; D(null)>]?writeRetryPolicy) =
+    member __.ReadRetryPolicy = readRetryPolicy
+    member __.WriteRetryPolicy = writeRetryPolicy
 
-    let loadTip log stream pos = Tip.tryLoad log retry.TipRetryPolicy (container, stream) (pos, None)
+type StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
+
+    let loadTip log stream pos = Tip.tryLoad log tip.ReadRetryPolicy (container, stream) (pos, None)
 
     // Always yields events forward, regardless of direction
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip, ?forceExcludeTip): Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode,isOrigin))
         let includeTip = Option.isNone tip && forceExcludeTip <> Some true
-        let walk log gateway = Query.scan log (gateway,stream) includeTip batching.MaxItems batching.MaxRequests direction (tryDecode, isOrigin)
+        let walk log gateway = Query.scan log (gateway,stream) includeTip query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
             match fallback with
             | None -> None
@@ -1051,7 +1054,7 @@ type StoreClient(container : Container, fallback : Container option, batching : 
         let log = log |> Log.prop "stream" stream
         let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log container) walkFallback
         return Token.create stream pos, events }
-    member __.ReadLazy(log, batching: BatchingPolicy, stream, direction, (tryDecode,isOrigin), ?minIndex, ?maxIndex) : AsyncSeq<'event[]> =
+    member __.ReadLazy(log, batching: QueryOptions, stream, direction, (tryDecode,isOrigin), ?minIndex, ?maxIndex) : AsyncSeq<'event[]> =
         Query.walkLazy log (container,stream) batching.MaxItems batching.MaxRequests (tryDecode,isOrigin) (direction, minIndex, maxIndex)
 
     member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), checkUnfolds): Async<StreamToken * 'event[]> =
@@ -1080,13 +1083,13 @@ type StoreClient(container : Container, fallback : Container option, batching : 
 
     member internal __.Sync(log, stream, exp, batch: Tip): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
-        match! Sync.batch log retry.WriteRetryPolicy (container, stream) (exp, batch) with
+        match! Sync.batch log tip.WriteRetryPolicy (container, stream) (exp, batch) with
         | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (pos',events)
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
     member __.Prune(log, stream, beforeIndex) =
-        Delete.pruneBefore log (container,stream) batching.MaxItems beforeIndex
+        Delete.pruneBefore log (container,stream) query.MaxItems beforeIndex
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event,byte[],'context>) =
     member __.Load(log, stream, initial, checkUnfolds, fold, isOrigin): Async<StreamToken * 'state> = async {
@@ -1208,16 +1211,18 @@ type CosmosStoreConnection
         g, streamName
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(connection : CosmosStoreConnection, batchingPolicy, retryPolicy) =
-    new(connection : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?readRetryPolicy, ?writeRetryPolicy) =
-        let retry = RetryPolicy(?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
-        let batching = BatchingPolicy(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
-        CosmosStoreContext(connection, batching, retry)
-    member __.Batching = batchingPolicy
-    member __.Retries = retryPolicy
+type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipOptions) =
+    let tipOptions = tipOptions |> Option.defaultWith TipOptions
+    let queryOptions = queryOptions |> Option.defaultWith QueryOptions
+    new(connection : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?tipOptions) =
+        let queryOptions = QueryOptions(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
+        CosmosStoreContext(connection, queryOptions, ?tipOptions = tipOptions)
+    new(connection : CosmosStoreConnection, ?queryMaxItems) =
+        let tipOptions = TipOptions()
+        CosmosStoreContext(connection, tipOptions = tipOptions, ?defaultMaxItems = queryMaxItems)
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
         let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
-        let store = StoreClient(cg.Container, cg.Fallback, batchingPolicy, retryPolicy)
+        let store = StoreClient(cg.Container, cg.Fallback, queryOptions, tipOptions)
         store, streamId, cg.InitializationGate
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
@@ -1404,7 +1409,7 @@ type EventsContext internal
         [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
     do if log = null then nullArg "log"
     let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let batching = BatchingPolicy(getDefaultMaxItems = getDefaultMaxItems)
+    let batching = QueryOptions(getDefaultMaxItems = getDefaultMaxItems)
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
         fun _ ->
@@ -1431,9 +1436,9 @@ type EventsContext internal
         streamId, init
     member __.StreamId(streamName) : string = __.ResolveStream streamName |> fst
 
-    member internal __.GetLazy(stream, ?batchSize, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<byte[]>[]> =
+    member internal __.GetLazy(stream, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<byte[]>[]> =
         let direction = defaultArg direction Direction.Forward
-        let batching = BatchingPolicy(defaultArg batchSize batching.MaxItems)
+        let batching = match queryMaxItems with Some qmi when batching.MaxItems <> qmi -> QueryOptions(qmi) | _ -> batching
         store.ReadLazy(log, batching, stream, direction, (Some,fun _ -> false), ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
@@ -1457,10 +1462,10 @@ type EventsContext internal
         let! (Token.Unpack (_,pos')) = store.GetPosition(log, stream, ?pos = position)
         return pos' }
 
-    /// Reads in batches of `batchSize` from the specified `Position`, allowing the reader to efficiently walk away from a running query
+    /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member __.Walk(stream, batchSize, ?minIndex, ?maxIndex, ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
-        __.GetLazy(stream, batchSize, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
+    member __.Walk(stream, queryMaxItems, ?minIndex, ?maxIndex, ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
+        __.GetLazy(stream, queryMaxItems, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     /// Reads all Events from a `Position` in a given `direction`
     member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*ITimelineEvent<byte[]>[]> =

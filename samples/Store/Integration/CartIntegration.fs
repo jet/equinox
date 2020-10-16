@@ -70,7 +70,7 @@ type Tests(testOutputHelper) =
 
     let arrangeCosmos connect resolve =
         let log = createLog ()
-        let ctx : CosmosStore.CosmosStoreContext = connect log defaultBatchSize
+        let ctx : CosmosStore.CosmosStoreContext = connect log defaultQueryMaxItems
         Backend.Cart.create log (resolve ctx)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
