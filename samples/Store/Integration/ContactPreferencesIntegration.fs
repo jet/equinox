@@ -61,14 +61,14 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeCosmos connect resolve batchSize =
+    let arrangeCosmos connect resolve queryMaxItems =
         let log = createLog ()
-        let ctx: CosmosStore.CosmosStoreContext = connect log batchSize
+        let ctx: CosmosStore.CosmosStoreContext = connect log queryMaxItems
         Backend.ContactPreferences.create log (resolve ctx)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosUnoptimized defaultBatchSize
+        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosUnoptimized defaultQueryMaxItems
         do! act service args
     }
 
@@ -80,6 +80,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosRollingUnfolds defaultBatchSize
+        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosRollingUnfolds defaultQueryMaxItems
         do! act service args
     }
