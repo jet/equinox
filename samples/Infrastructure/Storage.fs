@@ -83,11 +83,10 @@ module Cosmos =
     open Serilog
 
     let logContainer (log: ILogger) name (mode, endpoint, db, container) =
-        log.Information("CosmosDb {name:l} {mode} {connection} Database {database} Container {container}", name, mode, endpoint, db, container)
-    let connect (a : Info) conn =
-        let discovery = Discovery.ConnectionString conn
-        CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(discovery)
-    let conn (log: ILogger) (a : Info) =
+        log.Information("CosmosDB {name:l} {mode} {connection} Database {database} Container {container}", name, mode, endpoint, db, container)
+    let connect (a : Info) connectionString =
+        CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(Discovery.ConnectionString connectionString)
+    let conn (log : ILogger) (a : Info) =
         let (primaryClient, primaryDatabase, primaryContainer) as primary = connect a a.Connection, a.Database, a.Container
         logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)
         let secondary =
@@ -97,13 +96,13 @@ module Cosmos =
             | None -> None
         secondary |> Option.iter (fun (client, db, container) -> logContainer log "Secondary" (a.Mode, client.Endpoint, db, container))
         primary, secondary
-    let config (log: ILogger) (cache, unfolds, batchSize) info =
+    let config (log : ILogger) (cache, unfolds, batchSize) (a : Info) =
         let conn =
-            match conn log info with
+            match conn log a with
             | (client, databaseId, containerId), None ->
                 CosmosStoreConnection(client, databaseId, containerId)
             | (client, databaseId, containerId), Some (client2, db2, cont2) ->
-                CosmosStoreConnection(client, databaseId, containerId, client2=client2, databaseId2=db2, containerId2=cont2)
+                CosmosStoreConnection(client, databaseId, containerId, client2 = client2, databaseId2 = db2, containerId2 = cont2)
         let ctx = CosmosStoreContext(conn, defaultMaxItems = batchSize)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Cosmos (ctx, cacheStrategy, unfolds)
@@ -157,7 +156,7 @@ module EventStore =
         let (timeout, retries) as operationThrottling = a.Timeout, a.Retries
         let heartbeatTimeout = a.HeartbeatTimeout
         let concurrentOperationsLimit = a.ConcurrentOperationsLimit
-        log.Information("EventStore {host} heartbeat: {heartbeat}s timeout: {timeout}s concurrent reqs: {concurrency} retries {retries}",
+        log.Information("EventStoreDB {host} heartbeat: {heartbeat}s timeout: {timeout}s concurrent reqs: {concurrency} retries {retries}",
             a.Host, heartbeatTimeout.TotalSeconds, timeout.TotalSeconds, concurrentOperationsLimit, retries)
         let conn = connect storeLog (a.Host, heartbeatTimeout, concurrentOperationsLimit) a.Credentials operationThrottling |> Async.RunSynchronously
         let cacheStrategy = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))

@@ -37,7 +37,7 @@ Some aspects of the implementation are distilled from [`Jet.com` systems dating 
   - no additional roundtrips to the store needed at either the Load or Sync points in the flow
   - support, (via the [`FsCodec.IEventCodec`](https://github.com/jet/FsCodec#IEventCodec)) for the maintenance of multiple co-existing compaction schemas for a given stream (A 'compaction' event/snapshot isa Event)
   - compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
-  - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this excellent EventStore.org article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
+  - NB while this works well, and can deliver excellent performance (especially when allied with the Cache), [it's not a panacea, as noted in this EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
 - **`Equinox.CosmosStore` 'Tip with Unfolds' schema**: (In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`,) when using `Equinox.CosmosStore`, optimized command processing is managed via the `Tip`; a document per stream with a well-known identity enabling Syncing the r/w Position via a single point-read by virtue of the fact that the document maintains:
   a) the present Position of the stream - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
   b) ephemeral (`deflate+base64` compressed) [_unfolds_](DOCUMENTATION.md#Cosmos-Storage-Model)
@@ -626,7 +626,7 @@ The answer as to why that strategy is available in in `Equinox.EventStore` is fo
 - streams like `Favorites` where every event is small (add sku, drop sku), and the snapshot is pretty compact (list of skus) (but note it is ever growing)
 - streams like `SavedForLater` items where the state rolls over regularly - even after 5 years and 1000s of items moving in and out, there's a constraint of max 50 items which makes a snapshot pretty light. (The other trick is that a `Cleared` event counts as a valid starting state for the fold - and we don't write a snapshot if we have one of those)
 
-The big win is latency in querying contexts - given that access strategy, you're guaranteed to be able to produce the full state of the aggregate with a single roundtrip (if max batch size is 200, the sna[shots are written every 200 items so reading backward 200 guarantees a snapshot will be included)
+The big win is latency in querying contexts - given that access strategy, you're guaranteed to be able to produce the full state of the aggregate with a single roundtrip (if max batch size is 200, the snapshots are written every 200 items so reading backward 200 guarantees a snapshot will be included)
 
 The secondary benefit is of course that you have an absolute guarantee there will always be a snapshot, and if a given write succeeds, there will definitely be a snapshot in the `maxBatchSize` window (but it still copes if there isn't - i.e. you can add snapshotting after the fact)
 
@@ -652,8 +652,9 @@ TL;DR yes and no respectively
 Firstly, it's recommended to read the [documentation section on Access Strategies](DOCUMENTATION.md#access-strategies)
 
 General rules:
-- Events are the atoms from which state is built, they live forever in immutable Batch documents with id <> -1.
-- Snapshots/unfolds live in the `.u` array in the Tip doc (id: -1)
+- Events are the atoms from which state is built, they live forever, immutably in Batch documents.
+- There is a special Batch with `id = "-1"`, entitled the *Tip*.
+- Snapshots/unfolds live in the `.u` array in the Tip doc.
  loading/build of state is composed of
 - regardless of what happens, Events are _never_ destroyed, updated or touched in any way, ever. Having said that, if your Event DU does not match them, they're also as good as not there from the point of view of how State is established.
 - Reads always get the `Tip` first (one exception: `Unoptimized` mode skips reading the `Tip` as, by definition, you're not using snapshots/unfolds/any tricks), Writes always touch the `Tip` (yes, even in `Unoptimized` mode; there's no such thing as a stream that has ever been written to that does not have a `Tip`).

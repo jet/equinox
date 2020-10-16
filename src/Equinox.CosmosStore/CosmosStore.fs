@@ -185,7 +185,8 @@ module internal Position =
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 type internal Enum() =
-    static member Events(i: int64, e: Event[], indexMin, indexMax) : ITimelineEvent<byte[]> seq = seq {
+    static member Events(i: int64, e: Event[], ?minIndex, ?maxIndex) : ITimelineEvent<byte[]> seq = seq {
+        let indexMin, indexMax = defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue
         for offset in 0..e.Length-1 do
             let index = i + int64 offset
             // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
@@ -193,9 +194,9 @@ type internal Enum() =
                 let x = e.[offset]
                 yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, Guid.Empty, x.correlationId, x.causationId, x.t) }
     static member internal Events(t: Tip, ?minIndex, ?maxIndex) : ITimelineEvent<byte[]> seq =
-        Enum.Events(t.i, t.e, defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue)
+        Enum.Events(t.i, t.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
     static member internal Events(b: Batch, ?minIndex, ?maxIndex) =
-        Enum.Events(b.i, b.e, defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue)
+        Enum.Events(b.i, b.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
     static member Unfolds(xs: Unfold[]) : ITimelineEvent<byte[]> seq = seq {
         for x in xs -> FsCodec.Core.TimelineEvent.Create(x.i, x.c, x.d, x.m, Guid.Empty, null, null, x.t, isUnfold = true) }
     static member EventsAndUnfolds(x: Tip, ?minIndex, ?maxIndex): ITimelineEvent<byte[]> seq =
@@ -391,7 +392,7 @@ module private MicrosoftAzureCosmosWrappers =
 type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
 
 module internal SyncStoredProc =
-    let [<Literal>] name = "EquinoxRollingUnfolds4"  // NB need to rename/number for any breaking change
+    let [<Literal>] name = "EquinoxRollingUnfolds5"  // NB need to rename/number for any breaking change
     let [<Literal>] body = """
 // Manages the merging of the supplied Request Batch into the stream
 
@@ -424,7 +425,6 @@ function sync(req, expIndex, expEtag) {
             // yielding [] triggers the client to go loading the events itself
 
             // if we're working based on etags, the `u`nfolds likely bear relevant info as state-bearing unfolds
-            // if there are no `u`nfolds, we need to be careful not to yield `conflicts: null`, as that signals a successful write (see below)
             response.setBody({ etag: current._etag, n: current.n, conflicts: current.u || [] });
         } else {
             executeUpsert(current);
@@ -437,11 +437,14 @@ function sync(req, expIndex, expEtag) {
             if (err) throw err;
             response.setBody({ etag: doc._etag, n: doc.n, conflicts: null });
         }
+        function shouldCalveBatch(events) {
+            return events.length > 0;
+        }
         if (tip) {
             Array.prototype.push.apply(tip.e, req.e);
             tip.n = tip.i + tip.e.length;
             // If there are events, calve them to their own batch (this behavior is to simplify CFP consumer impl)
-            if (tip.e.length > 0) {
+            if (shouldCalveBatch(tip.e)) {
                 const batch = { id: tip.i.toString(), p: tip.p, i: tip.i, n: tip.n, e: tip.e }
                 const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
                 if (!batchAccepted) throw new Error("Unable to remove Tip markings.");
@@ -459,7 +462,7 @@ function sync(req, expIndex, expEtag) {
             if (!isAccepted) throw new Error("Unable to replace Tip batch.");
         } else {
             // NOTE we write the batch first (more consistent RU cost than writing tip first)
-            if (req.e.length > 0) {
+            if (shouldCalveBatch(req.e)) {
                 const batch = { id: "0", p: req.p, i: 0, n: req.e.length, e: req.e };
                 const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
                 if (!batchAccepted) throw new Error("Unable to create Batch 0.");
@@ -500,12 +503,13 @@ module internal Sync =
         let! (res : Scripts.StoredProcedureExecuteResponse<SyncResponse>) =
             container.Scripts.ExecuteStoredProcedureAsync<SyncResponse>(SyncStoredProc.name, PartitionKey stream, args, cancellationToken = ct) |> Async.AwaitTaskCorrect
         let newPos = { index = res.Resource.n; etag = Option.ofObj res.Resource.etag }
-        return res.RequestCharge, res.Resource.conflicts |> function
-            | null -> Result.Written newPos
-            | [||] when newPos.index = 0L -> Result.Conflict (newPos, Array.empty)
-            | [||] -> Result.ConflictUnknown newPos
-            | xs -> // stored proc can return events and/or unfolds with i >= req.i - no need to trim to a minIndex
-                Result.Conflict (newPos, Enum.Unfolds xs |> Array.ofSeq) }
+        match res.Resource.conflicts with
+        | null -> return res.RequestCharge, Result.Written newPos
+        | [||] when newPos.index = 0L -> return res.RequestCharge, Result.Conflict (newPos, Array.empty)
+        | [||] -> return res.RequestCharge, Result.ConflictUnknown newPos
+        | unfolds -> // stored proc only returns unfolds with index >= req.i - no need to trim to a minIndex
+            let events = Enum.Unfolds unfolds |> Array.ofSeq
+            return res.RequestCharge, Result.Conflict (newPos, events) }
 
     let private logged (container,stream) (exp : SyncExp, req: Tip) (log : ILogger)
         : Async<Result> = async {
@@ -1020,7 +1024,7 @@ type RetryPolicy([<O; D(null)>]?readRetryPolicy: IRetryPolicy, [<O; D(null)>]?wr
 type BatchingPolicy
     (   // Max items to request in query response. Defaults to 10.
         [<O; D(null)>]?defaultMaxItems : int,
-        // Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default to using `defaultMaxItems`
+        /// Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default: use `defaultMaxItems` value.
         [<O; D(null)>]?getDefaultMaxItems : unit -> int,
         /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
         [<O; D(null)>]?maxRequests) =
@@ -1031,6 +1035,8 @@ type BatchingPolicy
     member __.MaxRequests = maxRequests
 
 type StoreClient(container : Container, fallback : Container option, batching : BatchingPolicy, retry: RetryPolicy) =
+
+    let loadTip log stream pos = Tip.tryLoad log retry.TipRetryPolicy (container, stream) (pos, None)
 
     // Always yields events forward, regardless of direction
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip, ?forceExcludeTip): Async<StreamToken * 'event[]> = async {
@@ -1045,24 +1051,21 @@ type StoreClient(container : Container, fallback : Container option, batching : 
         let log = log |> Log.prop "stream" stream
         let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log container) walkFallback
         return Token.create stream pos, events }
-
-    member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), includeUnfolds): Async<StreamToken * 'event[]> =
-        if not includeUnfolds then con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), forceExcludeTip = true)
-        else async {
-            match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) (maybePos, None) with
-            | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
-            | Tip.Result.NotModified -> return invalidOp "Not applicable"
-            | Tip.Result.Found (pos, xs) -> return! con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), tip=(pos, xs)) }
-
     member __.ReadLazy(log, batching: BatchingPolicy, stream, direction, (tryDecode,isOrigin), ?minIndex, ?maxIndex) : AsyncSeq<'event[]> =
         Query.walkLazy log (container,stream) batching.MaxItems batching.MaxRequests (tryDecode,isOrigin) (direction, minIndex, maxIndex)
 
+    member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), checkUnfolds): Async<StreamToken * 'event[]> =
+        if not checkUnfolds then con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), forceExcludeTip = true)
+        else async {
+            match! loadTip log stream maybePos with
+            | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
+            | Tip.Result.NotModified -> return invalidOp "Not applicable"
+            | Tip.Result.Found (pos, xs) -> return! con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), tip=(pos, xs)) }
     member __.GetPosition(log, stream, ?pos): Async<StreamToken> = async {
-        match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) (pos, None) with
+        match! loadTip log stream pos with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
         | Tip.Result.NotModified -> return Token.create stream pos.Value
         | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create stream pos }
-
     member con.Reload(log, (stream, pos), (tryDecode, isOrigin), ?preview): Async<LoadFromTokenResult<'event>> =
         let query (pos, xs) = async {
             let! res = con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), tip=(pos, xs), minIndex = pos.index)
@@ -1070,23 +1073,24 @@ type StoreClient(container : Container, fallback : Container option, batching : 
         match preview with
         | Some (pos, xs) -> query (pos, xs)
         | None -> async {
-            match! Tip.tryLoad log retry.TipRetryPolicy (container,stream) (Some pos, None) with
+            match! loadTip log stream (Some pos) with
             | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty, Array.empty)
             | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
             | Tip.Result.Found (pos,xs) -> return! query (pos, xs) }
 
     member internal __.Sync(log, stream, exp, batch: Tip): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
-        match! Sync.batch log retry.WriteRetryPolicy (container,stream) (exp,batch) with
+        match! Sync.batch log retry.WriteRetryPolicy (container, stream) (exp, batch) with
         | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (pos',events)
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
+
     member __.Prune(log, stream, beforeIndex) =
         Delete.pruneBefore log (container,stream) batching.MaxItems beforeIndex
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event,byte[],'context>) =
-    member __.Load(log, stream, initial, includeUnfolds, fold, isOrigin): Async<StreamToken * 'state> = async {
-        let! token, events = store.Load(log, (stream, None), (codec.TryDecode,isOrigin), includeUnfolds)
+    member __.Load(log, stream, initial, checkUnfolds, fold, isOrigin): Async<StreamToken * 'state> = async {
+        let! token, events = store.Load(log, (stream, None), (codec.TryDecode,isOrigin), checkUnfolds)
         return token, fold initial events }
     member __.Reload(log, (Token.Unpack (stream, pos) as streamToken), state, fold, isOrigin, ?preloaded): Async<StreamToken * 'state> = async {
         match! store.Reload(log, (stream, pos), (codec.TryDecode,isOrigin), ?preview = preloaded) with
@@ -1113,58 +1117,37 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 module internal Caching =
-    /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, string,'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
-        let intercept streamName tokenAndState = async {
-            let! _ = tee streamName tokenAndState
-            return tokenAndState }
-        let loadAndIntercept load streamName = async {
-            let! tokenAndState = load
-            return! intercept streamName tokenAndState }
-        interface ICategory<'event, 'state, string, 'context> with
-            member __.Load(log, streamName, opt) : Async<StreamToken * 'state> =
-                loadAndIntercept (inner.Load(log, streamName, opt)) streamName
-            member __.TrySync(log : ILogger, (Token.Unpack (stream,_) as streamToken), state, events : 'event list, context)
-                : Async<SyncResult<'state>> = async {
-                match! inner.TrySync(log, streamToken, state, events, context) with
-                | SyncResult.Conflict resync -> return SyncResult.Conflict(loadAndIntercept resync stream)
-                | SyncResult.Written(token', state') ->
-                    let! intercepted = intercept stream (token', state')
-                    return SyncResult.Written intercepted }
-
     let applyCacheUpdatesWithSlidingExpiration
             (cache : ICache)
             (prefix : string)
-            (slidingExpiration : TimeSpan)
-            (category : ICategory<'event, 'state, string, 'context>)
-            : ICategory<'event, 'state, string, 'context> =
+            (slidingExpiration : TimeSpan) =
         let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
-        let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
-        CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
+        fun streamName value -> cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
 
-type internal Folder<'event, 'state, 'context>
-    (   category: Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state,
-        isOrigin: 'event -> bool,
-        mapUnfolds: Choice<unit,('event list -> 'state -> 'event seq),('event list -> 'state -> 'event list * 'event list)>,
-        compressUnfolds,
-        ?readCache) =
-    let inspectUnfolds = match mapUnfolds with Choice1Of3 () -> false | _ -> true
-    let batched log stream = category.Load(log, stream, initial, inspectUnfolds, fold, isOrigin)
+type internal CachingCategory<'event, 'state, 'context>
+    (   category: Category<'event, 'state, 'context>,
+        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        tryReadCache, updateCache,
+        checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, ('event list -> 'state -> 'event seq), ('event list -> 'state -> 'event list * 'event list)>) =
+    let cache streamName inner = async {
+        let! ts = inner
+        do! updateCache streamName ts
+        return ts }
     interface ICategory<'event, 'state, string, 'context> with
-        member __.Load(log, streamName, opt): Async<StreamToken * 'state> =
-            match readCache with
-            | None -> batched log streamName
-            | Some (cache : ICache, prefix : string) -> async {
-                match! cache.TryGet(prefix + streamName) with
-                | None -> return! batched log streamName
-                | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState
-                | Some (token, state) -> return! category.Reload(log, token, state, fold, isOrigin) }
-        member __.TrySync(log : ILogger, streamToken, state, events : 'event list, context)
+        member __.Load(log, streamName, opt): Async<StreamToken * 'state> = async {
+            match! tryReadCache streamName with
+            | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
+            | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState // read already updated TTL, no need to write
+            | Some (token, state) -> return! category.Reload(log, token, state, fold, isOrigin) |> cache streamName }
+        member __.TrySync(log : ILogger, (Token.Unpack (streamName, _) as streamToken), state, events : 'event list, context)
             : Async<SyncResult<'state>> = async {
             match! category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) with
-            | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
-            | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
+            | SyncResult.Conflict resync ->
+                return SyncResult.Conflict (cache streamName resync)
+            | SyncResult.Written (token',state') ->
+                let! res = cache streamName (async { return (token',state') })
+                return SyncResult.Written res }
 
 namespace Equinox.CosmosStore
 
@@ -1289,26 +1272,23 @@ type CosmosStoreCategory<'event, 'state, 'context>
         /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
         ?compressUnfolds) =
     let compressUnfolds = defaultArg compressUnfolds true
-    let readCacheOption =
-        match caching with
-        | CachingStrategy.NoCaching -> None
-        | CachingStrategy.SlidingWindow(cache, _) -> Some(cache, null)
-    let isOrigin, mapUnfolds =
-        match access with
-        | AccessStrategy.Unoptimized ->                      (fun _ -> false), Choice1Of3 ()
-        | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
-        | AccessStrategy.Snapshot (isOrigin,toSnapshot) ->   isOrigin,         Choice2Of3 (fun _ state  -> toSnapshot state |> Seq.singleton)
-        | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         Choice2Of3 (fun _ state  -> unfold state)
-        | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
-        | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         Choice3Of3 transmute
     let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<_, _, string, 'context>>()
     let resolveCategory (categoryName, container) =
-        let createCategory _name =
+        let createCategory _name : ICategory<_, _, string, 'context> =
+            let tryReadCache, updateCache =
+                match caching with
+                | CachingStrategy.NoCaching -> (fun _ -> async { return None }), fun _ _ -> async { () }
+                | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration cache null window
+            let isOrigin, checkUnfolds, mapUnfolds =
+                match access with
+                | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
+                | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
+                | AccessStrategy.Snapshot (isOrigin,toSnapshot) ->   isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Seq.singleton)
+                | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
+                | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
+                | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         true,  Choice3Of3 transmute
             let cosmosCat = Category<'event, 'state, 'context>(container, codec)
-            let folder = Folder<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, mapUnfolds, compressUnfolds, ?readCache = readCacheOption)
-            match caching with
-            | CachingStrategy.NoCaching -> folder :> ICategory<_, _, string, 'context>
-            | CachingStrategy.SlidingWindow(cache, window) -> Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+            CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
 
     let resolveStream (categoryName, container, streamId, maybeContainerInitializationGate) opt context =

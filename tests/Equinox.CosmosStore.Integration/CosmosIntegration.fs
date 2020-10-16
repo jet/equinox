@@ -70,13 +70,13 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
-    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly batching the reads [without reading the Tip]`` cartContext skuId = Async.RunSynchronously <| async {
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, correctly batching the reads (without special-casing tip)`` (cartContext, skuId) = Async.RunSynchronously <| async {
+        capture.Clear() // for re-runs of the test
         let maxItemsPerRequest = 5
         let context = createPrimaryContext log maxItemsPerRequest
 
         let service = Cart.createServiceWithoutOptimization log context
-        capture.Clear() // for re-runs of the test
 
         let cartId = % Guid.NewGuid()
         // The command processing should trigger only a single read and a single write call
@@ -96,15 +96,15 @@ type Tests(testOutputHelper) =
         let expectedEventCount = transactions * eventsPerAction
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        let expectedResponses = transactions/maxItemsPerRequest + 1
+        let expectedResponses = transactions / maxItemsPerRequest + 1
         test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
         verifyRequestChargesMax 9 // 8.58 // 10.01
     }
 
-    [<AutoData(MaxFail=1, MaxTest=2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` ctx initialState = Async.RunSynchronously <| async {
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` (ctx, initialState) = Async.RunSynchronously <| async {
+        capture.Clear()
         let log1, capture1 = log, capture
-        capture1.Clear()
         let batchSize = 3
         let context = createPrimaryContext log1 batchSize
         // Ensure batching is included at some point in the proceedings
@@ -171,7 +171,7 @@ type Tests(testOutputHelper) =
         test <@ maybeInitialSku |> Option.forall (fun (skuId, quantity) -> has skuId quantity)
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
-       // Intended conflicts arose
+        // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
 #if EVENTS_IN_TIP
         test <@ let c2 = List.choose conflict capture2.ExternalCalls
@@ -187,7 +187,7 @@ type Tests(testOutputHelper) =
     let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
-    [<AutoData(MaxFail=1, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` value = Async.RunSynchronously <| async {
         let context = createPrimaryContext log 1
         let service = ContactPreferences.createService log context
@@ -211,12 +211,8 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
 
-        //let ctx = createPrimaryEventsContext log None
-
         // Needs to share the same client for the session key to be threaded through
         // If we run on an independent context, we won't see (and hence prune) the full set of events
-        // TODO: explain why this sleep is still needed though!
-        do! Async.Sleep 1000
         let ctx = Core.EventsContext(context, log)
         let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
 
@@ -261,8 +257,8 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
     }
 
-    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` ctx initialState = Async.RunSynchronously <| async {
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` (ctx, initialState) = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
         let context = createPrimaryContext log1 1
@@ -337,9 +333,8 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` cartContext skuId = Async.RunSynchronously <| async {
-        let batchSize = 10
-        let context = createPrimaryContext log batchSize
+    let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` (cartContext, skuId) = Async.RunSynchronously <| async {
+        let context = createPrimaryContext log 10
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy log context
         let service1, service2 = createServiceIndexed (), createServiceIndexed ()
         capture.Clear()
@@ -364,8 +359,6 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
-        // TODO: explain why this sleep is still needed though!
-        do! Async.Sleep 1000
         let ctx = Core.EventsContext(context, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
@@ -387,9 +380,8 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` cartContext skuId = Async.RunSynchronously <| async {
-        let batchSize = 10
-        let context = createPrimaryContext log batchSize
+    let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` (cartContext, skuId) = Async.RunSynchronously <| async {
+        let context = createPrimaryContext log 10
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching log context cache
         let service1, service2 = createServiceCached (), createServiceCached ()
@@ -425,8 +417,6 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
-        // TODO: explain why this sleep is still needed though!
-        do! Async.Sleep 1000
         let ctx = Core.EventsContext(context, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
