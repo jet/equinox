@@ -441,9 +441,6 @@ function sync(req, expIndex, expEtag, maxEventsInTip, maxStringifyLen) {
         function shouldCalveBatch(events) {
             return events.length > maxEventsInTip || JSON.stringify(events).length > maxStringifyLen;
         }
-        function shouldCalveBatch(events) {
-            return events.length > 0;
-        }
         if (tip) {
             Array.prototype.push.apply(tip.e, req.e);
             tip.n = tip.i + tip.e.length;

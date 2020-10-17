@@ -173,7 +173,8 @@ type Tests(testOutputHelper) =
 
         // Attempt to write, skipping Index 0
         let! res = Events.append ctx streamName 1L <| TestEvents.Create(0,1)
-        test <@ [EqxAct.Resync] = capture.ExternalCalls @> // Resync is returned if no events should need to be re-queried
+        // Resync is returned if no events should need to be re-queried
+        test <@ [EqxAct.Resync] = capture.ExternalCalls @>
         // The response aligns with a normal conflict in that it passes the entire set of conflicting events ()
         test <@ AppendResult.Conflict (0L,[||]) = res @>
         if eventsInTip then verifyRequestChargesMax 12 // 11.49
