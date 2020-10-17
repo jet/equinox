@@ -71,7 +71,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
         e: Event[] }
-    /// Unless running in single partition mode (which would restrict us to 10GB per collection)
+    /// Unless running in single partition mode (which would restrict us to 10GB per container)
     /// we need to nominate a partition key that will be in every document
     static member internal PartitionKeyField = "p"
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
@@ -1031,7 +1031,9 @@ type QueryOptions
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
 
-/// Defines the policies in force regarding a) retrying read and write operations for the Tip b) accumulation/retention of Events in Tip
+/// Defines the policies in force regarding
+/// - accumulation/retention of Events in Tip
+/// - retrying read and write operations for the Tip
 type TipOptions
     (   /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0.
         [<O; D(null)>]?maxEvents,
@@ -1187,7 +1189,7 @@ type CosmosStoreConnection
         [<O; D(null)>]?disableInitialization) =
     let createGateway = match createGateway with Some creator -> creator | None -> id
     let primaryDatabaseAndContainerToSecondary = defaultArg primaryDatabaseAndContainerToSecondary id
-    // Index of database*collection -> Initialization Context
+    // Index of database*container -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, Initialization.ContainerInitializerGuard>()
     new(client, databaseId : string, containerId : string,
         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
@@ -1340,8 +1342,7 @@ type CosmosStoreCategory<'event, 'state, 'context>
             let stream = resolveStream streamArgs option context
             Stream.ofMemento (Token.create streamId Position.fromKnownEmpty,initial) stream
 
-    member __.FromMemento
-        (   Token.Unpack (stream,_pos) as streamToken, state) =
+    member __.FromMemento(Token.Unpack (stream,_pos) as streamToken, state) =
         let skipInitialization = None
         let (categoryName, container, streamId, _maybeInit) = resolveStreamConfig (StreamName.parse stream)
         let stream = resolveStream (categoryName, container, streamId, skipInitialization) None None
@@ -1489,7 +1490,7 @@ type EventsContext internal
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
     member __.Sync(stream, position, events: IEventData<_>[]) : Async<AppendResult<Position>> = async {
-        // Writes go through the stored proc, which we need to provision per-collection
+        // Writes go through the stored proc, which we need to provision per container
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
         //   to move this about before we reach a final destination in any case
         match __.ResolveStream stream |> snd with
