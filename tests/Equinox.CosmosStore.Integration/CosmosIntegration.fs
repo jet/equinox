@@ -75,19 +75,21 @@ type Tests(testOutputHelper) =
         capture.Clear() // for re-runs of the test
         let addRemoveCount = 40
         let eventsPerAction = addRemoveCount * 2 - 1
-        let queryMaxItems = 5
+        let queryMaxItems = 3
         let context = createPrimaryContextEx log queryMaxItems (if eventsInTip then eventsPerAction else 0)
 
         let service = Cart.createServiceWithoutOptimization log context
+        let emptyTip = if eventsInTip then 0 else 1
+        let expectedResponses n =
+            let expectedBatches = 1 + if eventsInTip then n / 2 else n
+            max 1 (int (ceil (float expectedBatches / float queryMaxItems)))
 
         let cartId = % Guid.NewGuid()
-        // The command processing should trigger only a single read and a single write call
+        // The command processing will trigger QueryB operations as no snapshots etc are being used
         let transactions = 6
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
-            let emptyTip = if eventsInTip then 0 else 1
-            let expectedBatchesOfItems = max 1 (int (ceil <| float (i - 1 + emptyTip) / float queryMaxItems))
-            test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
+            test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
             verifyRequestChargesMax 72 // 71.27 [3.58; 67.69]
             capture.Clear()
 
@@ -96,9 +98,9 @@ type Tests(testOutputHelper) =
         let expectedEventCount = transactions * eventsPerAction
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        let expectedResponses = transactions / queryMaxItems + 1
-        test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 9 // 8.58 // 10.01
+        test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+        if eventsInTip then verifyRequestChargesMax 8 // 7.46
+        else verifyRequestChargesMax 15 // 14.01
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]

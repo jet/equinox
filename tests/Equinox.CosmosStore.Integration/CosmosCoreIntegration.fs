@@ -36,9 +36,8 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let append (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log (Some 10) (if eventsInTip then 1 else 0)
         capture.Clear()
-        let ctx = createPrimaryEventsContext log (Some defaultQueryMaxItems)
+        let ctx = createPrimaryEventsContext log None (if eventsInTip then 1 else 0)
 
         let index = 0L
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
@@ -62,7 +61,7 @@ type Tests(testOutputHelper) =
     // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log (Some defaultQueryMaxItems)
+        let ctx = createPrimaryEventsContext log None 10
 
         let index = 0L
         let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
@@ -241,7 +240,7 @@ type Tests(testOutputHelper) =
     let ``get Lazy`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
         let ctx = createPrimaryEventsContext log (Some 1) (if eventsInTip then 3 else 0)
 
-        let! expected = add6EventsIn2BatchesEx ctx streamName 3
+        let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
         let! res = Events.getAll ctx streamName 0L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun _ -> false) |> AsyncSeq.toArrayAsync
         let expected = expected |> Array.take 1
@@ -251,8 +250,8 @@ type Tests(testOutputHelper) =
         let queryRoundTripsAndItemCounts = function
             | EqxEvent (Equinox.CosmosStore.Core.Log.Event.Query (Equinox.CosmosStore.Core.Direction.Forward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
-        // validate that, because we stopped after 1 item, we only needed one trip (which contained 3 events)
-        (if eventsInTip then [1,1] else [1,3]) =! capture.ChooseCalls queryRoundTripsAndItemCounts
+        // validate that, because we stopped after 1 item, we only needed one trip (which contained 4 events)
+        [1,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 3 // 2.97 (2.88 in Tip)
     }
 
