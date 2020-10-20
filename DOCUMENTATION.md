@@ -1832,9 +1832,8 @@ let gatewayLog =
 let factory : Equinox.CosmosStore.CosmosStoreClientFactory =
     CosmosStoreClientFactory(
         requestTimeout = TimeSpan.FromSeconds 5.,
-        maxRetryAttemptsOnThrottledRequests = 1,
-        maxRetryWaitTimeInSeconds = 3,
-        log = gatewayLog)
+        maxRetryAttemptsOnRateLimitedRequests = 1,
+        maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds 3.)
 let client =
     factory.Create("Application.CommandProcessor", Discovery.FromConnectionString connectionString)
     |> Async.RunSynchronously

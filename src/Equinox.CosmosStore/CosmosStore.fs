@@ -1224,8 +1224,6 @@ type CosmosStoreConnection
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipOptions) =
-    let tipOptions = tipOptions |> Option.defaultWith TipOptions
-    let queryOptions = queryOptions |> Option.defaultWith QueryOptions
     new(connection : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?tipOptions) =
         let queryOptions = QueryOptions(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
         CosmosStoreContext(connection, queryOptions, ?tipOptions = tipOptions)
@@ -1237,9 +1235,11 @@ type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipO
         ?tipMaxJsonLength) =
         let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength)
         CosmosStoreContext(connection, tipOptions = tipOptions, ?defaultMaxItems = queryMaxItems)
+    member val QueryOptions = queryOptions |> Option.defaultWith QueryOptions
+    member val TipOptions = tipOptions |> Option.defaultWith TipOptions
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
         let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
-        let store = StoreClient(cg.Container, cg.Fallback, queryOptions, tipOptions)
+        let store = StoreClient(cg.Container, cg.Fallback, __.QueryOptions, __.TipOptions)
         store, streamId, cg.InitializationGate
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
@@ -1417,15 +1417,8 @@ type AppendResult<'t> =
 type EventsContext internal
     (   context : Equinox.CosmosStore.CosmosStoreContext, store : StoreClient,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
-        log : Serilog.ILogger,
-        /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
-        /// Default: 10
-        [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
-        /// Alternate way of specifying defaultMaxItems that facilitates reading it from a cached dynamic configuration
-        [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
+        log : Serilog.ILogger) =
     do if log = null then nullArg "log"
-    let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let batching = QueryOptions(getDefaultMaxItems = getDefaultMaxItems)
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
         fun _ ->
@@ -1443,9 +1436,9 @@ type EventsContext internal
         | Direction.Forward -> startPos, None
         | Direction.Backward -> None, startPos
 
-    new (context : Equinox.CosmosStore.CosmosStoreContext, log, ?defaultMaxItems, ?getDefaultMaxItems) =
-        let storeClient, _streamId, _ = context.ResolveContainerClientAndStreamIdAndInit(null, null)
-        EventsContext(context, storeClient, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
+    new (context : Equinox.CosmosStore.CosmosStoreContext, log) =
+        let store, _streamId, _init = context.ResolveContainerClientAndStreamIdAndInit(null, null)
+        EventsContext(context, store, log)
 
     member __.ResolveStream(streamName) =
         let _cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
@@ -1454,7 +1447,7 @@ type EventsContext internal
 
     member internal __.GetLazy(stream, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<byte[]>[]> =
         let direction = defaultArg direction Direction.Forward
-        let batching = match queryMaxItems with Some qmi when batching.MaxItems <> qmi -> QueryOptions(qmi) | _ -> batching
+        let batching = match queryMaxItems with Some qmi -> QueryOptions(qmi) | _ -> context.QueryOptions
         store.ReadLazy(log, batching, stream, direction, (Some,fun _ -> false), ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {

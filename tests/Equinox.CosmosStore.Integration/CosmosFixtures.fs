@@ -61,16 +61,13 @@ let createFallbackContext log queryMaxItems =
 let defaultQueryMaxItems = 10
 
 let createPrimaryEventsContext log queryMaxItems tipMaxItems =
-    let queryMaxItems = defaultArg queryMaxItems defaultQueryMaxItems
     let context = createPrimaryContextEx log queryMaxItems tipMaxItems
-    Equinox.CosmosStore.Core.EventsContext(context, log, defaultMaxItems = queryMaxItems)
+    Equinox.CosmosStore.Core.EventsContext(context, log)
 
 let createSecondaryEventsContext log queryMaxItems =
-    let queryMaxItems = defaultArg queryMaxItems defaultQueryMaxItems
-    let ctx = createSecondaryContext log queryMaxItems
-    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = queryMaxItems)
+    let context = createSecondaryContext log queryMaxItems
+    Equinox.CosmosStore.Core.EventsContext(context, log)
 
 let createFallbackEventsContext log queryMaxItems =
-    let queryMaxItems = defaultArg queryMaxItems defaultQueryMaxItems
-    let ctx = createFallbackContext log queryMaxItems
-    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = queryMaxItems)
+    let context = createFallbackContext log queryMaxItems
+    Equinox.CosmosStore.Core.EventsContext(context, log)

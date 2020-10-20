@@ -90,7 +90,7 @@ type Tests(testOutputHelper) =
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
             test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 72 // 71.27 [3.58; 67.69]
+            verifyRequestChargesMax 76 // 75.01 [3.6; 71.41]
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -213,9 +213,7 @@ type Tests(testOutputHelper) =
         if not eventsInTip then
             (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
 
-            let ctx = createPrimaryEventsContext log None 0
-
-            // Needs to share the same client for the session key to be threaded through
+            // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
             // If we run on an independent context, we won't see (and hence prune) the full set of events
             let ctx = Core.EventsContext(context, log)
             let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
@@ -241,7 +239,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update Contacts against Cosmos with RollingUnfolds Access Strategy`` value = Async.RunSynchronously <| async {
-        let context = createPrimaryContext log 1
+        let context = createPrimaryContextEx log 1 10
         let service = ContactPreferences.createServiceWithLatestKnownEvent context log CachingStrategy.NoCaching
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
@@ -265,7 +263,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` (ctx, initialState) = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
-        let context = createPrimaryContext log1 1
+        let context = createPrimaryContextEx log1 1 10
 
         let cartContext, (sku11, sku12, sku21, sku22) = ctx
         let cartId = % Guid.NewGuid()
@@ -339,7 +337,7 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` (cartContext, skuId) = Async.RunSynchronously <| async {
         let queryMaxItems = 10
-        let context = createPrimaryContext log queryMaxItems
+        let context = createPrimaryContextEx log queryMaxItems 10
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy log context
         let service1, service2 = createServiceIndexed (), createServiceIndexed ()
         capture.Clear()
