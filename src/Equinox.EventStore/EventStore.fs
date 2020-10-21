@@ -567,14 +567,21 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
+/// For EventStoreDB, caching is less critical than it is for e.g. CosmosDB
+/// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
+    /// Retain a single 'state per streamName.
+    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
+    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
     | SlidingWindow of ICache * window : TimeSpan
-    /// Retain a single 'state per streamName
-    /// Upon expiration of the span, a reload is triggered
-    /// Typically combined with `Equinox.ResolveOption.AllowStale` to minimize loads
+    /// Retain a single 'state per streamName.
+    /// Upon expiration of the defined <c>span</c>, a full reload is triggered.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
     | FixedTimeSpan of ICache * span: TimeSpan
-    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
+    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache.
+    /// Semantics are identical to <c>SlidingWindow</c>.
     | SlidingWindowPrefixed of ICache * window : TimeSpan * prefix : string
 
 type Resolver<'event, 'state, 'context>

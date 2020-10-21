@@ -1155,6 +1155,8 @@ type Context(gateway: Gateway, containers: Containers, [<O; D(null)>] ?log) =
     member internal __.ResolveContainerStream(categoryName, id) : (Container*string) * (unit -> Async<unit>) option =
         containers.Resolve(gateway.Client, categoryName, id, init)
 
+/// For CosmosDB, caching is critical in order to reduce RU consumption.
+/// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Do not apply any caching strategy for this Stream.
@@ -1164,13 +1166,17 @@ type CachingStrategy =
     ///   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
     ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDb instances.
     | NoCaching
-    /// Retain a single 'state per streamName, together with the associated etag
-    /// NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
-    /// track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in tip
+    /// Retain a single 'state per streamName, together with the associated etag.
+    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
+    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
+    // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
     | SlidingWindow of ICache * window: TimeSpan
-    /// Retain a single 'state per streamName, together with the associated etag
-    /// Upon expiration of the span, a reload is triggered
-    /// Typically combined with `Equinox.ResolveOption.AllowStale` to minimize loads
+    /// Retain a single 'state per streamName, together with the associated etag.
+    /// Upon expiration of the defined <c>span</c>, a full reload is triggered.
+    /// Typically combined with `Equinox.ResolveOption.AllowStale` to minimize loads.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
     | FixedTimeSpan of ICache * span: TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
