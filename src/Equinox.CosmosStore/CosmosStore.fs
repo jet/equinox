@@ -1123,37 +1123,44 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 module internal Caching =
-    let applyCacheUpdatesWithSlidingExpiration
-            (cache : ICache)
-            (prefix : string)
-            (slidingExpiration : TimeSpan) =
+
+    let applyCacheUpdatesWithSlidingExpiration (cache : ICache, prefix : string) (slidingExpiration : TimeSpan) =
         let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
-        fun streamName value -> cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+        fun streamName value ->
+            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
 
-type internal CachingCategory<'event, 'state, 'context>
-    (   category: Category<'event, 'state, 'context>,
-        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
-        tryReadCache, updateCache,
-        checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, ('event list -> 'state -> 'event seq), ('event list -> 'state -> 'event list * 'event list)>) =
-    let cache streamName inner = async {
-        let! ts = inner
-        do! updateCache streamName ts
-        return ts }
-    interface ICategory<'event, 'state, string, 'context> with
-        member __.Load(log, streamName, opt): Async<StreamToken * 'state> = async {
-            match! tryReadCache streamName with
-            | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
-            | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState // read already updated TTL, no need to write
-            | Some (token, state) -> return! category.Reload(log, token, state, fold, isOrigin) |> cache streamName }
-        member __.TrySync(log : ILogger, (Token.Unpack (streamName, _) as streamToken), state, events : 'event list, context)
-            : Async<SyncResult<'state>> = async {
-            match! category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) with
-            | SyncResult.Conflict resync ->
-                return SyncResult.Conflict (cache streamName resync)
-            | SyncResult.Written (token',state') ->
-                let! res = cache streamName (async { return (token',state') })
-                return SyncResult.Written res }
+    let applyCacheUpdatesWithFixedTimeSpan (cache : ICache, prefix : string) (period : TimeSpan) =
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        fun streamName value ->
+            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
+            let options = CacheItemOptions.AbsoluteExpiration expirationPoint
+            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+
+    type CachingCategory<'event, 'state, 'context>
+        (   category: Category<'event, 'state, 'context>,
+            fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+            tryReadCache, updateCache,
+            checkUnfolds, compressUnfolds,
+            mapUnfolds: Choice<unit, ('event list -> 'state -> 'event seq), ('event list -> 'state -> 'event list * 'event list)>) =
+        let cache streamName inner = async {
+            let! ts = inner
+            do! updateCache streamName ts
+            return ts }
+        interface ICategory<'event, 'state, string, 'context> with
+            member __.Load(log, streamName, opt): Async<StreamToken * 'state> = async {
+                match! tryReadCache streamName with
+                | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
+                | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState // read already updated TTL, no need to write
+                | Some (token, state) -> return! category.Reload(log, token, state, fold, isOrigin) |> cache streamName }
+            member __.TrySync(log : ILogger, (Token.Unpack (streamName, _) as streamToken), state, events : 'event list, context)
+                : Async<SyncResult<'state>> = async {
+                match! category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) with
+                | SyncResult.Conflict resync ->
+                    return SyncResult.Conflict (cache streamName resync)
+                | SyncResult.Written (token',state') ->
+                    let! res = cache streamName (async { return (token',state') })
+                    return SyncResult.Written res }
 
 namespace Equinox.CosmosStore
 
@@ -1233,6 +1240,8 @@ type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipO
         let store = StoreClient(cg.Container, cg.Fallback, __.QueryOptions, __.TipOptions)
         store, streamId, cg.InitializationGate
 
+/// For CosmosDB, caching is critical in order to reduce RU consumption.
+/// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Do not apply any caching strategy for this Stream.
@@ -1242,10 +1251,18 @@ type CachingStrategy =
     ///   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
     ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDB instances.
     | NoCaching
-    /// Retain a single 'state per streamName, together with the associated etag
-    /// NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
-    /// track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in tip
-    | SlidingWindow of ICache * window: TimeSpan
+    /// Retain a single 'state per streamName, together with the associated etag.
+    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
+    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
+    // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
+    | SlidingWindow of ICache * window : TimeSpan
+    /// Retain a single 'state per streamName, together with the associated etag.
+    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
+    /// Typically combined with `Equinox.ResolveOption.AllowStale` to minimize loads.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    | FixedTimeSpan of ICache * period : TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
@@ -1285,13 +1302,14 @@ type CosmosStoreCategory<'event, 'state, 'context>
         /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
         ?compressUnfolds) =
     let compressUnfolds = defaultArg compressUnfolds true
-    let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<_, _, string, 'context>>()
+    let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, string, 'context>>()
     let resolveCategory (categoryName, container) =
         let createCategory _name : ICategory<_, _, string, 'context> =
             let tryReadCache, updateCache =
                 match caching with
                 | CachingStrategy.NoCaching -> (fun _ -> async { return None }), fun _ _ -> async { () }
-                | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration cache null window
+                | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration (cache, null) window
+                | CachingStrategy.FixedTimeSpan (cache, period) -> cache.TryGet, Caching.applyCacheUpdatesWithFixedTimeSpan (cache, null) period
             let isOrigin, checkUnfolds, mapUnfolds =
                 match access with
                 | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
@@ -1301,7 +1319,7 @@ type CosmosStoreCategory<'event, 'state, 'context>
                 | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> [],[toSnapshot state])
                 | AccessStrategy.Custom (isOrigin,transmute) ->      isOrigin,         true,  Choice3Of3 transmute
             let cosmosCat = Category<'event, 'state, 'context>(container, codec)
-            CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
+            Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
 
     let resolveStream (categoryName, container, streamId, maybeContainerInitializationGate) opt context =
@@ -1395,7 +1413,6 @@ namespace Equinox.CosmosStore.Core
 
 open FsCodec
 open FSharp.Control
-open System.Runtime.InteropServices
 
 /// Outcome of appending events, specifying the new and/or conflicting events, together with the updated Target write position
 [<RequireQualifiedAccess; NoComparison>]
@@ -1504,6 +1521,7 @@ type EventData() =
 /// Api as defined in the Equinox Specification
 /// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
 module Events =
+
     let private (|PositionIndex|) (x: Position) = x.index
     let private stripSyncResult (f: Async<AppendResult<Position>>): Async<AppendResult<int64>> = async {
         match! f with

@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `CachingStrategy.FixedTimeSpan`: Support for fixed caching periods [#255](https://github.com/jet/equinox/pull/255)
+
 ### Changed
 
 - Fork `Equinox.Cosmos` to `Equinox.CosmosStore`:
