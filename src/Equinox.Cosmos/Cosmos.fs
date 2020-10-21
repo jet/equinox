@@ -1215,7 +1215,7 @@ type Resolver<'event, 'state, 'context>
         match caching with
         | CachingStrategy.NoCaching -> None
         | CachingStrategy.SlidingWindow (cache, _)
-        | CachingStrategy.FixedTimeSpan (cache, _) -> Some(cache, null)
+        | CachingStrategy.FixedTimeSpan (cache, _) -> Some (cache, null)
     let isOrigin, mapUnfolds =
         match access with
         | AccessStrategy.Unoptimized ->                      (fun _ -> false), Choice1Of3 ()

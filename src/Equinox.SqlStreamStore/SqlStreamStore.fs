@@ -554,8 +554,8 @@ type Resolver<'event, 'state, 'context>
         match caching with
         | None -> None
         | Some (CachingStrategy.SlidingWindow (cache, _))
-        | Some (CachingStrategy.FixedTimeSpan (cache, _)) -> Some(cache, null)
-        | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some(cache, prefix)
+        | Some (CachingStrategy.FixedTimeSpan (cache, _)) -> Some (cache, null)
+        | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some (cache, prefix)
     let folder = Folder<'event, 'state, 'context>(inner, fold, initial, ?readCache = readCacheOption)
     let category : ICategory<_,_,_,'context> =
         match caching with
