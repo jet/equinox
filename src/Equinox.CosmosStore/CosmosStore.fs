@@ -500,7 +500,7 @@ module internal Sync =
         // ConflictUnknown is to be yielded if we believe querying is going to be necessary (as there are no unfolds, and no relevant events in the Tip)
         | [||] when res.Resource.e.Length = 0 && newPos.index > ep.index ->
             return res.RequestCharge, Result.ConflictUnknown newPos
-        | unfolds -> // stored proc only returns events with index >= req.i - no need to trim to a minIndex
+        | unfolds -> // stored proc only returns events and unfolds with index >= req.i - no need to trim to a minIndex
             let events = (Enum.Events(ep.index, res.Resource.e), Enum.Unfolds unfolds) ||> Seq.append |> Array.ofSeq
             return res.RequestCharge, Result.Conflict (newPos, events) }
 

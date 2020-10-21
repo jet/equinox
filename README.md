@@ -44,13 +44,13 @@ Some aspects of the implementation are distilled from [`Jet.com` systems dating 
   c) pending events, up to a specified count (or `JSON.stringify` length). When the events in tip accumulation limit is reached, they are shifted out to a thereafter-immutable `Batch`.
   
   This yields many of the benefits of the in-stream Rolling Snapshots approach while reducing latency and RU provisioning requirements due to meticulously tuned Request Charge costs:-
-  - when the stream is empty, the intial `Load` operation involves a single point read that yields a `404 NotFound` response, costing 1.0 RU
+  - when the stream is empty, the initial `Load` operation involves a single point read that yields a `404 NotFound` response, costing 1.0 RU
   - when coupled with the cache, a typical `Reload` operation is a _point read_ [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response]
   - when coupled with snapshots/unfolds mechanism, a cache miss on `Reload` only triggers paying the cost for reading of the compressed snapshot stored in the Tip (i.e. instead of a `302`, the `IfNoneMatch` yields a `200` and returns all relevant information in the same roundtrip)
   - writes are via a single invocation of the `Sync` stored procedure which:
     a) does a point read
     b) performs a concurrency check and then either
-    c) applies the write OR returns the conflicting events
+    c) applies the write OR returns the conflicting events and unfolds
   - no additional round trips to the store needed at either the `Load`, `Reload` or `Sync` points in the flow
 - **`Equinox.CosmosStore` `RollingState` and `Custom` 'non-event-sourced' modes**: Uses 'Tip with Unfolds' encoding to avoid having to write event documents at all - this enables one to build, reason about and test your aggregates in the normal manner, but inhibit event documents from being generated. This enables one to benefit from the caching and consistency management mechanisms without having to bear the cost of writing and storing the events themselves (and/or dealing with an ever-growing store size). Search for `transmute` or `RollingState` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in [the `dotnet-templates` `summaryConsumer` template](https://github.com/jet/dotnet-templates/tree/master/propulsion-summary-consumer).
 
