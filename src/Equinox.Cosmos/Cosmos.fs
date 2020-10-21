@@ -1086,12 +1086,12 @@ module Caching =
     let applyCacheUpdatesWithFixedTimeSpan
             (cache : ICache)
             (prefix : string)
-            (lifetime : TimeSpan)
+            (period : TimeSpan)
             (category : ICategory<'event, 'state, Container*string, 'context>)
             : ICategory<'event, 'state, Container*string, 'context> =
         let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let addOrUpdateFixedLifetimeCacheEntry streamName value =
-            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add lifetime
+            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
             let options = CacheItemOptions.AbsoluteExpiration expirationPoint
             cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
         CategoryTee<'event, 'state, 'context>(category, addOrUpdateFixedLifetimeCacheEntry) :> _
@@ -1172,12 +1172,12 @@ type CachingStrategy =
     /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
     // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
-    | SlidingWindow of ICache * window: TimeSpan
+    | SlidingWindow of ICache * window : TimeSpan
     /// Retain a single 'state per streamName, together with the associated etag.
-    /// Upon expiration of the defined <c>span</c>, a full reload is triggered.
+    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
     /// Typically combined with `Equinox.ResolveOption.AllowStale` to minimize loads.
     /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
-    | FixedTimeSpan of ICache * span: TimeSpan
+    | FixedTimeSpan of ICache * period : TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
@@ -1237,8 +1237,8 @@ type Resolver<'event, 'state, 'context>
         | CachingStrategy.NoCaching -> folder :> _
         | CachingStrategy.SlidingWindow (cache, window) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
-        | CachingStrategy.FixedTimeSpan (cache, span) ->
-            Caching.applyCacheUpdatesWithFixedTimeSpan cache null span folder
+        | CachingStrategy.FixedTimeSpan (cache, period) ->
+            Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder
 
     let resolveStream (streamId, maybeContainerInitializationGate) opt context =
         { new IStream<'event, 'state> with
