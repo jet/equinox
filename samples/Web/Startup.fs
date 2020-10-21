@@ -27,7 +27,7 @@ type Arguments =
             | LocalSeq ->                   "configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | Cached ->                     "employ a 50MB cache."
             | Unfolds ->                    "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
-            | Cosmos _ ->                   "specify storage in CosmosDb (--help for options)."
+            | Cosmos _ ->                   "specify storage in CosmosDB (--help for options)."
             | Es _ ->                       "specify storage in EventStore (--help for options)."
             | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
             | MsSql _ ->                    "specify storage in Sql Server (--help for options)."
@@ -62,28 +62,27 @@ type Startup() =
         let storeConfig, storeLog : Storage.StorageConfig * ILogger =
             let options = args.GetResults Cached @ args.GetResults Unfolds
             let unfolds = options |> List.exists (function Unfolds -> true | _ -> false)
-            let defaultBatchSize = 500
             let log = Log.ForContext<App>()
 
             let cache = if options |> List.exists (function Cached -> true | _ -> false) then Equinox.Cache(Storage.appName, sizeMb = 50) |> Some else None
             match args.TryGetSubCommand() with
             | Some (Cosmos sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-                log.Information("CosmosDb Storage options: {options:l}", options)
-                Storage.Cosmos.config log (cache, unfolds, defaultBatchSize) (Storage.Cosmos.Info sargs), storeLog
+                log.Information("CosmosDB Storage options: {options:l}", options)
+                Storage.Cosmos.config log (cache, unfolds) (Storage.Cosmos.Info sargs), storeLog
             | Some (Es sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-                log.Information("EventStore Storage options: {options:l}", options)
-                Storage.EventStore.config (log,storeLog) (cache, unfolds, defaultBatchSize) sargs, storeLog
+                log.Information("EventStoreDB Storage options: {options:l}", options)
+                Storage.EventStore.config (log,storeLog) (cache, unfolds) sargs, storeLog
             | Some (MsSql sargs) ->
                 log.Information("SqlStreamStore MsSql Storage options: {options:l}", options)
-                Storage.Sql.Ms.config log (cache, unfolds, defaultBatchSize) sargs, log
+                Storage.Sql.Ms.config log (cache, unfolds) sargs, log
             | Some (MySql sargs) ->
                 log.Information("SqlStreamStore MySql Storage options: {options:l}", options)
-                Storage.Sql.My.config log (cache, unfolds, defaultBatchSize) sargs, log
+                Storage.Sql.My.config log (cache, unfolds) sargs, log
             | Some (Postgres sargs) ->
                 log.Information("SqlStreamStore Postgres Storage options: {options:l}", options)
-                Storage.Sql.Pg.config log (cache, unfolds, defaultBatchSize) sargs, log
+                Storage.Sql.Pg.config log (cache, unfolds) sargs, log
             | _  | Some (Memory _) ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 Storage.MemoryStore.config (), log

@@ -349,9 +349,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
     dotnet run -- -g projector2 cosmos
     ```
-
-7. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
-
+7. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
     ```powershell	
     $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b	
     # `-V` for verbose logging	

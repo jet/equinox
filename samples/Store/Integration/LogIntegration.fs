@@ -122,12 +122,12 @@ type Tests() =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` cartContext skuId = Async.RunSynchronously <| async {
-        let batchSize = defaultBatchSize
+        let queryMaxItems = defaultQueryMaxItems
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
-        let context = createPrimaryContext log batchSize
+        let context = createPrimaryContext log queryMaxItems
         let service = Backend.Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy context)
-        let itemCount = batchSize / 2 + 1
+        let itemCount = queryMaxItems / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount cartContext cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200
     }

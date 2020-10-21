@@ -25,49 +25,51 @@ let discoverConnection () =
 let createClient (log : Serilog.ILogger) name discovery =
     let factory = CosmosStoreClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
     let client = factory.Create discovery
-    log.Information("CosmosDb Connecting {name} to {endpoint}", name, client.Endpoint)
+    log.Information("CosmosDB Connecting {name} to {endpoint}", name, client.Endpoint)
     client
 
-let connectPrimary (log : Serilog.ILogger) =
+let connectPrimary log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId)
 
-let connectSecondary (log : Serilog.ILogger) =
+let connectSecondary log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId2)
 
-let connectWithFallback (log : Serilog.ILogger) =
+let connectWithFallback log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
-    CosmosStoreConnection(client, databaseId, containerId, containerId2=containerId2)
+    CosmosStoreConnection(client, databaseId, containerId, containerId2 = containerId2)
 
-let createPrimaryContext (log: Serilog.ILogger) batchSize =
+let createPrimaryContextEx log queryMaxItems tipMaxEvents =
     let conn = connectPrimary log
-    CosmosStoreContext(conn, defaultMaxItems = batchSize)
+    CosmosStoreContext(conn, queryMaxItems = queryMaxItems, tipMaxEvents = tipMaxEvents)
 
-let createSecondaryContext (log: Serilog.ILogger) batchSize =
+let defaultTipMaxEvents = 10
+
+let createPrimaryContext log queryMaxItems =
+    createPrimaryContextEx log queryMaxItems defaultTipMaxEvents
+
+let createSecondaryContext log queryMaxItems =
     let conn = connectSecondary log
-    CosmosStoreContext(conn, defaultMaxItems = batchSize)
+    CosmosStoreContext(conn, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
 
-let createFallbackContext (log: Serilog.ILogger) batchSize =
+let createFallbackContext log queryMaxItems =
     let conn = connectWithFallback log
-    CosmosStoreContext(conn, defaultMaxItems = batchSize)
+    CosmosStoreContext(conn, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
 
-let defaultBatchSize = 500
+let defaultQueryMaxItems = 10
 
-let createPrimaryEventsContext log batchSize =
-    let batchSize = defaultArg batchSize defaultBatchSize
-    let context = createPrimaryContext log batchSize
-    Equinox.CosmosStore.Core.EventsContext(context, log, defaultMaxItems = batchSize)
+let createPrimaryEventsContext log queryMaxItems tipMaxItems =
+    let context = createPrimaryContextEx log queryMaxItems tipMaxItems
+    Equinox.CosmosStore.Core.EventsContext(context, log)
 
-let createSecondaryEventsContext log batchSize =
-    let batchSize = defaultArg batchSize defaultBatchSize
-    let ctx = createSecondaryContext log batchSize
-    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = batchSize)
+let createSecondaryEventsContext log queryMaxItems =
+    let context = createSecondaryContext log queryMaxItems
+    Equinox.CosmosStore.Core.EventsContext(context, log)
 
-let createFallbackEventsContext log batchSize =
-    let batchSize = defaultArg batchSize defaultBatchSize
-    let ctx = createFallbackContext log batchSize
-    Equinox.CosmosStore.Core.EventsContext(ctx, log, defaultMaxItems = batchSize)
+let createFallbackEventsContext log queryMaxItems =
+    let context = createFallbackContext log queryMaxItems
+    Equinox.CosmosStore.Core.EventsContext(context, log)
