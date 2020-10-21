@@ -6,7 +6,9 @@ Equinox is a set of low dependency libraries that allow for event-sourced proces
 * State management
 * Retrieval optimizations
 
-This allows *you* to compose the libraries into an architecture that fits your apps' needs. It does not and will not handle projections and subscriptions. Refer to [Propulsion](https://github.com/jet/propulsion) for those cases.
+This enables *you* to compose the libraries into an architecture that fits your apps' needs. 
+
+It does not and will not handle projections and subscriptions. Refer to [Propulsion](https://github.com/jet/propulsion) for those cases.
 
 # Table of Contents
 * [Getting Started](#getting-started)
