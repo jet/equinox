@@ -496,6 +496,19 @@ module Caching =
         let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
         CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
+    let applyCacheUpdatesWithFixedTimeSpan
+            (cache : ICache)
+            (prefix : string)
+            (lifetime : TimeSpan)
+            (category : ICategory<'event, 'state, string, 'context>)
+            : ICategory<'event, 'state, string, 'context> =
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let addOrUpdateFixedLifetimeCacheEntry streamName value =
+            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add lifetime
+            let options = CacheItemOptions.AbsoluteExpiration expirationPoint
+            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+        CategoryTee<'event, 'state, 'context>(category, addOrUpdateFixedLifetimeCacheEntry) :> _
+
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
     let batched log streamName = category.Load fold initial streamName log
     interface ICategory<'event, 'state, string, 'context> with
@@ -513,10 +526,21 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
 
+/// For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
+/// As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
-    | SlidingWindow of ICache * window: TimeSpan
-    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
+    /// Retain a single 'state per streamName.
+    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
+    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
+    | SlidingWindow of ICache * window : TimeSpan
+    /// Retain a single 'state per streamName
+    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
+    | FixedTimeSpan of ICache * period : TimeSpan
+    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache.
+    /// Semantics are identical to <c>SlidingWindow</c>.
     | SlidingWindowPrefixed of ICache * window: TimeSpan * prefix: string
 
 type Resolver<'event, 'state, 'context>
@@ -536,15 +560,18 @@ type Resolver<'event, 'state, 'context>
     let readCacheOption =
         match caching with
         | None -> None
-        | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
-        | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some(cache, prefix)
+        | Some (CachingStrategy.SlidingWindow (cache, _))
+        | Some (CachingStrategy.FixedTimeSpan (cache, _)) -> Some (cache, null)
+        | Some (CachingStrategy.SlidingWindowPrefixed (cache, _, prefix)) -> Some (cache, prefix)
     let folder = Folder<'event, 'state, 'context>(inner, fold, initial, ?readCache = readCacheOption)
     let category : ICategory<_,_,_,'context> =
         match caching with
         | None -> folder :> _
-        | Some (CachingStrategy.SlidingWindow(cache, window)) ->
+        | Some (CachingStrategy.SlidingWindow (cache, window)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
-        | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
+        | Some (CachingStrategy.FixedTimeSpan (cache, period)) ->
+            Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder
+        | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
     let resolveStream = Stream.create category
     let loadEmpty sn = context.LoadEmpty sn,initial

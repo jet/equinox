@@ -1078,10 +1078,23 @@ module Caching =
             (slidingExpiration : TimeSpan)
             (category : ICategory<'event, 'state, Container*string, 'context>)
             : ICategory<'event, 'state, Container*string, 'context> =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
         let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
         CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
+
+    let applyCacheUpdatesWithFixedTimeSpan
+            (cache : ICache)
+            (prefix : string)
+            (period : TimeSpan)
+            (category : ICategory<'event, 'state, Container*string, 'context>)
+            : ICategory<'event, 'state, Container*string, 'context> =
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let addOrUpdateFixedLifetimeCacheEntry streamName value =
+            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
+            let options = CacheItemOptions.AbsoluteExpiration expirationPoint
+            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+        CategoryTee<'event, 'state, 'context>(category, addOrUpdateFixedLifetimeCacheEntry) :> _
 
 type private Folder<'event, 'state, 'context>
     (   category: Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state,
@@ -1142,6 +1155,8 @@ type Context(gateway: Gateway, containers: Containers, [<O; D(null)>] ?log) =
     member internal __.ResolveContainerStream(categoryName, id) : (Container*string) * (unit -> Async<unit>) option =
         containers.Resolve(gateway.Client, categoryName, id, init)
 
+/// For CosmosDB, caching is critical in order to reduce RU consumption.
+/// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Do not apply any caching strategy for this Stream.
@@ -1151,10 +1166,18 @@ type CachingStrategy =
     ///   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
     ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDb instances.
     | NoCaching
-    /// Retain a single 'state per streamName, together with the associated etag
-    /// NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
-    /// track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in tip
-    | SlidingWindow of ICache * window: TimeSpan
+    /// Retain a single 'state per streamName, together with the associated etag.
+    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
+    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
+    // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
+    | SlidingWindow of ICache * window : TimeSpan
+    /// Retain a single 'state per streamName, together with the associated etag.
+    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
+    /// Typically combined with `Equinox.ResolveOption.AllowStale` to minimize loads.
+    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    | FixedTimeSpan of ICache * period : TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
@@ -1197,7 +1220,8 @@ type Resolver<'event, 'state, 'context>
     let readCacheOption =
         match caching with
         | CachingStrategy.NoCaching -> None
-        | CachingStrategy.SlidingWindow(cache, _) -> Some(cache, null)
+        | CachingStrategy.SlidingWindow (cache, _)
+        | CachingStrategy.FixedTimeSpan (cache, _) -> Some (cache, null)
     let isOrigin, mapUnfolds =
         match access with
         | AccessStrategy.Unoptimized ->                      (fun _ -> false), Choice1Of3 ()
@@ -1211,8 +1235,10 @@ type Resolver<'event, 'state, 'context>
     let category : ICategory<_, _, Container*string, 'context> =
         match caching with
         | CachingStrategy.NoCaching -> folder :> _
-        | CachingStrategy.SlidingWindow(cache, window) ->
+        | CachingStrategy.SlidingWindow (cache, window) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+        | CachingStrategy.FixedTimeSpan (cache, period) ->
+            Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder
 
     let resolveStream (streamId, maybeContainerInitializationGate) opt context =
         { new IStream<'event, 'state> with
