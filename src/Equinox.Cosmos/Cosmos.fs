@@ -407,20 +407,16 @@ module Sync =
     // NB don't nest in a private module, or serialization will fail miserably ;)
     [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
     type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
-    let [<Literal>] private sprocName = "EquinoxRollingUnfolds4"  // NB need to rename/number for any breaking change
+    let [<Literal>] private sprocName = "EquinoxRollingUnfolds5"  // NB need to rename/number for any breaking change
     let [<Literal>] private sprocBody = """
 // Manages the merging of the supplied Request Batch into the stream
 
 // 0 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index)
-
 // High level end-states:
-
 // 1a if there is a Tip, but are only changes to the `u`nfolds (and no `e`vents) -> update Tip only
 // 1b if there is a Tip, but incoming request includes an event -> generate a batch document + create empty Tip
-
 // 2a if stream empty, but incoming request includes an event -> generate a batch document + create empty Tip
 // 2b if no current Tip, and no events being written -> the incoming `req` becomes the Tip batch
-
 function sync(req, expIndex, expEtag) {
     if (!req) throw new Error("Missing req argument");
     const collectionLink = __.getSelfLink();
@@ -438,7 +434,6 @@ function sync(req, expIndex, expEtag) {
         } else if (current && ((expIndex === -2 && expEtag !== current._etag) || (expIndex !== -2 && expIndex !== current.n))) {
             // Where possible, we extract conflicting events from e and/or u in order to avoid another read cycle;
             // yielding [] triggers the client to go loading the events itself
-
             // if we're working based on etags, the `u`nfolds likely bear relevant info as state-bearing unfolds
             // if there are no `u`nfolds, we need to be careful not to yield `conflicts: null`, as that signals a successful write (see below)
             response.setBody({ etag: current._etag, n: current.n, conflicts: current.u || [] });
@@ -447,27 +442,26 @@ function sync(req, expIndex, expEtag) {
         }
     });
     if (!isAccepted) throw new Error("readDocument not Accepted");
-
     function executeUpsert(tip) {
         function callback(err, doc) {
             if (err) throw err;
             response.setBody({ etag: doc._etag, n: doc.n, conflicts: null });
         }
+        function shouldCalveBatch(events) {
+            return events.length > 0;
+        }
         if (tip) {
             Array.prototype.push.apply(tip.e, req.e);
             tip.n = tip.i + tip.e.length;
             // If there are events, calve them to their own batch (this behavior is to simplify CFP consumer impl)
-            if (tip.e.length > 0) {
+            if (shouldCalveBatch(tip.e)) {
                 const batch = { id: tip.i.toString(), p: tip.p, i: tip.i, n: tip.n, e: tip.e }
                 const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
                 if (!batchAccepted) throw new Error("Unable to remove Tip markings.");
-
                 tip.i = tip.n;
                 tip.e = [];
             }
-
             // TODO Carry forward `u` items not present in `batch`, together with supporting catchup events from preceding batches
-
             // Replace all the unfolds // TODO: should remove only unfolds being superseded
             tip.u = req.u;
             // As we've mutated the document in a manner that can conflict with other writers, our write needs to be contingent on no competing updates having taken place
@@ -475,11 +469,10 @@ function sync(req, expIndex, expEtag) {
             if (!isAccepted) throw new Error("Unable to replace Tip batch.");
         } else {
             // NOTE we write the batch first (more consistent RU cost than writing tip first)
-            if (req.e.length > 0) {
+            if (shouldCalveBatch(req.e)) {
                 const batch = { id: "0", p: req.p, i: 0, n: req.e.length, e: req.e };
                 const batchAccepted = __.createDocument(collectionLink, batch, { disableAutomaticIdGeneration: true });
                 if (!batchAccepted) throw new Error("Unable to create Batch 0.");
-
                 req.i = batch.n;
                 req.e = [];
             } else {
