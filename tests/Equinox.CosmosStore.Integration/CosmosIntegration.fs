@@ -75,20 +75,21 @@ type Tests(testOutputHelper) =
         capture.Clear() // for re-runs of the test
         let addRemoveCount = 40
         let eventsPerAction = addRemoveCount * 2 - 1
-        let queryMaxItems = 5
+        let queryMaxItems = 3
         let context = createPrimaryContext log queryMaxItems
 
         let service = Cart.createServiceWithoutOptimization log context
+        let expectedResponses n =
+            let expectedBatches = 1 + n
+            max 1 (int (ceil (float expectedBatches / float queryMaxItems)))
 
         let cartId = % Guid.NewGuid()
-        // The command processing should trigger only a single read and a single write call
+        // The command processing will trigger QueryB operations as no snapshots etc are being used
         let transactions = 6
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
-            let emptyTip = 0 // in V2 (and V3 master, for now), the Query filters out the Tip
-            let expectedBatchesOfItems = max 1 (int (ceil <| float (i - 1 + emptyTip) / float queryMaxItems))
-            test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 72 // 71.27 [3.58; 67.69]
+            test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
+            verifyRequestChargesMax 79 // 78.37 [3.15; 75.22]
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -96,9 +97,8 @@ type Tests(testOutputHelper) =
         let expectedEventCount = transactions * eventsPerAction
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
-        let expectedResponses = transactions / queryMaxItems + 1
-        test <@ List.replicate expectedResponses EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 9 // 8.58 // 10.01
+        test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+        verifyRequestChargesMax 15 // 14.01
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -187,15 +187,11 @@ type Tests(testOutputHelper) =
         let service = ContactPreferences.createService log context
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
-        //let (Domain.ContactPreferences.Id email) = id ()
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update(id, { value with quickSurveys = quickSurveysValue })
         // Ensure there will be something to be changed by the Update below
-        do! service.Update(id, { value with quickSurveys = not value.quickSurveys })
-
+        for i in 1..13 do
+            do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()
+
         do! service.Update(id, value)
 
         let! result = service.Read id
@@ -205,7 +201,7 @@ type Tests(testOutputHelper) =
 
         (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
 
-        // Needs to share the same client for the session key to be threaded through
+        // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
         // If we run on an independent context, we won't see (and hence prune) the full set of events
         let ctx = Core.EventsContext(context, log)
         let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
@@ -235,14 +231,11 @@ type Tests(testOutputHelper) =
         let service = ContactPreferences.createServiceWithLatestKnownEvent context log CachingStrategy.NoCaching
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update(id, { value with quickSurveys = quickSurveysValue })
-        // Ensure there will be something to be changed by the Update below
-        do! service.Update(id, { value with quickSurveys = not value.quickSurveys })
-
+        // Feed some junk into the stream; Ensure there will be something to be changed by the Update below
+        for i in 1..13 do
+            do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()
+
         do! service.Update(id, value)
 
         let! result = service.Read id

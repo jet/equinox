@@ -71,7 +71,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
         e: Event[] }
-    /// Unless running in single partition mode (which would restrict us to 10GB per collection)
+    /// Unless running in single partition mode (which would restrict us to 10GB per container)
     /// we need to nominate a partition key that will be in every document
     static member internal PartitionKeyField = "p"
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
@@ -392,8 +392,8 @@ module private MicrosoftAzureCosmosWrappers =
 type SyncResponse = { etag: string; n: int64; conflicts: Unfold[] }
 
 module internal SyncStoredProc =
-    let [<Literal>] private name = "EquinoxRollingUnfolds5"  // NB need to rename/number for any breaking change
-    let [<Literal>] private body = """
+    let [<Literal>] name = "EquinoxRollingUnfolds5"  // NB need to rename/number for any breaking change
+    let [<Literal>] body = """
 // Manages the merging of the supplied Request Batch into the stream
 
 // 0 perform concurrency check (index=-1 -> always append; index=-2 -> check based on .etag; _ -> check .n=.index)
@@ -867,7 +867,6 @@ module internal Tip =
         match primary, secondary with
         | Some { index = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
         | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
-        | None, _ when Option.isSome tip -> return pos, events // If there's no data in Tip or primary, there won't be any in secondary
         | _, None ->
             // TODO Add TipOptions parameter to opt-into this vs throwing
             logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
@@ -1020,7 +1019,8 @@ type QueryOptions
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
 
-/// Defines the policies in force regarding retrying read and write operations for the Tip
+/// Defines the policies in force regarding
+/// - retrying read and write operations for the Tip
 type TipOptions
     (   [<O; D(null)>]?readRetryPolicy,
         [<O; D(null)>]?writeRetryPolicy) =
@@ -1167,7 +1167,7 @@ type CosmosStoreConnection
         [<O; D(null)>]?disableInitialization) =
     let createGateway = match createGateway with Some creator -> creator | None -> id
     let primaryDatabaseAndContainerToSecondary = defaultArg primaryDatabaseAndContainerToSecondary id
-    // Index of database*collection -> Initialization Context
+    // Index of database*container -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, Initialization.ContainerInitializerGuard>()
     new(client, databaseId : string, containerId : string,
         /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
@@ -1202,27 +1202,27 @@ type CosmosStoreConnection
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipOptions) =
-    let tipOptions = tipOptions |> Option.defaultWith TipOptions
-    let queryOptions = queryOptions |> Option.defaultWith QueryOptions
     new(connection : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?tipOptions) =
         let queryOptions = QueryOptions(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
         CosmosStoreContext(connection, queryOptions, ?tipOptions = tipOptions)
     new(connection : CosmosStoreConnection, ?queryMaxItems) =
         let tipOptions = TipOptions()
         CosmosStoreContext(connection, tipOptions = tipOptions, ?defaultMaxItems = queryMaxItems)
+    member val QueryOptions = queryOptions |> Option.defaultWith QueryOptions
+    member val TipOptions = tipOptions |> Option.defaultWith TipOptions
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
         let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
-        let store = StoreClient(cg.Container, cg.Fallback, queryOptions, tipOptions)
+        let store = StoreClient(cg.Container, cg.Fallback, __.QueryOptions, __.TipOptions)
         store, streamId, cg.InitializationGate
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Do not apply any caching strategy for this Stream.
-    /// NB opting not to leverage caching when using CosmosDb can have significant implications for the scalability
+    /// NB opting not to leverage caching when using CosmosDB can have significant implications for the scalability
     ///   of your application, both in terms of latency and running costs.
     /// While the cost of a cache miss can be ameliorated to varying degrees by employing an appropriate `AccessStrategy`
     ///   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
-    ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDb instances.
+    ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDB instances.
     | NoCaching
     /// Retain a single 'state per streamName, together with the associated etag
     /// NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
@@ -1315,8 +1315,7 @@ type CosmosStoreCategory<'event, 'state, 'context>
             let stream = resolveStream streamArgs option context
             Stream.ofMemento (Token.create streamId Position.fromKnownEmpty,initial) stream
 
-    member __.FromMemento
-        (   Token.Unpack (stream,_pos) as streamToken, state) =
+    member __.FromMemento(Token.Unpack (stream,_pos) as streamToken, state) =
         let skipInitialization = None
         let (categoryName, container, streamId, _maybeInit) = resolveStreamConfig (StreamName.parse stream)
         let stream = resolveStream (categoryName, container, streamId, skipInitialization) None None
@@ -1330,11 +1329,11 @@ type Discovery =
     | ConnectionString of connectionString : string
 
 type CosmosStoreClientFactory
-    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
+    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB
         requestTimeout: TimeSpan,
-        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
+        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached
         maxRetryAttemptsOnRateLimitedRequests: int,
-        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
+        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response)
         maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
         /// Connection limit for Gateway Mode (default 1000)
         [<O; D(null)>]?gatewayModeMaxConnectionLimit,
@@ -1391,15 +1390,8 @@ type AppendResult<'t> =
 type EventsContext internal
     (   context : Equinox.CosmosStore.CosmosStoreContext, store : StoreClient,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
-        log : Serilog.ILogger,
-        /// Optional maximum number of Store.Batch records to retrieve as a set (how many Events are placed therein is controlled by average batch size when appending events
-        /// Default: 10
-        [<Optional; DefaultParameterValue(null)>]?defaultMaxItems,
-        /// Alternate way of specifying defaultMaxItems that facilitates reading it from a cached dynamic configuration
-        [<Optional; DefaultParameterValue(null)>]?getDefaultMaxItems) =
+        log : Serilog.ILogger) =
     do if log = null then nullArg "log"
-    let getDefaultMaxItems = match getDefaultMaxItems with Some f -> f | None -> fun () -> defaultArg defaultMaxItems 10
-    let batching = QueryOptions(getDefaultMaxItems = getDefaultMaxItems)
     let maxCountPredicate count =
         let acc = ref (max (count-1) 0)
         fun _ ->
@@ -1417,9 +1409,9 @@ type EventsContext internal
         | Direction.Forward -> startPos, None
         | Direction.Backward -> None, startPos
 
-    new (context : Equinox.CosmosStore.CosmosStoreContext, log, ?defaultMaxItems, ?getDefaultMaxItems) =
-        let storeClient, _streamId, _ = context.ResolveContainerClientAndStreamIdAndInit(null, null)
-        EventsContext(context, storeClient, log, ?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems)
+    new (context : Equinox.CosmosStore.CosmosStoreContext, log) =
+        let store, _streamId, _init = context.ResolveContainerClientAndStreamIdAndInit(null, null)
+        EventsContext(context, store, log)
 
     member __.ResolveStream(streamName) =
         let _cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
@@ -1428,7 +1420,7 @@ type EventsContext internal
 
     member internal __.GetLazy(stream, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<byte[]>[]> =
         let direction = defaultArg direction Direction.Forward
-        let batching = match queryMaxItems with Some qmi when batching.MaxItems <> qmi -> QueryOptions(qmi) | _ -> batching
+        let batching = match queryMaxItems with Some qmi -> QueryOptions(qmi) | _ -> context.QueryOptions
         store.ReadLazy(log, batching, stream, direction, (Some,fun _ -> false), ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     member internal __.GetInternal((stream, startPos), ?maxCount, ?direction) = async {
@@ -1464,7 +1456,7 @@ type EventsContext internal
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
     member __.Sync(stream, position, events: IEventData<_>[]) : Async<AppendResult<Position>> = async {
-        // Writes go through the stored proc, which we need to provision per-collection
+        // Writes go through the stored proc, which we need to provision per container
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
         //   to move this about before we reach a final destination in any case
         match __.ResolveStream stream |> snd with

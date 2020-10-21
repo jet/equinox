@@ -106,7 +106,7 @@ module Cosmos =
                 CosmosStoreConnection(client, databaseId, containerId)
             | (client, databaseId, containerId), Some (client2, db2, cont2) ->
                 CosmosStoreConnection(client, databaseId, containerId, client2 = client2, databaseId2 = db2, containerId2 = cont2)
-        log.Information("CosmosStore Max Items In Query: {queryMaxItems}",
+        log.Information("CosmosStore Max Items in Query: {queryMaxItems}",
                         a.QueryMaxItems)
         let ctx = CosmosStoreContext(conn, queryMaxItems = a.QueryMaxItems)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching

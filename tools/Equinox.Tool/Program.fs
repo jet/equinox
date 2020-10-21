@@ -103,7 +103,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
             | Es _ ->                       "Parameters for EventStore."
-            | Cosmos _ ->                   "Parameters for CosmosDb."
+            | Cosmos _ ->                   "Parameters for CosmosDB."
             | MsSql _ ->                    "Parameters for Sql Server."
             | MySql _ ->                    "Parameters for MySql."
             | Postgres _ ->                 "Parameters for Postgres."
@@ -159,7 +159,7 @@ and [<NoComparison; NoEquality>]TestArguments =
             | ErrorCutoff _ ->              "specify an error cutoff; test ends when exceeded (default: 10000)."
             | ReportIntervalS _ ->          "specify reporting intervals in seconds (default: 10)."
             | Es _ ->                       "Run transactions in-process against EventStore."
-            | Cosmos _ ->                   "Run transactions in-process against CosmosDb."
+            | Cosmos _ ->                   "Run transactions in-process against CosmosDB."
             | Memory _ ->                   "target in-process Transient Memory Store (Default if not other target specified)."
             | MsSql _ ->                    "Run transactions in-process against Sql Server."
             | MySql _ ->                    "Run transactions in-process against MySql."
@@ -183,7 +183,7 @@ and TestInfo(args: ParseResults<TestArguments>) =
         match args.TryGetSubCommand() with
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-            log.Information("Running transactions in-process against CosmosDb with storage options: {options:l}", __.Options)
+            log.Information("Running transactions in-process against CosmosDB with storage options: {options:l}", __.Options)
             storeLog, Storage.Cosmos.config log (cache, __.Unfolds) (Storage.Cosmos.Info sargs)
         | Some (Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
