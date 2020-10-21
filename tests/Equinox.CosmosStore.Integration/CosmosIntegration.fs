@@ -89,7 +89,7 @@ type Tests(testOutputHelper) =
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
             test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            if eventsInTip then verifyRequestChargesMax 74 // 73.61 [3.58; 70.03]
+            if eventsInTip then verifyRequestChargesMax 76 // 76.0 [3.72; 72.28]
             else verifyRequestChargesMax 79 // 78.37 [3.15; 75.22]
             capture.Clear()
 
