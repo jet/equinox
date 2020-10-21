@@ -34,16 +34,18 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let append (TestStream streamName) = Async.RunSynchronously <| async {
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let append (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let ctx = createPrimaryEventsContext log defaultQueryMaxItems
+        let ctx = createPrimaryEventsContext log defaultQueryMaxItems (if eventsInTip then 1 else 0)
 
         let index = 0L
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 34 // 33.07
+        if eventsInTip then verifyRequestChargesMax 21 // 20.42
+        else verifyRequestChargesMax 34 // 33.07
+
         // Clear the counters
         capture.Clear()
 
@@ -51,14 +53,15 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesMax 41 // 40.68
+        if eventsInTip then verifyRequestChargesMax 40 // 39.13
+        else verifyRequestChargesMax 41 // 40.68
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
     // As it stands with the NoTipEvents stored proc, permitting empty batches a) yields an invalid state b) provides no conceivable benefit
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``append Throws when passed an empty batch`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log defaultQueryMaxItems
+        let ctx = createPrimaryEventsContext log defaultQueryMaxItems 10
 
         let index = 0L
         let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
@@ -100,12 +103,12 @@ type Tests(testOutputHelper) =
     let verifyCorrectEventsBackward = verifyCorrectEventsEx Equinox.CosmosStore.Core.Direction.Backward
     let verifyCorrectEvents = verifyCorrectEventsEx Equinox.CosmosStore.Core.Direction.Forward
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``appendAtEnd and getNextIndex`` (extras, TestStream streamName) = Async.RunSynchronously <| async {
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``appendAtEnd and getNextIndex`` (eventsInTip, extras, TestStream streamName) = Async.RunSynchronously <| async {
         // If a fail triggers a rerun, we need to dump the previous log entries captured
         capture.Clear()
 
-        let ctx = createPrimaryEventsContext log 1
+        let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 1 else 0)
 
         let! pos = Events.getNextIndex ctx streamName
         test <@ [EqxAct.TipNotFound] = capture.ExternalCalls @>
@@ -119,7 +122,8 @@ type Tests(testOutputHelper) =
             test <@ [EqxAct.Append] = capture.ExternalCalls @>
             pos <- pos + int64 appendBatchSize
             pos =! res
-            verifyRequestChargesMax 46 // 45.16
+            if eventsInTip then verifyRequestChargesMax 50 // 49.58
+            else verifyRequestChargesMax 46 // 45.16
             capture.Clear()
 
             let! res = Events.getNextIndex ctx streamName
@@ -132,7 +136,8 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 50 // 49.74
+        if eventsInTip then verifyRequestChargesMax 45 // was 44.65
+        else verifyRequestChargesMax 50 // 49.74
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -160,10 +165,10 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 1 // for a 302 by definition - when an etag IfNotMatch is honored, you only pay one RU
     }
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``append - fails on non-matching`` (TestStream streamName) = Async.RunSynchronously <| async {
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``append - fails on non-matching`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
         capture.Clear()
-        let ctx = createPrimaryEventsContext log 10
+        let ctx = createPrimaryEventsContext log 10 (if eventsInTip then 1 else 0)
 
         // Attempt to write, skipping Index 0
         let! res = Events.append ctx streamName 1L <| TestEvents.Create(0,1)
@@ -171,7 +176,8 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.Resync] = capture.ExternalCalls @>
         // The response aligns with a normal conflict in that it passes the entire set of conflicting events ()
         test <@ AppendResult.Conflict (0L,[||]) = res @>
-        verifyRequestChargesMax 12 // 11.18
+        if eventsInTip then verifyRequestChargesMax 12 // 11.49
+        else verifyRequestChargesMax 12 // 11.18
         capture.Clear()
 
         // Now write at the correct position
@@ -179,23 +185,27 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName 0L expected
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 40 // 39.39
+        if eventsInTip then verifyRequestChargesMax 27 // 26.4
+        else verifyRequestChargesMax 40 // 39.39
         capture.Clear()
 
         // Try overwriting it (a competing consumer would see the same)
         let! res = Events.append ctx streamName 0L <| TestEvents.Create(-42,2)
         // This time we get passed the conflicting events - we pay a little for that, but that's unavoidable
-        match res, capture.ExternalCalls with
-        | AppendResult.ConflictUnknown 1L, [EqxAct.Conflict] ->
+        match eventsInTip, res, capture.ExternalCalls with
+        | true, AppendResult.Conflict (1L, e), [EqxAct.Resync] ->
+            verifyCorrectEvents 0L expected e
+            verifyRequestChargesMax 10 // 9.93
+        | false, AppendResult.ConflictUnknown 1L, [EqxAct.Conflict] ->
             verifyRequestChargesMax 12 // 11.9
         | x -> x |> failwithf "Unexpected %A"
     }
 
     (* Forward *)
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let get (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log 3
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let get (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+        let ctx = createPrimaryEventsContext log 3 (if eventsInTip then 10 else 0)
 
         // We're going to ignore the first, to prove we can
         let! expected = add6EventsIn2Batches ctx streamName
@@ -206,12 +216,13 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 1L expected res
 
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyRequestChargesMax 5 // (4.15) // WAS 13 with SDK bugs// 12.81
+        if eventsInTip then verifyRequestChargesMax 3
+        else verifyRequestChargesMax 5 // (4.15) // WAS 13 with SDK bugs// 12.81
     }
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``get in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log 1
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``get in 2 batches`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+        let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 1 else 0)
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 2
         let expected = expected |> Array.take 3
@@ -225,9 +236,9 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 7 // 6.01
     }
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``get Lazy`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log 1
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``get Lazy`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+        let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 3 else 0)
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
@@ -241,14 +252,14 @@ type Tests(testOutputHelper) =
             | _ -> None
         // validate that, because we stopped after 1 item, we only needed one trip (which contained 4 events)
         [1,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 4 // 3.06
+        verifyRequestChargesMax 3 // 2.97
     }
 
     (* Backward *)
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let getBackwards (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log 1
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let getBackwards (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+        let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 1 else 0)
 
         let! expected = add6EventsIn2Batches ctx streamName
 
@@ -263,9 +274,9 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 3
     }
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``getBackwards in 2 batches`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log 1
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``getBackwards in 2 batches`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+        let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 1 else 0)
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 2
 
@@ -280,9 +291,9 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 7 // 6.01
     }
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``getBackwards Lazy`` (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log 1
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``getBackwards Lazy`` (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+        let ctx = createPrimaryEventsContext log 1 (if eventsInTip then 3 else 0)
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
@@ -295,7 +306,7 @@ type Tests(testOutputHelper) =
 
         verifyCorrectEventsBackward 5L expected res
         // only 1 request of 1 item triggered
-        let pages = 1 // in V2 (and V3 master for now), Tip gets filtered out of the querying explicitly
+        let pages = if eventsInTip then 1 else 2 // in V2, the query excluded the Tip; in V3 with tipMaxEvents, we return the tip but it has no data
         test <@ [yield! Seq.replicate pages EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
         // validate that, despite only requesting max 1 item, we only needed one trip, bearing 5 items (from which one item was omitted)
         let queryRoundTripsAndItemCounts = function
@@ -303,14 +314,17 @@ type Tests(testOutputHelper) =
             | _ -> None
         let expectedPagesAndEvents = [pages, 2]
         expectedPagesAndEvents =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 6 // 5.66
+        if eventsInTip then verifyRequestChargesMax 3 // 2.98
+        else verifyRequestChargesMax 6 // 5.66
     }
 
     (* Prune *)
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let prune (TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log 10
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let prune (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+        if eventsInTip then () else // TODO
+
+        let ctx = createPrimaryEventsContext log 10 (if eventsInTip then 1 else 0)
         let! expected = add6EventsIn2Batches ctx streamName
 
         // Trigger deletion of first batch
@@ -352,10 +366,11 @@ type Tests(testOutputHelper) =
 
     (* Fallback *)
 
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let fallback (TestStream streamName) = Async.RunSynchronously <| async {
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let fallback (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
+        if eventsInTip then () else // TODO
 
-        let ctx1 = createPrimaryEventsContext log defaultQueryMaxItems
+        let ctx1 = createPrimaryEventsContext log defaultQueryMaxItems 0
         let ctx2 = createSecondaryEventsContext log defaultQueryMaxItems
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
 
@@ -400,7 +415,7 @@ type Tests(testOutputHelper) =
         test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
 
-        // Fallback queries secondary
+        // Fallback queries secondary (unless we actually delete the Tip too)
         // TODO demonstrate Primary read is only of Tip when using snapshots
         capture.Clear()
         let! res = Events.get ctx12 streamName 0L Int32.MaxValue

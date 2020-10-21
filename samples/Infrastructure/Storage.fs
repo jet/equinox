@@ -45,6 +45,8 @@ module Cosmos =
         | [<AltCommandLine "-s2">]      Connection2 of string
         | [<AltCommandLine "-d2">]      Database2 of string
         | [<AltCommandLine "-c2">]      Container2 of string
+        | [<AltCommandLine "-te">]      TipMaxEvents of int
+        | [<AltCommandLine "-tl">]      TipMaxJsonLength of int
         | [<AltCommandLine "-b">]       QueryMaxItems of int
         interface IArgParserTemplate with
             member a.Usage =
@@ -60,6 +62,8 @@ module Cosmos =
                 | Connection2 _ ->      "specify a connection string for Secondary Cosmos account. Default: use same as Primary Connection"
                 | Database2 _ ->        "specify a database name for Secondary store. Default: use same as Primary Database"
                 | Container2 _ ->       "specify a container name for store. Default: use same as Primary Container"
+                | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: 256"
+                | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Info(args : ParseResults<Arguments>) =
         member __.Mode =                args.GetResult(ConnectionMode,Microsoft.Azure.Cosmos.ConnectionMode.Direct)
@@ -76,6 +80,8 @@ module Cosmos =
         member __.Timeout =             args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member __.Retries =             args.GetResult(Retries,1)
         member __.MaxRetryWaitTime =    args.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
+        member __.TipMaxEvents =        args.GetResult(TipMaxEvents, 256)
+        member __.TipMaxJsonLength =    args.GetResult(TipMaxJsonLength, 30000)
         member __.QueryMaxItems =       args.GetResult(QueryMaxItems, 10)
 
     /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
@@ -106,9 +112,9 @@ module Cosmos =
                 CosmosStoreConnection(client, databaseId, containerId)
             | (client, databaseId, containerId), Some (client2, db2, cont2) ->
                 CosmosStoreConnection(client, databaseId, containerId, client2 = client2, databaseId2 = db2, containerId2 = cont2)
-        log.Information("CosmosStore Max Items in Query: {queryMaxItems}",
-                        a.QueryMaxItems)
-        let ctx = CosmosStoreContext(conn, queryMaxItems = a.QueryMaxItems)
+        log.Information("CosmosStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
+                        a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
+        let ctx = CosmosStoreContext(conn, queryMaxItems = a.QueryMaxItems, tipMaxEvents = a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Cosmos (ctx, cacheStrategy, unfolds)
 
