@@ -194,15 +194,11 @@ type Tests(testOutputHelper) =
         let service = ContactPreferences.createService log context
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
-        //let (Domain.ContactPreferences.Id email) = id ()
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update(id, { value with quickSurveys = quickSurveysValue })
         // Ensure there will be something to be changed by the Update below
-        do! service.Update(id, { value with quickSurveys = not value.quickSurveys })
-
+        for i in 1..13 do
+            do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()
+
         do! service.Update(id, value)
 
         let! result = service.Read id
@@ -243,14 +239,11 @@ type Tests(testOutputHelper) =
         let service = ContactPreferences.createServiceWithLatestKnownEvent context log CachingStrategy.NoCaching
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update(id, { value with quickSurveys = quickSurveysValue })
-        // Ensure there will be something to be changed by the Update below
-        do! service.Update(id, { value with quickSurveys = not value.quickSurveys })
-
+        // Feed some junk into the stream; Ensure there will be something to be changed by the Update below
+        for i in 1..13 do
+            do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()
+
         do! service.Update(id, value)
 
         let! result = service.Read id

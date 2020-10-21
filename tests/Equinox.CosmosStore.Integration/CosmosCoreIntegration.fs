@@ -43,7 +43,7 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        if eventsInTip then verifyRequestChargesMax 20 // 19.35
+        if eventsInTip then verifyRequestChargesMax 21 // 20.42
         else verifyRequestChargesMax 34 // 33.07
 
         // Clear the counters
