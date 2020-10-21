@@ -90,7 +90,8 @@ type Tests(testOutputHelper) =
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
             test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 76 // 75.01 [3.6; 71.41]
+            if eventsInTip then verifyRequestChargesMax 74 // 73.61 [3.58; 70.03]
+            else verifyRequestChargesMax 79 // 78.37 [3.15; 75.22]
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`

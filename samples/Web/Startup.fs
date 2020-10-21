@@ -27,7 +27,7 @@ type Arguments =
             | LocalSeq ->                   "configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | Cached ->                     "employ a 50MB cache."
             | Unfolds ->                    "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
-            | Cosmos _ ->                   "specify storage in CosmosDb (--help for options)."
+            | Cosmos _ ->                   "specify storage in CosmosDB (--help for options)."
             | Es _ ->                       "specify storage in EventStore (--help for options)."
             | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
             | MsSql _ ->                    "specify storage in Sql Server (--help for options)."

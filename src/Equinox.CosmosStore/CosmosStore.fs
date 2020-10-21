@@ -687,7 +687,7 @@ module internal Tip =
                  match minIndex with None -> () | Some x -> yield "c.n > @minPos", fun (q : QueryDefinition) -> q.WithParameter("@minPos", x)
                  match maxIndex with None -> () | Some x -> yield "c.i < @maxPos", fun (q : QueryDefinition) -> q.WithParameter("@maxPos", x) ]
             let whereClause =
-                let notTip = sprintf "c.id!=\"%s\"" Tip.WellKnownDocumentId // until tip-isa-batch, we have a guarantee there are no events in Tip
+                let notTip = sprintf "c.id!=\"%s\"" Tip.WellKnownDocumentId
                 let conditions = Seq.map fst args
                 if List.isEmpty args && includeTip then null
                 else "WHERE " + String.Join(" AND ", if includeTip then conditions else Seq.append conditions (Seq.singleton notTip))
@@ -1245,11 +1245,11 @@ type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipO
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     /// Do not apply any caching strategy for this Stream.
-    /// NB opting not to leverage caching when using CosmosDb can have significant implications for the scalability
+    /// NB opting not to leverage caching when using CosmosDB can have significant implications for the scalability
     ///   of your application, both in terms of latency and running costs.
     /// While the cost of a cache miss can be ameliorated to varying degrees by employing an appropriate `AccessStrategy`
     ///   [that works well and has been validated for your scenario with real data], even a cache with a low Hit Rate provides
-    ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDb instances.
+    ///   a direct benefit in terms of the number of Request Unit (RU)s that need to be provisioned to your CosmosDB instances.
     | NoCaching
     /// Retain a single 'state per streamName, together with the associated etag
     /// NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
@@ -1356,11 +1356,11 @@ type Discovery =
     | ConnectionString of connectionString : string
 
 type CosmosStoreClientFactory
-    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDb
+    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB
         requestTimeout: TimeSpan,
-        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDb, signifying RU limits have been breached
+        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached
         maxRetryAttemptsOnRateLimitedRequests: int,
-        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDb in the 429 response)
+        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response)
         maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
         /// Connection limit for Gateway Mode (default 1000)
         [<O; D(null)>]?gatewayModeMaxConnectionLimit,

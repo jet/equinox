@@ -92,7 +92,7 @@ Equinox does not focus on projection logic or wrapping thereof - each store brin
 
 - `FsKafka` [![FsKafka NuGet](https://img.shields.io/nuget/v/FsKafka.svg)](https://www.nuget.org/packages/FsKafka/): Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`propulsion project kafka`](https://github.com/jet/propulsion#dotnet-tool-provisioning--projections-test-tool) tool command; see [`dotnet new proProjector -k; dotnet new proConsumer` to generate a sample app](https://github.com/jet/dotnet-templates#propulsion-related) using it (see the `BatchedAsync` and `BatchedSync` modules in `Examples.fs`).
 - `Propulsion` [![Propulsion NuGet](https://img.shields.io/nuget/v/Propulsion.svg)](https://www.nuget.org/packages/Propulsion/): defines a canonical `Propulsion.Streams.StreamEvent` used to interop with `Propulsion.*` in processing pipelines for the `proProjector` and `proSync` templates in the [templates repo](https://github.com/jet/dotnet-templates), together with the `Ingestion`, `Streams`, `Progress` and `Parallel` modules that get composed into those processing pipelines. ([depends](https://www.fuget.org/packages/Propulsion) on `Serilog`)
-- `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/v/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDb Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). Used in the [`propulsion project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
+- `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/v/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). Used in the [`propulsion project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
 - `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/v/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
 - `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/v/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new proProjector -k; dotnet new proConsumer`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `FsKafka`)
 
@@ -247,7 +247,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
 4. browse writes at http://localhost:30778/web/index.html#/streams
 
-### Store data in [Azure CosmosDb](https://docs.microsoft.com/en-us/azure/cosmos-db/introduction)
+### Store data in [Azure CosmosDB](https://docs.microsoft.com/en-us/azure/cosmos-db/introduction)
 
 1. *export 3x env vars* (see [provisioning instructions](#run-cosmosdb-benchmark-when-provisioned))
 
@@ -265,21 +265,21 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     eqx init -ru 400 cosmos # generates a database+container, adds optimized indexes
     ```
 
-3. generate sample app from template, with CosmosDb wiring
+3. generate sample app from template, with CosmosDB wiring
 
     ```powershell
     dotnet new eqxweb -t -c # -t for todos, -c for cosmos
     dotnet run -p Web
     ```
 
-4. Use the `eqx` tool to dump stats relating the contents of the CosmosDb store
+4. Use the `eqx` tool to dump stats relating the contents of the CosmosDB store
 
     ```powershell
     # run queries to determine how many streams, docs, events there are in the container
     eqx -V -C stats -SDEP cosmos # -P to run in parallel # -V -C to show underlying query being used
     ```
 
-5. Use `propulsion` tool to run a CosmosDb ChangeFeedProcessor
+5. Use `propulsion` tool to run a CosmosDB ChangeFeedProcessor
 
     ```powershell
     dotnet tool uninstall Propulsion.Tool -g
@@ -293,7 +293,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     propulsion -V project -g projector1 stats cosmos
     ```
 
-6. Generate a CosmosDb ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
+6. Generate a CosmosDB ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
 
     ```powershell
     dotnet new -i Equinox.Templates
@@ -306,7 +306,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # cosmos specifies source overrides (using defaults in step 1 in this instance)
     dotnet run -- -g projector2 cosmos
     ```
-7. Use `propulsion` tool to Run a CosmosDb ChangeFeedProcessor, emitting to a Kafka topic
+7. Use `propulsion` tool to Run a CosmosDB ChangeFeedProcessor, emitting to a Kafka topic
 
     ```powershell	
     $env:PROPULSION_KAFKA_BROKER="instance.kafka.mysite.com:9092" # or use -b	
@@ -319,7 +319,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     propulsion -V project -g projector3 -l 5 kafka temp-topic cosmos	
     ```	
 
- 8. Generate CosmosDb [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
+ 8. Generate CosmosDB [Kafka Projector and Consumer](https://github.com/jet/propulsion#feeding-to-kafka) `.fsproj`ects (using `Propulsion.Kafka`)
 
     ```powershell
     cat readme.md # more complete instructions regarding the code
@@ -436,7 +436,7 @@ Please note the [QuickStart](#quickstart) is probably the best way to gain an ov
 
 ### build and run
 
-Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDb database and container prepared (see [PROVISIONING](#provisioning)):
+Run, including running the tests that assume you've got a local EventStore and pointers to a CosmosDB database and container prepared (see [PROVISIONING](#provisioning)):
 
     ./build.ps1
 
@@ -452,7 +452,7 @@ Run, including running the tests that assume you've got a local EventStore and p
 
     ./build -se
 
-### build, skip EventStore tests, skip auto-provisioning / de-provisioning CosmosDb
+### build, skip EventStore tests, skip auto-provisioning / de-provisioning CosmosDB
 
     ./build -se -scp
 
@@ -482,7 +482,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
     dotnet tool install -g Equinox.Tool # only once
     eqx run -t saveforlater -f 200 web
 
-### run CosmosDb benchmark (when provisioned)
+### run CosmosDB benchmark (when provisioned)
 
     $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
@@ -504,7 +504,7 @@ For EventStore, the tests assume a running local instance configured as follows 
     # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
     & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
 
-### Provisioning CosmosDb (when not using -sc)
+### Provisioning CosmosDB (when not using -sc)
 
     dotnet run -p tools/Equinox.Tool -- init -ru 400 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
@@ -525,7 +525,7 @@ While EventStore rarely shows any negative effects from repeated load test runs,
     # requires admin privilege
     rm $env:ProgramData\chocolatey\lib\eventstore-oss\tools\data
 
-### Deprovisioning CosmosDb
+### Deprovisioning CosmosDB
 
 The [provisioning](#provisioning) step spins up RUs in CosmosDB for the Container, which will keep draining your account until you reach a spending limit (if you're lucky!). *When finished running any test, it's critical to drop the RU allocations back down again via some mechanism (either delete the container or reset the RU provision down to the lowest possible value)*.
 
@@ -566,15 +566,15 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
 OK, I've read the README and the tagline. I still don't know what it does! Really, what's the TL;DR ?
 
 - supports storing events in [EventStore](https://eventstore.org), including working with existing data you may have (that's where it got its start)
-- includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDb account to get going
+- includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDB account to get going
 - provides all the necessary infrastructure to build idempotent synchronous command processing against all of the stores; your Domain code intentionally doesn't need to reference *any* Equinox modules whatsoever (although for smaller systems, you'll often group `Events`+`Fold`+`interpret`/`decide`+`Service` in a single `module`, which implies a reference to [the core `Equinox` package](src/Equinox)).
 - following on from the previous point: you just write the unit tests without any Equinox-specific hoops to jump through; this really works very well indeed, assuming you're writing the domain code and the tests in F#. If you're working in a more verbose language, you may end up building some test helpers. We don't envisage Equinox mandating a specific pattern on the unit testing side (consistent naming such as `Events.Event`+`evolve`+`fold`+`Command`+`interpret`/`decide` can help though).
 - it helps with integration testing decision processes by
   - staying out of your way as much as possible
-  - providing an in-memory store that implements the same interface as the EventStore and CosmosDb stores do
+  - providing an in-memory store that implements the same interface as the EventStore and CosmosDB stores do
 - There is a projection story, but it's not the last word - any 3 proper architects can come up with at least 3 wrong and 3 right ways of running those perfectly
   - For EventStore, you use its' projections; they're great. There's a `Propulsion.EventStore` which serves the needs of `dotnet new proSync`, [but it's not intended for application level projections as yet](https://github.com/jet/propulsion/issues/8).
-  - for CosmosDb, you use the `Propulsion.Cosmos.*` libraries to work off the CosmosDb ChangeFeed using the Microsoft ChangeFeedProcessor library (and, optionally, project to/consume from Kafka) using the sample app templates (`dotnet new proProjector`).
+  - for CosmosDB, you use the `Propulsion.Cosmos.*` libraries to work off the CosmosDB ChangeFeed using the Microsoft ChangeFeedProcessor library (and, optionally, project to/consume from Kafka) using the sample app templates (`dotnet new proProjector`).
 
 ### Should I use Equinox to learn event sourcing ?
 
@@ -604,7 +604,7 @@ The main language in mind for consumption is of course F# - many would say that 
 
 The `MemoryStore` backend is intended to implement the complete semantics of a durable store (aside from caching). The main benefit of using it is that any tests using it have zero environment dependencies. In some cases this can be very useful for demo apps or generators (rather than assuming a specific store at a specific endpoint and/or credentials, there is something to point at which does not require configuration or assumptions.). The single problem of course is that it's all in-process; the minute you stop the host, your TODO list has been forgotten. In general, EventStore is a very attractive option for prototyping; the open source edition is trivial to install and has a nice UI that lets you navigate events being produced etc.
 
-### OK, so it supports CosmosDb, EventStore and might even support more in the future. I really don't intend to shift datastores. Period. Why would I take on this complexity only to get the lowest common denominator ?
+### OK, so it supports CosmosDB, EventStore and might even support more in the future. I really don't intend to shift datastores. Period. Why would I take on this complexity only to get the lowest common denominator ?
 
 Yes, you have decisions to make; Equinox is not a panacea - there is no one size fits all. While the philosophy of Equinox is a) provide an opinionated store-neutral [Programming Model](DOCUMENTATION.md#Programming-Model) with a good pull toward a big [pit of success](https://blog.codinghorror.com/falling-into-the-pit-of-success/), while not closing the door to using store-specific features where relevant, having a dedicated interaction is always going to afford you more power and control.
 
