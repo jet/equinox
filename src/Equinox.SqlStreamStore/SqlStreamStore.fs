@@ -496,6 +496,19 @@ module Caching =
         let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
         CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
+    let applyCacheUpdatesWithFixedTimeSpan
+            (cache : ICache)
+            (prefix : string)
+            (lifetime : TimeSpan)
+            (category : ICategory<'event, 'state, string, 'context>)
+            : ICategory<'event, 'state, string, 'context> =
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let addOrUpdateFixedLifetimeCacheEntry streamName value =
+            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add lifetime
+            let options = CacheItemOptions.AbsoluteExpiration expirationPoint
+            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+        CategoryTee<'event, 'state, 'context>(category, addOrUpdateFixedLifetimeCacheEntry) :> _
+
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
     let batched log streamName = category.Load fold initial streamName log
     interface ICategory<'event, 'state, string, 'context> with
@@ -516,6 +529,10 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
     | SlidingWindow of ICache * window: TimeSpan
+    /// Retain a single 'state per streamName
+    /// Upon expiration of the span, a reload is triggered
+    /// Typically combined with `Equinox.ResolveOption.AllowStale` to minimize loads
+    | FixedTimeSpan of ICache * span: TimeSpan
     /// Prefix is used to segregate multiple folds per stream when they are stored in the cache
     | SlidingWindowPrefixed of ICache * window: TimeSpan * prefix: string
 
@@ -536,7 +553,8 @@ type Resolver<'event, 'state, 'context>
     let readCacheOption =
         match caching with
         | None -> None
-        | Some (CachingStrategy.SlidingWindow(cache, _)) -> Some(cache, null)
+        | Some (CachingStrategy.SlidingWindow (cache, _))
+        | Some (CachingStrategy.FixedTimeSpan (cache, _)) -> Some(cache, null)
         | Some (CachingStrategy.SlidingWindowPrefixed(cache, _, prefix)) -> Some(cache, prefix)
     let folder = Folder<'event, 'state, 'context>(inner, fold, initial, ?readCache = readCacheOption)
     let category : ICategory<_,_,_,'context> =
@@ -544,6 +562,8 @@ type Resolver<'event, 'state, 'context>
         | None -> folder :> _
         | Some (CachingStrategy.SlidingWindow(cache, window)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+        | Some (CachingStrategy.FixedTimeSpan (cache, span)) ->
+            Caching.applyCacheUpdatesWithFixedTimeSpan cache null span folder
         | Some (CachingStrategy.SlidingWindowPrefixed(cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
     let resolveStream = Stream.create category

@@ -37,8 +37,8 @@ type Cache(name, sizeMb : int) =
 
     let toPolicy (cacheItemOption: CacheItemOptions) =
         match cacheItemOption with
-        | AbsoluteExpiration absolute -> new CacheItemPolicy(AbsoluteExpiration = absolute)
-        | RelativeExpiration relative -> new CacheItemPolicy(SlidingExpiration = relative)
+        | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
+        | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
 
     interface ICache with
         member __.UpdateIfNewer(key, options, entry) = async {
