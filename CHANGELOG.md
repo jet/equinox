@@ -10,7 +10,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `CachingStrategy.FixedTimeSpan`: Support for fixed caching periods [#252](https://github.com/jet/equinox/pull/252)
+- `CachingStrategy.FixedTimeSpan`: Support for fixed caching periods [#255](https://github.com/jet/equinox/pull/255)
 
 ### Changed
 ### Removed
