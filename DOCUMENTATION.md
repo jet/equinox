@@ -1761,15 +1761,14 @@ stream). The request includes the following elements:
   expectedVersion check is fulfilled
 - `u`: array of `unfold`ed events (aka snapshots) that supersede items with
   equivalent `c`ase values  
-- `maxStringifyLen`: secondary constraint on the events retained in the tip (in addition to `maxEventsInTip` constraint) - constrains the maximum length of the events being buffered in the Tip by applying a size limit in characters (as computed via `JSON.stringify(events).length`)
 - `maxEventsInTip`: the maximum number of events permitted to be retained in the Tip (subject to that not exceeding the `maxStringifyLen` rule). For example:
 
   - if `e` contains 2 events, the _tip_ document's `e` has 2 events and the `maxEventsInTip` is `5`, the events get appended onto the tip's `e`vents
-  - if the total length including the new `e`vents would exceed `maxEvents`, the Tip is 'renamed' (gets its `id` set to `i.toString()`) to become a
+  - if the total length including the new `e`vents would exceed `maxEventsInTip`, the Tip is 'renamed' (gets its `id` set to `i.toString()`) to become a
     batch (with the new `e`vents included in that calved Batch), and the new Tip has a zero-length `e`vents array
     as a `Batch`, and a set of `u`nfolds (as an atomic
     transaction on the server side)
-
+- `maxStringifyLen`: secondary constraint on the events retained in the tip (in addition to `maxEventsInTip` constraint) - constrains the maximum length of the events being buffered in the Tip by applying a size limit in characters (as computed via `JSON.stringify(events).length`)
 - (PROPOSAL/FUTURE) `thirdPartyUnfoldRetention`: how many events to keep before
   the base (`i`) of the batch if required by lagging `u`nfolds which would
   otherwise fall out of scope as a result of the appends in this batch (this

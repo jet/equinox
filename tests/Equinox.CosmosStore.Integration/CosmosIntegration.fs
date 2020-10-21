@@ -79,7 +79,6 @@ type Tests(testOutputHelper) =
         let context = createPrimaryContextEx log queryMaxItems (if eventsInTip then eventsPerAction else 0)
 
         let service = Cart.createServiceWithoutOptimization log context
-        let emptyTip = if eventsInTip then 0 else 1
         let expectedResponses n =
             let expectedBatches = 1 + if eventsInTip then n / 2 else n
             max 1 (int (ceil (float expectedBatches / float queryMaxItems)))

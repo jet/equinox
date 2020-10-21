@@ -217,7 +217,7 @@ type Tests(testOutputHelper) =
 
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         if eventsInTip then verifyRequestChargesMax 3
-        else verifyRequestChargesMax 5 // (4.15) // WAS 13 with SDK bugs// 12.81 // was 3 before introduction of multi-event batches
+        else verifyRequestChargesMax 5 // (4.15) // WAS 13 with SDK bugs// 12.81
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -252,7 +252,7 @@ type Tests(testOutputHelper) =
             | _ -> None
         // validate that, because we stopped after 1 item, we only needed one trip (which contained 4 events)
         [1,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 3 // 2.97 (2.88 in Tip)
+        verifyRequestChargesMax 3 // 2.97
     }
 
     (* Backward *)
