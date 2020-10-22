@@ -4,7 +4,6 @@ Equinox is a set of low dependency libraries that allow for event-sourced proces
 * Snapshots
 * Caching
 * State management
-* Retrieval optimizations
 
 This enables *you* to compose the libraries into an architecture that fits your apps' needs. 
 
@@ -37,14 +36,15 @@ It does not and will not handle projections and subscriptions. Refer to [Propuls
 - If you are experienced with CosmosDB and [CosmoStore](https://github.com/Dzoukr/CosmoStore), but want to understand what sort of facilities Equinox adds on top of the raw event management in CosmoStore, see the [Access Strategies guide](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies)
 
 # Design Motivation
+
 Equinox's design is informed by discussions, talks and countless hours of hard and thoughtful work invested into many previous systems, [frameworks](https://github.com/NEventStore), [samples](https://github.com/thinkbeforecoding/FsUno.Prod), [forks of samples](https://github.com/bartelink/FunDomain), the outstanding continuous work of the [EventStore](https://github.com/eventstore) founders and team and the wider [DDD-CQRS-ES](https://groups.google.com/forum/#!forum/dddcqrs) community. It would be unfair to single out even a small number of people despite the immense credit that is due. Some aspects of the implementation are distilled from [`Jet.com` systems dating all the way back to 2013](http://gorodinski.com/blog/2013/02/17/domain-driven-design-with-fsharp-and-eventstore/).
 
-An event sourcing system usually needs the following concerns:
+An event sourcing system usually needs to address the following concerns:
 1. Storing events with good performance and debugging capabilities
 2. Transaction processing
     - Optimistic concurrency
         - Handle loading conflicting events and retry if another call overlaps on the same stream
-    - Folding events
+    - Folding events into a State, updating as new events are added
 3. Decoding events using codecs and formats
 4. Framework and application integration
 5. Projections and Reactions
@@ -53,11 +53,11 @@ Designing something that supports all of these as a single integrated solution r
 thus, Equinox focuses on the core of event sourcing, items 1 and 2, so it can be as non-intrusive to your application's domain. 
 
 Of course, the other concerns can't be ignored; thus, they are supported via other libraries that focus on them:
-- [FSCodec](https://github.com/jet/FsCodec) supports encoding and decoding (attribute 3)  
-- [Propulsion](https://github.com/jet/propulsion) supports projections and reactions (attribute 5)
+- [FSCodec](https://github.com/jet/FsCodec) supports encoding and decoding (concern 3)  
+- [Propulsion](https://github.com/jet/propulsion) supports projections and reactions (concern 5)
 - Integration with frameworks is an external concern of this library. Integration with other frameworks (Equinox wiring into ASP.Net Core) is something that you should address as you build your application.
 
-We believe the fact Equinox is a library is incredibly powerful: 
+We believe the fact Equinox is a library is critical:
     - It gives you the ability to pick your preferred way of supporting your event sourcing system.
     - There's less coupling to worry about as your application evolves over time.
 
@@ -66,11 +66,12 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 
 # Features
 
-- Designed not to invade application code; that way your domain tests can be written directly against your models.
+- Designed not to invade application code; your domain tests can be written directly against your models.
 - Core ideas and features of the library are extracted from ideas and lessons learned from existing production software.
 - Test coverage for it's core features. In addition there are baseline and specific tests for each supported storage system and a comprehensive test and benchmarking story
-- Pluggable event serialization. All encoding is specified in terms of the [`FsCodec.IEventCodec` contract](https://github.com/jet/FsCodec#IEventCodec). [FsCodec](https://github.com/jet/FsCodec) provides for pluggable encoding of events based on either:
+- Pluggable event serialization. All encoding is specified in terms of the [`FsCodec.IEventCodec` contract](https://github.com/jet/FsCodec#IEventCodec). [FsCodec](https://github.com/jet/FsCodec) provides for pluggable encoding of events based on:
   - `NewtonsoftJson.Codec`: a [versionable convention-based approach](https://eiriktsarpalis.wordpress.com/2018/10/30/a-contract-pattern-for-schemaless-datastores/) (using `Typeshape`'s `UnionContractEncoder` under the covers), providing for serializer-agnostic schema evolution with minimal boilerplate
+  - `SystemTextJson.Codec`: a replacement to support Microsoft's default serializer - [System.Text.Json](https://docs.microsoft.com/en-us/dotnet/api/system.text.json?view=netcore-3.1).  
   - `Box.Codec`: lightweight [non-serializing substitute equivalent to `NewtonsoftJson.Codec` for use in unit and integration tests](https://github.com/jet/FsCodec#boxcodec)
   - `Codec`: an explicitly coded pair of `encode` and `tryDecode` functions for when you need to customize
 - Caching using the .NET `MemoryCache` to:
@@ -81,23 +82,28 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
   - No additional round trips to the store needed at either the Load or Sync points in the flow
   - Support for multiple co-existing compaction schemas for a given stream (A 'compaction' event/snapshot is an Event). This is done by the [`FsCodec.IEventCodec`](https://github.com/jet/FsCodec#IEventCodec)
     - Compaction events typically do not get deleted (consistent with how EventStore works), although it is safe to do so in concept
-  - While snapshotting can deliver excellent performance especially when allied with the Cache, [it's not a panacea, as noted in this excellent EventStore.org article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
+  - While snapshotting can deliver excellent performance especially when allied with the Cache, [it's not a panacea, as noted in this excellent EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
 - **`Equinox.CosmosStore` 'Tip with Unfolds' schema**: 
-  - In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`, when using `Equinox.CosmosStore`, optimized command processing is managed via the `Tip` - a document per stream with an identity enabling syncing the read/write position via a single point-read. The `Tip` has the following attributes:
-    - It represents the position of the stream - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
-    - It is ephemeral (`deflate+base64` compressed) [_unfolds_](DOCUMENTATION.md#Cosmos-Storage-Model)
-    - It can also be a holding buffer for events. Note: [presently removed](https://github.com/jet/equinox/pull/58), but [should return](DOCUMENTATION.md#Roadmap), see [#109](https://github.com/jet/equinox/pull/109)
-  - Has the benefits of the in-stream Rolling Snapshots approach while reducing latency and RU provisioning requirements due to meticulously tuned Request Charge costs:-
-  - Writes never need to do queries or touch event documents in any way
-  - When coupled with the cache, a typical read is a point read [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response] (when the stream is empty, a `404 NotFound` response, also costing 1.0 RU)
-  - No additional round trips to the store needed at either the Load or Sync points in the flow
+  - In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`, when using `Equinox.CosmosStore`, optimized command processing is managed via the `Tip` - a document per stream with an identity enabling syncing the read/write position via a single point-read. The `Tip` maintains the following: 
+    - It records the current write position for the stream which is used for [optimistic concurrency control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control) - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
+    - It maintains the current [unfolds](DOCUMENTATION.md#Cosmos-Storage-Model) / snapshot data which is `deflate+base64` compressed.
+    - It can maintain events in a buffer when the tip accumulation limit is reached. The limit is up to a specified count or `Json.stringify` length. When the limit is met, events are shifted to a immutable `Batch`. 
+  - Has the benefits of the in-stream Rolling Snapshots approach while reducing latency and RU provisioning requirements due to meticulously tuned Request Charge costs:
+    - When the stream is empty, the initial `Load` operation involves a single point read that yields a `404 NotFound` response, costing 1.0 RU
+    - When coupled with the cache, a typical read is a point read [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response] (when the stream is empty, a `404 NotFound` response, also costing 1.0 RU)
+    - Writes are a single invocation of the `Sync` stored procedures which:
+        - Does a point read
+        - Performs a concurrency check
+        - Uses that check to apply the write or return conflicting events and unfold
+    - No additional round trips to the store needed at either the Load or Sync points in the flow
   - It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
+ 
 - **`Equinox.CosmosStore` `RollingState` and `Custom` 'non-event-sourced' modes**: 
     - Uses 'Tip with Unfolds' encoding to avoid having to write event documents at all. This options benefits from caching and consistency management mechanisms because the cost of writing and storing infinitely increasing events are removed. Search for `transmute` or `RollingState` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in [the `dotnet-templates` `summaryConsumer` template](https://github.com/jet/dotnet-templates/tree/master/propulsion-summary-consumer).
 
 # Currently Supported Data Stores
 
-- [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains code dating back to 2016, however [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking (squash-merged in [#42](https://github.com/jet/equinox/pull/42)).
+- [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db) - contains minor fragments of code dating back to 2016, however [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking (squash-merged in [#42](https://github.com/jet/equinox/pull/42)).
 - [EventStore](https://eventstore.org/) - this codebase itself has been in production since 2017 (see commit history), with key elements dating back to approx 2016.
 - `MemoryStore`: In-memory store (volatile, for unit or integration test purposes). Fulfils the full contract Equinox imposes on a store, but without I/O costs [(it's ~100 LOC wrapping a `ConcurrentDictionary`)](https://github.com/jet/equinox/blob/master/src/Equinox.MemoryStore/MemoryStore.fs), and the ability to [take serialization/deserialization cost out of the picture](https://github.com/jet/FsCodec#boxcodec).
 - [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore): Bindings for the powerful and widely used SQL-backed Event Storage system. [See SqlStreamStore docs](https://sqlstreamstore.readthedocs.io/en/latest/#introduction). :pray: [@rajivhost](https://github.com/rajivhost)
@@ -144,9 +150,11 @@ Equinox does not focus on projection logic - each store brings its own strengths
 - `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/v/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
 - `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/v/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new proProjector -k; dotnet new proConsumer`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `FsKafka`)
 
-### Tools
+### `dotnet tool` provisioning / benchmarking tool
 
-- `Equinox.Tool` [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/): Tool incorporating a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
+- `Equinox.Tool` [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/)
+    - Tool incorporating a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
+    - It can initialize stores for `SqlStreamStore` and `CosmosDB` by using the commands `eqx init` (SqlStreamStore requires an extra step of `eqx config` to setup the database schema). See [here](https://github.com/jet/equinox#store-data-in-azure-cosmosdb).
 
 ### `dotnet new` starter project templates and sample applications	### Starter Project Templates and Sample Applications 
 
@@ -677,7 +685,7 @@ The answer as to why that strategy is available in in `Equinox.EventStore` is fo
 - streams like `Favorites` where every event is small (add sku, drop sku), and the snapshot is pretty compact (list of skus) (but note it is ever growing)
 - streams like `SavedForLater` items where the state rolls over regularly - even after 5 years and 1000s of items moving in and out, there's a constraint of max 50 items which makes a snapshot pretty light. (The other trick is that a `Cleared` event counts as a valid starting state for the fold - and we don't write a snapshot if we have one of those)
 
-The big win is latency in querying contexts - given that access strategy, you're guaranteed to be able to produce the full state of the aggregate with a single roundtrip (if max batch size is 200, the sna[shots are written every 200 items so reading backward 200 guarantees a snapshot will be included)
+The big win is latency in querying contexts - given that access strategy, you're guaranteed to be able to produce the full state of the aggregate with a single roundtrip (if max batch size is 200, the snapshots are written every 200 items so reading backward 200 guarantees a snapshot will be included)
 
 The secondary benefit is of course that you have an absolute guarantee there will always be a snapshot, and if a given write succeeds, there will definitely be a snapshot in the `maxBatchSize` window (but it still copes if there isn't - i.e. you can add snapshotting after the fact)
 
@@ -714,7 +722,7 @@ General rules:
    a) load and decode unfolds from tip (followed by events, if and only if necessary)
    b) offer the events to an `isOrigin` function to allow us to stop when we've got a start point (a Reset Event, a relevant snapshot, or, failing that, the start of the stream)
 
-It may be helpful to look at [how an `AccessStrategy` is mapped to `isOrigin`, `toSnapshot` and `transmute` lambdas internally](https://github.com/jet/equinox/blob/74129903e85e01ce584b4449f629bf3e525515ea/src/Equinox.CosmosStore/CosmosStore.fs#L1016)
+It may be helpful to look at [how an `AccessStrategy` is mapped to `isOrigin`, `toSnapshot` and `transmute` lambdas internally](https://github.com/jet/equinox/blob/74129903e85e01ce584b4449f629bf3e525515ea/src/Equinox.CosmosStore/CosmosStore.fs#L1295)
 
 #### Aaand answering the question
 
