@@ -178,15 +178,9 @@ type Tests(testOutputHelper) =
                 && has sku21 21 && has sku22 22 @>
        // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
-#if EVENTS_IN_TIP
-        test <@ let c2 = List.choose conflict capture2.ExternalCalls
-                [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
-                && [EqxAct.Resync] = c2 @>
-#else
         test <@ let c2 = List.choose conflict capture2.ExternalCalls
                 [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
                 && [EqxAct.Conflict] = c2 @>
-#endif
     }
 
     let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]
@@ -197,15 +191,14 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createService log (createCosmosContext conn)
 
+        // We need to be sure every Update changes something as we rely on an expected number of events in the end
+        let value = if value <> ContactPreferences.Fold.initial then value else { value with manyPromotions = true }
         let email = let g = System.Guid.NewGuid() in g.ToString "N"
-        //let (Domain.ContactPreferences.Id email) = id ()
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update email { value with quickSurveys = quickSurveysValue }
-        // Ensure there will be something to be changed by the Update below
-        do! service.Update email { value with quickSurveys = not value.quickSurveys }
 
+        let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
+        // Ensure there will be something to be changed by the Update below
+        for i in 0..13 do
+            do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()
         do! service.Update email value
 
@@ -220,18 +213,14 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createServiceWithLatestKnownEvent (createCosmosContext conn) log CachingStrategy.NoCaching
 
-        let email = let g = System.Guid.NewGuid() in g.ToString "N"
-        // Feed some junk into the stream
-        for i in 0..11 do
-            let quickSurveysValue = i % 2 = 0
-            do! service.Update email { value with quickSurveys = quickSurveysValue }
+        let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
         // Ensure there will be something to be changed by the Update below
-        do! service.Update email { value with quickSurveys = not value.quickSurveys }
-
+        for i in 1..13 do
+            do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()
-        do! service.Update email value
+        do! service.Update(id, value)
 
-        let! result = service.Read email
+        let! result = service.Read id
         test <@ value = result @>
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
@@ -375,4 +364,5 @@ type Tests(testOutputHelper) =
         capture.Clear()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service1 1
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
+
     }

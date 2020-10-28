@@ -46,7 +46,8 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 33 // 32.27 // WAS 10
+        verifyRequestChargesMax 34 // 33.07
+
         // Clear the counters
         capture.Clear()
 
@@ -54,7 +55,7 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        verifyRequestChargesMax 41 // 40.68 // was 11
+        verifyRequestChargesMax 41 // 40.68
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
@@ -134,7 +135,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 46 // 45.42 // 47.02 // WAS 20
+        verifyRequestChargesMax 46 // 45.42
         capture.Clear()
 
         let! res = Events.getNextIndex ctx streamName
@@ -256,9 +257,9 @@ type Tests(testOutputHelper) =
         let queryRoundTripsAndItemCounts = function
             | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Forward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
-        // validate that, despite only requesting max 1 item, we only needed one trip (which contained only one item)
-        [1,1] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 4 // 3.23 // WAS 3 // 2.97
+        // validate that, because we stopped after 1 item, we only needed one trip (which contained 4 events)
+        [1,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
+        verifyRequestChargesMax 4 // 3.08
     }
 
     (* Backward *)
