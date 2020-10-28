@@ -189,13 +189,15 @@ type Tests(testOutputHelper) =
     let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` (eventsInTip, value) = Async.RunSynchronously <| async {
+    let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` (eventsInTip, value : ContactPreferences.Events.Preferences) = Async.RunSynchronously <| async {
         let context = createPrimaryContextEx log 1 (if eventsInTip then 1 else 0)
         let service = ContactPreferences.createService log context
+        // We need to be sure every Update changes something as we rely on an expected number of events in the end
+        let value = if value <> ContactPreferences.Fold.initial then value else { value with manyPromotions = true }
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
         // Ensure there will be something to be changed by the Update below
-        for i in 1..13 do
+        for i in 0..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()
 
@@ -215,8 +217,8 @@ type Tests(testOutputHelper) =
             let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
 
             // Prune all the events
-            let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 14L
-            test <@ deleted = 14 && deferred = 0 && trimmedPos = 14L @>
+            let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 15L
+            test <@ deleted = 15 && deferred = 0 && trimmedPos = 15L @>
 
             // Prove they're gone
             capture.Clear()
@@ -239,7 +241,7 @@ type Tests(testOutputHelper) =
         let service = ContactPreferences.createServiceWithLatestKnownEvent context log CachingStrategy.NoCaching
 
         let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
-        // Feed some junk into the stream; Ensure there will be something to be changed by the Update below
+        // Ensure there will be something to be changed by the Update below
         for i in 1..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()

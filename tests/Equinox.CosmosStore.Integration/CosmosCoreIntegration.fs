@@ -43,8 +43,8 @@ type Tests(testOutputHelper) =
         let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
         test <@ AppendResult.Ok 1L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        if eventsInTip then verifyRequestChargesMax 21 // 20.42
-        else verifyRequestChargesMax 34 // 33.07
+        if eventsInTip then verifyRequestChargesMax 24 // 23.72
+        else verifyRequestChargesMax 36 // 35.97 // 43.53 observed
 
         // Clear the counters
         capture.Clear()
@@ -53,8 +53,8 @@ type Tests(testOutputHelper) =
         test <@ AppendResult.Ok 6L = res @>
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
         // We didnt request small batches or splitting so it's not dramatically more expensive to write N events
-        if eventsInTip then verifyRequestChargesMax 40 // 39.13
-        else verifyRequestChargesMax 41 // 40.68
+        if eventsInTip then verifyRequestChargesMax 42 // 41.36
+        else verifyRequestChargesMax 43 // 42.82
     }
 
     // It's conceivable that in the future we might allow zero-length batches as long as a sync mechanism leveraging the etags and unfolds update mechanisms
@@ -136,7 +136,7 @@ type Tests(testOutputHelper) =
         pos <- pos + 42L
         pos =! res
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        if eventsInTip then verifyRequestChargesMax 45 // was 44.65
+        if eventsInTip then verifyRequestChargesMax 48 // 47.58
         else verifyRequestChargesMax 50 // 49.74
         capture.Clear()
 
@@ -152,7 +152,8 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 448 // 447.5 // 463.01 observed
+        if eventsInTip then verifyRequestChargesMax 451 // 450.03
+        else verifyRequestChargesMax 448 // 447.5 // 463.01 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -252,7 +253,8 @@ type Tests(testOutputHelper) =
             | _ -> None
         // validate that, because we stopped after 1 item, we only needed one trip (which contained 4 events)
         [1,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
-        verifyRequestChargesMax 3 // 2.97
+        if eventsInTip then verifyRequestChargesMax 4 // 3.06
+        else verifyRequestChargesMax 4 // 3.08
     }
 
     (* Backward *)
