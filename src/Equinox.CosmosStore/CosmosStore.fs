@@ -371,21 +371,22 @@ module private MicrosoftAzureCosmosWrappers =
     let (|CosmosStatusCode|) (e : CosmosException) =
         e.StatusCode
 
+    type Headers with
+        member headers.GetRequestCharge () =
+            match headers.TryGetValue "x-ms-request-charge" with
+            | true, charge -> float charge
+            | _ -> 0.
+
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
     type Container with
         member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : ItemRequestOptions): Async<float * ReadResult<'T>> = async {
             let options = defaultArg options null
             let! ct = Async.CancellationToken
-            // TODO use TryReadItemStreamAsync to avoid the exception https://github.com/Azure/azure-cosmos-dotnet-v3/issues/692#issuecomment-521936888
-            try let! item = async { return! container.ReadItemAsync(documentId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
-                // if item.StatusCode = System.Net.HttpStatusCode.NotModified then return item.RequestCharge, NotModified
-                // NB `.Document` will NRE if a IfNoneModified precondition triggers a NotModified result
-                // else
-                return item.RequestCharge, Found item.Resource
-            with CosmosException (CosmosStatusCode System.Net.HttpStatusCode.NotFound as e) -> return e.RequestCharge, NotFound
-                | CosmosException (CosmosStatusCode System.Net.HttpStatusCode.NotModified as e) -> return e.RequestCharge, NotModified
-                // NB while the docs suggest you may see a 412, the NotModified in the body of the try/with is actually what happens
-                | CosmosException (CosmosStatusCode System.Net.HttpStatusCode.PreconditionFailed as e) -> return e.RequestCharge, NotModified }
+            use! rm = async { return! container.ReadItemStreamAsync(documentId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
+            let rc = rm.Headers.GetRequestCharge()
+            if rm.StatusCode = System.Net.HttpStatusCode.NotFound then return rc, NotFound
+            elif rm.StatusCode = System.Net.HttpStatusCode.NotModified then return rc, NotModified
+            else return rc, Found (container.Database.Client.ClientOptions.Serializer.FromStream<'T>(rm.EnsureSuccessStatusCode().Content)) }
 
 // NB don't nest in a private module, or serialization will fail miserably ;)
 [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
