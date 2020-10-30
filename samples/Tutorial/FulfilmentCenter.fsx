@@ -144,7 +144,7 @@ service.Read(fc) |> Async.RunSynchronously
 
 Log.dumpMetrics ()
 
-/// Manages ingestion of summary events tagged with the version emitted from FulmentCenter.Service.QueryWithVersion
+/// Manages ingestion of summary events tagged with the version emitted from FulfilmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
     let streamName id = FsCodec.StreamName.create "FulfilmentCenterSummary" id

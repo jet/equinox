@@ -1223,17 +1223,17 @@ type CosmosStoreConnection
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipOptions) =
-    new(connection : CosmosStoreConnection, ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests, ?tipOptions) =
+    static member Create
+        (   connection : CosmosStoreConnection,
+            ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests,
+            /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
+            /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
+            ?tipMaxEvents,
+            /// Maximum serialized size (length of JSON.stringify representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
+            ?tipMaxJsonLength) =
         let queryOptions = QueryOptions(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
-        CosmosStoreContext(connection, queryOptions, ?tipOptions = tipOptions)
-    new(connection : CosmosStoreConnection, ?queryMaxItems,
-        /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
-        /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
-        ?tipMaxEvents,
-        /// Maximum serialized size (length of JSON.stringify representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
-        ?tipMaxJsonLength) =
         let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength)
-        CosmosStoreContext(connection, tipOptions = tipOptions, ?defaultMaxItems = queryMaxItems)
+        CosmosStoreContext(connection, queryOptions, tipOptions)
     member val QueryOptions = queryOptions |> Option.defaultWith QueryOptions
     member val TipOptions = tipOptions |> Option.defaultWith TipOptions
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =

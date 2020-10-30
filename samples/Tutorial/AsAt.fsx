@@ -29,7 +29,7 @@
 #r "FSharp.Control.AsyncSeq.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
-#r "Eventstore.ClientAPI.dll"
+#r "EventStore.ClientAPI.dll"
 #r "Equinox.EventStore.dll"
 #r "Microsoft.Azure.Cosmos.Direct.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
