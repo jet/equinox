@@ -385,7 +385,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
-        let context = createPrimaryContextEx log 10 (if eventsInTip then 1 else 0)
+        let context = createPrimaryContextEx log 10 (if eventsInTip then 10 else 0)
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching log context cache
         let service1, service2 = createServiceCached (), createServiceCached ()
@@ -439,5 +439,6 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! _ = service2.Read cartId
         test <@ [if eventsInTip then EqxAct.Tip else EqxAct.TipNotModified] = capture.ExternalCalls @>
+        // Charges are 1 RU regardless of whether a reload occurs, as the snapshot is tiny
         verifyRequestChargesMax 1
     }
