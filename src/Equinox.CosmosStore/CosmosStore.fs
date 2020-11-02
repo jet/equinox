@@ -529,11 +529,11 @@ module internal Sync =
             |> match result with
                 | Result.Written pos ->
                     Log.prop "nextExpectedVersion" pos >> Log.event (Log.SyncSuccess (mkMetric ru))
-                | Result.ConflictUnknown pos ->
-                    Log.prop "nextExpectedVersion" pos >> propConflict >> Log.event (Log.SyncConflict (mkMetric ru))
-                | Result.Conflict (pos, xs) ->
+                | Result.ConflictUnknown pos' ->
+                    Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.SyncConflict (mkMetric ru))
+                | Result.Conflict (pos', xs) ->
                     (if verbose then Log.propData "conflicts" xs else id)
-                    >> Log.prop "nextExpectedVersion" pos >> propConflict >> Log.event (Log.SyncResync(mkMetric ru))
+                    >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.SyncResync (mkMetric ru))
         log.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
             "Sync", stream, count, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
         return result }
@@ -658,7 +658,7 @@ module internal Tip =
             let log = log |> Log.prop "_etag" tip._etag |> Log.prop "n" tip.n
             log.Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
-    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * ITimelineEvent<byte[]>[]
+    type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i : int64 * ITimelineEvent<byte[]>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
     let tryLoad (log : ILogger) retryPolicy containerStream (maybePos: Position option, maxIndex): Async<Result> = async {
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log
@@ -667,7 +667,7 @@ module internal Tip =
         | ReadResult.NotFound -> return Result.NotFound
         | ReadResult.Found tip ->
             let minIndex = maybePos |> Option.map (fun x -> x.index)
-            return Result.Found (Position.fromTip tip, Enum.EventsAndUnfolds(tip, ?maxIndex = maxIndex, ?minIndex = minIndex) |> Array.ofSeq) }
+            return Result.Found (Position.fromTip tip, tip.i, Enum.EventsAndUnfolds(tip, ?maxIndex = maxIndex, ?minIndex = minIndex) |> Array.ofSeq) }
 
  module internal Query =
 
@@ -694,7 +694,7 @@ module internal Tip =
             let queryString = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s ORDER BY c.i %s" whereClause order
             let prams = Seq.map snd args
             (QueryDefinition queryString, prams) ||> Seq.fold (fun q wp -> q |> wp)
-        log.Debug("EqxCosmos Query {query} on {stream}", query.QueryText, stream)
+        log.Debug("EqxCosmos Query {query} on {stream}; minIndex={min} maxIndex={max}", query.QueryText, stream, minIndex, maxIndex)
         let qro = QueryRequestOptions(PartitionKey = Nullable (PartitionKey stream), MaxItemCount = Nullable maxItems)
         container.GetItemQueryIterator<Batch>(query, requestOptions = qro)
 
@@ -745,9 +745,9 @@ module internal Tip =
         used, dropped
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type ScanResult<'event> = { found : bool; index : int64; next : int64; maybeTipPos : Position option; events : 'event[] }
+    type ScanResult<'event> = { found : bool; minIndex : int64; next : int64; maybeTipPos : Position option; events : 'event[] }
 
-    let scanTip (tryDecode: #IEventData<byte[]> -> 'event option, isOrigin: 'event -> bool) (pos : Position, xs: #ITimelineEvent<byte[]>[]) : ScanResult<'event> =
+    let scanTip (tryDecode: #IEventData<byte[]> -> 'event option, isOrigin: 'event -> bool) (pos : Position, i : int64, xs: #ITimelineEvent<byte[]>[]) : ScanResult<'event> =
         let items = ResizeArray()
         let isOrigin' e =
             match tryDecode e with
@@ -756,7 +756,7 @@ module internal Tip =
                 items.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
                 isOrigin e
         let f, e = xs |> Seq.tryFindBack isOrigin' |> Option.isSome, items.ToArray()
-        { found = f; maybeTipPos = Some pos; index = pos.index; next = pos.index + 1L; events = e }
+        { found = f; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
     let scan<'event> (log : ILogger) (container,stream) includeTip maxItems maxRequests direction
@@ -799,7 +799,7 @@ module internal Tip =
         let minMax = (None, raws) ||> Array.fold (fun acc x -> let i = x.Index in Some (match acc with None -> i, i | Some (n, x) -> min n i, max x i))
         let version = match minMax with Some (_, max) -> max + 1L | None -> 0L
         log |> logQuery direction maxItems stream t (responseCount,raws) version ru
-        return minMax |> Option.map (fun (i,m) -> { found = found; index = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }) }
+        return minMax |> Option.map (fun (i,m) -> { found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }) }
 
     let walkLazy<'event> (log : ILogger) (container,stream) maxItems maxRequests
         (tryDecode : ITimelineEvent<byte[]> -> 'event option, isOrigin: 'event -> bool)
@@ -853,17 +853,18 @@ module internal Tip =
     /// 2) Querying Secondary for predecessors of what's obtained from 1
     let load (log : ILogger) (minIndex, maxIndex) (tip : ScanResult<'event> option)
             (primary : int64 option * int64 option -> Async<ScanResult<'event> option>)
-            (secondary : (int64 option * int64 option -> Async<ScanResult<'event> option>) option)
+            // Choice1Of2 -> indicates whether it's acceptable to ignore missing events; Choice2Of2 -> Fallback store
+            (secondary : Choice<bool,int64 option * int64 option -> Async<ScanResult<'event> option>>)
             : Async<Position * 'event[]> = async {
         let minI = defaultArg minIndex 0L
         match tip with
-        | Some { index = i; maybeTipPos = Some p; events = e } when i <= minI -> return p, e
         | Some { found = true; maybeTipPos = Some p; events = e } -> return p, e
+        | Some { minIndex = i; maybeTipPos = Some p; events = e } when i <= minI -> return p, e
         | _ ->
 
         let i, events, pos =
             match tip with
-            | Some { index = i; maybeTipPos = p; events = e } -> Some i, e, p
+            | Some { minIndex = i; maybeTipPos = p; events = e } -> Some i, e, p
             | None -> maxIndex, Array.empty, None
         let! primary = primary (minIndex, i)
         let events, pos =
@@ -877,22 +878,22 @@ module internal Tip =
                     .Debug(message)
 
         match primary, secondary with
-        | Some { index = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
         | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
-        | _, None ->
-            // TODO Add TipOptions parameter to opt-into this vs throwing
+        | Some { minIndex = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
+        | _, Choice1Of2 allowMissing ->
             logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
-            return pos, events
-        | _, Some secondary ->
+            if allowMissing then return pos, events
+            else return failwithf "Origin event not found; no secondary container supplied"
+        | _, Choice2Of2 secondary ->
 
-        let maxIndex = match primary with Some p -> Some p.index | None -> maxIndex // if no batches in primary, high water mark from tip is max
+        let maxIndex = match primary with Some p -> Some p.minIndex | None -> maxIndex // if no batches in primary, high water mark from tip is max
         let! secondary = secondary (minIndex, maxIndex)
         let events =
             match secondary with
             | Some s -> Array.append s.events events
             | None -> events
         match secondary with
-        | Some { index = i } when i <= minI -> ()
+        | Some { minIndex = i } when i <= minI -> ()
         | Some { found = true } -> ()
         | _ -> logMissing (minIndex, maxIndex) "Origin event not found in secondary container"
         return pos, events }
@@ -1039,18 +1040,20 @@ type TipOptions
         /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
         [<O; D(null)>]?maxJsonLength,
         [<O; D(null)>]?readRetryPolicy,
-        [<O; D(null)>]?writeRetryPolicy) =
-    let maxEvents, maxJsonLength = defaultArg maxEvents 0, defaultArg maxJsonLength 30_000
+        [<O; D(null)>]?writeRetryPolicy,
+        [<O; D(null)>]?ignoreMissingEvents) =
     /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
-    member __.MaxEvents = maxEvents
+    member val MaxEvents = defaultArg maxEvents 0
     /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
-    member __.MaxJsonLength = maxJsonLength
+    member val MaxJsonLength = defaultArg maxJsonLength 30_000
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteRetryPolicy = writeRetryPolicy
+    member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
 
 type StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
 
     let loadTip log stream pos = Tip.tryLoad log tip.ReadRetryPolicy (container, stream) (pos, None)
+    let ignoreMissing = tip.IgnoreMissingEvents
 
     // Always yields events forward, regardless of direction
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip): Async<StreamToken * 'event[]> = async {
@@ -1059,8 +1062,8 @@ type StoreClient(container : Container, fallback : Container option, query : Que
         let walk log gateway = Query.scan log (gateway,stream) includeTip query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
             match fallback with
-            | None -> None
-            | Some f -> walk (log |> Log.prop "secondary" true) f |> Some
+            | None -> Choice1Of2 ignoreMissing
+            | Some f -> Choice2Of2 (walk (log |> Log.prop "secondary" true) f)
 
         let log = log |> Log.prop "stream" stream
         let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log container) walkFallback
@@ -1068,34 +1071,34 @@ type StoreClient(container : Container, fallback : Container option, query : Que
     member __.ReadLazy(log, batching: QueryOptions, stream, direction, (tryDecode,isOrigin), ?minIndex, ?maxIndex) : AsyncSeq<'event[]> =
         Query.walkLazy log (container,stream) batching.MaxItems batching.MaxRequests (tryDecode,isOrigin) (direction, minIndex, maxIndex)
 
-    member con.Load(log, (stream, maybePos), (tryDecode, isOrigin), checkUnfolds): Async<StreamToken * 'event[]> =
-        if not checkUnfolds then con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin))
+    member store.Load(log, (stream, maybePos), (tryDecode, isOrigin), checkUnfolds : bool): Async<StreamToken * 'event[]> =
+        if not checkUnfolds then store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin))
         else async {
             match! loadTip log stream maybePos with
             | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty, Array.empty
             | Tip.Result.NotModified -> return invalidOp "Not applicable"
-            | Tip.Result.Found (pos, xs) -> return! con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), tip=(pos, xs)) }
+            | Tip.Result.Found (pos, i, xs) -> return! store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), tip = (pos, i, xs)) }
     member __.GetPosition(log, stream, ?pos): Async<StreamToken> = async {
         match! loadTip log stream pos with
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
         | Tip.Result.NotModified -> return Token.create stream pos.Value
-        | Tip.Result.Found (pos, _unfoldsAndEvents) -> return Token.create stream pos }
-    member con.Reload(log, (stream, pos), (tryDecode, isOrigin), ?preview): Async<LoadFromTokenResult<'event>> =
-        let query (pos, xs) = async {
-            let! res = con.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), tip=(pos, xs), minIndex = pos.index)
+        | Tip.Result.Found (pos, _i, _unfoldsAndEvents) -> return Token.create stream pos }
+    member store.Reload(log, (stream, pos), (tryDecode, isOrigin), ?preview): Async<LoadFromTokenResult<'event>> =
+        let query (pos, i, xs) = async {
+            let! res = store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), minIndex = i, tip = (pos, i, xs))
             return LoadFromTokenResult.Found res }
         match preview with
-        | Some (pos, xs) -> query (pos, xs)
+        | Some (pos, i, xs) -> query (pos, i, xs)
         | None -> async {
             match! loadTip log stream (Some pos) with
             | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty, Array.empty)
             | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
-            | Tip.Result.Found (pos,xs) -> return! query (pos, xs) }
+            | Tip.Result.Found (pos, i, xs) -> return! query (pos, i, xs) }
 
     member internal __.Sync(log, stream, exp, batch: Tip): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
         match! Sync.batch log (tip.WriteRetryPolicy, tip.MaxEvents, tip.MaxJsonLength) (container, stream) (exp, batch) with
-        | Sync.Result.Conflict (pos',events) -> return InternalSyncResult.Conflict (pos',events)
+        | Sync.Result.Conflict (pos', events) -> return InternalSyncResult.Conflict (pos', events)
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
@@ -1107,7 +1110,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode,isOrigin), checkUnfolds)
         return token, fold initial events }
     member __.Reload(log, (Token.Unpack (stream, pos) as streamToken), state, fold, isOrigin, ?preloaded): Async<StreamToken * 'state> = async {
-        match! store.Reload(log, (stream, pos), (codec.TryDecode,isOrigin), ?preview = preloaded) with
+        match! store.Reload(log, (stream, pos), (codec.TryDecode, isOrigin), ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return streamToken, state
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     member cat.Sync(log, token, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds): Async<SyncResult<'state>> = async {
@@ -1126,7 +1129,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         let projections = Sync.mkUnfold compressor baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
         match! store.Sync(log, stream, exp, batch) with
-        | InternalSyncResult.Conflict (pos', tipEvents) -> return SyncResult.Conflict (cat.Reload(log, token, state, fold, isOrigin, (pos', tipEvents)))
+        | InternalSyncResult.Conflict (pos', tipEvents) -> return SyncResult.Conflict (cat.Reload(log, token, state, fold, isOrigin, (pos', pos.index, tipEvents)))
         | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (cat.Reload(log, token, state, fold, isOrigin))
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
@@ -1237,10 +1240,13 @@ type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipO
             /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
             ?tipMaxEvents,
             /// Maximum serialized size (length of JSON.stringify representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
-            ?tipMaxJsonLength) =
+            ?tipMaxJsonLength,
+            /// Inhibit throwing when events are missing, but no fallback Container has been supplied
+            ?ignoreMissingEvents) =
         let queryOptions = QueryOptions(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
-        let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength)
+        let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
         CosmosStoreContext(connection, queryOptions, tipOptions)
+    member val Connection = connection
     member val QueryOptions = queryOptions |> Option.defaultWith QueryOptions
     member val TipOptions = tipOptions |> Option.defaultWith TipOptions
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
@@ -1507,9 +1513,9 @@ type EventsContext internal
         | Some init -> do! init ()
         let batch = Sync.mkBatch stream events Seq.empty
         match! store.Sync(log, stream, SyncExp.Version position.index, batch) with
-        | InternalSyncResult.Written (Token.Unpack (_,pos)) -> return AppendResult.Ok pos
-        | InternalSyncResult.Conflict (pos,events) -> return AppendResult.Conflict (pos, events)
-        | InternalSyncResult.ConflictUnknown (Token.Unpack (_,pos)) -> return AppendResult.ConflictUnknown pos }
+        | InternalSyncResult.Written (Token.Unpack (_, pos)) -> return AppendResult.Ok pos
+        | InternalSyncResult.Conflict (pos, events) -> return AppendResult.Conflict (pos, events)
+        | InternalSyncResult.ConflictUnknown (Token.Unpack (_, pos)) -> return AppendResult.ConflictUnknown pos }
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
     /// NB Should be used sparingly; Equinox.Stream enables building equivalent equivalent idempotent handling with minimal code.

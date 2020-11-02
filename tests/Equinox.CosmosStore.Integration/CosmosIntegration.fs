@@ -219,11 +219,13 @@ type Tests(testOutputHelper) =
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 14L
         test <@ deleted = 15 && deferred = 0 && trimmedPos = 15L @>
 
-        // Prove they're gone
+        // Prove we notice they're gone
         capture.Clear()
-        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
+        test <@ match res with
+                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                | x -> failwithf "Unexpected %A" x @>
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
 
         // But not forgotten
@@ -369,11 +371,13 @@ type Tests(testOutputHelper) =
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 11L
         test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
 
-        // Prove they're gone
+        // Show alarms are raised when they're gone
         capture.Clear()
-        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
+        test <@ match res with
+                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                | x -> failwithf "Unexpected %A" x @>
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
 
         // But we can still read (there's no cache so we'll definitely be reading)
@@ -427,11 +431,13 @@ type Tests(testOutputHelper) =
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 12L
         test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
 
-        // Prove they're gone
+        // Show that we hear about it if we try to load the events
         capture.Clear()
-        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
+        test <@ match res with
+                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                | x -> failwithf "Unexpected %A" x @>
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
 
         // But we can still read (service2 shares the cache so is aware of the last writes)

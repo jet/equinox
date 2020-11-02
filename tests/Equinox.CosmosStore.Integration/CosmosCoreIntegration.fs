@@ -324,7 +324,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx = createPrimaryEventsContext log 10 (if eventsInTip then 3 else 0)
+        let ctx, ctxUnsafe = createPrimaryEventsContextWithUnsafe log 10 (if eventsInTip then 3 else 0)
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
         // We should still the correct high-water mark even if we don't delete anything
@@ -347,7 +347,7 @@ type Tests(testOutputHelper) =
             verifyRequestChargesMax 17 // [13.33; 2.9]
 
         let pos = if eventsInTip then 5L else 4L
-        let! res = Events.get ctx streamName 0L Int32.MaxValue
+        let! res = Events.get ctxUnsafe streamName 0L Int32.MaxValue
         verifyCorrectEvents pos (Array.skip (int pos) expected) res
 
         // Repeat the process, but this time there should be no actual deletes
@@ -364,7 +364,7 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
-        let! res = Events.get ctx streamName 0L Int32.MaxValue
+        let! res = Events.get ctxUnsafe streamName 0L Int32.MaxValue
         verifyCorrectEvents pos (Array.skip (int pos) expected) res
 
         // Delete second batch
@@ -375,7 +375,7 @@ type Tests(testOutputHelper) =
         if eventsInTip then verifyRequestChargesMax 26 // [22.33; 2.83]
         else verifyRequestChargesMax 17 // 13.33 + 2.86
 
-        let! res = Events.get ctx streamName 0L Int32.MaxValue
+        let! res = Events.get ctxUnsafe streamName 0L Int32.MaxValue
         test <@ [||] = res @>
 
         // Attempt to repeat
@@ -390,7 +390,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let fallback (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        let ctx1 = createPrimaryEventsContext log defaultQueryMaxItems (if eventsInTip then 3 else 0)
+        let ctx1, ctx1Unsafe = createPrimaryEventsContextWithUnsafe log 10 (if eventsInTip then 3 else 0)
         let ctx2 = createSecondaryEventsContext log defaultQueryMaxItems
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
 
@@ -405,7 +405,7 @@ type Tests(testOutputHelper) =
 
         // Prove it's gone
         capture.Clear()
-        let! res = Events.get ctx1 streamName 0L Int32.MaxValue
+        let! res = Events.get ctx1Unsafe streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         let pos = if eventsInTip then 5L else 4L
         verifyCorrectEvents pos (Array.skip (int pos) expected) res
@@ -433,7 +433,7 @@ type Tests(testOutputHelper) =
 
         // Nothing left in primary
         capture.Clear()
-        let! res = Events.get ctx1 streamName 0L Int32.MaxValue
+        let! res = Events.get ctx1Unsafe streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
@@ -446,7 +446,6 @@ type Tests(testOutputHelper) =
         verifyRequestChargesMax 1
 
         // Fallback queries secondary (unless we actually delete the Tip too)
-        // TODO demonstrate Primary read is only of Tip when using snapshots
         capture.Clear()
         let! res = Events.get ctx12 streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
