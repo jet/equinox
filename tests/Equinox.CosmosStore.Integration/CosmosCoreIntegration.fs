@@ -324,8 +324,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        if eventsInTip then () else
-
         let ctx = createPrimaryEventsContext log 10 (if eventsInTip then 3 else 0)
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
@@ -339,36 +337,43 @@ type Tests(testOutputHelper) =
         // Trigger deletion of first batch, but as we're in the middle of the next, one event needs to be deferred
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
-        test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
-        test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 17 // 13.33 + 2.9
+        if eventsInTip then
+            test <@ deleted = 5 && deferred = 0 && trimmedPos = 5L @>
+            test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Trim; EqxAct.Prune] = capture.ExternalCalls @>
+            verifyRequestChargesMax 39 // 13.33 + 22.33 + 2.86
+        else
+            test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
+            test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
+            verifyRequestChargesMax 17 // [13.33; 2.9]
 
+        let pos = if eventsInTip then 5L else 4L
         let! res = Events.get ctx streamName 0L Int32.MaxValue
-        verifyCorrectEvents 4L (Array.skip 4 expected) res
+        verifyCorrectEvents pos (Array.skip (int pos) expected) res
 
         // Repeat the process, but this time there should be no actual deletes
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
-        test <@ deleted = 0 && deferred = 1 && trimmedPos = 4L @>
+        test <@ deleted = 0 && deferred = (if eventsInTip then 0 else 1) && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
         // We should still get the high-water mark even if we asked for less
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 4L
-        test <@ deleted = 0 && deferred = 0 && trimmedPos = 4L @>
+        test <@ deleted = 0 && deferred = 0 && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
         let! res = Events.get ctx streamName 0L Int32.MaxValue
-        verifyCorrectEvents 4L (Array.skip 4 expected) res
+        verifyCorrectEvents pos (Array.skip (int pos) expected) res
 
         // Delete second batch
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
-        test <@ deleted = 2 && deferred = 0 && trimmedPos = 6L @>
-        test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 17 // 13.33 + 2.86
+        test <@ deleted = (if eventsInTip then 1 else 2) && deferred = 0 && trimmedPos = 6L @>
+        test <@ [EqxAct.PruneResponse; (if eventsInTip then EqxAct.Trim else EqxAct.Delete); EqxAct.Prune] = capture.ExternalCalls @>
+        if eventsInTip then verifyRequestChargesMax 26 // [22.33; 2.83]
+        else verifyRequestChargesMax 17 // 13.33 + 2.86
 
         let! res = Events.get ctx streamName 0L Int32.MaxValue
         test <@ [||] = res @>
@@ -385,8 +390,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let fallback (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        if eventsInTip then () else
-
         let ctx1 = createPrimaryEventsContext log defaultQueryMaxItems (if eventsInTip then 3 else 0)
         let ctx2 = createSecondaryEventsContext log defaultQueryMaxItems
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
@@ -397,15 +400,17 @@ type Tests(testOutputHelper) =
 
         // Trigger deletion of first batch from primary
         let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 5L
-        if eventsInTip then test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
+        if eventsInTip then test <@ deleted = 5 && deferred = 0 && trimmedPos = 5L @>
         else test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
 
         // Prove it's gone
         capture.Clear()
         let! res = Events.get ctx1 streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyCorrectEvents 4L (Array.skip 4 expected) res
-        verifyRequestChargesMax 4 // 3.04
+        let pos = if eventsInTip then 5L else 4L
+        verifyCorrectEvents pos (Array.skip (int pos) expected) res
+        if eventsInTip then verifyRequestChargesMax 3 // 2.83
+        else verifyRequestChargesMax 4 // 3.04
 
         // Prove the full set exists in the secondary
         capture.Clear()
@@ -424,7 +429,7 @@ type Tests(testOutputHelper) =
         // Delete second batch in primary
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 6L
-        test <@ deleted = 2 && deferred = 0 && trimmedPos = 6L @>
+        test <@ deleted = (if eventsInTip then 1 else 2) && deferred = 0 && trimmedPos = 6L @>
 
         // Nothing left in primary
         capture.Clear()
