@@ -970,10 +970,10 @@ module Delete =
             let handle (batches : BatchIndices[], rc) = async {
                 let mutable delCharges, batchesDeleted, trimCharges, batchesTrimmed, eventsDeleted, eventsDeferred = 0., 0, 0., 0, 0, 0
                 let mutable lwm = None
-                for x in batches |> Seq.takeWhile isRelevant do
+                for x in batches |> Seq.takeWhile (fun x -> isRelevant x || lwm = None) do
                     let batchSize = x.n - x.i |> int
+                    let eligibleEvents = max 0 (min batchSize (int (beforePos - x.i)))
                     if isTip x then // Even if we remove the last event from the Tip, we need to retain a) unfolds b) position (n)
-                        let eligibleEvents = max 0 (min batchSize (int (beforePos - x.i)))
                         if eligibleEvents <> 0 then
                             let! charge = trimTip x.i eligibleEvents
                             trimCharges <- trimCharges + charge
@@ -987,9 +987,9 @@ module Delete =
                         batchesDeleted <- batchesDeleted + 1
                         eventsDeleted <- eventsDeleted + batchSize
                     else // can't update a non-Tip batch, or it'll be ordered wrong from a CFP perspective
-                        let eligibleEvents = min batchSize (int (beforePos - x.i))
                         eventsDeferred <- eventsDeferred + eligibleEvents
-                        lwm <- Some x.i
+                        if lwm = None then
+                            lwm <- Some x.i
                 return rc, lwm, (delCharges, batchesDeleted, trimCharges, batchesTrimmed, eventsDeleted, eventsDeferred)
             }
             let hasRelevantItems (batches, _rc) = batches |> Array.exists isRelevant
