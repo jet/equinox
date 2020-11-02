@@ -217,7 +217,7 @@ type Tests(testOutputHelper) =
             let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
 
             // Prune all the events
-            let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 15L
+            let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 15L
             test <@ deleted = 15 && deferred = 0 && trimmedPos = 15L @>
 
             // Prove they're gone
@@ -360,7 +360,7 @@ type Tests(testOutputHelper) =
         let ctx = Core.EventsContext(context, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
-        let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 12L
+        let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 12L
         test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
 
         // Prove they're gone
@@ -419,7 +419,7 @@ type Tests(testOutputHelper) =
             let ctx = Core.EventsContext(context, log)
             let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
             // Prune all the events
-            let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 13L
+            let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 13L
             test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
 
             // Prove they're gone

@@ -897,14 +897,14 @@ module internal Tip =
         | _ -> logMissing (minIndex, maxIndex) "Origin event not found in secondary container"
         return pos, events }
 
-// Manages deletion of batches
-// Note: it's critical that we delete individually, in the correct order so as not to leave gaps
-// Note: public so BatchIndices can be deserialized into
-module Delete =
+// Manages deletion of (full) Batches, and trimming of events in Tip, maintaining ordering guarantees by never updating non-Tip batches
+// Additionally, the nature of the fallback algorithm requires that deletions be carried out in sequential order so as not to leave gaps
+// NOTE: module is public so BatchIndices can be deserialized into
+module Prune =
 
     type BatchIndices = { id : string; i : int64; n : int64 }
 
-    let pruneBefore (log: ILogger) (container: Container, stream: string) maxItems beforePos : Async<int * int * int64> = async {
+    let until (log: ILogger) (container: Container, stream: string) maxItems indexInclusive : Async<int * int * int64> = async {
         let log = log |> Log.prop "stream" stream
         let! ct = Async.CancellationToken
         let deleteItem id count : Async<float> = async {
@@ -932,7 +932,7 @@ module Delete =
             log.Information("EqxCosmos {action:l} {count} {ms}ms rc={ru}", "Trim", count, ms, rc)
             return rc
         }
-        let log = log |> Log.prop "beforePos" beforePos
+        let log = log |> Log.prop "index" indexInclusive
         let query : FeedIterator<BatchIndices> =
              let qro = QueryRequestOptions(PartitionKey = Nullable (PartitionKey stream), MaxItemCount = Nullable maxItems)
              // sort by i to guarantee we don't ever leave an observable gap in the sequence
@@ -946,13 +946,13 @@ module Delete =
             batches, rc
         let! pt, outcomes =
             let isTip (x : BatchIndices) = x.id = Tip.WellKnownDocumentId
-            let isRelevant x = x.i < beforePos || isTip x
+            let isRelevant x = x.i <= indexInclusive || isTip x
             let handle (batches : BatchIndices[], rc) = async {
                 let mutable delCharges, batchesDeleted, trimCharges, batchesTrimmed, eventsDeleted, eventsDeferred = 0., 0, 0., 0, 0, 0
                 let mutable lwm = None
                 for x in batches |> Seq.takeWhile (fun x -> isRelevant x || lwm = None) do
                     let batchSize = x.n - x.i |> int
-                    let eligibleEvents = max 0 (min batchSize (int (beforePos - x.i)))
+                    let eligibleEvents = max 0 (min batchSize (int (indexInclusive + 1L - x.i)))
                     if isTip x then // Even if we remove the last event from the Tip, we need to retain a) unfolds b) position (n)
                         if eligibleEvents <> 0 then
                             let! charge = trimTip x.i eligibleEvents
@@ -961,7 +961,7 @@ module Delete =
                             eventsDeleted <- eventsDeleted + eligibleEvents
                         if lwm = None then
                             lwm <- Some (x.i + int64 eligibleEvents)
-                    elif x.n <= beforePos then
+                    elif x.n <= indexInclusive + 1L then
                         let! charge = deleteItem x.id batchSize
                         delCharges <- delCharges + charge
                         batchesDeleted <- batchesDeleted + 1
@@ -981,19 +981,19 @@ module Delete =
             |> Stopwatch.Time
         let mutable queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = 0., 0., 0., 0, 0, 0, 0
         let mutable lwm = None
-        for (qc, dc, tc), bLwm, (bDel, eDel, eDef) in outcomes do
+        for (qc, dc, tc), bLwm, (bCount, eDel, eDef) in outcomes do
             lwm <- max lwm bLwm
             queryCharges <- queryCharges + qc
             delCharges <- delCharges + dc
             trimCharges <- trimCharges + tc
             responses <- responses + 1
-            batches <- batches + bDel
+            batches <- batches + bCount
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
         let reqMetric : Log.Measurement = { stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
         let log = let evt = Log.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
-        log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={ru} deleteRu={delRu} trimRu={trimRu}",
+        log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
                 "Prune", eventsDeleted, batches, lwm, (let e = pt.Elapsed in e.TotalMilliseconds), queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm
     }
@@ -1099,8 +1099,8 @@ type StoreClient(container : Container, fallback : Container option, query : Que
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
-    member __.Prune(log, stream, beforeIndex) =
-        Delete.pruneBefore log (container,stream) query.MaxItems beforeIndex
+    member __.Prune(log, stream, index) =
+        Prune.until log (container,stream) query.MaxItems index
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event,byte[],'context>) =
     member __.Load(log, stream, initial, checkUnfolds, fold, isOrigin): Async<StreamToken * 'state> = async {
@@ -1518,8 +1518,8 @@ type EventsContext internal
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
-    member __.Prune(stream, beforeIndex) : Async<int * int * int64> =
-        store.Prune(log, stream, beforeIndex)
+    member __.Prune(stream, index) : Async<int * int * int64> =
+        store.Prune(log, stream, index)
 
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
@@ -1576,13 +1576,12 @@ module Events =
     let appendAtEnd (ctx: EventsContext) (streamName: string) (events: IEventData<_>[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.StreamId streamName, events) |> stripPosition
 
-    /// Requests deletion of events prior to the specified Index.
+    /// Requests deletion of events up and including the specified <c>index</c>.
     /// Due to the need to preserve ordering of data in the stream, only complete Batches will be removed.
-    /// If the <c>beforeIndex</c> is within the Tip, events prior to beforeIndex are removed via an etag-checked update. Does not alter the unfolds held in the Tip.
-    /// If the <c>beforeIndex</c> is beyond the position of the Tip document (i.e. `tip.n < beforeIndex`), the Tip and any unfolds within it will be entirely removed.
+    /// If the <c>index</c> is within the Tip, events are removed via an etag-checked update. Does not alter the unfolds held in the Tip, or remove the Tip itself.
     /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number.
-    let prune (ctx: EventsContext) (streamName: string) (beforeIndex: int64): Async<int * int * int64> =
-        ctx.Prune(ctx.StreamId streamName, beforeIndex)
+    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> =
+        ctx.Prune(ctx.StreamId streamName, index)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.

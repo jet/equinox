@@ -329,19 +329,19 @@ type Tests(testOutputHelper) =
 
         // We should still the correct high-water mark even if we don't delete anything
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 0L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName -1L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 0L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
-        // Trigger deletion of first batch, but as we're in the middle of the next, one event needs to be deferred
+        // Trigger deletion of first batch, but as we're in the middle of the next Batch...
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
-        if eventsInTip then
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 4L
+        if eventsInTip then // the Tip has a Trim operation applied to remove one event
             test <@ deleted = 5 && deferred = 0 && trimmedPos = 5L @>
             test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Trim; EqxAct.Prune] = capture.ExternalCalls @>
             verifyRequestChargesMax 39 // 13.33 + 22.33 + 2.86
-        else
+        else // the one event from the final batch needs to be deferred
             test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
             test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
             verifyRequestChargesMax 17 // [13.33; 2.9]
@@ -352,14 +352,14 @@ type Tests(testOutputHelper) =
 
         // Repeat the process, but this time there should be no actual deletes
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 4L
         test <@ deleted = 0 && deferred = (if eventsInTip then 0 else 1) && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
         // We should still get the high-water mark even if we asked for less
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 4L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 3L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
@@ -369,7 +369,7 @@ type Tests(testOutputHelper) =
 
         // Delete second batch
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 5L
         test <@ deleted = (if eventsInTip then 1 else 2) && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; (if eventsInTip then EqxAct.Trim else EqxAct.Delete); EqxAct.Prune] = capture.ExternalCalls @>
         if eventsInTip then verifyRequestChargesMax 26 // [22.33; 2.83]
@@ -380,7 +380,7 @@ type Tests(testOutputHelper) =
 
         // Attempt to repeat
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 7L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 6L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.83
@@ -399,7 +399,7 @@ type Tests(testOutputHelper) =
         let! _ = add6EventsIn2Batches ctx2 streamName
 
         // Trigger deletion of first batch from primary
-        let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 5L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx1 streamName 4L
         if eventsInTip then test <@ deleted = 5 && deferred = 0 && trimmedPos = 5L @>
         else test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
 
@@ -428,7 +428,7 @@ type Tests(testOutputHelper) =
 
         // Delete second batch in primary
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 6L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx1 streamName 5L
         test <@ deleted = (if eventsInTip then 1 else 2) && deferred = 0 && trimmedPos = 6L @>
 
         // Nothing left in primary
