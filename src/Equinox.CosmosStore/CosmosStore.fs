@@ -900,26 +900,6 @@ module internal Tip =
 // Manages deletion of batches
 // Note: it's critical that we delete individually, in the correct order so as not to leave gaps
 // Note: public so BatchIndices can be deserialized into
-
-// If we have results: []
-// - deleteBefore  9 would: return 0,0,0 (deleted, deferred, updated low water mark)
-
-// If we have results: ["-1",10,10; "0",0,1; "2",1,3; "3",3,8; "8",8,10]
-// - deleteBefore  3 would: inspect first 3, delete 2, return 3,0,3
-// - deleteBefore  4 would: inspect first 4, delete 2, return 3,1,3
-// - deleteBefore  8 would: inspect first 4, delete 2, return 8,0,8
-
-// If we have results: ["-1",10,10; "8",8,10]
-// - deleteBefore  3 would: inspect first 2, delete 0, return 0,0,8
-// - deleteBefore  8 would: inspect first 2, delete 0, return 0,0,8
-// - deleteBefore  9 would: inspect first 2, delete 0, return 0,1,8
-// - deleteBefore 10 would: inspect first 2, delete 1, return 2,0,10
-// - deleteBefore 11 would: inspect first 2, delete 1, return 2,0,10
-
-// If we have results: ["-1",10,10]
-// - deleteBefore  9 would: inspect first 1, delete 0, return 0,0,10
-// - deleteBefore 10 would: inspect first 1, delete 0, return 0,0,10
-// - deleteBefore 11 would: inspect first 1, delete 0, return 0,0,10
 module Delete =
 
     type BatchIndices = { id : string; i : int64; n : int64 }
@@ -990,7 +970,7 @@ module Delete =
                         eventsDeferred <- eventsDeferred + eligibleEvents
                         if lwm = None then
                             lwm <- Some x.i
-                return rc, lwm, (delCharges, batchesDeleted, trimCharges, batchesTrimmed, eventsDeleted, eventsDeferred)
+                return (rc, delCharges, trimCharges), lwm, (batchesDeleted + batchesTrimmed, eventsDeleted, eventsDeferred)
             }
             let hasRelevantItems (batches, _rc) = batches |> Array.exists isRelevant
             query
@@ -999,23 +979,22 @@ module Delete =
             |> AsyncSeq.mapAsync handle
             |> AsyncSeq.toArrayAsync
             |> Stopwatch.Time
-        let mutable queryCharges, delCharges, trimCharges, responses, batchesDeleted, batchesTrimmed, eventsDeleted, eventsDeferred = 0., 0., 0., 0, 0, 0, 0, 0
+        let mutable queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = 0., 0., 0., 0, 0, 0, 0
         let mutable lwm = None
-        for qc, bLwm, (dc, bDel, tc, bTrim, eDel, eDef) in outcomes do
+        for (qc, dc, tc), bLwm, (bDel, eDel, eDef) in outcomes do
             lwm <- max lwm bLwm
             queryCharges <- queryCharges + qc
             delCharges <- delCharges + dc
             trimCharges <- trimCharges + tc
             responses <- responses + 1
-            batchesDeleted <- batchesDeleted + bDel
-            batchesTrimmed <- batchesTrimmed + bTrim
+            batches <- batches + bDel
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
-        let reqMetric : Log.Measurement = { stream = stream; interval = pt; bytes = eventsDeleted; count = batchesDeleted + batchesTrimmed; ru = queryCharges }
+        let reqMetric : Log.Measurement = { stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
         let log = let evt = Log.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
-        log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={ru} deleteRu={delRu}",
-                "Prune", eventsDeleted, batchesDeleted, lwm, (let e = pt.Elapsed in e.TotalMilliseconds), queryCharges, delCharges)
+        log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={ru} deleteRu={delRu} trimRu={trimRu}",
+                "Prune", eventsDeleted, batches, lwm, (let e = pt.Elapsed in e.TotalMilliseconds), queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm
     }
 
