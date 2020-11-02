@@ -380,7 +380,7 @@ type Tests(testOutputHelper) =
 
         // Attempt to repeat
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 7L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.83
