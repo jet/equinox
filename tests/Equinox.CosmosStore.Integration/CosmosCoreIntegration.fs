@@ -324,14 +324,15 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        if eventsInTip then () else // TODO
+        if eventsInTip then () else
 
         let ctx = createPrimaryEventsContext log 10 (if eventsInTip then 1 else 0)
         let! expected = add6EventsIn2Batches ctx streamName
 
         // Trigger deletion of first batch
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
-        test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
+        if eventsInTip then test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
+        else test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 17 // 13.33 + 2.9
 
@@ -370,9 +371,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let fallback (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        if eventsInTip then () else // TODO
+        if eventsInTip then () else
 
-        let ctx1 = createPrimaryEventsContext log defaultQueryMaxItems 0
+        let ctx1 = createPrimaryEventsContext log defaultQueryMaxItems (if eventsInTip then 1 else 0)
         let ctx2 = createSecondaryEventsContext log defaultQueryMaxItems
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
 
@@ -382,7 +383,8 @@ type Tests(testOutputHelper) =
 
         // Trigger deletion of first batch from primary
         let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 5L
-        test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
+        if eventsInTip then test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
+        else test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
 
         // Prove it's gone
         capture.Clear()

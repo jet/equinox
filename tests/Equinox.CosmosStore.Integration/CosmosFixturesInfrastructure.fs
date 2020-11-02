@@ -57,7 +57,7 @@ module SerilogHelpers =
         | ResponseForward | ResponseBackward
         | QueryForward | QueryBackward
         | Append | Resync | Conflict
-        | PruneResponse | Delete | Prune
+        | PruneResponse | Delete | Trim | Prune
     let (|EqxAction|) = function
         | Event.Tip _ -> EqxAct.Tip
         | Event.TipNotFound _ -> EqxAct.TipNotFound
@@ -71,9 +71,10 @@ module SerilogHelpers =
         | Event.SyncConflict _ -> EqxAct.Conflict
         | Event.PruneResponse _ -> EqxAct.PruneResponse
         | Event.Delete _ -> EqxAct.Delete
+        | Event.Trim _ -> EqxAct.Trim
         | Event.Prune _ -> EqxAct.Prune
     let inline (|Stats|) ({ ru = ru }: Equinox.CosmosStore.Core.Log.Measurement) = ru
-    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|CosmosDeleteRc|CosmosPruneRc|) = function
+    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|CosmosDeleteRc|CosmosTrimRc|CosmosPruneRc|) = function
         | Event.Tip (Stats s)
         | Event.TipNotFound (Stats s)
         | Event.TipNotModified (Stats s)
@@ -85,12 +86,13 @@ module SerilogHelpers =
         | Event.SyncConflict (Stats s) -> CosmosWriteRc s
         | Event.SyncResync (Stats s) -> CosmosResyncRc s
         | Event.Delete (Stats s) -> CosmosDeleteRc s
+        | Event.Trim (Stats s) -> CosmosTrimRc s
         | Event.Prune (_, (Stats s)) -> CosmosPruneRc s
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|CosmosRequestCharge|EquinoxChargeRollup|) = function
         | CosmosResponseRc _ ->
             EquinoxChargeRollup
-        | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc | CosmosDeleteRc rc | CosmosPruneRc rc as e ->
+        | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc | CosmosDeleteRc rc | CosmosTrimRc rc | CosmosPruneRc rc as e ->
             CosmosRequestCharge (e,rc)
     let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.CosmosStore.Core.Log.Event option =
         logEvent.Properties.Values |> Seq.tryPick (function
