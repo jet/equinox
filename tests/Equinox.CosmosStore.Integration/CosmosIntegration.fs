@@ -208,31 +208,37 @@ type Tests(testOutputHelper) =
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
 
-        if not eventsInTip then
-            (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
+        (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
 
-            // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
-            // If we run on an independent context, we won't see (and hence prune) the full set of events
-            let ctx = Core.EventsContext(context, log)
-            let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
+        // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
+        // If we run on an independent context, we won't see (and hence prune) the full set of events
+        let ctx = Core.EventsContext(context, log)
+        let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
 
-            // Prune all the events
-            let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 15L
-            test <@ deleted = 15 && deferred = 0 && trimmedPos = 15L @>
+        // Prune all the events
+        let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 14L
+        test <@ deleted = 15 && deferred = 0 && trimmedPos = 15L @>
 
-            // Prove they're gone
-            capture.Clear()
-            let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
-            test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-            test <@ [||] = res @>
-            verifyRequestChargesMax 3 // 2.99
+        // Prove they're gone
+        capture.Clear()
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
 
-            // But we can still read (there's no cache so we'll definitely be reading)
-            capture.Clear()
-            let! _ = service.Read id
-            test <@ value = result @>
-            test <@ [EqxAct.Tip] = capture.ExternalCalls @>
-            verifyRequestChargesMax 1
+        // But not forgotten
+        capture.Clear()
+        let! pos = Core.Events.getNextIndex ctx streamName
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @> // Note in the current impl, this read is not cached
+        test <@ 15L = pos @>
+        verifyRequestChargesMax 1
+
+        // And we can still read the Snapshot from the Tip's unfolds (there's no caching so we'll definitely be reading)
+        capture.Clear()
+        let! _ = service.Read id
+        test <@ value = result @>
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+        verifyRequestChargesMax 1
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -360,7 +366,7 @@ type Tests(testOutputHelper) =
         let ctx = Core.EventsContext(context, log)
         let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
         // Prune all the events
-        let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 12L
+        let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 11L
         test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
 
         // Prove they're gone
@@ -413,25 +419,25 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne cartContext cartId skuId service1 1
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
 
-        if not eventsInTip then
-            (* Verify pruning does not affect snapshots, and does not touch the Tip *)
+        (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
-            let ctx = Core.EventsContext(context, log)
-            let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
-            // Prune all the events
-            let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 13L
-            test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
+        let ctx = Core.EventsContext(context, log)
+        let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
+        // Prune all the events
+        let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 12L
+        test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
 
-            // Prove they're gone
-            capture.Clear()
-            let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
-            test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-            test <@ [||] = res @>
-            verifyRequestChargesMax 3 // 2.99
+        // Prove they're gone
+        capture.Clear()
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        test <@ [||] = res @>
+        verifyRequestChargesMax 3 // 2.99
 
-            // But we can still read (service2 shares the cache so is aware of the last writes, and pruning does not invalidate the Tip)
-            capture.Clear()
-            let! _ = service2.Read cartId
-            test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
-            verifyRequestChargesMax 1
+        // But we can still read (service2 shares the cache so is aware of the last writes)
+        // When events are in the Tip, the Unfolds are invalidated and reloaded as a side-effect of the pruning triggering an etag change
+        capture.Clear()
+        let! _ = service2.Read cartId
+        test <@ [if eventsInTip then EqxAct.Tip else EqxAct.TipNotModified] = capture.ExternalCalls @>
+        verifyRequestChargesMax 1
     }
