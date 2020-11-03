@@ -259,18 +259,18 @@ type Tests(testOutputHelper) =
         let! conn = connectToLocalStore log
         let service = ContactPreferences.createService log conn
 
-        let (Domain.ContactPreferences.Id email) = id
+        let (Domain.ContactPreferences.Id id) = id
         // Feed some junk into the stream
         for i in 0..11 do
             let quickSurveysValue = i % 2 = 0
-            do! service.Update email { value with quickSurveys = quickSurveysValue }
+            do! service.Update(id, { value with quickSurveys = quickSurveysValue })
         // Ensure there will be something to be changed by the Update below
-        do! service.Update email { value with quickSurveys = not value.quickSurveys }
+        do! service.Update(id, { value with quickSurveys = not value.quickSurveys })
 
         capture.Clear()
-        do! service.Update email value
+        do! service.Update(id, value)
 
-        let! result = service.Read email
+        let! result = service.Read id
         test <@ value = result @>
 
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>

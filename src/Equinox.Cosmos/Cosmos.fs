@@ -523,11 +523,11 @@ function sync(req, expIndex, expEtag) {
             |> match result with
                 | Result.Written pos ->
                     Log.prop "nextExpectedVersion" pos >> Log.event (Log.SyncSuccess (mkMetric ru))
-                | Result.ConflictUnknown pos ->
-                    Log.prop "nextExpectedVersion" pos >> propConflict >> Log.event (Log.SyncConflict (mkMetric ru))
-                | Result.Conflict (pos, xs) ->
+                | Result.ConflictUnknown pos' ->
+                    Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.SyncConflict (mkMetric ru))
+                | Result.Conflict (pos', xs) ->
                     (if verbose then Log.propData "conflicts" xs else id)
-                    >> Log.prop "nextExpectedVersion" pos >> propConflict >> Log.event (Log.SyncResync(mkMetric ru))
+                    >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.SyncResync (mkMetric ru))
         log.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
             "Sync", stream, count, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
         return result }
@@ -832,6 +832,7 @@ module Delete =
             let q = SqlQuerySpec("SELECT c.id, c.i, c.n FROM c")
             let qro = Client.FeedOptions(PartitionKey = PartitionKey stream, MaxItemCount=Nullable maxItems)
             container.Client.CreateDocumentQuery<_>(container.CollectionUri, q, qro).AsDocumentQuery()
+        log.Debug("EqxCosmos Query {query} on {stream}", query, stream)
         let tryReadNextPage (x : IDocumentQuery<_>) = async {
             if not x.HasMoreResults then return None else
 

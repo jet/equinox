@@ -1,4 +1,4 @@
-module Equinox.CosmosStore.Integration.AsyncBatchingGateTests
+module Equinox.Cosmos.Integration.AsyncBatchingGateTests
 
 open System
 open System.Collections.Concurrent

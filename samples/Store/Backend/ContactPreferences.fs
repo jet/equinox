@@ -11,8 +11,8 @@ type Service(log, resolve, ?maxAttempts) =
         let command = Update { email = email; preferences = value }
         stream.Transact(Commands.interpret command)
 
-    member __.Update email value =
-        update email value
+    member __.Update(id, value) =
+        update id value
 
     member __.Read(email) =
         let stream = resolve email

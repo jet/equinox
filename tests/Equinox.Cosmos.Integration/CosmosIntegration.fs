@@ -193,16 +193,16 @@ type Tests(testOutputHelper) =
 
         // We need to be sure every Update changes something as we rely on an expected number of events in the end
         let value = if value <> ContactPreferences.Fold.initial then value else { value with manyPromotions = true }
-        let email = let g = System.Guid.NewGuid() in g.ToString "N"
+        let id = let g = System.Guid.NewGuid() in g.ToString "N"
 
-        let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
+        let id = (let g = System.Guid.NewGuid() in g.ToString "N")
         // Ensure there will be something to be changed by the Update below
         for i in 0..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
         capture.Clear()
-        do! service.Update email value
+        do! service.Update(id, value)
 
-        let! result = service.Read email
+        let! result = service.Read id
         test <@ value = result @>
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
@@ -213,7 +213,7 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let service = ContactPreferences.createServiceWithLatestKnownEvent (createCosmosContext conn) log CachingStrategy.NoCaching
 
-        let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
+        let id = let g = System.Guid.NewGuid() in g.ToString "N"
         // Ensure there will be something to be changed by the Update below
         for i in 1..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })

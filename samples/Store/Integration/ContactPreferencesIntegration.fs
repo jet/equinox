@@ -32,7 +32,7 @@ type Tests(testOutputHelper) =
 
     let act (service : Backend.ContactPreferences.Service) (id,value) = async {
         let (Domain.ContactPreferences.Id email) = id
-        do! service.Update email value
+        do! service.Update(email, value)
 
         let! actual = service.Read email
         test <@ value = actual @> }

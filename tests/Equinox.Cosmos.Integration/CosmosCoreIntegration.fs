@@ -80,17 +80,19 @@ type Tests(testOutputHelper) =
         let sx,sy = stringOfUtf8 x, stringOfUtf8 y
         test <@ ignore i; blobEquals x y || "" = xmlDiff sx sy @>
 
-    let add6EventsIn2Batches ctx streamName = async {
+    let add6EventsIn2BatchesEx ctx streamName splitAt = async {
         let index = 0L
-        let! res = Events.append ctx streamName index <| TestEvents.Create(0,1)
+        let! res = Events.append ctx streamName index <| TestEvents.Create(0, splitAt)
 
-        test <@ AppendResult.Ok 1L = res @>
-        let! res = Events.append ctx streamName 1L <| TestEvents.Create(1,5)
+        test <@ AppendResult.Ok (int64 splitAt) = res @>
+        let! res = Events.append ctx streamName (int64 splitAt) <| TestEvents.Create(splitAt, 6 - splitAt)
         test <@ AppendResult.Ok 6L = res @>
         // Only start counting RUs from here
         capture.Clear()
         return TestEvents.Create(0,6)
     }
+
+    let add6EventsIn2Batches ctx streamName = add6EventsIn2BatchesEx ctx streamName 1
 
     let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<byte[]>[]) =
         let xs, baseIndex =
@@ -246,8 +248,7 @@ type Tests(testOutputHelper) =
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContextWithItemLimit conn (Some 1)
 
-        let! expected = add6EventsIn2Batches ctx streamName
-        capture.Clear()
+        let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
         let! res = Events.getAll ctx streamName 0L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun _ -> false) |> AsyncSeq.toArrayAsync
         let expected = expected |> Array.take 1
@@ -330,36 +331,50 @@ type Tests(testOutputHelper) =
     (* Prune *)
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (TestStream streamName) = Async.RunSynchronously <| async {
-        capture.Clear()
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContextWithItemLimit conn None
 
-        let! expected = add6EventsIn2Batches ctx streamName
+        let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
-        // Trigger deletion of first batch
+        // We should still the correct high-water mark even if we don't delete anything
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 0L
+        test <@ deleted = 0 && deferred = 0 && trimmedPos = 0L @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 3 // 2.86
+
+        // Trigger deletion of first batch, but as we're in the middle of the next Batch...
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
-        test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
+        test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 17 // 13.33 + 2.9
+        verifyRequestChargesMax 17 // [13.33; 2.9]
 
+        let pos = 4L
         let! res = Events.get ctx streamName 0L Int32.MaxValue
-        verifyCorrectEvents 1L (Array.skip 1 expected) res
+        verifyCorrectEvents pos (Array.skip (int pos) expected) res
 
         // Repeat the process, but this time there should be no actual deletes
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 4L
-        test <@ deleted = 0 && deferred = 3 && trimmedPos = 1L @>
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        test <@ deleted = 0 && deferred = 1 && trimmedPos = pos @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 3 // 2.86
+
+        // We should still get the high-water mark even if we asked for less
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 3L
+        test <@ deleted = 0 && deferred = 0 (*BUG*) && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
         let! res = Events.get ctx streamName 0L Int32.MaxValue
-        verifyCorrectEvents 1L (Array.skip 1 expected) res
+        verifyCorrectEvents pos (Array.skip (int pos) expected) res
 
         // Delete second batch
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
-        test <@ deleted = 5 && deferred = 0 && trimmedPos = 6L @>
+        test <@ deleted = 2 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 17 // 13.33 + 2.86
 
@@ -368,8 +383,8 @@ type Tests(testOutputHelper) =
 
         // Attempt to repeat
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.83
-    }
+}
