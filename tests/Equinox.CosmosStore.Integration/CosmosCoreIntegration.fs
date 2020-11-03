@@ -326,41 +326,57 @@ type Tests(testOutputHelper) =
     let prune (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
         if eventsInTip then () else // TODO
 
-        let ctx = createPrimaryEventsContext log 10 (if eventsInTip then 1 else 0)
-        let! expected = add6EventsIn2Batches ctx streamName
+        let ctx, ctxUnsafe = createPrimaryEventsContextWithUnsafe log 10 0
+        let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
-        // Trigger deletion of first batch
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
-        test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
-        test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 17 // 13.33 + 2.9
-
-        let! res = Events.get ctx streamName 0L Int32.MaxValue
-        verifyCorrectEvents 1L (Array.skip 1 expected) res
-
-        // Repeat the process, but this time there should be no actual deletes
+        // We should still the correct high-water mark even if we don't delete anything
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 4L
-        test <@ deleted = 0 && deferred = 3 && trimmedPos = 1L @>
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 0L
+        test <@ deleted = 0 && deferred = 0 && trimmedPos = 0L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
-        let! res = Events.get ctx streamName 0L Int32.MaxValue
-        verifyCorrectEvents 1L (Array.skip 1 expected) res
+        // Trigger deletion of first batch, but as we're in the middle of the next Batch...
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 17 // [13.33; 2.9]
+
+        let pos = 4L
+        let! res = Events.get ctxUnsafe streamName 0L Int32.MaxValue
+        verifyCorrectEvents pos (Array.skip (int pos) expected) res
+
+        // Repeat the process, but this time there should be no actual deletes
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        test <@ deleted = 0 && deferred = 1 && trimmedPos = pos @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 3 // 2.86
+
+        // We should still get the high-water mark even if we asked for less
+        capture.Clear()
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 4L
+        test <@ deleted = 0 && deferred = 0 && trimmedPos = pos @>
+        test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
+        verifyRequestChargesMax 3 // 2.86
+
+        let! res = Events.get ctxUnsafe streamName 0L Int32.MaxValue
+        verifyCorrectEvents pos (Array.skip (int pos) expected) res
 
         // Delete second batch
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
-        test <@ deleted = 5 && deferred = 0 && trimmedPos = 6L @>
+        test <@ deleted = 2 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 17 // 13.33 + 2.86
 
-        let! res = Events.get ctx streamName 0L Int32.MaxValue
+        let! res = Events.get ctxUnsafe streamName 0L Int32.MaxValue
         test <@ [||] = res @>
 
         // Attempt to repeat
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.83
@@ -372,23 +388,24 @@ type Tests(testOutputHelper) =
     let fallback (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
         if eventsInTip then () else // TODO
 
-        let ctx1 = createPrimaryEventsContext log defaultQueryMaxItems 0
+        let ctx1, ctx1Unsafe = createPrimaryEventsContextWithUnsafe log 10 0
         let ctx2 = createSecondaryEventsContext log defaultQueryMaxItems
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
 
-        let! expected = add6EventsIn2Batches ctx1 streamName
+        let! expected = add6EventsIn2BatchesEx ctx1 streamName 4
         // Add the same events to the secondary container
         let! _ = add6EventsIn2Batches ctx2 streamName
 
         // Trigger deletion of first batch from primary
         let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 5L
-        test <@ deleted = 1 && deferred = 4 && trimmedPos = 1L @>
+        test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
 
         // Prove it's gone
         capture.Clear()
-        let! res = Events.get ctx1 streamName 0L Int32.MaxValue
+        let! res = Events.get ctx1Unsafe streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        verifyCorrectEvents 1L (Array.skip 1 expected) res
+        let pos = 4L
+        verifyCorrectEvents pos (Array.skip (int pos) expected) res
         verifyRequestChargesMax 4 // 3.04
 
         // Prove the full set exists in the secondary
@@ -408,17 +425,23 @@ type Tests(testOutputHelper) =
         // Delete second batch in primary
         capture.Clear()
         let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 6L
-        test <@ deleted = 5 && deferred = 0 && trimmedPos = 6L @>
+        test <@ deleted = 2 && deferred = 0 && trimmedPos = 6L @>
 
         // Nothing left in primary
         capture.Clear()
-        let! res = Events.get ctx1 streamName 0L Int32.MaxValue
+        let! res = Events.get ctx1Unsafe streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
 
+        // But primary retains high-water mark
+        capture.Clear()
+        let! res = Events.getNextIndex ctx1 streamName
+        test <@ [EqxAct.Tip] = capture.ExternalCalls @>
+        test <@ 6L = res @>
+        verifyRequestChargesMax 1
+
         // Fallback queries secondary (unless we actually delete the Tip too)
-        // TODO demonstrate Primary read is only of Tip when using snapshots
         capture.Clear()
         let! res = Events.get ctx12 streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
