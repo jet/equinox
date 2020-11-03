@@ -231,6 +231,8 @@ module Log =
         | PruneResponse of Measurement
         /// Deleted an individual Batch
         | Delete of Measurement
+        /// Trimmed the Tip
+        | Trim of Measurement
         /// Pruned batches from head of a stream
         /// Count in Measurement is number of batches (documents) deleted
         /// Bytes in Measurement is number of events deleted
@@ -270,7 +272,7 @@ module Log =
         module Stats =
             let inline (|Stats|) ({ interval = i; ru = ru }: Measurement) = ru, let e = i.Elapsed in int64 e.TotalMilliseconds
 
-            let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|CosmosDeleteRc|CosmosPruneRc|) = function
+            let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|CosmosDeleteRc|CosmosTrimRc|CosmosPruneRc|) = function
                 | Tip (Stats s)
                 | TipNotFound (Stats s)
                 | TipNotModified (Stats s)
@@ -283,6 +285,7 @@ module Log =
                 | SyncConflict (Stats s) -> CosmosWriteRc s
                 | SyncResync (Stats s) -> CosmosResyncRc s
                 | Delete (Stats s) -> CosmosDeleteRc s
+                | Trim (Stats s) -> CosmosTrimRc s
                 | Prune (_, (Stats s)) -> CosmosPruneRc s
             let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
                 | (:? ScalarValue as x) -> Some x.Value
@@ -304,6 +307,7 @@ module Log =
                 static member val Write = Counter.Create() with get, set
                 static member val Resync = Counter.Create() with get, set
                 static member val Delete = Counter.Create() with get, set
+                static member val Trim = Counter.Create() with get, set
                 static member val Prune = Counter.Create() with get, set
                 static member Restart() =
                     LogSink.Read <- Counter.Create()
@@ -311,6 +315,7 @@ module Log =
                     LogSink.Resync <- Counter.Create()
                     LogSink.Delete <- Counter.Create()
                     LogSink.Prune <- Counter.Create()
+                    LogSink.Trim <- Counter.Create()
                     let span = epoch.Elapsed
                     epoch.Restart()
                     span
@@ -320,6 +325,7 @@ module Log =
                         | CosmosMetric (CosmosWriteRc stats) -> LogSink.Write.Ingest stats
                         | CosmosMetric (CosmosResyncRc stats) -> LogSink.Resync.Ingest stats
                         | CosmosMetric (CosmosDeleteRc stats) -> LogSink.Delete.Ingest stats
+                        | CosmosMetric (CosmosTrimRc stats) -> LogSink.Trim.Ingest stats
                         | CosmosMetric (CosmosPruneRc stats) -> LogSink.Prune.Ingest stats
                         | CosmosMetric (CosmosResponseRc _) -> () // Costs are already included in others
                         | _ -> ()
@@ -332,6 +338,7 @@ module Log =
                 "Write", Stats.LogSink.Write
                 "Resync", Stats.LogSink.Resync
                 "Delete", Stats.LogSink.Delete
+                "Trim", Stats.LogSink.Trim
                 "Prune", Stats.LogSink.Prune ]
             let mutable rows, totalCount, totalRc, totalMs = 0, 0L, 0., 0L
             let logActivity name count rc lat =
@@ -380,8 +387,8 @@ module private MicrosoftAzureCosmosWrappers =
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
     type Container with
         member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : ItemRequestOptions): Async<float * ReadResult<'T>> = async {
-            let options = defaultArg options null
             let! ct = Async.CancellationToken
+            let options = defaultArg options null
             use! rm = async { return! container.ReadItemStreamAsync(documentId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
             let rc = rm.Headers.GetRequestCharge()
             if rm.StatusCode = System.Net.HttpStatusCode.NotFound then return rc, NotFound
@@ -891,16 +898,16 @@ module internal Tip =
         | _ -> logMissing (minIndex, maxIndex) "Origin event not found in secondary container"
         return pos, events }
 
-// Manages deletion of batches
-// Note: it's critical that we delete individually, in the correct order so as not to leave gaps
-// Note: public so BatchIndices can be deserialized into
-module Delete =
+// Manages deletion of (full) Batches, and trimming of events in Tip, maintaining ordering guarantees by never updating non-Tip batches
+// Additionally, the nature of the fallback algorithm requires that deletions be carried out in sequential order so as not to leave gaps
+// NOTE: module is public so BatchIndices can be deserialized into
+module Prune =
 
     type BatchIndices = { id : string; i : int64; n : int64 }
 
-    let pruneBefore (log: ILogger) (container: Container, stream: string) maxItems beforePos : Async<int * int * int64> = async {
-        let! ct = Async.CancellationToken
+    let until (log: ILogger) (container: Container, stream: string) maxItems indexInclusive : Async<int * int * int64> = async {
         let log = log |> Log.prop "stream" stream
+        let! ct = Async.CancellationToken
         let deleteItem id count : Async<float> = async {
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = Nullable false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
             let! t, res = container.DeleteItemAsync(id, PartitionKey stream, ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
@@ -910,10 +917,27 @@ module Delete =
             log.Information("EqxCosmos {action:l} {id} {ms}ms rc={ru}", "Delete", id, ms, rc)
             return rc
         }
-        let log = log |> Log.prop "beforePos" beforePos
+        let trimTip expectedI count = async {
+            match! container.TryReadItem<Tip>(PartitionKey stream, Tip.WellKnownDocumentId) with
+            | _, ReadResult.NotModified -> return failwith "unexpected NotModified; no etag supplied"
+            | _, ReadResult.NotFound -> return failwith "unexpected NotFound"
+            | _, ReadResult.Found tip when tip.i <> expectedI -> return failwithf "Concurrent write detected; Expected i=%d actual=%d" expectedI tip.i
+            | tipRu, ReadResult.Found tip ->
+
+            let tip = { tip with i = tip.i + int64 count; e = Array.skip count tip.e }
+            let ro = ItemRequestOptions(EnableContentResponseOnWrite = Nullable false, IfMatchEtag = tip._etag)
+            let! t, updateRes = container.ReplaceItemAsync(tip, tip.id, Nullable (PartitionKey stream), ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
+            let rc, ms = tipRu + updateRes.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
+            let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = count; ru = rc }
+            let log = let evt = Log.Trim reqMetric in log |> Log.event evt
+            log.Information("EqxCosmos {action:l} {count} {ms}ms rc={ru}", "Trim", count, ms, rc)
+            return rc
+        }
+        let log = log |> Log.prop "index" indexInclusive
         let query : FeedIterator<BatchIndices> =
              let qro = QueryRequestOptions(PartitionKey = Nullable (PartitionKey stream), MaxItemCount = Nullable maxItems)
-             container.GetItemQueryIterator<_>(QueryDefinition "SELECT c.id, c.i, c.n FROM c", requestOptions = qro)
+             // sort by i to guarantee we don't ever leave an observable gap in the sequence
+             container.GetItemQueryIterator<_>(QueryDefinition "SELECT c.id, c.i, c.n FROM c ORDER by c.i", requestOptions = qro)
         let mapPage i (t : StopwatchInterval) (page : FeedResponse<BatchIndices>) =
             let batches, rc, ms = Array.ofSeq page, page.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
@@ -921,47 +945,33 @@ module Delete =
             let log = let evt = Log.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
             log.Information("EqxCosmos {action:l} {batches} {ms}ms n={next} rc={ru}", "PruneResponse", batches.Length, ms, next, rc)
             batches, rc
-
-        // If we have results: []
-        // - deleteBefore  9 would: return 0,0,0
-
-        // If we have results: ["-1",10,10; "0",0,1; "2",1,3; "3",3,8; "8",8,10]
-        // - deleteBefore  3 would: inspect first 3, delete 2, return 3,0,3
-        // - deleteBefore  4 would: inspect first 4, delete 2, return 3,1,3
-        // - deleteBefore  8 would: inspect first 4, delete 2, return 8,0,8
-
-        // If we have results: ["-1",10,10; "8",8,10]
-        // - deleteBefore  3 would: inspect first 2, delete 0, return 0,0,8
-        // - deleteBefore  8 would: inspect first 2, delete 0, return 0,0,8
-        // - deleteBefore  9 would: inspect first 2, delete 0, return 0,1,8
-        // - deleteBefore 10 would: inspect first 2, delete 1, return 2,0,10
-        // - deleteBefore 11 would: inspect first 2, delete 1, return 2,0,10
-
-        // If we have results: ["-1",10,10]
-        // - deleteBefore  9 would: inspect first 1, delete 0, return 0,0,10
-        // - deleteBefore 10 would: inspect first 1, delete 0, return 0,0,10
-        // - deleteBefore 11 would: inspect first 1, delete 0, return 0,0,10
         let! pt, outcomes =
             let isTip (x : BatchIndices) = x.id = Tip.WellKnownDocumentId
-            let isRelevant x = isTip x || x.i < beforePos
+            let isRelevant x = x.i <= indexInclusive || isTip x
             let handle (batches : BatchIndices[], rc) = async {
-                let mutable delCharges, batchesDeleted, eventsDeleted, eventsDeferred = 0., 0, 0, 0
-                let mutable tipI, lwm = None, None
-                for x in batches |> Seq.takeWhile isRelevant do
-                    let count = x.n - x.i |> int
-                    if isTip x then
-                        tipI <- Some x.i
-                        // TODO order by i and prune events from tip
-                    elif x.n > beforePos then
-                        eventsDeferred <- eventsDeferred + min count (int (beforePos - x.i))
-                        lwm <- Some x.i
-                    else
-                        let! charge = deleteItem x.id count
+                let mutable delCharges, batchesDeleted, trimCharges, batchesTrimmed, eventsDeleted, eventsDeferred = 0., 0, 0., 0, 0, 0
+                let mutable lwm = None
+                for x in batches |> Seq.takeWhile (fun x -> isRelevant x || lwm = None) do
+                    let batchSize = x.n - x.i |> int
+                    let eligibleEvents = max 0 (min batchSize (int (indexInclusive + 1L - x.i)))
+                    if isTip x then // Even if we remove the last event from the Tip, we need to retain a) unfolds b) position (n)
+                        if eligibleEvents <> 0 then
+                            let! charge = trimTip x.i eligibleEvents
+                            trimCharges <- trimCharges + charge
+                            batchesTrimmed <- batchesTrimmed + 1
+                            eventsDeleted <- eventsDeleted + eligibleEvents
+                        if lwm = None then
+                            lwm <- Some (x.i + int64 eligibleEvents)
+                    elif x.n <= indexInclusive + 1L then
+                        let! charge = deleteItem x.id batchSize
                         delCharges <- delCharges + charge
                         batchesDeleted <- batchesDeleted + 1
-                        eventsDeleted <- eventsDeleted + count
-                        lwm <- Some x.n
-                return rc, (tipI, lwm), (delCharges, batchesDeleted, eventsDeleted, eventsDeferred)
+                        eventsDeleted <- eventsDeleted + batchSize
+                    else // can't update a non-Tip batch, or it'll be ordered wrong from a CFP perspective
+                        eventsDeferred <- eventsDeferred + eligibleEvents
+                        if lwm = None then
+                            lwm <- Some x.i
+                return (rc, delCharges, trimCharges), lwm, (batchesDeleted + batchesTrimmed, eventsDeleted, eventsDeferred)
             }
             let hasRelevantItems (batches, _rc) = batches |> Array.exists isRelevant
             query
@@ -970,26 +980,22 @@ module Delete =
             |> AsyncSeq.mapAsync handle
             |> AsyncSeq.toArrayAsync
             |> Stopwatch.Time
-        let mutable queryCharges, delCharges, responses, batchesDeleted, eventsDeleted, eventsDeferred = 0., 0., 0, 0, 0, 0
-        let mutable lwm, tipI = None, None
-        for qc, (bTipI, bLwm), (dc, bDel, eDel, eDef) in outcomes do
+        let mutable queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = 0., 0., 0., 0, 0, 0, 0
+        let mutable lwm = None
+        for (qc, dc, tc), bLwm, (bCount, eDel, eDef) in outcomes do
             lwm <- max lwm bLwm
-            tipI <- max tipI bTipI
             queryCharges <- queryCharges + qc
             delCharges <- delCharges + dc
+            trimCharges <- trimCharges + tc
             responses <- responses + 1
-            batchesDeleted <- batchesDeleted + bDel
+            batches <- batches + bCount
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
-        let reqMetric : Log.Measurement = { stream = stream; interval = pt; bytes = eventsDeleted; count = batchesDeleted; ru = queryCharges }
+        let reqMetric : Log.Measurement = { stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
         let log = let evt = Log.Prune (responses, reqMetric) in log |> Log.event evt
-        let lwm =
-            match lwm, tipI with
-            | Some lwm, _     -> lwm  // we saw a batch and identified a Low Water mark based on it
-            | None, Some tipI -> tipI // we saw the Tip, but no batches along the way, therefore it's i is the low water mark
-            | None, None      -> 0L   // If we've seen no batches at all, then the write position is 0L
-        log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={ru} deleteRu={delRu}",
-                "Prune", eventsDeleted, batchesDeleted, lwm, (let e = pt.Elapsed in e.TotalMilliseconds), queryCharges, delCharges)
+        let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
+        log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
+                "Prune", eventsDeleted, batches, lwm, (let e = pt.Elapsed in e.TotalMilliseconds), queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm
     }
 
@@ -1096,8 +1102,8 @@ type StoreClient(container : Container, fallback : Container option, query : Que
         | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create stream pos')
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create stream pos') }
 
-    member __.Prune(log, stream, beforeIndex) =
-        Delete.pruneBefore log (container,stream) query.MaxItems beforeIndex
+    member __.Prune(log, stream, index) =
+        Prune.until log (container,stream) query.MaxItems index
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event,byte[],'context>) =
     member __.Load(log, stream, initial, checkUnfolds, fold, isOrigin): Async<StreamToken * 'state> = async {
@@ -1518,8 +1524,8 @@ type EventsContext internal
         | AppendResult.Ok token -> return token
         | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
-    member __.Prune(stream, beforeIndex) : Async<int * int * int64> =
-        store.Prune(log, stream, beforeIndex)
+    member __.Prune(stream, index) : Async<int * int * int64> =
+        store.Prune(log, stream, index)
 
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
@@ -1576,11 +1582,12 @@ module Events =
     let appendAtEnd (ctx: EventsContext) (streamName: string) (events: IEventData<_>[]): Async<int64> =
         ctx.NonIdempotentAppend(ctx.StreamId streamName, events) |> stripPosition
 
-    /// Requests deletion of events prior to the specified Index
-    /// Due to the need to preserve ordering of data in the stream, only full batches will be removed
-    /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number
-    let prune (ctx: EventsContext) (streamName: string) (beforeIndex: int64): Async<int * int * int64> =
-        ctx.Prune(ctx.StreamId streamName, beforeIndex)
+    /// Requests deletion of events up and including the specified <c>index</c>.
+    /// Due to the need to preserve ordering of data in the stream, only complete Batches will be removed.
+    /// If the <c>index</c> is within the Tip, events are removed via an etag-checked update. Does not alter the unfolds held in the Tip, or remove the Tip itself.
+    /// Returns count of events deleted this time, events that could not be deleted due to partial batches, and the stream's lowest remaining sequence number.
+    let pruneUntil (ctx: EventsContext) (streamName: string) (index: int64): Async<int * int * int64> =
+        ctx.Prune(ctx.StreamId streamName, index)
 
     /// Returns an async sequence of events in the stream backwards starting from the specified sequence number,
     /// reading in batches of the specified size.

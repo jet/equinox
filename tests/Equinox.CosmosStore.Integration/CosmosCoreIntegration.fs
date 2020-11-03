@@ -324,40 +324,43 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let prune (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        if eventsInTip then () else // TODO
-
-        let ctx, ctxUnsafe = createPrimaryEventsContextWithUnsafe log 10 0
+        let ctx, ctxUnsafe = createPrimaryEventsContextWithUnsafe log 10 (if eventsInTip then 3 else 0)
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
         // We should still the correct high-water mark even if we don't delete anything
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 0L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName -1L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 0L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
         // Trigger deletion of first batch, but as we're in the middle of the next Batch...
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
-        test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
-        test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 17 // [13.33; 2.9]
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 4L
+        if eventsInTip then // the Tip has a Trim operation applied to remove one event
+            test <@ deleted = 5 && deferred = 0 && trimmedPos = 5L @>
+            test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Trim; EqxAct.Prune] = capture.ExternalCalls @>
+            verifyRequestChargesMax 39 // 13.33 + 22.33 + 2.86
+        else // the one event from the final batch needs to be deferred
+            test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
+            test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
+            verifyRequestChargesMax 17 // [13.33; 2.9]
 
-        let pos = 4L
+        let pos = if eventsInTip then 5L else 4L
         let! res = Events.get ctxUnsafe streamName 0L Int32.MaxValue
         verifyCorrectEvents pos (Array.skip (int pos) expected) res
 
         // Repeat the process, but this time there should be no actual deletes
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
-        test <@ deleted = 0 && deferred = 1 && trimmedPos = pos @>
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 4L
+        test <@ deleted = 0 && deferred = (if eventsInTip then 0 else 1) && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
         // We should still get the high-water mark even if we asked for less
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 3L
-        test <@ deleted = 0 && deferred = 0 (*BUG*) && trimmedPos = 6L @>
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 3L
+        test <@ deleted = 0 && deferred = 0 && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
@@ -366,17 +369,18 @@ type Tests(testOutputHelper) =
 
         // Delete second batch
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
-        test <@ deleted = 2 && deferred = 0 && trimmedPos = 6L @>
-        test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 17 // 13.33 + 2.86
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 5L
+        test <@ deleted = (if eventsInTip then 1 else 2) && deferred = 0 && trimmedPos = 6L @>
+        test <@ [EqxAct.PruneResponse; (if eventsInTip then EqxAct.Trim else EqxAct.Delete); EqxAct.Prune] = capture.ExternalCalls @>
+        if eventsInTip then verifyRequestChargesMax 26 // [22.33; 2.83]
+        else verifyRequestChargesMax 17 // 13.33 + 2.86
 
         let! res = Events.get ctxUnsafe streamName 0L Int32.MaxValue
         test <@ [||] = res @>
 
         // Attempt to repeat
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 6L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.83
@@ -386,9 +390,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let fallback (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
-        if eventsInTip then () else // TODO
-
-        let ctx1, ctx1Unsafe = createPrimaryEventsContextWithUnsafe log 10 0
+        let ctx1, ctx1Unsafe = createPrimaryEventsContextWithUnsafe log 10 (if eventsInTip then 3 else 0)
         let ctx2 = createSecondaryEventsContext log defaultQueryMaxItems
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
 
@@ -397,16 +399,18 @@ type Tests(testOutputHelper) =
         let! _ = add6EventsIn2Batches ctx2 streamName
 
         // Trigger deletion of first batch from primary
-        let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 5L
-        test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx1 streamName 4L
+        if eventsInTip then test <@ deleted = 5 && deferred = 0 && trimmedPos = 5L @>
+        else test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
 
         // Prove it's gone
         capture.Clear()
         let! res = Events.get ctx1Unsafe streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        let pos = 4L
+        let pos = if eventsInTip then 5L else 4L
         verifyCorrectEvents pos (Array.skip (int pos) expected) res
-        verifyRequestChargesMax 4 // 3.04
+        if eventsInTip then verifyRequestChargesMax 3 // 2.83
+        else verifyRequestChargesMax 4 // 3.04
 
         // Prove the full set exists in the secondary
         capture.Clear()
@@ -424,8 +428,8 @@ type Tests(testOutputHelper) =
 
         // Delete second batch in primary
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx1 streamName 6L
-        test <@ deleted = 2 && deferred = 0 && trimmedPos = 6L @>
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx1 streamName 5L
+        test <@ deleted = (if eventsInTip then 1 else 2) && deferred = 0 && trimmedPos = 6L @>
 
         // Nothing left in primary
         capture.Clear()
