@@ -387,8 +387,8 @@ module private MicrosoftAzureCosmosWrappers =
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
     type Container with
         member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : ItemRequestOptions): Async<float * ReadResult<'T>> = async {
-            let options = defaultArg options null
             let! ct = Async.CancellationToken
+            let options = defaultArg options null
             use! rm = async { return! container.ReadItemStreamAsync(documentId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
             let rc = rm.Headers.GetRequestCharge()
             if rm.StatusCode = System.Net.HttpStatusCode.NotFound then return rc, NotFound
@@ -694,7 +694,7 @@ module internal Tip =
             let queryString = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s ORDER BY c.i %s" whereClause order
             let prams = Seq.map snd args
             (QueryDefinition queryString, prams) ||> Seq.fold (fun q wp -> q |> wp)
-        log.Debug("EqxCosmos Query {query} on {stream}; minIndex={min} maxIndex={max}", query.QueryText, stream, minIndex, maxIndex)
+        log.Debug("EqxCosmos Query {query} on {stream}; minIndex={minIndex} maxIndex={maxIndex}", query.QueryText, stream, minIndex, maxIndex)
         let qro = QueryRequestOptions(PartitionKey = Nullable (PartitionKey stream), MaxItemCount = Nullable maxItems)
         container.GetItemQueryIterator<Batch>(query, requestOptions = qro)
 
@@ -1046,8 +1046,8 @@ type TipOptions
     member val MaxEvents = defaultArg maxEvents 0
     /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
     member val MaxJsonLength = defaultArg maxJsonLength 30_000
-    member __.ReadRetryPolicy = readRetryPolicy
-    member __.WriteRetryPolicy = writeRetryPolicy
+    member val ReadRetryPolicy = readRetryPolicy
+    member val WriteRetryPolicy = writeRetryPolicy
     member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
 
 type StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
