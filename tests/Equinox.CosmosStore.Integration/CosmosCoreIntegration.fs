@@ -356,8 +356,8 @@ type Tests(testOutputHelper) =
 
         // We should still get the high-water mark even if we asked for less
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 4L
-        test <@ deleted = 0 && deferred = 0 && trimmedPos = pos @>
+        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 3L
+        test <@ deleted = 0 && deferred = 0 (*BUG*) && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
