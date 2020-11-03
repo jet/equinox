@@ -13,6 +13,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CachingStrategy.FixedTimeSpan`: Support for fixed caching periods [#255](https://github.com/jet/equinox/pull/255)
 
 ### Changed
+
+- `Cosmos`: Finalize `Prune` API to align with `master` [#258](https://github.com/jet/equinox/pull/258)
+
 ### Removed
 ### Fixed
 

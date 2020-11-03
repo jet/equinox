@@ -93,7 +93,7 @@ type Tests(testOutputHelper) =
             // Extra roundtrip required after maxItemsPerRequest is exceeded
             let expectedBatchesOfItems = max 1 ((i-1) / maxItemsPerRequest)
             test <@ i = i && List.replicate expectedBatchesOfItems EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
-            verifyRequestChargesMax 60 // 59.27 [3.28; 55.99] // 5.5 observed for read
+            verifyRequestChargesMax 62 // 61.66 [3.59; 58.07]
             capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
@@ -364,5 +364,4 @@ type Tests(testOutputHelper) =
         capture.Clear()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service1 1
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-
     }

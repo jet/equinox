@@ -152,7 +152,7 @@ type Tests(testOutputHelper) =
         let extrasCount = match extras with x when x > 50 -> 5000 | x when x < 1 -> 1 | x -> x*100
         let! _pos = ctx.NonIdempotentAppend(stream, TestEvents.Create (int pos,extrasCount))
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
-        verifyRequestChargesMax 448 // 447.5 // 463.01 observed
+        verifyRequestChargesMax 449 // 448.87 // 463.01 observed
         capture.Clear()
 
         let! pos = ctx.Sync(stream,?position=None)
@@ -333,19 +333,18 @@ type Tests(testOutputHelper) =
     let prune (TestStream streamName) = Async.RunSynchronously <| async {
         let! conn = connectToSpecifiedCosmosOrSimulator log
         let ctx = mkContextWithItemLimit conn None
-
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
         // We should still the correct high-water mark even if we don't delete anything
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 0L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName -1L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 0L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
         // Trigger deletion of first batch, but as we're in the middle of the next Batch...
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 4L
         test <@ deleted = 4 && deferred = 1 && trimmedPos = 4L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 17 // [13.33; 2.9]
@@ -356,15 +355,15 @@ type Tests(testOutputHelper) =
 
         // Repeat the process, but this time there should be no actual deletes
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 4L
         test <@ deleted = 0 && deferred = 1 && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
         // We should still get the high-water mark even if we asked for less
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 3L
-        test <@ deleted = 0 && deferred = 0 (*BUG*) && trimmedPos = 6L @>
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 3L
+        test <@ deleted = 0 && deferred = 0 && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.86
 
@@ -373,7 +372,7 @@ type Tests(testOutputHelper) =
 
         // Delete second batch
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 6L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 5L
         test <@ deleted = 2 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Delete; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 17 // 13.33 + 2.86
@@ -383,7 +382,7 @@ type Tests(testOutputHelper) =
 
         // Attempt to repeat
         capture.Clear()
-        let! deleted, deferred, trimmedPos = Events.prune ctx streamName 5L
+        let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 6L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.83
