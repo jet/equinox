@@ -210,7 +210,6 @@ type Tests(testOutputHelper) =
 
         if not eventsInTip then
             (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
-
             // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
             // If we run on an independent context, we won't see (and hence prune) the full set of events
             let ctx = Core.EventsContext(context, log)
@@ -220,14 +219,23 @@ type Tests(testOutputHelper) =
             let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 15L
             test <@ deleted = 15 && deferred = 0 && trimmedPos = 15L @>
 
-            // Prove they're gone
+            // Prove we notice they're gone
             capture.Clear()
-            let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+            let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
+            test <@ match res with
+                    | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                    | x -> failwithf "Unexpected %A" x @>
             test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-            test <@ [||] = res @>
             verifyRequestChargesMax 3 // 2.99
 
-            // But we can still read (there's no cache so we'll definitely be reading)
+            // But not forgotten
+            capture.Clear()
+            let! pos = Core.Events.getNextIndex ctx streamName
+            test <@ [EqxAct.Tip] = capture.ExternalCalls @> // Note in the current impl, this read is not cached
+            test <@ 15L = pos @>
+            verifyRequestChargesMax 1
+
+            // And we can still read the Snapshot from the Tip's unfolds (there's no caching so we'll definitely be reading)
             capture.Clear()
             let! _ = service.Read id
             test <@ value = result @>
@@ -363,11 +371,13 @@ type Tests(testOutputHelper) =
         let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 12L
         test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
 
-        // Prove they're gone
+        // Show alarms are raised when they're gone
         capture.Clear()
-        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+        let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
+        test <@ match res with
+                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                | x -> failwithf "Unexpected %A" x @>
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        test <@ [||] = res @>
         verifyRequestChargesMax 3 // 2.99
 
         // But we can still read (there's no cache so we'll definitely be reading)
@@ -379,7 +389,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
-        let context = createPrimaryContextEx log 10 (if eventsInTip then 1 else 0)
+        let context = createPrimaryContextEx log 10 (if eventsInTip then 10 else 0)
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching log context cache
         let service1, service2 = createServiceCached (), createServiceCached ()
@@ -422,11 +432,13 @@ type Tests(testOutputHelper) =
             let! deleted, deferred, trimmedPos = Core.Events.prune ctx streamName 13L
             test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
 
-            // Prove they're gone
+            // Show that we hear about it if we try to load the events
             capture.Clear()
-            let! res = Core.Events.get ctx streamName 0L Int32.MaxValue
+            let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
+            test <@ match res with
+                    | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                    | x -> failwithf "Unexpected %A" x @>
             test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-            test <@ [||] = res @>
             verifyRequestChargesMax 3 // 2.99
 
             // But we can still read (service2 shares the cache so is aware of the last writes, and pruning does not invalidate the Tip)
