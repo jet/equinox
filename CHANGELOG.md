@@ -9,15 +9,20 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.3.0"></a>
+## [2.3.0] - 2020-11-04
+
+### Added
 
 - `CachingStrategy.FixedTimeSpan`: Support for fixed caching periods [#255](https://github.com/jet/equinox/pull/255)
 
 ### Changed
 
 - `Cosmos`: Finalize `Prune` API to align with `master` [#258](https://github.com/jet/equinox/pull/258)
-
-### Removed
-### Fixed
 
 <a name="2.3.0-rc2"></a>
 ## [2.3.0-rc2] - 2020-10-02
@@ -432,7 +437,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.3.0-rc2...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.3.0...HEAD
+[2.3.0]: https://github.com/jet/equinox/compare/2.3.0-rc2...2.3.0
 [2.3.0-rc2]: https://github.com/jet/equinox/compare/2.3.0-rc1...2.3.0-rc2
 [2.3.0-rc1]: https://github.com/jet/equinox/compare/2.2.0...2.3.0-rc1
 [2.2.0]: https://github.com/jet/equinox/compare/2.1.0...2.2.0
