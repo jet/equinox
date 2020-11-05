@@ -361,22 +361,6 @@ module Log =
 
 [<AutoOpen>]
 module private MicrosoftAzureCosmosWrappers =
-    /// Extracts the innermost exception from a nested hierarchy of Aggregate Exceptions
-    let (|AggregateException|) (exn : exn) =
-        let rec aux (e : exn) =
-            match e with
-            | :? AggregateException as agg when agg.InnerExceptions.Count = 1 ->
-                aux agg.InnerExceptions.[0]
-            | _ -> e
-        aux exn
-    /// CosmosDB Error HttpStatusCode extractor
-    let (|CosmosException|_|) (e : exn) =
-        match e with
-        | AggregateException (:? CosmosException as ce) -> Some ce
-        | _ -> None
-    // CosmosDB Error HttpStatusCode extractor
-    let (|CosmosStatusCode|) (e : CosmosException) =
-        e.StatusCode
 
     type Headers with
         member headers.GetRequestCharge () =
@@ -592,7 +576,7 @@ module Initialization =
     let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body)) |> Async.AwaitTaskCorrect
             return r.RequestCharge
-        with CosmosException ((CosmosStatusCode sc) as e) when sc = System.Net.HttpStatusCode.Conflict -> return e.RequestCharge }
+        with (:? Microsoft.Azure.Cosmos.CosmosException as ce) when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
     let private mkContainerProperties containerName partitionKeyFieldName =
         ContainerProperties(id = containerName, partitionKeyPath = sprintf "/%s" partitionKeyFieldName)
     let private createBatchAndTipContainerIfNotExists (client: CosmosClient) (dName,cName) mode : Async<Container> =
