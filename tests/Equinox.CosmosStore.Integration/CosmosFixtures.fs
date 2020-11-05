@@ -44,7 +44,7 @@ let connectWithFallback log =
     CosmosStoreConnection(client, databaseId, containerId, containerId2 = containerId2)
 
 let createPrimaryContextIgnoreMissing conn queryMaxItems tipMaxEvents ignoreMissing =
-    CosmosStoreContext.Create(conn, defaultMaxItems = queryMaxItems, tipMaxEvents = tipMaxEvents, ignoreMissingEvents = ignoreMissing)
+    CosmosStoreContext.Create(conn, queryMaxItems = queryMaxItems, tipMaxEvents = tipMaxEvents, ignoreMissingEvents = ignoreMissing)
 
 let createPrimaryContextEx log queryMaxItems tipMaxEvents =
     let conn = connectPrimary log
@@ -57,11 +57,11 @@ let createPrimaryContext log queryMaxItems =
 
 let createSecondaryContext log queryMaxItems =
     let conn = connectSecondary log
-    CosmosStoreContext.Create(conn, defaultMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
+    CosmosStoreContext.Create(conn, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
 
 let createFallbackContext log queryMaxItems =
     let conn = connectWithFallback log
-    CosmosStoreContext.Create(conn, defaultMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
+    CosmosStoreContext.Create(conn, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
 
 let defaultQueryMaxItems = 10
 

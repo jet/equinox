@@ -1001,6 +1001,7 @@ module Prune =
 
 type [<NoComparison>] Token = { stream: string; pos: Position }
 module Token =
+
     let create stream pos : StreamToken = { value = box { stream = stream; pos = pos }; version = pos.index }
     let (|Unpack|) (token: StreamToken) : string*Position = let t = unbox<Token> token.value in t.stream,t.pos
     let supersedes (Unpack (_,currentPos)) (Unpack (_,xPos)) =
@@ -1020,14 +1021,14 @@ module Internal =
 /// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
 type QueryOptions
     (   /// Max number of Batches to return per paged query response. Default: 10.
-        [<O; D(null)>]?defaultMaxItems : int,
-        /// Dynamic version of `defaultMaxItems`, allowing one to react to dynamic configuration changes. Default: use `defaultMaxItems` value.
-        [<O; D(null)>]?getDefaultMaxItems : unit -> int,
+        [<O; D(null)>]?maxItems : int,
+        /// Dynamic version of `maxItems`, allowing one to react to dynamic configuration changes. Default: use `maxItems` value.
+        [<O; D(null)>]?getMaxItems : unit -> int,
         /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
         [<O; D(null)>]?maxRequests) =
-    let getDefaultMaxItems = defaultArg getDefaultMaxItems (fun () -> defaultArg defaultMaxItems 10)
+    let getMaxItems = defaultArg getMaxItems (fun () -> defaultArg maxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
-    member __.MaxItems = getDefaultMaxItems ()
+    member __.MaxItems = getMaxItems ()
     /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`
     member __.MaxRequests = maxRequests
 
@@ -1039,16 +1040,19 @@ type TipOptions
         [<O; D(null)>]?maxEvents,
         /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
         [<O; D(null)>]?maxJsonLength,
+        /// Inhibit throwing when events are missing, but no fallback Container has been supplied. Default: false.
+        [<O; D(null)>]?ignoreMissingEvents,
         [<O; D(null)>]?readRetryPolicy,
-        [<O; D(null)>]?writeRetryPolicy,
-        [<O; D(null)>]?ignoreMissingEvents) =
+        [<O; D(null)>]?writeRetryPolicy) =
     /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
     member val MaxEvents = defaultArg maxEvents 0
     /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
     member val MaxJsonLength = defaultArg maxJsonLength 30_000
+    /// Whether to inhibit throwing when events are missing, but no fallback Container has been supplied
+    member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
+
     member val ReadRetryPolicy = readRetryPolicy
     member val WriteRetryPolicy = writeRetryPolicy
-    member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
 
 type StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
 
@@ -1206,11 +1210,11 @@ type CosmosStoreConnection
         /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
         [<O; D(null)>]?createGateway : Container -> Container,
         /// Client to use for fallback Containers. Default: use same as <c>primary</c>
-        ?client2 : CosmosClient,
+        [<O; D(null)>]?client2 : CosmosClient,
         /// Database to use for fallback Containers. Default: use same as <c>databaseId</c>
-        ?databaseId2,
+        [<O; D(null)>]?databaseId2,
         /// Container to use for fallback Containers. Default: use same as <c>containerId</c>
-        ?containerId2) =
+        [<O; D(null)>]?containerId2) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
@@ -1235,15 +1239,18 @@ type CosmosStoreConnection
 type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipOptions) =
     static member Create
         (   connection : CosmosStoreConnection,
-            ?defaultMaxItems, ?getDefaultMaxItems, ?maxRequests,
+            /// Max number of Batches to return per paged query response. Default: 10.
+            [<O; D null>]?queryMaxItems,
+            /// Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
+            [<O; D null>]?queryMaxRequests,
             /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
             /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
-            ?tipMaxEvents,
-            /// Maximum serialized size (length of JSON.stringify representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
-            ?tipMaxJsonLength,
+            [<O; D null>]?tipMaxEvents,
+            /// Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
+            [<O; D null>]?tipMaxJsonLength,
             /// Inhibit throwing when events are missing, but no fallback Container has been supplied
-            ?ignoreMissingEvents) =
-        let queryOptions = QueryOptions(?defaultMaxItems = defaultMaxItems, ?getDefaultMaxItems = getDefaultMaxItems, ?maxRequests = maxRequests)
+            [<O; D null>]?ignoreMissingEvents) =
+        let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
         let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
         CosmosStoreContext(connection, queryOptions, tipOptions)
     member val Connection = connection
@@ -1314,7 +1321,7 @@ type CosmosStoreCategory<'event, 'state, 'context>
     (   context : CosmosStoreContext, codec, fold, initial, caching, access,
         /// Compress Unfolds in Tip. Default: <c>true</c>.
         /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
-        ?compressUnfolds) =
+        [<O; D null>]?compressUnfolds) =
     let compressUnfolds = defaultArg compressUnfolds true
     let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, string, 'context>>()
     let resolveCategory (categoryName, container) =
