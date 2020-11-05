@@ -1199,7 +1199,7 @@ type Resolver<'event, 'state, 'context>
     (   context : Context, codec, fold, initial, caching, access,
         /// Compress Unfolds in Tip. Default: <c>true<c>.
         /// NOTE when set to <c>false</c>, requires Equinox.Cosmos Version >= 2.3.0 to be able to read
-        ?compressUnfolds) =
+        [<O; D null>]?compressUnfolds) =
     let compressUnfolds = defaultArg compressUnfolds true
     let readCacheOption =
         match caching with
