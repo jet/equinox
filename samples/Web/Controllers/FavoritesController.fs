@@ -5,7 +5,7 @@ open Microsoft.AspNetCore.Mvc
 
 [<Route "api/[controller]">]
 [<ApiController>]
-type FavoritesController(service : Backend.Favorites.Service) =
+type FavoritesController(service : Favorites.Service) =
     inherit ControllerBase()
 
     [<HttpGet>]

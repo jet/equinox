@@ -33,14 +33,14 @@ let mkSkuId () = Guid.NewGuid() |> SkuId
 let executeLocal (container: ServiceProvider) test: ClientId -> Async<unit> =
     match test with
     | Favorite ->
-        let service = container.GetRequiredService<Backend.Favorites.Service>()
+        let service = container.GetRequiredService<Favorites.Service>()
         fun clientId -> async {
             let sku = mkSkuId ()
             do! service.Favorite(clientId,[sku])
             let! items = service.List clientId
             if items |> Array.exists (fun x -> x.skuId = sku) |> not then invalidOp "Added item not found" }
     | SaveForLater ->
-        let service = container.GetRequiredService<Backend.SavedForLater.Service>()
+        let service = container.GetRequiredService<SavedForLater.Service>()
         fun clientId -> async {
             let skus = [mkSkuId (); mkSkuId (); mkSkuId ()]
             let! saved = service.Save(clientId,skus)
@@ -56,12 +56,12 @@ let executeLocal (container: ServiceProvider) test: ClientId -> Async<unit> =
         let service = container.GetRequiredService<TodoBackend.Service>()
         fun clientId -> async {
             let! items = service.List(clientId)
-            if Seq.length items > 1000 then 
+            if Seq.length items > 1000 then
                 return! service.Execute(clientId, TodoBackend.Command.Clear)
             else
-                let! _ = service.Create(clientId,TodoBackend.Events.Todo.Create size)
+                let! _ = service.Create(clientId, TodoBackend.Events.Todo.Create size)
                 return ()}
-            
+
 let executeRemote (client: HttpClient) test =
     match test with
     | Favorite ->
@@ -92,7 +92,7 @@ let executeRemote (client: HttpClient) test =
             let session = TodoClient.Session(client, clientId)
             let client = session.Todos
             let! items = client.List()
-            if Seq.length items > 1000 then 
+            if Seq.length items > 1000 then
                 return! client.Clear()
             else
                 let! _ = client.Add(TodoClient.Todo.Create size)

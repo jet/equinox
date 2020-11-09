@@ -1,5 +1,6 @@
 ﻿module Samples.Store.Integration.LogIntegration
 
+open Domain
 open Equinox.Core
 open Equinox.CosmosStore.Integration
 open FSharp.UMX
@@ -97,7 +98,7 @@ let createLoggerWithMetricsExtraction emit =
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type Tests() =
-    let act buffer (service : Backend.Cart.Service) itemCount context cartId skuId resultTag = async {
+    let act buffer (service : Cart.Service) itemCount context cartId skuId resultTag = async {
         do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service itemCount
         let! state = service.Read cartId
         test <@ itemCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
@@ -115,7 +116,7 @@ type Tests() =
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let! conn = connectToLocalEventStoreNode log
         let gateway = createGesGateway conn batchSize
-        let service = Backend.Cart.create log (CartIntegration.resolveGesStreamWithRollingSnapshots gateway)
+        let service = Cart.create log (CartIntegration.resolveGesStreamWithRollingSnapshots gateway)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
@@ -127,7 +128,7 @@ type Tests() =
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let context = createPrimaryContext log queryMaxItems
-        let service = Backend.Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy context)
+        let service = Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy context)
         let itemCount = queryMaxItems / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount cartContext cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200

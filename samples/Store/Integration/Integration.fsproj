@@ -24,7 +24,6 @@
     <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
     <ProjectReference Include="..\..\..\tests\Equinox.CosmosStore.Integration\Equinox.CosmosStore.Integration.fsproj" />
     <ProjectReference Include="..\..\..\tests\Equinox.EventStore.Integration\Equinox.EventStore.Integration.fsproj" />
-    <ProjectReference Include="..\Backend\Backend.fsproj" />
     <ProjectReference Include="..\Domain\Domain.fsproj" />
   </ItemGroup>
 

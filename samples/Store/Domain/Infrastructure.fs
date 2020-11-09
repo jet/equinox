@@ -43,7 +43,7 @@ module Guid =
 /// SkuId strongly typed id
 /// - Ensures canonical rendering without dashes via ToString + Newtonsoft.Json
 /// - Guards against XSS by only permitting initialization based on Guid.Parse
-/// - Implements comparison/equality solely to enable tests to leverage structural equality 
+/// - Implements comparison/equality solely to enable tests to leverage structural equality
 [<Sealed; AutoSerializable(false); JsonConverter(typeof<SkuIdJsonConverter>)>]
 type SkuId private (id : string) =
     inherit StringId<SkuId>(id)

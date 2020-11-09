@@ -29,12 +29,12 @@ type ServiceBuilder(storageConfig, handlerLog) =
      member __.CreateFavoritesService() =
         let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
         let snapshot = Favorites.Fold.isOrigin,Favorites.Fold.snapshot
-        Backend.Favorites.create handlerLog (resolver.Resolve(Favorites.Events.codec,fold,initial,snapshot))
+        Favorites.create handlerLog (resolver.Resolve(Favorites.Events.codec,fold,initial,snapshot))
 
      member __.CreateSaveForLaterService() =
         let fold, initial = SavedForLater.Fold.fold, SavedForLater.Fold.initial
         let snapshot = SavedForLater.Fold.isOrigin,SavedForLater.Fold.compact
-        Backend.SavedForLater.create 50 handlerLog (resolver.Resolve(SavedForLater.Events.codec,fold,initial,snapshot))
+        SavedForLater.create 50 handlerLog (resolver.Resolve(SavedForLater.Events.codec,fold,initial,snapshot))
 
      member __.CreateTodosService() =
         let fold, initial = TodoBackend.Fold.fold, TodoBackend.Fold.initial

@@ -1,5 +1,6 @@
 ﻿module Samples.Store.Integration.CartIntegration
 
+open Domain
 open Equinox
 open Equinox.CosmosStore.Integration
 open Swensen.Unquote
@@ -11,7 +12,7 @@ let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
 
 let createMemoryStore () = MemoryStore.VolatileStore<byte[]>()
 let createServiceMemory log store =
-    Backend.Cart.create log (fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
+    Cart.create log (fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
 
 let codec = Domain.Cart.Events.codec
 
@@ -25,7 +26,7 @@ let resolveCosmosStreamWithSnapshotStrategy context =
 let resolveCosmosStreamWithoutCustomAccessStrategy context =
     fun (id,opt) -> CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
 
-let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
+let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {
         for i in 1..count do
             yield Domain.Cart.SyncItem (context, skuId, Some i, None)
@@ -54,7 +55,7 @@ type Tests(testOutputHelper) =
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn defaultBatchSize
-        return Backend.Cart.create log (resolve gateway) }
+        return Cart.create log (resolve gateway) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
@@ -71,7 +72,7 @@ type Tests(testOutputHelper) =
     let arrangeCosmos connect resolve =
         let log = createLog ()
         let ctx : CosmosStore.CosmosStoreContext = connect log defaultQueryMaxItems
-        Backend.Cart.create log (resolve ctx)
+        Cart.create log (resolve ctx)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {

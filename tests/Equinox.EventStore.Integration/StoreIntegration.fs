@@ -52,33 +52,33 @@ module Cart =
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
     let createServiceWithoutOptimization log gateway =
         let resolve (id,opt) = Resolver(gateway, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt)
-        Backend.Cart.create log resolve
+        Cart.create log resolve
     let createServiceWithCompaction log gateway =
         let resolve (id,opt) = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
-        Backend.Cart.create log resolve
+        Cart.create log resolve
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.create log (fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
+        Cart.create log (fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Backend.Cart.create log (fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
+        Cart.create log (fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let gateway = createGesGateway connection defaultBatchSize
-        Backend.ContactPreferences.create log (Resolver(gateway, codec, fold, initial).Resolve)
+        ContactPreferences.create log (Resolver(gateway, codec, fold, initial).Resolve)
     let createService log connection =
         let resolver = Resolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
-        Backend.ContactPreferences.create log resolver.Resolve
+        ContactPreferences.create log resolver.Resolve
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
 
-    let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Backend.Cart.Service) count =
+    let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
         service.ExecuteManyAsync(cartId, optimistic, seq {
             for i in 1..count do
                 yield Domain.Cart.SyncItem (context, skuId, Some i, None)
@@ -157,7 +157,7 @@ type Tests(testOutputHelper) =
                     do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service1 addRemoveCount
                     return Some (skuId, addRemoveCount) }
 
-        let act prepare (service : Backend.Cart.Service) log skuId count =
+        let act prepare (service : Cart.Service) log skuId count =
             service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Domain.Cart.SyncItem (context, skuId, Some count, None)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }

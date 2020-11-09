@@ -1,5 +1,6 @@
 ﻿module Equinox.MemoryStore.Integration.MemoryStoreIntegration
 
+open Domain
 open Equinox.MemoryStore
 open Swensen.Unquote
 
@@ -7,7 +8,7 @@ let createMemoryStore () = VolatileStore<_>()
 let createServiceMemory log store =
     let resolver = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Cart.Fold.fold, Domain.Cart.Fold.initial)
     let resolve (id, opt) = resolver.Resolve(id, ?option=opt)
-    Backend.Cart.create log resolve
+    Cart.create log resolve
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
@@ -51,7 +52,7 @@ type Tests(testOutputHelper) =
 
 let createFavoritesServiceMemory log store =
     let resolver = Resolver(store, FsCodec.Box.Codec.Create(), Domain.Favorites.Fold.fold, Domain.Favorites.Fold.initial)
-    Backend.Favorites.create log resolver.Resolve
+    Favorites.create log resolver.Resolve
 
 type ChangeFeed(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

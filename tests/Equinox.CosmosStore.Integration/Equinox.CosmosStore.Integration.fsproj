@@ -18,7 +18,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\samples\Store\Backend\Backend.fsproj" />
     <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />

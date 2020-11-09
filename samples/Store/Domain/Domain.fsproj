@@ -15,6 +15,7 @@
     <Compile Include="Favorites.fs" />
     <Compile Include="SavedForLater.fs" />
     <Compile Include="InventoryItem.fs" />
+    <Compile Include="Retries.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +23,8 @@
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
 
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.1.0" />
+
+    <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>
 
 </Project>

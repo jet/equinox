@@ -1,5 +1,6 @@
 ﻿module Samples.Store.Integration.ContactPreferencesIntegration
 
+open Domain
 open Equinox
 open Equinox.CosmosStore.Integration
 open Swensen.Unquote
@@ -10,7 +11,7 @@ let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferenc
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    Backend.ContactPreferences.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
+    ContactPreferences.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.ContactPreferences.Events.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
@@ -30,7 +31,7 @@ type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput
 
-    let act (service : Backend.ContactPreferences.Service) (id,value) = async {
+    let act (service : ContactPreferences.Service) (id,value) = async {
         do! service.Update(id, value)
 
         let! actual = service.Read id
@@ -47,7 +48,7 @@ type Tests(testOutputHelper) =
         let log = createLog ()
         let! conn = connect log
         let gateway = choose conn
-        return Backend.ContactPreferences.create log (resolve gateway) }
+        return ContactPreferences.create log (resolve gateway) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
@@ -64,7 +65,7 @@ type Tests(testOutputHelper) =
     let arrangeCosmos connect resolve queryMaxItems =
         let log = createLog ()
         let ctx: CosmosStore.CosmosStoreContext = connect log queryMaxItems
-        Backend.ContactPreferences.create log (resolve ctx)
+        ContactPreferences.create log (resolve ctx)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = Async.RunSynchronously <| async {

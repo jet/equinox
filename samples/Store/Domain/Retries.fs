@@ -1,7 +1,6 @@
-﻿[<AutoOpen>]
-module Backend.Infrastructure
-
-open System
+﻿/// Placeholder example for Backoff functions to be used with .EventStore and .SqlStreamStore when composing retry
+[<AutoOpen>]
+module Domain.Retries
 
 /// Given a value, creates a function with one ignored argument which returns the value.
 let inline konst x _ = x

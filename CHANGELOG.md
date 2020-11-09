@@ -37,7 +37,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.Tool`: Target `FSharp.Core` v `4.7.1`
 - Update AzDO CI/CD to use `windows-latest`
 - Update to `3.1.101` SDK
-- Remove `module Commands` convention from in examples
+- Remove `module Commands` convention from examples
+- Remove separated `Backend` project from examples (support for architecturally separating all domain logic from Equinox and Domain Service logic from Concrete Stores remains)
 - Revise semantics of Cart Sample Command handling
 - Simplify `AsyncCacheCell` [#229](https://github.com/jet/equinox/pull/229)
 
