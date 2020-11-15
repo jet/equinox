@@ -748,6 +748,40 @@ Then, whenever you emit events from a `decide` or `interpret`, the `AccessStrate
 
 Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's really not that :scream:](https://github.com/jet/equinox/blob/master/src/Equinox.CosmosStore/CosmosStore.fs#1109).
 
+<a name="how-is-expectedVersion-managed"/></a>
+### Help me understand how the `expectedVersion` is used with EventStoreDB - it seems very confusing :pray: [@dharmaturtle](https://github.com/dharmaturtle) 
+
+> I'm having some trouble understanding how Equinox+ESDB handles "expected version". Most of the examples use `Equinox.Stream.Transact` which is storage agnostic and doesn't offer any obvious concurrency checking. In `Equinox.EventStore.Context`, there's a `Sync` and `TrySync` that take a `Token` which holds a `streamVersion`. Should I be be using that instead of `Transact`?
+
+The bulk of the implementation is in [`Equinox/Flow.fs`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs)
+
+There are [sequence diagrams in Documentation MD](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#code-diagrams-for-equinoxeventstore--equinoxsqlstreamstore) but I'll summarize here:
+
+- As you suggest, `Transact` is definitely the API you want to be be using
+- The assumption in Equinox is that you _always_ want to do a version check - if you don't, you can't process idempotently, why incur the cost of an ordered append only store? (there is a lower `Sync` operation which does a blind write to the store in `Equinox.CosmosStore` which allows you to do a non-version-checked write in that context (its implemented and exposed as the stored procedure needs to handle the concept). For EventStoreDB, if you have such a special case, you can use its APIs directly)
+- The inner API with the `Sync` and `TrySync` is the 'store interface' which represents the actual processing needed to do a version-checked write (The `Sync` one does not handle retries and is only used for the last attempt, when there are no subsequent retries)
+- The main reason for the separation is that no ephemeral state is held by Equinox in anything like e.g. Unit Of Work during the course of a `decide` function being invoked - the `(token,state)` tuple represents all the things known at the point of loading, and the `Sync` can use anything it stashed in there when it has proposed events passed to it, as the contract involves the caller resupplying that context.
+- Another consideration is that its easy to introduce off by one errors when there's an expectedVersion in play, so encapsulating this is no bad thing (in addition to it being something that you don't want to be passing around in your domain logic)
+
+But why, you might ask? the API is designed such that the token can store any kind of state relevant to the `Sync` operation.
+
+a) for SqlStreamStore and EventStore, when writing rolling snapshots, we need to retain the index of the last Rolling Snapshot that was written, if we encountered it during loading (e.g. if we read V198-100 and there was a snapshot at at V101, then we need to write a new one iff the events we are writing would make event 101 be > batchSize events away, i.e. we need to always include a RollingSnapshot to maintain the "if you read the last page, it will include a rolling snapshot" guarantee)
+b) for CosmosDB, the `expectedVersion` can actually be an `expectedEtag` - this is how `AccessStrategy.RollingState` works - this allows one to update Unfolds without having to add an event every time just to trigger a change in the version
+
+(The second usage did not necessitate an interface change - i.e. the Token mechanism was introduced to handle the first case, and just happened to fit the second case)
+
+> Alternatively, I'm seeing in `proReactor` that there's a decide that does version checking. Is this recommended? [code](https://github.com/jet/dotnet-templates/blob/3329510601450ab77bcc40df7a407c5f0e3c8464/propulsion-reactor/TodoSummary.fs#L30-L52) 
+
+If you need to know the version in your actual handler, QueryEx and other such APIs alongside Transact expose it (e.g. if you want to include a version to accompany a directly rendered piece of data). (Note that doing this - including a version in a rendering of something should not be a goto strategy - i.e. having APIs that pass around expectedVersion is not a good idea in general)
+
+The typical case for using the version in the output is to be able to publish a versioned summary on a feed, so someone else can build a version-checking idempotent Ingester..... Which brings us to:
+
+For that particular reactor, a different thing is going on though: the input value is versioned, and we don't write if the value is in date e.g. if you reset the checkpoint on the projector, it can re-run all the work idempotently:
+
+a) version 3 of something is never temporarily overwritten with V2 and then V3
+
+b) no redundant writes take place (and no expensive RU costs are incurred in Cosmos)
+
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
 😲Please raise a question-Issue, and we'll be delighted to either answer directly, or incorporate the question and answer here
