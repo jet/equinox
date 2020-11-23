@@ -223,7 +223,7 @@ module Log =
         /// Summarizes a set of Responses for a given Read request
         | Query of Direction * responses: int * Measurement
         /// Individual read request in a Batch
-        /// Charges are rolled up into QuerySummary (so do not double count)
+        /// Charges are rolled up into Query metric (so do not double count)
         | QueryResponse of Direction * Measurement
 
         | SyncSuccess of Measurement
@@ -235,23 +235,23 @@ module Log =
         /// Bytes in Measurement is number of events deleted
         | Prune of responsesHandled : int * Measurement
         /// Handled response from listing of batches in a stream
-        /// Charges are rolled up into PruneSummary (so do not double count)
+        /// Charges are rolled up into the Prune metric (so do not double count)
         | PruneResponse of Measurement
         /// Deleted an individual Batch
         | Delete of Measurement
         /// Trimmed the Tip
         | Trim of Measurement
-    let prop name value (log : ILogger) = log.ForContext(name, value)
-    let propData name (events: #IEventData<byte[]> seq) (log : ILogger) =
+    let internal prop name value (log : ILogger) = log.ForContext(name, value)
+    let internal propData name (events: #IEventData<byte[]> seq) (log : ILogger) =
         let render = function null -> "null" | bytes -> System.Text.Encoding.UTF8.GetString bytes
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
-    let propEvents = propData "events"
-    let propDataUnfolds = Enum.Unfolds >> propData "unfolds"
-    let propStartPos (value : Position) log = prop "startPos" value.index log
-    let propStartEtag (value : Position) log = prop "startEtag" value.etag log
+    let internal propEvents = propData "events"
+    let internal propDataUnfolds = Enum.Unfolds >> propData "unfolds"
+    let internal propStartPos (value : Position) log = prop "startPos" value.index log
+    let internal propStartEtag (value : Position) log = prop "startEtag" value.etag log
 
-    let withLoggedRetries<'t> (retryPolicy: IRetryPolicy option) (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
+    let internal withLoggedRetries<'t> (retryPolicy: IRetryPolicy option) (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
         match retryPolicy with
         | None -> f log
         | Some retryPolicy ->
@@ -261,38 +261,38 @@ module Log =
             retryPolicy.Execute withLoggingContextWrapping
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
-    open Serilog.Events
-    let event (value : Metric) (log : ILogger) =
-        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
+    let internal event (value : Metric) (log : ILogger) =
+        let enrich (e : Serilog.Events.LogEvent) =
+            e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty("cosmosEvt", Serilog.Events.ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let internal (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
     let internal (|EventLen|) (x: #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes + metaBytes + 80
     let internal (|BatchLen|) = Seq.sumBy (|EventLen|)
-    let internal (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
-        | (:? ScalarValue as x) -> Some x.Value
+    let internal (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
+        | (:? Serilog.Events.ScalarValue as x) -> Some x.Value
         | _ -> None
-    let (|MetricEvent|_|) (logEvent : LogEvent) : Metric option =
+    let (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric option =
         match logEvent.Properties.TryGetValue("cosmosEvt") with
         | true, SerilogScalar (:? Metric as e) -> Some e
         | _ -> None
     [<RequireQualifiedAccess>]
-    type Operation = Tip | Query | Write | Resync | Conflict | Prune | Delete | Trim
+    type Operation = Tip | Tip404 | Tip302 | Query | Write | Resync | Conflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
-        | Metric.Tip s
-        | Metric.TipNotFound s
-        | Metric.TipNotModified s -> Op (Operation.Tip, s)
+        | Metric.Tip s                        -> Op (Operation.Tip, s)
+        | Metric.TipNotFound s                -> Op (Operation.Tip404, s)
+        | Metric.TipNotModified s             -> Op (Operation.Tip302, s)
 
-        | Metric.Query (_, _, s) -> Op (Operation.Query, s)
+        | Metric.Query (_, _, s)              -> Op (Operation.Query, s)
         | Metric.QueryResponse (direction, s) -> QueryRes (direction, s)
 
-        | Metric.SyncSuccess s -> Op (Operation.Write, s)
-        | Metric.SyncResync s -> Op (Operation.Resync, s)
-        | Metric.SyncConflict s -> Op (Operation.Conflict, s)
+        | Metric.SyncSuccess s                -> Op (Operation.Write, s)
+        | Metric.SyncResync s                 -> Op (Operation.Resync, s)
+        | Metric.SyncConflict s               -> Op (Operation.Conflict, s)
 
-        | Metric.Prune (_, s) -> Op (Operation.Prune, s)
-        | Metric.PruneResponse s -> PruneRes s
-        | Metric.Delete s -> Op (Operation.Delete, s)
-        | Metric.Trim s -> Op (Operation.Trim, s)
+        | Metric.Prune (_, s)                 -> Op (Operation.Prune, s)
+        | Metric.PruneResponse s              -> PruneRes s
+        | Metric.Delete s                     -> Op (Operation.Delete, s)
+        | Metric.Trim s                       -> Op (Operation.Trim, s)
 
     /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
     /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
@@ -332,13 +332,14 @@ module Log =
                     match logEvent with
                     | MetricEvent cm ->
                         match cm with
-                        | Op ((Operation.Tip | Operation.Query), RcMs m)  -> LogSink.Read.Ingest m
-                        | QueryRes (_direction,          _)       -> ()
+                        | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip302 | Operation.Query), RcMs m)  ->
+                                                                      LogSink.Read.Ingest m
+                        | QueryRes (_direction,          _)        -> ()
                         | Op (Operation.Write,            RcMs m)  -> LogSink.Write.Ingest m
                         | Op (Operation.Conflict,         RcMs m)  -> LogSink.Conflict.Ingest m
                         | Op (Operation.Resync,           RcMs m)  -> LogSink.Resync.Ingest m
                         | Op (Operation.Prune,            RcMs m)  -> LogSink.Prune.Ingest m
-                        | PruneRes (                     _)       -> ()
+                        | PruneRes (                     _)        -> ()
                         | Op (Operation.Delete,           RcMs m)  -> LogSink.Delete.Ingest m
                         | Op (Operation.Trim,             RcMs m)  -> LogSink.Trim.Ingest m
                     | _ -> ()
