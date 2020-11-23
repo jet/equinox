@@ -36,15 +36,15 @@ module EquinoxCosmosInterop =
             | Log.TipNotModified m -> "CosmosTip302", m, None, m.ru
             | Log.Query (Direction.Forward,c,m) -> "CosmosQueryF", m, Some c, m.ru
             | Log.Query (Direction.Backward,c,m) -> "CosmosQueryB", m, Some c, m.ru
-            | Log.Response (Direction.Forward,m) -> "CosmosResponseF", m, None, m.ru
-            | Log.Response (Direction.Backward,m) -> "CosmosResponseB", m, None, m.ru
+            | Log.QueryResponse (Direction.Forward,m) -> "CosmosResponseF", m, None, m.ru
+            | Log.QueryResponse (Direction.Backward,m) -> "CosmosResponseB", m, None, m.ru
             | Log.SyncSuccess m -> "CosmosSync200", m, None, m.ru
             | Log.SyncConflict m -> "CosmosSync409", m, None, m.ru
             | Log.SyncResync m -> "CosmosSyncResync", m, None, m.ru
+            | Log.Prune (events, m) -> "CosmosPrune", m, Some events, m.ru
             | Log.PruneResponse m -> "CosmosPruneResponse", m, None, m.ru
             | Log.Delete m -> "CosmosDelete", m, None, m.ru
             | Log.Trim m -> "CosmosTrim", m, None, m.ru
-            | Log.Prune (events, m) -> "CosmosPrune", m, Some events, m.ru
         {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; responses = batches
             interval = StopwatchInterval(metric.interval.StartTicks,metric.interval.EndTicks); ru = ru }
 
