@@ -59,47 +59,47 @@ module SerilogHelpers =
         | Append | Resync | Conflict
         | PruneResponse | Delete | Trim | Prune
     let (|EqxAction|) = function
-        | Event.Tip _ -> EqxAct.Tip
-        | Event.TipNotFound _ -> EqxAct.TipNotFound
-        | Event.TipNotModified _ -> EqxAct.TipNotModified
+        | Metric.Tip _ -> EqxAct.Tip
+        | Metric.TipNotFound _ -> EqxAct.TipNotFound
+        | Metric.TipNotModified _ -> EqxAct.TipNotModified
 
-        | Event.Query (Direction.Forward, _, _) -> EqxAct.QueryForward
-        | Event.Query (Direction.Backward, _, _) -> EqxAct.QueryBackward
-        | Event.QueryResponse (Direction.Forward, _) -> EqxAct.ResponseForward
-        | Event.QueryResponse (Direction.Backward, _) -> EqxAct.ResponseBackward
+        | Metric.Query (Direction.Forward, _, _) -> EqxAct.QueryForward
+        | Metric.Query (Direction.Backward, _, _) -> EqxAct.QueryBackward
+        | Metric.QueryResponse (Direction.Forward, _) -> EqxAct.ResponseForward
+        | Metric.QueryResponse (Direction.Backward, _) -> EqxAct.ResponseBackward
 
-        | Event.SyncSuccess _ -> EqxAct.Append
-        | Event.SyncResync _ -> EqxAct.Resync
-        | Event.SyncConflict _ -> EqxAct.Conflict
+        | Metric.SyncSuccess _ -> EqxAct.Append
+        | Metric.SyncResync _ -> EqxAct.Resync
+        | Metric.SyncConflict _ -> EqxAct.Conflict
 
-        | Event.Prune _ -> EqxAct.Prune
-        | Event.PruneResponse _ -> EqxAct.PruneResponse
-        | Event.Delete _ -> EqxAct.Delete
-        | Event.Trim _ -> EqxAct.Trim
+        | Metric.Prune _ -> EqxAct.Prune
+        | Metric.PruneResponse _ -> EqxAct.PruneResponse
+        | Metric.Delete _ -> EqxAct.Delete
+        | Metric.Trim _ -> EqxAct.Trim
     let (|Load|Write|Resync|Prune|Delete|Trim|Response|) = function
-        | Event.Tip s
-        | Event.TipNotFound s
-        | Event.TipNotModified s
+        | Metric.Tip s
+        | Metric.TipNotFound s
+        | Metric.TipNotModified s
 
-        | Event.Query (_, _, s) -> Load s
-        | Event.QueryResponse (_, s) -> Response s
+        | Metric.Query (_, _, s) -> Load s
+        | Metric.QueryResponse (_, s) -> Response s
 
-        | Event.SyncSuccess s
-        | Event.SyncConflict s -> Write s
-        | Event.SyncResync s -> Resync s
+        | Metric.SyncSuccess s
+        | Metric.SyncConflict s -> Write s
+        | Metric.SyncResync s -> Resync s
 
-        | Event.Prune (_, s) -> Prune s
-        | Event.PruneResponse s -> Response s
-        | Event.Delete s -> Delete s
-        | Event.Trim s -> Trim s
+        | Metric.Prune (_, s) -> Prune s
+        | Metric.PruneResponse s -> Response s
+        | Metric.Delete s -> Delete s
+        | Metric.Trim s -> Trim s
     let inline (|Rc|) ({ ru = ru }: Equinox.CosmosStore.Core.Log.Measurement) = ru
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|TotalRequestCharge|ResponseBreakdown|) = function
         | Load (Rc rc) | Write (Rc rc) | Resync (Rc rc) | Delete (Rc rc) | Trim (Rc rc) | Prune (Rc rc) as e -> TotalRequestCharge (e, rc)
         | Response _ -> ResponseBreakdown
-    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.CosmosStore.Core.Log.Event option =
+    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.CosmosStore.Core.Log.Metric option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Equinox.CosmosStore.Core.Log.Event as e) -> Some e
+            | SerilogScalar (:? Equinox.CosmosStore.Core.Log.Metric as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =

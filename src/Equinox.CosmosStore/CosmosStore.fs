@@ -212,7 +212,7 @@ module Log =
     [<NoEquality; NoComparison>]
     type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int; ru: float }
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type Event =
+    type Metric =
         /// Individual read request for the Tip
         | Tip of Measurement
         /// Individual read request for the Tip, not found
@@ -262,7 +262,7 @@ module Log =
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     open Serilog.Events
-    let event (value : Event) (log : ILogger) =
+    let event (value : Metric) (log : ILogger) =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("cosmosEvt", ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let internal (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
@@ -271,28 +271,28 @@ module Log =
     let internal (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
         | (:? ScalarValue as x) -> Some x.Value
         | _ -> None
-    let (|Metric|_|) (logEvent : LogEvent) : Event option =
+    let (|MetricEvent|_|) (logEvent : LogEvent) : Metric option =
         match logEvent.Properties.TryGetValue("cosmosEvt") with
-        | true, SerilogScalar (:? Event as e) -> Some e
+        | true, SerilogScalar (:? Metric as e) -> Some e
         | _ -> None
     [<RequireQualifiedAccess>]
     type Operation = Tip | Query | Write | Resync | Conflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
-        | Event.Tip s
-        | Event.TipNotFound s
-        | Event.TipNotModified s -> Op (Operation.Tip, s)
+        | Metric.Tip s
+        | Metric.TipNotFound s
+        | Metric.TipNotModified s -> Op (Operation.Tip, s)
 
-        | Event.Query (_, _, s) -> Op (Operation.Query, s)
-        | Event.QueryResponse (direction, s) -> QueryRes (direction, s)
+        | Metric.Query (_, _, s) -> Op (Operation.Query, s)
+        | Metric.QueryResponse (direction, s) -> QueryRes (direction, s)
 
-        | Event.SyncSuccess s -> Op (Operation.Write, s)
-        | Event.SyncResync s -> Op (Operation.Resync, s)
-        | Event.SyncConflict s -> Op (Operation.Conflict, s)
+        | Metric.SyncSuccess s -> Op (Operation.Write, s)
+        | Metric.SyncResync s -> Op (Operation.Resync, s)
+        | Metric.SyncConflict s -> Op (Operation.Conflict, s)
 
-        | Event.Prune (_, s) -> Op (Operation.Prune, s)
-        | Event.PruneResponse s -> PruneRes s
-        | Event.Delete s -> Op (Operation.Delete, s)
-        | Event.Trim s -> Op (Operation.Trim, s)
+        | Metric.Prune (_, s) -> Op (Operation.Prune, s)
+        | Metric.PruneResponse s -> PruneRes s
+        | Metric.Delete s -> Op (Operation.Delete, s)
+        | Metric.Trim s -> Op (Operation.Trim, s)
 
     /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
     /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
@@ -330,7 +330,7 @@ module Log =
             interface Serilog.Core.ILogEventSink with
                 member __.Emit logEvent =
                     match logEvent with
-                    | Metric cm ->
+                    | MetricEvent cm ->
                         match cm with
                         | Op ((Operation.Tip | Operation.Query), RcMs m)  -> LogSink.Read.Ingest m
                         | QueryRes (_direction,          _)       -> ()
@@ -526,12 +526,12 @@ module internal Sync =
                 | SyncExp.Any ->         Log.prop "expectedVersion" -1
             |> match result with
                 | Result.Written pos ->
-                    Log.prop "nextExpectedVersion" pos >> Log.event (Log.Event.SyncSuccess (mkMetric ru))
+                    Log.prop "nextExpectedVersion" pos >> Log.event (Log.Metric.SyncSuccess (mkMetric ru))
                 | Result.ConflictUnknown pos' ->
-                    Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Event.SyncConflict (mkMetric ru))
+                    Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Metric.SyncConflict (mkMetric ru))
                 | Result.Conflict (pos', xs) ->
                     (if verbose then Log.propData "conflicts" xs else id)
-                    >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Event.SyncResync (mkMetric ru))
+                    >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Metric.SyncResync (mkMetric ru))
         log.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
             "Sync", stream, count, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
         return result }
@@ -644,13 +644,13 @@ module internal Tip =
         let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
         | ReadResult.NotModified ->
-            (log 0 0 Log.Event.TipNotModified).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 302, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 302, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.NotFound ->
-            (log 0 0 Log.Event.TipNotFound).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.Found tip ->
             let log =
                 let (Log.BatchLen bytes), count = Enum.Unfolds tip.u, tip.u.Length
-                log bytes count Log.Event.Tip
+                log bytes count Log.Metric.Tip
             let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propDataUnfolds tip.u
             let log = match maybePos with Some p -> log |> Log.propStartPos p |> Log.propStartEtag p | None -> log
             let log = log |> Log.prop "_etag" tip._etag |> Log.prop "n" tip.n
@@ -712,7 +712,7 @@ module internal Query =
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
-        let log = let evt = Log.Event.QueryResponse (direction, reqMetric) in log |> Log.event evt
+        let log = let evt = Log.Metric.QueryResponse (direction, reqMetric) in log |> Log.event evt
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
         let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
         (log|> Log.prop "bytes" bytes
@@ -726,7 +726,7 @@ module internal Query =
     let private logQuery direction queryMaxItems streamName interval (responsesCount, events : ITimelineEvent<byte[]>[]) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
-        let evt = Log.Event.Query (direction, responsesCount, reqMetric)
+        let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
         (log |> Log.prop "bytes" bytes |> Log.prop "queryMaxItems" queryMaxItems |> Log.event evt).Information(
             "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms rc={ru}",
@@ -911,7 +911,7 @@ module Prune =
             let! t, res = container.DeleteItemAsync(id, PartitionKey stream, ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             let rc, ms = res.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = count; ru = rc }
-            let log = let evt = Log.Event.Delete reqMetric in log |> Log.event evt
+            let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {id} {ms}ms rc={ru}", "Delete", id, ms, rc)
             return rc
         }
@@ -927,7 +927,7 @@ module Prune =
             let! t, updateRes = container.ReplaceItemAsync(tip, tip.id, Nullable (PartitionKey stream), ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             let rc, ms = tipRu + updateRes.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = count; ru = rc }
-            let log = let evt = Log.Event.Trim reqMetric in log |> Log.event evt
+            let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {count} {ms}ms rc={ru}", "Trim", count, ms, rc)
             return rc
         }
@@ -940,7 +940,7 @@ module Prune =
             let batches, rc, ms = Array.ofSeq page, page.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
             let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
-            let log = let evt = Log.Event.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
+            let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
             log.Information("EqxCosmos {action:l} {batches} {ms}ms n={next} rc={ru}", "PruneResponse", batches.Length, ms, next, rc)
             batches, rc
         let! pt, outcomes =
@@ -990,7 +990,7 @@ module Prune =
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
         let reqMetric : Log.Measurement = { stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
-        let log = let evt = Log.Event.Prune (responses, reqMetric) in log |> Log.event evt
+        let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
                 "Prune", eventsDeleted, batches, lwm, (let e = pt.Elapsed in e.TotalMilliseconds), queryCharges, delCharges, trimCharges)
