@@ -27,24 +27,6 @@ module private Histograms =
             observeS (facet, op) (app, cat) s
             observeRu (facet, op) (app, cat) ru
 
-module private Counters =
-
-    let private mkCounter (cfg : Prometheus.CounterConfiguration) name desc =
-        let h = Prometheus.Metrics.CreateCounter(name, desc, cfg)
-        fun (facet : string, op : string, outcome : string) (app : string) (cat : string, c) -> h.WithLabels(facet, op, outcome, app, cat).Inc(c)
-    let labelNames = [| "facet"; "op"; "outcome"; "app"; "cat" |]
-    let config = Prometheus.CounterConfiguration(LabelNames = labelNames)
-    let total stat desc =
-        let name = Impl.baseName (stat + "_total")
-        let desc = Impl.baseDesc desc
-        mkCounter config name desc
-    let eventsAndBytesPair stat desc =
-        let observeE = total (stat + "_events") (desc + "Events")
-        let observeB = total (stat + "_bytes") (desc + "Bytes")
-        fun ctx app (cat, e, b) ->
-            observeE ctx app (cat, e)
-            match b with None -> () | Some b -> observeB ctx app (cat, b)
-
 module private Summaries =
 
     let labelNames = [| "facet"; "app" |]
@@ -63,6 +45,24 @@ module private Summaries =
         fun facet app (s, ru) ->
             observeS facet app s
             observeRu facet app ru
+
+module private Counters =
+
+    let private mkCounter (cfg : Prometheus.CounterConfiguration) name desc =
+        let h = Prometheus.Metrics.CreateCounter(name, desc, cfg)
+        fun (facet : string, op : string, outcome : string) (app : string) (cat : string, c) -> h.WithLabels(facet, op, outcome, app, cat).Inc(c)
+    let labelNames = [| "facet"; "op"; "outcome"; "app"; "cat" |]
+    let config = Prometheus.CounterConfiguration(LabelNames = labelNames)
+    let total stat desc =
+        let name = Impl.baseName (stat + "_total")
+        let desc = Impl.baseDesc desc
+        mkCounter config name desc
+    let eventsAndBytesPair stat desc =
+        let observeE = total (stat + "_events") (desc + "Events")
+        let observeB = total (stat + "_bytes") (desc + "Bytes")
+        fun ctx app (cat, e, b) ->
+            observeE ctx app (cat, e)
+            match b with None -> () | Some b -> observeB ctx app (cat, b)
 
 module private Stats =
 
@@ -101,10 +101,8 @@ open Equinox.CosmosStore.Core.Log
 
 type LogSink(app) =
     interface Serilog.Core.ILogEventSink with
-        member __.Emit logEvent =
-            match logEvent with
-            | MetricEvent cm ->
-                match cm with
+        member __.Emit logEvent = logEvent |> function
+            | MetricEvent cm -> cm |> function
                 | Op       (Operation.Tip,      m) -> Stats.observeTip  ("query",    "tip",           "ok", "200") app m
                 | Op       (Operation.Tip404,   m) -> Stats.observeTip  ("query",    "tip",           "ok", "404") app m
                 | Op       (Operation.Tip302,   m) -> Stats.observeTip  ("query",    "tip",           "ok", "302") app m
