@@ -1,5 +1,10 @@
 namespace Equinox.CosmosStore.Prometheus
 
+module private Impl =
+
+    let baseName stat = "equinox_" + stat
+    let baseDesc desc = "Equinox CosmosDB " + desc
+
 module private Histograms =
 
     let private mkHistogram (cfg : Prometheus.HistogramConfiguration) name desc =
@@ -15,8 +20,7 @@ module private Histograms =
         let ruCfg = Prometheus.HistogramConfiguration(Buckets = ruBuckets, LabelNames = labelNames)
         mkHistogram ruCfg
     let sAndRuPair stat desc =
-        let baseName = "equinox_" + stat
-        let baseDesc = "Equinox CosmosDB " + desc
+        let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = sHistogram (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = ruHistogram (baseName + "_ru") (baseDesc + " charge")
         fun (facet, op) app (cat, s, ru) ->
@@ -31,8 +35,8 @@ module private Counters =
     let labelNames = [| "facet"; "op"; "outcome"; "app"; "cat" |]
     let config = Prometheus.CounterConfiguration(LabelNames = labelNames)
     let total stat desc =
-        let name = sprintf "equinox_%s_total" stat
-        let desc = sprintf "Equinox CosmosDB %s" desc
+        let name = Impl.baseName (stat + "_total")
+        let desc = Impl.baseDesc desc
         mkCounter config name desc
     let eventsAndBytesPair stat desc =
         let observeE = total (stat + "_events") (desc + "Events")
@@ -53,8 +57,7 @@ module private Summaries =
         let objectives = [| qep 0.50 0.05; qep 0.95 0.01; qep 0.99 0.01 |]
         Prometheus.SummaryConfiguration(Objectives = objectives, LabelNames = labelNames, MaxAge = System.TimeSpan.FromMinutes 1.)
     let sAndRuPair stat desc =
-        let baseName = "equinox_" + stat
-        let baseDesc = "Equinox CosmosDB " + desc
+        let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = mkSummary config (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = mkSummary config (baseName + "_ru") (baseDesc + " charge")
         fun facet app (s, ru) ->
@@ -63,12 +66,12 @@ module private Summaries =
 
 module private Stats =
 
-    let opHistogram = Histograms.sAndRuPair "op" "Operation"
-    let roundtripHistogram = Histograms.sAndRuPair "roundtrip" "Fragment"
-    let payloadCounters = Counters.eventsAndBytesPair "payload" "Payload, "
-    let cacheCounter = Counters.total "cache" "Cache"
-    let opSummary = Summaries.sAndRuPair "op_summary" "Operation Summary"
-    let roundtripSummaries = Summaries.sAndRuPair "roundtrip_summary" "Fragment Summary"
+    let opHistogram =         Histograms.sAndRuPair       "op"                "Operation"
+    let roundtripHistogram =  Histograms.sAndRuPair       "roundtrip"         "Fragment"
+    let opSummary =           Summaries.sAndRuPair        "op_summary"        "Operation Summary"
+    let roundtripSummary =    Summaries.sAndRuPair        "roundtrip_summary" "Fragment Summary"
+    let payloadCounters =     Counters.eventsAndBytesPair "payload"           "Payload, "
+    let cacheCounter =        Counters.total              "cache"             "Cache"
 
     let observeLatencyAndCharge (facet, op) app (cat, s, ru) =
         opHistogram (facet, op) app (cat, s, ru)
@@ -80,7 +83,6 @@ module private Stats =
     let cat (streamName : string) =
         let cat, _id = FsCodec.StreamName.splitCategoryAndId (FSharp.UMX.UMX.tag streamName)
         cat
-
     let inline (|CatSRu|) ({ interval = i; ru = ru } : Equinox.CosmosStore.Core.Log.Measurement as m) =
         let s = let e = i.Elapsed in e.TotalSeconds
         cat m.stream, s, ru
@@ -93,7 +95,7 @@ module private Stats =
         cacheCounter (facet, op, cacheOutcome) app (cat, 1.)
     let observeRes (facet, _op as stat) app (CatSRu (cat, s, ru)) =
         roundtripHistogram stat app (cat, s, ru)
-        roundtripSummaries facet app (s, ru)
+        roundtripSummary facet app (s, ru)
 
 open Equinox.CosmosStore.Core.Log
 
