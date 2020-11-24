@@ -25,8 +25,6 @@ module EquinoxEsInterop =
         { action = action; stream = metric.stream; interval = metric.interval; bytes = metric.bytes; count = metric.count; batches = batches }
 module EquinoxCosmosInterop =
     open Equinox.CosmosStore.Core
-    let inline private (|RcMs|) ({ interval = i; ru = ru }: Log.Measurement) =
-        ru, let e = i.Elapsed in int64 e.TotalMilliseconds
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" __.action __.stream __.action __.interval.Elapsed __.ru

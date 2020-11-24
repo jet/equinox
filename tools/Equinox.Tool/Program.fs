@@ -292,7 +292,7 @@ module LoadTest =
 
         match storeConfig with
         | Some (Storage.StorageConfig.Cosmos _) ->
-            Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.dump log
+            Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Es _) ->
             Equinox.EventStore.Log.InternalMetrics.dump log
         | Some (Storage.StorageConfig.Sql _) ->

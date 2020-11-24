@@ -223,7 +223,7 @@ module Log =
         /// Summarizes a set of Responses for a given Read request
         | Query of Direction * responses: int * Measurement
         /// Individual read request in a Batch
-        /// Charges are rolled up into Query metric (so do not double count)
+        /// Charges are rolled up into Query Metric (so do not double count)
         | QueryResponse of Direction * Measurement
 
         | SyncSuccess of Measurement
@@ -235,7 +235,7 @@ module Log =
         /// Bytes in Measurement is number of events deleted
         | Prune of responsesHandled : int * Measurement
         /// Handled response from listing of batches in a stream
-        /// Charges are rolled up into the Prune metric (so do not double count)
+        /// Charges are rolled up into the Prune Metric (so do not double count)
         | PruneResponse of Measurement
         /// Deleted an individual Batch
         | Delete of Measurement
@@ -346,35 +346,35 @@ module Log =
                             | Op (Operation.Trim,             RcMs m)  -> LogSink.Trim.Ingest m
                         | _ -> ()
 
-            /// Relies on feeding of metrics from Log through to Stats.LogSink
-            /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
-            let dump (log: Serilog.ILogger) =
-                let stats =
-                  [ "Read", LogSink.Read
-                    "Write", LogSink.Write
-                    "Resync", LogSink.Resync
-                    "Conflict", LogSink.Conflict
-                    "Prune", LogSink.Prune
-                    "Delete", LogSink.Delete
-                    "Trim", LogSink.Trim ]
-                let mutable rows, totalCount, totalRc, totalMs = 0, 0L, 0., 0L
-                let logActivity name count rc lat =
-                    log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
-                        name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
-                for name, stat in stats do
-                    if stat.count <> 0L then
-                        let ru = float stat.rux100 / 100.
-                        totalCount <- totalCount + stat.count
-                        totalRc <- totalRc + ru
-                        totalMs <- totalMs + stat.ms
-                        logActivity name stat.count ru stat.ms
-                        rows <- rows + 1
-                // Yes, there's a minor race here between the use of the values and the reset
-                let duration = LogSink.Restart()
-                if rows > 1 then logActivity "TOTAL" totalCount totalRc totalMs
-                let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
-                let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
-                for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d)
+        /// Relies on feeding of metrics from Log through to Stats.LogSink
+        /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
+        let dump (log: Serilog.ILogger) =
+            let stats =
+              [ "Read", Stats.LogSink.Read
+                "Write", Stats.LogSink.Write
+                "Resync", Stats.LogSink.Resync
+                "Conflict", Stats.LogSink.Conflict
+                "Prune", Stats.LogSink.Prune
+                "Delete", Stats.LogSink.Delete
+                "Trim", Stats.LogSink.Trim ]
+            let mutable rows, totalCount, totalRc, totalMs = 0, 0L, 0., 0L
+            let logActivity name count rc lat =
+                log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
+                    name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
+            for name, stat in stats do
+                if stat.count <> 0L then
+                    let ru = float stat.rux100 / 100.
+                    totalCount <- totalCount + stat.count
+                    totalRc <- totalRc + ru
+                    totalMs <- totalMs + stat.ms
+                    logActivity name stat.count ru stat.ms
+                    rows <- rows + 1
+            // Yes, there's a minor race here between the use of the values and the reset
+            let duration = Stats.LogSink.Restart()
+            if rows > 1 then logActivity "TOTAL" totalCount totalRc totalMs
+            let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+            let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
+            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d)
 
 [<AutoOpen>]
 module private MicrosoftAzureCosmosWrappers =
