@@ -298,81 +298,83 @@ module Log =
     /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
     module InternalMetrics =
 
-        type internal Counter =
-             { mutable rux100: int64; mutable count: int64; mutable ms: int64 }
-             static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
-             member __.Ingest (ru, ms) =
-                 System.Threading.Interlocked.Increment(&__.count) |> ignore
-                 System.Threading.Interlocked.Add(&__.rux100, int64 (ru*100.)) |> ignore
-                 System.Threading.Interlocked.Add(&__.ms, ms) |> ignore
-        let inline private (|RcMs|) ({ interval = i; ru = ru }: Measurement) =
-            ru, let e = i.Elapsed in int64 e.TotalMilliseconds
-        type LogSink() =
-            static let epoch = System.Diagnostics.Stopwatch.StartNew()
-            static member val internal Read = Counter.Create() with get, set
-            static member val internal Write = Counter.Create() with get, set
-            static member val internal Resync = Counter.Create() with get, set
-            static member val internal Conflict = Counter.Create() with get, set
-            static member val internal Prune = Counter.Create() with get, set
-            static member val internal Delete = Counter.Create() with get, set
-            static member val internal Trim = Counter.Create() with get, set
-            static member Restart() =
-                LogSink.Read <- Counter.Create()
-                LogSink.Write <- Counter.Create()
-                LogSink.Resync <- Counter.Create()
-                LogSink.Conflict <- Counter.Create()
-                LogSink.Prune <- Counter.Create()
-                LogSink.Delete <- Counter.Create()
-                LogSink.Trim <- Counter.Create()
-                let span = epoch.Elapsed
-                epoch.Restart()
-                span
-            interface Serilog.Core.ILogEventSink with
-                member __.Emit logEvent =
-                    match logEvent with
-                    | MetricEvent cm ->
-                        match cm with
-                        | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip302 | Operation.Query), RcMs m)  ->
-                                                                      LogSink.Read.Ingest m
-                        | QueryRes (_direction,          _)        -> ()
-                        | Op (Operation.Write,            RcMs m)  -> LogSink.Write.Ingest m
-                        | Op (Operation.Conflict,         RcMs m)  -> LogSink.Conflict.Ingest m
-                        | Op (Operation.Resync,           RcMs m)  -> LogSink.Resync.Ingest m
-                        | Op (Operation.Prune,            RcMs m)  -> LogSink.Prune.Ingest m
-                        | PruneRes (                     _)        -> ()
-                        | Op (Operation.Delete,           RcMs m)  -> LogSink.Delete.Ingest m
-                        | Op (Operation.Trim,             RcMs m)  -> LogSink.Trim.Ingest m
-                    | _ -> ()
+        module Stats =
 
-        /// Relies on feeding of metrics from Log through to Stats.LogSink
-        /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
-        let dump (log: Serilog.ILogger) =
-            let stats =
-              [ "Read", LogSink.Read
-                "Write", LogSink.Write
-                "Resync", LogSink.Resync
-                "Conflict", LogSink.Conflict
-                "Prune", LogSink.Prune
-                "Delete", LogSink.Delete
-                "Trim", LogSink.Trim ]
-            let mutable rows, totalCount, totalRc, totalMs = 0, 0L, 0., 0L
-            let logActivity name count rc lat =
-                log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
-                    name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
-            for name, stat in stats do
-                if stat.count <> 0L then
-                    let ru = float stat.rux100 / 100.
-                    totalCount <- totalCount + stat.count
-                    totalRc <- totalRc + ru
-                    totalMs <- totalMs + stat.ms
-                    logActivity name stat.count ru stat.ms
-                    rows <- rows + 1
-            // Yes, there's a minor race here between the use of the values and the reset
-            let duration = LogSink.Restart()
-            if rows > 1 then logActivity "TOTAL" totalCount totalRc totalMs
-            let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
-            let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
-            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d)
+            type internal Counter =
+                 { mutable rux100: int64; mutable count: int64; mutable ms: int64 }
+                 static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
+                 member __.Ingest (ru, ms) =
+                     System.Threading.Interlocked.Increment(&__.count) |> ignore
+                     System.Threading.Interlocked.Add(&__.rux100, int64 (ru*100.)) |> ignore
+                     System.Threading.Interlocked.Add(&__.ms, ms) |> ignore
+            let inline private (|RcMs|) ({ interval = i; ru = ru }: Measurement) =
+                ru, let e = i.Elapsed in int64 e.TotalMilliseconds
+            type LogSink() =
+                static let epoch = System.Diagnostics.Stopwatch.StartNew()
+                static member val internal Read = Counter.Create() with get, set
+                static member val internal Write = Counter.Create() with get, set
+                static member val internal Resync = Counter.Create() with get, set
+                static member val internal Conflict = Counter.Create() with get, set
+                static member val internal Prune = Counter.Create() with get, set
+                static member val internal Delete = Counter.Create() with get, set
+                static member val internal Trim = Counter.Create() with get, set
+                static member Restart() =
+                    LogSink.Read <- Counter.Create()
+                    LogSink.Write <- Counter.Create()
+                    LogSink.Resync <- Counter.Create()
+                    LogSink.Conflict <- Counter.Create()
+                    LogSink.Prune <- Counter.Create()
+                    LogSink.Delete <- Counter.Create()
+                    LogSink.Trim <- Counter.Create()
+                    let span = epoch.Elapsed
+                    epoch.Restart()
+                    span
+                interface Serilog.Core.ILogEventSink with
+                    member __.Emit logEvent =
+                        match logEvent with
+                        | MetricEvent cm ->
+                            match cm with
+                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip302 | Operation.Query), RcMs m)  ->
+                                                                          LogSink.Read.Ingest m
+                            | QueryRes (_direction,          _)        -> ()
+                            | Op (Operation.Write,            RcMs m)  -> LogSink.Write.Ingest m
+                            | Op (Operation.Conflict,         RcMs m)  -> LogSink.Conflict.Ingest m
+                            | Op (Operation.Resync,           RcMs m)  -> LogSink.Resync.Ingest m
+                            | Op (Operation.Prune,            RcMs m)  -> LogSink.Prune.Ingest m
+                            | PruneRes (                     _)        -> ()
+                            | Op (Operation.Delete,           RcMs m)  -> LogSink.Delete.Ingest m
+                            | Op (Operation.Trim,             RcMs m)  -> LogSink.Trim.Ingest m
+                        | _ -> ()
+
+            /// Relies on feeding of metrics from Log through to Stats.LogSink
+            /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
+            let dump (log: Serilog.ILogger) =
+                let stats =
+                  [ "Read", LogSink.Read
+                    "Write", LogSink.Write
+                    "Resync", LogSink.Resync
+                    "Conflict", LogSink.Conflict
+                    "Prune", LogSink.Prune
+                    "Delete", LogSink.Delete
+                    "Trim", LogSink.Trim ]
+                let mutable rows, totalCount, totalRc, totalMs = 0, 0L, 0., 0L
+                let logActivity name count rc lat =
+                    log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
+                        name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
+                for name, stat in stats do
+                    if stat.count <> 0L then
+                        let ru = float stat.rux100 / 100.
+                        totalCount <- totalCount + stat.count
+                        totalRc <- totalRc + ru
+                        totalMs <- totalMs + stat.ms
+                        logActivity name stat.count ru stat.ms
+                        rows <- rows + 1
+                // Yes, there's a minor race here between the use of the values and the reset
+                let duration = LogSink.Restart()
+                if rows > 1 then logActivity "TOTAL" totalCount totalRc totalMs
+                let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+                let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
+                for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d)
 
 [<AutoOpen>]
 module private MicrosoftAzureCosmosWrappers =
