@@ -210,7 +210,9 @@ type IRetryPolicy = abstract member Execute: (int -> Async<'T>) -> Async<'T>
 module Log =
 
     [<NoEquality; NoComparison>]
-    type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int; ru: float }
+    type Measurement =
+       {   database: string; container: string; stream: string
+           interval: StopwatchInterval; bytes: int; count: int; ru: float }
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Metric =
         /// Individual read request for the Tip
@@ -519,7 +521,7 @@ module internal Sync =
         let! t, (ru, result) = run (container,stream) (maxEventsInTip, maxStringifyLen) (exp, req) |> Stopwatch.Time
         let (Log.BatchLen bytes), count = Enum.Events req, req.e.Length
         let log =
-            let inline mkMetric ru : Log.Measurement = { stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
+            let inline mkMetric ru : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
             let inline propConflict log = log |> Log.prop "conflict" true |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in req.e -> x.c }))
             let verbose = log.IsEnabled Serilog.Events.LogEventLevel.Debug
             (if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log)
@@ -644,7 +646,7 @@ module internal Tip =
     let private loggedGet (get : Container * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
         let! t, (ru, res : ReadResult<Tip>) = get (container,stream) maybePos |> Stopwatch.Time
-        let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
+        let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
         | ReadResult.NotModified ->
             (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {res} {ms}ms rc={ru}", "Tip", 302, (let e = t.Elapsed in e.TotalMilliseconds), ru)
@@ -701,7 +703,7 @@ module internal Query =
 
     // Unrolls the Batches in a response
     // NOTE when reading backwards, the events are emitted in reverse Index order to suit the takeWhile consumption
-    let private mapPage direction (streamName: string) (minIndex, maxIndex) (maxRequests: int option)
+    let private mapPage direction (container : Container, streamName: string) (minIndex, maxIndex) (maxRequests: int option)
             (log: ILogger) i t (res : FeedResponse<Batch>)
         : ITimelineEvent<byte[]>[] * Position option * float =
         let log = log |> Log.prop "batchIndex" i
@@ -714,7 +716,7 @@ module internal Query =
             |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
         let (Log.BatchLen bytes), count = events, events.Length
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
+        let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
         let log = let evt = Log.Metric.QueryResponse (direction, reqMetric) in log |> Log.event evt
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEvents events
         let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
@@ -726,9 +728,9 @@ module internal Query =
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, ru
 
-    let private logQuery direction queryMaxItems streamName interval (responsesCount, events : ITimelineEvent<byte[]>[]) n (ru: float) (log : ILogger) =
+    let private logQuery direction queryMaxItems (container : Container, streamName) interval (responsesCount, events : ITimelineEvent<byte[]>[]) n (ru: float) (log : ILogger) =
         let (Log.BatchLen bytes), count = events, events.Length
-        let reqMetric : Log.Measurement = { stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
+        let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
         (log |> Log.prop "bytes" bytes |> Log.prop "queryMaxItems" queryMaxItems |> Log.event evt).Information(
@@ -793,13 +795,13 @@ module internal Query =
         let readLog = log |> Log.prop "direction" direction
         let batches : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> =
             mkQuery readLog (container,stream) includeTip maxItems (direction, minIndex, maxIndex)
-            |> feedIteratorMapTi (mapPage direction stream (minIndex, maxIndex) maxRequests readLog)
+            |> feedIteratorMapTi (mapPage direction (container, stream) (minIndex, maxIndex) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws = Array.map fst events
         let decoded = if direction = Direction.Forward then Array.choose snd events else Seq.choose snd events |> Seq.rev |> Array.ofSeq
         let minMax = (None, raws) ||> Array.fold (fun acc x -> let i = x.Index in Some (match acc with None -> i, i | Some (n, x) -> min n i, max x i))
         let version = match minMax with Some (_, max) -> max + 1L | None -> 0L
-        log |> logQuery direction maxItems stream t (responseCount,raws) version ru
+        log |> logQuery direction maxItems (container, stream) t (responseCount,raws) version ru
         return minMax |> Option.map (fun (i,m) -> { found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }) }
 
     let walkLazy<'event> (log : ILogger) (container,stream) maxItems maxRequests
@@ -808,7 +810,7 @@ module internal Query =
         : AsyncSeq<'event[]> = asyncSeq {
         let query = mkQuery log (container,stream) true maxItems (direction, minIndex, maxIndex)
 
-        let readPage = mapPage direction stream (minIndex, maxIndex) maxRequests
+        let readPage = mapPage direction (container, stream) (minIndex, maxIndex) maxRequests
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
         let query = query |> feedIteratorMapTi (readPage readLog)
@@ -846,7 +848,7 @@ module internal Query =
         finally
             let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             let t = StopwatchInterval(startTicks, endTicks)
-            log |> logQuery direction maxItems stream t (i, allEvents.ToArray()) -1L ru }
+            log |> logQuery direction maxItems (container, stream) t (i, allEvents.ToArray()) -1L ru }
 
     /// Manages coalescing of spans of events obtained from various sources:
     /// 1) Tip Data and/or Conflicting events
@@ -913,7 +915,7 @@ module Prune =
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = Nullable false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
             let! t, res = container.DeleteItemAsync(id, PartitionKey stream, ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             let rc, ms = res.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
-            let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = count; ru = rc }
+            let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {id} {ms}ms rc={ru}", "Delete", id, ms, rc)
             return rc
@@ -929,7 +931,7 @@ module Prune =
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = Nullable false, IfMatchEtag = tip._etag)
             let! t, updateRes = container.ReplaceItemAsync(tip, tip.id, Nullable (PartitionKey stream), ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             let rc, ms = tipRu + updateRes.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
-            let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = count; ru = rc }
+            let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {count} {ms}ms rc={ru}", "Trim", count, ms, rc)
             return rc
@@ -942,7 +944,7 @@ module Prune =
         let mapPage i (t : StopwatchInterval) (page : FeedResponse<BatchIndices>) =
             let batches, rc, ms = Array.ofSeq page, page.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
-            let reqMetric : Log.Measurement = { stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
+            let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
             log.Information("EqxCosmos {action:l} {batches} {ms}ms n={next} rc={ru}", "PruneResponse", batches.Length, ms, next, rc)
             batches, rc
@@ -992,7 +994,7 @@ module Prune =
             batches <- batches + bCount
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
-        let reqMetric : Log.Measurement = { stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
+        let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",

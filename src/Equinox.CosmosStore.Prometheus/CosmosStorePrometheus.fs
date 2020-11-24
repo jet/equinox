@@ -7,10 +7,11 @@ module private Impl =
 
 module private Histograms =
 
+    let labelNames = [| "facet"; "op"; "app"; "db"; "con"; "cat" |]
     let private mkHistogram (cfg : Prometheus.HistogramConfiguration) name desc =
         let h = Prometheus.Metrics.CreateHistogram(name, desc, cfg)
-        fun (facet : string, op : string) (app : string, cat : string) s -> h.WithLabels(facet, op, app, cat).Observe(s)
-    let labelNames = [| "facet"; "op"; "app"; "cat" |]
+        fun (facet : string, op : string) app (db, con, cat : string) s ->
+            h.WithLabels(facet, op, app, db, con, cat).Observe(s)
     let private sHistogram =
         let sBuckets = [| 0.0005; 0.001; 0.002; 0.004; 0.008; 0.016; 0.5; 1.; 2.; 4.; 8. |]
         let sCfg = Prometheus.HistogramConfiguration(Buckets = sBuckets, LabelNames = labelNames)
@@ -23,17 +24,16 @@ module private Histograms =
         let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = sHistogram (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = ruHistogram (baseName + "_ru") (baseDesc + " charge")
-        fun (facet, op) app (cat, s, ru) ->
-            observeS (facet, op) (app, cat) s
-            observeRu (facet, op) (app, cat) ru
+        fun (facet, op) app (db, con, cat, s, ru) ->
+            observeS (facet, op) app (db, con, cat) s
+            observeRu (facet, op) app (db, con, cat) ru
 
 module private Summaries =
 
-    let labelNames = [| "facet"; "app" |]
-
+    let labelNames = [| "facet"; "app"; "db"; "con" |]
     let private mkSummary (cfg : Prometheus.SummaryConfiguration) name desc  =
         let s = Prometheus.Metrics.CreateSummary(name, desc, cfg)
-        fun (facet : string) (app : string) o -> s.WithLabels(facet, app).Observe(o)
+        fun (facet : string) app (db, con) o -> s.WithLabels(facet, app, db, con).Observe(o)
     let config =
         let inline qep q e = Prometheus.QuantileEpsilonPair(q, e)
         let objectives = [| qep 0.50 0.05; qep 0.95 0.01; qep 0.99 0.01 |]
@@ -42,16 +42,17 @@ module private Summaries =
         let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = mkSummary config (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = mkSummary config (baseName + "_ru") (baseDesc + " charge")
-        fun facet app (s, ru) ->
-            observeS facet app s
-            observeRu facet app ru
+        fun facet app (db, con, s, ru) ->
+            observeS facet app (db, con) s
+            observeRu facet app (db, con) ru
 
 module private Counters =
 
+    let labelNames = [| "facet"; "op"; "outcome"; "app"; "db"; "con"; "cat" |]
     let private mkCounter (cfg : Prometheus.CounterConfiguration) name desc =
         let h = Prometheus.Metrics.CreateCounter(name, desc, cfg)
-        fun (facet : string, op : string, outcome : string) (app : string) (cat : string, c) -> h.WithLabels(facet, op, outcome, app, cat).Inc(c)
-    let labelNames = [| "facet"; "op"; "outcome"; "app"; "cat" |]
+        fun (facet : string, op : string, outcome : string) app (db, con, cat, c) ->
+            h.WithLabels(facet, op, outcome, app, db, con, cat).Inc(c)
     let config = Prometheus.CounterConfiguration(LabelNames = labelNames)
     let total stat desc =
         let name = Impl.baseName (stat + "_total")
@@ -60,9 +61,9 @@ module private Counters =
     let eventsAndBytesPair stat desc =
         let observeE = total (stat + "_events") (desc + "Events")
         let observeB = total (stat + "_bytes") (desc + "Bytes")
-        fun ctx app (cat, e, b) ->
-            observeE ctx app (cat, e)
-            match b with None -> () | Some b -> observeB ctx app (cat, b)
+        fun ctx app (db, con, cat, e, b) ->
+            observeE ctx app (db, con, cat, e)
+            match b with None -> () | Some b -> observeB ctx app (db, con, cat, b)
 
 module private Stats =
 
@@ -73,29 +74,29 @@ module private Stats =
     let payloadCounters =     Counters.eventsAndBytesPair "payload"           "Payload, "
     let cacheCounter =        Counters.total              "cache"             "Cache"
 
-    let observeLatencyAndCharge (facet, op) app (cat, s, ru) =
-        opHistogram (facet, op) app (cat, s, ru)
-        opSummary facet app (s, ru)
-    let observeWithEventCounts (facet, op, outcome) app (cat, s, ru, count, bytes) =
-        observeLatencyAndCharge (facet, op) app (cat, s, ru)
-        payloadCounters (facet, op, outcome) app (cat, float count, if bytes = -1 then None else Some (float bytes))
+    let observeLatencyAndCharge (facet, op) app (db, con, cat, s, ru) =
+        opHistogram (facet, op) app (db, con, cat, s, ru)
+        opSummary facet app (db, con, s, ru)
+    let observeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, count, bytes) =
+        observeLatencyAndCharge (facet, op) app (db, con, cat, s, ru)
+        payloadCounters (facet, op, outcome) app (db, con, cat, float count, if bytes = -1 then None else Some (float bytes))
 
     let cat (streamName : string) =
         let cat, _id = FsCodec.StreamName.splitCategoryAndId (FSharp.UMX.UMX.tag streamName)
         cat
     let inline (|CatSRu|) ({ interval = i; ru = ru } : Equinox.CosmosStore.Core.Log.Measurement as m) =
         let s = let e = i.Elapsed in e.TotalSeconds
-        cat m.stream, s, ru
-    let observe_ stat app (CatSRu (cat, s, ru)) =
-        observeLatencyAndCharge stat app (cat, s, ru)
-    let observe (facet, op, outcome) app (CatSRu (cat, s, ru) as m) =
-        observeWithEventCounts (facet, op, outcome) app (cat, s, ru, m.count, m.bytes)
-    let observeTip (facet, op, outcome, cacheOutcome) app (CatSRu (cat, s, ru) as m) =
-        observeWithEventCounts (facet, op, outcome) app (cat, s, ru, m.count, m.bytes)
-        cacheCounter (facet, op, cacheOutcome) app (cat, 1.)
-    let observeRes (facet, _op as stat) app (CatSRu (cat, s, ru)) =
-        roundtripHistogram stat app (cat, s, ru)
-        roundtripSummary facet app (s, ru)
+        m.database, m.container, cat m.stream, s, ru
+    let observe_ stat app (CatSRu (db, con, cat, s, ru)) =
+        observeLatencyAndCharge stat app (db, con, cat, s, ru)
+    let observe (facet, op, outcome) app (CatSRu (db, con, cat, s, ru) as m) =
+        observeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, m.count, m.bytes)
+    let observeTip (facet, op, outcome, cacheOutcome) app (CatSRu (db, con, cat, s, ru) as m) =
+        observeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, m.count, m.bytes)
+        cacheCounter (facet, op, cacheOutcome) app (db, con, cat, 1.)
+    let observeRes (facet, _op as stat) app (CatSRu (db, con, cat, s, ru)) =
+        roundtripHistogram stat app (db, con, cat, s, ru)
+        roundtripSummary facet app (db, con, s, ru)
 
 open Equinox.CosmosStore.Core.Log
 
