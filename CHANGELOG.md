@@ -30,6 +30,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
     - Replaced `BatchingPolicy`, `RetryPolicy` with `TipOptions`, `QueryOptions` to better align with Cosmos SDK V4 [#253](https://github.com/jet/equinox/pull/253)
     - Added support for accumulating events in Tip [#251](https://github.com/jet/equinox/pull/251) see also [#110](https://github.com/jet/equinox/pull/110)
     - Added support for pruning events in Tip [#258](https://github.com/jet/equinox/pull/258) see also [#233](https://github.com/jet/equinox/pull/233)
+    - Added Prometheus integration package [#266](https://github.com/jet/equinox/pull/266)
 - target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
 - Retarget `netcoreapp2.1` apps to `netcoreapp3.1` with `SystemTextJson`
 - Retarget Todobackend to `aspnetcore` v `3.1`
