@@ -51,7 +51,7 @@ module private Counters =
     let labelNames = [| "facet"; "op"; "outcome"; "app"; "db"; "con"; "cat" |]
     let private mkCounter (cfg : Prometheus.CounterConfiguration) name desc =
         let h = Prometheus.Metrics.CreateCounter(name, desc, cfg)
-        fun (facet : string, op : string, outcome : string) app (db, con, cat, c) ->
+        fun (facet : string, op : string, outcome : string) app (db, con, cat) c ->
             h.WithLabels(facet, op, outcome, app, db, con, cat).Inc(c)
     let config = Prometheus.CounterConfiguration(LabelNames = labelNames)
     let total stat desc =
@@ -62,8 +62,8 @@ module private Counters =
         let observeE = total (stat + "_events") (desc + "Events")
         let observeB = total (stat + "_bytes") (desc + "Bytes")
         fun ctx app (db, con, cat, e, b) ->
-            observeE ctx app (db, con, cat, e)
-            match b with None -> () | Some b -> observeB ctx app (db, con, cat, b)
+            observeE ctx app (db, con, cat) e
+            match b with None -> () | Some b -> observeB ctx app (db, con, cat) b
 
 module private Stats =
 
@@ -77,26 +77,24 @@ module private Stats =
     let observeLatencyAndCharge (facet, op) app (db, con, cat, s, ru) =
         opHistogram (facet, op) app (db, con, cat, s, ru)
         opSummary facet app (db, con, s, ru)
-    let observeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, count, bytes) =
+    let observeLatencyAndChargeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, count, bytes) =
         observeLatencyAndCharge (facet, op) app (db, con, cat, s, ru)
         payloadCounters (facet, op, outcome) app (db, con, cat, float count, if bytes = -1 then None else Some (float bytes))
 
-    let cat (streamName : string) =
-        let cat, _id = FsCodec.StreamName.splitCategoryAndId (FSharp.UMX.UMX.tag streamName)
-        cat
     let inline (|CatSRu|) ({ interval = i; ru = ru } : Equinox.CosmosStore.Core.Log.Measurement as m) =
+        let cat, _id = FsCodec.StreamName.splitCategoryAndId (FSharp.UMX.UMX.tag m.stream)
         let s = let e = i.Elapsed in e.TotalSeconds
-        m.database, m.container, cat m.stream, s, ru
-    let observe_ stat app (CatSRu (db, con, cat, s, ru)) =
-        observeLatencyAndCharge stat app (db, con, cat, s, ru)
-    let observe (facet, op, outcome) app (CatSRu (db, con, cat, s, ru) as m) =
-        observeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, m.count, m.bytes)
-    let observeTip (facet, op, outcome, cacheOutcome) app (CatSRu (db, con, cat, s, ru) as m) =
-        observeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, m.count, m.bytes)
-        cacheCounter (facet, op, cacheOutcome) app (db, con, cat, 1.)
+        m.database, m.container, cat, s, ru
     let observeRes (facet, _op as stat) app (CatSRu (db, con, cat, s, ru)) =
         roundtripHistogram stat app (db, con, cat, s, ru)
         roundtripSummary facet app (db, con, s, ru)
+    let observe_ stat app (CatSRu (db, con, cat, s, ru)) =
+        observeLatencyAndCharge stat app (db, con, cat, s, ru)
+    let observe (facet, op, outcome) app (CatSRu (db, con, cat, s, ru) as m) =
+        observeLatencyAndChargeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, m.count, m.bytes)
+    let observeTip (facet, op, outcome, cacheOutcome) app (CatSRu (db, con, cat, s, ru) as m) =
+        observeLatencyAndChargeWithEventCounts (facet, op, outcome) app (db, con, cat, s, ru, m.count, m.bytes)
+        cacheCounter (facet, op, cacheOutcome) app (db, con, cat) 1.
 
 open Equinox.CosmosStore.Core.Log
 
