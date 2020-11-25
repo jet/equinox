@@ -1,6 +1,6 @@
 namespace Equinox.CosmosStore.Prometheus
 
-module private Impl =
+module private Prefixes =
 
     let baseName stat = "equinox_" + stat
     let baseDesc desc = "Equinox CosmosDB " + desc
@@ -12,6 +12,7 @@ module private Histograms =
         let h = Prometheus.Metrics.CreateHistogram(name, desc, cfg)
         fun (facet : string, op : string) app (db, con, cat : string) s ->
             h.WithLabels(facet, op, app, db, con, cat).Observe(s)
+    // Given we also have summary metrics with equivalent labels, we focus the bucketing on LAN latencies
     let private sHistogram =
         let sBuckets = [| 0.0005; 0.001; 0.002; 0.004; 0.008; 0.016; 0.5; 1.; 2.; 4.; 8. |]
         let sCfg = Prometheus.HistogramConfiguration(Buckets = sBuckets, LabelNames = labelNames)
@@ -21,7 +22,7 @@ module private Histograms =
         let ruCfg = Prometheus.HistogramConfiguration(Buckets = ruBuckets, LabelNames = labelNames)
         mkHistogram ruCfg
     let sAndRuPair stat desc =
-        let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
+        let baseName, baseDesc = Prefixes.baseName stat, Prefixes.baseDesc desc
         let observeS = sHistogram (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = ruHistogram (baseName + "_ru") (baseDesc + " charge")
         fun (facet, op) app (db, con, cat, s, ru) ->
@@ -39,7 +40,7 @@ module private Summaries =
         let objectives = [| qep 0.50 0.05; qep 0.95 0.01; qep 0.99 0.01 |]
         Prometheus.SummaryConfiguration(Objectives = objectives, LabelNames = labelNames, MaxAge = System.TimeSpan.FromMinutes 1.)
     let sAndRuPair stat desc =
-        let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
+        let baseName, baseDesc = Prefixes.baseName stat, Prefixes.baseDesc desc
         let observeS = mkSummary config (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = mkSummary config (baseName + "_ru") (baseDesc + " charge")
         fun facet app (db, con, s, ru) ->
@@ -55,8 +56,8 @@ module private Counters =
             h.WithLabels(facet, op, outcome, app, db, con, cat).Inc(c)
     let config = Prometheus.CounterConfiguration(LabelNames = labelNames)
     let total stat desc =
-        let name = Impl.baseName (stat + "_total")
-        let desc = Impl.baseDesc desc
+        let name = Prefixes.baseName (stat + "_total")
+        let desc = Prefixes.baseDesc desc
         mkCounter config name desc
     let eventsAndBytesPair stat desc =
         let observeE = total (stat + "_events") (desc + "Events")
