@@ -261,7 +261,7 @@ module Log =
                 let log = if count = 1 then log else log |> prop contextLabel count
                 f log
             retryPolicy.Execute withLoggingContextWrapping
-    /// Attach a property to the log context to hold the metrics
+    /// Include a LogEvent property bearing metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let internal event (value : Metric) (log : ILogger) =
         let enrich (e : Serilog.Events.LogEvent) =

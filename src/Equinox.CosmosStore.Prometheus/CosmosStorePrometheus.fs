@@ -1,6 +1,6 @@
 namespace Equinox.CosmosStore.Prometheus
 
-module private Prefixes =
+module private Impl =
 
     let baseName stat = "equinox_" + stat
     let baseDesc desc = "Equinox CosmosDB " + desc
@@ -22,11 +22,11 @@ module private Histograms =
         let ruCfg = Prometheus.HistogramConfiguration(Buckets = ruBuckets, LabelNames = labelNames)
         mkHistogram ruCfg
     let sAndRuPair stat desc =
-        let baseName, baseDesc = Prefixes.baseName stat, Prefixes.baseDesc desc
+        let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = sHistogram (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = ruHistogram (baseName + "_ru") (baseDesc + " charge")
-        fun (facet, op) app (db, con, cat, s, ru) ->
-            observeS (facet, op) app (db, con, cat) s
+        fun (facet, op) app (db, con, cat, s : System.TimeSpan, ru) ->
+            observeS (facet, op) app (db, con, cat) s.TotalSeconds
             observeRu (facet, op) app (db, con, cat) ru
 
 module private Summaries =
@@ -40,11 +40,11 @@ module private Summaries =
         let objectives = [| qep 0.50 0.05; qep 0.95 0.01; qep 0.99 0.01 |]
         Prometheus.SummaryConfiguration(Objectives = objectives, LabelNames = labelNames, MaxAge = System.TimeSpan.FromMinutes 1.)
     let sAndRuPair stat desc =
-        let baseName, baseDesc = Prefixes.baseName stat, Prefixes.baseDesc desc
+        let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = mkSummary config (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = mkSummary config (baseName + "_ru") (baseDesc + " charge")
-        fun facet app (db, con, s, ru) ->
-            observeS facet app (db, con) s
+        fun facet app (db, con, s : System.TimeSpan, ru) ->
+            observeS facet app (db, con) s.TotalSeconds
             observeRu facet app (db, con) ru
 
 module private Counters =
@@ -56,8 +56,8 @@ module private Counters =
             h.WithLabels(facet, op, outcome, app, db, con, cat).Inc(c)
     let config = Prometheus.CounterConfiguration(LabelNames = labelNames)
     let total stat desc =
-        let name = Prefixes.baseName (stat + "_total")
-        let desc = Prefixes.baseDesc desc
+        let name = Impl.baseName (stat + "_total")
+        let desc = Impl.baseDesc desc
         mkCounter config name desc
     let eventsAndBytesPair stat desc =
         let observeE = total (stat + "_events") (desc + "Events")
@@ -84,8 +84,7 @@ module private Stats =
 
     let inline (|CatSRu|) ({ interval = i; ru = ru } : Equinox.CosmosStore.Core.Log.Measurement as m) =
         let cat, _id = FsCodec.StreamName.splitCategoryAndId (FSharp.UMX.UMX.tag m.stream)
-        let s = let e = i.Elapsed in e.TotalSeconds
-        m.database, m.container, cat, s, ru
+        m.database, m.container, cat, i.Elapsed, ru
     let observeRes (facet, _op as stat) app (CatSRu (db, con, cat, s, ru)) =
         roundtripHistogram stat app (db, con, cat, s, ru)
         roundtripSummary facet app (db, con, s, ru)
