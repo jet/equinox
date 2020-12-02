@@ -94,8 +94,6 @@ let store = Equinox.MemoryStore.VolatileStore()
 let _ = store.Committed.Subscribe(fun (s, xs) -> logEvents s xs)
 let codec = FsCodec.Box.Codec.Create()
 let resolve = Equinox.MemoryStore.Resolver(store, codec, fold, initial).Resolve
-open Serilog
-let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let service = Service(log, resolve, maxAttempts=3)
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously

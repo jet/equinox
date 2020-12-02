@@ -284,7 +284,7 @@ module Log =
         | true, SerilogScalar (:? Metric as e) -> Some e
         | _ -> None
     [<RequireQualifiedAccess>]
-    type Operation = Tip | Tip404 | Tip302 | Query | Write | Resync | Conflict | Prune | Delete | Trim
+    type Operation = Tip | Tip404 | Tip302 | Query | Write | Resync | Conflict | Prune | Delete
     let (|Op|QueryRes|PruneRes|) = function
         | Metric.Tip s                        -> Op (Operation.Tip, s)
         | Metric.TipNotFound s                -> Op (Operation.Tip404, s)
@@ -545,12 +545,12 @@ function sync(req, expIndex, expEtag) {
                 | Exp.Any ->         Log.prop "expectedVersion" -1
             |> match result with
                 | Result.Written pos ->
-                    Log.prop "nextExpectedVersion" pos >> Log.event (Log.SyncSuccess (mkMetric ru))
+                    Log.prop "nextExpectedVersion" pos >> Log.event (Log.Metric.SyncSuccess (mkMetric ru))
                 | Result.ConflictUnknown pos' ->
-                    Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.SyncConflict (mkMetric ru))
+                    Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Metric.SyncConflict (mkMetric ru))
                 | Result.Conflict (pos', xs) ->
                     (if verbose then Log.propData "conflicts" xs else id)
-                    >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.SyncResync (mkMetric ru))
+                    >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Metric.SyncResync (mkMetric ru))
         log.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
             "Sync", stream, count, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
         return result }

@@ -113,5 +113,4 @@ type LogSink(app) =
                 | Op       (Operation.Prune,    m) -> Stats.observe_    ("prune",    "pruneQuery")                 app m
                 | PruneRes (                    m) -> Stats.observeRes  ("prune",    "pruneQueryPage")             app m
                 | Op       (Operation.Delete,   m) -> Stats.observe     ("prune",    "delete",        "ok")        app m
-                | Op       (Operation.Trim,     m) -> Stats.observe     ("prune",    "trim",          "ok")        app m
             | _ -> ()
