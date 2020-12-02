@@ -59,42 +59,45 @@ module SerilogHelpers =
         | Append | Resync | Conflict
         | PruneResponse | Delete | Prune
     let (|EqxAction|) = function
-        | Event.Tip _ -> EqxAct.Tip
-        | Event.TipNotFound _ -> EqxAct.TipNotFound
-        | Event.TipNotModified _ -> EqxAct.TipNotModified
-        | Event.Response (Direction.Forward,_) -> EqxAct.ResponseForward
-        | Event.Response (Direction.Backward,_) -> EqxAct.ResponseBackward
-        | Event.Query (Direction.Forward,_,_) -> EqxAct.QueryForward
-        | Event.Query (Direction.Backward,_,_) -> EqxAct.QueryBackward
-        | Event.SyncSuccess _ -> EqxAct.Append
-        | Event.SyncResync _ -> EqxAct.Resync
-        | Event.SyncConflict _ -> EqxAct.Conflict
-        | Event.PruneResponse _ -> EqxAct.PruneResponse
-        | Event.Delete _ -> EqxAct.Delete
-        | Event.Prune _ -> EqxAct.Prune
-    let inline (|Stats|) ({ ru = ru }: Equinox.Cosmos.Store.Log.Measurement) = ru
-    let (|CosmosReadRc|CosmosWriteRc|CosmosResyncRc|CosmosResponseRc|CosmosDeleteRc|CosmosPruneRc|) = function
-        | Event.Tip (Stats s)
-        | Event.TipNotFound (Stats s)
-        | Event.TipNotModified (Stats s)
-        // slices are rolled up into batches so be sure not to double-count
-        | Event.PruneResponse (Stats s)
-        | Event.Response (_,Stats s) -> CosmosResponseRc s
-        | Event.Query (_,_, (Stats s)) -> CosmosReadRc s
-        | Event.SyncSuccess (Stats s)
-        | Event.SyncConflict (Stats s) -> CosmosWriteRc s
-        | Event.SyncResync (Stats s) -> CosmosResyncRc s
-        | Event.Delete (Stats s) -> CosmosDeleteRc s
-        | Event.Prune (_, (Stats s)) -> CosmosPruneRc s
+        | Metric.Tip _ -> EqxAct.Tip
+        | Metric.TipNotFound _ -> EqxAct.TipNotFound
+        | Metric.TipNotModified _ -> EqxAct.TipNotModified
+
+        | Metric.Query (Direction.Forward, _, _) -> EqxAct.QueryForward
+        | Metric.Query (Direction.Backward, _, _) -> EqxAct.QueryBackward
+        | Metric.QueryResponse (Direction.Forward, _) -> EqxAct.ResponseForward
+        | Metric.QueryResponse (Direction.Backward, _) -> EqxAct.ResponseBackward
+
+        | Metric.SyncSuccess _ -> EqxAct.Append
+        | Metric.SyncResync _ -> EqxAct.Resync
+        | Metric.SyncConflict _ -> EqxAct.Conflict
+
+        | Metric.Prune _ -> EqxAct.Prune
+        | Metric.PruneResponse _ -> EqxAct.PruneResponse
+        | Metric.Delete _ -> EqxAct.Delete
+    let (|Load|Write|Resync|Prune|Delete|Response|) = function
+        | Metric.Tip s
+        | Metric.TipNotFound s
+        | Metric.TipNotModified s
+
+        | Metric.Query (_, _, s) -> Load s
+        | Metric.QueryResponse (_, s) -> Response s
+
+        | Metric.SyncSuccess s
+        | Metric.SyncConflict s -> Write s
+        | Metric.SyncResync s -> Resync s
+
+        | Metric.Prune (_, s) -> Prune s
+        | Metric.PruneResponse s -> Response s
+        | Metric.Delete s -> Delete s
+    let inline (|Rc|) ({ ru = ru }: Equinox.Cosmos.Store.Log.Measurement) = ru
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
-    let (|CosmosRequestCharge|EquinoxChargeRollup|) = function
-        | CosmosResponseRc _ ->
-            EquinoxChargeRollup
-        | CosmosReadRc rc | CosmosWriteRc rc | CosmosResyncRc rc | CosmosDeleteRc rc | CosmosPruneRc rc as e ->
-            CosmosRequestCharge (e,rc)
-    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Store.Log.Event option =
+    let (|TotalRequestCharge|ResponseBreakdown|) = function
+        | Load (Rc rc) | Write (Rc rc) | Resync (Rc rc) | Delete (Rc rc) | Prune (Rc rc) as e -> TotalRequestCharge (e, rc)
+        | Response _ -> ResponseBreakdown
+    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.Cosmos.Store.Log.Metric option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Equinox.Cosmos.Store.Log.Event as e) -> Some e
+            | SerilogScalar (:? Equinox.Cosmos.Store.Log.Metric as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =
@@ -113,7 +116,7 @@ module SerilogHelpers =
         member __.Clear () = captured.Clear()
         member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
         member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
-        member __.RequestCharges = __.ChooseCalls (function EqxEvent (CosmosRequestCharge e) -> Some e | _ -> None)
+        member __.RequestCharges = __.ChooseCalls (function EqxEvent (TotalRequestCharge e) -> Some e | _ -> None)
 
 type TestsWithLogCapture(testOutputHelper) =
     let log, capture = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
@@ -124,6 +127,7 @@ type TestsWithLogCapture(testOutputHelper) =
         let capture = LogCaptureBuffer()
         let logger =
             Serilog.LoggerConfiguration()
+                .MinimumLevel.Debug()
                 .WriteTo.Seq("http://localhost:5341")
                 .WriteTo.Sink(testOutput)
                 .WriteTo.Sink(capture)
