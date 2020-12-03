@@ -45,7 +45,16 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
-- `MemoryStore`: Serialize `Committed` events to guarantee consumption in event `Index` order re [#265](https://github.com/jet/equinox/issues/265) [#269](https://github.com/jet/equinox/pull/269)
+<a name="2.4.0"></a>
+## [2.4.0] - 2020-12-03
+
+### Added
+
+- `Cosmos.Prometheus`: Prometheus integration package as `master` [#266](https://github.com/jet/equinox/pull/266) [#267](https://github.com/jet/equinox/pull/267)
+
+### Fixed
+
+- `MemoryStore`: Serialize `Committed` events to guarantee consumption in event `Index` order re [#265](https://github.com/jet/equinox/issues/265) [#269](https://github.com/jet/equinox/pull/269) :pray: [@fnipo](https://github.com/fnipo)
 - `Cosmos`: Fix defaulting for `compressUnfolds` in C# [#261](https://github.com/jet/equinox/pull/261)
 
 <a name="2.3.0"></a>
@@ -54,6 +63,10 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `CachingStrategy.FixedTimeSpan`: Support for fixed caching periods [#255](https://github.com/jet/equinox/pull/255)
+
+### Changed
+
+- `Cosmos`: Finalize `Prune` API to align with `master` [#258](https://github.com/jet/equinox/pull/258)
 
 <a name="2.3.0-rc2"></a>
 ## [2.3.0-rc2] - 2020-10-02
@@ -468,7 +481,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.3.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.4.0...HEAD
+[2.4.0]: https://github.com/jet/equinox/compare/2.3.0...2.4.0
 [2.3.0]: https://github.com/jet/equinox/compare/2.3.0-rc2...2.3.0
 [2.3.0-rc2]: https://github.com/jet/equinox/compare/2.3.0-rc1...2.3.0-rc2
 [2.3.0-rc1]: https://github.com/jet/equinox/compare/2.2.0...2.3.0-rc1
