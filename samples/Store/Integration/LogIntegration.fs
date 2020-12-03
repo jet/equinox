@@ -28,23 +28,23 @@ module EquinoxCosmosInterop =
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" __.action __.stream __.action __.interval.Elapsed __.ru
-    let flatten (evt : Log.Event) : FlatMetric =
+    let flatten (evt : Log.Metric) : FlatMetric =
         let action, metric, batches, ru =
             match evt with
-            | Log.Tip m -> "CosmosTip", m, None, m.ru
-            | Log.TipNotFound m -> "CosmosTip404", m, None, m.ru
-            | Log.TipNotModified m -> "CosmosTip302", m, None, m.ru
-            | Log.Query (Direction.Forward,c,m) -> "CosmosQueryF", m, Some c, m.ru
-            | Log.Query (Direction.Backward,c,m) -> "CosmosQueryB", m, Some c, m.ru
-            | Log.Response (Direction.Forward,m) -> "CosmosResponseF", m, None, m.ru
-            | Log.Response (Direction.Backward,m) -> "CosmosResponseB", m, None, m.ru
-            | Log.SyncSuccess m -> "CosmosSync200", m, None, m.ru
-            | Log.SyncConflict m -> "CosmosSync409", m, None, m.ru
-            | Log.SyncResync m -> "CosmosSyncResync", m, None, m.ru
-            | Log.PruneResponse m -> "CosmosPruneResponse", m, None, m.ru
-            | Log.Delete m -> "CosmosDelete", m, None, m.ru
-            | Log.Trim m -> "CosmosTrim", m, None, m.ru
-            | Log.Prune (events, m) -> "CosmosPrune", m, Some events, m.ru
+            | Log.Metric.Tip m -> "CosmosTip", m, None, m.ru
+            | Log.Metric.TipNotFound m -> "CosmosTip404", m, None, m.ru
+            | Log.Metric.TipNotModified m -> "CosmosTip302", m, None, m.ru
+            | Log.Metric.Query (Direction.Forward,c,m) -> "CosmosQueryF", m, Some c, m.ru
+            | Log.Metric.Query (Direction.Backward,c,m) -> "CosmosQueryB", m, Some c, m.ru
+            | Log.Metric.QueryResponse (Direction.Forward,m) -> "CosmosResponseF", m, None, m.ru
+            | Log.Metric.QueryResponse (Direction.Backward,m) -> "CosmosResponseB", m, None, m.ru
+            | Log.Metric.SyncSuccess m -> "CosmosSync200", m, None, m.ru
+            | Log.Metric.SyncConflict m -> "CosmosSync409", m, None, m.ru
+            | Log.Metric.SyncResync m -> "CosmosSyncResync", m, None, m.ru
+            | Log.Metric.Prune (events, m) -> "CosmosPrune", m, Some events, m.ru
+            | Log.Metric.PruneResponse m -> "CosmosPruneResponse", m, None, m.ru
+            | Log.Metric.Delete m -> "CosmosDelete", m, None, m.ru
+            | Log.Metric.Trim m -> "CosmosTrim", m, None, m.ru
         {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; responses = batches
             interval = StopwatchInterval(metric.interval.StartTicks,metric.interval.EndTicks); ru = ru }
 
@@ -67,7 +67,7 @@ type SerilogMetricsExtractor(emit : string -> unit) =
         logEvent.Properties
         |> Seq.tryPick (function
             | KeyValue (k, SerilogScalar (:? Equinox.EventStore.Log.Event as m)) -> Some <| Choice1Of3 (k,m)
-            | KeyValue (k, SerilogScalar (:? Equinox.CosmosStore.Core.Log.Event as m)) -> Some <| Choice2Of3 (k,m)
+            | KeyValue (k, SerilogScalar (:? Equinox.CosmosStore.Core.Log.Metric as m)) -> Some <| Choice2Of3 (k,m)
             | _ -> None)
         |> Option.defaultValue (Choice3Of3 ())
     let handleLogEvent logEvent =

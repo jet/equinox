@@ -88,6 +88,8 @@ ProjectSection(SolutionItems) = preProject
 	diagrams\CosmosCode.puml = diagrams\CosmosCode.puml
 EndProjectSection
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.CosmosStore.Prometheus", "src\Equinox.CosmosStore.Prometheus\Equinox.CosmosStore.Prometheus.fsproj", "{3107BBC1-2BCB-4750-AED0-42B1F4CD1909}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -190,6 +192,10 @@ Global
 		{3021659A-5CA4-4E06-AF00-2457ED3F105B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3021659A-5CA4-4E06-AF00-2457ED3F105B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3021659A-5CA4-4E06-AF00-2457ED3F105B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3107BBC1-2BCB-4750-AED0-42B1F4CD1909}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3107BBC1-2BCB-4750-AED0-42B1F4CD1909}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3107BBC1-2BCB-4750-AED0-42B1F4CD1909}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3107BBC1-2BCB-4750-AED0-42B1F4CD1909}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
