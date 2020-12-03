@@ -3,11 +3,12 @@
 /// 2. Illustrates a minimal implementation of the Storage interface interconnects for the purpose of writing Store connectors
 namespace Equinox.MemoryStore
 
+open System
 open Equinox
 open Equinox.Core
 open System.Runtime.InteropServices
 
-/// Equivalent to GetEventStore's in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
+/// Equivalent to EventStoreDB's in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
 exception private WrongVersionException of streamName: string * expected: int * value: obj
 
 /// Internal result used to reflect the outcome of syncing with the entry in the inner ConcurrentDictionary
@@ -20,8 +21,16 @@ type ConcurrentArraySyncResult<'t> = Written of 't | Conflict of 't
 
 /// Maintains a dictionary of ITimelineEvent<'Format>[] per stream-name, allowing one to vary the encoding used to match that of a given concrete store, or optimize test run performance
 type VolatileStore<'Format>() =
-    let streams = System.Collections.Concurrent.ConcurrentDictionary<string,FsCodec.ITimelineEvent<'Format>[]>()
+
+    let streams = System.Collections.Concurrent.ConcurrentDictionary<string, FsCodec.ITimelineEvent<'Format>[]>()
     let committed = Event<_>()
+    // Where TrySync attempts overlap on the same stream, there's a race to raise the Committed event for each 'commit' resulting from a successful Sync
+    // If we don't serialize the publishing of the events, its possible for handlers to observe the Events out of order
+    // Here we neuter that effect - the BatchingGate can end up with commits submitted out of order, but we serialize the raising of the events per stream
+    let publishCommitted (commits : (FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[])[]) = async {
+        for streamName, events in commits |> Seq.groupBy fst do
+            committed.Trigger(streamName, events |> Seq.collect snd |> Seq.sortBy (fun x -> x.Index) |> Seq.toArray) }
+    let publish = AsyncBatchingGate(publishCommitted, TimeSpan.FromMilliseconds 2.)
 
     [<CLIEvent>]
     member __.Committed : IEvent<FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[]> = committed.Publish
@@ -33,20 +42,20 @@ type VolatileStore<'Format>() =
     member __.TrySync
         (   streamName, trySyncValue : FsCodec.ITimelineEvent<'Format>[] -> ConcurrentDictionarySyncResult<FsCodec.ITimelineEvent<'Format>[]>,
             events: FsCodec.ITimelineEvent<'Format>[])
-        : ConcurrentArraySyncResult<FsCodec.ITimelineEvent<'Format>[]> =
+        : ConcurrentArraySyncResult<FsCodec.ITimelineEvent<'Format>[]> = async {
         let seedStream _streamName = events
         let updateValue streamName (currentValue : FsCodec.ITimelineEvent<'Format>[]) =
             match trySyncValue currentValue with
             | ConcurrentDictionarySyncResult.Conflict expectedVersion -> raise <| WrongVersionException (streamName, expectedVersion, box currentValue)
             | ConcurrentDictionarySyncResult.Written value -> value
         try let res = streams.AddOrUpdate(streamName, seedStream, updateValue) |> Written
-            committed.Trigger((FsCodec.StreamName.parse streamName, events)) // raise here, once, as updateValue can conceptually be invoked multiple times
-            res
-        with WrongVersionException(_, _, conflictingValue) -> unbox conflictingValue |> Conflict
+            do! publish.Execute((FsCodec.StreamName.parse streamName, events)) // we publish the event here, once, as updateValue can conceptually be invoked multiple times
+            return res
+        with WrongVersionException(_, _, conflictingValue) -> return unbox conflictingValue |> Conflict }
 
 type Token = { streamVersion: int; streamName: string }
 
-/// Internal implementation detail of MemoryStreamStore
+/// Internal implementation detail of MemoryStore
 module private Token =
 
     let private streamTokenOfIndex streamName (streamVersion : int) : StreamToken =
