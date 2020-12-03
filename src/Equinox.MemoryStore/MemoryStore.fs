@@ -44,18 +44,18 @@ type VolatileStore<'Format>() =
     member __.TrySync
         (   streamName, trySyncValue : FsCodec.ITimelineEvent<'Format>[] -> ConcurrentDictionarySyncResult<FsCodec.ITimelineEvent<'Format>[]>,
             events: FsCodec.ITimelineEvent<'Format>[])
-        : ConcurrentArraySyncResult<FsCodec.ITimelineEvent<'Format>[]> = async {
+        : Async<ConcurrentArraySyncResult<FsCodec.ITimelineEvent<'Format>[]>> = async {
         let seedStream _streamName = events
         let updateValue streamName (currentValue : FsCodec.ITimelineEvent<'Format>[]) =
             match trySyncValue currentValue with
             | ConcurrentDictionarySyncResult.Conflict expectedVersion -> raise <| WrongVersionException (streamName, expectedVersion, box currentValue)
             | ConcurrentDictionarySyncResult.Written value -> value
-        try let res = streams.AddOrUpdate(streamName, seedStream, updateValue) |> Written
+        try let res = streams.AddOrUpdate(streamName, seedStream, updateValue)
             // we publish the event here, once, as `updateValue` can be invoked multiple times
             do! publishCommit.Execute((FsCodec.StreamName.parse streamName, events))
-            return res
+            return Written res
         with WrongVersionException(_, _, conflictingValue) ->
-            return unbox conflictingValue |> Conflict }
+            return Conflict (unbox conflictingValue) }
 
 type Token = { streamVersion: int; streamName: string }
 
@@ -90,14 +90,15 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
             let trySyncValue currentValue =
                 if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue encoded |> Array.ofSeq)
-            match store.TrySync(token.streamName, trySyncValue, encoded) with
+            match! store.TrySync(token.streamName, trySyncValue, encoded) with
+            | ConcurrentArraySyncResult.Written _ ->
+                return SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events
             | ConcurrentArraySyncResult.Conflict conflictingEvents ->
                 let resync = async {
                     let version = Token.tokenOfArray token.streamName conflictingEvents
                     let successorEvents = conflictingEvents |> Seq.skip (token.streamVersion + 1) |> List.ofSeq
                     return version, fold state (successorEvents |> Seq.choose codec.TryDecode) }
-                return SyncResult.Conflict resync
-            | ConcurrentArraySyncResult.Written _ -> return SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events }
+                return SyncResult.Conflict resync }
 
 type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
     let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
