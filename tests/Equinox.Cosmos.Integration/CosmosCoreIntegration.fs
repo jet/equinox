@@ -256,7 +256,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 0L expected res
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         let queryRoundTripsAndItemCounts = function
-            | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Forward, responses, { count = c })) -> Some (responses,c)
+            | EqxEvent (Equinox.Cosmos.Store.Log.Metric.Query (Equinox.Cosmos.Store.Direction.Forward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         // validate that, because we stopped after 1 item, we only needed one trip (which contained 4 events)
         [1,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
@@ -322,7 +322,7 @@ type Tests(testOutputHelper) =
         test <@ [EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
         // validate that, despite only requesting max 1 item, we only needed one trip, bearing 5 items (from which one item was omitted)
         let queryRoundTripsAndItemCounts = function
-            | EqxEvent (Equinox.Cosmos.Store.Log.Event.Query (Equinox.Cosmos.Store.Direction.Backward, responses, { count = c })) -> Some (responses,c)
+            | EqxEvent (Equinox.Cosmos.Store.Log.Metric.Query (Equinox.Cosmos.Store.Direction.Backward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         [1,5] =! capture.ChooseCalls queryRoundTripsAndItemCounts
         verifyRequestChargesMax 4 // 3.24 // WAS 3 // 2.98

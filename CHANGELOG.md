@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- Prometheus integration package as `master` [#266](https://github.com/jet/equinox/pull/266) [#267](https://github.com/jet/equinox/pull/267)
+
 ### Changed
 ### Removed
 ### Fixed
