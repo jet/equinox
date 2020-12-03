@@ -77,16 +77,15 @@ module private Token =
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
-    let (|Decode|) = Array.choose codec.TryDecode
     interface ICategory<'event, 'state, string, 'context> with
         member __.Load(_log, streamName, _opt) = async {
             match store.TryLoad streamName with
             | None -> return Token.ofEmpty streamName initial
-            | Some (Decode events) -> return Token.ofEventArray streamName fold initial events }
+            | Some events -> return Token.ofEventArray streamName fold initial (events |> Array.choose codec.TryDecode) }
         member __.TrySync(_log, Token.Unpack token, state, events : 'event list, context : 'context option) = async {
             let inline map i (e : FsCodec.IEventData<'Format>) =
                 FsCodec.Core.TimelineEvent.Create(int64 i, e.EventType, e.Data, e.Meta, e.EventId, e.CorrelationId, e.CausationId, e.Timestamp)
-            let encoded : FsCodec.ITimelineEvent<_>[] = events |> Seq.mapi (fun i e -> map (token.streamVersion+i+1) (codec.Encode(context,e))) |> Array.ofSeq
+            let encoded = events |> Seq.mapi (fun i e -> map (token.streamVersion + i + 1) (codec.Encode(context, e))) |> Array.ofSeq
             let trySyncValue currentValue =
                 if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue encoded |> Array.ofSeq)
@@ -103,11 +102,12 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
 type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
     let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
     let resolveStream streamName context = Stream.create category streamName None context
+
     member __.Resolve(streamName : FsCodec.StreamName, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
         match FsCodec.StreamName.toString streamName, option with
-        | sn, (None|Some AllowStale) -> resolveStream sn context
+        | sn, (None | Some AllowStale) -> resolveStream sn context
         | sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
     member __.FromMemento(Token.Unpack stream as streamToken, state, ?context) =
-        Stream.ofMemento (streamToken,state) (resolveStream stream.streamName context)
+        Stream.ofMemento (streamToken, state) (resolveStream stream.streamName context)
