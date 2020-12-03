@@ -3,7 +3,6 @@
 /// 2. Illustrates a minimal implementation of the Storage interface interconnects for the purpose of writing Store connectors
 namespace Equinox.MemoryStore
 
-open System
 open Equinox
 open Equinox.Core
 open System.Runtime.InteropServices
@@ -23,16 +22,19 @@ type ConcurrentArraySyncResult<'t> = Written of 't | Conflict of 't
 type VolatileStore<'Format>() =
 
     let streams = System.Collections.Concurrent.ConcurrentDictionary<string, FsCodec.ITimelineEvent<'Format>[]>()
-    let committed = Event<_>()
+
     // Where TrySync attempts overlap on the same stream, there's a race to raise the Committed event for each 'commit' resulting from a successful Sync
     // If we don't serialize the publishing of the events, its possible for handlers to observe the Events out of order
+    let committed = Event<_>()
     // Here we neuter that effect - the BatchingGate can end up with commits submitted out of order, but we serialize the raising of the events per stream
-    let publishCommitted (commits : (FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[])[]) = async {
+    let publishBatches (commits : (FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[])[]) = async {
         for streamName, events in commits |> Seq.groupBy fst do
             committed.Trigger(streamName, events |> Seq.collect snd |> Seq.sortBy (fun x -> x.Index) |> Seq.toArray) }
-    let publish = AsyncBatchingGate(publishCommitted, TimeSpan.FromMilliseconds 2.)
+    let publishCommit = AsyncBatchingGate(publishBatches, System.TimeSpan.FromMilliseconds 2.)
 
     [<CLIEvent>]
+    /// Notifies of a batch of events being committed to a given Stream. Guarantees no out of order and/or overlapping raising of the event<br/>
+    /// NOTE in some cases, two or more overlapping commits can be coalesced into a single <c>Committed</c> event
     member __.Committed : IEvent<FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[]> = committed.Publish
 
     /// Loads state from a given stream
@@ -49,9 +51,11 @@ type VolatileStore<'Format>() =
             | ConcurrentDictionarySyncResult.Conflict expectedVersion -> raise <| WrongVersionException (streamName, expectedVersion, box currentValue)
             | ConcurrentDictionarySyncResult.Written value -> value
         try let res = streams.AddOrUpdate(streamName, seedStream, updateValue) |> Written
-            do! publish.Execute((FsCodec.StreamName.parse streamName, events)) // we publish the event here, once, as updateValue can conceptually be invoked multiple times
+            // we publish the event here, once, as `updateValue` can be invoked multiple times
+            do! publishCommit.Execute((FsCodec.StreamName.parse streamName, events))
             return res
-        with WrongVersionException(_, _, conflictingValue) -> return unbox conflictingValue |> Conflict }
+        with WrongVersionException(_, _, conflictingValue) ->
+            return unbox conflictingValue |> Conflict }
 
 type Token = { streamVersion: int; streamName: string }
 
