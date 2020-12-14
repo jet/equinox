@@ -12,7 +12,6 @@
 
     <PackageId>Equinox.Tool</PackageId>
     <AssemblyName>eqx</AssemblyName>
-
     <!-- Allow to run on SDK >= 5-->
     <RollForward>Major</RollForward>
 
