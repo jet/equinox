@@ -13,6 +13,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `Cosmos.Prometheus`: Correct namespace (was erroneously `Equinox.CosmosStore.Prometheus`) [#268](https://github.com/jet/equinox/pull/268)
+
 <a name="2.4.0"></a>
 ## [2.4.0] - 2020-12-03
 
