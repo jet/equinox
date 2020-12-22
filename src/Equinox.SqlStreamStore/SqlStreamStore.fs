@@ -581,7 +581,7 @@ type Resolver<'event, 'state, 'context>
         | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =
+    member __.FromMemento(Token.Unpack token as streamToken, state, [<O; D null>] ?context) =
         Stream.ofMemento (streamToken,state) (resolveStream token.stream.name context None)
 
 [<AbstractClass>]

@@ -1239,7 +1239,7 @@ type CosmosStoreConnection
         g, streamName
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(connection : CosmosStoreConnection, ?queryOptions, ?tipOptions) =
+type CosmosStoreContext(connection : CosmosStoreConnection, [<O; D null>] ?queryOptions, [<O; D null>] ?tipOptions) =
     static member Create
         (   connection : CosmosStoreConnection,
             /// Max number of Batches to return per paged query response. Default: 10.
@@ -1375,10 +1375,10 @@ type CosmosStoreCategory<'event, 'state, 'context>
             let stream = resolveStream streamArgs option context
             Stream.ofMemento (Token.create streamId Position.fromKnownEmpty,initial) stream
 
-    member __.FromMemento(Token.Unpack (stream,_pos) as streamToken, state) =
+    member __.FromMemento(Token.Unpack (stream,_pos) as streamToken, state, [<O; D null>] ?context) =
         let skipInitialization = None
         let (categoryName, container, streamId, _maybeInit) = resolveStreamConfig (StreamName.parse stream)
-        let stream = resolveStream (categoryName, container, streamId, skipInitialization) None None
+        let stream = resolveStream (categoryName, container, streamId, skipInitialization) context None
         Stream.ofMemento (streamToken,state) stream
 
 [<RequireQualifiedAccess; NoComparison>]
@@ -1435,6 +1435,7 @@ type CosmosStoreClientFactory
 
 namespace Equinox.CosmosStore.Core
 
+open Equinox.Core
 open FsCodec
 open FSharp.Control
 
@@ -1499,17 +1500,17 @@ type EventsContext internal
 
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
-    member __.Sync(stream, ?position: Position) : Async<Position> = async {
+    member __.Sync(stream, [<O; D null>] ?position: Position) : Async<Position> = async {
         let! (Token.Unpack (_,pos')) = store.GetPosition(log, stream, ?pos = position)
         return pos' }
 
     /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
-    member __.Walk(stream, queryMaxItems, ?minIndex, ?maxIndex, ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
+    member __.Walk(stream, queryMaxItems, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?direction) : AsyncSeq<ITimelineEvent<byte[]>[]> =
         __.GetLazy(stream, queryMaxItems, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     /// Reads all Events from a `Position` in a given `direction`
-    member __.Read(stream, ?position, ?maxCount, ?direction) : Async<Position*ITimelineEvent<byte[]>[]> =
+    member __.Read(stream, [<O; D null>] ?position, [<O; D null>] ?maxCount, [<O; D null>] ?direction) : Async<Position*ITimelineEvent<byte[]>[]> =
         __.GetInternal((stream, position), ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`

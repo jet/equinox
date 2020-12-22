@@ -627,7 +627,7 @@ type Resolver<'event, 'state, 'context>
         | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member __.FromMemento(Token.Unpack token as streamToken, state, ?context) =
+    member __.FromMemento(Token.Unpack token as streamToken, state, [<O; D null>] ?context) =
         Stream.ofMemento (streamToken, state) (resolveStream token.stream.name context None)
 
 type private SerilogAdapter(log : ILogger) =
@@ -741,7 +741,7 @@ type Connector
     member __.Connect
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name,
-            discovery : Discovery, ?clusterNodePreference) : Async<IEventStoreConnection> = async {
+            discovery : Discovery, [<O; D null>] ?clusterNodePreference) : Async<IEventStoreConnection> = async {
         if name = null then nullArg "name"
         let clusterNodePreference = defaultArg clusterNodePreference NodePreference.Master
         let name = String.concat ";" <| seq {

@@ -109,5 +109,5 @@ type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>,
         | sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn initial) (resolveStream sn context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member __.FromMemento(Token.Unpack stream as streamToken, state, ?context) =
+    member __.FromMemento(Token.Unpack stream as streamToken, state, [<Optional; DefaultParameterValue null>] ?context) =
         Stream.ofMemento (streamToken, state) (resolveStream stream.streamName context)
