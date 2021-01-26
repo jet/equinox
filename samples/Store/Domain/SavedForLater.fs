@@ -105,19 +105,19 @@ let decide (maxSavedItems : int) (cmd : Command) (state : Fold.State) : bool * E
         if Array.isEmpty net then true, []
         else validateAgainstInvariants [ Events.Added { skus = net ; dateSaved = dateSaved } ]
 
-type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>, maxSavedItems) =
+type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>, maxSavedItems) =
 
     do if maxSavedItems < 0 then invalidArg "maxSavedItems" "must be non-negative value."
 
     let execute clientId command : Async<bool> =
-        let stream = resolve clientId
-        stream.Transact(decide maxSavedItems command)
+        let decider = resolve clientId
+        decider.Transact(decide maxSavedItems command)
     let read clientId : Async<Events.Item[]> =
-        let stream = resolve clientId
-        stream.Query id
+        let decider = resolve clientId
+        decider.Query id
     let remove clientId (resolveCommand : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
-        let stream = resolve clientId
-        stream.TransactAsync(fun (state : Fold.State) -> async {
+        let decider = resolve clientId
+        decider.TransactAsync(fun (state : Fold.State) -> async {
             let contents = seq { for item in state -> item.skuId } |> set
             let! cmd = resolveCommand contents.Contains
             let _, events = decide maxSavedItems cmd state
@@ -141,5 +141,5 @@ type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.S
         return! execute targetId (Merge state) }
 
 let create maxSavedItems log resolve =
-    let resolve id = Equinox.Stream(log, resolve (streamName id), maxAttempts = 3)
+    let resolve id = Equinox.Decider(log, resolve (streamName id), maxAttempts = 3)
     Service(resolve, maxSavedItems)

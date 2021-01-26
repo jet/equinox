@@ -9,7 +9,7 @@ actor "Applications" <<External Person>> as apps
 rectangle "Consistent Processing" <<Container>> {
     frame Domain {
         rectangle "Equinox" as eqx <<Component>> {
-            rectangle "Equinox.Stream" as stream <<Component>>
+            rectangle "Equinox.Decider" as stream <<Component>>
             interface "IStream" <<Component>>
         }
         rectangle aggregate <<Component>> [

@@ -752,7 +752,7 @@ Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's
 <a name="how-is-expectedVersion-managed"/></a>
 ### Help me understand how the `expectedVersion` is used with EventStoreDB - it seems very confusing :pray: [@dharmaturtle](https://github.com/dharmaturtle) 
 
-> I'm having some trouble understanding how Equinox+ESDB handles "expected version". Most of the examples use `Equinox.Stream.Transact` which is storage agnostic and doesn't offer any obvious concurrency checking. In `Equinox.EventStore.Context`, there's a `Sync` and `TrySync` that take a `Token` which holds a `streamVersion`. Should I be be using that instead of `Transact`?
+> I'm having some trouble understanding how Equinox+ESDB handles "expected version". Most of the examples use `Equinox.Decider.Transact` which is storage agnostic and doesn't offer any obvious concurrency checking. In `Equinox.EventStore.Context`, there's a `Sync` and `TrySync` that take a `Token` which holds a `streamVersion`. Should I be be using that instead of `Transact`?
 
 The bulk of the implementation is in [`Equinox/Flow.fs`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs)
 

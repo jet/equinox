@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <Compile Include="Flow.fs" />
-    <Compile Include="Equinox.fs" />
+    <Compile Include="Decider.fs" />
   </ItemGroup>
 
   <ItemGroup>

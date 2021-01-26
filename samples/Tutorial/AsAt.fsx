@@ -102,14 +102,14 @@ let interpret command state =
         if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
         else [-1L,Events.Removed {count = delta}]
 
-type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
-        let stream = resolve clientId
-        stream.Transact(interpret command)
+        let decider = resolve clientId
+        decider.Transact(interpret command)
     let query clientId projection : Async<int> =
-        let stream = resolve clientId
-        stream.Query projection
+        let decider = resolve clientId
+        decider.Query projection
 
     member __.Add(clientId, count) = execute clientId (Add count)
     member __.Remove(clientId, count) = execute clientId (Remove count)
@@ -152,7 +152,7 @@ module EventStore =
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
     let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-    let resolve id = Equinox.Stream(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
+    let resolve id = Equinox.Decider(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
 
 module Cosmos =
 
@@ -166,7 +166,7 @@ module Cosmos =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
     let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-    let resolve id = Equinox.Stream(Log.log, category.Resolve(streamName id), maxAttempts = 3)
+    let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 
 let serviceES = Service(EventStore.resolve)
 let serviceCosmos = Service(Cosmos.resolve)

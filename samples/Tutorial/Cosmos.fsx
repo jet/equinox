@@ -64,20 +64,20 @@ module Favorites =
         | Add sku -> if state |> List.contains sku then [] else [ Events.Added {sku = sku}]
         | Remove sku -> if state |> List.contains sku then [ Events.Removed {sku = sku}] else []
 
-    type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
+    type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
         member __.Favorite(clientId, sku) =
-            let stream = resolve clientId
-            stream.Transact(interpret (Add sku))
+            let decider = resolve clientId
+            decider.Transact(interpret (Add sku))
         member __.Unfavorite(clientId, skus) =
-            let stream = resolve clientId
-            stream.Transact(interpret (Remove skus))
+            let decider = resolve clientId
+            decider.Transact(interpret (Remove skus))
         member __.List clientId: Async<string list> =
-            let stream = resolve clientId
-            stream.Query id
+            let decider = resolve clientId
+            decider.Query id
 
     let create resolve =
-        let resolve clientId = Equinox.Stream(Log.log, resolve (streamName clientId), maxAttempts = 3)
+        let resolve clientId = Equinox.Decider(Log.log, resolve (streamName clientId), maxAttempts = 3)
         Service(resolve)
 
     module Cosmos =

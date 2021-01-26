@@ -56,16 +56,16 @@ let decide (value : UploadId) (state : Fold.State) : Choice<UploadId,UploadId> *
     | None -> Choice1Of2 value, [Events.IdAssigned { value = value}]
     | Some value -> Choice2Of2 value, []
 
-type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member __.Sync(companyId, purchaseOrderId, value) : Async<Choice<UploadId,UploadId>> =
-        let stream = resolve (companyId, purchaseOrderId)
-        stream.Transact(decide value)
+        let decider = resolve (companyId, purchaseOrderId)
+        decider.Transact(decide value)
 
 let create resolve =
     let resolve ids =
         let streamName = streamName ids
-        Equinox.Stream(Serilog.Log.ForContext<Service>(), resolve streamName, maxAttempts = 3)
+        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolve streamName, maxAttempts = 3)
     Service(resolve)
 
 module Cosmos =

@@ -61,20 +61,20 @@ let interpret c (state : State) =
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Deleted { id=id }] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Cleared]
 
-type Service internal (resolve : string -> Equinox.Stream<Event, State>) =
+type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
     let execute clientId command : Async<unit> =
-        let stream = resolve clientId
-        stream.Transact(interpret command)
+        let decider = resolve clientId
+        decider.Transact(interpret command)
     let handle clientId command : Async<Todo list> =
-        let stream = resolve clientId
-        stream.Transact(fun state ->
+        let decider = resolve clientId
+        decider.Transact(fun state ->
             let events = interpret command state
             let state' = fold state events
             state'.items,events)
     let query clientId (projection : State -> 't) : Async<'t> =
-        let stream = resolve clientId
-        stream.Query projection
+        let decider = resolve clientId
+        decider.Query projection
 
     member __.List clientId : Async<Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
@@ -130,7 +130,7 @@ module Store =
 module TodosCategory = 
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
     let category = CosmosStoreCategory(Store.context, codec, fold, initial, Store.cacheStrategy, access=access)
-    let resolve id = Equinox.Stream(log, category.Resolve(streamName id), maxAttempts = 3)
+    let resolve id = Equinox.Decider(log, category.Resolve(streamName id), maxAttempts = 3)
 
 let service = Service(TodosCategory.resolve)
 
