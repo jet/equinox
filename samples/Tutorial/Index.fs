@@ -38,12 +38,12 @@ let interpret add remove (state : Fold.State<'v>) =
         [   if adds.Length <> 0 then yield Events.Added { items = Map.ofSeq adds }
             if removes.Length <> 0 then yield Events.Deleted { items = removes } ]
 
-type Service<'t> internal (stream : Equinox.Decider<Events.Event<'t>, Fold.State<'t>>) =
+type Service<'t> internal (decider : Equinox.Decider<Events.Event<'t>, Fold.State<'t>>) =
 
     member __.Ingest(adds : seq<string*'t>, removes : string seq) : Async<int*int> =
-        stream.Transact(interpret adds removes)
+        decider.Transact(interpret adds removes)
     member __.Read() : Async<Map<string,'t>> =
-        stream.Query id
+        decider.Query id
 
 let create<'t> resolve indexId =
     let log = Serilog.Log.ForContext<Service<'t>>()

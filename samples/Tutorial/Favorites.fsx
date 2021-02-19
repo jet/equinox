@@ -73,11 +73,11 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
     b) a maximum number of attempts to make if we clash with a conflicting write *)
 
 // Example of wrapping Stream to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
-type Handler(stream : Equinox.Decider<Event, State>) =
+type Handler(decider : Equinox.Decider<Event, State>) =
     member __.Execute command : Async<unit> =
-        stream.Transact(interpret command)
+        decider.Transact(interpret command)
     member __.Read : Async<string list> =
-        stream.Query id
+        decider.Query id
 
 (* When we Execute a command, Equinox.Decider will use `fold` and `interpret` to Decide whether Events need to be written
     Normally, we'll let failures percolate via exceptions, but not return a result (i.e. we don't say "your command caused 1 event") *)

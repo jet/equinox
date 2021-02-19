@@ -11,7 +11,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 ### Changed
 
-- Rename `type Stream` tp `Decider` [#272](https://github.com/jet/equinox/pull/272) :pray: [@thinkbeforecoding](https://github.com/thinkbeforecoding)
+- Rename `type Stream` to `Decider` [#272](https://github.com/jet/equinox/pull/272) :pray: [@thinkbeforecoding](https://github.com/thinkbeforecoding)
 - Fork `Equinox.Cosmos` to `Equinox.CosmosStore`:
     - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
     - Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)

@@ -3,7 +3,7 @@
 open Equinox.Core
 open System.Runtime.InteropServices
 
-/// Exception yielded by Stream.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
+/// Exception yielded by Decider.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
 type MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Concurrency violation; aborting after %i attempts." count)
 
@@ -55,11 +55,11 @@ type Decider<'event, 'state>
     member __.QueryEx(projection : ISyncContext<'state> -> 'view) : Async<'view> =
         Flow.query (stream, log, projection)
 
-/// Store-agnostic <c>Context.Resolve</c> Options
+/// Store-agnostic <c>Category.Resolve</c> Options
 type ResolveOption =
     /// Without consulting Cache or any other source, assume the Stream to be empty for the initial Query or Transact
     | AssumeEmpty
-    /// If the Cache holds a value, use that without checking the backing store for updates, implying:
-    /// - maximizing use of OCC for `Stream.Transact`
-    /// - enabling potentially stale reads [in the face of multiple writers)] (for `Stream.Query`)
+    /// If the Cache holds any state, use that without checking the backing store for updates, implying:
+    /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
+    /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`
     | AllowStale
