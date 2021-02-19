@@ -57,14 +57,14 @@ let interpret command (state : Fold.State) =
         if doesntHave skuId then [] else
         [ Events.Unfavorited { skuId = skuId } ]
 
-type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
-        let stream = resolve clientId
-        stream.Transact(interpret command)
+        let decider = resolve clientId
+        decider.Transact(interpret command)
     let read clientId : Async<Events.Favorited []> =
-        let stream = resolve clientId
-        stream.Query id
+        let decider = resolve clientId
+        decider.Query id
 
     member __.Execute(clientId, command) =
         execute clientId command
@@ -79,5 +79,5 @@ type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.S
         read clientId
 
 let create log resolve =
-    let resolve id = Equinox.Stream(log, resolve (streamName id), maxAttempts  = 3)
+    let resolve id = Equinox.Decider(log, resolve (streamName id), maxAttempts  = 3)
     Service(resolve)

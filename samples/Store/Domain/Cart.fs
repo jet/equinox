@@ -133,11 +133,11 @@ let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
         state', acc @ events)
 #endif
 
-type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-        let stream = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        stream.TransactAsync(fun state -> async {
+        let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
+        decider.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
 #if ACCUMULATOR
             let acc = Accumulator(Fold.fold, state)
@@ -155,14 +155,14 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
          __.ExecuteManyAsync(cartId, false, [command])
 
     member __.Read cartId =
-        let stream = resolve (cartId,None)
-        stream.Query id
+        let decider = resolve (cartId,None)
+        decider.Query id
     member __.ReadStale cartId =
-        let stream = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
-        stream.Query id
+        let decider = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
+        decider.Query id
 
 let create log resolve =
     let resolve (id, opt) =
-        let stream = resolve (streamName id, opt)
-        Equinox.Stream(log, stream, maxAttempts = 3)
+        let decider = resolve (streamName id, opt)
+        Equinox.Decider(log, decider, maxAttempts = 3)
     Service(resolve)

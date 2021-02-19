@@ -1,5 +1,5 @@
 ﻿/// Internal data structures/impl. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implementing a Store or a decorator thereof.
-/// i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Equinox.fs, not here
+/// i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Decider.fs, not here
 namespace Equinox.Core
 
 open Serilog
@@ -39,7 +39,7 @@ type ISyncContext<'state> =
     /// The present State of the stream within the context of this Flow
     abstract member State : 'state
 
-/// Internal implementation of the Store agnostic load + run/render. See Equinox.fs for App-facing APIs.
+/// Internal implementation of the Store agnostic load + run/render. See Decider.fs for App-facing APIs.
 module internal Flow =
 
     /// Represents stream and folding state between the load and run/render phases

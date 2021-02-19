@@ -85,17 +85,17 @@ module FulfilmentCenter =
         | UpdateDetails c when state.details = Some c -> []
         | UpdateDetails c -> [Events.FcDetailsChanged { details = c }]
 
-    type Service internal (resolve : string -> Equinox.Stream<Events.Event, Fold.State>) =
+    type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
         let execute fc command : Async<unit> =
-            let stream = resolve fc
-            stream.Transact(interpret command)
+            let decider = resolve fc
+            decider.Transact(interpret command)
         let read fc : Async<Summary> =
-            let stream = resolve fc
-            stream.Query id
+            let decider = resolve fc
+            decider.Query id
         let queryEx fc (projection : Fold.State -> 't) : Async<int64*'t> =
-            let stream = resolve fc
-            stream.QueryEx(fun c -> c.Version, projection c.State)
+            let decider = resolve fc
+            decider.QueryEx(fun c -> c.Version, projection c.State)
 
         member __.UpdateName(id, value) = execute id (Register value)
         member __.UpdateAddress(id, value) = execute id (UpdateAddress value)
@@ -135,7 +135,7 @@ module Store =
 open FulfilmentCenter
 
 let category = CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
-let resolve id = Equinox.Stream(Log.log, category.Resolve(streamName id), maxAttempts = 3)
+let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 let service = Service(resolve)
 
 let fc = "fc0"
@@ -170,14 +170,14 @@ module FulfilmentCenterSummary =
         | Update (uv,_us) when state |> Option.exists (fun s -> s.version > uv) -> []
         | Update (uv,us) -> [Events.Updated { version = uv; state = us }]
 
-    type Service internal (resolve : string -> Equinox.Stream<Events.Event, State>) =
+    type Service internal (resolve : string -> Equinox.Decider<Events.Event, State>) =
 
         let execute fc command : Async<unit> =
-            let stream = resolve fc
-            stream.Transact(interpret command)
+            let decider = resolve fc
+            decider.Transact(interpret command)
         let read fc : Async<Summary option> =
-            let stream = resolve fc
-            stream.Query(Option.map (fun s -> s.state))
+            let decider = resolve fc
+            decider.Query(Option.map (fun s -> s.state))
 
         member __.Update(id, version, value) = execute id (Update (version,value))
         member __.TryRead id : Async<Summary option> = read id

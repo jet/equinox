@@ -54,23 +54,23 @@ let decideConfirm item (state : Fold.State) : Events.Event list =
 let decideRelease item (state : Fold.State) : Events.Event list =
     failwith "TODO"
 
-type Service internal (resolve : SequenceId -> Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member __.ReserveMany(series,count) : Async<int64 list> =
-        let stream = resolve series
-        stream.Transact(decideReserve count)
+        let decider = resolve series
+        decider.Transact(decideReserve count)
 
     member __.Reserve(series) : Async<int64> = async {
         let! res = __.ReserveMany(series,1)
         return List.head res }
 
     member __.Confirm(series,item) : Async<unit> =
-        let stream = resolve series
-        stream.Transact(decideConfirm item)
+        let decider = resolve series
+        decider.Transact(decideConfirm item)
 
     member __.Release(series,item) : Async<unit> =
-        let stream = resolve series
-        stream.Transact(decideRelease item)
+        let decider = resolve series
+        decider.Transact(decideRelease item)
 
 let [<Literal>] appName = "equinox-tutorial-gapless"
 
@@ -82,7 +82,7 @@ module Cosmos =
         let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
         let resolve sequenceId =
             let streamName = streamName sequenceId
-            Equinox.Stream(Serilog.Log.Logger, category.Resolve streamName, maxAttempts = 3)
+            Equinox.Decider(Serilog.Log.Logger, category.Resolve streamName, maxAttempts = 3)
         Service(resolve)
 
     module Snapshot =

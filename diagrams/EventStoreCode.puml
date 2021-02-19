@@ -2,7 +2,7 @@
 title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query operation\nwith a cold cache and an empty stream
 
 actor Caller order 20
-box "Equinox.Stream"
+box "Equinox.Decider"
     participant Stream order 40
 end box
 participant Aggregate order 50
@@ -34,7 +34,7 @@ Stream -> Caller: {result = list }
 title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Transact operation\nwith an-in sync cache and snapshotting Access Strategy
 
 actor Caller order 20
-box "Equinox.Stream"
+box "Equinox.Decider"
     participant Stream order 40
 end box
 participant Aggregate order 50
@@ -101,7 +101,7 @@ Stream -> Caller: proposedResult
 title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query\nfollowing a Query or Transact on same node, i.e. in sync cache, events on stream
 
 actor Caller order 20
-box "Equinox.Stream"
+box "Equinox.Decider"
     participant Stream order 40
 end box
 participant Aggregate order 50
@@ -131,7 +131,7 @@ Aggregate -> Caller: result
 title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query\nwith out of sync cache e.g. another process (when using a snapshotting Access Strategy)
 
 actor Caller order 20
-box "Equinox.Stream"
+box "Equinox.Decider"
     participant Stream order 40
 end box
 participant Aggregate order 50

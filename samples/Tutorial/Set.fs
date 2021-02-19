@@ -38,7 +38,7 @@ let interpret add remove (state : Fold.State) =
         [   if adds.Length <> 0 then yield Events.Added { items = adds }
             if removes.Length <> 0 then yield Events.Deleted { items = removes } ]
 
-type Service internal (stream : Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (stream : Equinox.Decider<Events.Event, Fold.State>) =
 
     member __.Add(add : string seq, remove : string seq) : Async<int*int> =
         stream.Transact(interpret add remove)
@@ -48,8 +48,8 @@ type Service internal (stream : Equinox.Stream<Events.Event, Fold.State>) =
 
 let create resolve setId =
     let streamName = streamName setId
-    let stream = Equinox.Stream(Serilog.Log.ForContext<Service>(), resolve streamName, maxAttempts = 3)
-    Service(stream)
+    let decider = Equinox.Decider(Serilog.Log.ForContext<Service>(), resolve streamName, maxAttempts = 3)
+    Service(decider)
 
 module Cosmos =
 

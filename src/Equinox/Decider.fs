@@ -8,7 +8,7 @@ type MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Concurrency violation; aborting after %i attempts." count)
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
-type Stream<'event, 'state>
+type Decider<'event, 'state>
     (   log, stream : IStream<'event, 'state>, maxAttempts : int,
         [<Optional; DefaultParameterValue(null)>] ?createAttemptsExhaustedException,
         [<Optional; DefaultParameterValue(null)>] ?resyncPolicy) =

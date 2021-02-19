@@ -39,7 +39,7 @@ together {
             Service
         ]
         rectangle stream <<Component>> [
-            Equinox.Stream
+            Equinox.Decider
         ]
         interface IStream <<Component>>
     }

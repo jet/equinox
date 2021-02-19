@@ -1514,7 +1514,7 @@ type EventsContext internal
         __.GetInternal((stream, position), ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
-    /// Callers should implement appropriate idempotent handling, or use Equinox.Stream for that purpose
+    /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
     member __.Sync(stream, position, events: IEventData<_>[]) : Async<AppendResult<Position>> = async {
         // Writes go through the stored proc, which we need to provision per container
         // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
@@ -1529,7 +1529,7 @@ type EventsContext internal
         | InternalSyncResult.ConflictUnknown (Token.Unpack (_, pos)) -> return AppendResult.ConflictUnknown pos }
 
     /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
-    /// NB Should be used sparingly; Equinox.Stream enables building equivalent equivalent idempotent handling with minimal code.
+    /// NB Should be used sparingly; Equinox.Decider enables building equivalent equivalent idempotent handling with minimal code.
     member __.NonIdempotentAppend(stream, events: IEventData<_>[]) : Async<Position> = async {
         match! __.Sync(stream, Position.fromAppendAtEnd, events) with
         | AppendResult.Ok token -> return token

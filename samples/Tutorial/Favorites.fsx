@@ -12,7 +12,7 @@
  * EVENTS
  *)
 
-(* Define the events that will be saved in the Stream *)
+(* Define the events that will be saved in the stream *)
 
 // Note using strings and DateTimes etc as Event payloads is not supported for .Cosmos or .EventStore using the UnionCodec support
 // i.e. typically records are used for the Event Payloads even in cases where you feel you'll only ever have a single primitive value
@@ -68,18 +68,18 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
  * STREAM API
  *)
 
-(* Equinox.Stream provides low level functions against an IStream given
+(* Equinox.Decider provides low level functions against an IStream given
     a) a log to send metrics and store roundtrip info to
     b) a maximum number of attempts to make if we clash with a conflicting write *)
 
 // Example of wrapping Stream to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
-type Handler(stream : Equinox.Stream<Event, State>) =
+type Handler(stream : Equinox.Decider<Event, State>) =
     member __.Execute command : Async<unit> =
         stream.Transact(interpret command)
     member __.Read : Async<string list> =
         stream.Query id
 
-(* When we Execute a command, Equinox.Stream will use `fold` and `interpret` to Decide whether Events need to be written
+(* When we Execute a command, Equinox.Decider will use `fold` and `interpret` to Decide whether Events need to be written
     Normally, we'll let failures percolate via exceptions, but not return a result (i.e. we don't say "your command caused 1 event") *)
 
 // For now, write logs to the Console (in practice we'd connect it to a concrete log sink)
@@ -111,7 +111,7 @@ let codec =
 // Each store has a Resolver that generates IStream instances binding to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
 let resolver = Equinox.MemoryStore.Resolver(store, codec, fold, initial)
-let stream streamName = Equinox.Stream(log, resolver.Resolve streamName, maxAttempts = 2)
+let stream streamName = Equinox.Decider(log, resolver.Resolve streamName, maxAttempts = 2)
 
 // We hand the streamId to the resolver
 let clientAStream = stream clientAFavoritesStreamName
@@ -137,25 +137,25 @@ handler.Read |> Async.RunSynchronously
 (* Building a service to package Command Handling and related functions
     No, this is not doing CQRS! *)
 
-type Service(streamFor : string -> Handler) =
+type Service(deciderFor : string -> Handler) =
 
     member __.Favorite(clientId, sku) =
-        let stream = streamFor clientId
-        stream.Execute(Add sku)
+        let decider = deciderFor clientId
+        decider.Execute(Add sku)
 
     member __.Unfavorite(clientId, skus) =
-        let stream = streamFor clientId
-        stream.Execute(Remove skus)
+        let decider = deciderFor clientId
+        decider.Execute(Remove skus)
 
     member __.List(clientId): Async<string list> =
-        let stream = streamFor clientId
-        stream.Read
+        let decider = deciderFor clientId
+        decider.Read
 
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
 let streamFor (clientId: string) =
     let streamName = FsCodec.StreamName.create "Favorites" clientId
-    let stream = Equinox.Stream(log, resolver.Resolve streamName, maxAttempts = 3)
-    Handler(stream)
+    let decider = Equinox.Decider(log, resolver.Resolve streamName, maxAttempts = 3)
+    Handler(decider)
 
 let service = Service(streamFor)
 

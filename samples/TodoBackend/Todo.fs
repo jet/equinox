@@ -48,17 +48,17 @@ let interpret c (state : Fold.State) =
     | Delete id -> if state.items |> List.exists (fun x -> x.id = id) then [Events.Deleted {id=id}] else []
     | Clear -> if state.items |> List.isEmpty then [] else [Events.Cleared]
 
-type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.State>) =
+type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     let execute clientId command =
-        let stream = resolve clientId
-        stream.Transact(interpret command)
+        let decider = resolve clientId
+        decider.Transact(interpret command)
     let query clientId projection =
-        let stream = resolve clientId
-        stream.Query projection
+        let decider = resolve clientId
+        decider.Query projection
     let handle clientId command =
-        let stream = resolve clientId
-        stream.Transact(fun state ->
+        let decider = resolve clientId
+        decider.Transact(fun state ->
             let events = interpret command state
             let state' = Fold.fold state events
             state'.items,events)
@@ -80,4 +80,4 @@ type Service internal (resolve : ClientId -> Equinox.Stream<Events.Event, Fold.S
         let! state' = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }
 
-let create log resolve = Service(fun id -> Equinox.Stream(log, resolve (streamName id), maxAttempts = 3))
+let create log resolve = Service(fun id -> Equinox.Decider(log, resolve (streamName id), maxAttempts = 3))

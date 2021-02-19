@@ -15,7 +15,6 @@ module Cart =
     let createServiceWithoutOptimization log context =
         let resolve (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Cart.create log resolve
-    let projection = "Compacted",snd snapshot
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds log context =
         let unfArgs = Domain.Cart.Fold.isOrigin, fun _ -> Seq.empty
