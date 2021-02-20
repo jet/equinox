@@ -44,6 +44,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Remove separated `Backend` project from examples (support for architecturally separating all domain logic from Equinox and Domain Service logic from Concrete Stores remains)
 - Revise semantics of Cart Sample Command handling
 - Simplify `AsyncCacheCell` [#229](https://github.com/jet/equinox/pull/229)
+- Replace `Decider.TransactAsyncEx` with `TransactEx`, providing an extended signature to expose the `ISyncContext` to `decide` [#263](https://github.com/jet/equinox/pull/263)
 
 ### Removed
 ### Fixed
