@@ -53,7 +53,7 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against EventStore, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
         let! client = connectToLocalEventStoreNode log
-        let context = createGesContext client defaultBatchSize
+        let context = createContext client defaultBatchSize
         let service = createServiceGes log context
         do! act service args
     }

@@ -52,13 +52,13 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeEs connectToLocalEventStoreNode createGesContext resolveStreamGesWithoutAccessStrategy
+        let! service = arrangeEs connectToLocalEventStoreNode createContext resolveStreamGesWithoutAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeEs connectToLocalEventStoreNode createGesContext resolveStreamGesWithOptimizedStorageSemantics
+        let! service = arrangeEs connectToLocalEventStoreNode createContext resolveStreamGesWithOptimizedStorageSemantics
         do! act service args
     }
 

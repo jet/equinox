@@ -163,7 +163,7 @@ module EventStore =
                 log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
             .Establish(appName, Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
-    let private createContet connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
+    let private createContext connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
     let config (log: ILogger, storeLog) (cache, unfolds) (args : ParseResults<Arguments>) =
         let a = Info(args)
         let (timeout, retries) as operationThrottling = a.Timeout, a.Retries
@@ -173,7 +173,7 @@ module EventStore =
             a.Host, heartbeatTimeout.TotalSeconds, timeout.TotalSeconds, concurrentOperationsLimit, retries)
         let connection = connect storeLog (a.Host, heartbeatTimeout, concurrentOperationsLimit) a.Credentials operationThrottling |> Async.RunSynchronously
         let cacheStrategy = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
-        StorageConfig.Es ((createContet connection a.MaxEvents), cacheStrategy, unfolds)
+        StorageConfig.Es ((createContext connection a.MaxEvents), cacheStrategy, unfolds)
 
 module Sql =
     open Equinox.SqlStreamStore
