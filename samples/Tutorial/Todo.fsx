@@ -122,9 +122,9 @@ module Store =
 
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
-    let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
-    let conn = CosmosStoreConnection(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
-    let context = CosmosStoreContext(conn)
+    let cosmosClient = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
+    let storeClient = CosmosStoreClient(cosmosClient, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let context = CosmosStoreContext(storeClient)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory = 

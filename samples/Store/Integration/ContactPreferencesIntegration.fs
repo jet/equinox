@@ -14,10 +14,10 @@ let createServiceMemory log store =
     ContactPreferences.create log (MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.ContactPreferences.Events.codec
-let resolveStreamGesWithOptimizedStorageSemantics gateway =
-    EventStore.EventStoreCategory(gateway 1, codec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
-let resolveStreamGesWithoutAccessStrategy gateway =
-    EventStore.EventStoreCategory(gateway defaultBatchSize, codec, fold, initial).Resolve
+let resolveStreamGesWithOptimizedStorageSemantics context =
+    EventStore.EventStoreCategory(context 1, codec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
+let resolveStreamGesWithoutAccessStrategy context =
+    EventStore.EventStoreCategory(context defaultBatchSize, codec, fold, initial).Resolve
 
 let resolveStreamCosmosWithLatestKnownEventSemantics context =
     CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.LatestKnownEvent).Resolve
@@ -46,26 +46,26 @@ type Tests(testOutputHelper) =
 
     let arrangeEs connect choose resolve = async {
         let log = createLog ()
-        let! conn = connect log
-        let gateway = choose conn
-        return ContactPreferences.create log (resolve gateway) }
+        let! client = connect log
+        let context = choose client
+        return ContactPreferences.create log (resolve context) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeEs connectToLocalEventStoreNode createGesGateway resolveStreamGesWithoutAccessStrategy
+        let! service = arrangeEs connectToLocalEventStoreNode createGesContext resolveStreamGesWithoutAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeEs connectToLocalEventStoreNode createGesGateway resolveStreamGesWithOptimizedStorageSemantics
+        let! service = arrangeEs connectToLocalEventStoreNode createGesContext resolveStreamGesWithOptimizedStorageSemantics
         do! act service args
     }
 
     let arrangeCosmos connect resolve queryMaxItems =
         let log = createLog ()
-        let ctx: CosmosStore.CosmosStoreContext = connect log queryMaxItems
-        ContactPreferences.create log (resolve ctx)
+        let context: CosmosStore.CosmosStoreContext = connect log queryMaxItems
+        ContactPreferences.create log (resolve context)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = Async.RunSynchronously <| async {

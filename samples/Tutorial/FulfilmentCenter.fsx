@@ -127,8 +127,8 @@ module Store =
     let appName = "equinox-tutorial"
     let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
     let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
-    let conn = CosmosStoreConnection(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
-    let context = CosmosStoreContext(conn)
+    let storeClient = CosmosStoreClient(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let context = CosmosStoreContext(storeClient)
     let cache = Equinox.Cache(appName, 20)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 

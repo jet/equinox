@@ -106,17 +106,17 @@ module Cosmos =
         secondary |> Option.iter (fun (client, db, container) -> logContainer log "Secondary" (a.Mode, client.Endpoint, db, container))
         primary, secondary
     let config (log : ILogger) (cache, unfolds) (a : Info) =
-        let conn =
+        let client =
             match conn log a with
             | (client, databaseId, containerId), None ->
-                CosmosStoreConnection(client, databaseId, containerId)
+                CosmosStoreClient(client, databaseId, containerId)
             | (client, databaseId, containerId), Some (client2, db2, cont2) ->
-                CosmosStoreConnection(client, databaseId, containerId, client2 = client2, databaseId2 = db2, containerId2 = cont2)
+                CosmosStoreClient(client, databaseId, containerId, client2 = client2, databaseId2 = db2, containerId2 = cont2)
         log.Information("CosmosStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
                         a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
-        let ctx = CosmosStoreContext.Create(conn, queryMaxItems = a.QueryMaxItems, tipMaxEvents = a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength)
+        let context = CosmosStoreContext.Create(client, queryMaxItems = a.QueryMaxItems, tipMaxEvents = a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
-        StorageConfig.Cosmos (ctx, cacheStrategy, unfolds)
+        StorageConfig.Cosmos (context, cacheStrategy, unfolds)
 
 /// To establish a local node to run the tests against:
 ///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
@@ -171,9 +171,9 @@ module EventStore =
         let concurrentOperationsLimit = a.ConcurrentOperationsLimit
         log.Information("EventStoreDB {host} heartbeat: {heartbeat}s timeout: {timeout}s concurrent reqs: {concurrency} retries {retries}",
             a.Host, heartbeatTimeout.TotalSeconds, timeout.TotalSeconds, concurrentOperationsLimit, retries)
-        let conn = connect storeLog (a.Host, heartbeatTimeout, concurrentOperationsLimit) a.Credentials operationThrottling |> Async.RunSynchronously
+        let client = connect storeLog (a.Host, heartbeatTimeout, concurrentOperationsLimit) a.Credentials operationThrottling |> Async.RunSynchronously
         let cacheStrategy = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
-        StorageConfig.Es ((createGateway conn a.MaxEvents), cacheStrategy, unfolds)
+        StorageConfig.Es ((createGateway client a.MaxEvents), cacheStrategy, unfolds)
 
 module Sql =
     open Equinox.SqlStreamStore
@@ -206,8 +206,8 @@ module Sql =
         let private createGateway connection batchSize = SqlStreamStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
         let config (log: ILogger) (cache, unfolds) (args : ParseResults<Arguments>) =
             let a = Info(args)
-            let conn = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
-            StorageConfig.Sql((createGateway conn a.MaxEvents), cacheStrategy cache, unfolds)
+            let client = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
+            StorageConfig.Sql((createGateway client a.MaxEvents), cacheStrategy cache, unfolds)
     module My =
         type [<NoEquality; NoComparison>] Arguments =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
@@ -232,8 +232,8 @@ module Sql =
         let private createGateway connection batchSize = SqlStreamStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
         let config (log: ILogger) (cache, unfolds) (args : ParseResults<Arguments>) =
             let a = Info(args)
-            let conn = connect log (a.ConnectionString, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
-            StorageConfig.Sql((createGateway conn a.MaxEvents), cacheStrategy cache, unfolds)
+            let client = connect log (a.ConnectionString, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
+            StorageConfig.Sql((createGateway client a.MaxEvents), cacheStrategy cache, unfolds)
      module Pg =
         type [<NoEquality; NoComparison>] Arguments =
             | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
@@ -258,8 +258,8 @@ module Sql =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore Postgres Connection {connectionString} Schema {schema} AutoCreate {autoCreate}", connectionString, schema, autoCreate)
             Equinox.SqlStreamStore.Postgres.Connector(sssConnectionString,schema,autoCreate=autoCreate).Establish()
-        let private createGateway connection batchSize = SqlStreamStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
+        let private createContext connection batchSize = SqlStreamStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
         let config (log: ILogger) (cache, unfolds) (args : ParseResults<Arguments>) =
             let a = Info(args)
-            let conn = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
-            StorageConfig.Sql((createGateway conn a.MaxEvents), cacheStrategy cache, unfolds)
+            let client = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
+            StorageConfig.Sql((createContext client a.MaxEvents), cacheStrategy cache, unfolds)

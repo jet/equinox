@@ -15,8 +15,8 @@ let createServiceMemory log store =
     Favorites.create log (MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.Favorites.Events.codec
-let createServiceGes log gateway =
-    let cat = EventStore.EventStoreCategory(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
+let createServiceGes log context =
+    let cat = EventStore.EventStoreCategory(context, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
     Favorites.create log cat.Resolve
 
 let createServiceCosmos log context =
@@ -52,9 +52,9 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let! conn = connectToLocalEventStoreNode log
-        let gateway = createGesGateway conn defaultBatchSize
-        let service = createServiceGes log gateway
+        let! client = connectToLocalEventStoreNode log
+        let context = createGesContext client defaultBatchSize
+        let service = createServiceGes log context
         do! act service args
     }
 

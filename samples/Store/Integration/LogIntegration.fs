@@ -114,9 +114,9 @@ type Tests() =
         let batchSize = defaultBatchSize
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
-        let! conn = connectToLocalEventStoreNode log
-        let gateway = createGesGateway conn batchSize
-        let service = Cart.create log (CartIntegration.resolveGesStreamWithRollingSnapshots gateway)
+        let! client = connectToLocalEventStoreNode log
+        let context = createGesContext client batchSize
+        let service = Cart.create log (CartIntegration.resolveGesStreamWithRollingSnapshots context)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"

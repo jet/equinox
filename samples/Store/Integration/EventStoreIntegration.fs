@@ -13,4 +13,4 @@ let connectToLocalEventStoreNode log =
     Connector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
         .Establish("Equinox-sample", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
 let defaultBatchSize = 500
-let createGesGateway connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
+let createGesContext connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))

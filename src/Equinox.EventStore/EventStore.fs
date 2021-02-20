@@ -358,7 +358,7 @@ module Token =
         let currentVersion, newVersion = current.pos.streamVersion, x.pos.streamVersion
         newVersion > currentVersion
 
-type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy) =
+type EventStoreClient(readConnection, [<O; D(null)>] ?writeConnection, [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy) =
     member __.ReadConnection = readConnection
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteConnection = defaultArg writeConnection readConnection
@@ -372,7 +372,7 @@ type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>] ?batchCountLim
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown of StreamToken
 
-type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
+type EventStoreContext(conn : EventStoreClient, batching : BatchingPolicy) =
     let isResolvedEventEventType (tryDecode, predicate) (x : ResolvedEvent) = predicate (tryDecode (x.Event.Data))
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
 
@@ -726,7 +726,7 @@ type Connector
             match node with
             | NodePreference.Master         -> s.PerformOnLeaderOnly()                  // explicitly use ES default of requiring master, use default Node preference of Master
             | NodePreference.PreferMaster   -> s.PerformOnAnyNode()                     // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
-            // NB .PreferSlaveNode/.PreferRandomNode setting is ignored if using EventStoreConnection.Create(ConnectionSettings, ClusterSettings) overload but
+            // NB .PreferSlaveNode/.PreferRandomNode setting is ignored if using EventStoreClient.Create(ConnectionSettings, ClusterSettings) overload but
             // this code is necessary for cases where people are using the discover :// and related URI schemes
             | NodePreference.PreferSlave    -> s.PerformOnAnyNode().PreferFollowerNode()// override default PerformOnMasterOnly(), override Master Node preference
             | NodePreference.Random         -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
@@ -765,13 +765,13 @@ type Connector
     member __.Establish
         (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
             name,
-            discovery : Discovery, strategy : ConnectionStrategy) : Async<EventStoreConnection> = async {
+            discovery : Discovery, strategy : ConnectionStrategy) : Async<EventStoreClient> = async {
         match strategy with
         | ConnectionStrategy.ClusterSingle nodePreference ->
             let! conn = __.Connect(name, discovery, nodePreference)
-            return EventStoreConnection(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
+            return EventStoreClient(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
         | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
             let! masterInParallel = Async.StartChild (__.Connect(name + "-TwinW", discovery, NodePreference.Master))
             let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
             let! master = masterInParallel
-            return EventStoreConnection(readConnection = slave, writeConnection = master, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }
+            return EventStoreClient(readConnection = slave, writeConnection = master, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }

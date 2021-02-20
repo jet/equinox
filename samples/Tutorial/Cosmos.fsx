@@ -98,8 +98,8 @@ module Store =
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let factory = Equinox.CosmosStore.CosmosStoreClientFactory(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
     let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
-    let conn = CosmosStoreConnection(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
-    let createContext () = CosmosStoreContext(conn)
+    let storeClient = CosmosStoreClient(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
+    let createContext () = CosmosStoreContext(storeClient)
 
 let context = Store.createContext ()
 let cache = Equinox.Cache(appName, 20)
