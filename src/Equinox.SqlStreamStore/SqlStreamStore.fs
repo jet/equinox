@@ -332,7 +332,7 @@ module Token =
         let currentVersion, newVersion = current.pos.streamVersion, x.pos.streamVersion
         newVersion > currentVersion
 
-type Connection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type SqlStreamStoreConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.ReadConnection = readConnection
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteConnection = defaultArg writeConnection readConnection
@@ -346,7 +346,7 @@ type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountLimi
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
-type Context(conn : Connection, batching : BatchingPolicy) =
+type SqlStreamStoreContext(conn : SqlStreamStoreConnection, batching : BatchingPolicy) =
     let isResolvedEventEventType (tryDecode,predicate) (e:StreamMessage) =
         let data = e.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
         predicate (tryDecode data)
@@ -421,7 +421,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state, 'context>(context : Context, codec : FsCodec.IEventCodec<_,_,'context>, ?access : AccessStrategy<'event,'state>) =
+type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext, codec : FsCodec.IEventCodec<_,_,'context>, ?access : AccessStrategy<'event,'state>) =
     let tryDecode (e: ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
     let compactionPredicate =
         match access with
@@ -543,8 +543,8 @@ type CachingStrategy =
     /// Semantics are identical to <c>SlidingWindow</c>.
     | SlidingWindowPrefixed of ICache * window: TimeSpan * prefix: string
 
-type Resolver<'event, 'state, 'context>
-    (   context : Context, codec : FsCodec.IEventCodec<_,_,'context>, fold, initial,
+type SqlStreamStoreCategory<'event, 'state, 'context>
+    (   context : SqlStreamStoreContext, codec : FsCodec.IEventCodec<_,_,'context>, fold, initial,
         /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>]?caching,
@@ -589,7 +589,7 @@ type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPoli
 
     abstract member Connect : unit -> Async<SqlStreamStore.IStreamStore>
 
-    member __.Establish(appName) : Async<Connection> = async {
+    member __.Establish() : Async<SqlStreamStoreConnection> = async {
         let! store = __.Connect()
-        return Connection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
+        return SqlStreamStoreConnection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
     }

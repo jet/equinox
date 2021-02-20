@@ -12,14 +12,14 @@ let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
 
 let createMemoryStore () = MemoryStore.VolatileStore<byte[]>()
 let createServiceMemory log store =
-    Cart.create log (fun (id,opt) -> MemoryStore.Resolver(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
+    Cart.create log (fun (id,opt) -> MemoryStore.MemoryStoreCategory(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
 
 let codec = Domain.Cart.Events.codec
 
 let resolveGesStreamWithRollingSnapshots gateway =
-    fun (id,opt) -> EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
+    fun (id,opt) -> EventStore.EventStoreCategory(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
 let resolveGesStreamWithoutCustomAccessStrategy gateway =
-    fun (id,opt) -> EventStore.Resolver(gateway, codec, fold, initial).Resolve(id,?option=opt)
+    fun (id,opt) -> EventStore.EventStoreCategory(gateway, codec, fold, initial).Resolve(id,?option=opt)
 
 let resolveCosmosStreamWithSnapshotStrategy context =
     fun (id,opt) -> CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)

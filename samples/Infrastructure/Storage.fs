@@ -9,9 +9,9 @@ exception MissingArg of string
 type StorageConfig =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
     | Memory of Equinox.MemoryStore.VolatileStore<byte[]>
-    | Es     of Equinox.EventStore.Context * Equinox.EventStore.CachingStrategy option * unfolds: bool
+    | Es     of Equinox.EventStore.EventStoreContext * Equinox.EventStore.CachingStrategy option * unfolds: bool
     | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool
-    | Sql    of Equinox.SqlStreamStore.Context * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
+    | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
     type [<NoEquality; NoComparison>] Arguments =
@@ -163,7 +163,7 @@ module EventStore =
                 log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
             .Establish(appName, Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
-    let private createGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
+    let private createGateway connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
     let config (log: ILogger, storeLog) (cache, unfolds) (args : ParseResults<Arguments>) =
         let a = Info(args)
         let (timeout, retries) as operationThrottling = a.Timeout, a.Retries
@@ -202,8 +202,8 @@ module Sql =
         let connect (log : ILogger) (connectionString,schema,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore MsSql Connection {connectionString} Schema {schema} AutoCreate {autoCreate}", connectionString, schema, autoCreate)
-            Equinox.SqlStreamStore.MsSql.Connector(sssConnectionString,schema,autoCreate=autoCreate).Establish(appName)
-        let private createGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
+            Equinox.SqlStreamStore.MsSql.Connector(sssConnectionString,schema,autoCreate=autoCreate).Establish()
+        let private createGateway connection batchSize = SqlStreamStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
         let config (log: ILogger) (cache, unfolds) (args : ParseResults<Arguments>) =
             let a = Info(args)
             let conn = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
@@ -228,8 +228,8 @@ module Sql =
         let connect (log : ILogger) (connectionString,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore MySql Connection {connectionString} AutoCreate {autoCreate}", connectionString, autoCreate)
-            Equinox.SqlStreamStore.MySql.Connector(sssConnectionString,autoCreate=autoCreate).Establish(appName)
-        let private createGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
+            Equinox.SqlStreamStore.MySql.Connector(sssConnectionString,autoCreate=autoCreate).Establish()
+        let private createGateway connection batchSize = SqlStreamStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
         let config (log: ILogger) (cache, unfolds) (args : ParseResults<Arguments>) =
             let a = Info(args)
             let conn = connect log (a.ConnectionString, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
@@ -257,8 +257,8 @@ module Sql =
         let connect (log : ILogger) (connectionString,schema,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore Postgres Connection {connectionString} Schema {schema} AutoCreate {autoCreate}", connectionString, schema, autoCreate)
-            Equinox.SqlStreamStore.Postgres.Connector(sssConnectionString,schema,autoCreate=autoCreate).Establish(appName)
-        let private createGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
+            Equinox.SqlStreamStore.Postgres.Connector(sssConnectionString,schema,autoCreate=autoCreate).Establish()
+        let private createGateway connection batchSize = SqlStreamStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
         let config (log: ILogger) (cache, unfolds) (args : ParseResults<Arguments>) =
             let a = Info(args)
             let conn = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously

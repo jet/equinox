@@ -358,7 +358,7 @@ module Token =
         let currentVersion, newVersion = current.pos.streamVersion, x.pos.streamVersion
         newVersion > currentVersion
 
-type Connection(readConnection, [<O; D(null)>] ?writeConnection, [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy) =
+type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy) =
     member __.ReadConnection = readConnection
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteConnection = defaultArg writeConnection readConnection
@@ -372,7 +372,7 @@ type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>] ?batchCountLim
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown of StreamToken
 
-type Context(conn : Connection, batching : BatchingPolicy) =
+type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
     let isResolvedEventEventType (tryDecode, predicate) (x : ResolvedEvent) = predicate (tryDecode (x.Event.Data))
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
 
@@ -451,7 +451,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state, 'context>(context : Context, codec : FsCodec.IEventCodec<_, _, 'context>, ?access : AccessStrategy<'event, 'state>) =
+type private Category<'event, 'state, 'context>(context : EventStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access : AccessStrategy<'event, 'state>) =
     let tryDecode (e : ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
 
     let compactionPredicate =
@@ -584,8 +584,8 @@ type CachingStrategy =
     /// Semantics are identical to <c>SlidingWindow</c>.
     | SlidingWindowPrefixed of ICache * window : TimeSpan * prefix : string
 
-type Resolver<'event, 'state, 'context>
-    (   context : Context, codec : FsCodec.IEventCodec<_, _, 'context>, fold, initial,
+type EventStoreCategory<'event, 'state, 'context>
+    (   context : EventStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, fold, initial,
         /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
         /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>] ?caching,
@@ -765,13 +765,13 @@ type Connector
     member __.Establish
         (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
             name,
-            discovery : Discovery, strategy : ConnectionStrategy) : Async<Connection> = async {
+            discovery : Discovery, strategy : ConnectionStrategy) : Async<EventStoreConnection> = async {
         match strategy with
         | ConnectionStrategy.ClusterSingle nodePreference ->
             let! conn = __.Connect(name, discovery, nodePreference)
-            return Connection(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
+            return EventStoreConnection(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
         | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
             let! masterInParallel = Async.StartChild (__.Connect(name + "-TwinW", discovery, NodePreference.Master))
             let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
             let! master = masterInParallel
-            return Connection(readConnection = slave, writeConnection = master, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }
+            return EventStoreConnection(readConnection = slave, writeConnection = master, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }

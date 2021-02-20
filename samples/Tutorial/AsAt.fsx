@@ -145,14 +145,14 @@ module EventStore =
     let connector = Connector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
     let esc = connector.Connect(appName, Discovery.GossipDns host) |> Async.RunSynchronously
     let log = Logger.SerilogNormal (Log.log)
-    let conn = Connection(esc)
-    let context = Context(conn, BatchingPolicy(maxBatchSize=snapshotWindow))
+    let conn = EventStoreConnection(esc)
+    let context = EventStoreContext(conn, BatchingPolicy(maxBatchSize=snapshotWindow))
     // cache so normal read pattern is to read from whatever we've built in memory
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-    let resolve id = Equinox.Decider(Log.log, resolver.Resolve(streamName id), maxAttempts = 3)
+    let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let resolve id = Equinox.Decider(Log.log, cat.Resolve(streamName id), maxAttempts = 3)
 
 module Cosmos =
 

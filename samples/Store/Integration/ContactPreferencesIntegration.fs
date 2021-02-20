@@ -11,13 +11,13 @@ let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferenc
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    ContactPreferences.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
+    ContactPreferences.create log (MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.ContactPreferences.Events.codec
 let resolveStreamGesWithOptimizedStorageSemantics gateway =
-    EventStore.Resolver(gateway 1, codec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
+    EventStore.EventStoreCategory(gateway 1, codec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamGesWithoutAccessStrategy gateway =
-    EventStore.Resolver(gateway defaultBatchSize, codec, fold, initial).Resolve
+    EventStore.EventStoreCategory(gateway defaultBatchSize, codec, fold, initial).Resolve
 
 let resolveStreamCosmosWithLatestKnownEventSemantics context =
     CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.LatestKnownEvent).Resolve

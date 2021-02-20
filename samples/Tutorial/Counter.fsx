@@ -85,8 +85,8 @@ let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
 let store = Equinox.MemoryStore.VolatileStore()
 let _ = store.Committed.Subscribe(fun (s, xs) -> logEvents s xs)
 let codec = FsCodec.Box.Codec.Create()
-let resolver = Equinox.MemoryStore.Resolver(store, codec, fold, initial)
-let resolve instanceId = Equinox.Decider(log, streamName instanceId |> resolver.Resolve, maxAttempts = 3)
+let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
+let resolve instanceId = Equinox.Decider(log, streamName instanceId |> cat.Resolve, maxAttempts = 3)
 let service = Service(resolve)
 
 let clientId = "ClientA"

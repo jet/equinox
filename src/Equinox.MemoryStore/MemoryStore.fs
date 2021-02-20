@@ -99,7 +99,7 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
                     return version, fold state (successorEvents |> Seq.choose codec.TryDecode) }
                 return SyncResult.Conflict resync }
 
-type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
+type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
     let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
     let resolveStream streamName context = Stream.create category streamName None context
 

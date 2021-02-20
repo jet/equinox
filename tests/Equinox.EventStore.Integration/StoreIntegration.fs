@@ -8,12 +8,17 @@ open Swensen.Unquote
 open System.Threading
 open System
 
+let defaultBatchSize = 500
+
 #if STORE_POSTGRES
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.Postgres
 
 let connectToLocalStore (_ : ILogger) =
     Connector("Host=localhost;User Id=postgres;database=EQUINOX_TEST_DB",autoCreate=true).Establish()
+
+type Context = SqlStreamStoreContext
+type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
 #else
 #if STORE_MSSQL
 open Equinox.SqlStreamStore
@@ -21,6 +26,9 @@ open Equinox.SqlStreamStore.MsSql
 
 let connectToLocalStore (_ : ILogger) =
     Connector(sprintf "Server=localhost,1433;User=sa;Password=!Passw0rd;Database=test",autoCreate=true).Establish()
+
+type Context = SqlStreamStoreContext
+type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
 #else
 #if STORE_MYSQL
 open Equinox.SqlStreamStore
@@ -28,6 +36,9 @@ open Equinox.SqlStreamStore.MySql
 
 let connectToLocalStore (_ : ILogger) =
     Connector(sprintf "Server=localhost;User=root;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
+
+type Context = SqlStreamStoreContext
+type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
 #else // STORE_EVENTSTORE
 open Equinox.EventStore
 
@@ -39,11 +50,13 @@ open Equinox.EventStore
 let connectToLocalStore log =
     Connector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
         .Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"),ConnectionStrategy.ClusterSingle NodePreference.Master)
+
+type Context = EventStoreContext
+type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
 #endif
 #endif
 #endif
 
-let defaultBatchSize = 500
 let createGesGateway connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
 
 module Cart =
@@ -51,27 +64,27 @@ module Cart =
     let codec = Domain.Cart.Events.codec
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
     let createServiceWithoutOptimization log gateway =
-        let resolve (id,opt) = Resolver(gateway, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt)
+        let resolve (id,opt) = Category(gateway, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt)
         Cart.create log resolve
     let createServiceWithCompaction log gateway =
-        let resolve (id,opt) = Resolver(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
+        let resolve (id,opt) = Category(gateway, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
         Cart.create log resolve
     let createServiceWithCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Cart.create log (fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
+        Cart.create log (fun (id,opt) -> Category(gateway, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
     let createServiceWithCompactionAndCaching log gateway cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Cart.create log (fun (id,opt) -> Resolver(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
+        Cart.create log (fun (id,opt) -> Category(gateway, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
     let codec = Domain.ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let gateway = createGesGateway connection defaultBatchSize
-        ContactPreferences.create log (Resolver(gateway, codec, fold, initial).Resolve)
+        ContactPreferences.create log (Category(gateway, codec, fold, initial).Resolve)
     let createService log connection =
-        let resolver = Resolver(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
-        ContactPreferences.create log resolver.Resolve
+        let cat = Category(createGesGateway connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
+        ContactPreferences.create log cat.Resolve
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

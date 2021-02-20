@@ -63,5 +63,5 @@ module Cosmos =
 module MemoryStore =
 
     let create store =
-        let resolver = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial)
-        create resolver.Resolve
+        let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Events.codec, Fold.fold, Fold.initial)
+        create cat.Resolve

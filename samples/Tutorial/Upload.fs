@@ -79,5 +79,5 @@ module Cosmos =
 module EventStore =
     open Equinox.EventStore
     let create context =
-        let resolver = Resolver(context, Events.codec, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent)
-        create resolver.Resolve
+        let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent)
+        create cat.Resolve

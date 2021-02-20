@@ -388,7 +388,7 @@ module Dump =
         let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
         let doU,doE = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly)
         let doC,doJ,doP,doT = args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip),not(args.Contains TimeRegular)
-        let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
+        let cat = Samples.Infrastructure.Services.StreamResolver(storeConfig)
 
         let streams = args.GetResults DumpArguments.Stream
         log.ForContext("streams",streams).Information("Reading...")
@@ -408,7 +408,7 @@ module Dump =
                 | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (streamName : FsCodec.StreamName) = async {
-            let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
+            let stream = cat.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
             let! _token,events = stream.Load storeLog
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
             let mutable prevTs = None
