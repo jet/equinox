@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- Replace `Stream.TransactAsyncEx` with `TransactEx`, providing an extended signature to expose the `ISyncContext` to `decide` as `master` [#263](https://github.com/jet/equinox/pull/263) [#272](https://github.com/jet/equinox/pull/272)
+
 ### Removed
 ### Fixed
 
