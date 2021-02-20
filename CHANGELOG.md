@@ -48,7 +48,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
-- change `createAttemptsExhaustedException` to allow any `exn`-derived `type` [#264](https://github.com/jet/equinox/pull/264)
+- change `createAttemptsExhaustedException` to allow any `exn`-derived `type` [#275](https://github.com/jet/equinox/pull/275)
 
 <a name="2.4.0"></a>
 ## [2.4.0] - 2020-12-03
