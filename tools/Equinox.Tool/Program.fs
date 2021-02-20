@@ -314,14 +314,14 @@ module CosmosInit =
 
     open Equinox.CosmosStore.Core.Initialization
 
-    let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
-        Storage.Cosmos.conn log (Storage.Cosmos.Info sargs) |> fst
+    let connect log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
+        Storage.Cosmos.connect log (Storage.Cosmos.Info sargs) |> fst
 
     let containerAndOrDb log (iargs: ParseResults<InitArguments>) = async {
         match iargs.TryGetSubCommand() with
         | Some (InitArguments.Cosmos sargs) ->
             let skipStoredProc = iargs.Contains InitArguments.SkipStoredProc
-            let client,dName,cName = conn log sargs
+            let client,dName,cName = connect log sargs
             let mode = (CosmosInitInfo iargs).ProvisioningMode
             match mode with
             | Provisioning.Container ru ->
@@ -364,7 +364,7 @@ module CosmosStats =
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let client,dName,cName = CosmosInit.conn log sargs
+            let client,dName,cName = CosmosInit.connect log sargs
             let container = client.GetContainer(dName, cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """

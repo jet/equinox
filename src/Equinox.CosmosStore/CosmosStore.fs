@@ -1193,7 +1193,7 @@ open System
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
 /// - The (singleton) per Container Stored Procedure initialization state
-type CosmosStoreClient
+type CosmosStoreConnection
     (   /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
         categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
         createContainer : string * string -> Container,
@@ -1224,7 +1224,7 @@ type CosmosStoreClient
         let secondaryContainer =
             if Option.isNone client2 && Option.isNone databaseId2 && Option.isNone containerId2 then fun (_, _) -> None
             else fun (d, c) -> Some ((defaultArg client2 client).GetDatabase(defaultArg databaseId2 d).GetContainer(defaultArg containerId2 c))
-        CosmosStoreClient(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
+        CosmosStoreConnection(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
             ?disableInitialization = disableInitialization, ?createGateway = createGateway)
     member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
         let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
@@ -1239,9 +1239,9 @@ type CosmosStoreClient
         g, streamName
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(connection : CosmosStoreClient, [<O; D null>] ?queryOptions, [<O; D null>] ?tipOptions) =
+type CosmosStoreContext(connection : CosmosStoreConnection, [<O; D null>] ?queryOptions, [<O; D null>] ?tipOptions) =
     static member Create
-        (   connection : CosmosStoreClient,
+        (   connection : CosmosStoreConnection,
             /// Max number of Batches to return per paged query response. Default: 10.
             [<O; D null>]?queryMaxItems,
             /// Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.

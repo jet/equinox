@@ -110,7 +110,7 @@ type Tests() =
 
     // Protip: Debug this test to view standard metrics rendering
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` context skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against EventStore, hooking, extracting and substituting metrics in the logging information`` (ctx, skuId) = Async.RunSynchronously <| async {
         let batchSize = defaultBatchSize
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
@@ -119,11 +119,11 @@ type Tests() =
         let service = Cart.create log (CartIntegration.resolveGesStreamWithRollingSnapshots context)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
-        do! act buffer service itemCount context cartId skuId "ReadStreamEventsBackwardAsync-Duration"
+        do! act buffer service itemCount ctx cartId skuId "ReadStreamEventsBackwardAsync-Duration"
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` cartContext skuId = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, hooking, extracting and substituting metrics in the logging information`` (ctx, skuId) = Async.RunSynchronously <| async {
         let queryMaxItems = defaultQueryMaxItems
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
@@ -131,5 +131,5 @@ type Tests() =
         let service = Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy context)
         let itemCount = queryMaxItems / 2 + 1
         let cartId = % Guid.NewGuid()
-        do! act buffer service itemCount cartContext cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200
+        do! act buffer service itemCount ctx cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200
     }

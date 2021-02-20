@@ -332,7 +332,7 @@ module Token =
         let currentVersion, newVersion = current.pos.streamVersion, x.pos.streamVersion
         newVersion > currentVersion
 
-type SqlStreamStoreClient(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+type SqlStreamStoreConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member __.ReadConnection = readConnection
     member __.ReadRetryPolicy = readRetryPolicy
     member __.WriteConnection = defaultArg writeConnection readConnection
@@ -346,14 +346,14 @@ type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountLimi
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
-type SqlStreamStoreContext(client : SqlStreamStoreClient, batching : BatchingPolicy) =
+type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : BatchingPolicy) =
     let isResolvedEventEventType (tryDecode,predicate) (e:StreamMessage) =
         let data = e.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
         predicate (tryDecode data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     member internal __.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
     member __.LoadBatched streamName log (tryDecode,isCompactionEventType): Async<StreamToken * 'event[]> = async {
-        let! version, events = Read.loadForwardsFrom log client.ReadRetryPolicy client.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
+        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting streamName version, Array.choose tryDecode events
         | Some isCompactionEvent ->
@@ -362,15 +362,15 @@ type SqlStreamStoreContext(client : SqlStreamStoreClient, batching : BatchingPol
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose tryDecode events }
     member __.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode,isOrigin): Async<StreamToken * 'event []> = async {
         let! version, events =
-            Read.loadBackwardsUntilCompactionOrStart log client.ReadRetryPolicy client.ReadConnection batching.BatchSize batching.MaxBatches streamName (tryDecode,isOrigin)
+            Read.loadBackwardsUntilCompactionOrStart log connection.ReadRetryPolicy connection.ReadConnection batching.BatchSize batching.MaxBatches streamName (tryDecode,isOrigin)
         match Array.tryHead events |> Option.filter (function _, Some e -> isOrigin e | _ -> false) with
         | None -> return Token.ofUncompactedVersion batching.BatchSize streamName version, Array.choose snd events
         | Some (resolvedEvent,_) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose snd events }
     member __.LoadFromToken useWriteConn streamName log (Token.Unpack token as streamToken) (tryDecode,isCompactionEventType)
         : Async<StreamToken * 'event[]> = async {
         let streamPosition = token.pos.streamVersion + 1L
-        let connToUse = if useWriteConn then client.WriteConnection else client.ReadConnection
-        let! version, events = Read.loadForwardsFrom log client.ReadRetryPolicy connToUse batching.BatchSize batching.MaxBatches streamName streamPosition
+        let connToUse = if useWriteConn then connection.WriteConnection else connection.ReadConnection
+        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connToUse batching.BatchSize batching.MaxBatches streamName streamPosition
         match isCompactionEventType with
         | None -> return Token.ofNonCompacting streamName version, Array.choose tryDecode events
         | Some isCompactionEvent ->
@@ -379,7 +379,7 @@ type SqlStreamStoreContext(client : SqlStreamStoreClient, batching : BatchingPol
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose tryDecode events }
     member __.TrySync log (Token.Unpack token as streamToken) (events, encodedEvents: EventData array) (isCompactionEventType) : Async<GatewaySyncResult> = async {
         let streamVersion = token.pos.streamVersion
-        let! wr = Write.writeEvents log client.WriteRetryPolicy client.WriteConnection token.stream.name streamVersion encodedEvents
+        let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection token.stream.name streamVersion encodedEvents
         match wr with
         | EsSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
@@ -396,7 +396,7 @@ type SqlStreamStoreContext(client : SqlStreamStoreClient, batching : BatchingPol
             return GatewaySyncResult.Written token }
     member __.Sync(log, streamName, streamVersion, events: FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
-        let! wr = Write.writeEvents log client.WriteRetryPolicy client.WriteConnection streamName streamVersion encodedEvents
+        let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents
         match wr with
         | EsSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
@@ -589,7 +589,7 @@ type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPoli
 
     abstract member Connect : unit -> Async<SqlStreamStore.IStreamStore>
 
-    member __.Establish() : Async<SqlStreamStoreClient> = async {
+    member __.Establish() : Async<SqlStreamStoreConnection> = async {
         let! store = __.Connect()
-        return SqlStreamStoreClient(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
+        return SqlStreamStoreConnection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
     }
