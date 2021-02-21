@@ -3,7 +3,7 @@ title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query operati
 
 actor Caller order 20
 box "Equinox.Decider"
-    participant Stream order 40
+    participant Decider order 40
 end box
 participant Aggregate order 50
 participant Service order 60
@@ -15,19 +15,19 @@ end box
 
 Caller -> Service: Read("clientId")
 participant Aggregate
-Service -> Stream: Query(id, renderList)
-Stream -> IStream: Load("Favorites-clientId")
+Service -> Decider: Query(id, renderList)
+Decider -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 note left of Cache #yellow: Cache Keeps Folded State (and the Version) per Stream\nin memory - GC can release if total RAM use overflows defined limit
 Cache --> IStream: None
 IStream -> EventStore: ReadStreamEventsForward (-1, "Favorites-clientId", batchSize)
 EventStore -[#blue]-> IStream: { version = -1; [No events] }
 IStream <- Aggregate: initial
-IStream -> Stream: { state = initial; version = -1 }
+IStream -> Decider: { state = initial; version = -1 }
 IStream --> Cache: Update("Favorites-clientId", { version = -1, state = initial })
 note left of Cache: Even if we write a stale version to the cache, each Query or Transact will do a Sync with the Store\nso we will end up with a correct state -- we just need to establish a valid starting point
-Stream -> Aggregate: renderList version state
-Stream -> Caller: {result = list }
+Decider -> Aggregate: renderList version state
+Decider -> Caller: {result = list }
 @enduml
 
 @startuml
@@ -35,7 +35,7 @@ title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Transact oper
 
 actor Caller order 20
 box "Equinox.Decider"
-    participant Stream order 40
+    participant Decider order 40
 end box
 participant Aggregate order 50
 participant Service order 60
@@ -46,9 +46,9 @@ box "Equinox.EventStore / EventStore"
 end box
 
 Caller -> Service: Execute("clientId", Favorite "A")
-Service -> Stream: Transact(interpret (Favorite "A"))
-Service -> Stream: maxAttempts
-Stream -> IStream: Load("Favorites-clientId")
+Service -> Decider: Transact(interpret (Favorite "A"))
+Service -> Decider: maxAttempts
+Decider -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: None
 IStream -> EventStore: ReadStreamEventsForward (-1, "Favorites-clientId", batchSize)
@@ -68,9 +68,9 @@ else load from events (backward)
   Aggregate --> IStream: state
 end // initial stream load cases
 loop Optimistic Concurrency Control loop driven by consistency check on version, attempts times; INPUT: state
-Stream -> Aggregate: interpret state
-Aggregate --> Stream: (result = proposedResult, events = proposedEvents)
-Stream -> IStream: Sync version state proposedEvents
+Decider -> Aggregate: interpret state
+Aggregate --> Decider: (result = proposedResult, events = proposedEvents)
+Decider -> IStream: Sync version state proposedEvents
 IStream <- Aggregate: fold state proposedEvents
 Aggregate --> IStream: state'
 note over IStream: Every (batchSize - 1) events, a Snapshot Event is appended with the application events\nto ensure a single roundtrip will always return a snapshot plus successor events
@@ -93,8 +93,8 @@ end // alt throw
 end // alt ok or conflict
 end // loop
 IStream --> Cache: Update("Favorites-clientId", { state', version' })
-IStream -> Stream: { state = state' }
-Stream -> Caller: proposedResult
+IStream -> Decider: { state = state' }
+Decider -> Caller: proposedResult
 @enduml
 
 @startuml
@@ -102,7 +102,7 @@ title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query\nfollow
 
 actor Caller order 20
 box "Equinox.Decider"
-    participant Stream order 40
+    participant Decider order 40
 end box
 participant Aggregate order 50
 participant Service order 60
@@ -115,14 +115,14 @@ end box
 actor Caller
 Caller -> Service: Read("clientId")
 participant Aggregate
-Service -> Stream: Query(id, renderList)
-Stream -> IStream: Load("Favorites-clientId")
+Service -> Decider: Query(id, renderList)
+Decider -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: { state = cachedState; version = cachedVersion }
 IStream -> EventStore: ReadStreamEventsForward (version, "Favorites-clientId", batchSize)
 EventStore -[#blue]-> IStream: (no events)
 IStream -> Cache: { state = fold cachedState []; version = version }
-IStream -> Stream: { state = fold cachedState []; version = version }
+IStream -> Decider: { state = fold cachedState []; version = version }
 Aggregate <-> IStream: { result = renderList version state }
 Aggregate -> Caller: result
 @enduml
@@ -132,7 +132,7 @@ title Code diagram for Equinox.EventStore / Equinox.SqlStreamStore Query\nwith o
 
 actor Caller order 20
 box "Equinox.Decider"
-    participant Stream order 40
+    participant Decider order 40
 end box
 participant Aggregate order 50
 participant Service order 60
@@ -145,8 +145,8 @@ end box
 actor Caller
 Caller -> Service: Read("clientId")
 participant Aggregate
-Service -> Stream: Query(id, renderList)
-Stream -> IStream: Load("Favorites-clientId")
+Service -> Decider: Query(id, renderList)
+Decider -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: None
 IStream -> EventStore: ReadStreamEventsBackward (End, "Favorites-clientId", batchSize)
@@ -156,8 +156,8 @@ note over IStream: returns true (we'd otherwise keep walking back and then folds
 IStream -> Aggregate: fold initial [Snapshotted snapshottedValue]
 Aggregate --> IStream: state
 IStream --> Cache: Update("Favorites-clientId", { state, version })
-IStream -> Stream: {state = state; version = version }
-Stream -> Aggregate: let result = renderList version, state
-Stream -> Caller: result
+IStream -> Decider: {state = state; version = version }
+Decider -> Aggregate: let result = renderList version, state
+Decider -> Caller: result
 
 @enduml

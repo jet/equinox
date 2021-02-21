@@ -3,7 +3,7 @@ title Code diagram for Equinox.CosmosStore Query operation, with empty cache and
 
 actor Caller order 20 
 box "Equinox.Decider"
-    participant Stream order 40
+    participant Decider order 40
 end box
 participant Aggregate order 50
 participant Service order 60
@@ -15,18 +15,18 @@ end box
 
 Caller -> Service: Read("clientId")
 participant Aggregate
-Service -> Stream: Query(id, renderList)
-Stream -> IStream: Load("Favorites-clientId")
+Service -> Decider: Query(id, renderList)
+Decider -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: None
 IStream -> CosmosDB: ReadItem(NoEtag, "Favorites-clientId", "-1")
 CosmosDB -[#blue]-> IStream: 404 Not Found
 note right IStream #lightblue: Charge = 1 RU
 IStream <- Aggregate: initial
-IStream -> Stream: { state = initial; version = -1 }
+IStream -> Decider: { state = initial; version = -1 }
 IStream --> Cache: Update("Favorites-clientId", { etag = null, version = -1, state = initial })
-Stream -> Aggregate: renderList version state
-Stream -> Caller: {result = list }
+Decider -> Aggregate: renderList version state
+Decider -> Caller: {result = list }
 @enduml
 
 @startuml
@@ -34,7 +34,7 @@ title Code diagram for Equinox.CosmosStore Transact operation, with cache up to 
 
 actor Caller order 20
 box "Equinox.Decider"
-    participant Stream order 40
+    participant Decider order 40
 end box
 participant Aggregate order 50
 participant Service order 60
@@ -45,9 +45,9 @@ box "Equinox.CosmosStore / CosmosDB"
 end box
 
 Caller -> Service: Execute("clientId", Favorite "A")
-Service -> Stream: Transact(interpret (Favorite "A"))
-Service -> Stream: maxAttempts
-Stream -> IStream: Load("Favorites-clientId")
+Service -> Decider: Transact(interpret (Favorite "A"))
+Service -> Decider: maxAttempts
+Decider -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: None
 IStream -> CosmosDB: ReadItem(etag, "Favorites-clientId", "-1")
@@ -55,9 +55,9 @@ IStream -> CosmosDB: ReadItem(etag, "Favorites-clientId", "-1")
 alt Stream Empty (initial state)
 CosmosDB -[#blue]-> IStream: 404 Not Found
 note right IStream #lightblue: Charge = 1 RU
-Stream -> IStream: initial
-IStream -> Stream: { state = initial; events = [] }
-Stream -> Aggregate: fold initial events
+Decider -> IStream: initial
+IStream -> Decider: { state = initial; events = [] }
+Decider -> Aggregate: fold initial events
 else load from snapshot
 CosmosDB -[#green]-> IStream: 200, etag, u = [{c:"Snapshotted", d: {state = snapshottedValue}}])
 note right IStream #lightblue: charge = f(READ * length(compressedTipDocument)
@@ -85,9 +85,9 @@ end // initial stream load cases
 Aggregate --> IStream: state
 
 loop Optimistic Concurrency Control loop driven by consistency check on etag, attempts times; INPUT: state
-Stream -> Aggregate: interpret state
-Aggregate --> Stream: { result = proposedResult\n  events proposedEvents }
-Stream -> IStream: TrySync token state proposedEvents
+Decider -> Aggregate: interpret state
+Aggregate --> Decider: { result = proposedResult\n  events proposedEvents }
+Decider -> IStream: TrySync token state proposedEvents
 IStream -> Aggregate: fold state proposedEvents
 Aggregate --> IStream: state'
 IStream -> Aggregate: snapshot state'
@@ -110,8 +110,8 @@ end // alt throw
 end // alt ok or conflict
 end // loop
 IStream --> Cache: Update("Favorites-clientId", { etag', state', version' })
-IStream -> Stream: { state = state' }
-Stream -> Caller: proposedResult
+IStream -> Decider: { state = state' }
+Decider -> Caller: proposedResult
 @enduml
 
 @startuml
@@ -131,14 +131,14 @@ end box
 
 Caller -> Service: Read("clientId")
 participant Aggregate
-Service -> Stream: Query(id, renderList)
-Stream -> IStream: Load("Favorites-clientId")
+Service -> Decider: Query(id, renderList)
+Decider -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: { state = cachedState; etag = cachedEtag }
 IStream -> CosmosDB: ReadItem(cachedEtag, "Favorites-clientId", "-1")
 CosmosDB -[#blue]->  IStream: 304 Not Modified
 note right IStream #lightblue: Charge = 1 RU
-IStream -> Stream: { state = cachedState\n  version = version\n  etag = cachedEtag }
+IStream -> Decider: { state = cachedState\n  version = version\n  etag = cachedEtag }
 Aggregate <-> IStream: { result = renderList version state }
 Aggregate -> Caller: result
 @enduml
@@ -148,7 +148,7 @@ title Code diagram for Equinox.CosmosStore Query operation on a node without an 
 
 actor Caller order 20
 box "Equinox.Decider"
-    participant Stream order 40
+    participant Decider order 40
 end box
 participant Aggregate order 50
 participant Service order 60
@@ -160,8 +160,8 @@ end box
 
 Caller -> Service: Read("clientId")
 participant Aggregate
-Service -> Stream: Query(id, renderList)
-Stream -> IStream: Load("Favorites-clientId")
+Service -> Decider: Query(id, renderList)
+Decider -> IStream: Load("Favorites-clientId")
 IStream -> Cache: TryGet("Favorites-clientId")
 Cache --> IStream: None
 IStream -> CosmosDB: ReadItem(NoEtag, "Favorites-clientId", "-1")
@@ -174,7 +174,7 @@ Aggregate -[#green]-> IStream: true
 IStream -> Aggregate: fold initial snapshottedValue
 Aggregate --> IStream: state
 IStream --> Cache: Update("Favorites-clientId", { etag, state, version })
-IStream -> Stream: {state = state; version = version }
-Stream -> Aggregate: let result = renderList version, state
-Stream -> Caller: result
+IStream -> Decider: {state = state; version = version }
+Decider -> Aggregate: let result = renderList version, state
+Decider -> Caller: result
 @enduml
