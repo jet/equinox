@@ -9,10 +9,18 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.5.0"></a>
+## [2.5.0] - 2021-02-24
+
+
+### Added
 
 - `Stream.TransactEx`: extended signature, replacing `TransactAsyncEx`. Provides the `ISyncContext` both before and after the `decide` so pre-flight checks can be performed (as `master` [#263](https://github.com/jet/equinox/pull/263)) [#277](https://github.com/jet/equinox/pull/277)
 
-### Changed
 ### Removed
 
 - `Stream.TransactAsyncEx` (as `master` [#263](https://github.com/jet/equinox/pull/263)) [#277](https://github.com/jet/equinox/pull/277)
@@ -457,7 +465,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.4.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.5.0...HEAD
+[2.5.0]: https://github.com/jet/equinox/compare/2.4.0...2.5.0
 [2.4.0]: https://github.com/jet/equinox/compare/2.3.0...2.4.0
 [2.3.0]: https://github.com/jet/equinox/compare/2.3.0-rc2...2.3.0
 [2.3.0-rc2]: https://github.com/jet/equinox/compare/2.3.0-rc1...2.3.0-rc2
