@@ -9,8 +9,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Stream.TransactEx`: extended signature, replacing `TransactAsyncEx`. Provides the `ISyncContext` both before and after the `decide` so pre-flight checks can be performed (as `master` [#263](https://github.com/jet/equinox/pull/263)) [#277](https://github.com/jet/equinox/pull/277)
+
 ### Changed
 ### Removed
+
+- `Stream.TransactAsyncEx` (as `master` [#263](https://github.com/jet/equinox/pull/263)) [#277](https://github.com/jet/equinox/pull/277)
+
 ### Fixed
 
 - `Cosmos.Prometheus`: Correct namespace (was erroneously `Equinox.CosmosStore.Prometheus`) [#271](https://github.com/jet/equinox/pull/271)

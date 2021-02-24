@@ -43,7 +43,7 @@ type ISyncContext<'state> =
 module internal Flow =
 
     /// Represents stream and folding state between the load and run/render phases
-    type SyncState<'event, 'state>
+    type SyncContext<'event, 'state>
         (   originState : StreamToken * 'state,
             trySync : ILogger * StreamToken * 'state * 'event list -> Async<SyncResult<'state>>) =
         let mutable tokenAndState = originState
@@ -77,45 +77,45 @@ module internal Flow =
     /// 2b. if saved without conflict, exit with updated state
     /// 2b. if conflicting changes, retry by recommencing at step 1 with the updated state
     let run (log : ILogger) (maxSyncAttempts : int, resyncRetryPolicy, createMaxAttemptsExhaustedException)
-        (syncState : SyncState<'event, 'state>)
-        (decide : 'state -> Async<'result * 'event list>)
-        (mapResult : 'result -> SyncState<'event, 'state> -> 'resultEx)
-        : Async<'resultEx> =
+        (context : SyncContext<'event, 'state>)
+        (decide : ISyncContext<'state> -> Async<'result * 'event list>)
+        (mapResult : 'result -> SyncContext<'event, 'state> -> 'view)
+        : Async<'view> =
 
         if maxSyncAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxSyncAttempts", maxSyncAttempts, "should be >= 1")
 
         /// Run a decision cycle - decide what events should be appended given the presented state
-        let rec loop attempt : Async<'resultEx> = async {
+        let rec loop attempt : Async<'view> = async {
             let log = if attempt = 1 then log else log.ForContext("syncAttempt", attempt)
-            let! result, events = decide (syncState :> ISyncContext<'state>).State
+            let! result, events = decide (context :> ISyncContext<'state>)
             if List.isEmpty events then
                 log.Debug "No events generated"
-                return mapResult result syncState
+                return mapResult result context
             elif attempt = maxSyncAttempts then
                 // Special case: on final attempt, we won't be `resync`ing; we're giving up
-                let! committed = syncState.TryWithoutResync(log, events)
+                let! committed = context.TryWithoutResync(log, events)
                 if not committed then
                     log.Debug "Max Sync Attempts exceeded"
                     return raise (createMaxAttemptsExhaustedException attempt)
                 else
-                    return mapResult result syncState
+                    return mapResult result context
             else
-                let! committed = syncState.TryOrResync(resyncRetryPolicy, attempt, log, events)
+                let! committed = context.TryOrResync(resyncRetryPolicy, attempt, log, events)
                 if not committed then
                     log.Debug "Resyncing and retrying"
                     return! loop (attempt + 1)
                 else
-                    return mapResult result syncState }
+                    return mapResult result context }
 
         /// Commence, processing based on the incoming state
         loop 1
 
     let transact (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) (stream : IStream<_, _>, log) decide mapResult : Async<'result> = async {
         let! streamState = stream.Load log
-        let syncState = SyncState(streamState, stream.TrySync)
+        let syncState = SyncContext(streamState, stream.TrySync)
         return! run log (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) syncState decide mapResult }
 
-    let query (stream : IStream<'event, 'state>, log : ILogger, project: SyncState<'event, 'state> -> 'result) : Async<'result> = async {
+    let query (stream : IStream<'event, 'state>, log : ILogger, project: SyncContext<'event, 'state> -> 'result) : Async<'result> = async {
         let! streamState = stream.Load log
-        let syncState = SyncState(streamState, stream.TrySync)
+        let syncState = SyncContext(streamState, stream.TrySync)
         return project syncState }
