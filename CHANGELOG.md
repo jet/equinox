@@ -44,12 +44,26 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - Remove separated `Backend` project from examples (support for architecturally separating all domain logic from Equinox and Domain Service logic from Concrete Stores remains)
 - Revise semantics of Cart Sample Command handling
 - Simplify `AsyncCacheCell` [#229](https://github.com/jet/equinox/pull/229)
-- Replace `Decider.TransactAsyncEx` with `TransactEx`, providing an extended signature to expose the `ISyncContext` to `decide` [#263](https://github.com/jet/equinox/pull/263)
 
 ### Removed
 ### Fixed
 
 - change `createAttemptsExhaustedException` to allow any `exn`-derived `type` [#275](https://github.com/jet/equinox/pull/275)
+
+<a name="2.5.0"></a>
+## [2.5.0] - 2021-02-24
+
+### Added
+
+- `Stream.TransactEx`: extended signature, replacing `TransactAsyncEx`. Provides the `ISyncContext` both before and after the `decide` so pre-flight checks can be performed (as `master` [#263](https://github.com/jet/equinox/pull/263)) [#277](https://github.com/jet/equinox/pull/277)
+
+### Removed
+
+- `Stream.TransactAsyncEx` (as `master` [#263](https://github.com/jet/equinox/pull/263)) [#277](https://github.com/jet/equinox/pull/277)
+
+### Fixed
+
+- `Cosmos.Prometheus`: Correct namespace (was erroneously `Equinox.CosmosStore.Prometheus`) [#271](https://github.com/jet/equinox/pull/271)
 
 <a name="2.4.0"></a>
 ## [2.4.0] - 2020-12-03
@@ -487,7 +501,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.4.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.5.0...HEAD
+[2.5.0]: https://github.com/jet/equinox/compare/2.4.0...2.5.0
 [2.4.0]: https://github.com/jet/equinox/compare/2.3.0...2.4.0
 [2.3.0]: https://github.com/jet/equinox/compare/2.3.0-rc2...2.3.0
 [2.3.0-rc2]: https://github.com/jet/equinox/compare/2.3.0-rc1...2.3.0-rc2
