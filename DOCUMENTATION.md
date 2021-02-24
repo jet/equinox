@@ -404,9 +404,9 @@ module EventStore =
     let create (context, cache) =
         let cacheStrategy =
             Equinox.EventStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-        let resolver =
-            Equinox.EventStore.Resolver(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create resolver.Resolve
+        let cat =
+            Equinox.EventStore.EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        create cat.Resolve
 
 module Cosmos =
     let accessStrategy =
@@ -428,8 +428,8 @@ can use the `MemoryStore` in the context of your tests:
 ```fsharp
 module MemoryStore =
     let create (store : Equinox.MemoryStore.VolatileStore) =
-        let resolver = Equinox.MemoryStore.Resolver(store, Events.codec, Fold.fold, Fold.initial)
-        create resolver.Resolve
+        let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Events.codec, Fold.fold, Fold.initial)
+        create cat.Resolve
 ```
 
 Typically that binding module can live with your test helpers rather than

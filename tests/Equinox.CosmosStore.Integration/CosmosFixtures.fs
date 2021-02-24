@@ -43,12 +43,12 @@ let connectWithFallback log =
     let client = createClient log name discovery
     CosmosStoreConnection(client, databaseId, containerId, containerId2 = containerId2)
 
-let createPrimaryContextIgnoreMissing conn queryMaxItems tipMaxEvents ignoreMissing =
-    CosmosStoreContext.Create(conn, queryMaxItems = queryMaxItems, tipMaxEvents = tipMaxEvents, ignoreMissingEvents = ignoreMissing)
+let createPrimaryContextIgnoreMissing client queryMaxItems tipMaxEvents ignoreMissing =
+    CosmosStoreContext.Create(client, queryMaxItems = queryMaxItems, tipMaxEvents = tipMaxEvents, ignoreMissingEvents = ignoreMissing)
 
 let createPrimaryContextEx log queryMaxItems tipMaxEvents =
-    let conn = connectPrimary log
-    createPrimaryContextIgnoreMissing conn queryMaxItems tipMaxEvents false
+    let connection = connectPrimary log
+    createPrimaryContextIgnoreMissing connection queryMaxItems tipMaxEvents false
 
 let defaultTipMaxEvents = 10
 
@@ -56,12 +56,12 @@ let createPrimaryContext log queryMaxItems =
     createPrimaryContextEx log queryMaxItems defaultTipMaxEvents
 
 let createSecondaryContext log queryMaxItems =
-    let conn = connectSecondary log
-    CosmosStoreContext.Create(conn, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
+    let connection = connectSecondary log
+    CosmosStoreContext.Create(connection, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
 
 let createFallbackContext log queryMaxItems =
-    let conn = connectWithFallback log
-    CosmosStoreContext.Create(conn, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
+    let connection = connectWithFallback log
+    CosmosStoreContext.Create(connection, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
 
 let defaultQueryMaxItems = 10
 
@@ -70,10 +70,10 @@ let createPrimaryEventsContext log queryMaxItems tipMaxItems =
     Equinox.CosmosStore.Core.EventsContext(context, log)
 
 let createPrimaryEventsContextWithUnsafe log queryMaxItems tipMaxItems =
-    let conn = connectPrimary log
+    let connection = connectPrimary log
     let create ignoreMissing =
-        let ctx = createPrimaryContextIgnoreMissing conn queryMaxItems tipMaxItems ignoreMissing
-        Equinox.CosmosStore.Core.EventsContext(ctx, log)
+        let context = createPrimaryContextIgnoreMissing connection queryMaxItems tipMaxItems ignoreMissing
+        Equinox.CosmosStore.Core.EventsContext(context, log)
     create false, create true
 
 let createSecondaryEventsContext log queryMaxItems =

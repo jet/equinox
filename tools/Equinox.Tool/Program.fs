@@ -314,14 +314,14 @@ module CosmosInit =
 
     open Equinox.CosmosStore.Core.Initialization
 
-    let conn log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
-        Storage.Cosmos.conn log (Storage.Cosmos.Info sargs) |> fst
+    let connect log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
+        Storage.Cosmos.connect log (Storage.Cosmos.Info sargs) |> fst
 
     let containerAndOrDb log (iargs: ParseResults<InitArguments>) = async {
         match iargs.TryGetSubCommand() with
         | Some (InitArguments.Cosmos sargs) ->
             let skipStoredProc = iargs.Contains InitArguments.SkipStoredProc
-            let client,dName,cName = conn log sargs
+            let client,dName,cName = connect log sargs
             let mode = (CosmosInitInfo iargs).ProvisioningMode
             match mode with
             | Provisioning.Container ru ->
@@ -364,7 +364,7 @@ module CosmosStats =
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
             let doS = doS || (not doD && not doE) // default to counting streams only unless otherwise specified
             let inParallel = args.Contains Parallel
-            let client,dName,cName = CosmosInit.conn log sargs
+            let client,dName,cName = CosmosInit.connect log sargs
             let container = client.GetContainer(dName, cName)
             let ops =
                 [   if doS then yield "Streams",   """SELECT VALUE COUNT(1) FROM c WHERE c.id="-1" """
@@ -388,7 +388,7 @@ module Dump =
         let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
         let doU,doE = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly)
         let doC,doJ,doP,doT = args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip),not(args.Contains TimeRegular)
-        let resolver = Samples.Infrastructure.Services.StreamResolver(storeConfig)
+        let cat = Samples.Infrastructure.Services.StreamResolver(storeConfig)
 
         let streams = args.GetResults DumpArguments.Stream
         log.ForContext("streams",streams).Information("Reading...")
@@ -408,7 +408,7 @@ module Dump =
                 | _ -> sprintf "(%d chars)" (System.Text.Encoding.UTF8.GetString(data).Length)
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (streamName : FsCodec.StreamName) = async {
-            let stream = resolver.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
+            let stream = cat.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
             let! _token,events = stream.Load storeLog
             let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
             let mutable prevTs = None

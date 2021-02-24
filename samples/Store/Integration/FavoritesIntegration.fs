@@ -12,21 +12,21 @@ let snapshot = Domain.Favorites.Fold.isOrigin, Domain.Favorites.Fold.snapshot
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    Favorites.create log (MemoryStore.Resolver(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
+    Favorites.create log (MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
 let codec = Domain.Favorites.Events.codec
-let createServiceGes log gateway =
-    let resolver = EventStore.Resolver(gateway, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
-    Favorites.create log resolver.Resolve
+let createServiceGes log context =
+    let cat = EventStore.EventStoreCategory(context, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot)
+    Favorites.create log cat.Resolve
 
 let createServiceCosmos log context =
-    let category = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
-    Favorites.create log category.Resolve
+    let cat = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
+    Favorites.create log cat.Resolve
 
 let createServiceCosmosRollingState log context =
     let access = CosmosStore.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
-    let category = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
-    Favorites.create log category.Resolve
+    let cat = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
+    Favorites.create log cat.Resolve
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
@@ -52,9 +52,9 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events`` args = Async.RunSynchronously <| async {
         let log = createLog ()
-        let! conn = connectToLocalEventStoreNode log
-        let gateway = createGesGateway conn defaultBatchSize
-        let service = createServiceGes log gateway
+        let! client = connectToLocalEventStoreNode log
+        let context = createContext client defaultBatchSize
+        let service = createServiceGes log context
         do! act service args
     }
 

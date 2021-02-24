@@ -1066,7 +1066,7 @@ type StoreClient(container : Container, fallback : Container option, query : Que
     member internal __.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip): Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode,isOrigin))
         let includeTip = Option.isNone tip
-        let walk log gateway = Query.scan log (gateway,stream) includeTip query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
+        let walk log container = Query.scan log (container,stream) includeTip query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
             match fallback with
             | None -> Choice1Of2 ignoreMissing
