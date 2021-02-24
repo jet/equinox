@@ -10,15 +10,25 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+### Removed
+### Fixed
 
-- Rename `type Stream` to `Decider` [#272](https://github.com/jet/equinox/pull/272) :pray: [@thinkbeforecoding](https://github.com/thinkbeforecoding)
-- Standardise naming of top level structure: `<StoreName>Connection` (wraps the relevant `*Client` for that store), `Context`, `Category` [#276](https://github.com/jet/equinox/pull/276)
-    - Rename `Resolver` -> `<StoreName>Category`
-    - Rename `Context` -> `<StoreName>Context`
-- Fork `Equinox.Cosmos` to `Equinox.CosmosStore`:
-    - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
-    - Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
-    - Rename `Equinox.Cosmos` DLL and namespace to `Equinox.CosmosStore` [#243](https://github.com/jet/equinox/pull/243)
+<a name="3.0.0-beta.1"></a>
+## [3.0.0-beta.1] - 2021-02-24
+
+### Added
+ 
+ - `Equinox.CosmosStore`: Forked from `Equinox.Cosmos` to add significant new features (see Removed section for deprecation policy info).
+   - Added support for accumulating events in Tip, i.e. being able to operate with a single document per stream until the events (if any) overflow a defined size threshold [#251](https://github.com/jet/equinox/pull/251) see also [#110](https://github.com/jet/equinox/pull/110)
+   - Added Secondary store fallback for Event loading, enabling streams to be hot-migrated (archived to a secondary/clone, then pruned from the primary/active) between Primary and Secondary stores [#247](https://github.com/jet/equinox/pull/247), [#259](https://github.com/jet/equinox/pull/259)
+   - Added support for pruning events within the Tip document [#258](https://github.com/jet/equinox/pull/258) see also [#233](https://github.com/jet/equinox/pull/233)
+   - Added Prometheus integration package [#266](https://github.com/jet/equinox/pull/266) see also [#267](https://github.com/jet/equinox/pull/267)
+   - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
+   - Replaced `BatchingPolicy`, `RetryPolicy` with `TipOptions`, `QueryOptions` to better align with Cosmos SDK V4 [#253](https://github.com/jet/equinox/pull/253)
+   - Reorganized `QueryRetryPolicy` to handle `IAsyncEnumerable` coming in Cosmos SDK V4 [#246](https://github.com/jet/equinox/pull/246) :pray: [@ylibrach](https://github.com/ylibrach)
+   - Remove exceptions from 302/404 paths when reading Tip [#257](https://github.com/jet/equinox/pull/257)
+   - Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
+   - Rename `Equinox.Cosmos` DLL and namespace to `Equinox.CosmosStore` [#243](https://github.com/jet/equinox/pull/243)
         - Rename `Equinox.Cosmos.Store` -> `Equinox.CosmosStore.Core` 
         - `Core` sub-namespace
             - Rename `Equinox.Cosmos.Core.Context` -> `Equinox.CosmosStore.Core.EventsContext`
@@ -28,30 +38,39 @@ The `Unreleased` section name is replaced by the expected version of next releas
         - Rename `Equinox.Cosmos.Context` -> `Equinox.CosmosStore.CosmosStoreContext`
         - Rename `Equinox.Cosmos.Resolver` -> `Equinox.CosmosStore.CosmosStoreCategory`
         - Rename `Equinox.Cosmos.Connector` -> `Equinox.CosmosStore.CosmosStoreClientFactory`
-        - Remove exceptions from 302/404 paths when reading Tip [#257](https://github.com/jet/equinox/pull/257)
-    - Reorganized `QueryRetryPolicy` to handle `IAsyncEnumerable` coming in Cosmos SDK V4 [#246](https://github.com/jet/equinox/pull/246) :pray: [@ylibrach](https://github.com/ylibrach)
-    - Added Secondary store fallback for Event loading, enabling streams to be hot-migrated (archived to a secondary/clone, then pruned from the primary/active) between Primary and Secondary stores [#247](https://github.com/jet/equinox/pull/247), [#259](https://github.com/jet/equinox/pull/259)
-    - Replaced `BatchingPolicy`, `RetryPolicy` with `TipOptions`, `QueryOptions` to better align with Cosmos SDK V4 [#253](https://github.com/jet/equinox/pull/253)
-    - Added support for accumulating events in Tip [#251](https://github.com/jet/equinox/pull/251) see also [#110](https://github.com/jet/equinox/pull/110)
-    - Added support for pruning events in Tip [#258](https://github.com/jet/equinox/pull/258) see also [#233](https://github.com/jet/equinox/pull/233)
-    - Added Prometheus integration package [#266](https://github.com/jet/equinox/pull/266) see also [#267](https://github.com/jet/equinox/pull/267)
-- target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
-- Retarget `netcoreapp2.1` apps to `netcoreapp3.1` with `SystemTextJson`
-- Retarget Todobackend to `aspnetcore` v `3.1`
-- Target `FSharp.Control.AsyncSeq` v `2.0.23`
+
+### Changed
+
+- `Equinox`: Rename `type Stream` to `Decider` [#272](https://github.com/jet/equinox/pull/272) :pray: [@thinkbeforecoding](https://github.com/thinkbeforecoding)
+
+- `Equinox.Core`: Simplify `AsyncCacheCell` [#229](https://github.com/jet/equinox/pull/229)
+
+- `Equinox.EventStore`: target `EventStore.Client` v `20.6` (instead of v `5.0.x`) [#224](https://github.com/jet/equinox/pull/224)
+
+- _All Stores_: `FSharp.Control.AsyncSeq` v `2.0.23`
+
 - `Equinox.Tool`: Target `FSharp.Core` v `4.7.1`
+- `Equinox.Tool`: Add `<RollForward>Major</RollForward>` [#270](https://github.com/jet/equinox/pull/270)
+
+- _All Stores_: Standardise naming of top level structure: `<StoreName>Connection` (wraps the relevant `*Client` for that store), `Context`, `Category` [#276](https://github.com/jet/equinox/pull/276)
+    - Rename `Resolver` -> `<StoreName>Category`
+    - Rename `Context` -> `<StoreName>Context`
+
 - Update AzDO CI/CD to use `windows-latest`
 - Update to `3.1.101` SDK
-- Add `<RollForward>Major</RollForward>` for `Equinox.Tool` [#270](https://github.com/jet/equinox/pull/270)
 - Remove `module Commands` convention from examples
 - Remove separated `Backend` project from examples (support for architecturally separating all domain logic from Equinox and Domain Service logic from Concrete Stores remains)
+- Retarget `netcoreapp2.1` sample apps to `netcoreapp3.1` with `SystemTextJson`
+- Retarget Todobackend to `aspnetcore` v `3.1`
 - Revise semantics of Cart Sample Command handling
-- Simplify `AsyncCacheCell` [#229](https://github.com/jet/equinox/pull/229)
 
 ### Removed
+
+- `Equinox.Cosmos`: for now, there is no intention to release a `3.x` version; instead `Equinox.CosmosStore` maintains forward compatibility of the `2.x` data format but moves to `Microsoft.Azure.Cosmos`. Version `2.x` releases (which continue to depend on `Microsoft.Azure.DocumentDb.Core` are published from the https://github.com/jet/equinox/tree/v2 branch
+
 ### Fixed
 
-- change `createAttemptsExhaustedException` to allow any `exn`-derived `type` [#275](https://github.com/jet/equinox/pull/275)
+- `Equinox`: change `createAttemptsExhaustedException` to allow any `exn`-derived `type` [#275](https://github.com/jet/equinox/pull/275)
 
 <a name="2.5.0"></a>
 ## [2.5.0] - 2021-02-24
@@ -504,7 +523,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.5.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.0-beta.1...HEAD
+[3.0.0-beta.1]: https://github.com/jet/equinox/compare/2.5.0...3.0.0-beta.1
 [2.5.0]: https://github.com/jet/equinox/compare/2.4.0...2.5.0
 [2.4.0]: https://github.com/jet/equinox/compare/2.3.0...2.4.0
 [2.3.0]: https://github.com/jet/equinox/compare/2.3.0-rc2...2.3.0
