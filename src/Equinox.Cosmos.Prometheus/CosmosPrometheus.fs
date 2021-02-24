@@ -1,4 +1,4 @@
-namespace Equinox.CosmosStore.Prometheus
+namespace Equinox.Cosmos.Prometheus
 
 module private Impl =
 
