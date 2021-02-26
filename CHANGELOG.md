@@ -12,9 +12,12 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - `CosmosStore`: Default Connection Mode now `Direct` to align with V3 SDK (previous default was `Gateway` to match V2 SDK) [#281](https://github.com/jet/equinox/pull/281)
+- `CosmosStore`: Target `Microsoft.Azure.Cosmos` v `3.13.0` [#278](https://github.com/jet/equinox/pull/278)
 
 ### Removed
 ### Fixed
+
+- `CosmosStore`: `Dispose()` as required by updated `FeedIterator` interface [#278](https://github.com/jet/equinox/pull/278)
 
 <a name="3.0.0-beta.1"></a>
 ## [3.0.0-beta.1] - 2021-02-24
