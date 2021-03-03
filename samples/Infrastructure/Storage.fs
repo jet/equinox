@@ -66,7 +66,7 @@ module Cosmos =
                 | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Info(args : ParseResults<Arguments>) =
-        member __.Mode =                args.GetResult(ConnectionMode,Microsoft.Azure.Cosmos.ConnectionMode.Direct)
+        member __.Mode =                args.TryGetResult ConnectionMode
         member __.Connection =          args.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
         member __.Database =            args.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
         member __.Container =           args.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
@@ -94,7 +94,7 @@ module Cosmos =
     let logContainer (log: ILogger) name (mode, endpoint, db, container) =
         log.Information("CosmosDB {name:l} {mode} {connection} Database {database} Container {container}", name, mode, endpoint, db, container)
     let createClient (a : Info) connectionString =
-        CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, mode=a.Mode).Create(Discovery.ConnectionString connectionString)
+        CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode).Create(Discovery.ConnectionString connectionString)
     let connect (log : ILogger) (a : Info) =
         let (primaryClient, primaryDatabase, primaryContainer) as primary = createClient a a.Connection, a.Database, a.Container
         logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)
