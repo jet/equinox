@@ -26,7 +26,7 @@
 
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.0.0" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.13.0" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.17.0" />
     <PackageReference Include="System.Runtime.Caching" Version="4.5.0" />
   </ItemGroup>
 
