@@ -1305,8 +1305,16 @@ type CosmosStoreClient
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
 
-    /// Connect to a CosmosStore in the indicated Container
+    /// Connect to an Equinox.CosmosStore in the specified Container
     /// NOTE: The returned CosmosStoreClient instance should be held as a long-lived singleton within the application.
+    /// <example><code>
+    /// let createContext (connectionString, database, container) = async {
+    ///     let factory = CosmosClientFactory(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
+    ///     let createCosmosClient containers = factory.Connect(Discovery.ConnectionString connectionString, containers)
+    ///     let! storeClient = CosmosStoreClient.Connect(createCosmosClient, database, container)
+    ///     return CosmosStoreContext(storeClient)
+    /// }
+    /// </code></example>
     static member Connect(connect, databaseId : string, containerId : string) : Async<CosmosStoreClient> = async {
         let! client = connect [ struct (databaseId, containerId) ]
         return CosmosStoreClient(client, databaseId, containerId) }
