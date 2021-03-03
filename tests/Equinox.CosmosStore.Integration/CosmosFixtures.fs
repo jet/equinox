@@ -23,8 +23,8 @@ let discoverConnection () =
     | Some connectionString -> "EQUINOX_COSMOS_CONNECTION", Discovery.ConnectionString connectionString
 
 let createClient (log : Serilog.ILogger) name discovery =
-    let factory = CosmosStoreClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-    // For normal usage, it's recommended to use CosmosStoreConnector.Connect()
+    let factory = CosmosClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
+    // For normal usage, it's recommended to use CosmosStoreClient.Connect()
     let client = factory.CreateUninitialized discovery
     log.Information("CosmosDB Connecting {name} to {endpoint}", name, client.Endpoint)
     client
@@ -32,17 +32,17 @@ let createClient (log : Serilog.ILogger) name discovery =
 let connectPrimary log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
-    CosmosStoreConnection(client, databaseId, containerId)
+    CosmosStoreClient(client, databaseId, containerId)
 
 let connectSecondary log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
-    CosmosStoreConnection(client, databaseId, containerId2)
+    CosmosStoreClient(client, databaseId, containerId2)
 
 let connectWithFallback log =
     let name, discovery = discoverConnection ()
     let client = createClient log name discovery
-    CosmosStoreConnection(client, databaseId, containerId, containerId2 = containerId2)
+    CosmosStoreClient(client, databaseId, containerId, containerId2 = containerId2)
 
 let createPrimaryContextIgnoreMissing client queryMaxItems tipMaxEvents ignoreMissing =
     CosmosStoreContext.Create(client, queryMaxItems = queryMaxItems, tipMaxEvents = tipMaxEvents, ignoreMissingEvents = ignoreMissing)

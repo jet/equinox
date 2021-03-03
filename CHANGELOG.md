@@ -20,6 +20,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
+- `CosmosStore.CosmosStoreClient`: Merge of `CosmosStore.CosmosStoreConnector` and `CosmosStoreConnection` [#280](https://github.com/jet/equinox/pull/280)
 - `CosmosStore.CosmosStoreConnector`: Uses the CosmosDB SDK 3.17 `CreateAndInitialize` to correctly connect and initialize a CosmosClient for an application [#279](https://github.com/jet/equinox/pull/279)
 
 ### Changed

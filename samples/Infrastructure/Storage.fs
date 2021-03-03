@@ -96,9 +96,9 @@ module Cosmos =
     // NOTE: this is a big song and dance, don't blindly copy!
     // - In normal usage, you typically connect to a single container only.
     // - In hot-warm scenarios, the secondary/fallback container will frequently within the same account and hence can share a CosmosClient
-    // For these typical purposes, CosmosStoreConnector.Connect should be used to establish the Client and Connection, not custom wiring as we have here
+    // For these typical purposes, CosmosStoreClient.Connect should be used to establish the Client and Connection, not custom wiring as we have here
     let createClient (a : Info) connectionString =
-        let clientFactory = CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
+        let clientFactory = CosmosClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
         clientFactory.CreateUninitialized(Discovery.ConnectionString connectionString)
     let connect (log : ILogger) (a : Info) =
         let (primaryClient, primaryDatabase, primaryContainer) as primary = createClient a a.Connection, a.Database, a.Container
@@ -114,9 +114,9 @@ module Cosmos =
         let connection =
             match connect log a with
             | (client, databaseId, containerId), None ->
-                CosmosStoreConnection(client, databaseId, containerId)
+                CosmosStoreClient(client, databaseId, containerId)
             | (client, databaseId, containerId), Some (client2, db2, cont2) ->
-                CosmosStoreConnection(client, databaseId, containerId, client2 = client2, databaseId2 = db2, containerId2 = cont2)
+                CosmosStoreClient(client, databaseId, containerId, client2 = client2, databaseId2 = db2, containerId2 = cont2)
         log.Information("CosmosStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
                         a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
         let context = CosmosStoreContext.Create(connection, queryMaxItems = a.QueryMaxItems, tipMaxEvents = a.TipMaxEvents, tipMaxJsonLength = a.TipMaxJsonLength)

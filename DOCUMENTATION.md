@@ -1827,15 +1827,16 @@ let outputLog = LoggerConfiguration().WriteTo.NLog().CreateLogger()
 let gatewayLog =
     outputLog.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Equinox")
 
-let factory : Equinox.CosmosStore.CosmosStoreClientFactory =
-    CosmosStoreClientFactory(
+let factory : Equinox.CosmosStore.CosmosClientFactory =
+    CosmosClientFactory(
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnRateLimitedRequests = 1,
         maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds 3.)
 
 // If storing in a single collection, one specifies the db and collection when using Connect()
 // alternately use factory.CreateUnitialized, which defers that until the stream one is writing to becomes clear
-let! client, connection = factory.Connect(Discovery.ConnectionString connectionString, "databaseName", "containerName")
+let createCosmosClient containers = factory.Connect(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"), containers)
+let! connection = CosmosStoreClient.Connect(createCosmosClient, "databaseName", "containerName")
 
 let ctx = EventsContext(connection, gatewayLog)
 
