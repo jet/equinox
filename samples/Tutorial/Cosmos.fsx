@@ -96,7 +96,8 @@ module Store =
     open Equinox.CosmosStore
 
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
-    let factory = Equinox.CosmosStore.CosmosStoreClientFactory(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
+    // default connection mode is `Direct`; we use Gateway mode here to reduce connectivity potential issues. Ideally you want to remove that for production for perf reasons
+    let factory = Equinox.CosmosStore.CosmosStoreClientFactory(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5., mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
     let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
     let connection = CosmosStoreConnection(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
     let createContext () = CosmosStoreContext(connection)

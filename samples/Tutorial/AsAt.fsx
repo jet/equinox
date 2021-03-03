@@ -159,7 +159,7 @@ module Cosmos =
     open Equinox.CosmosStore
 
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
-    let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
+    let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
     let client = factory.Create(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
     let connection = CosmosStoreConnection(client, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
     let context = CosmosStoreContext(connection)
