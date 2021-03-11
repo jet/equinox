@@ -34,7 +34,10 @@ type ISyncContext<'state> =
     /// Represents a Checkpoint position on a Stream's timeline; Can be used to manage continuations via a Resolver's FromMemento method
     abstract member CreateMemento : unit -> StreamToken * 'state
 
-    /// Exposes the underlying Store's internal Version/Index (which, depending on the Codec, may or may not be reflected in the last event presented)
+    /// Exposes the underlying Store's internal Version for the underlying stream.
+    /// An empty stream is Version 0; one with a single event is Version 1 etc.
+    /// It's important to consider that this Version is more authoritative than inspecting the `Index` of the last event passed to
+    /// your `fold` function - the codec may opt to ignore it
     abstract member Version : int64
 
     /// The present State of the stream within the context of this Flow

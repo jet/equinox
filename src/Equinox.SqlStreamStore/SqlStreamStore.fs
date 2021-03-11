@@ -301,7 +301,9 @@ module Token =
         {   value = box {
                 stream = { name = streamName}
                 pos = { streamVersion = streamVersion; compactionEventNumber = compactionEventNumber; batchCapacityLimit = batchCapacityLimit } }
-            version = streamVersion }
+            // In this impl, the StreamVersion matches the SqlStreamStore (and EventStore) StreamVersion in being -1-based
+            // Version however is the representation that needs to align with ISyncContext.Version
+            version = streamVersion + 1L }
     /// No batching / compaction; we only need to retain the StreamVersion
     let ofNonCompacting streamName streamVersion : StreamToken =
         create None None streamName streamVersion

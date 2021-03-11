@@ -62,9 +62,6 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
     let execute clientId command : Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret command)
-    let read clientId : Async<Events.Favorited []> =
-        let decider = resolve clientId
-        decider.Query id
 
     member __.Execute(clientId, command) =
         execute clientId command
@@ -76,7 +73,12 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         execute clientId (Command.Unfavorite sku)
 
     member __.List clientId : Async<Events.Favorited []> =
-        read clientId
+        let decider = resolve clientId
+        decider.Query(id)
+
+    member __.ListWithVersion clientId : Async<int64 * Events.Favorited []> =
+        let decider = resolve clientId
+        decider.QueryEx(fun ctx -> ctx.Version, ctx.State)
 
 let create log resolveStream =
     let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts  = 3)
