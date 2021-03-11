@@ -780,7 +780,13 @@ module internal Query =
         let batches : AsyncSeq<ITimelineEvent<byte[]>[] * Position option * float> = run readlog retryingLoggingReadSlice maxRequests query
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws, decoded = (Array.map fst events), (events |> Seq.choose snd |> Array.ofSeq)
-        let pos = match maybeTipPos with Some p -> p | None -> Position.fromMaxIndex raws
+        let pos =
+            // Hack-fix covered by test in FavoritesIntegration.
+            // This case is implemented differently in V3
+            match maybeTipPos, startPos with
+            | Some p, _ -> p
+            | None, Some startPos when Array.isEmpty raws -> startPos
+            | None, _ -> Position.fromMaxIndex raws
 
         log |> logQuery direction maxItems (container, stream) t (!responseCount,raws) pos.index ru
         return pos, decoded }
@@ -1012,8 +1018,9 @@ type Gateway(conn : Connection, batching : BatchingPolicy) =
         | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create (container,stream) Position.fromKnownEmpty,Array.empty)
         | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
         | Tip.Result.Found (pos, FromUnfold tryDecode isOrigin span) -> return LoadFromTokenResult.Found (Token.create (container,stream) pos, span)
-        | _ ->  let! res = __.Read log (container,stream) Direction.Forward (Some pos) (tryDecode,isOrigin)
-                return LoadFromTokenResult.Found res }
+        | Tip.Result.Found _ ->
+            let! res = __.Read log (container,stream) Direction.Forward (Some pos) (tryDecode,isOrigin)
+            return LoadFromTokenResult.Found res }
     member __.CreateSyncStoredProcIfNotExists log container =
         Sync.Initialization.createSyncStoredProcIfNotExists log container
     member __.Sync log containerStream (exp, batch: Tip): Async<InternalSyncResult> = async {

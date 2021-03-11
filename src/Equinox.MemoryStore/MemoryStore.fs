@@ -8,11 +8,11 @@ open Equinox.Core
 open System.Runtime.InteropServices
 
 /// Equivalent to EventStoreDB's in purpose; signals a conflict has been detected and reprocessing of the decision will be necessary
-exception private WrongVersionException of streamName: string * expected: int * value: obj
+exception private WrongVersionException of value : obj
 
 /// Internal result used to reflect the outcome of syncing with the entry in the inner ConcurrentDictionary
 [<NoEquality; NoComparison>]
-type ConcurrentDictionarySyncResult<'t> = Written of 't | Conflict of int
+type ConcurrentDictionarySyncResult<'t> = Written of 't | Conflict
 
 /// Response type for VolatileStore.TrySync to communicate the outcome and updated state of a stream
 [<NoEquality; NoComparison>]
@@ -46,30 +46,30 @@ type VolatileStore<'Format>() =
             events: FsCodec.ITimelineEvent<'Format>[])
         : Async<ConcurrentArraySyncResult<FsCodec.ITimelineEvent<'Format>[]>> = async {
         let seedStream _streamName = events
-        let updateValue streamName (currentValue : FsCodec.ITimelineEvent<'Format>[]) =
+        let updateValue _streamName (currentValue : FsCodec.ITimelineEvent<'Format>[]) =
             match trySyncValue currentValue with
-            | ConcurrentDictionarySyncResult.Conflict expectedVersion -> raise <| WrongVersionException (streamName, expectedVersion, box currentValue)
+            | ConcurrentDictionarySyncResult.Conflict -> raise <| WrongVersionException (box currentValue)
             | ConcurrentDictionarySyncResult.Written value -> value
         try let res = streams.AddOrUpdate(streamName, seedStream, updateValue)
             // we publish the event here, once, as `updateValue` can be invoked multiple times
             do! publishCommit.Execute((FsCodec.StreamName.parse streamName, events))
             return Written res
-        with WrongVersionException(_, _, conflictingValue) ->
+        with WrongVersionException conflictingValue ->
             return Conflict (unbox conflictingValue) }
 
-type Token = { streamVersion: int; streamName: string }
+type Token = { streamName : string; eventCount : int }
 
 /// Internal implementation detail of MemoryStore
 module private Token =
 
-    let private streamTokenOfIndex streamName (streamVersion : int) : StreamToken =
-        {   value = box { streamName = streamName; streamVersion = streamVersion }
-            version = int64 streamVersion }
+    let private streamTokenOfEventCount streamName (eventCount : int) : StreamToken =
+        {   value = box { streamName = streamName; eventCount = eventCount }
+            version = int64 eventCount }
     let (|Unpack|) (token: StreamToken) : Token = unbox<Token> token.value
     /// Represent a stream known to be empty
-    let ofEmpty streamName initial = streamTokenOfIndex streamName -1, initial
-    let tokenOfArray streamName (value: 'event array) = Array.length value - 1 |> streamTokenOfIndex streamName
-    let tokenOfSeq streamName (value: 'event seq) = Seq.length value - 1 |> streamTokenOfIndex streamName
+    let ofEmpty streamName initial = streamTokenOfEventCount streamName 0, initial
+    let tokenOfArray streamName (value: 'event array) = Array.length value |> streamTokenOfEventCount streamName
+    let tokenOfSeq streamName (value: 'event seq) = Seq.length value |> streamTokenOfEventCount streamName
     /// Represent a known array of events (without a known folded State)
     let ofEventArray streamName fold initial (events: 'event array) = tokenOfArray streamName events, fold initial (Seq.ofArray events)
     /// Represent a known array of Events together with the associated state
@@ -85,18 +85,18 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
         member __.TrySync(_log, Token.Unpack token, state, events : 'event list, context : 'context option) = async {
             let inline map i (e : FsCodec.IEventData<'Format>) =
                 FsCodec.Core.TimelineEvent.Create(int64 i, e.EventType, e.Data, e.Meta, e.EventId, e.CorrelationId, e.CausationId, e.Timestamp)
-            let encoded = events |> Seq.mapi (fun i e -> map (token.streamVersion + i + 1) (codec.Encode(context, e))) |> Array.ofSeq
+            let encoded = events |> Seq.mapi (fun i e -> map (token.eventCount + i) (codec.Encode(context, e))) |> Array.ofSeq
             let trySyncValue currentValue =
-                if Array.length currentValue <> token.streamVersion + 1 then ConcurrentDictionarySyncResult.Conflict (token.streamVersion)
+                if Array.length currentValue <> token.eventCount then ConcurrentDictionarySyncResult.Conflict
                 else ConcurrentDictionarySyncResult.Written (Seq.append currentValue encoded |> Array.ofSeq)
             match! store.TrySync(token.streamName, trySyncValue, encoded) with
             | ConcurrentArraySyncResult.Written _ ->
                 return SyncResult.Written <| Token.ofEventArrayAndKnownState token.streamName fold state events
             | ConcurrentArraySyncResult.Conflict conflictingEvents ->
                 let resync = async {
-                    let version = Token.tokenOfArray token.streamName conflictingEvents
-                    let successorEvents = conflictingEvents |> Seq.skip (token.streamVersion + 1) |> List.ofSeq
-                    return version, fold state (successorEvents |> Seq.choose codec.TryDecode) }
+                    let token' = Token.tokenOfArray token.streamName conflictingEvents
+                    let successorEvents = conflictingEvents |> Seq.skip token.eventCount |> List.ofSeq
+                    return token', fold state (successorEvents |> Seq.choose codec.TryDecode) }
                 return SyncResult.Conflict resync }
 
 type Resolver<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event,'Format,'context>, fold, initial) =
