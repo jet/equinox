@@ -10,11 +10,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+### Removed
+### Fixed
+
+<a name="2.5.1"></a>
+## [2.5.1] - 2021-03-12
+
+### Changed
 
 - `ISyncContext.Version`: documented value as being `0`-based, rather than whatever a given store happens to use internally (which happens to align with the native version representation in `Equinox.Cosmos`) [#282](https://github.com/jet/equinox/pull/282)
 - `MemoryStore` / `SqlStreamStore` / `EventStore`: aligned implementations to represent `Version` in a store-neutral manner per the documentation change [#282](https://github.com/jet/equinox/pull/282)
 
-### Removed
 ### Fixed
 
 - `Cosmos` / `ISyncContext.Version`: fixed erroneous `0` value when re-reading with caching but without snapshots in `Cosmos` store [#282](https://github.com/jet/equinox/pull/282)
@@ -470,7 +476,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.5.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.5.1...HEAD
+[2.5.1]: https://github.com/jet/equinox/compare/2.5.0...2.5.1
 [2.5.0]: https://github.com/jet/equinox/compare/2.4.0...2.5.0
 [2.4.0]: https://github.com/jet/equinox/compare/2.3.0...2.4.0
 [2.3.0]: https://github.com/jet/equinox/compare/2.3.0-rc2...2.3.0
