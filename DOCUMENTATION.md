@@ -1830,15 +1830,11 @@ let factory : Equinox.CosmosStore.CosmosStoreClientFactory =
         requestTimeout = TimeSpan.FromSeconds 5.,
         maxRetryAttemptsOnRateLimitedRequests = 1,
         maxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds 3.)
-let client =
-    factory.Create("Application.CommandProcessor", Discovery.FromConnectionString connectionString)
-    |> Async.RunSynchronously
 
-let client = factory.Create(Discovery.ConnectionString connectionString)
+// If storing in a single collection, one specifies the db and collection when using Connect()
+// alternately use factory.CreateUnitialized, which defers that until the stream one is writing to becomes clear
+let! client, connection = factory.Connect(Discovery.ConnectionString connectionString, "databaseName", "containerName")
 
-// If storing in a single collection, one specifies the db and collection
-// alternately use the overload that defers the mapping until the stream one is writing to becomes clear
-let connection = CosmosStoreConnection(client, "databaseName", "containerName")
 let ctx = EventsContext(connection, gatewayLog)
 
 //

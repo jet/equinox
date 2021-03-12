@@ -24,7 +24,8 @@ let discoverConnection () =
 
 let createClient (log : Serilog.ILogger) name discovery =
     let factory = CosmosStoreClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-    let client = factory.Create discovery
+    // For normal usage, it's recommended to use CosmosStoreConnector.Connect()
+    let client = factory.CreateUninitialized discovery
     log.Information("CosmosDB Connecting {name} to {endpoint}", name, client.Endpoint)
     client
 

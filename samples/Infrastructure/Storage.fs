@@ -93,8 +93,13 @@ module Cosmos =
 
     let logContainer (log: ILogger) name (mode, endpoint, db, container) =
         log.Information("CosmosDB {name:l} {mode} {connection} Database {database} Container {container}", name, mode, endpoint, db, container)
+    // NOTE: this is a big song and dance, don't blindly copy!
+    // - In normal usage, you typically connect to a single container only.
+    // - In hot-warm scenarios, the secondary/fallback container will frequently within the same account and hence can share a CosmosClient
+    // For these typical purposes, CosmosStoreConnector.Connect should be used to establish the Client and Connection, not custom wiring as we have here
     let createClient (a : Info) connectionString =
-        CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode).Create(Discovery.ConnectionString connectionString)
+        let clientFactory = CosmosStoreClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
+        clientFactory.CreateUninitialized(Discovery.ConnectionString connectionString)
     let connect (log : ILogger) (a : Info) =
         let (primaryClient, primaryDatabase, primaryContainer) as primary = createClient a a.Connection, a.Database, a.Container
         logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)

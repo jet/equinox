@@ -1390,6 +1390,7 @@ type Discovery =
     /// Cosmos SDK Connection String
     | ConnectionString of connectionString : string
 
+/// Manages establishing a CosmosClient, which is used by CosmosStoreConnection to read from the underlying Cosmos DB Container.
 type CosmosStoreClientFactory
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB
         requestTimeout: TimeSpan,
@@ -1431,10 +1432,37 @@ type CosmosStoreClientFactory
             co.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
         co
 
-    abstract member Create: discovery: Discovery -> CosmosClient
-    default __.Create discovery = discovery |> function
+    /// Creates an instance of CosmosClient without actually validating or establishing the connection
+    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreConnector.Connect()</c> in preference to this API
+    ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
+    abstract member CreateUninitialized: discovery: Discovery -> CosmosClient
+    default __.CreateUninitialized discovery = discovery |> function
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, __.Options)
         | Discovery.ConnectionString cs -> new CosmosClient(cs, __.Options)
+
+    /// Creates and validates a Client including loading metadata for the specified containers
+    abstract member Connect: discovery: Discovery * containers : System.Collections.Generic.IReadOnlyList<struct (string * string)> -> Async<CosmosClient>
+    default __.Connect(discovery, containers) = async {
+        let! ct = Async.CancellationToken
+        match discovery with
+        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, __.Options, ct) |> Async.AwaitTaskCorrect
+        | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, __.Options) |> Async.AwaitTaskCorrect }
+
+/// Manages establishing of a connection to a CosmosStore
+type CosmosStoreConnector(cosmosClientFactory : CosmosStoreClientFactory, discovery : Discovery) =
+
+    /// Connect to a CosmosStore in the indicated Container
+    /// NOTE: The returned CosmosStoreConnection instance should be held as a long-lived singleton within the application.
+    member __.Connect(databaseId : string, containerId : string) : Async<CosmosStoreConnection> = async {
+        let! client = cosmosClientFactory.Connect(discovery, [ struct (databaseId, containerId) ])
+        return CosmosStoreConnection(client, databaseId, containerId) }
+
+    /// Connect to a hot-warm CosmosStore pair within the same account
+    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where necessary.
+    /// NOTE: The returned CosmosStoreConnection instance should be held as a long-lived singleton within the application.
+    member __.Connect(databaseId : string, primaryContainerId : string, fallbackContainerId) : Async<CosmosStoreConnection> = async {
+        let! client = cosmosClientFactory.Connect(discovery, [ struct (databaseId, primaryContainerId); struct (databaseId, fallbackContainerId) ])
+        return CosmosStoreConnection(client, databaseId, primaryContainerId, containerId2=fallbackContainerId) }
 
 namespace Equinox.CosmosStore.Core
 
