@@ -70,7 +70,7 @@ type Tests(testOutputHelper) =
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly batching the reads (without special-casing tip)`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against Cosmos, correctly batching the reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
         capture.Clear() // for re-runs of the test
         let addRemoveCount = 40
         let eventsPerAction = addRemoveCount * 2 - 1

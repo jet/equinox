@@ -885,6 +885,7 @@ module internal Query =
         match primary, secondary with
         | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
         | Some { minIndex = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
+        | None, _ when Option.isNone tip -> return pos, events // initial load where no documents present in stream
         | _, Choice1Of2 allowMissing ->
             logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
             if allowMissing then return pos, events
