@@ -682,6 +682,8 @@ module internal Query =
             yield map i t res
             if query.HasMoreResults then
                 yield! loop (i + 1) }
+        // earlier versions, such as 3.9.0, do not implement IDisposable; see linked issue for detail on when SDK team added it
+        use __ = query // see https://github.com/jet/equinox/issues/225 - in the Cosmos V4 SDK, all this is managed IAsyncEnumerable
         loop 0
     let private mkQuery (log : ILogger) (container : Container, stream: string) includeTip maxItems (direction: Direction, minIndex, maxIndex) : FeedIterator<Batch> =
         let order = if direction = Direction.Forward then "ASC" else "DESC"
