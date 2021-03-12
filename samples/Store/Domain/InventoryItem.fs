@@ -66,7 +66,7 @@ type Service internal (resolve : InventoryItemId -> Equinox.Decider<Events.Event
         let decider = resolve itemId
         decider.Query id
 
-let create resolve =
+let create resolveStream =
     let resolve id =
-        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolve (streamName id), maxAttempts = 3)
+        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream (streamName id), maxAttempts = 3)
     Service(resolve)

@@ -47,10 +47,10 @@ type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fol
         let decider = resolve series
         decider.Transact(decideReserve (defaultArg count 1))
 
-let create resolve =
+let create resolveStream =
     let resolve sequenceId =
         let streamName = streamName sequenceId
-        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolve streamName, maxAttempts = 3)
+        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream streamName, maxAttempts = 3)
     Service(resolve)
 
 module Cosmos =

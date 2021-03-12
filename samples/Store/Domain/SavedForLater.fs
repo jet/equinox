@@ -112,9 +112,11 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
     let execute clientId command : Async<bool> =
         let decider = resolve clientId
         decider.Transact(decide maxSavedItems command)
+
     let read clientId : Async<Events.Item[]> =
         let decider = resolve clientId
         decider.Query id
+
     let remove clientId (resolveCommand : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
         let decider = resolve clientId
         decider.TransactAsync(fun (state : Fold.State) -> async {
@@ -140,6 +142,6 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         let! state = read clientId
         return! execute targetId (Merge state) }
 
-let create maxSavedItems log resolve =
-    let resolve id = Equinox.Decider(log, resolve (streamName id), maxAttempts = 3)
+let create maxSavedItems log resolveStream =
+    let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts = 3)
     Service(resolve, maxSavedItems)

@@ -161,8 +161,8 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
         let decider = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
         decider.Query id
 
-let create log resolve =
+let create log resolveStream =
     let resolve (id, opt) =
-        let decider = resolve (streamName id, opt)
-        Equinox.Decider(log, decider, maxAttempts = 3)
+        let stream = resolveStream (streamName id, opt)
+        Equinox.Decider(log, stream, maxAttempts = 3)
     Service(resolve)

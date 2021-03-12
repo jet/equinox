@@ -7,8 +7,8 @@ open Swensen.Unquote
 let createMemoryStore () = VolatileStore<_>()
 let createServiceMemory log store =
     let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Domain.Cart.Fold.fold, Domain.Cart.Fold.initial)
-    let resolve (id, opt) = cat.Resolve(id, ?option=opt)
-    Cart.create log resolve
+    let resolveStream (id, opt) = cat.Resolve(id, ?option=opt)
+    Cart.create log resolveStream
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 

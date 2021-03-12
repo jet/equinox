@@ -78,6 +78,6 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
     member __.List clientId : Async<Events.Favorited []> =
         read clientId
 
-let create log resolve =
-    let resolve id = Equinox.Decider(log, resolve (streamName id), maxAttempts  = 3)
+let create log resolveStream =
+    let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts  = 3)
     Service(resolve)

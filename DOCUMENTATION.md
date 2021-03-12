@@ -369,9 +369,9 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State)
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create resolve =
+let create resolveStream =
     let resolve id =
-        let stream = resolve (streamName id)
+        let stream = resolveStream (streamName id)
         Equinox.Decider(Serilog.Log.ForContext<Service>(), stream, maxAttempts = 3)
     Service(resolve)
 ```
@@ -594,9 +594,11 @@ let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
  *)
 
 type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
+
     let execute clientId command : Async<unit> =
         let decider = resolve clientId
         decider.Transact(interpret command)
+        
     let read clientId : Async<string list> =
         let decider = resolve clientId
         decider.Query id
@@ -610,9 +612,9 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
     member __.List clientId : Async<Events.Favorited []> =
         read clientId
 
-let create resolve : Service =
+let create resolveStream : Service =
     let resolve id =
-        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolve (streamName id), maxAttempts = 3)
+        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream (streamName id), maxAttempts = 3)
     Service(resolve)
 ```
 

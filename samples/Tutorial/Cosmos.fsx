@@ -76,8 +76,8 @@ module Favorites =
             let decider = resolve clientId
             decider.Query id
 
-    let create resolve =
-        let resolve clientId = Equinox.Decider(Log.log, resolve (streamName clientId), maxAttempts = 3)
+    let create resolveStream =
+        let resolve clientId = Equinox.Decider(Log.log, resolveStream (streamName clientId), maxAttempts = 3)
         Service(resolve)
 
     module Cosmos =

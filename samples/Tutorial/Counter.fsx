@@ -62,6 +62,7 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
     member __.Execute(instanceId, command) : Async<unit> =
         let decider = resolve instanceId
         decider.Transact(decide command)
+
     member __.Reset(instanceId, value) : Async<unit> =
         __.Execute(instanceId, Clear value)
 

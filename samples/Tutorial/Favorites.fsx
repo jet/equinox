@@ -72,7 +72,7 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
     a) a log to send metrics and store roundtrip info to
     b) a maximum number of attempts to make if we clash with a conflicting write *)
 
-// Example of wrapping Stream to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
+// Example of wrapping Decider to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
 type Handler(decider : Equinox.Decider<Event, State>) =
     member __.Execute command : Async<unit> =
         decider.Transact(interpret command)
@@ -108,7 +108,7 @@ let codec =
         | "Remove", (:? string as x) -> Removed x |> Some
         | _ -> None
     FsCodec.Codec.Create(encode,tryDecode)
-// Each store has a Resolver that generates IStream instances binding to a specific stream in a specific store
+// Each store has a <Store>Category that is used to resolve IStream instances binding to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
 let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
 let stream streamName = Equinox.Decider(log, cat.Resolve streamName, maxAttempts = 2)

@@ -51,11 +51,11 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeEs connect choose resolve = async {
+    let arrangeEs connect choose resolveStream = async {
         let log = createLog ()
         let! client = connect log
         let context = choose client defaultBatchSize
-        return Cart.create log (resolve context) }
+        return Cart.create log (resolveStream context) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
@@ -69,10 +69,10 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeCosmos connect resolve =
+    let arrangeCosmos connect resolveStream =
         let log = createLog ()
         let context : CosmosStore.CosmosStoreContext = connect log defaultQueryMaxItems
-        Cart.create log (resolve context)
+        Cart.create log (resolveStream context)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {

@@ -44,11 +44,11 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeEs connect choose resolve = async {
+    let arrangeEs connect choose resolveStream = async {
         let log = createLog ()
         let! client = connect log
         let context = choose client
-        return ContactPreferences.create log (resolve context) }
+        return ContactPreferences.create log (resolveStream context) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
@@ -62,10 +62,10 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeCosmos connect resolve queryMaxItems =
+    let arrangeCosmos connect resolveStream queryMaxItems =
         let log = createLog ()
         let context: CosmosStore.CosmosStoreContext = connect log queryMaxItems
-        ContactPreferences.create log (resolve context)
+        ContactPreferences.create log (resolveStream context)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = Async.RunSynchronously <| async {

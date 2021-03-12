@@ -46,9 +46,9 @@ type Service internal (decider : Equinox.Decider<Events.Event, Fold.State>) =
     member __.Read() : Async<Set<string>> =
         decider.Query id
 
-let create resolve setId =
+let create resolveStream setId =
     let streamName = streamName setId
-    let decider = Equinox.Decider(Serilog.Log.ForContext<Service>(), resolve streamName, maxAttempts = 3)
+    let decider = Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream streamName, maxAttempts = 3)
     Service(decider)
 
 module Cosmos =
