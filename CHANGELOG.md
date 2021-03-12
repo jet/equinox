@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- `CosmosStore`: Default Connection Mode now `Direct` to align with V3 SDK (previous default was `Gateway` to match V2 SDK) [#281](https://github.com/jet/equinox/pull/281)
+
 ### Removed
 ### Fixed
 
