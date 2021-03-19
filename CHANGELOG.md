@@ -13,6 +13,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `Equinox.Tool`: Fix incorrect `Azure.Cosmos.Direct` reference [#280](https://github.com/jet/equinox/pull/208)
+
 <a name="3.0.0-beta.2"></a>
 ## [3.0.0-beta.2] - 2021-03-12
 
