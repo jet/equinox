@@ -92,7 +92,7 @@ module Cosmos =
     open Serilog
 
     let logContainer (log: ILogger) name (mode, endpoint, db, container) =
-        log.Information("CosmosDB {name:l} {mode} {connection} Database {database} Container {container}", name, mode, endpoint, db, container)
+        log.Information("CosmosDB {name:l} {mode} {connection} Database {database} Container {container}", name, defaultArg mode Microsoft.Azure.Cosmos.ConnectionMode.Direct, endpoint, db, container)
     // NOTE: this is a big song and dance, don't blindly copy!
     // - In normal usage, you typically connect to a single container only.
     // - In hot-warm scenarios, the secondary/fallback container will frequently within the same account and hence can share a CosmosClient
