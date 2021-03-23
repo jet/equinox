@@ -1042,16 +1042,16 @@ type QueryOptions
 /// - accumulation/retention of Events in Tip
 /// - retrying read and write operations for the Tip
 type TipOptions
-    (   /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0.
-        [<O; D(null)>]?maxEvents,
+    (   /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
+        maxEvents,
         /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
         [<O; D(null)>]?maxJsonLength,
         /// Inhibit throwing when events are missing, but no fallback Container has been supplied. Default: false.
         [<O; D(null)>]?ignoreMissingEvents,
         [<O; D(null)>]?readRetryPolicy,
         [<O; D(null)>]?writeRetryPolicy) =
-    /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
-    member val MaxEvents = defaultArg maxEvents 0
+    /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
+    member val MaxEvents : int = maxEvents
     /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
     member val MaxJsonLength = defaultArg maxJsonLength 30_000
     /// Whether to inhibit throwing when events are missing, but no fallback Container has been supplied
@@ -1183,6 +1183,13 @@ module internal Caching =
                     let! res = cache streamName (async { return (token',state') })
                     return SyncResult.Written res }
 
+module ConnectionString =
+
+    let (|AccountEndpoint|) connectionString =
+        match System.Data.Common.DbConnectionStringBuilder(ConnectionString = connectionString).TryGetValue "AccountEndpoint" with
+        | true, (:? string as s) when not (System.String.IsNullOrEmpty s) -> s
+        | _ -> invalidOp "Connection string does not contain an \"AccountEndpoint\""
+
 namespace Equinox.CosmosStore
 
 open Equinox
@@ -1199,6 +1206,9 @@ type Discovery =
     | AccountUriAndKey of accountUri: Uri * key:string
     /// Cosmos SDK Connection String
     | ConnectionString of connectionString : string
+    member x.Endpoint : Uri = x |> function
+        | Discovery.AccountUriAndKey (u, _k) -> u
+        | Discovery.ConnectionString (ConnectionString.AccountEndpoint e) -> Uri e
 
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 type CosmosClientFactory
@@ -1217,7 +1227,7 @@ type CosmosClientFactory
         /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
         [<O; D(null)>]?bypassCertificateValidation : bool) =
 
-    /// CosmosClientOptions for this Connector as configured
+    /// CosmosClientOptions for this CosmosClientFactory as configured
     member val Options =
         let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
         let co =
@@ -1244,18 +1254,21 @@ type CosmosClientFactory
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
     /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
-    abstract member CreateUninitialized: discovery: Discovery -> CosmosClient
-    default __.CreateUninitialized discovery = discovery |> function
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, __.Options)
-        | Discovery.ConnectionString cs -> new CosmosClient(cs, __.Options)
+    member x.CreateUninitialized(discovery : Discovery) = discovery |> function
+        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
+        | Discovery.ConnectionString cs -> new CosmosClient(cs, x.Options)
 
     /// Creates and validates a Client including loading metadata for the specified containers
-    abstract member Connect: discovery: Discovery * containers : System.Collections.Generic.IReadOnlyList<struct (string * string)> -> Async<CosmosClient>
-    default __.Connect(discovery, containers) = async {
+    member x.CreateAndInitialize(discovery : Discovery, containers) = async {
         let! ct = Async.CancellationToken
         match discovery with
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, __.Options, ct) |> Async.AwaitTaskCorrect
-        | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, __.Options) |> Async.AwaitTaskCorrect }
+        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct) |> Async.AwaitTaskCorrect
+        | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options) |> Async.AwaitTaskCorrect }
+
+    /// Creates and validates a Client including loading metadata for the specified containers
+    // Ordinarily, we'd frown on a member with curried arguments; however in this instance it makes for the cleanest API
+    member x.Connect (discovery : Discovery) (containers : System.Collections.Generic.IReadOnlyList<struct (string*string)>) =
+        x.CreateAndInitialize(discovery, containers)
 
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
@@ -1293,7 +1306,7 @@ type CosmosStoreClient
             else fun (d, c) -> Some ((defaultArg client2 client).GetDatabase(defaultArg databaseId2 d).GetContainer(defaultArg containerId2 c))
         CosmosStoreClient(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
             ?disableInitialization = disableInitialization, ?createGateway = createGateway)
-    member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
+    member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
         let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let createContainerInitializerGuard (d, c) =
             let init =
@@ -1315,40 +1328,39 @@ type CosmosStoreClient
     ///     return CosmosStoreContext(storeClient)
     /// }
     /// </code></example>
-    static member Connect(connect, databaseId : string, containerId : string) : Async<CosmosStoreClient> = async {
-        let! client = connect [ struct (databaseId, containerId) ]
+    static member Connect(connectContainers, databaseId : string, containerId : string) : Async<CosmosStoreClient> = async {
+        let! client = connectContainers [| struct (databaseId, containerId) |]
         return CosmosStoreClient(client, databaseId, containerId) }
 
     /// Connect to a hot-warm CosmosStore pair within the same account
     /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where necessary.
     /// NOTE: The returned CosmosStoreClient instance should be held as a long-lived singleton within the application.
-    static member Connect(connect, databaseId : string, primaryContainerId : string, fallbackContainerId) : Async<CosmosStoreClient> = async {
-        let! client = connect [ struct (databaseId, primaryContainerId); struct (databaseId, fallbackContainerId) ]
+    static member Connect(connectContainers, databaseId : string, primaryContainerId : string, fallbackContainerId) : Async<CosmosStoreClient> = async {
+        let! client = connectContainers [| struct (databaseId, primaryContainerId); struct (databaseId, fallbackContainerId) |]
         return CosmosStoreClient(client, databaseId, primaryContainerId, containerId2=fallbackContainerId) }
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(connection : CosmosStoreClient, [<O; D null>] ?queryOptions, [<O; D null>] ?tipOptions) =
-    static member Create
-        (   connection : CosmosStoreClient,
-            /// Max number of Batches to return per paged query response. Default: 10.
-            [<O; D null>]?queryMaxItems,
-            /// Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
-            [<O; D null>]?queryMaxRequests,
-            /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
+type CosmosStoreContext(storeClient : CosmosStoreClient, tipOptions, queryOptions) =
+    new(    storeClient : CosmosStoreClient,
+            /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
             /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
-            [<O; D null>]?tipMaxEvents,
+            tipMaxEvents,
             /// Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
             [<O; D null>]?tipMaxJsonLength,
             /// Inhibit throwing when events are missing, but no fallback Container has been supplied
-            [<O; D null>]?ignoreMissingEvents) =
+            [<O; D null>]?ignoreMissingEvents,
+            /// Max number of Batches to return per paged query response. Default: 10.
+            [<O; D null>]?queryMaxItems,
+            /// Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
+            [<O; D null>]?queryMaxRequests) =
+        let tipOptions = TipOptions(maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
-        let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
-        CosmosStoreContext(connection, queryOptions, tipOptions)
-    member val Connection = connection
-    member val QueryOptions = queryOptions |> Option.defaultWith QueryOptions
-    member val TipOptions = tipOptions |> Option.defaultWith TipOptions
+        CosmosStoreContext(storeClient, tipOptions, queryOptions)
+    member val StoreClient = storeClient
+    member val QueryOptions = queryOptions
+    member val TipOptions = tipOptions
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
-        let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
+        let cg, streamId = storeClient.ResolveContainerGuardAndStreamName(categoryName, streamId)
         let store = StoreClient(cg.Container, cg.Fallback, __.QueryOptions, __.TipOptions)
         store, streamId, cg.InitializationGate
 

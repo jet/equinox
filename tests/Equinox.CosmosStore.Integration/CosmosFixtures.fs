@@ -22,11 +22,10 @@ let discoverConnection () =
     | None -> "localDocDbSim", Discovery.AccountUriAndKey(Uri "https://localhost:8081", "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==")
     | Some connectionString -> "EQUINOX_COSMOS_CONNECTION", Discovery.ConnectionString connectionString
 
-let createClient (log : Serilog.ILogger) name discovery =
+let createClient (log : Serilog.ILogger) name (discovery : Discovery) =
     let factory = CosmosClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
-    let client = factory.CreateUninitialized discovery
-    log.Information("CosmosDB Connecting {name} to {endpoint}", name, client.Endpoint)
-    client
+    log.Information("CosmosDB Connecting {name} to {endpoint}", name, discovery.Endpoint)
+    factory.CreateUninitialized discovery
 
 let connectPrimary log =
     let name, discovery = discoverConnection ()
@@ -44,7 +43,7 @@ let connectWithFallback log =
     CosmosStoreClient(client, databaseId, containerId, containerId2 = containerId2)
 
 let createPrimaryContextIgnoreMissing client queryMaxItems tipMaxEvents ignoreMissing =
-    CosmosStoreContext.Create(client, queryMaxItems = queryMaxItems, tipMaxEvents = tipMaxEvents, ignoreMissingEvents = ignoreMissing)
+    CosmosStoreContext(client, tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
 
 let createPrimaryContextEx log queryMaxItems tipMaxEvents =
     let connection = connectPrimary log
@@ -57,11 +56,11 @@ let createPrimaryContext log queryMaxItems =
 
 let createSecondaryContext log queryMaxItems =
     let connection = connectSecondary log
-    CosmosStoreContext.Create(connection, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
+    CosmosStoreContext(connection, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
 
 let createFallbackContext log queryMaxItems =
     let connection = connectWithFallback log
-    CosmosStoreContext.Create(connection, queryMaxItems = queryMaxItems, tipMaxEvents = defaultTipMaxEvents)
+    CosmosStoreContext(connection, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
 
 let defaultQueryMaxItems = 10
 

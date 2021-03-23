@@ -1835,10 +1835,10 @@ let factory : Equinox.CosmosStore.CosmosClientFactory =
 
 // If storing in a single collection, one specifies the db and collection when using Connect()
 // alternately use factory.CreateUnitialized, which defers that until the stream one is writing to becomes clear
-let createCosmosClient containers = factory.Connect(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"), containers)
-let! connection = CosmosStoreClient.Connect(createCosmosClient, "databaseName", "containerName")
+let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
+let! storeClient = CosmosStoreClient.Connect(factory.Connect discovery, "databaseName", "containerName")
 
-let ctx = EventsContext(connection, gatewayLog)
+let ctx = EventsContext(storeClient, gatewayLog)
 
 //
 // Write an event

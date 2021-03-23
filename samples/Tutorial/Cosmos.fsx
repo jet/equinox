@@ -97,16 +97,14 @@ module Store =
 
     let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     // default connection mode is `Direct`; we use Gateway mode here to reduce connectivity potential issues. Ideally you want to remove that for production for perf reasons
-    let factory = CosmosClientFactory(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5., mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
-    let createCosmosClient containers = factory.Connect(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"), containers)
-    let createContext () = async {
-        let! storeClient = CosmosStoreClient.Connect(createCosmosClient, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER")
-        return CosmosStoreContext(storeClient)
-    }
+    let connector =
+        CosmosClientFactory(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5., mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
+            .Connect (Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
+    let storeClient = CosmosStoreClient.Connect(connector, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
+    let cache = Equinox.Cache(appName, 20)
 
-let context = Store.createContext() |> Async.RunSynchronously
-let cache = Equinox.Cache(appName, 20)
-let service = Favorites.Cosmos.create (context, cache)
+let service = Favorites.Cosmos.create (Store.context, Store.cache)
 
 let client = "ClientJ"
 
