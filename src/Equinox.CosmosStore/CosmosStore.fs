@@ -1212,13 +1212,13 @@ type Discovery =
 
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 type CosmosClientFactory
-    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB
+    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
         requestTimeout: TimeSpan,
-        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached
+        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
         maxRetryAttemptsOnRateLimitedRequests: int,
-        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response)
+        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
         maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
-        /// Connection limit for Gateway Mode (default 1000)
+        /// Connection limit for Gateway Mode. CosmosDB default: 50
         [<O; D(null)>]?gatewayModeMaxConnectionLimit,
         /// Connection mode (default: ConnectionMode.Gateway (lowest perf, least trouble))
         [<O; D(null)>]?mode : ConnectionMode,
@@ -1240,7 +1240,7 @@ type CosmosClientFactory
         | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
         match gatewayModeMaxConnectionLimit with
         | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
-        | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 1000
+        | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 50
         match defaultConsistencyLevel with
         | Some x -> co.ConsistencyLevel <- Nullable x
         | None -> ()
