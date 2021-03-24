@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `Cosmos.Discovery.Endpoint`: Extracts Uri for diagnostic purposes [#284](https://github.com/jet/equinox/issues/284)
+
 ### Changed
 ### Removed
 ### Fixed

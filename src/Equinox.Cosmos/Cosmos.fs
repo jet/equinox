@@ -1281,6 +1281,7 @@ type Resolver<'event, 'state, 'context>
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     | UriAndKey of databaseUri:Uri * key:string
+    member x.Endpoint = let (UriAndKey (u, _k)) = x in u
     /// Implements connection string parsing logic curiously missing from the CosmosDB SDK
     static member FromConnectionString (connectionString: string) =
         match connectionString with
