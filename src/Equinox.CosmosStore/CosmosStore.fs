@@ -1042,16 +1042,16 @@ type QueryOptions
 /// - accumulation/retention of Events in Tip
 /// - retrying read and write operations for the Tip
 type TipOptions
-    (   /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0.
-        [<O; D(null)>]?maxEvents,
+    (   /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
+        maxEvents,
         /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
         [<O; D(null)>]?maxJsonLength,
         /// Inhibit throwing when events are missing, but no fallback Container has been supplied. Default: false.
         [<O; D(null)>]?ignoreMissingEvents,
         [<O; D(null)>]?readRetryPolicy,
         [<O; D(null)>]?writeRetryPolicy) =
-    /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
-    member val MaxEvents = defaultArg maxEvents 0
+    /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
+    member val MaxEvents : int = maxEvents
     /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
     member val MaxJsonLength = defaultArg maxJsonLength 30_000
     /// Whether to inhibit throwing when events are missing, but no fallback Container has been supplied
@@ -1183,6 +1183,13 @@ module internal Caching =
                     let! res = cache streamName (async { return (token',state') })
                     return SyncResult.Written res }
 
+module ConnectionString =
+
+    let (|AccountEndpoint|) connectionString =
+        match System.Data.Common.DbConnectionStringBuilder(ConnectionString = connectionString).TryGetValue "AccountEndpoint" with
+        | true, (:? string as s) when not (System.String.IsNullOrEmpty s) -> s
+        | _ -> invalidOp "Connection string does not contain an \"AccountEndpoint\""
+
 namespace Equinox.CosmosStore
 
 open Equinox
@@ -1193,10 +1200,80 @@ open Microsoft.Azure.Cosmos
 open Serilog
 open System
 
+[<RequireQualifiedAccess; NoComparison>]
+type Discovery =
+    /// Separated Account Uri and Key (for interop with previous versions)
+    | AccountUriAndKey of accountUri: Uri * key:string
+    /// Cosmos SDK Connection String
+    | ConnectionString of connectionString : string
+    member x.Endpoint : Uri = x |> function
+        | Discovery.AccountUriAndKey (u, _k) -> u
+        | Discovery.ConnectionString (ConnectionString.AccountEndpoint e) -> Uri e
+
+/// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
+type CosmosClientFactory
+    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
+        requestTimeout: TimeSpan,
+        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
+        maxRetryAttemptsOnRateLimitedRequests: int,
+        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
+        maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
+        /// Connection limit for Gateway Mode. CosmosDB default: 50
+        [<O; D(null)>]?gatewayModeMaxConnectionLimit,
+        /// Connection mode (default: ConnectionMode.Gateway (lowest perf, least trouble))
+        [<O; D(null)>]?mode : ConnectionMode,
+        /// consistency mode (default: ConsistencyLevel.Session)
+        [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
+        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
+        [<O; D(null)>]?bypassCertificateValidation : bool) =
+
+    /// CosmosClientOptions for this CosmosClientFactory as configured
+    member val Options =
+        let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
+        let co =
+            CosmosClientOptions(
+                MaxRetryAttemptsOnRateLimitedRequests = maxAttempts,
+                MaxRetryWaitTimeOnRateLimitedRequests = maxWait,
+                RequestTimeout = timeout)
+        match mode with
+        | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
+        | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
+        match gatewayModeMaxConnectionLimit with
+        | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
+        | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 50
+        match defaultConsistencyLevel with
+        | Some x -> co.ConsistencyLevel <- Nullable x
+        | None -> ()
+        // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
+        if bypassCertificateValidation = Some true && co.ConnectionMode = ConnectionMode.Gateway then
+            let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = cb)
+            co.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
+        co
+
+    /// Creates an instance of CosmosClient without actually validating or establishing the connection
+    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
+    ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
+    member x.CreateUninitialized(discovery : Discovery) = discovery |> function
+        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
+        | Discovery.ConnectionString cs -> new CosmosClient(cs, x.Options)
+
+    /// Creates and validates a Client including loading metadata for the specified containers
+    member x.CreateAndInitialize(discovery : Discovery, containers) = async {
+        let! ct = Async.CancellationToken
+        match discovery with
+        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct) |> Async.AwaitTaskCorrect
+        | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options) |> Async.AwaitTaskCorrect }
+
+    /// Creates and validates a Client including loading metadata for the specified containers
+    // Ordinarily, we'd frown on a member with curried arguments; however in this instance it makes for the cleanest API
+    member x.Connect (discovery : Discovery) (containers : System.Collections.Generic.IReadOnlyList<struct (string*string)>) =
+        x.CreateAndInitialize(discovery, containers)
+
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
 /// - The (singleton) per Container Stored Procedure initialization state
-type CosmosStoreConnection
+type CosmosStoreClient
     (   /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
         categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
         createContainer : string * string -> Container,
@@ -1227,9 +1304,9 @@ type CosmosStoreConnection
         let secondaryContainer =
             if Option.isNone client2 && Option.isNone databaseId2 && Option.isNone containerId2 then fun (_, _) -> None
             else fun (d, c) -> Some ((defaultArg client2 client).GetDatabase(defaultArg databaseId2 d).GetContainer(defaultArg containerId2 c))
-        CosmosStoreConnection(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
+        CosmosStoreClient(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
             ?disableInitialization = disableInitialization, ?createGateway = createGateway)
-    member internal __.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
+    member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
         let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let createContainerInitializerGuard (d, c) =
             let init =
@@ -1241,29 +1318,49 @@ type CosmosStoreConnection
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
 
+    /// Connect to an Equinox.CosmosStore in the specified Container
+    /// NOTE: The returned CosmosStoreClient instance should be held as a long-lived singleton within the application.
+    /// <example><code>
+    /// let createContext (connectionString, database, container) = async {
+    ///     let factory = CosmosClientFactory(System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
+    ///     let createCosmosClient containers = factory.Connect(Discovery.ConnectionString connectionString, containers)
+    ///     let! storeClient = CosmosStoreClient.Connect(createCosmosClient, database, container)
+    ///     return CosmosStoreContext(storeClient)
+    /// }
+    /// </code></example>
+    static member Connect(connectContainers, databaseId : string, containerId : string) : Async<CosmosStoreClient> = async {
+        let! client = connectContainers [| struct (databaseId, containerId) |]
+        return CosmosStoreClient(client, databaseId, containerId) }
+
+    /// Connect to a hot-warm CosmosStore pair within the same account
+    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where necessary.
+    /// NOTE: The returned CosmosStoreClient instance should be held as a long-lived singleton within the application.
+    static member Connect(connectContainers, databaseId : string, primaryContainerId : string, fallbackContainerId) : Async<CosmosStoreClient> = async {
+        let! client = connectContainers [| struct (databaseId, primaryContainerId); struct (databaseId, fallbackContainerId) |]
+        return CosmosStoreClient(client, databaseId, primaryContainerId, containerId2=fallbackContainerId) }
+
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(connection : CosmosStoreConnection, [<O; D null>] ?queryOptions, [<O; D null>] ?tipOptions) =
-    static member Create
-        (   connection : CosmosStoreConnection,
-            /// Max number of Batches to return per paged query response. Default: 10.
-            [<O; D null>]?queryMaxItems,
-            /// Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
-            [<O; D null>]?queryMaxRequests,
-            /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: 0
+type CosmosStoreContext(storeClient : CosmosStoreClient, tipOptions, queryOptions) =
+    new(    storeClient : CosmosStoreClient,
+            /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
             /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
-            [<O; D null>]?tipMaxEvents,
+            tipMaxEvents,
             /// Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
             [<O; D null>]?tipMaxJsonLength,
             /// Inhibit throwing when events are missing, but no fallback Container has been supplied
-            [<O; D null>]?ignoreMissingEvents) =
+            [<O; D null>]?ignoreMissingEvents,
+            /// Max number of Batches to return per paged query response. Default: 10.
+            [<O; D null>]?queryMaxItems,
+            /// Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
+            [<O; D null>]?queryMaxRequests) =
+        let tipOptions = TipOptions(maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
-        let tipOptions = TipOptions(?maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
-        CosmosStoreContext(connection, queryOptions, tipOptions)
-    member val Connection = connection
-    member val QueryOptions = queryOptions |> Option.defaultWith QueryOptions
-    member val TipOptions = tipOptions |> Option.defaultWith TipOptions
+        CosmosStoreContext(storeClient, tipOptions, queryOptions)
+    member val StoreClient = storeClient
+    member val QueryOptions = queryOptions
+    member val TipOptions = tipOptions
     member internal __.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
-        let cg, streamId = connection.ResolveContainerGuardAndStreamName(categoryName, streamId)
+        let cg, streamId = storeClient.ResolveContainerGuardAndStreamName(categoryName, streamId)
         let store = StoreClient(cg.Container, cg.Fallback, __.QueryOptions, __.TipOptions)
         store, streamId, cg.InitializationGate
 
@@ -1383,87 +1480,6 @@ type CosmosStoreCategory<'event, 'state, 'context>
         let (categoryName, container, streamId, _maybeInit) = resolveStreamConfig (StreamName.parse stream)
         let stream = resolveStream (categoryName, container, streamId, skipInitialization) context None
         Stream.ofMemento (streamToken,state) stream
-
-[<RequireQualifiedAccess; NoComparison>]
-type Discovery =
-    /// Separated Account Uri and Key (for interop with previous versions)
-    | AccountUriAndKey of accountUri: Uri * key:string
-    /// Cosmos SDK Connection String
-    | ConnectionString of connectionString : string
-
-/// Manages establishing a CosmosClient, which is used by CosmosStoreConnection to read from the underlying Cosmos DB Container.
-type CosmosStoreClientFactory
-    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB
-        requestTimeout: TimeSpan,
-        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached
-        maxRetryAttemptsOnRateLimitedRequests: int,
-        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response)
-        maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
-        /// Connection limit for Gateway Mode (default 1000)
-        [<O; D(null)>]?gatewayModeMaxConnectionLimit,
-        /// Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
-        /// NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
-        [<O; D(null)>]?mode : ConnectionMode,
-        /// consistency mode (default: ConsistencyLevel.Session)
-        [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
-        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
-        [<O; D(null)>]?bypassCertificateValidation : bool) =
-
-    /// CosmosClientOptions for this Connector as configured
-    member val Options =
-        let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
-        let co =
-            CosmosClientOptions(
-                MaxRetryAttemptsOnRateLimitedRequests = maxAttempts,
-                MaxRetryWaitTimeOnRateLimitedRequests = maxWait,
-                RequestTimeout = timeout)
-        match mode with
-        | None | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
-        | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // only supports Https
-        match gatewayModeMaxConnectionLimit with
-        | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
-        | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 1000
-        match defaultConsistencyLevel with
-        | Some x -> co.ConsistencyLevel <- Nullable x
-        | None -> ()
-        // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
-        if bypassCertificateValidation = Some true && co.ConnectionMode = ConnectionMode.Gateway then
-            let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = cb)
-            co.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
-        co
-
-    /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreConnector.Connect()</c> in preference to this API
-    ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
-    abstract member CreateUninitialized: discovery: Discovery -> CosmosClient
-    default __.CreateUninitialized discovery = discovery |> function
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, __.Options)
-        | Discovery.ConnectionString cs -> new CosmosClient(cs, __.Options)
-
-    /// Creates and validates a Client including loading metadata for the specified containers
-    abstract member Connect: discovery: Discovery * containers : System.Collections.Generic.IReadOnlyList<struct (string * string)> -> Async<CosmosClient>
-    default __.Connect(discovery, containers) = async {
-        let! ct = Async.CancellationToken
-        match discovery with
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, __.Options, ct) |> Async.AwaitTaskCorrect
-        | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, __.Options) |> Async.AwaitTaskCorrect }
-
-/// Manages establishing of a connection to a CosmosStore
-type CosmosStoreConnector(cosmosClientFactory : CosmosStoreClientFactory, discovery : Discovery) =
-
-    /// Connect to a CosmosStore in the indicated Container
-    /// NOTE: The returned CosmosStoreConnection instance should be held as a long-lived singleton within the application.
-    member __.Connect(databaseId : string, containerId : string) : Async<CosmosStoreConnection> = async {
-        let! client = cosmosClientFactory.Connect(discovery, [ struct (databaseId, containerId) ])
-        return CosmosStoreConnection(client, databaseId, containerId) }
-
-    /// Connect to a hot-warm CosmosStore pair within the same account
-    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where necessary.
-    /// NOTE: The returned CosmosStoreConnection instance should be held as a long-lived singleton within the application.
-    member __.Connect(databaseId : string, primaryContainerId : string, fallbackContainerId) : Async<CosmosStoreConnection> = async {
-        let! client = cosmosClientFactory.Connect(discovery, [ struct (databaseId, primaryContainerId); struct (databaseId, fallbackContainerId) ])
-        return CosmosStoreConnection(client, databaseId, primaryContainerId, containerId2=fallbackContainerId) }
 
 namespace Equinox.CosmosStore.Core
 

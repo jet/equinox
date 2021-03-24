@@ -121,13 +121,14 @@ open Equinox.CosmosStore
 module Store =
 
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
-    let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
-    let connector = CosmosStoreConnector(factory, Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
-    let connection = connector.Connect(read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
-    let context = CosmosStoreContext(connection)
+    let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
+    let factory = CosmosClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
+    let storeClient = CosmosStoreClient.Connect(factory.Connect discovery, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, tipMaxEvents = 100)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
-module TodosCategory = 
+module TodosCategory =
+
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
     let category = CosmosStoreCategory(Store.context, codec, fold, initial, Store.cacheStrategy, access=access)
     let resolve id = Equinox.Decider(log, category.Resolve(streamName id), maxAttempts = 3)

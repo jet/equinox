@@ -142,7 +142,7 @@ module EventStore =
 
     let snapshotWindow = 500
     // see QuickStart for how to run a local instance in a mode that emulates the behavior of a cluster
-    let (host,username,password) = "localhost", "admin", "changeit"
+    let host, username, password = "localhost", "admin", "changeit"
     let connector = Connector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
     let esc = connector.Connect(appName, Discovery.GossipDns host) |> Async.RunSynchronously
     let log = Logger.SerilogNormal (Log.log)
@@ -159,11 +159,11 @@ module Cosmos =
 
     open Equinox.CosmosStore
 
-    let read key = System.Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
-    let factory = CosmosStoreClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
-    let connector = CosmosStoreConnector(factory, Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"))
-    let connection = connector.Connect(read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
-    let context = CosmosStoreContext(connection)
+    let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
+    let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
+    let factory = CosmosClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5., mode=Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
+    let storeClient = CosmosStoreClient.Connect(factory.Connect discovery, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
     let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
