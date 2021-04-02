@@ -14,6 +14,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CosmosStore.Discovery.Endpoint`: Enables parsing of Endpoint Uri from connection string [#284](https://github.com/jet/equinox/pull/284) [#280](https://github.com/jet/equinox/pull/280)
 
 ### Changed
+
+- `CosmosStore`: Add stream name to "EqxCosmos Tip" log entries
+
 ### Removed
 ### Fixed
 
