@@ -9,6 +9,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="3.0.0-beta.3"></a>
+## [3.0.0-beta.3] - 2021-04-06
+
+### Added
 
 - `CosmosStore.CosmosStoreClient`: Merge of `CosmosStore.CosmosStoreConnector` and `CosmosStoreConnection` [#280](https://github.com/jet/equinox/pull/280)
 - `CosmosStore.Discovery.Endpoint`: Enables parsing of Endpoint Uri from connection string [#284](https://github.com/jet/equinox/pull/284) [#280](https://github.com/jet/equinox/pull/280)
@@ -17,7 +25,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - `CosmosStore`: Add stream name to "EqxCosmos Tip" log entries
 
-### Removed
 ### Fixed
 
 - `Equinox.Tool`: Fix incorrect `Azure.Cosmos.Direct` reference [#280](https://github.com/jet/equinox/pull/208)
@@ -561,7 +568,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.0-beta.2...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.0-beta.3...HEAD
+[3.0.0-beta.3]: https://github.com/jet/equinox/compare/3.0.0-beta.2...3.0.0-beta.3
 [3.0.0-beta.2]: https://github.com/jet/equinox/compare/3.0.0-beta.1...3.0.0-beta.2
 [3.0.0-beta.1]: https://github.com/jet/equinox/compare/2.5.1...3.0.0-beta.1
 [2.5.1]: https://github.com/jet/equinox/compare/2.5.0...2.5.1
