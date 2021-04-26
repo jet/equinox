@@ -721,7 +721,7 @@ type Connector
         [<O; D(null)>] ?custom : ConnectionSettingsBuilder -> ConnectionSettingsBuilder) =
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
-        .SetCompatibilityMode("auto")
+        .SetCompatibilityMode("auto") // talk to v20 servers cleanly https://www.eventstore.com/blog/5.0.11tcp-client-release-notes-0-0
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
         .SetQueueTimeoutTo(reqTimeout) // ES default: Zero/unlimited
         .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
