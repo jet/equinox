@@ -1258,10 +1258,10 @@ type CosmosClientFactory
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
         | Discovery.ConnectionString cs -> new CosmosClient(cs, x.Options)
 
-    /// Creates and validates a Client including loading metadata for the specified containers
+    /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
     member x.CreateAndInitialize(discovery : Discovery, containers) = async {
         let! ct = Async.CancellationToken
-        match discovery with
+       match discovery with //
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct) |> Async.AwaitTaskCorrect
         | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options) |> Async.AwaitTaskCorrect }
 
