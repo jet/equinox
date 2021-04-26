@@ -13,6 +13,10 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Cosmos.Discovery.Endpoint`: Extracts Uri for diagnostic purposes [#284](https://github.com/jet/equinox/issues/284)
 
 ### Changed
+
+- `EventStore`: Add `customize` hook to `Connector` [#285](https://github.com/jet/equinox/pull/285)
+- `EventStore`: Added [`SetAutoCompatibilityMode("Auto")`](https://www.eventstore.com/blog/5.0.11tcp-client-release-notes-0-0) to default wireup; pin `EventStore.Client` to `[5.0.11,6)` [#285](https://github.com/jet/equinox/pull/285)
+
 ### Removed
 ### Fixed
 
