@@ -14,8 +14,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Changed
 
-- `EventStore`: Add `customize` hook to `Connector` [#285](https://github.com/jet/equinox/pull/285)
-- `EventStore`: Added [`SetAutoCompatibilityMode("Auto")`](https://www.eventstore.com/blog/5.0.11tcp-client-release-notes-0-0) to default wireup; pin `EventStore.Client` to `[5.0.11,6)` [#285](https://github.com/jet/equinox/pull/285)
+- `EventStore`: Add `customize` hook to `Connector` [#285](https://github.com/jet/equinox/pull/286)
+- `EventStore`: Pin `EventStore.Client` to `[5.0.11,6)` [#285](https://github.com/jet/equinox/pull/286)
+- `EventStore`: Added [`SetAutoCompatibilityMode("Auto")`](https://www.eventstore.com/blog/5.0.11tcp-client-release-notes-0-0) to default wireup [#285](https://github.com/jet/equinox/pull/286)
 
 ### Removed
 ### Fixed
