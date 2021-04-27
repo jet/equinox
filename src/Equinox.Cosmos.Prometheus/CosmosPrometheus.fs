@@ -109,7 +109,7 @@ type LogSink(customKeys, customValues) =
     new appName = LogSink([| "app" |],[| appName |])
 
     interface Serilog.Core.ILogEventSink with
-        member _.Emit logEvent = logEvent |> function
+        member __.Emit logEvent = logEvent |> function
             | MetricEvent cm -> cm |> function
                 | Op       (Operation.Tip,      m) -> observeTip  ("query",    "tip",           "ok", "200") m
                 | Op       (Operation.Tip404,   m) -> observeTip  ("query",    "tip",           "ok", "404") m
