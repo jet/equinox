@@ -716,7 +716,9 @@ type Connector
         [<O; D(null)>] ?gossipTimeout, [<O; D(null)>] ?clientConnectionTimeout,
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
         /// NB as this will enter server and client logs, it should not contain sensitive information
-        [<O; D(null)>] ?tags : (string*string) seq) =
+        [<O; D(null)>] ?tags : (string*string) seq,
+        /// Facilitates arbitrary customization of settings that are not explicitly addressed herein and/or general post-processing of the configuration.
+        [<O; D(null)>] ?custom : ConnectionSettingsBuilder -> ConnectionSettingsBuilder) =
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
@@ -737,6 +739,7 @@ type Connector
         |> fun s -> match gossipTimeout with Some v -> s.SetGossipTimeout v | None -> s // default: 1000 ms
         |> fun s -> match clientConnectionTimeout with Some v -> s.WithConnectionTimeoutOf v | None -> s // default: 1000 ms
         |> fun s -> match log with Some log -> log.Configure s | None -> s
+        |> fun s -> match custom with Some c -> c s | None -> s
         |> fun s -> s.Build()
 
     /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` and `clusterNodePrefence` preference
