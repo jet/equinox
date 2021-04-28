@@ -9,6 +9,14 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="2.6.0"></a>
+## [2.6.0] - 2021-04-28
+
+### Added
 
 - `Cosmos.Discovery.Endpoint`: Extracts Uri for diagnostic purposes [#284](https://github.com/jet/equinox/issues/284)
 - `Cosmos.Prometheus.LogSink`: Generalized `app` tag to arbitrary custom tags [#287](https://github.com/jet/equinox/issues/287)
@@ -18,9 +26,6 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `EventStore`: Add `customize` hook to `Connector` [#286](https://github.com/jet/equinox/pull/286)
 - `EventStore`: Pin `EventStore.Client` to `[5.0.11,6)` [#286](https://github.com/jet/equinox/pull/286)
 - `EventStore`: Added [`SetAutoCompatibilityMode("auto")`](https://www.eventstore.com/blog/5.0.11tcp-client-release-notes-0-0) to default wireup [#286](https://github.com/jet/equinox/pull/286)
-
-### Removed
-### Fixed
 
 <a name="2.5.1"></a>
 ## [2.5.1] - 2021-03-12
@@ -485,7 +490,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/2.5.1...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/2.6.0...HEAD
+[2.6.0]: https://github.com/jet/equinox/compare/2.5.1...2.6.0
 [2.5.1]: https://github.com/jet/equinox/compare/2.5.0...2.5.1
 [2.5.0]: https://github.com/jet/equinox/compare/2.4.0...2.5.0
 [2.4.0]: https://github.com/jet/equinox/compare/2.3.0...2.4.0
