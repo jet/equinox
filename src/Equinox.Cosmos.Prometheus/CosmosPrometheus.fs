@@ -52,10 +52,11 @@ module private Summaries =
 module private Counters =
 
     let labelNames tagNames = Array.append tagNames [| "facet"; "op"; "outcome"; "db"; "con"; "cat" |]
+    let labelValues tagValues (facet, op, outcome, db, con, cat) = Array.append tagValues [| facet; op; outcome; db; con; cat |]
     let private mkCounter (cfg : Prometheus.CounterConfiguration) name desc =
         let h = Prometheus.Metrics.CreateCounter(name, desc, cfg)
         fun tagValues (facet : string, op : string, outcome : string) (db, con, cat) c ->
-            h.WithLabels(facet, op, outcome, db, con, cat).Inc(c)
+            h.WithLabels(labelValues tagValues (facet, op, outcome, db, con, cat)).Inc(c)
     let config tagNames = Prometheus.CounterConfiguration(LabelNames = labelNames tagNames)
     let total (tagNames, tagValues) stat desc =
         let name = Impl.baseName (stat + "_total")
@@ -91,7 +92,7 @@ type LogSink(customKeys, customValues) =
         observeLatencyAndCharge (facet, op) (db, con, cat, s, ru)
         payloadCounters (facet, op, outcome) (db, con, cat, float count, if bytes = -1 then None else Some (float bytes))
 
-    let (|CatSRu|) ({ interval = i; ru = ru } : Equinox.Cosmos.Store.Log.Measurement as m) =
+    let (|CatSRu|) ({ interval = i; ru = ru } : Measurement as m) =
         let cat, _id = FsCodec.StreamName.splitCategoryAndId (FSharp.UMX.UMX.tag m.stream)
         m.database, m.container, cat, i.Elapsed, ru
     let observeRes (facet, _op as stat) (CatSRu (db, con, cat, s, ru)) =
