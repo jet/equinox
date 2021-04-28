@@ -13,6 +13,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+<a name="3.0.0-beta.4"></a>
+## [3.0.0-beta.4] - 2021-04-28
+
+### Added
+
+- `CosmosStore.Prometheus.LogSink`: Generalized `app` tag to arbitrary custom tags as per `Cosmos` [#287](https://github.com/jet/equinox/issues/287)
+
 <a name="3.0.0-beta.3"></a>
 ## [3.0.0-beta.3] - 2021-04-06
 
@@ -582,7 +589,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.0-beta.3...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.0-beta.4...HEAD
+[3.0.0-beta.4]: https://github.com/jet/equinox/compare/3.0.0-beta.3...3.0.0-beta.4
 [3.0.0-beta.3]: https://github.com/jet/equinox/compare/3.0.0-beta.2...3.0.0-beta.3
 [3.0.0-beta.2]: https://github.com/jet/equinox/compare/3.0.0-beta.1...3.0.0-beta.2
 [3.0.0-beta.1]: https://github.com/jet/equinox/compare/2.6.0...3.0.0-beta.1
