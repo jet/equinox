@@ -20,6 +20,7 @@
     <None Include="Cosmos.fsx" />
     <None Include="AsAt.fsx" />
     <None Include="FulfilmentCenter.fsx" />
+    <Compile Include="CarryForward.fs" />
   </ItemGroup>
 
   <ItemGroup>
