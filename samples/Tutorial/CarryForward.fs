@@ -1,32 +1,36 @@
 namespace Tutorial.ClosingBooks
 
-open FSharp.UMX
-
 /// Buffers events accumulated from a series of decisions while evolving the presented `state` to reflect said proposed `Events`
-type private Accumulator(originState, fold) =
-    let mutable state = originState
+type private Accumulator<'event, 'state>(originState, fold : 'state -> 'event seq -> 'state) =
     let pendingEvents = ResizeArray()
+    let mutable state = originState
+
+    let apply (events : 'event seq) =
+        pendingEvents.AddRange events
+        state <- fold state events
 
     /// Run a decision function, buffering and applying any Events yielded
-    member _.Decide decide =
-        let r, es = decide state
-        state <- fold state (Seq.ofList es)
+    member _.Transact decide =
+        let r, events = decide state
+        apply events
         r
 
     /// Run an Async decision function, buffering and applying any Events yielded
-    member _.DecideAsync decide = async {
-        let! r, es = decide state
-        state <- fold state (Seq.ofList es)
+    member _.TransactAsync decide = async {
+        let! r, events = decide state
+        apply events
         return r }
 
     /// Accumulated events based on the Decisions applied to date
     member _.Events = List.ofSeq pendingEvents
 
-type EpochId = string<epochId>
+open FSharp.UMX
+type EpochId = int<epochId>
 and [<Measure>] epochId
 module EpochId =
-    let parse (value : string) : EpochId = %value
-    let toString (value : EpochId) : string = %value
+    let parse (value : int) : EpochId = %value
+    let tryPrev (value : EpochId) : EpochId option = match %value with 0 -> None | x -> Some %(x - 1)
+    let toString (value : EpochId) : string = string %value
 
 module Epoch =
 
@@ -48,7 +52,8 @@ module Epoch =
 
     module Fold =
 
-        type State = Initial | Open of items : string[] | Closed of items : string[] * carryingForward : string[]
+        type State = Initial | Open of items : OpenState | Closed of items : string[] * carryingForward : string[]
+        and OpenState = string[]
         let initial : State = Initial
         let (|Items|) = function Initial -> [||] | Open i | Closed (i, _) -> i
         open Events
@@ -69,30 +74,33 @@ module Epoch =
 
         /// Handles attempting to apply the request to the stream (assuming it's not already closed)
         /// The `decide` function can signal a need to close and/or split the request by emitting it as the residual
-        let tryIngest (decide : State -> 'residual * Event list) req = function
+        let tryIngest (decide : 'req -> State -> 'req * 'result * Event list) req = function
             | Initial ->        failwith "Invalid tryIngest; stream not Open"
-            | Open _ as s ->    decide s
-            | Closed _ ->       req, []
+            | Open _ as s ->    let residual, result, events = decide req s
+                                (residual, Some result), events
+            | Closed _ ->       (req, None), []
 
         /// Yields or computes the Balance to be Carried forward and/or application of the event representing that decision
-        let maybeClose (decideCarryForward : 'residual -> State -> Async<Balance option>) residual state = async {
+        let maybeClose (decideCarryForward : 'residual -> OpenState -> Async<Balance option>) residual state = async {
             match state with
             | Initial ->        return failwith "Invalid maybeClose; stream not Open"
-            | Open _ as s ->    let! cf = decideCarryForward residual s
+            | Open s ->         let! cf = decideCarryForward residual s
                                 let events = cf |> Option.map CarryForward |> Option.toList
                                 return (residual, cf), events
             | Closed (_, b) ->  return (residual, Some { items = b }), [] }
 
     [<NoComparison; NoEquality>]
-    type Rules<'residual> =
+    type Rules<'request, 'result> =
         {   getIncomingBalance  : unit -> Async<Events.Balance>
-            decideIngestion     : Fold.State -> 'residual * Events.Event list
-            decideCarryForward  : 'residual -> Fold.State -> Async<Events.Balance option> }
+            decideIngestion     : 'request -> Fold.State -> 'request * 'result * Events.Event list
+            decideCarryForward  : 'request -> Fold.OpenState -> Async<Events.Balance option> }
 
     /// The result of the overall ingestion, consisting of
-    type Result<'residual> =
+    type Result<'request, 'result> =
         {   /// residual of the request, in the event where it was not possible to ingest it completely
-            residual            : 'residual
+            residual            : 'request
+            /// The result of the decision (assuming processing took place)
+            result              : 'result option
             /// balance being carried forward in the event that the successor epoch has yet to have the BroughtForward event generated
             carryForward        : Events.Balance option }
 
@@ -100,17 +108,42 @@ module Epoch =
     /// 1. Streams must open with a BroughtForward event (obtained via Rules.getIncomingBalance if this is an uninitialized Epoch)
     /// 2. (If the Epoch has not closed) Rules.decide gets to map the request to events and a residual
     /// 3. Rules.decideCarryForward may trigger the closing of the Epoch based on the residual and the stream State by emitting Some balance
-    let decideIngestWithCarryForward rules req s : Async<Result<'residual> * Events.Event list> = async {
+    let decideIngestWithCarryForward rules req s : Async<Result<'result, 'req> * Events.Event list> = async {
         let acc = Accumulator(s, Fold.fold)
-        do! acc.DecideAsync(Fold.maybeOpen rules.getIncomingBalance)
-        let req' = acc.Decide(Fold.tryIngest rules.decideIngestion req)
-        let! residual, carryForward = acc.DecideAsync(Fold.maybeClose rules.decideCarryForward req')
-        return { residual = residual; carryForward = carryForward }, acc.Events
+        do! acc.TransactAsync(Fold.maybeOpen rules.getIncomingBalance)
+        let residual, result = acc.Transact(Fold.tryIngest rules.decideIngestion req)
+        let! residual, carryForward = acc.TransactAsync(Fold.maybeClose rules.decideCarryForward residual)
+        return { result = result; residual = residual; carryForward = carryForward }, acc.Events
     }
 
     /// Manages Application of Request's to the Epoch's stream
     type Service(resolve : EpochId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        member _.TryIngest(epochId, rules, req) : Async<Result<_>> =
+        let calcBalance state =
+            let createEventsBalance items : Events.Balance = { items = items }
+            async { return createEventsBalance state }
+        let close (state : Fold.OpenState) = async {
+            let! bal = calcBalance state
+            return Some bal }
+
+        /// Walks back as far as necessary to ensure preceding Epochs are Closed
+        member private x.CloseUntil epochId : Async<Events.Balance> =
+            let closePrecedingEpochs () =
+                match EpochId.tryPrev epochId with
+                | None -> calcBalance [||]
+                | Some prevEpoch -> x.CloseUntil prevEpoch
+            let rules : Rules<unit, unit> =
+                {   getIncomingBalance = closePrecedingEpochs
+                    decideIngestion = fun () _state -> (), (), []
+                    decideCarryForward = fun () -> close }
             let decider = resolve epochId
-            decider.TransactEx((fun c -> decideIngestWithCarryForward rules req c.State), fun r _c -> r)
+            decider.TransactEx((fun c -> decideIngestWithCarryForward rules () c.State), fun r _c -> Option.get r.carryForward)
+
+        /// Runs the decision function on the specified Epoch, closing and bringing forward balances from preceding Epochs if necessary
+        member x.Transact(epochId, decide : Fold.State -> 'result * Events.Event list) : Async<Result<unit, 'result>> =
+            let rules : Rules<unit, 'result> =
+                {   getIncomingBalance = fun () -> x.CloseUntil epochId
+                    decideIngestion = fun () state -> let result, events = decide state in (), result, events
+                    decideCarryForward = fun _result _state -> async { return None } }
+            let decider = resolve epochId
+            decider.TransactEx((fun c -> decideIngestWithCarryForward rules () c.State), fun r _c -> r)
