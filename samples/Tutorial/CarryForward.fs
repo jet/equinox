@@ -50,8 +50,8 @@ module Epoch =
 
         type State = Initial | Open of items : string[] | Closed of items : string[] * carryingForward : string[]
         let initial : State = Initial
-        open Events
         let (|Items|) = function Initial -> [||] | Open i | Closed (i, _) -> i
+        open Events
         let evolve (Items items) = function
             | BroughtForward e
             | Added e ->        Open (Array.append items e.items)
@@ -60,22 +60,24 @@ module Epoch =
         let fold = Seq.fold evolve
 
         /// Handles one-time opening of the Epoch, if applicable
-        let maybeOpen (getIncomingBalance : unit -> Balance option) = function
-            | Initial ->        (), getIncomingBalance () |> Option.map BroughtForward |> Option.toList
+        let maybeOpen (getIncomingBalance : unit -> Async<Balance>) state = async {
+            match state with
+            | Initial ->        let! balance = getIncomingBalance ()
+                                return (), [BroughtForward balance]
             | Open _
-            | Closed _ ->       (), []
+            | Closed _ ->       return (), [] }
 
         /// Handles attempting to apply the request to the stream (assuming it's not already closed)
         /// The `decide` function can signal a need to close and/or split the request by emitting it as the residual
-        let tryIngest (decide : State -> 'residual * Events.Event list) req = function
-            | Initial
+        let tryIngest (decide : State -> 'residual * Event list) req = function
+            | Initial ->        failwith "Invalid tryIngest; stream not Open"
             | Open _ as s ->    decide s
             | Closed _ ->       req, []
 
         /// Yields or computes the Balance to be Carried forward and/or application of the event representing that decision
         let maybeClose (decideCarryForward : 'residual -> State -> Async<Balance option>) residual state = async {
             match state with
-            | Initial
+            | Initial ->        return failwith "Invalid maybeClose; stream not Open"
             | Open _ as s ->    let! cf = decideCarryForward residual s
                                 let events = cf |> Option.map CarryForward |> Option.toList
                                 return (residual, cf), events
@@ -83,7 +85,7 @@ module Epoch =
 
     [<NoComparison; NoEquality>]
     type Rules<'residual> =
-        {   getIncomingBalance  : unit -> Events.Balance option
+        {   getIncomingBalance  : unit -> Async<Events.Balance>
             decideIngestion     : Fold.State -> 'residual * Events.Event list
             decideCarryForward  : 'residual -> Fold.State -> Async<Events.Balance option> }
 
@@ -95,12 +97,12 @@ module Epoch =
             carryForward        : Events.Balance option }
 
     /// Decision function ensuring the high level rules of an Epoch are adhered to viz.
-    /// 1. Streams may open with a BroughtForward event (decided by Rules.getIncomingBalance)
-    /// 2. Rules.decide gets to map the request to events and a residual iff the stream, assuming the Epoch has not yet closed
-    /// 3. Rules.decideCarryForward controls the closing of an Epoch based on either the residual or the stream State
+    /// 1. Streams must open with a BroughtForward event (obtained via Rules.getIncomingBalance if this is an uninitialized Epoch)
+    /// 2. (If the Epoch has not closed) Rules.decide gets to map the request to events and a residual
+    /// 3. Rules.decideCarryForward may trigger the closing of the Epoch based on the residual and the stream State by emitting Some balance
     let decideIngestWithCarryForward rules req s : Async<Result<'residual> * Events.Event list> = async {
         let acc = Accumulator(s, Fold.fold)
-        acc.Decide(Fold.maybeOpen rules.getIncomingBalance)
+        do! acc.DecideAsync(Fold.maybeOpen rules.getIncomingBalance)
         let req' = acc.Decide(Fold.tryIngest rules.decideIngestion req)
         let! residual, carryForward = acc.DecideAsync(Fold.maybeClose rules.decideCarryForward req')
         return { residual = residual; carryForward = carryForward }, acc.Events
