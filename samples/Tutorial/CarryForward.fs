@@ -119,23 +119,22 @@ module Epoch =
     /// Manages Application of Request's to the Epoch's stream
     type Service(resolve : EpochId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        let calcBalance state =
-            let createEventsBalance items : Events.Balance = { items = items }
-            async { return createEventsBalance state }
-        let close (state : Fold.OpenState) = async {
-            let! bal = calcBalance state
-            return Some bal }
-
         /// Walks back as far as necessary to ensure preceding Epochs are Closed
         member private x.CloseUntil epochId : Async<Events.Balance> =
+            let calcBalance state =
+                let createEventsBalance items : Events.Balance = { items = items }
+                async { return createEventsBalance state }
             let closePrecedingEpochs () =
                 match EpochId.tryPrev epochId with
                 | None -> calcBalance [||]
                 | Some prevEpoch -> x.CloseUntil prevEpoch
+            let alwaysClose () (state : Fold.OpenState) = async {
+                let! bal = calcBalance state
+                return Some bal }
             let rules : Rules<unit, unit> =
                 {   getIncomingBalance = closePrecedingEpochs
                     decideIngestion = fun () _state -> (), (), []
-                    decideCarryForward = fun () -> close }
+                    decideCarryForward = alwaysClose }
             let decider = resolve epochId
             decider.TransactEx((fun c -> decideIngestWithCarryForward rules () c.State), fun r _c -> Option.get r.carryForward)
 
@@ -144,6 +143,6 @@ module Epoch =
             let rules : Rules<unit, 'result> =
                 {   getIncomingBalance = fun () -> x.CloseUntil epochId
                     decideIngestion = fun () state -> let result, events = decide state in (), result, events
-                    decideCarryForward = fun _result _state -> async { return None } }
+                    decideCarryForward = fun () _state -> async { return None } }
             let decider = resolve epochId
             decider.TransactEx((fun c -> decideIngestWithCarryForward rules () c.State), fun r _c -> r)
