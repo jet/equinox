@@ -10,11 +10,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
-
-- `CosmosStore.Prometheus.LogSink`: Aligned signature with Equivalent Propulsion one :pray: [@deviousasti](https://github.com/deviousasti)
-
 ### Removed
 ### Fixed
+
+<a name="3.0.0"></a>
+## [3.0.0] - 2021-05-13
+
+### Changed
+
+- `CosmosStore.Prometheus.LogSink`: Aligned signature with Equivalent Propulsion one :pray: [@deviousasti](https://github.com/deviousasti)
 
 <a name="3.0.0-beta.4"></a>
 ## [3.0.0-beta.4] - 2021-04-28
@@ -592,7 +596,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.0-beta.4...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.0...HEAD
+[3.0.0]: https://github.com/jet/equinox/compare/3.0.0-beta.4...3.0.0
 [3.0.0-beta.4]: https://github.com/jet/equinox/compare/3.0.0-beta.3...3.0.0-beta.4
 [3.0.0-beta.3]: https://github.com/jet/equinox/compare/3.0.0-beta.2...3.0.0-beta.3
 [3.0.0-beta.2]: https://github.com/jet/equinox/compare/3.0.0-beta.1...3.0.0-beta.2
