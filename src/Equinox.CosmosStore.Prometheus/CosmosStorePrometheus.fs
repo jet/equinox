@@ -71,13 +71,12 @@ module private Counters =
 
 open Equinox.CosmosStore.Core.Log
 
-/// Extracts metrics embedded in Equinox log messages, and maps those to prometheus-net metrics.
-/// Acts as a virtual Serilog Sink.
-type LogSink(customKeys, customValues) =
+/// <summary>An ILogEventSink that publishes to Prometheus</summary>
+/// <param name="customTags">Custom tags to annotate the metric we're publishing where such tag manipulation cannot better be achieved via the Prometheus scraper config.</param>
+type LogSink(customTags: seq<string * string>) =
 
-    do if Array.length customKeys <> Array.length customValues then invalidArg "customKeys" "Unmatched tag/value counts"
+    let tags = Array.ofSeq customTags |> Array.unzip
 
-    let tags =                (customKeys, customValues)
     let opHistogram =         Histograms.sAndRuPair       tags "op"                "Operation"
     let roundtripHistogram =  Histograms.sAndRuPair       tags "roundtrip"         "Fragment"
     let opSummary =           Summaries.sAndRuPair        tags "op_summary"        "Operation Summary"
@@ -106,11 +105,8 @@ type LogSink(customKeys, customValues) =
         observeLatencyAndChargeWithEventCounts (facet, op, outcome) (db, con, cat, s, ru, m.count, m.bytes)
         cacheCounter (facet, op, cacheOutcome) (db, con, cat) 1.
 
-    /// Emit metrics with a single custom tag
-    new appName = LogSink([| "app" |],[| appName |])
-
     interface Serilog.Core.ILogEventSink with
-        member __.Emit logEvent = logEvent |> function
+        member _.Emit logEvent = logEvent |> function
             | MetricEvent cm -> cm |> function
                 | Op       (Operation.Tip,      m) -> observeTip  ("query",    "tip",           "ok", "200") m
                 | Op       (Operation.Tip404,   m) -> observeTip  ("query",    "tip",           "ok", "404") m

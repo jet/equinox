@@ -10,6 +10,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
+
+- `CosmosStore.Prometheus.LogSink`: Aligned signature with Equivalent Propulsion one :pray: [@deviousasti](https://github.com/deviousasti)
+
 ### Removed
 ### Fixed
 
