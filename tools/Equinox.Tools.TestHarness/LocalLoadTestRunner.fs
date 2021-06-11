@@ -10,14 +10,13 @@ module Local =
     /// <summary>
     ///     Core in-memory load testing workflow
     /// </summary>
-    /// <param name="logger">Logger function.</param>
-    /// <param name="logLevel">Log level for load test events.</param>
+    /// <param name="log">Logger function.</param>
     /// <param name="aggregationIntervals">Test result bucket aggregation intervals.</param>
     /// <param name="targetTestsPerSecond">Target throughput per second.</param>
     /// <param name="errorCutoff">Number of errors after which the load test should be automatically aborted.</param>
     /// <param name="duration">Duration of the load test.</param>
     /// <param name="sessionFactoryFactory">Asynchronous session factory. Responsible for obtaining a context for running a single test. Sessions may be reused for multiple test runs, but never concurrently.</param>
-    /// <param name="singleTestRunner">Load test runner lambda. Performs the actual load test given a session context. Values are treated are succesful test runs, exceptions are treated as failed runs.</param>
+    /// <param name="executeSingleIteration">Load test runner lambda. Performs the actual load test given a session context. Values are treated are succesful test runs, exceptions are treated as failed runs.</param>
     let runLoadTest (log : ILogger) (aggregationIntervals : TimeSpan[])
                     (targetTestsPerSecond : int) (errorCutoff : int64) (duration : TimeSpan)
                     (sessionFactoryFactory : Async<Async<'Session>>)

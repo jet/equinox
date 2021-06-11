@@ -37,7 +37,7 @@ type Stopwatch =
     /// <summary>
     ///     Times a computation, returning the result with a time range measurement.
     /// </summary>
-    /// <param name="f">Function to execute & time.</param>
+    /// <param name="f">Function to execute / time.</param>
     [<DebuggerStepThrough>]
     static member Time(f : unit -> 'T) : StopwatchInterval * 'T =
         let startTicks = Stopwatch.GetTimestamp()
@@ -49,7 +49,7 @@ type Stopwatch =
     /// <summary>
     ///     Times an async computation, returning the result with a time range measurement.
     /// </summary>
-    /// <param name="f">Function to execute & time.</param>
+    /// <param name="f">Function to execute / time.</param>
     [<DebuggerStepThrough>]
     static member Time(f : Async<'T>) : Async<StopwatchInterval * 'T> = async {
         let startTicks = Stopwatch.GetTimestamp()
