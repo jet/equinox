@@ -9,11 +9,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="3.0.1"></a>
+## [3.0.1] - 2021-06-11
+
+### Added
 
 - `CosmosStore.CosmosStoreConnector`: Wrapper for `CosmosClientFactory` enabling cleaner consumer code [#292](https://github.com/jet/equinox/issues/292)
 
-### Changed
-### Removed
 ### Fixed
 
 - `CosmosStore`: Reinstate default connection mode as `Direct` per [#281](https://github.com/jet/equinox/issues/281) [#287](https://github.com/jet/equinox/issues/287)
@@ -601,7 +607,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.0...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.1...HEAD
+[3.0.1]: https://github.com/jet/equinox/compare/3.0.0...3.0.1
 [3.0.0]: https://github.com/jet/equinox/compare/3.0.0-beta.4...3.0.0
 [3.0.0-beta.4]: https://github.com/jet/equinox/compare/3.0.0-beta.3...3.0.0-beta.4
 [3.0.0-beta.3]: https://github.com/jet/equinox/compare/3.0.0-beta.2...3.0.0-beta.3
