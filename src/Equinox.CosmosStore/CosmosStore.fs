@@ -1220,7 +1220,8 @@ type CosmosClientFactory
         maxRetryWaitTimeOnRateLimitedRequests: TimeSpan,
         /// Connection limit for Gateway Mode. CosmosDB default: 50
         [<O; D(null)>]?gatewayModeMaxConnectionLimit,
-        /// Connection mode (default: ConnectionMode.Gateway (lowest perf, least trouble))
+        /// Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
+        /// NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
         [<O; D(null)>]?mode : ConnectionMode,
         /// consistency mode (default: ConsistencyLevel.Session)
         [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
@@ -1236,8 +1237,8 @@ type CosmosClientFactory
                 MaxRetryWaitTimeOnRateLimitedRequests = maxWait,
                 RequestTimeout = timeout)
         match mode with
-        | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
-        | None | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // default; only supports Https
+        | None | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
+        | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // only supports Https
         match gatewayModeMaxConnectionLimit with
         | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
         | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 50

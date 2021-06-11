@@ -13,6 +13,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `CosmosStore`: Reinstate default connection mode as `Direct` per [#281](https://github.com/jet/equinox/issues/281) [#287](https://github.com/jet/equinox/issues/287)
+
 <a name="3.0.0"></a>
 ## [3.0.0] - 2021-05-13
 
