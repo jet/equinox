@@ -122,9 +122,9 @@ module Store =
 
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
-    let factory = CosmosClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
-    let storeClient = CosmosStoreClient.Connect(factory.Connect discovery, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient, tipMaxEvents = 100)
+    let connector = CosmosStoreConnector(discovery, TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
+    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, tipMaxEvents = 100) // Keep up to 100 events in tip before moving events to a new document
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
 
 module TodosCategory =

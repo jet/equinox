@@ -125,10 +125,9 @@ module Store =
 
     let read key = Environment.GetEnvironmentVariable key |> Option.ofObj |> Option.get
     let appName = "equinox-tutorial"
-    let factory = CosmosClientFactory(TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
-    let createCosmosClient containers = factory.Connect(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"), containers)
-    let storeClient = CosmosStoreClient.Connect(createCosmosClient, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
-    let context = CosmosStoreContext(storeClient)
+    let connector = CosmosStoreConnector(Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION"), TimeSpan.FromSeconds 5., 2, TimeSpan.FromSeconds 5.)
+    let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
+    let context = CosmosStoreContext(storeClient, tipMaxEvents = 256)
     let cache = Equinox.Cache(appName, 20)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
 
