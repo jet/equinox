@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- `CosmosStore.CosmosStoreConnector`: Wrapper for `CosmosClientFactory` enabling cleaner consumer code [#292](https://github.com/jet/equinox/issues/292)
+
 ### Changed
 ### Removed
 ### Fixed

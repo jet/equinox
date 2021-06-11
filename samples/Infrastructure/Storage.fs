@@ -98,8 +98,8 @@ module Cosmos =
     // - In hot-warm scenarios, the secondary/fallback container will frequently within the same account and hence can share a CosmosClient
     // For these typical purposes, CosmosStoreClient.Connect should be used to establish the Client and Connection, not custom wiring as we have here
     let createClient (a : Info) connectionString =
-        let clientFactory = CosmosClientFactory(a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
-        clientFactory.CreateUninitialized(Discovery.ConnectionString connectionString)
+        let connector = CosmosStoreConnector(Discovery.ConnectionString connectionString, a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
+        connector.CreateUninitialized()
     let connect (log : ILogger) (a : Info) =
         let (primaryClient, primaryDatabase, primaryContainer) as primary = createClient a a.Connection, a.Database, a.Container
         logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)

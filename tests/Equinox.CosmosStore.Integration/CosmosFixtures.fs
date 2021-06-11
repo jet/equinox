@@ -23,9 +23,9 @@ let discoverConnection () =
     | Some connectionString -> "EQUINOX_COSMOS_CONNECTION", Discovery.ConnectionString connectionString
 
 let createClient (log : Serilog.ILogger) name (discovery : Discovery) =
-    let factory = CosmosClientFactory(requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
+    let connector = CosmosStoreConnector(discovery, requestTimeout=TimeSpan.FromSeconds 3., maxRetryAttemptsOnRateLimitedRequests=2, maxRetryWaitTimeOnRateLimitedRequests=TimeSpan.FromMinutes 1.)
     log.Information("CosmosDB Connecting {name} to {endpoint}", name, discovery.Endpoint)
-    factory.CreateUninitialized discovery
+    connector.CreateUninitialized()
 
 let connectPrimary log =
     let name, discovery = discoverConnection ()
