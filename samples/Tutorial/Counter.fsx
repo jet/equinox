@@ -1,15 +1,15 @@
-﻿// Compile Tutorial.fsproj before attempting to send this to FSI with Alt-Enter by either:
+// Compile Tutorial.fsproj before attempting to send this to FSI with Alt-Enter by either:
 // a) right-clicking or 
 // b) typing dotnet build samples/Tutorial 
-#I "bin/Debug/netstandard2.1/"
-#r "Serilog.dll"
-#r "Serilog.Sinks.Console.dll"
-#r "Equinox.dll"
-#r "Equinox.MemoryStore.dll"
-#r "TypeShape.dll"
-#r "FSharp.UMX.dll"
-#r "FsCodec.dll"
-#r "FsCodec.NewtonsoftJson.dll"
+#r "nuget:Serilog"
+#r "nuget:Serilog.Sinks.Console"
+#r "nuget:Equinox"
+#r "nuget:Equinox.MemoryStore"
+#r "nuget:TypeShape"
+#r "nuget:Fsharp.UMX"
+#r "nuget:FsCodec"
+#r "nuget:FsCodec.Box"
+#r "nuget:FsCodec.NewtonsoftJson"
 
 // Contributed by @voronoipotato
 
