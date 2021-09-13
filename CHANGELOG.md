@@ -13,7 +13,12 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
-- Fix CI to stop emitting builds with incorrect `AssemblyVersion 1.0.0.0` (update MinVer to 2.5.0)
+<a name="3.0.2"></a>
+## [3.0.1] - 2021-09-13
+
+### Fixed
+
+- Fix CI to stop emitting builds with incorrect `AssemblyVersion 1.0.0.0` (updated MinVer to `2.5.0`)
 - Update global.json to use SDK version `5.0.200`
 
 <a name="3.0.1"></a>
@@ -610,7 +615,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.1...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.2...HEAD
+[3.0.2]: https://github.com/jet/equinox/compare/3.0.1...3.0.2
 [3.0.1]: https://github.com/jet/equinox/compare/3.0.0...3.0.1
 [3.0.0]: https://github.com/jet/equinox/compare/3.0.0-beta.4...3.0.0
 [3.0.0-beta.4]: https://github.com/jet/equinox/compare/3.0.0-beta.3...3.0.0-beta.4
