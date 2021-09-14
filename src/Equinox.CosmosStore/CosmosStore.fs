@@ -1427,7 +1427,7 @@ type AccessStrategy<'event,'state> =
     /// Don't apply any optimized reading logic. Note this can be extremely RU cost prohibitive
     /// and can severely impact system scalability. Should hence only be used with careful consideration.
     | Unoptimized
-    /// Load only the single most recent event defined in <c>'event`</c> and trust that doing a <c>fold</c> from any such event
+    /// Load only the single most recent event defined in <c>'event</c> and trust that doing a <c>fold</c> from any such event
     /// will yield a correct and complete state
     /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
     /// <remarks>
