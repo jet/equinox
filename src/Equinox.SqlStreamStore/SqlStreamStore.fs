@@ -409,7 +409,7 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event,'state> =
-    /// Load only the single most recent event defined in <c>'event`</c> and trust that doing a <c>fold</c> from any such event
+    /// Load only the single most recent event defined in <c>'event</c> and trust that doing a <c>fold</c> from any such event
     /// will yield a correct and complete state
     /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
     | LatestKnownEvent
