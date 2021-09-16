@@ -10,11 +10,15 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 ### Changed
-
-- `EventStore`: Add `customize` hook to `Connector` [#286](https://github.com/jet/equinox/pull/286) (cherry-pick from `2.6.0`)
-
 ### Removed
 ### Fixed
+
+<a name="3.0.3"></a>
+## [3.0.3] - 2021-09-16
+
+### Changed
+
+- `EventStore`: Add `customize` hook to `Connector` [#286](https://github.com/jet/equinox/pull/286) (cherry-pick from `2.6.0`)
 
 <a name="3.0.2"></a>
 ## [3.0.1] - 2021-09-13
@@ -618,7 +622,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.2...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.3...HEAD
+[3.0.3]: https://github.com/jet/equinox/compare/3.0.2...3.0.3
 [3.0.2]: https://github.com/jet/equinox/compare/3.0.1...3.0.2
 [3.0.1]: https://github.com/jet/equinox/compare/3.0.0...3.0.1
 [3.0.0]: https://github.com/jet/equinox/compare/3.0.0-beta.4...3.0.0
