@@ -21,7 +21,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `EventStore`: Add `customize` hook to `Connector` [#286](https://github.com/jet/equinox/pull/286) (cherry-pick from `2.6.0`)
 
 <a name="3.0.2"></a>
-## [3.0.1] - 2021-09-13
+## [3.0.2] - 2021-09-13
 
 ### Fixed
 

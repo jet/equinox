@@ -1,13 +1,13 @@
 # Equinox [![Build Status](https://dev.azure.com/jet-opensource/opensource/_apis/build/status/jet.equinox?branchName=master)](https://dev.azure.com/jet-opensource/opensource/_build/latest?definitionId=4?branchName=master) [![release](https://img.shields.io/github/release/jet/equinox.svg)](https://github.com/jet/equinox/releases) [![NuGet](https://img.shields.io/nuget/vpre/Equinox.svg?logo=nuget)](https://www.nuget.org/packages/Equinox/) [![license](https://img.shields.io/github/license/jet/Equinox.svg)](LICENSE) ![code size](https://img.shields.io/github/languages/code-size/jet/equinox.svg) [![docs status](https://img.shields.io/badge/DOCUMENTATION-WIP-important.svg?style=popout)](DOCUMENTATION.md) [<img src="https://img.shields.io/badge/slack-DDD--CQRS--ES%20%23equinox-yellow.svg?logo=slack">](https://j.mp/ddd-es-cqrs)
 
-Equinox is a set of low dependency libraries that allow for event-sourced processing against stream-based stores including:
+Equinox is a set of low dependency libraries that allow for event-sourced processing against stream-based stores handling:
 * Snapshots
 * Caching
-* State management
+* [Optimistic concurrency control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control)
 
-This enables *you* to compose the libraries into an architecture that fits your apps' needs. 
+**Not a framework**; *you* compose the libraries into an architecture that fits your apps' evolving needs. 
 
-It does not and will not handle projections and subscriptions. Refer to [Propulsion](https://github.com/jet/propulsion) for those cases.
+It does not and will not handle projections and subscriptions. See [Propulsion](https://github.com/jet/propulsion) for that.
 
 # Table of Contents
 
