@@ -87,12 +87,13 @@ module Props =
     #endif
     type FsCheckAttribute() =
         inherit FsCheck.Xunit.PropertiesAttribute(MaxTest = maxTest, Arbitrary=[|typeof<GapGen>|])
-        member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
-        override x.Skip =
-            match Option.ofObj x.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
-            | Some value when value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase) ->
-                $"Skipped as requested via %s{_.SkipIfRequestedViaEnvironmentVariable}"
-            | _ -> null
+        member val SkipIfRequestedViaEnvironmentVariableName : string = null with get, set
+        member private x.SkipRequested =
+            Option.ofObj x.SkipIfRequestedViaEnvironmentVariableName
+            |> Option.map Environment.GetEnvironmentVariable
+            |> Option.bind Option.ofObj
+            |> Option.exists (fun value -> value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase))
+        override x.Skip = if x.SkipRequested then $"Skipped as requested via %s{x.SkipIfRequestedViaEnvironmentVariableName}" else null
 
 type UnoptimizedTipReadingCorrectness(testOutputHelper) =
     inherit TestsWithLogCapture(testOutputHelper)
@@ -105,7 +106,7 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
 
     /// This test compares the experiences of cached and uncached paths to reading the same data within a given stream
     /// This is in order to shake out bugs and/or variation induced by the presence of stale state in the cache entry
-    [<Props.FsCheck(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    [<Props.FsCheck(SkipIfRequestedViaEnvironmentVariableName="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can sync with competing writer with and without cache`` (instanceId, contextArgs, firstIsCached, Props.EventCount count1, Props.EventCount count2) = Async.RunSynchronously <| async {
         let context = createContext contextArgs
         let service1, service2 =
