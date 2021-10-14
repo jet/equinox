@@ -22,6 +22,8 @@ module WiringHelpers =
         let accessStrategy = Equinox.CosmosStore.AccessStrategy.Unoptimized
         createCategory codec initial fold accessStrategy (context, cache)
 
+/// Test Aggregation used to validate that the reading logic in Equinox.CosmosStore correctly reads, deserializes and folds the events
+/// This is especially relevant when events are spread between a Tip page and preceding pages as the Tip reading logic is special cased compared to querying
 module SequenceCheck =
 
     let streamName (id : Guid) = FsCodec.StreamName.create "_SequenceCheck" (id.ToString "N")
@@ -77,17 +79,19 @@ module Props =
     type GapGen =
         static member InTip = Gen.constant 5 |> Arb.fromGen
         static member EventCount = Gen.choose (0, 25) |> Arb.fromGen
-    type FsCheckAttribute() =
     #if DEBUG
-        inherit FsCheck.Xunit.PropertiesAttribute(MaxTest = 100, Arbitrary=[|typeof<GapGen>|])
+    let [<Literal>] maxTest = 100
     #else
-        inherit FsCheck.Xunit.PropertiesAttribute(MaxTest = 1; Arbitrary=[|typeof<GapGen>|])
+    // In release mode, don't run quite as many cases of the test
+    let [<Literal>] maxTest = 5
     #endif
+    type FsCheckAttribute() =
+        inherit FsCheck.Xunit.PropertiesAttribute(MaxTest = maxTest, Arbitrary=[|typeof<GapGen>|])
         member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
-        override __.Skip =
-            match Option.ofObj __.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
+        override x.Skip =
+            match Option.ofObj x.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
             | Some value when value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase) ->
-                sprintf "Skipped as requested via %s" __.SkipIfRequestedViaEnvironmentVariable
+                $"Skipped as requested via %s{_.SkipIfRequestedViaEnvironmentVariable}"
             | _ -> null
 
 type UnoptimizedTipReadingCorrectness(testOutputHelper) =
@@ -99,6 +103,8 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
         let queryMaxItems = 10
         createPrimaryContextEx log queryMaxItems eventsInTip
 
+    /// This test compares the experiences of cached and uncached paths to reading the same data within a given stream
+    /// This is in order to shake out bugs and/or variation induced by the presence of stale state in the cache entry
     [<Props.FsCheck(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can sync with competing writer with and without cache`` (instanceId, contextArgs, firstIsCached, Props.EventCount count1, Props.EventCount count2) = Async.RunSynchronously <| async {
         let context = createContext contextArgs
