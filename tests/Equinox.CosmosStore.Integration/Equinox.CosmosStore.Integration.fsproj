@@ -11,6 +11,7 @@
     <Compile Include="CosmosFixtures.fs" />
     <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="CosmosIntegration.fs" />
+    <Compile Include="AccessStrategies.fs" />
     <Compile Include="CosmosCoreIntegration.fs" />
     <Compile Include="JsonConverterTests.fs" />
     <Compile Include="CacheCellTests.fs" />
