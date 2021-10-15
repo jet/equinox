@@ -13,7 +13,12 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
-- `CosmosStore`: Fixed stream range loading bug for `Reload` for both `Query` with cache value and resync [#295](https://github.com/jet/equinox/pull/295)
+<a name="3.0.4"></a>
+## [3.0.4] - 2021-10-15
+
+### Fixed
+
+- `CosmosStore`: Fixed event retrieval bug for `Reload` for both `Query` with cached value and resync cases [#295](https://github.com/jet/equinox/pull/295) :pray: [@ragiano215](https://github.com/ragiano215)
 
 <a name="3.0.3"></a>
 ## [3.0.3] - 2021-09-16
@@ -624,7 +629,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.3...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.4...HEAD
+[3.0.4]: https://github.com/jet/equinox/compare/3.0.3...3.0.4
 [3.0.3]: https://github.com/jet/equinox/compare/3.0.2...3.0.3
 [3.0.2]: https://github.com/jet/equinox/compare/3.0.1...3.0.2
 [3.0.1]: https://github.com/jet/equinox/compare/3.0.0...3.0.1
