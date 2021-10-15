@@ -77,8 +77,8 @@ module Props =
     type EventsInTip = EventsInTip of int
     type EventCount = EventCount of int
     type GapGen =
-        static member InTip = Gen.constant 5 |> Arb.fromGen
-        static member EventCount = Gen.choose (0, 25) |> Arb.fromGen
+        static member InTip : Arbitrary<EventsInTip> = Gen.constant 5 |> Gen.map EventsInTip |> Arb.fromGen
+        static member EventCount : Arbitrary<EventCount> = Gen.choose (0, 25) |> Gen.map EventCount |> Arb.fromGen
     #if DEBUG
     let [<Literal>] maxTest = 100
     #else
