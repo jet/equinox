@@ -1094,16 +1094,16 @@ type StoreClient(container : Container, fallback : Container option, query : Que
         | Tip.Result.NotModified -> return Token.create stream pos.Value
         | Tip.Result.Found (pos, _i, _unfoldsAndEvents) -> return Token.create stream pos }
     member store.Reload(log, (stream, pos), (tryDecode, isOrigin), ?preview): Async<LoadFromTokenResult<'event>> =
-        let query (pos, i, xs) = async {
-            let! res = store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), minIndex = i, tip = (pos, i, xs))
+        let read tipContent = async {
+            let! res = store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), minIndex = pos.index, tip = tipContent)
             return LoadFromTokenResult.Found res }
         match preview with
-        | Some (pos, i, xs) -> query (pos, i, xs)
+        | Some (pos, i, xs) -> read (pos, i, xs)
         | None -> async {
             match! loadTip log stream (Some pos) with
             | Tip.Result.NotFound -> return LoadFromTokenResult.Found (Token.create stream Position.fromKnownEmpty, Array.empty)
             | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
-            | Tip.Result.Found (pos, i, xs) -> return! query (pos, i, xs) }
+            | Tip.Result.Found (pos, i, xs) -> return! read (pos, i, xs) }
 
     member internal __.Sync(log, stream, exp, batch: Tip): Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."

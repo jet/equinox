@@ -13,6 +13,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `CosmosStore`: Fixed stream range loading bug for `Reload` for both `Query` with cache value and resync [#295](https://github.com/jet/equinox/pull/295)
+
 <a name="3.0.3"></a>
 ## [3.0.3] - 2021-09-16
 
