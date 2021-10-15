@@ -44,7 +44,7 @@ module SequenceCheck =
         let fold state = Seq.fold evolve state
 
     let decide (value, count) (state : Fold.State) =
-        if value = 0 || Array.last state = (value - 1)
+        if (value = 0 && Array.isEmpty state) || Array.last state = (value - 1)
         then List.init count (fun i -> Events.Add {| value = value + i |})
         else failwith $"Invalid Add of %d{value} to list %A{state}"
 
