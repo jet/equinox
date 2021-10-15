@@ -126,7 +126,7 @@ type UnoptimizedTipReadingCorrectness(testOutputHelper) =
         test <@ s2' = s1' @>
 
         let! s1'' = service1.Add(instanceId, count1, count2)
-        let expected = Array.init count1 (fun i -> count1 + i)
+        let expected = Array.init (count1 + count2) id
         test <@ expected = s1'' @>
 
         let! s2'' = service2.Read instanceId
