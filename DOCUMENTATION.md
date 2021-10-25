@@ -2239,7 +2239,7 @@ rich relative to the need of consumers to date. Some things remain though:
   `Equinox.Decider` (with the potential to swap stores once one gets to using
   `Equinox.Decider`)
 - Get conflict handling as efficient and predictable as for `Equinox.CosmosStore`
-  https://github.com/jet/equinox/issues/28
+  https://github.com/jet/equinox/issues/38
 - provide for snapshots to be stored out of the stream, and loaded in a
   customizable manner in a manner analogous to
   [the proposed comparable `Equinox.CosmosStore` facility](https://github.com/jet/equinox/issues/61).
