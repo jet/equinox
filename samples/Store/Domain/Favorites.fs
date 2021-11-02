@@ -42,43 +42,40 @@ module Fold =
     let isOrigin = function Events.Snapshotted _ -> true | _ -> false
     let snapshot state = Events.Snapshotted { net = state }
 
-type Command =
-    | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
-    | Unfavorite    of skuId : SkuId
+let doesntHave skuId (state : Fold.State) = state |> Array.exists (fun x -> x.skuId = skuId) |> not
 
-let interpret command (state : Fold.State) =
-    let doesntHave skuId = state |> Array.exists (fun x -> x.skuId = skuId) |> not
-    match command with
-    | Favorite (date = date; skuIds = skuIds) ->
-        [ for skuId in Seq.distinct skuIds do
-            if doesntHave skuId then
-                yield Events.Favorited { date = date; skuId = skuId } ]
-    | Unfavorite skuId ->
-        if doesntHave skuId then [] else
-        [ Events.Unfavorited { skuId = skuId } ]
+let decideFavorite date skuIds state =
+    [ for skuId in Seq.distinct skuIds do
+        if state |> doesntHave skuId then
+            yield Events.Favorited { date = date; skuId = skuId } ]
+
+let decideUnfavorite skuId state =
+    if state |> doesntHave skuId then [] else
+    [ Events.Unfavorited { skuId = skuId } ]
 
 type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    let execute clientId command : Async<unit> =
+    member _.Favorite(clientId, skus, ?at) =
         let decider = resolve clientId
-        decider.Transact(interpret command)
+        decider.Transact(decideFavorite (defaultArg at System.DateTimeOffset.Now) skus)
 
-    member __.Execute(clientId, command) =
-        execute clientId command
+    member _.Unfavorite(clientId, sku) =
+        let decider = resolve clientId
+        decider.Transact(decideUnfavorite sku)
 
-    member __.Favorite(clientId, skus) =
-        execute clientId (Command.Favorite(System.DateTimeOffset.Now, skus))
-
-    member __.Unfavorite(clientId, sku) =
-        execute clientId (Command.Unfavorite sku)
-
-    member __.List clientId : Async<Events.Favorited []> =
+    member _.List clientId : Async<Events.Favorited []> =
         let decider = resolve clientId
         decider.Query(id)
 
-    member __.ListWithVersion clientId : Async<int64 * Events.Favorited []> =
+    member _.ListWithVersion clientId : Async<int64 * Events.Favorited []> =
         let decider = resolve clientId
         decider.QueryEx(fun ctx -> ctx.Version, ctx.State)
+
+    // NOTE not a real world example - used for an integration test; TODO get a better example where it's actually relevant
+    member _.UnfavoriteWithPostVersion(clientId, sku) =
+        let decider = resolve clientId
+        decider.TransactEx((fun c -> async { return (), decideUnfavorite sku c.State }),
+                           fun _r c -> c.Version)
 
 let create log resolveStream =
     let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts  = 3)

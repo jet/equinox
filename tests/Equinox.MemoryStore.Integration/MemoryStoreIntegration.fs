@@ -85,5 +85,16 @@ type ChangeFeed(testOutputHelper) =
                 stream = expectedStream
                 && env.Index = 1L
                 && env.EventType = "Unfavorited"
-                && env.Data |> unbox<Domain.Favorites.Events.Unfavorited> |> fun x -> x.skuId = sku @>
-}
+                && env.Data |> unbox<Domain.Favorites.Events.Unfavorited> |> fun x -> x.skuId = sku @> }
+
+type Versions(testOutputHelper) =
+    let log = TestOutputAdapter testOutputHelper |> createLogger
+
+    [<AutoData>]
+    let ``Post-Version is computed correctly`` (clientId, sku) = Async.RunSynchronously <| async {
+        let store = createMemoryStore ()
+        let service = createFavoritesServiceMemory log store
+
+        do! service.Favorite(clientId, [sku])
+        let! postVersion = service.UnfavoriteWithPostVersion(clientId, sku)
+        test <@ 1L + 1L = postVersion @> }

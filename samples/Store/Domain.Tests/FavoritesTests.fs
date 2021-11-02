@@ -10,6 +10,15 @@ open System
 let mkFavorite skuId    = Favorited { date = DateTimeOffset.UtcNow; skuId = skuId }
 let mkUnfavorite skuId  = Unfavorited { skuId = skuId }
 
+type Command =
+    | Favorite      of date : DateTimeOffset * skuIds : SkuId list
+    | Unfavorite    of skuId : SkuId
+
+let interpret (command : Command) =
+    match command with
+    | Favorite (date, skus) ->  decideFavorite date skus
+    | Unfavorite sku ->         decideUnfavorite sku
+
 /// Put the aggregate into the state where the command should trigger an event; verify correct events are yielded
 let verifyCorrectEventGenerationWhenAppropriate command (originState: State) =
     let initialEvents = command |> function
