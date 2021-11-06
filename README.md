@@ -783,6 +783,39 @@ a) version 3 of something is never temporarily overwritten with V2 and then V3
 
 b) no redundant writes take place (and no expensive RU costs are incurred in Cosmos)
 
+### What version numbers does Equinox use for an empty stream and when a stream has only one event?
+
+Equinox uses
+
+* `0` when there's no events
+* `1` when the first event is written
+
+> Side note: for contrast, EventStore internally uses the following
+>
+> * `0` when there's only 1 event written to the stream
+> * `-1` when the stream exists and is empty but has metadata defined
+> * `-2` when the stream doesn't exist
+
+Note that with a
+[pruner](https://github.com/jet/dotnet-templates/tree/master/propulsion-pruner)-[archiver](https://github.com/jet/dotnet-templates/tree/master/propulsion-archiver)
+set up for one's Equinox store, one's primary store might be devoid of events due to the operation of the pruner.
+However, it will have recorded the version of the stream, and Equinox would fallback to the secondary store to retrieve
+the requisite events.
+
+### What is Equinox's behavior if it is queried for a "non-existent" stream? E.g.: An app having a GET API endpoint for some business entity like a customer order but the user provided an order that hasn't been created yet.
+
+Note firstly that Equinox treats a non-existent stream as an empty stream. For the use case stated, it's first
+recommended that the state is defined to represent this non-existent / uninitialized phase, e.g.: defining a DU with a
+variant `Initial`. This same variant would act as the `Fold.initial` for the category. The app would ultimately call
+either a `.Query` or `.QueryEx`, and Equinox would return this for the application logic to match against.
+
+> Side note: the original question is for a read operation, but there's an interesting consideration for a write. Say,
+> for instance, that there's a PUT API endpoint where the code would create a customer order (or some other business
+> entity). As an optimization, one could utilize `Equinox.ResolveOption.AssumeEmpty` for these semantics. Even in the
+> scenario that the user might erroneously be recreating an existing order, Equinox would have performed a version check
+> and rerun the decider logic to present to the user that the business entity has already been created. (Of course, this
+> would only end up being another round trip to the store.)
+
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
 😲Please raise a question-Issue, and we'll be delighted to either answer directly, or incorporate the question and answer here
