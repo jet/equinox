@@ -36,18 +36,26 @@ let createServiceCosmosUnoptimizedButCached log context =
     let cat = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, caching, access)
     Favorites.create log cat.Resolve
 
+type Command =
+    | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list
+    | Unfavorite    of skuId : SkuId
+
+let execute (service : Favorites.Service) clientId = function
+    | Favorite (date, skus) ->  service.Favorite(clientId, skus, at = date)
+    | Unfavorite sku ->         service.Unfavorite(clientId, sku)
+
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput
 
     let act (service : Favorites.Service) (clientId, command) = async {
-        do! service.Execute(clientId, command)
+        do! execute service clientId command
         let! version, items = service.ListWithVersion clientId
 
         match command with
-        | Domain.Favorites.Favorite (_, skuIds) ->
+        | Favorite (_, skuIds) ->
             test <@ skuIds |> List.forall (fun skuId -> items |> Array.exists (function { skuId = itemSkuId} -> itemSkuId = skuId)) @>
-        | Domain.Favorites.Unfavorite _ ->
+        | Unfavorite _ ->
             test <@ Array.isEmpty items @>
         return version, items }
 

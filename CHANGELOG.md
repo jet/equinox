@@ -12,6 +12,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 ### Removed
 ### Fixed
+ 
+- `MemoryStore`: Fixed incorrect `Version` computation for `TransactEx` post-State [#296](https://github.com/jet/equinox/pull/296)
 
 <a name="3.0.4"></a>
 ## [3.0.4] - 2021-10-15
