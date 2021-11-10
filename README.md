@@ -824,6 +824,35 @@ and Equinox will supply the _initial_ value for the `project` function to render
 > passing that state to the `decider` function, which, assuming it's implemented in an [_idempotent_](https://en.wikipedia.org/wiki/Idempotence)
 > manner, will indicate that there are no events to be written.
 
+### So with `Equinox.CosmosStore`, it seems it should be possible to handle saving multiple events from multiple streams as long as they share the same partition key. But it does not seem to be possible via `Equinox.Decider.Transact` ?
+
+> I'm asking because I had this idea which I was workshopping with a friend, that it could solve typical sync problems in typical availability domains.
+
+> Let's assume that our domain is Bike Sharing in different cities. Users can reserve a bike, and then access it and ride.
+
+> In our system we would have two subdomains:
+> * Inventory - responsible for being sure that is bike (resource) is ready to be used
+> * Orders - responsible for tracking information regarding reservations, orders etc
+
+> There could be different subdomains as Orders, that would be using Inventory under the hood - like Repairing.
+
+> In the system we would like to a) block a particular bike for the user and b) at the same time create a reservation for them to store all important business information.
+
+> So we use and save data to the 2 different streams of data - typical ES problem.
+
+> We could use event handers / sagas but it brings another level of complexity.
+
+> In the case above we could assume that data inside a single city will be so small, that even with prolonged usage it won't fill the whole CosmosDB partition. So we could use it to handle saving 2 events in the same time. (My actual system is not Bike Sharing, and I'm confident of a lack of explosive growth!)
+
+> Saving a `BikeBlocked` event would be handled in a transaction along with the `ReservationMade`. So we wouldn't end up with the situation that bike is blocked and reservation is not made or conversely.
+
+> What do you think of this idea? Does it sound reasonable?
+
+First, I'd refer to some good resources in this space, which describe key functions of an Event Store
+
+- Yves Lorphelin's [Expectations for an Event Store](https://github.com/ylorph/RandomThoughts/blob/master/2019.08.09_expectations_for_an_event_store.md)
+- The [Evolved Version of that: 
+
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
 😲Please raise a question-Issue, and we'll be delighted to either answer directly, or incorporate the question and answer here
