@@ -809,7 +809,7 @@ Example: I have an app serving a GET endpoint for a customer order, but the id s
 Note firstly that Equinox treats a non-existent stream as an empty stream. For the use case stated, it's first
 recommended that the state is defined to represent this non-existent / uninitialized phase, e.g.: defining a DU with a
 variant `Initial`, or in some way following the [Null Object Pattern](https://en.wikipedia.org/wiki/Null_object_pattern).
-This value would thus be used a rhw `Fold.initial` for the Category. The app will use a `.Query`/`.QueryEx` on the relevant Decider,
+This value would thus be used as the `Fold.initial` for the Category. The app will use a `.Query`/`.QueryEx` on the relevant Decider,
 and Equinox will supply the _initial_ value for the `project` function to render from (as a pattern match).
 
 > Side note: the original question is for a read operation, but there's an interesting consideration if we are doing a `Transact`. Say,
