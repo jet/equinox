@@ -9,6 +9,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+
+- Stores: Expose `.Log.PropertyTag` Literals to enable log filtering  [#297](https://github.com/jet/equinox/pull/297)
+
 ### Changed
 ### Removed
 ### Fixed

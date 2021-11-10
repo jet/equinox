@@ -209,6 +209,9 @@ type IRetryPolicy = abstract member Execute: (int -> Async<'T>) -> Async<'T>
 
 module Log =
 
+    /// <summary>Name of Property used for <c>Metric</c> in <c>LogEvent</c>s.</summary>
+    let [<Literal>] PropertyTag = "cosmosEvt"
+
     [<NoEquality; NoComparison>]
     type Measurement =
        {   database: string; container: string; stream: string
@@ -265,7 +268,7 @@ module Log =
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let internal event (value : Metric) (log : ILogger) =
         let enrich (e : Serilog.Events.LogEvent) =
-            e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty("cosmosEvt", Serilog.Events.ScalarValue(value)))
+            e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty(PropertyTag, Serilog.Events.ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let internal (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
     let internal (|EventLen|) (x: #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes + metaBytes + 80
@@ -274,7 +277,7 @@ module Log =
         | (:? Serilog.Events.ScalarValue as x) -> Some x.Value
         | _ -> None
     let (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric option =
-        match logEvent.Properties.TryGetValue("cosmosEvt") with
+        match logEvent.Properties.TryGetValue(PropertyTag) with
         | true, SerilogScalar (:? Metric as e) -> Some e
         | _ -> None
     [<RequireQualifiedAccess>]

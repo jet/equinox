@@ -17,6 +17,10 @@ type Direction = Forward | Backward with
     override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
 
 module Log =
+
+    /// <summary>Name of Property used for <c>Event</c> in <c>LogEvent</c>s.</summary>
+    let [<Literal>] PropertyTag = "esEvt"
+
     [<NoEquality; NoComparison>]
     type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int }
     [<NoEquality; NoComparison>]
@@ -43,7 +47,7 @@ module Log =
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let event (value : Event) (log : ILogger) =
-        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("esEvt", ScalarValue(value)))
+        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty(PropertyTag, ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log: Async<'t> =
         match retryPolicy with
@@ -73,7 +77,7 @@ module Log =
                 | (:? ScalarValue as x) -> Some x.Value
                 | _ -> None
             let (|EsMetric|_|) (logEvent : LogEvent) : Event option =
-                match logEvent.Properties.TryGetValue("esEvt") with
+                match logEvent.Properties.TryGetValue(PropertyTag) with
                 | true, SerilogScalar (:? Event as e) -> Some e
                 | _ -> None
             type Counter =
