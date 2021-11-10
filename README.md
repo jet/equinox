@@ -783,6 +783,47 @@ a) version 3 of something is never temporarily overwritten with V2 and then V3
 
 b) no redundant writes take place (and no expensive RU costs are incurred in Cosmos)
 
+### What kind of values does `ISyncContext.Version` return; i.e. what numeric value is yielded for an empty stream?
+
+Independent of the backing store being used, Equinox uses `0`-based versioning, i.e. the version value is equal to the number of events in the stream. Each event's `Index` is `0`-based, akin to how a .NET array is numbered:
+
+* **`1` when the first event is written**
+* _`0` when there's no events_
+
+> Side note: for contrast, EventStoreDB employs a different (`-1`-based) scheme in order to have `-1`/`-2` etc represent various `expectedVersion` conditions 
+>
+> * **`0` when the first event is written to the stream**
+> * _`-1` when the stream exists and is empty but has metadata defined_
+> * _`-2` when the stream doesn't exist_
+
+Note that for `Equinox.CosmosStore` with a
+[pruner](https://github.com/jet/dotnet-templates/tree/master/propulsion-pruner)-[archiver](https://github.com/jet/dotnet-templates/tree/master/propulsion-archiver)
+pair configured, the primary store may have been stripped of events due to the operation of the pruner.
+In this case, it will however retain the version of the stream in the tip document, and if that's non-`0`,
+will attempt to load the archived events from the secondary store.
+
+### What is Equinox's behavior if one does a `Query` on a 'non-existent' stream?
+
+Example: I have an app serving a GET endpoint for a customer order, but the id supplied within the URL is for an order that hasn't yet been created.
+
+Note firstly that Equinox treats a non-existent stream as an empty stream. For the use case stated, it's first
+recommended that the state is defined to represent this non-existent / uninitialized phase, e.g.: defining a DU with a
+variant `Initial`, or in some way following the [Null Object Pattern](https://en.wikipedia.org/wiki/Null_object_pattern).
+This value would thus be used as the `Fold.initial` for the Category. The app will use a `.Query`/`.QueryEx` on the relevant Decider,
+and Equinox will supply the _initial_ value for the `project` function to render from (as a pattern match).
+
+> Side note: the original question is for a read operation, but there's an interesting consideration if we are doing a `Transact`. Say,
+> for instance, that there's a PUT API endpoint where the code would register a fresh customer order for the customer in its order list
+> via the Decider's `Transact` operation. As an optimization, one can utilize the `AssumeEmpty` hint as the `Equinox.ResolveOption` to
+> hint that it's worth operating on the assumption that the stream is empty. When the internal sync operation attempts to perform the write,
+> that assumption will be tested; every write is always version checked.
+> In the scenario where we are dealing with a rerun of an attempt to create an order (lets say the call timed out, but the processing actually
+> concluded successfully on another node of the API server cluster just prior to the caller giving up), the version check will determine that
+> the expected version is _not_ `0` (as expected when a stream is _Empty_), but instead `1` (as the preceding invocation wrote one event).
+> In this case, the loop will then use the `fold` function from the `initial` state, folding in the single event (via the `evolve` function),
+> passing that state to the `decider` function, which, assuming it's implemented in an [_idempotent_](https://en.wikipedia.org/wiki/Idempotence)
+> manner, will indicate that there are no events to be written.
+
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
 😲Please raise a question-Issue, and we'll be delighted to either answer directly, or incorporate the question and answer here
