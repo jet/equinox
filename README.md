@@ -1014,7 +1014,7 @@ In other words, it's looking like you're painted into a corner: you can't shard,
 - I've done lots of CosmosDB specific reading on this - MS has actually got pretty good docs (most useful ones I'm aware of are linked from [DOCUMENTATION.md](DOCUMENTATION.md))
 - I've read and watched lots of stuff on various DBs. Most of that can be replaced with https://www.amazon.com/Designing-Data-Intensive-Applications-Reliable-Maintainable/dp/1449373321 and some in-date equivalent of https://martinfowler.com/books/nosql.html
 - Cosmos DB, when used with Mechanical Sympathy (read: Billing Model Sympathy) at the forefront of one's mind is absolutely a good product that can be extremely cost effective and provide excellent performance
-_ _However_, You are pretty much guaranteed to not get that good :point_up: experience without reading, measuring and iterating (I've seen many people with much bigger brains than me prove that over and over - the bad things you hear about Cosmos DB are true too, and are not only caused by the below average drivers)
+_However_, you are pretty much guaranteed to not get that good :point_up: experience without reading, measuring and iterating (I've seen many people with much bigger brains than me prove that over and over - the bad things you hear about Cosmos DB are true too, and are not only caused by the below average drivers)
 
 #### TL;DR on Cosmos DB for storing events (but really for all usages)
 
