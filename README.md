@@ -825,6 +825,7 @@ and Equinox will supply the _initial_ value for the `project` function to render
 > passing that state to the `decider` function, which, assuming it's implemented in an [_idempotent_](https://en.wikipedia.org/wiki/Idempotence)
 > manner, will indicate that there are no events to be written.
 
+<a name="what-is-a-decider"/></a>
 ### What is a Decider? How does the Equinox `type Decider` relate to Jérémie's concept of one? :pray: [@rmaziarka](https://github.com/rmaziarka)
 
 The single best treatment of the concept of a Decider that's online at present is [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ) with [Jérémie Chassaing, @thinkb4coding](https://twitter.com/thinkb4coding). If you're serious about making the time investment to write a PoC of a store (or a real one) on a Document DB and/or even doing a SQL-backed one without studying the prior art in that space intently, you can't afford not to invest that time. As teased in that video, there will hopefully be a body of work that will describe the concept in more detail ... eventually...
