@@ -839,7 +839,7 @@ https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L22-L56)
 
 #### In general
 
-While the concept of a Decider plays well with Event Sourcing and many different types of Store, its important to note that neither storage or event sourcing is a prerequisite. A lot of the value of the concept is that you can and should be able to talk about and implement one without reference to any specific store implementation (or even thinking about it ever being stored - it can also be used to manage in-memory structures such as UI trees etc).
+While the concept of a Decider plays well with Event Sourcing and many different types of Stores, it's important to note that neither storage or event sourcing is a prerequisite. A lot of the value of the concept is that you can and should be able to talk about and implement one without reference to any specific store implementation (or even thinking about it ever being stored - it can also be used to manage in-memory structures such as UI trees etc).
 
 #### Consistency
 
