@@ -862,9 +862,9 @@ With the Equinox `type Decider`, the typical `decide` signature used with the `T
 
   NOTE: (There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result` which will be yielded to the caller driving the Decision as the return value of the `Transact` function).
 
-### So what kind of a thing is a Decider then?
+#### So what kind of a thing is a Decider then?
 
-So, what is a Decider then? A marketing term? Jérémie's way of explaining an app?
+Is it a marketing term? Jérémie's way of explaining an app?
 
 I'd present the fact that Equinox:
 - was initially generalised and extracted from working code using ESDB in (by most measures) a successful startup written in a mix of F# and C# by the usual mix of devs, experience levels, awareness of event sourcing patterns and language/domain backgrounds
@@ -874,7 +874,7 @@ I'd present the fact that Equinox:
 - can and has been used at every stage in an e-commerce pipeline
 - is presently aligning pretty neatly with diverse domains without any changes/extensions, both for me and others
 
-... as evidence for Decider being a _pattern_ (analogous to how event sourcing and various modern event sourced UI paradigms have a lot in common).
+... as evidence for Decider being *a pattern language* (analogous to how event sourcing and many modern event sourced UI paradigms share a lot of common patterns).
 
 #### ... about the process of making _decisions_
 
