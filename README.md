@@ -996,7 +996,7 @@ For avoidance of doubt: being able to write two events at the same time is a pre
 You're correct to identify the maximum amount of data being managed in a scope as a critical consideration when coupling stuff within a logical partition in order to be able to achieve consistency when managing updates across two set of related pieces of information.
 
 Specifically wrt CosmosDB, the following spring to mind without looking anything up:
-- The max amount of data in any logical partition if 20GB. I would not be shocked if it was 50GB some time soon. But it's not going to be a TB any time soon. When that's gone, you need to delete things
+- The max amount of data in any logical partition is 20GB. I would not be shocked if it was 50GB some time soon. But it's not going to be a TB any time soon. When that's gone, you need to delete things
 - All updates in a logical partition are hitting the exact same thing on the same node of a physical partition
 - All reads are also hitting that
 - The maximum amount of RUs you can give that physical partition is 5000 RU (or is it 10000 RU?)
