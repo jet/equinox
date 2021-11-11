@@ -766,8 +766,9 @@ There are [sequence diagrams in Documentation MD](https://github.com/jet/equinox
 
 But why, you might ask? the API is designed such that the token can store any kind of state relevant to the `Sync` operation.
 
-a) for SqlStreamStore and EventStore, when writing rolling snapshots, we need to retain the index of the last Rolling Snapshot that was written, if we encountered it during loading (e.g. if we read V198-100 and there was a snapshot at at V101, then we need to write a new one iff the events we are writing would make event 101 be > batchSize events away, i.e. we need to always include a RollingSnapshot to maintain the "if you read the last page, it will include a rolling snapshot" guarantee)
-b) for CosmosDB, the `expectedVersion` can actually be an `expectedEtag` - this is how `AccessStrategy.RollingState` works - this allows one to update Unfolds without having to add an event every time just to trigger a change in the version
+a. for SqlStreamStore and EventStore, when writing rolling snapshots, we need to retain the index of the last Rolling Snapshot that was written, if we encountered it during loading (e.g. if we read V198-100 and there was a snapshot at at V101, then we need to write a new one iff the events we are writing would make event 101 be > batchSize events away, i.e. we need to always include a RollingSnapshot to maintain the "if you read the last page, it will include a rolling snapshot" guarantee)
+
+b. for CosmosDB, the `expectedVersion` can actually be an `expectedEtag` - this is how `AccessStrategy.RollingState` works - this allows one to update Unfolds without having to add an event every time just to trigger a change in the version
 
 (The second usage did not necessitate an interface change - i.e. the Token mechanism was introduced to handle the first case, and just happened to fit the second case)
 
@@ -779,9 +780,9 @@ The typical case for using the version in the output is to be able to publish a 
 
 For that particular reactor, a different thing is going on though: the input value is versioned, and we don't write if the value is in date e.g. if you reset the checkpoint on the projector, it can re-run all the work idempotently:
 
-a) version 3 of something is never temporarily overwritten with V2 and then V3
+a. version 3 of something is never temporarily overwritten with V2 and then V3
 
-b) no redundant writes take place (and no expensive RU costs are incurred in Cosmos)
+b. no redundant writes take place (and no expensive RU costs are incurred in Cosmos)
 
 ### What kind of values does `ISyncContext.Version` return; i.e. what numeric value is yielded for an empty stream? :pray: [@ragiano215](https://github.com/ragiano215)
 
@@ -824,7 +825,7 @@ and Equinox will supply the _initial_ value for the `project` function to render
 > passing that state to the `decider` function, which, assuming it's implemented in an [_idempotent_](https://en.wikipedia.org/wiki/Idempotence)
 > manner, will indicate that there are no events to be written.
 
-### What is a Decider? How does the `type Decider` relate to Jérémie's concept of one? :pray: [@rmaziarka](https://github.com/rmaziarka)
+### What is a Decider? How does the Equinox `type Decider` relate to Jérémie's concept of one? :pray: [@rmaziarka](https://github.com/rmaziarka)
 
 The single best treatment of the concept of a Decider that's online at present is [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ) with [Jérémie Chassaing, @thinkb4coding](https://twitter.com/thinkb4coding). If you're serious about making the time investment to write a PoC of a store (or a real one) on a Document DB and/or even doing a SQL-backed one without studying the prior art in that space intently, you can't afford not to invest that time. As teased in that video, there will hopefully be a body of work that will describe the concept in more detail ... eventually...
 
@@ -1021,7 +1022,7 @@ However, the fundamental things that arise when viewing it at a low/storage desi
 
 I've witnessed people attempt to 'solve' the fundamental low level issues by working around reality, moving it all into a Cosmos DB Stored Procedure (Yes, you can guess the outcome). Please don't even think about that, no matter how much tech tricks you'll learn!
 
-### Conclusion
+#### Conclusion
 
 **You know what's coming next: You don't want to merge two Deciders and 'Just' bring it all under a nice tidy transaction to avoid thinking about Process Managers and/or other techniques.**
 
