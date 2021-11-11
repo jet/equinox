@@ -783,7 +783,7 @@ a) version 3 of something is never temporarily overwritten with V2 and then V3
 
 b) no redundant writes take place (and no expensive RU costs are incurred in Cosmos)
 
-### What kind of values does `ISyncContext.Version` return; i.e. what numeric value is yielded for an empty stream?
+### What kind of values does `ISyncContext.Version` return; i.e. what numeric value is yielded for an empty stream? :pray: [@ragiano215](https://github.com/ragiano215)
 
 Independent of the backing store being used, Equinox uses `0`-based versioning, i.e. the version value is equal to the number of events in the stream. Each event's `Index` is `0`-based, akin to how a .NET array is numbered:
 
@@ -802,7 +802,7 @@ pair configured, the primary store may have been stripped of events due to the o
 In this case, it will however retain the version of the stream in the tip document, and if that's non-`0`,
 will attempt to load the archived events from the secondary store.
 
-### What is Equinox's behavior if one does a `Query` on a 'non-existent' stream?
+### What is Equinox's behavior if one does a `Query` on a 'non-existent' stream? :pray: [@ragiano215](https://github.com/ragiano215)
 
 Example: I have an app serving a GET endpoint for a customer order, but the id supplied within the URL is for an order that hasn't yet been created.
 
@@ -875,7 +875,7 @@ The missing part beyond that basic anemic stuff is where the value lies:
 
 Quite frequently, a Decider will also internally be a Process Manager, encapsulting a state machine.
 
-### With `Equinox.CosmosStore`, it seems it should be possible to handle saving multiple events from multiple streams as long as they share the same partition key in Cosmos DB. But it does not seem to be possible via `Equinox.Decider.Transact` ?
+### With `Equinox.CosmosStore`, it seems it should be possible to handle saving multiple events from multiple streams as long as they share the same partition key in Cosmos DB. But it does not seem to be possible via `Equinox.Decider.Transact` ? :pray: [@rmaziarka](https://github.com/rmaziarka)
 
 > I'm asking because I had this idea which I was workshopping with a friend, that it could solve typical sync problems in typical availability domains.
 
