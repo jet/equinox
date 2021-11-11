@@ -850,9 +850,9 @@ With Deciders in general, and Equinox in particular, the following elements are 
 
 With the Equinox `type Decider`, the typical `decide` signature used with the `Transact` API has the following signature:
 
-    context -> inputsAndOrCommand -> 'State -> Event list
+      context -> inputsAndOrCommand -> 'State -> Event list
 
-  (There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result` which will be yielded to the caller driving the Decision as the return value of the `Transact` function).
+    (There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result` which will be yielded to the caller driving the Decision as the return value of the `Transact` function).
 
 So, what is a Decider then? A marketing term? Jérémie's way of explaining an app?
 
