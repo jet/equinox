@@ -886,7 +886,7 @@ Finally, I'd say that a key thing the Decider concept brings is a richer way of 
 The missing part beyond that basic anemic stuff is where the value lies:
 - any interesting system *makes _decisions_*:
 - a decision can yield a result alongside the events that are needed to manifest the state change
-- any decision process can and should consider [idempotentcy](https://en.wikipedia.org/wiki/Idempotence) - if you initiate a process/request something, a retry can't be a special case you don't worry about, considering it is a fundamental baseline requirement and thinking tool
+- any decision process can and should consider [idempotency](https://en.wikipedia.org/wiki/Idempotence) - if you initiate a process/request something, a retry can't be a special case you don't worry about, considering it is a fundamental baseline requirement and thinking tool
 - it can let you drive a set of reactions in a fault-tolerant and scalable (both perf/system size, and management/separation of complexity)  manner
 
 Quite frequently, a Decider will also internally be a Process Manager, encapsulting a state machine.
