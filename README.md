@@ -840,7 +840,7 @@ _In any system, any decision (or even query) processed by a Decider should be co
 
 _When applying the concept of a Decider to event sourcing, the consistency requirement means [there's more to the exercise than emitting events into a thing those marketing centers on Events](https://domaincentric.net/blog/eventstoredb-vs-kafka)_. There needs to be a way in the overall processing of a decision manages a concurrency conflict by taking the state that superseded the one you based the original decision on (the _origin state_), and re-running the decision based on the reality of that conflicting _actual state_. The resync operation that needs to take place in that instance can be managed by reloading from events, reloading from a snapshot, or by taking events since your local state and `fold`ing those Events on top of that.
 
-When applying the concept of a Decider to event sourcing, we can use the following elements:
+With Deciders in general, and Equinox in particular, the following elements are involved:
 - a `State` type, on which we base decisions, which can be updated by the consequences of a decision
 - a `decide` function, which is presented a `State`, and returns a decision, which we use to update the State, if, and only if there is no concurrency conflict when applying them
 - an `initial` State, from which we start
@@ -848,9 +848,11 @@ When applying the concept of a Decider to event sourcing, we can use the followi
 - the Events are maintained as an ordered list of events (could be an in memory array, a stream in ESDB, documents with a Tip as with `Equinox.CosmosStore`)
 - the State is established by [`fold`](https://en.wikipedia.org/wiki/Fold_(higher-order_function))ing the sequence of `Event`s, starting from an `initial` state
 
-With the Equinox `type Decider`, the typical `decide` signature used with the `Transact` API has the following type `context -> inputsAndOrCommand -> 'State -> Event list`.
+With the Equinox `type Decider`, the typical `decide` signature used with the `Transact` API has the following signature:
 
-(There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result` which will be yielded to the caller driving the Decision as the return value of the `Transact` function).
+    context -> inputsAndOrCommand -> 'State -> Event list
+
+  (There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result` which will be yielded to the caller driving the Decision as the return value of the `Transact` function).
 
 So, what is a Decider then? A marketing term? Jérémie's way of explaining an app?
 
