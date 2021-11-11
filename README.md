@@ -1016,7 +1016,7 @@ In other words, it's looking like you're painted into a corner: you can't shard,
 - Cosmos DB, when used with Mechanical Sympathy (read: Billing Model Sympathy) at the forefront of one's mind is absolutely a good product that can be extremely cost effective and provide excellent performance
 _ _However_, You are pretty much guaranteed to not get that good :point_up: experience without reading, measuring and iterating (I've seen many people with much bigger brains than me prove that over and over - the bad things you hear about Cosmos DB are true too, and are not only caused by the below average drivers)
 
-#### TL;DR on Cosmos DB
+#### TL;DR on Cosmos DB for storing events (but really for all usages)
 
 - You can't update or the changefeed gets out of order (but there are lots of other reasons not to do updates beyond that)
 - You need to do etag-checked reads and writes or go home
