@@ -1001,11 +1001,11 @@ Specifically wrt CosmosDB, the following spring to mind without looking anything
 - All reads are also hitting that
 - The maximum amount of RUs you can give that physical partition is 5000 RU (or is it 10000 RU?)
 - the more data you have in a single logical partition, the more pages in the indexes, the higher the RU cost for equivalent things (the amount in other logical partitions does not have this effect)
-- hot partitions
+- [hotspots at either logical partition or physical partition levels](DOCUMENTATION.md#growth-handling-strategies)
 - if you do an event per document, you are hosed
 - if you don't have an e-tag checked write or read scheme, you won't be able to load state efficiently without resorting to queries
 
-In other words, it's looking like you're painted into a corner: you can't shard, can't scale and are asking for hot partition issues. Correct, that doesn't always matter. But even if you have 10 cities, you can't afford for the two busiest ones to be hosted on the same node as that's going to be the one suffering rate limiting. (Look for hot partitions in [DOCUMENTATION.md](DOCUMENTATION.md) for more versions of me attempting to convey these concerns). Trust me, its not even worth thinking about tricks to manage this fundamental problem (trying to influence the sharding etc is going to be real complexity you do not want to be explaining to other engineers on a whiteboard or a 5am conf call)
+In other words, it's looking like you're painted into a corner: you can't shard, can't scale and are asking for hotspotted partition issues. Correct, that doesn't always matter. But even if you have 10 cities, you can't afford for the two busiest ones to be hosted on the same node as that's going to be the one suffering rate limiting. Trust me, its not even worth thinking about tricks to manage this fundamental problem (trying to influence the sharding etc is going to be real complexity you do not want to be explaining to other engineers on a whiteboard or a 5am conf call)
 
 #### So why do all these things spring to mind ?
 
