@@ -879,7 +879,7 @@ I'd present the fact that Equinox:
 
 #### ... about the process of making _decisions_
 
-Finally, I'd say that a key thing the Decider concept brings is a richer way of looking at event sourcing that the typical event sourcing 101 examples you might see:
+Finally, I'd say that a key thing the Decider concept brings is a richer way of looking at event sourcing than the typical event sourcing 101 examples you might see:
 - de-emphasizing one-way things that map commands to events without deduplicating and/or yielding a result (not saying that you shouldn't do the simplest thing -- you absolutely should)
 - de-emphasizing all projection handlers only ever just sitting there looking for `MyThingCreated` and doing an `INSERT` with a try/catch for duplicate inserts as a way to make it idempotent (and every stream design requiring a Created event as a way to enable that)
 
