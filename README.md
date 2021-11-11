@@ -829,16 +829,24 @@ and Equinox will supply the _initial_ value for the `project` function to render
 
 The single best treatment of the concept of a Decider that's online at present is [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ) with [Jérémie Chassaing, @thinkb4coding](https://twitter.com/thinkb4coding). If you're serious about making the time investment to write a PoC of a store (or a real one) on a Document DB and/or even doing a SQL-backed one without studying the prior art in that space intently, you can't afford not to invest that time. As teased in that video, there will hopefully be a body of work that will describe the concept in more detail ... eventually...
 
+#### In Equinox
+
 The Equinox `type Decider`, which exposes an [API that covers the needs of making Consistent Decisions against a State derived from Events on a Stream](
 https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L22-L56)
 
 > NOTE the `Decider` itself in Equinox does no directly touch all three of the ingredients - while you pass it a `decide` function, the `initial` and `fold` functions, are  supplied to the specific store library (e.g. `Equinox.CosmosStore.CosmosStoreCategory`), as that manages the loading, snapshotting, syncing and caching of the state and events.
 
+#### In general
+
 While the concept of a Decider plays well with Event Sourcing and many different types of Store, its important to note that neither storage or event sourcing is a prerequisite. A lot of the value of the concept is that you can and should be able to talk about and implement one without reference to any specific store implementation (or even thinking about it ever being stored - it can also be used to manage in-memory structures such as UI trees etc).
+
+#### Consistency
 
 _In any system, any decision (or even query) processed by a Decider should be concurrency controlled_. If you're running in an Actor based system, the concurrency is managed by that. If you're building an in-memory decision system to support a game etc as Jérémie does in the talk, there's only one so that concern is side-stepped.
 
 _When applying the concept of a Decider to event sourcing, the consistency requirement means [there's more to the exercise than emitting events into a thing those marketing centers on Events](https://domaincentric.net/blog/eventstoredb-vs-kafka)_. There needs to be a way in the overall processing of a decision manages a concurrency conflict by taking the state that superseded the one you based the original decision on (the _origin state_), and re-running the decision based on the reality of that conflicting _actual state_. The resync operation that needs to take place in that instance can be managed by reloading from events, reloading from a snapshot, or by taking events since your local state and `fold`ing those Events on top of that.
+
+#### The ingredients
 
 With Deciders in general, and Equinox in particular, the following elements are involved:
 - a `State` type, on which we base decisions, which can be updated by the consequences of a decision
@@ -852,7 +860,9 @@ With the Equinox `type Decider`, the typical `decide` signature used with the `T
 
       context -> inputsAndOrCommand -> 'State -> Event list
 
-    (There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result` which will be yielded to the caller driving the Decision as the return value of the `Transact` function).
+  NOTE: (There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result` which will be yielded to the caller driving the Decision as the return value of the `Transact` function).
+
+### So what kind of a thing is a Decider then?
 
 So, what is a Decider then? A marketing term? Jérémie's way of explaining an app?
 
@@ -865,6 +875,8 @@ I'd present the fact that Equinox:
 - is presently aligning pretty neatly with diverse domains without any changes/extensions, both for me and others
 
 ... as evidence for Decider being a _pattern_ (analogous to how event sourcing and various modern event sourced UI paradigms have a lot in common).
+
+#### ... about the process of making _decisions_
 
 Finally, I'd say that a key thing the Decider concept brings is a richer way of looking at event sourcing that the typical event sourcing 101 examples you might see:
 - de-emphasizing one-way things that map commands to events without deduplicating and/or yielding a result (not saying that you shouldn't do the simplest thing -- you absolutely should)
