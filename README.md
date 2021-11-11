@@ -1029,7 +1029,7 @@ wrt 3+4+5, Equinox.Cosmos default max doc size is 30KB. On occasion where paying
 
 #### Why think about it and explain it at such a low level?
 
-Why think about this problem from such a low level perspective ? Why not just stick to the high level given that's equally important to get right, and if correctly will more often yield a cleanly implementable solution?
+Why think about this problem from such a low level perspective? Why not just stick to the high level given that's equally important to get right, and if correctly will more often yield a cleanly implementable solution?
 
 Many people have a strong desire to write the least amount of code possible, and that's not unreasonable. The most critical question is going to be, does it work at all? Due to the combination of factors above, the answer is looking pretty clear. You can write the code and run it to be sure. I already have, in spike branches, and will save you the spoiler.
 
