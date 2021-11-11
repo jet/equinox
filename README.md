@@ -835,7 +835,7 @@ The single best treatment of the concept of a Decider that's online at present i
 The Equinox `type Decider`, which exposes an [API that covers the needs of making Consistent Decisions against a State derived from Events on a Stream](
 https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L22-L56)
 
-> NOTE the `Decider` itself in Equinox does no directly touch all three of the ingredients - while you pass it a `decide` function, the `initial` and `fold` functions, are  supplied to the specific store library (e.g. `Equinox.CosmosStore.CosmosStoreCategory`), as that manages the loading, snapshotting, syncing and caching of the state and events.
+> NOTE the `Decider` itself in Equinox does not directly touch all three of the ingredients - while you pass it a `decide` function, the `initial` and `fold` functions, are  supplied to the specific store library (e.g. `Equinox.CosmosStore.CosmosStoreCategory`), as that manages the loading, snapshotting, syncing and caching of the state and events.
 
 #### In general
 
