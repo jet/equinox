@@ -1021,7 +1021,7 @@ _However_, you are pretty much guaranteed to not get that good :point_up: experi
 - You can't update or the changefeed gets out of order (but there are lots of other reasons not to do updates beyond that)
 - You need to do etag-checked reads and writes or go home
 - Each Item/Document costs you about 500 bytes in headers and space in all the indexes so you need to strongly consider >1 event/document
-- Queries are way more costly than point reads. Its called a Document database because the single thing it does best on this planet is read or update ONE document. Read/write cost rule of thumb is per KB, but has logarithmic properties too, i.e. 50K is not always 50x the cost of 1K
+- Queries are way more costly than point reads. It's called a Document database because the single thing it does best on this planet is read or update ONE document. Read/write cost rule of thumb is per KB, but has logarithmic properties too, i.e. 50K is not always 50x the cost of 1K
 - Keep streams as small as possible but no smaller. 20GB max in Cosmos, but in practice, the latency to read that much stuff is preposterous
 - Keep documents on the small side. (Max doc size is 2MB, max stored proc arg size is 1MB, 1MB induces roundtrip latency and write contention etc). DynamoDB sets max doc size at 400KB for similar reasons. ESDB allows 4MB but that's less of a problem for it.
 - Keep documents uniform in size where possible. Consider taking a write overhead hit to preserve read efficiency or scalability. (inc considering compression)
