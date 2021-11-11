@@ -828,7 +828,7 @@ and Equinox will supply the _initial_ value for the `project` function to render
 <a name="what-is-a-decider"/></a>
 ### What is a Decider? How does the Equinox `type Decider` relate to Jérémie's concept of one? :pray: [@rmaziarka](https://github.com/rmaziarka)
 
-The single best treatment of the concept of a Decider that's online at present is [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ) with [Jérémie Chassaing, @thinkb4coding](https://twitter.com/thinkb4coding). If you're serious about making the time investment to write a PoC of a store (or a real one) on a Document DB and/or even doing a SQL-backed one without studying the prior art in that space intently, you can't afford not to invest that time. As teased in that video, there will hopefully be a body of work that will describe the concept in more detail ... eventually...
+The single best treatment of the concept of a Decider that's online at present is [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ) with [Jérémie Chassaing, @thinkb4coding](https://twitter.com/thinkb4coding). As teased in that video, there will hopefully be a body of work that will describe the concept in more detail ... eventually (but hopefully not [inevitably](https://github.com/ylorph/The-Inevitable-Event-Centric-Book))...
 
 #### In Equinox
 
@@ -1040,6 +1040,8 @@ I've witnessed people attempt to 'solve' the fundamental low level issues by wor
 #### Conclusion
 
 **You know what's coming next: You don't want to merge two Deciders and 'Just' bring it all under a nice tidy transaction to avoid thinking about Process Managers and/or other techniques.**
+
+If you're still serious about making the time investment to write a PoC (or a real) implementation of a Store on a Document DB such as CosmosDB (and/or even writing a SQL-backed one without studying the prior art in that space intently), you can't afford _not_ to invest that time in [watching a 2h45m video about Deciders!](https://www.youtube.com/watch?v=kgYGMVDHQHs). 
 
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
