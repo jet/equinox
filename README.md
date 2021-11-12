@@ -856,7 +856,7 @@ _When applying the concept of a Decider to event sourcing, the consistency requi
 #### The ingredients
 
 With Deciders in general, and Equinox in particular, the following elements are involved:
-- a `State` type, on which decisions can be based. This can be updated as a consequence of a decision. e.g. the item identifiers in a cart and the associated quantities
+- a `State` type, on which decisions can be based. This can be updated as a consequence of a decision, e.g. the item identifiers in a cart and the associated quantities
 - a `decide` function, which is presented a `State`, and returns a decision, which we use to update the State, if, and only if there is no concurrency conflict when applying them. e.g. the `decider` might validate that it's acceptable to start a process at the present time, returning the identifier of the process; if there is already one in flight, it can return the identifier of that already-started process (covered under the term idempotency further onwards)
 - an `initial` State, from which we start if there's nothing in the store, e.g. an empty list of product codes representing nothing in the cart
 - an `Event` type (think a Discriminated union). This might have cases like `Cleared`, `QuantityChanged`, `ItemAdded` (in some cases only a snapshot of the state is persisted, but in Equinox, changes are always represented in terms of the relevant Event type for a given Decider)
