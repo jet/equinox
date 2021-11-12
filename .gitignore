@@ -45,3 +45,6 @@ packages.config
 
 #Ionide
 .ionide/
+
+#User VS Code settings
+.vscode
