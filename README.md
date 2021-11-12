@@ -832,7 +832,7 @@ The single best treatment of the concept of a Decider that's online at present i
 
 #### In Equinox
 
-The Equinox `type Decider`, exposes an [API that covers the needs of making Consistent Decisions against a State derived from Events on a Stream](
+The Equinox `type Decider` exposes an [API that covers the needs of making Consistent Decisions against a State derived from Events on a Stream](
 https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L22-L56). At a high level, we have:
 - `Transact*` functions - these run a decision function that may result in a change to the State, including management of the retry cycle when a consistency violation occurs during the syncing of the state with the backing store (See [Optmimistic Concurrency Control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control)). Some variants can also yield an outcome to the caller after the syncing to the store has taken place.
 - `Query*` functions - these run a render function propjecting from the State the Decider manages (but can't mutate it or trigger changes). The concept of [CQRS](https://martinfowler.com/bliki/CQRS.html) is a consideration here - using the Decider to read state should not be a default approach (but equally should not be considered off limits).
