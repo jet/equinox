@@ -766,8 +766,9 @@ There are [sequence diagrams in Documentation MD](https://github.com/jet/equinox
 
 But why, you might ask? the API is designed such that the token can store any kind of state relevant to the `Sync` operation.
 
-a) for SqlStreamStore and EventStore, when writing rolling snapshots, we need to retain the index of the last Rolling Snapshot that was written, if we encountered it during loading (e.g. if we read V198-100 and there was a snapshot at at V101, then we need to write a new one iff the events we are writing would make event 101 be > batchSize events away, i.e. we need to always include a RollingSnapshot to maintain the "if you read the last page, it will include a rolling snapshot" guarantee)
-b) for CosmosDB, the `expectedVersion` can actually be an `expectedEtag` - this is how `AccessStrategy.RollingState` works - this allows one to update Unfolds without having to add an event every time just to trigger a change in the version
+a. for SqlStreamStore and EventStore, when writing rolling snapshots, we need to retain the index of the last Rolling Snapshot that was written, if we encountered it during loading (e.g. if we read V198-100 and there was a snapshot at at V101, then we need to write a new one iff the events we are writing would make event 101 be > batchSize events away, i.e. we need to always include a RollingSnapshot to maintain the "if you read the last page, it will include a rolling snapshot" guarantee)
+
+b. for CosmosDB, the `expectedVersion` can actually be an `expectedEtag` - this is how `AccessStrategy.RollingState` works - this allows one to update Unfolds without having to add an event every time just to trigger a change in the version
 
 (The second usage did not necessitate an interface change - i.e. the Token mechanism was introduced to handle the first case, and just happened to fit the second case)
 
@@ -779,11 +780,11 @@ The typical case for using the version in the output is to be able to publish a 
 
 For that particular reactor, a different thing is going on though: the input value is versioned, and we don't write if the value is in date e.g. if you reset the checkpoint on the projector, it can re-run all the work idempotently:
 
-a) version 3 of something is never temporarily overwritten with V2 and then V3
+a. version 3 of something is never temporarily overwritten with V2 and then V3
 
-b) no redundant writes take place (and no expensive RU costs are incurred in Cosmos)
+b. no redundant writes take place (and no expensive RU costs are incurred in Cosmos)
 
-### What kind of values does `ISyncContext.Version` return; i.e. what numeric value is yielded for an empty stream?
+### What kind of values does `ISyncContext.Version` return; i.e. what numeric value is yielded for an empty stream? :pray: [@ragiano215](https://github.com/ragiano215)
 
 Independent of the backing store being used, Equinox uses `0`-based versioning, i.e. the version value is equal to the number of events in the stream. Each event's `Index` is `0`-based, akin to how a .NET array is numbered:
 
@@ -802,7 +803,7 @@ pair configured, the primary store may have been stripped of events due to the o
 In this case, it will however retain the version of the stream in the tip document, and if that's non-`0`,
 will attempt to load the archived events from the secondary store.
 
-### What is Equinox's behavior if one does a `Query` on a 'non-existent' stream?
+### What is Equinox's behavior if one does a `Query` on a 'non-existent' stream? :pray: [@ragiano215](https://github.com/ragiano215)
 
 Example: I have an app serving a GET endpoint for a customer order, but the id supplied within the URL is for an order that hasn't yet been created.
 
@@ -823,6 +824,228 @@ and Equinox will supply the _initial_ value for the `project` function to render
 > In this case, the loop will then use the `fold` function from the `initial` state, folding in the single event (via the `evolve` function),
 > passing that state to the `decider` function, which, assuming it's implemented in an [_idempotent_](https://en.wikipedia.org/wiki/Idempotence)
 > manner, will indicate that there are no events to be written.
+
+<a name="what-is-a-decider"/></a>
+### What is a Decider? How does the Equinox `type Decider` relate to Jérémie's concept of one? :pray: [@rmaziarka](https://github.com/rmaziarka)
+
+The single best treatment of the concept of a Decider that's online at present is [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ) with [Jérémie Chassaing, @thinkb4coding](https://twitter.com/thinkb4coding). As teased in that video, there will hopefully be a body of work that will describe the concept in more detail ... eventually (but hopefully not [inevitably](https://github.com/ylorph/The-Inevitable-Event-Centric-Book))...
+
+#### In Equinox
+
+The Equinox `type Decider`, which exposes an [API that covers the needs of making Consistent Decisions against a State derived from Events on a Stream](
+https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L22-L56)
+
+> NOTE the `Decider` itself in Equinox does not directly touch all three of the ingredients - while you pass it a `decide` function, the `initial` and `fold` functions, are  supplied to the specific store library (e.g. `Equinox.CosmosStore.CosmosStoreCategory`), as that manages the loading, snapshotting, syncing and caching of the state and events.
+
+#### In general
+
+While the concept of a Decider plays well with Event Sourcing and many different types of Stores, it's important to note that neither storage or event sourcing is a prerequisite. A lot of the value of the concept is that you can and should be able to talk about and implement one without reference to any specific store implementation (or even thinking about it ever being stored - it can also be used to manage in-memory structures such as UI trees etc).
+
+#### Consistency
+
+_In any system, any decision (or even query) processed by a Decider should be concurrency controlled_.
+
+> NOTE: the situation might be different if working in an environment where a particular concurrency model is emphasized. E.g.: if you're running in an Actor based system, one may map a decider to an actor. With this, any impetus to change state would be forwarded to that one actor and in a serial fashion. Potentials for conflicts would be managed by a supervisor.
+>
+> Another example where the situation could be different is if you're building an in-memory decision system to support a game etc as Jérémie does in the talk. There's only one so that concern is side-stepped.
+
+_When applying the concept of a Decider to event sourcing, the consistency requirement means [there's more to the exercise than emitting events into a thing those marketing centers on Events](https://domaincentric.net/blog/eventstoredb-vs-kafka)_. There needs to be a way in the overall processing of a decision that manages a concurrency conflict by taking the state that superseded the one you based the original decision on (the _origin state_), and re-running the decision based on the reality of that conflicting _actual state_. The resync operation that needs to take place in that instance can be managed by reloading from events, reloading from a snapshot, or by taking events since your local state and `fold`ing those Events on top of that.
+
+#### The ingredients
+
+With Deciders in general, and Equinox in particular, the following elements are involved:
+- a `State` type, on which we base decisions, which can be updated by the consequences of a decision
+- a `decide` function, which is presented a `State`, and returns a decision, which we use to update the State, if, and only if there is no concurrency conflict when applying them
+- an `initial` State, from which we start
+- an `Event` type (think a Discriminated union)
+- the Events are maintained as an ordered list of events (could be an in memory array, a stream in ESDB, documents with a Tip as with `Equinox.CosmosStore`)
+- the State is established by [`fold`](https://en.wikipedia.org/wiki/Fold_(higher-order_function))ing the sequence of `Event`s, starting from an `initial` state
+
+With the Equinox `type Decider`, the typical `decide` signature used with the `Transact` API has the following signature:
+
+      context -> inputsAndOrCommand -> 'State -> Event list
+
+> NOTE: There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result`, which will be yielded to the caller driving the Decision as the return value of the `Transact` function.
+
+#### So what kind of a thing is a Decider then?
+
+Is it a marketing term? Jérémie's way of explaining an app?
+
+I'd present the fact that Equinox:
+- was initially generalised and extracted from working code using ESDB in (by most measures) a successful startup written in a mix of F# and C# by the usual mix of devs, experience levels, awareness of event sourcing patterns and language/domain backgrounds
+- for a long time only had its MemoryStore as the thing to force it to be store agnostic
+- did not fundamentally change to add idiomatic support for a Document database (CosmosDB)
+- will not fundamentally change to add idiomatic support for DynamoDB
+- can and has been used at every stage in an e-commerce pipeline
+- is presently aligning pretty neatly with diverse domains without any changes/extensions, both for me and others
+
+... as evidence for Decider being *a pattern language* (analogous to how event sourcing and many modern event sourced UI paradigms share a lot of common patterns).
+
+#### ... about the process of making _decisions_
+
+Finally, I'd say that a key thing the Decider concept brings is a richer way of looking at event sourcing than the typical event sourcing 101 examples you might see:
+- de-emphasizing one-way things that map commands to events without deduplicating and/or yielding a result (not saying that you shouldn't do the simplest thing -- you absolutely should)
+- de-emphasizing all projection handlers only ever just sitting there looking for `MyThingCreated` and doing an `INSERT` with a try/catch for duplicate inserts as a way to make it idempotent (and every stream design requiring a Created event as a way to enable that)
+
+The missing part beyond that basic anemic stuff is where the value lies:
+- any interesting system *makes _decisions_*:
+- a decision can yield a result alongside the events that are needed to manifest the state change
+- any decision process can and should consider [idempotency](https://en.wikipedia.org/wiki/Idempotence) - if you initiate a process/request something, a retry can't be a special case you don't worry about, considering it is a fundamental baseline requirement and thinking tool
+- it can let you drive a set of reactions in a fault-tolerant and scalable (both perf/system size, and management/separation of complexity)  manner
+
+Quite frequently, a Decider will also internally be a Process Manager, encapsulting a state machine.
+
+### With `Equinox.CosmosStore`, it seems it should be possible to handle saving multiple events from multiple streams as long as they share the same partition key in Cosmos DB. But it does not seem to be possible via `Equinox.Decider.Transact` ? :pray: [@rmaziarka](https://github.com/rmaziarka)
+
+> I'm asking because I had this idea which I was workshopping with a friend, that it could solve typical sync problems in typical availability domains.
+
+> Let's assume that our domain is Bike Sharing in different cities. Users can reserve a bike, and then access it and ride.
+
+> In our system we would have two subdomains:
+> * Inventory - responsible for being sure that is bike (resource) is ready to be used
+> * Orders - responsible for tracking information regarding reservations, orders etc
+
+> There could be different subdomains as Orders, that would be using Inventory under the hood - like Repairing.
+
+> In the system we would like to a) block a particular bike for the user and b) at the same time create a reservation for them to store all important business information.
+
+> So we use and save data to the 2 different streams of data - typical ES problem.
+
+> We could use event handers / sagas but it brings another level of complexity.
+
+> In the case above we could assume that data inside a single city will be so small, that even with prolonged usage it won't fill the whole CosmosDB partition. So we could use it to handle saving 2 events in the same time. (My actual system is not Bike Sharing, and I'm confident of a lack of explosive growth!)
+
+> Saving a `BikeBlocked` event would be handled in a transaction along with the `ReservationMade`. So we wouldn't end up with the situation that bike is blocked and reservation is not made or conversely.
+
+> What do you think of this idea? Does it sound reasonable?
+
+#### Why not keep it simple and have it one logical partition: a high level perspective
+
+I'd actually attack this problem from an event modeling perspective first (Event Storming and other such things are reasonable too, but I personally found the rampup on EM to be reasonable, and it definitely forces you to traverse the right concerns. [Good intro article re Event Modeling](https://eventmodeling.org/posts/what-is-event-modeling).
+
+Once you cover enough scenarios of any non-CRUD system, I'd be surprised if you truly end up with a model with just 2 logical streams that you want to combine into 1 for simplicity of event storage because you are covering all the cases and can reason about the model cleanly.
+
+When you have a reasonable handle from a few passes over that (watch our for analysis paralysis, but also don't assume you can keep it simple via :see_no_evil::hear_no_evil: and not talking to enough people who understand the whole needs of the system, aka :speak_no_evil:)
+
+For any set of decisions you control in a single _Decider_ you need to:
+- be able to establish all relevant state to back the decision making efficiently (point reads of single documents, etag-backed caching, small streams, not having to filter out things you don't need)
+- be able to write it with a concurrency check (all writers to all stuff under control of the decider are all contenting for the write capacity, i.e provisioned RUs)
+- be able to see the changes on a feed in a useful way (in order of writes, with related stuff easily accessible and no stuff you don't care about)
+- be able to write it efficiently - if you can't absorb the maximum writes needed, you need to find a way to split it out to multiple logical streams (and hence Deciders)
+- have a set of event contracts, folding logic and decision making logic that a person can read, reason about and test
+- have ways to manage evolution over time of the rules, the event schema and the inevitable need to handle scenarios you didnt envisage, or are genuinely new
+- minimize speculative just in case, well intentioned and/or future-proofing complexity - there'll be plenty challenging complexity fun without you adding to the mix
+- you don't want to have to think about anything outside a given Decider when drawing stuff on a whiteboard, looking at a dashboard, looking at metrics, writing a test unless it makes things fundamentally easier
+
+That's a lot of things.
+
+**Before we go on, consider this: you want to minimise how much stuff a single Decider does. Adding stuff into a Decider does not add complexity linearly. There is no technical low level silver bullet solution to this problem.**
+
+Right, strap yourself in; there's no TL;DR for this one ;)
+
+#### Preamble
+
+First, I'd refer to some good resources in this space, which describe key functions of an Event Store
+
+- Yves Lorphelin's [Expectations for an Event Store](https://github.com/ylorph/RandomThoughts/blob/master/2019.08.09_expectations_for_an_event_store.md)
+- The [Evolved Version of that, with a slightly different focus](https://www.eventstore.com/blog/requirements-for-the-storage-of-events)
+
+Next, I'd like to call out some things that Equinox is focused on delivering, regardless of the backing store:
+
+  - concurrency-controlled updates
+    - to a single consistency control unit (stream) at a time (underlying stores in general rarely provide support for more than that, but more importantly, a huge number of use cases in a huge number of systems have natural mappings to this without anyone having to do evil things or write thousands of lines of code)
+    - no major focus on blind-writes, even if there is low level support and/or things work if you go direct and do it out of band)
+    - provide a good story for managing the writing of the first event in a stream in an efficient manner
+  - have a story for providing a changefeed
+    - typically via a matching Propulsion library (fully ordered for SSS and ESDB, ordered at stream level for CosmosDB, similar for DynamoDB if/when that happens)
+  - have a story for caching and efficient usage of the store
+    - `Equinox.SqlStreamStore`
+      - caching is supported and recommended to minimise reads
+      - in-stream snapshots sometimes help but there are tradeoffs
+    - `Equinox.EventStore`
+      - caching is supported, but less important/relevant than it is with SSS as ESDB has good caching support and options
+      - Equinox in-stream snapshots sometimes help but there are tradeoffs)
+    - `Equinox.CosmosStore`
+      - etag-checked read caching (use without that is not recommended in general, though you absolutely will and should turn it off for some streams)
+      - multiple events are packed into each document (critical to avoid per document overhead - this is configurable)
+      - etag-checked RollingState access mode enables allow you to achieve optimal perf and RU cost via the same API without writing an event every time
+
+**The provision of the changefeed needs to be considered as a primary factor in the overall design if you're trying to build a general store - the nature of what you are seeking to provide (max latency and ordering guarantees etc) will be a major factor in designing the schema for how you manage the encoding and updating of the items in the store**
+
+#### Sagas?
+
+>In the system we would like to block particular bike for the user. But at the same time create a reservation for them to store all important business information. So we use and save data to the 2 different streams of data - typical ES problem. We could use event handers / sagas but it brings another level of complexity. 
+
+There will always be complexity in any interesting system that should not just be a CRUD layer over a relational DB.
+Taking particular solution patterns off the table from the off is definitely something you need to be careful to avoid.
+As an analogy: Having lots of classes in a system can make a mess. But collapsing it all into as few as possible can result in ISP and SRP violations and actually make for a hard to navigate and grok system, despite there being less files and less lines of code (aka complexity). Coupling things can sometimes keep things Simple, but can also sometimes simply couple things.
+In my personal experience
+1) Sagas and PMs can be scary, and there are not many good examples out there in an event sourcing context
+2) You can build a massive number of systems without them
+
+But, also IME:
+3) They're pretty fundamental
+4) They are not as hard as you think when you've done two of them
+5) Proper stores enable good ways to manage them
+6) They enable you to keep the overall complexity of a system down by decoupling things one might artificially couple if you're working with a toolbox where you've denied yourself a space for PMs and Sagas
+
+In other words, my YAGNI detector was on high alert for it, as it seems yours is :wink:
+
+#### Transactional writes?
+
+>In the case above we could assume that data inside a single city will be so small, that even with the long usage it won't complete the whole CosmosDB partition. So we could use it to handle saving 2 events in the same time.
+
+For avoidance of doubt: being able to write two events at the same time is a pretty valid thing to want and need to do (Equinox itself, and any credible Event Store supports it)
+
+You're correct to identify the maximum amount of data being managed in a scope as a critical consideration when coupling stuff within a logical partition in order to be able to achieve consistency when managing updates across two set of related pieces of information.
+
+Specifically wrt CosmosDB, the following spring to mind without looking anything up:
+- The max amount of data in any logical partition is 20GB. I would not be shocked if it was 50GB some time soon. But it's not going to be a TB any time soon. When that's gone, you need to delete things
+- All updates in a logical partition are hitting the exact same thing on the same node of a physical partition
+- All reads are also hitting that
+- The maximum amount of RUs you can give that physical partition is 5000 RU (or is it 10000 RU?)
+- the more data you have in a single logical partition, the more pages in the indexes, the higher the RU cost for equivalent things (the amount in other logical partitions does not have this effect)
+- [hotspots at either logical partition or physical partition levels](DOCUMENTATION.md#growth-handling-strategies)
+- if you do an event per document, you are hosed
+- if you don't have an e-tag checked write or read scheme, you won't be able to load state efficiently without resorting to queries
+
+In other words, it's looking like you're painted into a corner: you can't shard, can't scale and are asking for hotspotted partition issues. Correct, that doesn't always matter. But even if you have 10 cities, you can't afford for the two busiest ones to be hosted on the same node as that's going to be the one suffering rate limiting. Trust me, it's not even worth thinking about tricks to manage this fundamental problem (trying to influence the sharding etc is going to be real complexity you do not want to be explaining to other engineers on a whiteboard or a 5am conf call)
+
+#### So why do all these things spring to mind ?
+
+- This desire comes up all the time - I've had this conversation with tens of engineers with various years of programming, years as users of document databases, years of writing event sourced systems on this topic. I don't believe many have walked away still believing there's an easy way around this either.
+- I have done lots of benchmarking (measuring latency, RUs, handling of concurrency conflicts) of pretty much every possible approach on Cosmos DB
+- I've done lots of CosmosDB specific reading on this - MS has actually got pretty good docs (most useful ones I'm aware of are linked from [DOCUMENTATION.md](DOCUMENTATION.md))
+- I've read and watched lots of stuff on various DBs. Most of that can be replaced with https://www.amazon.com/Designing-Data-Intensive-Applications-Reliable-Maintainable/dp/1449373321 and some in-date equivalent of https://martinfowler.com/books/nosql.html
+- Cosmos DB, when used with Mechanical Sympathy (read: Billing Model Sympathy) at the forefront of one's mind is absolutely a good product that can be extremely cost effective and provide excellent performance
+_However_, you are pretty much guaranteed to not get that good :point_up: experience without reading, measuring and iterating (I've seen many people with much bigger brains than me prove that over and over - the bad things you hear about Cosmos DB are true too, and are not only caused by the below average drivers)
+
+#### TL;DR on Cosmos DB for storing events (but really for all usages)
+
+- You can't update or the changefeed gets out of order (but there are lots of other reasons not to do updates beyond that)
+- You need to do etag-checked reads and writes or go home
+- Each Item/Document costs you about 500 bytes in headers and space in all the indexes so you need to strongly consider >1 event/document
+- Queries are way more costly than point reads. It's called a Document database because the single thing it does best on this planet is read or update ONE document. Read/write cost rule of thumb is per KB, but has logarithmic properties too, i.e. 50K is not always 50x the cost of 1K
+- Keep streams as small as possible but no smaller. 20GB max in Cosmos, but in practice, the latency to read that much stuff is preposterous
+- Keep documents on the small side. (Max doc size is 2MB, max stored proc arg size is 1MB, 1MB induces roundtrip latency and write contention etc). DynamoDB sets max doc size at 400KB for similar reasons. ESDB allows 4MB but that's less of a problem for it.
+- Keep documents uniform in size where possible. Consider taking a write overhead hit to preserve read efficiency or scalability. (inc considering compression)
+wrt 3+4+5, Equinox.Cosmos default max doc size is 30KB. On occasion where paying a write overhead is merited, I've used/recommended 500K and 1 MB for various reasons. That's the exception more than the rule.
+
+#### Why think about it and explain it at such a low level?
+
+Why think about this problem from such a low level perspective? Why not just stick to the high level given that's equally important to get right, and if correctly will more often yield a cleanly implementable solution?
+
+Many people have a strong desire to write the least amount of code possible, and that's not unreasonable. The most critical question is going to be, does it work at all? Due to the combination of factors above, the answer is looking pretty clear. You can write the code and run it to be sure. I already have, in spike branches, and will save you the spoiler.
+
+However, the fundamental things that arise when viewing it at a low/storage design level, also have high level issues in terms of modelling the software too, and different people will understand them better from different angles
+
+I've witnessed people attempt to 'solve' the fundamental low level issues by working around reality, moving it all into a Cosmos DB Stored Procedure (Yes, you can guess the outcome). Please don't even think about that, no matter how much tech tricks you'll learn!
+
+#### Conclusion
+
+**You know what's coming next: You don't want to merge two Deciders and 'Just' bring it all under a nice tidy transaction to avoid thinking about Process Managers and/or other techniques.**
+
+If you're still serious about making the time investment to write a PoC (or a real) implementation of a Store on a Document DB such as CosmosDB (and/or even writing a SQL-backed one without studying the prior art in that space intently), you can't afford _not_ to invest that time in [watching a 2h45m video about Deciders!](https://www.youtube.com/watch?v=kgYGMVDHQHs). 
 
 ### OK, but you didn't answer my question, you just talked about stuff you wanted to talk about!
 
