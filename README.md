@@ -841,7 +841,7 @@ https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L22-L56). At a
 
 #### In general
 
-While the concept of a Decider plays well with Event Sourcing and many different types of Stores, it's important to note that neither storage or event sourcing is a prerequisite. A lot of the value of the concept is that you can and should be able to talk about and implement one without reference to any specific store implementation (or even thinking about it ever being stored - it can also be used to manage in-memory structures such as UI trees etc).
+While the concept of a Decider plays well with Event Sourcing and many different types of Stores, it's important to note that neither storage or event sourcing is a prerequisite. A lot of the value of the concept is that you can and should be able to talk about and implement one without reference to any specific store implementation (or even thinking about it ever being stored - it can also be used to manage in-memory structures such as UI trees etc). By the same token, you can decorate/proxy a Decider with loading or saving behavior (not limited to just 'copying the commands'), e.g. you might be syncing saves of changes to a backend in near-real time while the front end is reflecting changes instantaneously.
 
 #### Consistency
 
@@ -892,7 +892,12 @@ Finally, I'd say that a key thing the Decider concept brings is a richer way of 
 The missing part beyond that basic anemic stuff is where the value lies:
 - any interesting system *makes _decisions_*:
 - a decision can yield a result alongside the events that are needed to manifest the state change
-- any decision process can and should consider [idempotency](https://en.wikipedia.org/wiki/Idempotence) - if you initiate a process/request something, a retry can't be a special case you don't worry about. Taking correct handling of such retry and/or replay scenarios into consideration should not be an afterthought, but instead be a concern on your day to day checklist when writing a decision function. Of course idempotency can be handled in many ways - sometimes before processing gets to the Decider, sometimes internally (e.g. a decision can yield the unique id generated the first time the request was triggered on every subsequent invocation), sometimes it can be handled externally (e.g. one might not maintain the state that would be necessary to fully deduplicate triggerings and rely on the EventStoreDB and SqlStreamStore idempotent write deduplication mechanism to deduplicate the writes just in time) 
+- any decision process can and should consider [idempotency](https://en.wikipedia.org/wiki/Idempotence) - if you initiate a process/request something, a retry can't be a special case you don't worry about. Taking correct handling of such retry and/or replay scenarios into consideration should not be an afterthought, but instead be a concern on your day to day checklist when writing a decision function. Of course idempotency can be handled in many ways
+  - sometimes before processing gets to the Decider - i.e. any outer layer of the processing can have semantics that cover the idempotency requirement
+  - sometimes within the Decider itself (e.g. a decision can yield the unique id generated the first time the request was triggered on every subsequent invocation)
+  - sometimes it can be handled externally (e.g. one might not maintain the state that would be necessary to fully deduplicate triggerings and rely on the EventStoreDB and SqlStreamStore idempotent write deduplication mechanism to elide the redundant the writes just in time)
+  - A Decider can also be decorated/proxied to add idempotency. As [Jérémie](https://github.com/thinkbeforecoding) [mentioned here](https://github.com/jet/equinox/pull/299#discussion_r748744034), and in his talk, you can also naturally _layer idempotency on a decider. You can make a generic function
+`D<Cmd,Event,State> -> D<(IdCmd), Event, (State(Id Set))>` where `Id` is a command identifier. In the `decide` function it checks whether the id is in the set. In the `evolve` function, it adds the id to the set._
 - it can let you drive a set of reactions in a fault-tolerant and scalable (both perf/system size, and management/separation of complexity)  manner
 - a Decider should generally be maintaining one or more invariants associated with the underlying state it represents; if there isn't some element of your system doing that, you might as well be dumping stuff in a log or mutating a CRUD model.
 
