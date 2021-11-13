@@ -1,0 +1,12 @@
+{
+    ////////////
+    // General
+    ////////////
+    "extensions.ignoreRecommendations": true,
+    "extensions.autoUpdate": false,
+    //////////
+    // F#
+    //////////
+    "FSharp.enableMSBuildProjectGraph": false,
+    "FSharp.workspacePath": "./Equinox.sln",
+}
