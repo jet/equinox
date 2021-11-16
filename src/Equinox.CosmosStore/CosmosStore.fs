@@ -565,33 +565,43 @@ module internal Sync =
 
 module Initialization =
 
-    type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int | Serverless
-    let adjustOfferC (c:Container) (rus : int) = async {
+    // Note: the Cosmos SDK does not (currently) support changing the Throughput mode of an existing Database or Container.
+    type [<RequireQualifiedAccess>] Throughput = Manual of rus: int | Autoscale of maxRus: int
+    type [<RequireQualifiedAccess>] Provisioning = Container of Throughput | Database of Throughput | Serverless
+    let toThroughputProperties = function
+        | Some (Throughput.Manual rus) -> ThroughputProperties.CreateManualThroughput(rus)
+        | Some (Throughput.Autoscale maxRus) -> ThroughputProperties.CreateAutoscaleThroughput(maxRus)
+        | _ -> null
+    let adjustOfferC (c:Container) (throughput : Throughput) = async {
+        let tp = Some throughput |> toThroughputProperties
         let! ct = Async.CancellationToken
-        let! _ = c.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
-    let adjustOfferD (d:Database) (rus : int) = async {
+        let! _ = c.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
+    let adjustOfferD (d:Database) (throughput : Throughput) = async {
+        let tp = Some throughput |> toThroughputProperties
         let! ct = Async.CancellationToken
-        let! _ = d.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
-    let private createDatabaseIfNotExists (client:CosmosClient) dName maybeRus = async {
+        let! _ = d.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
+    let private createDatabaseIfNotExists (client:CosmosClient) dName maybeThroughput = async {
+        let tp = maybeThroughput |> toThroughputProperties
         let! ct = Async.CancellationToken
-        let! dbr = client.CreateDatabaseIfNotExistsAsync(id = dName, throughput = Option.toNullable maybeRus, cancellationToken = ct) |> Async.AwaitTaskCorrect
+        let! dbr = client.CreateDatabaseIfNotExistsAsync(dName, tp, cancellationToken = ct) |> Async.AwaitTaskCorrect
         return dbr.Database }
     let private createOrProvisionDatabase (client:CosmosClient) dName mode = async {
         match mode with
-        | Provisioning.Database rus ->
-            let! db = createDatabaseIfNotExists client dName (Some rus)
-            do! adjustOfferD db rus
+        | Provisioning.Database throughput ->
+            let! db = createDatabaseIfNotExists client dName (Some throughput)
+            do! adjustOfferD db throughput
         | Provisioning.Container _ | Provisioning.Serverless ->
             let! _ = createDatabaseIfNotExists client dName None in () }
-    let private createContainerIfNotExists (d:Database) (cp:ContainerProperties) maybeRus = async {
+    let private createContainerIfNotExists (d:Database) (cp:ContainerProperties) maybeThroughput = async {
+        let tp = maybeThroughput |> toThroughputProperties
         let! ct = Async.CancellationToken
-        let! c = d.CreateContainerIfNotExistsAsync(cp, throughput = Option.toNullable maybeRus, cancellationToken = ct) |> Async.AwaitTaskCorrect
+        let! c = d.CreateContainerIfNotExistsAsync(cp, tp, cancellationToken = ct) |> Async.AwaitTaskCorrect
         return c.Container }
     let private createOrProvisionContainer (d:Database) (cp:ContainerProperties) mode = async {
         match mode with
-        | Provisioning.Container rus ->
-            let! c = createContainerIfNotExists d cp (Some rus)
-            do! adjustOfferC c rus
+        | Provisioning.Container throughput ->
+            let! c = createContainerIfNotExists d cp (Some throughput)
+            do! adjustOfferC c throughput
             return c
         | Provisioning.Database _ | Provisioning.Serverless ->
             return! createContainerIfNotExists d cp None }
@@ -629,7 +639,7 @@ module Initialization =
             do! createSyncStoredProcIfNotExists (Some log) container }
     let initAux (client: CosmosClient) (dName,cName) rus = async {
         // Hardwired for now (not sure if CFP can store in a Database-allocated as it would need to be supplying partition keys)
-        let mode = Provisioning.Container rus
+        let mode = Provisioning.Container (Throughput.Manual rus)
         do! createOrProvisionDatabase client dName mode
         return! createAuxContainerIfNotExists client (dName,cName) mode }
 

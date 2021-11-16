@@ -14,6 +14,7 @@ open System.Net.Http
 open System.Threading
 
 type Provisioning = Equinox.CosmosStore.Core.Initialization.Provisioning
+type Throughput = Equinox.CosmosStore.Core.Initialization.Throughput
 
 let [<Literal>] appName = "equinox-tool"
 
@@ -41,22 +42,28 @@ type Arguments =
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality>]InitArguments =
     | [<AltCommandLine "-ru">]              Rus of int
+    | [<AltCommandLine "-A">]               Autoscale
     | [<AltCommandLine "-m">]               Mode of CosmosModeType
     | [<AltCommandLine "-P">]               SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ ->                      "Specify RU/s level to provision for the Container (Default: 400 RU/s)."
+            | Rus _ ->                      "Specify RU/s level to provision for the Container (Default: 400 RU/s or 4000 RU/s if autoscaling)."
+            | Autoscale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
             | Mode _ ->                     "Configure RU mode to use Container-level RU, Database-level RU, or Serverless allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosInitInfo(args : ParseResults<InitArguments>) =
     member __.ProvisioningMode =
+        let throughput() =
+            if args.Contains Autoscale
+            then Throughput.Autoscale (args.GetResult(Rus, 4000))
+            else Throughput.Manual (args.GetResult(Rus, 400))
         match args.GetResult(Mode, CosmosModeType.Container) with
-        | CosmosModeType.Container ->       Provisioning.Container (args.GetResult(Rus, 400))
-        | CosmosModeType.Db ->              Provisioning.Database (args.GetResult(Rus, 400))
+        | CosmosModeType.Container ->       Provisioning.Container (throughput())
+        | CosmosModeType.Db ->              Provisioning.Database (throughput())
         | CosmosModeType.Serverless ->
-            if args.Contains Rus then raise (Storage.MissingArg "Cannot specify RU/s in Serverless mode")
+            if args.Contains Rus || args.Contains Autoscale then raise (Storage.MissingArg "Cannot specify RU/s or Autoscale in Serverless mode")
             Provisioning.Serverless
 and [<NoComparison; NoEquality>]ConfigArguments =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
