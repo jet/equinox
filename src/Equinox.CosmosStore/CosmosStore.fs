@@ -565,43 +565,49 @@ module internal Sync =
 
 module Initialization =
 
-    type [<RequireQualifiedAccess>] Provisioning = Container of rus: int | Database of rus: int | Serverless
-    let adjustOfferC (c:Container) (rus : int) = async {
+    // Note: the Cosmos SDK does not (currently) support changing the Throughput mode of an existing Database or Container.
+    type [<RequireQualifiedAccess>] Throughput = Manual of rus: int | Autoscale of maxRus: int
+    type [<RequireQualifiedAccess>] Provisioning = Container of Throughput | Database of Throughput | Serverless
+    let (|ThroughputProperties|) = function
+        | Throughput.Manual rus -> ThroughputProperties.CreateManualThroughput(rus)
+        | Throughput.Autoscale maxRus -> ThroughputProperties.CreateAutoscaleThroughput(maxRus)
+    let (|MaybeThroughputProperties|) = Option.map (function ThroughputProperties tp -> tp) >> Option.toObj
+    let adjustOfferC (c:Container) (ThroughputProperties tp) = async {
         let! ct = Async.CancellationToken
-        let! _ = c.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
-    let adjustOfferD (d:Database) (rus : int) = async {
+        let! _ = c.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
+    let adjustOfferD (d : Database) (ThroughputProperties tp) = async {
         let! ct = Async.CancellationToken
-        let! _ = d.ReplaceThroughputAsync(rus, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
-    let private createDatabaseIfNotExists (client:CosmosClient) dName maybeRus = async {
+        let! _ = d.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
+    let private createDatabaseIfNotExists (client : CosmosClient) dName (MaybeThroughputProperties tpOrNull) = async {
         let! ct = Async.CancellationToken
-        let! dbr = client.CreateDatabaseIfNotExistsAsync(id = dName, throughput = Option.toNullable maybeRus, cancellationToken = ct) |> Async.AwaitTaskCorrect
+        let! dbr = client.CreateDatabaseIfNotExistsAsync(dName, throughputProperties = tpOrNull, cancellationToken = ct) |> Async.AwaitTaskCorrect
         return dbr.Database }
-    let private createOrProvisionDatabase (client:CosmosClient) dName mode = async {
+    let private createOrProvisionDatabase (client : CosmosClient) dName mode = async {
         match mode with
-        | Provisioning.Database rus ->
-            let! db = createDatabaseIfNotExists client dName (Some rus)
-            do! adjustOfferD db rus
+        | Provisioning.Database throughput ->
+            let! db = createDatabaseIfNotExists client dName (Some throughput)
+            do! adjustOfferD db throughput
         | Provisioning.Container _ | Provisioning.Serverless ->
             let! _ = createDatabaseIfNotExists client dName None in () }
-    let private createContainerIfNotExists (d:Database) (cp:ContainerProperties) maybeRus = async {
+    let private createContainerIfNotExists (d : Database) (cp : ContainerProperties) (MaybeThroughputProperties tpOrNull) = async {
         let! ct = Async.CancellationToken
-        let! c = d.CreateContainerIfNotExistsAsync(cp, throughput = Option.toNullable maybeRus, cancellationToken = ct) |> Async.AwaitTaskCorrect
+        let! c = d.CreateContainerIfNotExistsAsync(cp, throughputProperties = tpOrNull, cancellationToken = ct) |> Async.AwaitTaskCorrect
         return c.Container }
-    let private createOrProvisionContainer (d:Database) (cp:ContainerProperties) mode = async {
+    let private createOrProvisionContainer (d : Database) (cp : ContainerProperties) mode = async {
         match mode with
-        | Provisioning.Container rus ->
-            let! c = createContainerIfNotExists d cp (Some rus)
-            do! adjustOfferC c rus
+        | Provisioning.Container throughput ->
+            let! c = createContainerIfNotExists d cp (Some throughput)
+            do! adjustOfferC c throughput
             return c
         | Provisioning.Database _ | Provisioning.Serverless ->
             return! createContainerIfNotExists d cp None }
-    let private createStoredProcIfNotExists (c:Container) (name, body): Async<float> = async {
+    let private createStoredProcIfNotExists (c : Container) (name, body): Async<float> = async {
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body)) |> Async.AwaitTaskCorrect
             return r.RequestCharge
         with (:? Microsoft.Azure.Cosmos.CosmosException as ce) when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
     let private mkContainerProperties containerName partitionKeyFieldName =
         ContainerProperties(id = containerName, partitionKeyPath = sprintf "/%s" partitionKeyFieldName)
-    let private createBatchAndTipContainerIfNotExists (client: CosmosClient) (dName,cName) mode : Async<Container> =
+    let private createBatchAndTipContainerIfNotExists (client : CosmosClient) (dName, cName) mode : Async<Container> =
         let def = mkContainerProperties cName Batch.PartitionKeyField
         def.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
         def.IndexingPolicy.Automatic <- true
@@ -611,27 +617,27 @@ module Initialization =
         // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
         for k in Batch.IndexedFields do def.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
         createOrProvisionContainer (client.GetDatabase dName) def mode
-    let createSyncStoredProcIfNotExists (log: ILogger option) container = async {
-        let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name,SyncStoredProc.body) |> Stopwatch.Time
+    let createSyncStoredProcIfNotExists (log : ILogger option) container = async {
+        let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name, SyncStoredProc.body) |> Stopwatch.Time
         match log with
         | None -> ()
         | Some log -> log.Information("Created stored procedure {procName} in {ms}ms {ru}RU", SyncStoredProc.name, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
-    let private createAuxContainerIfNotExists (client: CosmosClient) (dName,cName) mode : Async<Container> =
+    let private createAuxContainerIfNotExists (client: CosmosClient) (dName, cName) mode : Async<Container> =
         let def = mkContainerProperties cName "id" // as per Cosmos team, Partition Key must be "/id"
         // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
         def.IndexingPolicy.Automatic <- false
         def.IndexingPolicy.IndexingMode <- IndexingMode.None
         createOrProvisionContainer (client.GetDatabase dName) def mode
-    let init log (client: CosmosClient) (dName,cName) mode skipStoredProc = async {
+    let init log (client : CosmosClient) (dName, cName) mode skipStoredProc = async {
         do! createOrProvisionDatabase client dName mode
-        let! container = createBatchAndTipContainerIfNotExists client (dName,cName) mode
+        let! container = createBatchAndTipContainerIfNotExists client (dName, cName) mode
         if not skipStoredProc then
             do! createSyncStoredProcIfNotExists (Some log) container }
-    let initAux (client: CosmosClient) (dName,cName) rus = async {
+    let initAux (client : CosmosClient) (dName, cName) rus = async {
         // Hardwired for now (not sure if CFP can store in a Database-allocated as it would need to be supplying partition keys)
-        let mode = Provisioning.Container rus
+        let mode = Provisioning.Container (Throughput.Manual rus)
         do! createOrProvisionDatabase client dName mode
-        return! createAuxContainerIfNotExists client (dName,cName) mode }
+        return! createAuxContainerIfNotExists client (dName, cName) mode }
 
     /// Holds Container state, coordinating initialization activities
     type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> Async<unit>) =

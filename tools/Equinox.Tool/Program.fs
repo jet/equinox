@@ -13,7 +13,7 @@ open System
 open System.Net.Http
 open System.Threading
 
-type Provisioning = Equinox.CosmosStore.Core.Initialization.Provisioning
+module CosmosInit = Equinox.CosmosStore.Core.Initialization
 
 let [<Literal>] appName = "equinox-tool"
 
@@ -41,23 +41,29 @@ type Arguments =
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality>]InitArguments =
     | [<AltCommandLine "-ru">]              Rus of int
+    | [<AltCommandLine "-A">]               Autoscale
     | [<AltCommandLine "-m">]               Mode of CosmosModeType
     | [<AltCommandLine "-P">]               SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ ->                      "Specify RU/s level to provision for the Container (Default: 400 RU/s)."
+            | Rus _ ->                      "Specify RU/s level to provision for the Container (Default: 400 RU/s or 4000 RU/s if autoscaling)."
+            | Autoscale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
             | Mode _ ->                     "Configure RU mode to use Container-level RU, Database-level RU, or Serverless allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosInitInfo(args : ParseResults<InitArguments>) =
     member __.ProvisioningMode =
+        let throughput () =
+            if args.Contains Autoscale
+            then CosmosInit.Throughput.Autoscale (args.GetResult(Rus, 4000))
+            else CosmosInit.Throughput.Manual (args.GetResult(Rus, 400))
         match args.GetResult(Mode, CosmosModeType.Container) with
-        | CosmosModeType.Container ->       Provisioning.Container (args.GetResult(Rus, 400))
-        | CosmosModeType.Db ->              Provisioning.Database (args.GetResult(Rus, 400))
+        | CosmosModeType.Container ->       CosmosInit.Provisioning.Container (throughput ())
+        | CosmosModeType.Db ->              CosmosInit.Provisioning.Database (throughput ())
         | CosmosModeType.Serverless ->
-            if args.Contains Rus then raise (Storage.MissingArg "Cannot specify RU/s in Serverless mode")
-            Provisioning.Serverless
+            if args.Contains Rus || args.Contains Autoscale then raise (Storage.MissingArg "Cannot specify RU/s or Autoscale in Serverless mode")
+            CosmosInit.Provisioning.Serverless
 and [<NoComparison; NoEquality>]ConfigArguments =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
@@ -312,8 +318,6 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
 
 module CosmosInit =
 
-    open Equinox.CosmosStore.Core.Initialization
-
     let connect log (sargs : ParseResults<Storage.Cosmos.Arguments>) =
         Storage.Cosmos.connect log (Storage.Cosmos.Info sargs) |> fst
 
@@ -324,16 +328,16 @@ module CosmosInit =
             let client,dName,cName = connect log sargs
             let mode = (CosmosInitInfo iargs).ProvisioningMode
             match mode with
-            | Provisioning.Container ru ->
+            | CosmosInit.Provisioning.Container ru ->
                 let modeStr = "Container"
                 log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, ru)
-            | Provisioning.Database ru ->
+            | CosmosInit.Provisioning.Database ru ->
                 let modeStr = "Database"
                 log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, ru)
-            | Provisioning.Serverless ->
+            | CosmosInit.Provisioning.Serverless ->
                 let modeStr = "Serverless"
                 log.Information("Provisioning `Equinox.CosmosStore` Store in {mode:l} mode with automatic RU/s as configured in account", modeStr)
-            return! init log client (dName,cName) mode skipStoredProc
+            return! CosmosInit.init log client (dName,cName) mode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 module SqlInit =
