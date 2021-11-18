@@ -394,8 +394,7 @@ module private MicrosoftAzureCosmosWrappers =
     type Container with
         member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : ItemRequestOptions): Async<float * ReadResult<'T>> = async {
             let! ct = Async.CancellationToken
-            let options = defaultArg options null
-            use! rm = async { return! container.ReadItemStreamAsync(documentId, partitionKey, requestOptions = options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
+            use! rm = async { return! container.ReadItemStreamAsync(documentId, partitionKey, requestOptions = Option.toObj options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
             let rc = rm.Headers.GetRequestCharge()
             if rm.StatusCode = System.Net.HttpStatusCode.NotFound then return rc, NotFound
             elif rm.StatusCode = System.Net.HttpStatusCode.NotModified then return rc, NotModified
@@ -641,8 +640,8 @@ module Initialization =
 module internal Tip =
 
     let private get (container : Container, stream : string) (maybePos: Position option) =
-        let ro = match maybePos with Some { etag = Some etag } -> ItemRequestOptions(IfNoneMatchEtag = etag) | _ -> null
-        container.TryReadItem(PartitionKey stream, Tip.WellKnownDocumentId, ro)
+        let ro = match maybePos with Some { etag = Some etag } -> ItemRequestOptions(IfNoneMatchEtag = etag) |> Some | _ -> None
+        container.TryReadItem<Tip>(PartitionKey stream, Tip.WellKnownDocumentId, ?options = ro)
     let private loggedGet (get : Container * string -> Position option -> Async<_>) (container,stream) (maybePos: Position option) (log: ILogger) = async {
         let log = log |> Log.prop "stream" stream
         let! t, (ru, res : ReadResult<Tip>) = get (container,stream) maybePos |> Stopwatch.Time
