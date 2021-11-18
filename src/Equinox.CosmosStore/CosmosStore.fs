@@ -568,7 +568,7 @@ module Initialization =
     // Note: the Cosmos SDK does not (currently) support changing the Throughput mode of an existing Database or Container.
     type [<RequireQualifiedAccess>] Throughput = Manual of rus: int | Autoscale of maxRus: int
     type [<RequireQualifiedAccess>] Provisioning = Container of Throughput | Database of Throughput | Serverless
-    let (|ThroughputProperties|) = function
+    let private (|ThroughputProperties|) = function
         | Throughput.Manual rus -> ThroughputProperties.CreateManualThroughput(rus)
         | Throughput.Autoscale maxRus -> ThroughputProperties.CreateAutoscaleThroughput(maxRus)
     let private createOrProvisionDatabase (client : CosmosClient) dName mode = async {
@@ -595,6 +595,7 @@ module Initialization =
             let! c = createContainerIfNotExists (Some throughput)
             let! _ = c.ReplaceThroughputAsync(throughput, cancellationToken = ct) |> Async.AwaitTaskCorrect
             return c }
+
     let private createStoredProcIfNotExists (c : Container) (name, body): Async<float> = async {
         let! ct = Async.CancellationToken
         try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct) |> Async.AwaitTaskCorrect
@@ -618,6 +619,7 @@ module Initialization =
         let! c = createOrProvisionContainer d (cName, sprintf "/%s" Batch.PartitionKeyField, applyBatchAndTipContainerProperties) mode // as per Cosmos team, Partition Key must be "/id"
         if not skipStoredProc then
             do! createSyncStoredProcIfNotExists (Some log) c }
+
     let private applyAuxContainerProperties (cp : ContainerProperties) =
         // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
         cp.IndexingPolicy.Automatic <- false
