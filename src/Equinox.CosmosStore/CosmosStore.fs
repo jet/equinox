@@ -571,73 +571,62 @@ module Initialization =
     let (|ThroughputProperties|) = function
         | Throughput.Manual rus -> ThroughputProperties.CreateManualThroughput(rus)
         | Throughput.Autoscale maxRus -> ThroughputProperties.CreateAutoscaleThroughput(maxRus)
-    let (|MaybeThroughputProperties|) = Option.map (function ThroughputProperties tp -> tp) >> Option.toObj
-    let adjustOfferC (c:Container) (ThroughputProperties tp) = async {
-        let! ct = Async.CancellationToken
-        let! _ = c.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
-    let adjustOfferD (d : Database) (ThroughputProperties tp) = async {
-        let! ct = Async.CancellationToken
-        let! _ = d.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect in () }
-    let private createDatabaseIfNotExists (client : CosmosClient) dName (MaybeThroughputProperties tpOrNull) = async {
-        let! ct = Async.CancellationToken
-        let! dbr = client.CreateDatabaseIfNotExistsAsync(dName, throughputProperties = tpOrNull, cancellationToken = ct) |> Async.AwaitTaskCorrect
-        return dbr.Database }
     let private createOrProvisionDatabase (client : CosmosClient) dName mode = async {
-        match mode with
-        | Provisioning.Database throughput ->
-            let! db = createDatabaseIfNotExists client dName (Some throughput)
-            do! adjustOfferD db throughput
-        | Provisioning.Container _ | Provisioning.Serverless ->
-            let! _ = createDatabaseIfNotExists client dName None in () }
-    let private createContainerIfNotExists (d : Database) (cp : ContainerProperties) (MaybeThroughputProperties tpOrNull) = async {
         let! ct = Async.CancellationToken
-        let! c = d.CreateContainerIfNotExistsAsync(cp, throughputProperties = tpOrNull, cancellationToken = ct) |> Async.AwaitTaskCorrect
-        return c.Container }
-    let private createOrProvisionContainer (d : Database) (cp : ContainerProperties) mode = async {
+        let createDatabaseIfNotExists maybeTp = async {
+            let! r = client.CreateDatabaseIfNotExistsAsync(dName, throughputProperties = Option.toObj maybeTp, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            return r.Database }
         match mode with
-        | Provisioning.Container throughput ->
-            let! c = createContainerIfNotExists d cp (Some throughput)
-            do! adjustOfferC c throughput
-            return c
-        | Provisioning.Database _ | Provisioning.Serverless ->
-            return! createContainerIfNotExists d cp None }
+        | Provisioning.Container _ | Provisioning.Serverless -> return! createDatabaseIfNotExists None
+        | Provisioning.Database (ThroughputProperties tp) ->
+            let! d = createDatabaseIfNotExists (Some tp)
+            let! _ = d.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            return d }
+    let private createOrProvisionContainer (d : Database) (cName, pkPath, customizeContainer) mode = async {
+        let cp = ContainerProperties(id = cName, partitionKeyPath = pkPath)
+        customizeContainer cp
+        let! ct = Async.CancellationToken
+        let createContainerIfNotExists maybeTp = async {
+            let! r = d.CreateContainerIfNotExistsAsync(cp, throughputProperties = Option.toObj maybeTp, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            return r.Container }
+        match mode with
+        | Provisioning.Database _ | Provisioning.Serverless -> return! createContainerIfNotExists None
+        | Provisioning.Container (ThroughputProperties throughput) ->
+            let! c = createContainerIfNotExists (Some throughput)
+            let! _ = c.ReplaceThroughputAsync(throughput, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            return c }
     let private createStoredProcIfNotExists (c : Container) (name, body): Async<float> = async {
-        try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body)) |> Async.AwaitTaskCorrect
+        let! ct = Async.CancellationToken
+        try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct) |> Async.AwaitTaskCorrect
             return r.RequestCharge
-        with (:? Microsoft.Azure.Cosmos.CosmosException as ce) when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
-    let private mkContainerProperties containerName partitionKeyFieldName =
-        ContainerProperties(id = containerName, partitionKeyPath = sprintf "/%s" partitionKeyFieldName)
-    let private createBatchAndTipContainerIfNotExists (client : CosmosClient) (dName, cName) mode : Async<Container> =
-        let def = mkContainerProperties cName Batch.PartitionKeyField
-        def.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
-        def.IndexingPolicy.Automatic <- true
+        with :? CosmosException as ce when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
+    let private applyBatchAndTipContainerProperties (cp : ContainerProperties) =
+        cp.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
+        cp.IndexingPolicy.Automatic <- true
         // Can either do a blacklist or a whitelist
         // Given how long and variable the blacklist would be, we whitelist instead
-        def.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
+        cp.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
         // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
-        for k in Batch.IndexedFields do def.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
-        createOrProvisionContainer (client.GetDatabase dName) def mode
+        for k in Batch.IndexedFields do cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
     let createSyncStoredProcIfNotExists (log : ILogger option) container = async {
         let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name, SyncStoredProc.body) |> Stopwatch.Time
         match log with
         | None -> ()
         | Some log -> log.Information("Created stored procedure {procName} in {ms}ms {ru}RU", SyncStoredProc.name, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
-    let private createAuxContainerIfNotExists (client: CosmosClient) (dName, cName) mode : Async<Container> =
-        let def = mkContainerProperties cName "id" // as per Cosmos team, Partition Key must be "/id"
-        // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
-        def.IndexingPolicy.Automatic <- false
-        def.IndexingPolicy.IndexingMode <- IndexingMode.None
-        createOrProvisionContainer (client.GetDatabase dName) def mode
     let init log (client : CosmosClient) (dName, cName) mode skipStoredProc = async {
-        do! createOrProvisionDatabase client dName mode
-        let! container = createBatchAndTipContainerIfNotExists client (dName, cName) mode
+        let! d = createOrProvisionDatabase client dName mode
+        let! c = createOrProvisionContainer d (cName, sprintf "/%s" Batch.PartitionKeyField, applyBatchAndTipContainerProperties) mode // as per Cosmos team, Partition Key must be "/id"
         if not skipStoredProc then
-            do! createSyncStoredProcIfNotExists (Some log) container }
+            do! createSyncStoredProcIfNotExists (Some log) c }
+    let private applyAuxContainerProperties (cp : ContainerProperties) =
+        // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
+        cp.IndexingPolicy.Automatic <- false
+        cp.IndexingPolicy.IndexingMode <- IndexingMode.None
     let initAux (client : CosmosClient) (dName, cName) rus = async {
-        // Hardwired for now (not sure if CFP can store in a Database-allocated as it would need to be supplying partition keys)
+        // Hardwired for now to be Container level manual provisioning; need to be very far from normal usage to want to vary that
         let mode = Provisioning.Container (Throughput.Manual rus)
-        do! createOrProvisionDatabase client dName mode
-        return! createAuxContainerIfNotExists client (dName, cName) mode }
+        let! d = createOrProvisionDatabase client dName mode
+        return! createOrProvisionContainer d (cName, "/id", applyAuxContainerProperties) mode } // as per Cosmos team, Partition Key must be "/id"
 
     /// Holds Container state, coordinating initialization activities
     type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> Async<unit>) =
