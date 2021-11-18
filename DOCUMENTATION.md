@@ -2233,6 +2233,7 @@ raise Issues first though ;) ).
 EventStore, and it's Store adapter is the most proven and is pretty feature
 rich relative to the need of consumers to date. Some things remain though:
 
+- __Get impl in `master` ported to the modern gRPC client, currently parked in [#196](https://github.com/jet/equinox/pull/196). See also [#232](https://github.com/jet/equinox/issues/232)__
 - Provide a low level walking events in F# API akin to
   `Equinox.CosmosStore.Core.Events`; this would allow consumers to jump from direct
   use of `EventStore.ClientAPI` -> `Equinox.EventStore.Core.Events` ->
@@ -2242,10 +2243,20 @@ rich relative to the need of consumers to date. Some things remain though:
   https://github.com/jet/equinox/issues/38
 - provide for snapshots to be stored out of the stream, and loaded in a
   customizable manner in a manner analogous to
-  [the proposed comparable `Equinox.CosmosStore` facility](https://github.com/jet/equinox/issues/61).
+  [the proposed comparable `Equinox.CosmosStore` facility](https://github.com/jet/equinox/issues/61)
+- Provide a facility in FsCodec.ICodec to walk the Event DU to generate a list of event types; use that to generate the server-side event loading filter e.g. when a Decider used a highly selective subset of the known Event Types
+- (If Server started to support it), provide a hint when loading as to the `isOrigin` Event Type so backward load can stop when it meets an Embedded Snapshot or Reset (e.g. `CartCleared`) event
+- `Propulsion.EventStore`: Provide an option to opt out of retrieving event bodies
+
+## Wouldn't it be nice - `Equinox.SqlStreamStore`
+
+- Provide support for an `isOrigin` overload that works on the event type string; implement a two phase load algorithm that loads the events first, and then the bodies only from the origin point forward
+- `Propulsion.SqlStreamStore`: Provide an option to opt out of retrieving event bodies
 
 ## Wouldn't it be nice - `Equinox.CosmosStore`
 
+- Switching to using MS V4 SDK eventually (Parked in [#197](https://github.com/jet/equinox/pull/197)). See also [#232](https://github.com/jet/equinox/issues/232)
+- Refactor the usage of the Stored Proc to instead use the V3 API's Transactional Batch support (will likely happen as a backport from `Equinox.DynamoStore`)
 - Enable snapshots to be stored outside of the main collection in
   `Equinox.CosmosStore` [#61](https://github.com/jet/equinox/issues/61)
 - Multiple writers support for `u`nfolds (at present a `sync` completely
@@ -2255,7 +2266,8 @@ rich relative to the need of consumers to date. Some things remain though:
   that's no longer in use gets removed)
   [#108](https://github.com/jet/equinox/issues/108)
 - low level performance improvements in loading logic (reducing allocations etc)
+- `Propulsion.CosmosStore`: provide a Serverless mode that can be used with Azure Functions to execute batch of projections based on a set of documents from the change feed
 
-## Wouldn't it be nice - `Equinox.DynamoDb`
+## Wouldn't it be nice - `Equinox.DynamoStore`
 
 - See [#76](https://github.com/jet/equinox/issues/76)
