@@ -18,13 +18,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- Stores: Expose `.Log.PropertyTag` Literals to enable log filtering  [#298](https://github.com/jet/equinox/pull/298~~~~)
+- Stores: Expose `.Log.PropertyTag` Literals to enable log filtering  [#298](https://github.com/jet/equinox/pull/298)
 - `Equinox.Tool`: Add support for [autoscaling throughput](https://docs.microsoft.com/en-us/azure/cosmos-db/provision-throughput-autoscale) of Cosmos containers and databases [#302](https://github.com/jet/equinox/pull/302) :pray: [@belcher-rok](https://github.com/belcher-rok)
 
 ### Fixed
 
 - `MemoryStore`: Fixed incorrect `Version` computation for `TransactEx` post-State [#296](https://github.com/jet/equinox/pull/296)
-- 
+
 <a name="3.0.4"></a>
 ## [3.0.4] - 2021-10-15
 
