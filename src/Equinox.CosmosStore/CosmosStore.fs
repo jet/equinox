@@ -394,11 +394,11 @@ module private MicrosoftAzureCosmosWrappers =
     type Container with
         member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : ItemRequestOptions): Async<float * ReadResult<'T>> = async {
             let! ct = Async.CancellationToken
-            use! rm = async { return! container.ReadItemStreamAsync(documentId, partitionKey, requestOptions = Option.toObj options, cancellationToken = ct) |> Async.AwaitTaskCorrect }
-            let rc = rm.Headers.GetRequestCharge()
-            if rm.StatusCode = System.Net.HttpStatusCode.NotFound then return rc, NotFound
-            elif rm.StatusCode = System.Net.HttpStatusCode.NotModified then return rc, NotModified
-            else return rc, Found (container.Database.Client.ClientOptions.Serializer.FromStream<'T>(rm.EnsureSuccessStatusCode().Content)) }
+            use! rm = container.ReadItemStreamAsync(documentId, partitionKey, requestOptions = Option.toObj options, cancellationToken = ct) |> Async.AwaitTaskCorrect
+            return rm.Headers.GetRequestCharge(), rm.StatusCode |> function
+                | System.Net.HttpStatusCode.NotFound -> NotFound
+                | System.Net.HttpStatusCode.NotModified -> NotModified
+                | _ -> rm.EnsureSuccessStatusCode().Content |> container.Database.Client.ClientOptions.Serializer.FromStream<'T> |> Found }
 
 // NB don't nest in a private module, or serialization will fail miserably ;)
 [<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
