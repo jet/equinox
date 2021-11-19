@@ -384,18 +384,12 @@ module Log =
 [<AutoOpen>]
 module private MicrosoftAzureCosmosWrappers =
 
-    type Headers with
-        member headers.GetRequestCharge () =
-            match headers.TryGetValue "x-ms-request-charge" with
-            | true, charge -> float charge
-            | _ -> 0.
-
     type ReadResult<'T> = Found of 'T | NotFound | NotModified
     type Container with
         member container.TryReadItem(partitionKey : PartitionKey, documentId : string, ?options : ItemRequestOptions): Async<float * ReadResult<'T>> = async {
             let! ct = Async.CancellationToken
             use! rm = container.ReadItemStreamAsync(documentId, partitionKey, requestOptions = Option.toObj options, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return rm.Headers.GetRequestCharge(), rm.StatusCode |> function
+            return rm.Headers.RequestCharge, rm.StatusCode |> function
                 | System.Net.HttpStatusCode.NotFound -> NotFound
                 | System.Net.HttpStatusCode.NotModified -> NotModified
                 | _ -> rm.EnsureSuccessStatusCode().Content |> container.Database.Client.ClientOptions.Serializer.FromStream<'T> |> Found }
