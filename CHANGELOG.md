@@ -11,6 +11,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 ### Changed
 ### Removed
+
+- Removed Grafana spec now that canonical is in `dotnet-templates` [#304](https://github.com/jet/equinox/pull/304)
+
 ### Fixed
 
 <a name="3.0.5"></a>
