@@ -828,7 +828,11 @@ and Equinox will supply the _initial_ value for the `project` function to render
 <a name="what-is-a-decider"/></a>
 ### What is a Decider? How does the Equinox `type Decider` relate to Jérémie's concept of one? :pray: [@rmaziarka](https://github.com/rmaziarka)
 
-The single best treatment of the concept of a Decider that's online at present is [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ) with [Jérémie Chassaing, @thinkb4coding](https://twitter.com/thinkb4coding). As teased in that video, there will hopefully be a body of work that will describe the concept in more detail ... eventually (but hopefully not [inevitably](https://github.com/ylorph/The-Inevitable-Event-Centric-Book))...
+The best treatments of the concept of a Decider are:
+1. [Jérémie's intro post](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider) - it's not short, but its required reading for anyone considering event sourcing, regardless of whether you're even going to use a functional programmign language to do so.
+2. There's a very thorough treatment with code walk-through and discussion in [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ) with [Jérémie Chassaing, @thinkb4coding](https://twitter.com/thinkb4coding)
+
+As teased in both, there will hopefully eventually (but hopefully not [inevitably](https://github.com/ylorph/The-Inevitable-Event-Centric-Book)) be a book at some point too :fingers_crossed: 
 
 #### In Equinox
 

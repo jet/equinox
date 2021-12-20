@@ -24,6 +24,9 @@ Worked examples and a slightly different take on DDD (the appendix on
 Functional Event sourcing is not far from what we have around these parts;
 which is [not surprising given there's input from Jérémie Chassaing](https://github.com/thinkbeforecoding/FsUno.Prod))
 
+_Functional Event Sourcing Decider_, [Jérémie Chassaing](https://twitter.com/thinkb4coding), 2021.
+Precursor to an excellent book covering this space more broadly. There's teasers with extensive code walk-through and discussion in [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ)
+
 - **Your link here** - Please add materials that helped you on your journey so
   far here via PRs!
 
