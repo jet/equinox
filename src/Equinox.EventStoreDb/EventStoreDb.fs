@@ -26,15 +26,15 @@ module Log =
     let propEventData name (events : EventData[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
-                if x.IsJson then
-                    yield System.Collections.Generic.KeyValuePair<_,_>(x.Type, System.Text.Encoding.UTF8.GetString x.Data) })
+                if x.ContentType = "application/json" then
+                    yield let d = x.Data in System.Collections.Generic.KeyValuePair<_,_>(x.Type, System.Text.Encoding.UTF8.GetString d.Span) })
 
     let propResolvedEvents name (events : ResolvedEvent[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
                 let e = x.Event
-                if e.IsJson then
-                    yield System.Collections.Generic.KeyValuePair<_,_>(e.EventType, System.Text.Encoding.UTF8.GetString e.Data) })
+                if e.ContentType = "application/json" then
+                    yield let d = e.Data in System.Collections.Generic.KeyValuePair<_,_>(e.EventType, System.Text.Encoding.UTF8.GetString d.Span) })
 
     open Serilog.Events
 
@@ -53,7 +53,7 @@ module Log =
                 f log
             retryPolicy withLoggingContextWrapping
 
-    let (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
+    let (|BlobLen|) (x : ReadOnlyMemory<byte>) = x.Length
 
     /// NB Caveat emptor; this is subject to unlimited change without the major version changing - while the `dotnet-templates` repo will be kept in step, and
     /// the ChangeLog will mention changes, it's critical to not assume that the presence or nature of these helpers be considered stable
@@ -130,14 +130,14 @@ module Log =
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EsSyncResult = Written of EventStore.Client.WriteResult | Conflict of actualVersion: int64
+type EsSyncResult = Written of EventStore.Client.ConditionalWriteResult | Conflict of actualVersion: int64
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
     let private writeEventsAsync (log : ILogger) (conn : EventStoreClient) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> = async {
         try let! ct = Async.CancellationToken
-            let! wr = conn.AppendToStreamAsync(streamName, StreamRevision.FromInt64 version, events, cancellationToken=ct) |> Async.AwaitTaskCorrect
+            let! wr = conn.ConditionalAppendToStreamAsync(streamName, StreamRevision.FromInt64 version, events, cancellationToken=ct) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? EventStore.Client.WrongExpectedVersionException as ex ->
             log.Information(ex, "Ges TrySync WrongExpectedVersionException writing {EventTypes}, actual {ActualVersion}",
@@ -174,13 +174,13 @@ module private Write =
 module private Read =
     open FSharp.Control
 
-    let private readAsyncEnum (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : StreamRevision)
+    let private readAsyncEnum (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : StreamPosition)
         : Async<AsyncSeq<ResolvedEvent>> = async {
         let! ct = Async.CancellationToken
-        return conn.ReadStreamAsync(direction, streamName, startPos, uint64 batchSize, resolveLinkTos = false, cancellationToken = ct)
+        return conn.ReadStreamAsync(direction, streamName, startPos, int64 batchSize, resolveLinkTos = false, cancellationToken = ct)
             |> AsyncSeq.ofAsyncEnum }
 
-    let readAsyncEnumVer (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : StreamRevision) : Async<int64*ResolvedEvent[]> = async {
+    let readAsyncEnumVer (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : StreamPosition) : Async<int64*ResolvedEvent[]> = async {
         try let! res = readAsyncEnum conn streamName direction batchSize startPos
             let! events = res |> AsyncSeq.toArrayAsync
             let version =
@@ -249,7 +249,7 @@ module private Read =
         let call pos = loggedReadAsyncEnumVer conn streamName Direction.Backwards batchSize pos
         let retryingLoggingRead pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let startPosition = StreamRevision.End
+        let startPosition = StreamPosition.End
         let direction = Direction.Backwards
         let readLog = log |> Log.prop "direction" direction
         let! t, (version, eventsBackward) = retryingLoggingRead startPosition readLog |> Stopwatch.Time
@@ -265,12 +265,13 @@ module UnionEncoderAdapters =
         // TODO something like let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
         // TOCONSIDER wire e.Metadata.["$correlationId"] and .["$causationId"] into correlationId and causationId
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        FsCodec.Core.TimelineEvent.Create(e.EventNumber.ToInt64(), e.EventType, e.Data, e.Metadata, correlationId = null, causationId = null, timestamp = ts)
+        let n, d, m = e.EventNumber, e.Data, e.Metadata
+        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), e.EventType, d.ToArray(), m.ToArray(), correlationId = null, causationId = null, timestamp = ts)
 
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        EventData(Uuid.NewUuid(), x.EventType, isJson = true, data = x.Data, metadata = x.Meta)
+        EventData(Uuid.NewUuid(), x.EventType, contentType = "application/json", data = ReadOnlyMemory(x.Data), metadata = ReadOnlyMemory(x.Meta))
 
 type Stream = { name : string }
 type Position = { streamVersion : int64; compactionEventNumber : int64 option; batchCapacityLimit : int option }
@@ -342,7 +343,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
     member internal __.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
 
     member __.LoadBatched streamName log (tryDecode, isCompactionEventType) : Async<StreamToken * 'event[]> = async {
-        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize streamName StreamRevision.Start
+        let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize streamName StreamPosition.Start
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting streamName version, Array.choose tryDecode events
         | Some isCompactionEvent ->
@@ -359,7 +360,7 @@ type Context(conn : Connection, batching : BatchingPolicy) =
 
     member __.LoadFromToken useWriteConn streamName log (Token.Unpack token as streamToken) (tryDecode, isCompactionEventType)
         : Async<StreamToken * 'event[]> = async {
-        let streamPosition = StreamRevision.FromInt64(token.pos.streamVersion + 1L)
+        let streamPosition = StreamPosition.FromInt64(token.pos.streamVersion + 1L)
         let connToUse = if useWriteConn then conn.WriteConnection else conn.ReadConnection
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy connToUse batching.BatchSize streamName streamPosition
         match isCompactionEventType with

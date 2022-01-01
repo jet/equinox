@@ -91,7 +91,7 @@ EndProjectSection
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.CosmosStore.Prometheus", "src\Equinox.CosmosStore.Prometheus\Equinox.CosmosStore.Prometheus.fsproj", "{3107BBC1-2BCB-4750-AED0-42B1F4CD1909}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.EventStore.Grpc", "src\Equinox.EventStore.Grpc\Equinox.EventStore.Grpc.fsproj", "{C828E360-6FE8-47F9-9415-0A21869D7A93}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.EventStoreDb", "src\Equinox.EventStoreDb\Equinox.EventStoreDb.fsproj", "{C828E360-6FE8-47F9-9415-0A21869D7A93}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

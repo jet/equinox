@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
-    <Compile Include="EventStoreGrpc.fs" />
+    <Compile Include="EventStoreDb.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,8 +23,8 @@
 
     <PackageReference Include="FSharp.Core" Version="4.3.4" />
 
-    <PackageReference Include="EventStore.Client.Grpc" Version="6.0.0-preview2" />
-    <PackageReference Include="FsCodec" Version="2.0.0-rc3" />
+    <PackageReference Include="EventStore.Client.Grpc.Streams" Version="21.2.0" />
+    <PackageReference Include="FsCodec" Version="2.0.0" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
   </ItemGroup>
 
