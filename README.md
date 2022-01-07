@@ -92,7 +92,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
     - It can maintain events in a buffer when the tip accumulation limit is reached. The limit is up to a specified count or `JSON.stringify` length. When the limit is met, events are shifted to a immutable `Batch`. 
   - Has the benefits of the in-stream Rolling Snapshots approach while reducing latency and RU provisioning requirements due to meticulously tuned Request Charge costs:
     - When the stream is empty, the initial `Load` operation involves a single point read that yields a `404 NotFound` response, costing 1.0 RU
-    - When coupled with the cache, a typical read is a point read [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `302 Not Found` response] (when the stream is empty, a `404 NotFound` response, also costing 1.0 RU)
+    - When coupled with the cache, a typical read is a point read [with `IfNoneMatch` on an etag], costing 1.0 RU if in-date [to get the `304 Not Modified` response] (when the stream is empty, a `404 NotFound` response, also costing 1.0 RU)
     - Writes are a single invocation of the `Sync` stored procedure which:
         - Does a point read
         - Performs a concurrency check

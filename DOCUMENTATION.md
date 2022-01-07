@@ -1735,7 +1735,7 @@ produce the `state` by folding in a variety of ways:
 
 If we have `state5` based on the events up to `C3 d5`, and (being the writer,
 or a recent reader), have the etag: `etagXYZ`, we can do a `HTTP GET` with
-`etag: IfNoneMatch etagXYZ`, which will return `302 Not Modified` with < 1K of
+`etag: IfNoneMatch etagXYZ`, which will return `304 Not Modified` with < 1K of
 data, and a charge of `1.00` RU allowing us to derive the state as:
 
 - `state5`

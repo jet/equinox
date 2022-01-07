@@ -281,11 +281,11 @@ module Log =
         | true, SerilogScalar (:? Metric as e) -> Some e
         | _ -> None
     [<RequireQualifiedAccess>]
-    type Operation = Tip | Tip404 | Tip302 | Query | Write | Resync | Conflict | Prune | Delete | Trim
+    type Operation = Tip | Tip404 | Tip304 | Query | Write | Resync | Conflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
         | Metric.Tip s                        -> Op (Operation.Tip, s)
         | Metric.TipNotFound s                -> Op (Operation.Tip404, s)
-        | Metric.TipNotModified s             -> Op (Operation.Tip302, s)
+        | Metric.TipNotModified s             -> Op (Operation.Tip304, s)
 
         | Metric.Query (_, _, s)              -> Op (Operation.Query, s)
         | Metric.QueryResponse (direction, s) -> QueryRes (direction, s)
@@ -339,7 +339,7 @@ module Log =
                         match logEvent with
                         | MetricEvent cm ->
                             match cm with
-                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip302 | Operation.Query), RcMs m)  ->
+                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304 | Operation.Query), RcMs m)  ->
                                                                           LogSink.Read.Ingest m
                             | QueryRes (_direction,          _)        -> ()
                             | Op (Operation.Write,            RcMs m)  -> LogSink.Write.Ingest m
@@ -645,7 +645,7 @@ module internal Tip =
         let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
         | ReadResult.NotModified ->
-            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms}ms rc={ru}", "Tip", stream ,302, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms}ms rc={ru}", "Tip", stream, 304, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.NotFound ->
             (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {stream} {res} {ms}ms rc={ru}", "Tip", stream, 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.Found tip ->

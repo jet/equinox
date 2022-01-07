@@ -99,7 +99,7 @@ module Store =
     // default connection mode is `Direct`; we use Gateway mode here to reduce connectivity potential issues. Ideally you want to remove that for production for perf reasons
     let discovery = Discovery.ConnectionString (read "EQUINOX_COSMOS_CONNECTION")
     let connector = CosmosStoreConnector(discovery, System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5., Microsoft.Azure.Cosmos.ConnectionMode.Gateway)
-            
+
     let storeClient = CosmosStoreClient.Connect(connector.CreateAndInitialize, read "EQUINOX_COSMOS_DATABASE", read "EQUINOX_COSMOS_CONTAINER") |> Async.RunSynchronously
     let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
     let cache = Equinox.Cache(appName, 20)
@@ -109,11 +109,11 @@ let service = Favorites.Cosmos.create (Store.context, Store.cache)
 let client = "ClientJ"
 
 service.Favorite(client, "a") |> Async.RunSynchronously
-service.Favorite(client, "b") |> Async.RunSynchronously 
-service.List(client) |> Async.RunSynchronously 
+service.Favorite(client, "b") |> Async.RunSynchronously
+service.List(client) |> Async.RunSynchronously
 
-service.Unfavorite(client, "b") |> Async.RunSynchronously 
-service.List(client) |> Async.RunSynchronously 
+service.Unfavorite(client, "b") |> Async.RunSynchronously
+service.List(client) |> Async.RunSynchronously
 
 Log.dumpMetrics ()
 
@@ -132,10 +132,10 @@ Log.dumpMetrics ()
 [13:48:33 INF] EqxCosmos QueryF Favorites-ClientJ v5 5/1 185ms rc=4.37
 [13:48:33 DBG] Resyncing and retrying
 [13:48:33 INF] EqxCosmos Sync 1+0 96ms rc=37.67
-[13:48:34 INF] EqxCosmos Tip 302 90ms rc=1
-[13:48:34 INF] EqxCosmos Tip 302 92ms rc=1
+[13:48:34 INF] EqxCosmos Tip 304 90ms rc=1
+[13:48:34 INF] EqxCosmos Tip 304 92ms rc=1
 [13:48:34 INF] EqxCosmos Sync 1+0 96ms rc=37.33
-[13:48:34 INF] EqxCosmos Tip 302 87ms rc=1
+[13:48:34 INF] EqxCosmos Tip 304 87ms rc=1
 [13:48:34 INF] Read: 8 requests costing 16 RU (average: 2.05); Average latency: 125ms
 [13:48:34 INF] Write: 3 requests costing 80 RU (average: 26.80); Average latency: 94ms
 [13:48:34 INF] TOTAL: 11 requests costing 97 RU (average: 8.80); Average latency: 116ms
