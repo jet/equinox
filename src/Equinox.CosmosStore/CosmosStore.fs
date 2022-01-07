@@ -1,5 +1,6 @@
 namespace Equinox.CosmosStore.Core
 
+open System.Text.Json
 open Equinox.Core
 open FsCodec
 open FSharp.Control
@@ -8,11 +9,11 @@ open Newtonsoft.Json
 open Serilog
 open System
 
-type EventBody = byte[]
+type EventBody = JsonElement
 
 /// A single Domain Event from the array held in a Batch
-type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
-    Event =
+[<NoEquality; NoComparison>]
+type Event = // TODO for STJ v5: All fields required unless explicitly optional
     {   /// Creation datetime (as opposed to system-defined _lastUpdated which is touched by triggers, replication etc.)
         t: DateTimeOffset // ISO 8601
 
@@ -20,22 +21,17 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         c: string // required
 
         /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for CosmosDB
-        [<JsonConverter(typeof<FsCodec.NewtonsoftJson.VerbatimUtf8JsonConverter>)>]
-        [<JsonProperty(Required=Required.AllowNull)>]
-        d: EventBody // Required, but can be null so Nullary cases can work
+        d: EventBody // TODO for STJ v5: Required, but can be null so Nullary cases can work
 
-        /// Optional metadata, as UTF-8 encoded json, ready to emit directly (null, not written if missing)
-        [<JsonConverter(typeof<FsCodec.NewtonsoftJson.VerbatimUtf8JsonConverter>)>]
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        m: EventBody
+        /// Optional metadata, as UTF-8 encoded json, ready to emit directly
+        m: EventBody // TODO for STJ v5: Optional, not serialized if missing
 
-        /// Optional correlationId (can be null, not written if missing)
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        correlationId : string
+        /// Optional correlationId
+        correlationId : string // TODO for STJ v5: Optional, not serialized if missing
 
-        /// Optional causationId (can be null, not written if missing)
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        causationId : string }
+        /// Optional causationId
+        causationId : string // TODO for STJ v5: Optional, not serialized if missing
+    }
 
     interface IEventData<EventBody> with
         member x.EventType = x.c
@@ -47,12 +43,11 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         member x.Timestamp = x.t
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
-type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
-    Batch =
+[<NoEquality; NoComparison>]
+type Batch = // TODO for STJ v5: All fields required unless explicitly optional
     {   /// CosmosDB-mandated Partition Key, must be maintained within the document
         /// Not actually required if running in single partition mode, but for simplicity, we always write it
-        [<JsonProperty(Required=Required.Default)>] // Not requested in queries
-        p: string // "{streamName}"
+        p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
 
         /// CosmosDB-mandated unique row key; needs to be unique within any partition it is maintained; must be string
         /// At the present time, one can't perform an ORDER BY on this field, hence we also have i shadowing it
@@ -62,8 +57,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
         /// When we read, we need to capture the value so we can retain it for caching purposes
         /// NB this is not relevant to fill in when we pass it to the writing stored procedure
         /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
-        [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
-        _etag: string
+        _etag: string // TODO for STJ v5: Optional, not serialized if missing
 
         /// base 'i' value for the Events held herein
         i: int64 // {index}
@@ -73,7 +67,7 @@ type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
 
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
         e: Event[] }
-    /// Unless running in single partition mode (which would restrict us to 10GB per container)
+    /// Unless running in single partition mode (which would restrict us to 10GB per collection)
     /// we need to nominate a partition key that will be in every document
     static member internal PartitionKeyField = "p"
     /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
@@ -91,65 +85,31 @@ type Unfold =
         /// The Case (Event Type) of this compaction/snapshot, used to drive deserialization
         c: string // required
 
-        /// UTF-8 JSON OR Event body - Json -> UTF-8 -> Deflate -> Base64
-        [<JsonConverter(typeof<Base64MaybeDeflateUtf8JsonConverter>)>]
-        d: byte[] // required
+        /// Event body - Json -> Deflate -> Base64 -> JsonElement
+        [<JsonConverter(typeof<JsonCompressedBase64Converter>)>]
+        d: EventBody // required
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
-        [<JsonConverter(typeof<Base64MaybeDeflateUtf8JsonConverter>)>]
-        [<JsonProperty(Required=Required.Default, NullValueHandling=NullValueHandling.Ignore)>]
-        m: EventBody } // optional
-
-/// Transparently encodes/decodes fields that can optionally by compressed by
-/// 1. Writing outgoing values (which may be JSON string, JSON object, or null) from a UTF-8 JSON array representation as per VerbatimUtf8Converter
-/// 2a. Decoding incoming JSON String values by Decompressing it to a UTF-8 JSON array representation
-/// 2b. Decoding incoming JSON non-string values by reading the raw value directly into a UTF-8 JSON array as per VerbatimUtf8Converter
-and Base64MaybeDeflateUtf8JsonConverter() =
-    inherit JsonConverter()
-    let inflate str : byte[] =
-        let compressedBytes = System.Convert.FromBase64String str
-        use input = new System.IO.MemoryStream(compressedBytes)
-        use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
-        use output = new System.IO.MemoryStream()
-        decompressor.CopyTo(output)
-        output.ToArray()
-    static member Compress(input : byte[]) : byte[] =
-        if input = null || input.Length = 0 then null else
-
-        use output = new System.IO.MemoryStream()
-        use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
-        compressor.Write(input, 0, input.Length)
-        compressor.Close()
-        String.Concat("\"", System.Convert.ToBase64String(output.ToArray()), "\"")
-        |> System.Text.Encoding.UTF8.GetBytes
-    override _.CanConvert(objectType) =
-        typeof<byte[]>.Equals(objectType)
-    override _.ReadJson(reader, _, _, serializer) =
-        match reader.TokenType with
-        | JsonToken.Null -> null
-        | JsonToken.String -> serializer.Deserialize(reader, typedefof<string>) :?> string |> inflate |> box
-        | _ -> Newtonsoft.Json.Linq.JToken.Load reader |> string |> System.Text.Encoding.UTF8.GetBytes |> box
-    override _.WriteJson(writer, value, serializer) =
-        let array = value :?> byte[]
-        if array = null || array.Length = 0 then serializer.Serialize(writer, null)
-        else System.Text.Encoding.UTF8.GetString array |> writer.WriteRawValue
+        [<JsonConverter(typeof<JsonCompressedBase64Converter>)>]
+        m: EventBody // TODO for STJ v5: Optional, not serialized if missing
+    }
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
 /// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
 /// NB the type does double duty as a) model for when we read it b) encoding a batch being sent to the stored proc
-type [<NoEquality; NoComparison; JsonObject(ItemRequired=Required.Always)>]
-    Tip =
-    {   [<JsonProperty(Required=Required.Default)>] // Not requested in queries
+[<NoEquality; NoComparison>]
+type Tip = // TODO for STJ v5: All fields required unless explicitly optional
+    {
         /// Partition key, as per Batch
-        p: string // "{streamName}"
+        p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
+
         /// Document Id within partition, as per Batch
         id: string // "{-1}" - Well known IdConstant used while this remains the pending batch
 
         /// When we read, we need to capture the value so we can retain it for caching purposes
         /// NB this is not relevant to fill in when we pass it to the writing stored procedure
         /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
-        [<JsonProperty(DefaultValueHandling=DefaultValueHandling.Ignore, Required=Required.Default)>]
-        _etag: string
+        _etag: string // TODO for STJ v5: Optional, not serialized if missing
 
         /// base 'i' value for the Events held herein
         i: int64
@@ -250,7 +210,7 @@ module Log =
         | Trim of Measurement
     let internal prop name value (log : ILogger) = log.ForContext(name, value)
     let internal propData name (events : #IEventData<EventBody> seq) (log : ILogger) =
-        let render = function null -> "null" | bytes -> System.Text.Encoding.UTF8.GetString bytes
+        let render (body : EventBody) = body.GetRawText()
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let internal propEvents = propData "events"
@@ -271,8 +231,8 @@ module Log =
     let internal event (value : Metric) (log : ILogger) =
         let enrich (e : Serilog.Events.LogEvent) =
             e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty(PropertyTag, Serilog.Events.ScalarValue(value)))
-        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt,_) = enrich evt })
-    let internal (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
+        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
+    let internal (|BlobLen|) (x : EventBody) = if x.ValueKind = JsonValueKind.Null then 0 else x.GetRawText().Length
     let internal (|EventLen|) (x : #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes + metaBytes + 80
     let internal (|BatchLen|) = Seq.sumBy (|EventLen|)
     let internal (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
@@ -1143,7 +1103,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
                 let events', unfolds = transmute events state'
                 SyncExp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
-        let compressor = if compressUnfolds then Base64MaybeDeflateUtf8JsonConverter.Compress else id
+        let compressor = if compressUnfolds then JsonCompressedBase64Converter.Compress else id
         let projections = Sync.mkUnfold compressor baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
         match! store.Sync(log, stream, exp, batch) with
@@ -1244,7 +1204,8 @@ type CosmosClientFactory
             CosmosClientOptions(
                 MaxRetryAttemptsOnRateLimitedRequests = maxAttempts,
                 MaxRetryWaitTimeOnRateLimitedRequests = maxWait,
-                RequestTimeout = timeout)
+                RequestTimeout = timeout,
+                Serializer = CosmosJsonSerializer(System.Text.Json.JsonSerializerOptions()))
         match mode with
         | None | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // only supports Https

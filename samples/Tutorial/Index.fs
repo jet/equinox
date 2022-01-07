@@ -13,7 +13,7 @@ module Events =
         | Deleted of ItemIds
         | Snapshotted of Items<'v>
         interface TypeShape.UnionContract.IUnionContract
-    let codec<'v> = FsCodec.NewtonsoftJson.Codec.Create<Event<'v>>()
+    let codec<'v> = FsCodec.SystemTextJson.Codec.Create<Event<'v>>()
 
 module Fold =
 

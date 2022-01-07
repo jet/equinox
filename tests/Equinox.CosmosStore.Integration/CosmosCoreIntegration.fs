@@ -14,10 +14,11 @@ open System.Text
 
 type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
+        let ser = System.Text.Json.JsonSerializer.SerializeToElement
         EventData.FromUtf8Bytes
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
-                Encoding.UTF8.GetBytes(defaultArg json "{\"d\":\"d\"}"),
-                Encoding.UTF8.GetBytes "{\"m\":\"m\"}")
+                defaultArg json "{\"d\":\"d\"}" |> ser,
+                ser "{\"m\":\"m\"}")
     static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
 
 type Tests(testOutputHelper) =
@@ -69,7 +70,7 @@ type Tests(testOutputHelper) =
     }
 
     let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
-    let stringOfEventBody (x: byte[]) = Encoding.UTF8.GetString(x)
+    let stringOfEventBody (x : System.Text.Json.JsonElement) = x.GetRawText()
     let xmlDiff (x: string) (y: string) =
         match JsonDiffPatchDotNet.JsonDiffPatch().Diff(JToken.Parse x,JToken.Parse y) with
         | null -> ""
