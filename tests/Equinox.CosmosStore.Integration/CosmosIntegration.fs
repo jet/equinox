@@ -11,7 +11,7 @@ open System.Threading
 module Cart =
     let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
     let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
-    let codec = Domain.Cart.Events.codec
+    let codec = Domain.Cart.Events.codecStj
     let createServiceWithoutOptimization log context =
         let resolve (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Cart.create log resolve
@@ -34,7 +34,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
-    let codec = Domain.ContactPreferences.Events.codec
+    let codec = Domain.ContactPreferences.Events.codecStj
     let createServiceWithoutOptimization createContext queryMaxItems log _ignoreWindowSize _ignoreCompactionPredicate =
         let context = createContext queryMaxItems
         let resolveStream = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve

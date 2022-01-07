@@ -7,7 +7,6 @@
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <DefineConstants Condition=" '$(TargetFramework)' == 'net461' ">$(DefineConstants);NET461</DefineConstants>
-    <DefineConstants>$(DefineConstants);NO_ASYNCSEQ</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

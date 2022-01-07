@@ -33,7 +33,7 @@ module SequenceCheck =
         type Event =
             | Add of {| value : int |}
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+        let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
 
     module Fold =
 
