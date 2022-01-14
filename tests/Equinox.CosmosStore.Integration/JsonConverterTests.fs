@@ -52,4 +52,4 @@ type Base64ZipUtf8Tests() =
         let maybeCompressed = maybeCompressor nullElement
         let ser = ser "AnEventType" maybeCompressed
         let des = System.Text.Json.JsonSerializer.Deserialize<Core.Unfold>(ser)
-        test <@ System.Text.Json.JsonValueKind.Null = des.d.ValueKind @>
+        test <@ System.Text.Json.JsonValueKind.Null = let d = des.d in d.ValueKind @>

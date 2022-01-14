@@ -43,11 +43,12 @@ type Startup() =
         services
             .AddMvc()
             .AddJsonOptions(fun o ->
+                FsCodec.SystemTextJson.Options.Create().Converters
                 // NOTE this is technically superfluous as we don't use `option`s in the models at present
                 // The key side-effect we want to guarantee is that we reference `FsCodec.SystemTextJson`,
-                // which will trigger a dependency on `System.Text.Json` >= `5.0.0-preview.3`
+                // which will trigger a dependency on `System.Text.Json` >= `6.0.1`
                 // This makes F# records roundtrip (System.Text.Json v4 required parameterless constructors on records)
-                o.JsonSerializerOptions.Converters.Add(FsCodec.SystemTextJson.Converters.JsonOptionConverter()))
+                |> Seq.iter o.JsonSerializerOptions.Converters.Add)
             .SetCompatibilityVersion(CompatibilityVersion.Latest) |> ignore
 
         let verbose = args.Contains Verbose
