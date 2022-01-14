@@ -5,12 +5,10 @@ open System.IO
 open System.Text.Json
 open System.Text.Json.Serialization
 
-//module JsonHelper =
-//
-//    let d = JsonDocument.Parse "null"
-//    let private Null = d.RootElement
-//    /// System.Text.Json versions > 4.7 reject JsonValueKind.Undefined elements
-//    let fixup (e : JsonElement) = if e.ValueKind = JsonValueKind.Undefined then Null else e
+module JsonHelper =
+
+    let Null = JsonSerializer.SerializeToElement null
+    let fixup (e : JsonElement) = if e.ValueKind = JsonValueKind.Undefined then Null else e
 
 type CosmosJsonSerializer(options: JsonSerializerOptions) =
     inherit CosmosSerializer()
@@ -34,14 +32,15 @@ and JsonCompressedBase64Converter() =
     inherit JsonConverter<JsonElement>()
 
     static member Compress(value: JsonElement) =
-        if value.ValueKind = JsonValueKind.Null then value
+        if value.ValueKind = JsonValueKind.Undefined then JsonHelper.Null
+        elif value.ValueKind = JsonValueKind.Null then value
         else
             let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
             use output = new MemoryStream()
             use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
             compressor.Write(input, 0, input.Length)
             compressor.Close()
-            JsonDocument.Parse("\"" + System.Convert.ToBase64String(output.ToArray()) + "\"").RootElement
+            JsonSerializer.Deserialize<JsonElement>("\"" + System.Convert.ToBase64String(output.ToArray()) + "\"")
 
     override _.Read(reader, _typeToConvert, options) =
         if reader.TokenType <> JsonTokenType.String then

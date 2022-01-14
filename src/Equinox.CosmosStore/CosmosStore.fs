@@ -1,13 +1,12 @@
 namespace Equinox.CosmosStore.Core
 
-open System.Text.Json
 open Equinox.Core
 open FsCodec
 open FSharp.Control
 open Microsoft.Azure.Cosmos
-open Newtonsoft.Json
 open Serilog
 open System
+open System.Text.Json
 
 type EventBody = JsonElement
 
@@ -86,11 +85,11 @@ type Unfold =
         c: string // required
 
         /// Event body - Json -> Deflate -> Base64 -> JsonElement
-        [<JsonConverter(typeof<JsonCompressedBase64Converter>)>]
+        [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
         d: EventBody // required
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
-        [<JsonConverter(typeof<JsonCompressedBase64Converter>)>]
+        [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
         m: EventBody // TODO for STJ v5: Optional, not serialized if missing
     }
 
@@ -508,7 +507,7 @@ module internal Sync =
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
     let private mkEvent (e : IEventData<_>) =
-        {   t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId }
+        {   t = e.Timestamp; c = e.EventType; d = JsonHelper.fixup e.Data; m = JsonHelper.fixup e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId }
     let mkBatch (stream : string) (events : IEventData<_>[]) unfolds : Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = Array.map mkEvent events; u = Array.ofSeq unfolds }
@@ -1103,7 +1102,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
                 let events', unfolds = transmute events state'
                 SyncExp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
-        let compressor = if compressUnfolds then JsonCompressedBase64Converter.Compress else id
+        let compressor = if compressUnfolds then JsonCompressedBase64Converter.Compress else JsonHelper.fixup
         let projections = Sync.mkUnfold compressor baseIndex projectionsEncoded
         let batch = Sync.mkBatch stream eventsEncoded projections
         match! store.Sync(log, stream, exp, batch) with
