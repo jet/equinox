@@ -17,7 +17,7 @@ type TestEvents() =
         let ser = System.Text.Json.JsonSerializer.SerializeToElement
         EventData.FromUtf8Bytes
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
-                defaultArg json "{\"d\":\"d\"}" |> ser,
+                ser <| defaultArg json "{\"d\":\"d\"}",
                 ser "{\"m\":\"m\"}")
     static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
 
