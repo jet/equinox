@@ -811,9 +811,16 @@ module internal Query =
         let raws = Array.map fst events
         let decoded = if direction = Direction.Forward then Array.choose snd events else Seq.choose snd events |> Seq.rev |> Array.ofSeq
         let minMax = (None, raws) ||> Array.fold (fun acc x -> let i = x.Index in Some (match acc with None -> i, i | Some (n, x) -> min n i, max x i))
-        let version = match minMax with Some (_, max) -> max + 1L | None -> 0L
+        let version =
+            match maybeTipPos, minMax with
+            | Some { index = max }, _
+            | _, Some (_, max) -> max + 1L
+            | None, None -> 0L
         log |> logQuery direction maxItems (container, stream) t (responseCount,raws) version ru
-        return minMax |> Option.map (fun (i,m) -> { found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }) }
+        match minMax, maybeTipPos with
+        | Some (i, m), _ -> return Some { found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }
+        | None, Some { index = tipI } -> return Some { found = found; minIndex = tipI; next = tipI; maybeTipPos = maybeTipPos; events = [||] }
+        | None, _ -> return None }
 
     let walkLazy<'event> (log : ILogger) (container,stream) maxItems maxRequests
         (tryDecode : ITimelineEvent<byte[]> -> 'event option, isOrigin: 'event -> bool)
