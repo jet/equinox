@@ -586,10 +586,6 @@ type SqlStreamStoreCategory<'event, 'state, 'context>
         | sn, (None|Some AllowStale) -> resolveStream sn option context
         | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
 
-    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member _.FromMemento(Token.Unpack token as streamToken, state, [<O; D null>] ?context) =
-        Stream.ofMemento (streamToken,state) (resolveStream token.stream.name context None)
-
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
 

@@ -81,7 +81,3 @@ type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store : VolatileStor
         match FsCodec.StreamName.toString streamName, option with
         | sn, (None | Some AllowStale) -> resolveStream sn context
         | sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn, initial) (resolveStream sn context)
-
-    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member _.FromMemento(Token.Unpack stream as streamToken, state, [<Optional; DefaultParameterValue null>] ?context) =
-        Stream.ofMemento (streamToken, state) (resolveStream stream.streamName context)
