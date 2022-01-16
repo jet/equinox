@@ -138,7 +138,7 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
 
     member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        decider.TransactAsync(fun state -> async {
+        decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
 #if ACCUMULATOR
             let acc = Accumulator(Fold.fold, state)

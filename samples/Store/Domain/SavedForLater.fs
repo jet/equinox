@@ -119,7 +119,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
 
     let remove clientId (resolveCommand : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
         let decider = resolve clientId
-        decider.TransactAsync(fun (state : Fold.State) -> async {
+        decider.Transact(fun (state : Fold.State) -> async {
             let contents = seq { for item in state -> item.skuId } |> set
             let! cmd = resolveCommand contents.Contains
             let _, events = decide maxSavedItems cmd state
