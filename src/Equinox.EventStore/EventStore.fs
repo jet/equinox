@@ -632,10 +632,6 @@ type EventStoreCategory<'event, 'state, 'context>
         | sn, (None|Some AllowStale) -> resolveStream sn option context
         | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
 
-    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member __.FromMemento(Token.Unpack token as streamToken, state, [<O; D null>] ?context) =
-        Stream.ofMemento (streamToken, state) (resolveStream token.stream.name context None)
-
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
         member __.Debug(format : string, args : obj []) =           log.Debug(format, args)

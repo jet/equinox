@@ -1487,12 +1487,6 @@ type CosmosStoreCategory<'event, 'state, 'context>
             let stream = resolveStream streamArgs option context
             Stream.ofMemento (Token.create streamId Position.fromKnownEmpty,initial) stream
 
-    member __.FromMemento(Token.Unpack (stream,_pos) as streamToken, state, [<O; D null>] ?context) =
-        let skipInitialization = None
-        let (categoryName, container, streamId, _maybeInit) = resolveStreamConfig (StreamName.parse stream)
-        let stream = resolveStream (categoryName, container, streamId, skipInitialization) context None
-        Stream.ofMemento (streamToken,state) stream
-
 namespace Equinox.CosmosStore.Core
 
 open Equinox.Core

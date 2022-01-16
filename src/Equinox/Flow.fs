@@ -31,9 +31,6 @@ type IStream<'event, 'state> =
 /// Exposed by TransactEx / QueryEx, providing access to extended state information for cases where that's required
 type ISyncContext<'state> =
 
-    /// Represents a Checkpoint position on a Stream's timeline; Can be used to manage continuations via a Resolver's FromMemento method
-    abstract member CreateMemento : unit -> StreamToken * 'state
-
     /// Exposes the underlying Store's internal Version for the underlying stream.
     /// An empty stream is Version 0; one with a single event is Version 1 etc.
     /// It's important to consider that this Version is more authoritative than inspecting the `Index` of the last event passed to
@@ -62,7 +59,6 @@ module internal Flow =
                 return true }
 
         interface ISyncContext<'state> with
-            member __.CreateMemento() = tokenAndState
             member __.State = snd tokenAndState
             member __.Version = (fst tokenAndState).version
 
