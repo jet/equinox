@@ -80,4 +80,3 @@ type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store : VolatileStor
     member _.Resolve(streamName : FsCodec.StreamName, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
         match FsCodec.StreamName.toString streamName, option with
         | sn, (None | Some AllowStale) -> resolveStream sn context
-        | sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn, initial) (resolveStream sn context)

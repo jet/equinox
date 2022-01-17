@@ -5,8 +5,6 @@ open System.Runtime.InteropServices
 
 /// Store-agnostic <c>Category.Resolve</c> Options
 type ResolveOption =
-    /// Without consulting Cache or any other source, assume the Stream to be empty for the initial Query or Transact
-    | AssumeEmpty
     /// If the Cache holds any state, use that without checking the backing store for updates, implying:
     /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
     /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`

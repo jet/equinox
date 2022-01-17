@@ -1449,21 +1449,17 @@ type CosmosStoreCategory<'event, 'state, 'context>
             Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
 
-    let resolveStream (categoryName, container, streamId, maybeContainerInitializationGate) opt context =
+    let resolveStream (StreamName.CategoryAndId (categoryName, streamId)) opt ctx =
+        let container, streamId, maybeContainerInitializationGate = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
         let category = resolveCategory (categoryName, container)
         { new IStream<'event, 'state> with
             member _.Load log = category.Load(log, streamId, opt)
             member _.TrySync(log : ILogger, token : StreamToken, originState : 'state, events : 'event list) =
                 match maybeContainerInitializationGate with
-                | None -> category.TrySync(log, token, originState, events, context)
+                | None -> category.TrySync(log, token, originState, events, ctx)
                 | Some init -> async {
                     do! init ()
-                    return! category.TrySync(log, token, originState, events, context) } }
-
-    let resolveStreamConfig = function
-        | StreamName.CategoryAndId (categoryName, streamId) ->
-            let containerClient, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
-            categoryName, containerClient, streamId, init
+                    return! category.TrySync(log, token, originState, events, ctx) } }
 
     member _.Resolve
         (   streamName : StreamName,
@@ -1471,12 +1467,7 @@ type CosmosStoreCategory<'event, 'state, 'context>
             [<O; D null>]?option,
             /// Context to be passed to IEventCodec
             [<O; D null>]?context) =
-        match resolveStreamConfig streamName, option with
-        | streamArgs,(None|Some AllowStale) ->
-            resolveStream streamArgs option context
-        | _, _, streamId, _ as streamArgs,Some AssumeEmpty ->
-            let stream = resolveStream streamArgs option context
-            Stream.ofMemento (Token.create streamId Position.fromKnownEmpty,initial) stream
+            resolveStream streamName option context
 
 namespace Equinox.CosmosStore.Core
 

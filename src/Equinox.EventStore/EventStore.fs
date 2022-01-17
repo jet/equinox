@@ -382,8 +382,6 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
     let isResolvedEventEventType (tryDecode, predicate) (x : ResolvedEvent) = predicate (tryDecode x.Event.Data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
 
-    member internal _.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
-
     member _.LoadBatched streamName log (tryDecode, isCompactionEventType) : Async<StreamToken * 'event[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
@@ -624,13 +622,8 @@ type EventStoreCategory<'event, 'state, 'context>
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
 
-    let resolveStream = Stream.create category
-    let loadEmpty sn = context.LoadEmpty sn, initial
-
     member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>] ?option, [<O; D null>] ?context) =
-        match FsCodec.StreamName.toString streamName, option with
-        | sn, (None|Some AllowStale) -> resolveStream sn option context
-        | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
+        Stream.create category (FsCodec.StreamName.toString streamName) option context
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
