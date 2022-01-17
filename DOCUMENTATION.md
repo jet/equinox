@@ -703,7 +703,7 @@ elements you'll touch in a normal application are:
   Transaction semantics that are central to Equinox and the overall `Decider` concept.
 - [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L11) -
   surface API one uses to `Transact` or `Query` against a specific stream's state
-- [`type ResolveOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L59) -
+- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L59) -
   used to specify optimization overrides to be applied when 
   `resolve` hydrates a `Decider`
 

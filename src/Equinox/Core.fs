@@ -1,4 +1,15 @@
-﻿/// Internal data structures/impl. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implementing a Store or a decorator thereof.
+﻿namespace Equinox
+
+/// Store-agnostic Loading Options
+type LoadOption =
+    /// No special requests; Obtain latest state from store based on consistency level configured
+    | Load
+    /// If the Cache holds any state, use that without checking the backing store for updates, implying:
+    /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
+    /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`
+    | AllowStale
+
+/// Internal data structures/impl. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implementing a Store or a decorator thereof.
 /// i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Decider.fs, not here
 namespace Equinox.Core
 
@@ -21,7 +32,7 @@ type SyncResult<'state> =
 type IStream<'event, 'state> =
 
     /// Obtain the state from the target stream
-    abstract Load : log: ILogger -> Async<StreamToken * 'state>
+    abstract Load : log: ILogger * opt : Equinox.LoadOption -> Async<StreamToken * 'state>
 
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
@@ -110,12 +121,12 @@ module internal Flow =
         // Commence, processing based on the incoming state
         loop 1
 
-    let transact (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) (stream : IStream<_, _>, log) decide mapResult : Async<'result> = async {
-        let! streamState = stream.Load log
+    let transact opt (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) (stream : IStream<_, _>, log) decide mapResult : Async<'result> = async {
+        let! streamState = stream.Load(log, opt)
         let context = SyncContext(streamState, stream.TrySync)
         return! run log (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) context decide mapResult }
 
-    let query (stream : IStream<'event, 'state>, log : ILogger, project: SyncContext<'event, 'state> -> 'result) : Async<'result> = async {
-        let! streamState = stream.Load log
+    let query opt (stream : IStream<'event, 'state>, log : ILogger, project: SyncContext<'event, 'state> -> 'result) : Async<'result> = async {
+        let! streamState = stream.Load(log, opt)
         let context = SyncContext(streamState, stream.TrySync)
         return project context }

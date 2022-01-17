@@ -134,7 +134,7 @@ let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
         state', acc @ events)
 #endif
 
-type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve : CartId * Equinox.LoadOption option -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
@@ -159,11 +159,11 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
         let decider = resolve (cartId,None)
         decider.Query id
     member _.ReadStale cartId =
-        let decider = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
+        let decider = resolve (cartId,Some Equinox.LoadOption.AllowStale)
         decider.Query id
 
 let create log resolveStream =
     let resolve (id, opt) =
-        let stream = resolveStream (streamName id, opt)
-        Equinox.Decider(log, stream, maxAttempts = 3)
+        let stream = resolveStream (streamName id)
+        Equinox.Decider(log, stream, maxAttempts = 3, ?defaultOption = opt)
     Service(resolve)

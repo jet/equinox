@@ -518,7 +518,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
             | Some (cache : ICache, prefix : string) -> async {
                 match! cache.TryGet(prefix + streamName) with
                 | None -> return! batched log streamName
-                | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
+                | Some tokenAndState when opt = AllowStale -> return tokenAndState
                 | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
         member _.TrySync(log : ILogger, streamName, streamToken, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
             let! syncRes = category.TrySync(log, fold, streamName, streamToken, initialState, events, context)
@@ -533,11 +533,11 @@ type CachingStrategy =
     /// Retain a single 'state per streamName.
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
+    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
     | SlidingWindow of ICache * window : TimeSpan
     /// Retain a single 'state per streamName
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
+    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
     | FixedTimeSpan of ICache * period : TimeSpan
     /// Prefix is used to segregate multiple folds per stream when they are stored in the cache.
     /// Semantics are identical to <c>SlidingWindow</c>.
@@ -573,8 +573,8 @@ type SqlStreamStoreCategory<'event, 'state, 'context>
             Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
-    member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>]?option, [<O; D null>]?context) =
-        Stream.create category (FsCodec.StreamName.toString streamName) option context
+    member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>]?context) =
+        Stream.create category (FsCodec.StreamName.toString streamName) context
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

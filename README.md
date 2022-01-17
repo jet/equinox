@@ -806,7 +806,7 @@ and Equinox will supply the _initial_ value for the `project` function to render
 
 > Side note: the original question is for a read operation, but there's an interesting consideration if we are doing a `Transact`. Say,
 > for instance, that there's a PUT API endpoint where the code would register a fresh customer order for the customer in its order list
-> via the Decider's `Transact` operation. As an optimization, one can utilize the `AssumeEmpty` hint as the `Equinox.ResolveOption` to
+> via the Decider's `Transact` operation. As an optimization, one can utilize the `AssumeEmpty` hint as the `Equinox.LoadOption` to
 > hint that it's worth operating on the assumption that the stream is empty. When the internal sync operation attempts to perform the write,
 > that assumption will be tested; every write is always version checked.
 > In the scenario where we are dealing with a rerun of an attempt to create an order (lets say the call timed out, but the processing actually

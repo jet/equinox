@@ -1139,7 +1139,7 @@ module internal Caching =
             member _.Load(log, streamName, opt) : Async<StreamToken * 'state> = async {
                 match! tryReadCache streamName with
                 | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
-                | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState // read already updated TTL, no need to write
+                | Some tokenAndState when opt = Equinox.AllowStale -> return tokenAndState // read already updated TTL, no need to write
                 | Some (token, state) -> return! category.Reload(log, streamName, token, state, fold, isOrigin) |> cache streamName }
             member _.TrySync(log : ILogger, streamName, streamToken, state, events : 'event list, context)
                 : Async<SyncResult<'state>> = async {
@@ -1380,14 +1380,14 @@ type CachingStrategy =
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
     // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
     // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
     | SlidingWindow of ICache * window : TimeSpan
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Typically combined with `Equinox.ResolveOption.AllowStale` to minimize loads.
-    /// Unless <c>ResolveOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
+    /// Typically combined with `Equinox.LoadOption.AllowStale` to minimize loads.
+    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
     | FixedTimeSpan of ICache * period : TimeSpan
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
@@ -1448,11 +1448,11 @@ type CosmosStoreCategory<'event, 'state, 'context>
             Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
 
-    let resolveStream (StreamName.CategoryAndId (categoryName, streamId) as sn) opt ctx =
+    let resolveStream (StreamName.CategoryAndId (categoryName, streamId) as sn) ctx =
         let container, streamId, maybeContainerInitializationGate = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
         let category = resolveCategory (categoryName, container)
         { new IStream<'event, 'state> with
-            member _.Load log = category.Load(log, streamId, opt)
+            member _.Load(log, opt) = category.Load(log, streamId, opt)
             member _.TrySync(log : ILogger, token : StreamToken, originState : 'state, events : 'event list) =
                 match maybeContainerInitializationGate with
                 | None -> category.TrySync(log, StreamName.toString sn, token, originState, events, ctx)
@@ -1462,11 +1462,9 @@ type CosmosStoreCategory<'event, 'state, 'context>
 
     member _.Resolve
         (   streamName : StreamName,
-            /// Resolver options
-            [<O; D null>]?option,
             /// Context to be passed to IEventCodec
             [<O; D null>]?context) =
-            resolveStream streamName option context
+            resolveStream streamName context
 
 namespace Equinox.CosmosStore.Core
 
