@@ -13,7 +13,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
-<a name="3.0.5"></a>
+<a name="3.0.6"></a>
 ## [3.0.6] - 2022-01-19
 
 ### Changed
