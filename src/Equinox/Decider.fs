@@ -56,8 +56,8 @@ type Decider<'event, 'state>
 
     /// Project from the folded <c>'state</c>, without executing a decision flow as <c>Transact</c> does
     member _.Query(projection : 'state -> 'view, ?option) : Async<'view> =
-        query option (stream, log, fun context -> projection (context :> ISyncContext<'state>).State)
+        query option (stream, log) (fun context -> projection (context :> ISyncContext<'state>).State)
 
     /// Project from the stream's <c>'state<c> (including extended context), without executing a decision flow as <c>Transact<c> does
     member _.QueryEx(projection : ISyncContext<'state> -> 'view, ?option) : Async<'view> =
-        query option (stream, log, projection)
+        query option (stream, log) projection

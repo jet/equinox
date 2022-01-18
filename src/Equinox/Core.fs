@@ -126,7 +126,7 @@ module internal Flow =
         let context = SyncContext(streamState, stream.TrySync)
         return! run log (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) context decide mapResult }
 
-    let query opt (stream : IStream<'event, 'state>, log : ILogger, project: SyncContext<'event, 'state> -> 'result) : Async<'result> = async {
+    let query opt (stream : IStream<'event, 'state>, log : ILogger) (project: SyncContext<'event, 'state> -> 'result) : Async<'result> = async {
         let! streamState = stream.Load(log, opt)
         let context = SyncContext(streamState, stream.TrySync)
         return project context }
