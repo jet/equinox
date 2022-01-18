@@ -40,10 +40,10 @@ let interpret add remove (state : Fold.State) =
 
 type Service internal (decider : Equinox.Decider<Events.Event, Fold.State>) =
 
-    member __.Add(add : string seq, remove : string seq) : Async<int*int> =
+    member _.Add(add : string seq, remove : string seq) : Async<int*int> =
         decider.Transact(interpret add remove)
 
-    member __.Read() : Async<Set<string>> =
+    member _.Read() : Async<Set<string>> =
         decider.Query id
 
 let create resolveStream setId =

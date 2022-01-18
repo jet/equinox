@@ -1,3 +1,4 @@
+#if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #I "bin/Debug/netstandard2.1/"
@@ -7,6 +8,10 @@
 #r "Equinox.MemoryStore.dll"
 #r "FSharp.UMX.dll"
 #r "FSCodec.dll"
+#else
+#r "nuget:Equinox.MemoryStore"
+#r "nuget:Serilog.Sinks.Console"
+#endif
 
 (*
  * EVENTS
@@ -18,7 +23,7 @@
 // i.e. typically records are used for the Event Payloads even in cases where you feel you'll only ever have a single primitive value
 
 type Event =
-    | Added of string  
+    | Added of string
     | Removed of string
 // No IUnionContract or Codec required as we're using a custom encoder in this example
 //    interface TypeShape.UnionContract.IUnionContract
@@ -59,7 +64,7 @@ let removeBEffect = interpret (Remove "b") favesCba
 //val removeBEffect : Event list = [Removed "b"]
 
 let favesCa = fold favesCba removeBEffect
-// val favesCa : string list = ["c"; "a"] 
+// val favesCa : string list = ["c"; "a"]
 
 let _removeBAgainEffect = interpret (Remove "b") favesCa
 //val _removeBAgainEffect : Event list = []
@@ -74,9 +79,9 @@ let _removeBAgainEffect = interpret (Remove "b") favesCa
 
 // Example of wrapping Decider to encapsulate stream access patterns (see DOCUMENTATION.md for reasons why this is not advised in real apps)
 type Handler(decider : Equinox.Decider<Event, State>) =
-    member __.Execute command : Async<unit> =
+    member _.Execute command : Async<unit> =
         decider.Transact(interpret command)
-    member __.Read : Async<string list> =
+    member _.Read : Async<string list> =
         decider.Query id
 
 (* When we Execute a command, Equinox.Decider will use `fold` and `interpret` to Decide whether Events need to be written
@@ -107,7 +112,7 @@ let codec =
         | "Add", (:? string as x) -> Added x |> Some
         | "Remove", (:? string as x) -> Removed x |> Some
         | _ -> None
-    FsCodec.Codec.Create(encode,tryDecode)
+    FsCodec.Codec.Create(encode, tryDecode)
 // Each store has a <Store>Category that is used to resolve IStream instances binding to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
 let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
@@ -120,10 +125,10 @@ let handler = Handler(clientAStream)
 
 (* Run some commands *)
 
-handler.Execute (Add "a") |> Async.RunSynchronously
-handler.Execute (Add "b") |> Async.RunSynchronously
+handler.Execute(Add "a") |> Async.RunSynchronously
+handler.Execute(Add "b") |> Async.RunSynchronously
 // Idempotency comes into play if we run it twice:
-handler.Execute (Add "b") |> Async.RunSynchronously
+handler.Execute(Add "b") |> Async.RunSynchronously
 
 (* Read the current state *)
 
@@ -139,32 +144,33 @@ handler.Read |> Async.RunSynchronously
 
 type Service(deciderFor : string -> Handler) =
 
-    member __.Favorite(clientId, sku) =
+    member _.Favorite(clientId, sku) =
         let decider = deciderFor clientId
         decider.Execute(Add sku)
 
-    member __.Unfavorite(clientId, skus) =
+    member _.Unfavorite(clientId, skus) =
         let decider = deciderFor clientId
         decider.Execute(Remove skus)
 
-    member __.List(clientId): Async<string list> =
+    member _.List(clientId): Async<string list> =
         let decider = deciderFor clientId
         decider.Read
 
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
 let streamFor (clientId: string) =
     let streamName = FsCodec.StreamName.create "Favorites" clientId
-    let decider = Equinox.Decider(log, cat.Resolve streamName, maxAttempts = 3)
+    let stream = cat.Resolve streamName
+    let decider = Equinox.Decider(log, stream, maxAttempts = 3)
     Handler(decider)
 
 let service = Service(streamFor)
 
 let client = "ClientB"
 service.Favorite(client, "a") |> Async.RunSynchronously
-service.Favorite(client, "b") |> Async.RunSynchronously 
-service.List(client) |> Async.RunSynchronously 
+service.Favorite(client, "b") |> Async.RunSynchronously
+service.List(client) |> Async.RunSynchronously
 // val it : string list = ["b"; "a"]
 
-service.Unfavorite(client, "b") |> Async.RunSynchronously 
-service.List(client) |> Async.RunSynchronously 
+service.Unfavorite(client, "b") |> Async.RunSynchronously
+service.List(client) |> Async.RunSynchronously
 //val it : string list = ["a"]

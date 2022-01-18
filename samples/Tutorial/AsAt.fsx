@@ -11,6 +11,7 @@
 // - the same general point applies to over-using querying of streams for read purposes as we do here;
 //   applying CQRS principles can often lead to a better model regardless of raw necessity
 
+#if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
@@ -34,7 +35,12 @@
 #r "Microsoft.Azure.Cosmos.Direct.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
-
+#else
+#r "nuget:Serilog.Sinks.Console"
+#r "nuget:Serilog.Sinks.Seq"
+#r "nuget:Equinox.CosmosStore"
+#r "nuget:Equinox.EventStore"
+#endif
 open System
 
 let streamName clientId = FsCodec.StreamName.create "Account" clientId
@@ -133,8 +139,8 @@ module Log =
         Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
         Equinox.EventStore.Log.InternalMetrics.dump log
 
-let [<Literal>] appName = "equinox-tutorial"
-let cache = Equinox.Cache(appName, 20)
+let [<Literal>] AppName = "equinox-tutorial"
+let cache = Equinox.Cache(AppName, 20)
 
 module EventStore =
 
@@ -144,7 +150,7 @@ module EventStore =
     // see QuickStart for how to run a local instance in a mode that emulates the behavior of a cluster
     let host, username, password = "localhost", "admin", "changeit"
     let connector = Connector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
-    let esc = connector.Connect(appName, Discovery.GossipDns host) |> Async.RunSynchronously
+    let esc = connector.Connect(AppName, Discovery.GossipDns host) |> Async.RunSynchronously
     let log = Logger.SerilogNormal (Log.log)
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, BatchingPolicy(maxBatchSize=snapshotWindow))
@@ -169,13 +175,13 @@ module Cosmos =
     let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 
-let serviceES = Service(EventStore.resolve)
-let serviceCosmos = Service(Cosmos.resolve)
+//let serviceES = Service(EventStore.resolve)
+let service= Service(Cosmos.resolve)
 
 let client = "ClientA"
-serviceES.Add(client, 1) |> Async.RunSynchronously
-serviceES.Add(client, 3) |> Async.RunSynchronously
-serviceES.Remove(client, 1) |> Async.RunSynchronously
-serviceES.Read(client) |> Async.RunSynchronously |> printf "%A"
+service.Add(client, 1) |> Async.RunSynchronously
+service.Add(client, 3) |> Async.RunSynchronously
+service.Remove(client, 1) |> Async.RunSynchronously
+service.Read(client) |> Async.RunSynchronously |> printf "%A"
 
 Log.dumpMetrics ()
