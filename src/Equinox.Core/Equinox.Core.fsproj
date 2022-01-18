@@ -28,7 +28,7 @@
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
     <PackageReference Include="MinVer" Version="2.5.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />
+    <PackageReference Include="FSharp.Core" Version="3.1.2.5" Condition=" '$(TargetFramework)' == 'net461' " />
     <PackageReference Include="FSharp.Core" Version="4.3.4" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
     <PackageReference Include="System.Runtime.Caching" Version="4.5.0" Condition=" '$(TargetFramework)' == 'netstandard2.0' " />
     <Reference Include="System.Runtime.Caching" Condition=" '$(TargetFramework)' != 'netstandard2.0' " />

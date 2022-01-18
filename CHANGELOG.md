@@ -11,6 +11,16 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 ### Changed
 ### Removed
+### Fixed
+
+<a name="3.0.5"></a>
+## [3.0.6] - 2022-01-19
+
+### Changed
+
+- `CosmosStore`: Cleanup `Microsoft.Azure.Cosmos` calls [#303](https://github.com/jet/equinox/pull/303)
+
+### Removed
 
 - Removed Grafana spec now that canonical is in `dotnet-templates` [#304](https://github.com/jet/equinox/pull/304)
 
@@ -646,7 +656,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.5...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.6...HEAD
+[3.0.6]: https://github.com/jet/equinox/compare/3.0.5...3.0.6
 [3.0.5]: https://github.com/jet/equinox/compare/3.0.4...3.0.5
 [3.0.4]: https://github.com/jet/equinox/compare/3.0.3...3.0.4
 [3.0.3]: https://github.com/jet/equinox/compare/3.0.2...3.0.3
