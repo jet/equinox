@@ -40,9 +40,9 @@ let interpret add remove (state : Fold.State<'v>) =
 
 type Service<'t> internal (decider : Equinox.Decider<Events.Event<'t>, Fold.State<'t>>) =
 
-    member __.Ingest(adds : seq<string*'t>, removes : string seq) : Async<int*int> =
+    member _.Ingest(adds : seq<string*'t>, removes : string seq) : Async<int*int> =
         decider.Transact(interpret adds removes)
-    member __.Read() : Async<Map<string,'t>> =
+    member _.Read() : Async<Map<string,'t>> =
         decider.Query id
 
 let create<'t> resolve indexId =

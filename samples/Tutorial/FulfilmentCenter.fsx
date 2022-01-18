@@ -1,3 +1,4 @@
+#if LOCAL
 #I "bin/Debug/netstandard2.1/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
@@ -13,6 +14,13 @@
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.CosmosStore.dll"
+#else
+#r "nuget:Equinox.MemoryStore"
+#r "nuget:Equinox.CosmosStore"
+#r "nuget:FsCodec.NewtonsoftJson"
+#r "nuget:Serilog.Sinks.Console"
+#r "nuget:Serilog.Sinks.Seq"
+#endif
 
 open FSharp.UMX
 
@@ -27,13 +35,13 @@ module Types =
     type FcDetails = { dcCode : string; countryCode : string; financialGroupCode : string }
 
     type FcName = { code : string; name : string }
-        
+
     type Address =
         {   address1    : string
             address2    : string
             city        : string
             state       : string
-            zip         : string 
+            zip         : string
             isBusiness  : bool option
             isWeekendDeliveries  : bool option
             businessName  : string option }
@@ -97,12 +105,12 @@ module FulfilmentCenter =
             let decider = resolve fc
             decider.QueryEx(fun c -> c.Version, projection c.State)
 
-        member __.UpdateName(id, value) = execute id (Register value)
-        member __.UpdateAddress(id, value) = execute id (UpdateAddress value)
-        member __.UpdateContact(id, value) = execute id (UpdateContact value)
-        member __.UpdateDetails(id, value) = execute id (UpdateDetails value)
-        member __.Read id : Async<Summary> = read id
-        member __.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
+        member _.UpdateName(id, value) = execute id (Register value)
+        member _.UpdateAddress(id, value) = execute id (UpdateAddress value)
+        member _.UpdateContact(id, value) = execute id (UpdateContact value)
+        member _.UpdateDetails(id, value) = execute id (UpdateDetails value)
+        member _.Read id : Async<Summary> = read id
+        member _.QueryWithVersion(id, render : Fold.State -> 'res) : Async<int64*'res> = queryEx id render
 
 open Equinox.CosmosStore
 open System
@@ -139,7 +147,7 @@ let service = Service(resolve)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously
-service.Read(fc) |> Async.RunSynchronously 
+service.Read(fc) |> Async.RunSynchronously
 
 Log.dumpMetrics ()
 
@@ -171,12 +179,9 @@ module FulfilmentCenterSummary =
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, State>) =
 
-        let execute fc command : Async<unit> =
-            let decider = resolve fc
-            decider.Transact(interpret command)
-        let read fc : Async<Summary option> =
-            let decider = resolve fc
+        member _.Update(id, version, value) =
+            let decider = resolve id
+            decider.Transact(interpret (Update (version,value)))
+        member _.TryRead id : Async<Summary option> =
+            let decider = resolve id
             decider.Query(Option.map (fun s -> s.state))
-
-        member __.Update(id, version, value) = execute id (Update (version,value))
-        member __.TryRead id : Async<Summary option> = read id

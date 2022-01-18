@@ -1,4 +1,5 @@
-﻿// Compile Tutorial.fsproj by either a) right-clicking or b) typing
+﻿#if LOCAL
+// Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
 #r "netstandard"
@@ -18,6 +19,11 @@
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.CosmosStore.dll"
+#else
+#r "nuget:Serilog.Sinks.Console"
+#r "nuget:Serilog.Sinks.Seq"
+#r "nuget:Equinox.CosmosStore"
+#endif
 
 module Log =
 

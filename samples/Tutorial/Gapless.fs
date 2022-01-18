@@ -56,19 +56,19 @@ let decideRelease item (state : Fold.State) : Events.Event list =
 
 type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member __.ReserveMany(series,count) : Async<int64 list> =
+    member _.ReserveMany(series,count) : Async<int64 list> =
         let decider = resolve series
         decider.Transact(decideReserve count)
 
-    member __.Reserve(series) : Async<int64> = async {
-        let! res = __.ReserveMany(series,1)
+    member x.Reserve(series) : Async<int64> = async {
+        let! res = x.ReserveMany(series, 1)
         return List.head res }
 
-    member __.Confirm(series,item) : Async<unit> =
+    member _.Confirm(series,item) : Async<unit> =
         let decider = resolve series
         decider.Transact(decideConfirm item)
 
-    member __.Release(series,item) : Async<unit> =
+    member _.Release(series,item) : Async<unit> =
         let decider = resolve series
         decider.Transact(decideRelease item)
 

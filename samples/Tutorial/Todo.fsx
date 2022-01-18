@@ -1,4 +1,5 @@
-﻿// Compile Tutorial.fsproj by either a) right-clicking or b) typing
+﻿#if LOCAL
+// Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
 #r "netstandard"
@@ -16,7 +17,11 @@
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
-
+#else
+#r "nuget:Equinox.CosmosStore"
+#r "nuget:Serilog.Sinks.Console"
+#r "nuget:Serilog.Sinks.Seq"
+#endif
 open System
 
 (* NB It's recommended to look at Favorites.fsx first as it establishes the groundwork

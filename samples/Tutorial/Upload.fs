@@ -1,4 +1,4 @@
-/// Simple example of how one might have multiple uploaders agree/share a common UploadId for a given OrderId
+/// Simple example of how one might have multiple instances of an uploader app agree/share a common UploadId for a given OrderId
 module Upload
 
 open FSharp.UMX
@@ -58,7 +58,7 @@ let decide (value : UploadId) (state : Fold.State) : Choice<UploadId,UploadId> *
 
 type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member __.Sync(companyId, purchaseOrderId, value) : Async<Choice<UploadId,UploadId>> =
+    member _.Sync(companyId, purchaseOrderId, value) : Async<Choice<UploadId,UploadId>> =
         let decider = resolve (companyId, purchaseOrderId)
         decider.Transact(decide value)
 

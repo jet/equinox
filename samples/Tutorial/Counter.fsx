@@ -1,24 +1,30 @@
+#if LOCAL
 // Compile Tutorial.fsproj before attempting to send this to FSI with Alt-Enter by either:
-// a) right-clicking or 
-// b) typing dotnet build samples/Tutorial 
-#r "nuget:Serilog"
-#r "nuget:Serilog.Sinks.Console"
-#r "nuget:Equinox"
+// a) right-clicking or
+// b) typing dotnet build samples/Tutorial
+#I "bin/Debug/netstandard2.1/"
+#r "Serilog.dll"
+#r "Serilog.Sinks.Console.dll"
+#r "Equinox.dll"
+#r "Equinox.MemoryStore.dll"
+#r "TypeShape.dll"
+#r "FSharp.UMX.dll"
+#r "FsCodec.dll"
+#r "FsCodec.NewtonsoftJson.dll"
+#else
 #r "nuget:Equinox.MemoryStore"
-#r "nuget:TypeShape"
-#r "nuget:Fsharp.UMX"
-#r "nuget:FsCodec"
 #r "nuget:FsCodec.Box"
-#r "nuget:FsCodec.NewtonsoftJson"
+#r "nuget:Serilog.Sinks.Console"
+#endif
 
 // Contributed by @voronoipotato
 
-(* Events are things that have already happened, 
+(* Events are things that have already happened,
    they always exist in the past, and should always be past tense verbs*)
 
 (* A counter going up might clear to 0, but a counter going down might clear to 100. *)
 type Cleared = { value : int }
-type Event = 
+type Event =
     | Incremented
     | Decremented
     | Cleared of Cleared
@@ -40,7 +46,7 @@ let evolve state event =
 let fold state events = Seq.fold evolve state events
 
 (* Commands are the things we intend to happen, though they may not*)
-type Command = 
+type Command =
     | Increment
     | Decrement
     | Clear of int
@@ -50,11 +56,11 @@ type Command =
 
 let decide command (State state) =
     match command with
-    | Increment -> 
+    | Increment ->
         if state > 100 then [] else [Incremented]
-    | Decrement -> 
+    | Decrement ->
         if state <= 0 then [] else [Decremented]
-    | Clear i -> 
+    | Clear i ->
         if state = i then [] else [Cleared {value = i}]
 
 type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
@@ -94,5 +100,5 @@ let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously
 service.Execute(clientId, Increment) |> Async.RunSynchronously
 service.Read(clientId) |> Async.RunSynchronously
-service.Reset(clientId, 5) |> Async.RunSynchronously 
+service.Reset(clientId, 5) |> Async.RunSynchronously
 service.Read(clientId) |> Async.RunSynchronously
