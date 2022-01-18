@@ -163,7 +163,7 @@ type Tests(testOutputHelper) =
 
         let! _pos = ctx.Sync(stream,pos)
         test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
-        verifyRequestChargesMax 1 // for a 302 by definition - when an etag IfNotMatch is honored, you only pay one RU
+        verifyRequestChargesMax 1 // for a 304 by definition - when an etag IfNotMatch is honored, you only pay one RU
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]

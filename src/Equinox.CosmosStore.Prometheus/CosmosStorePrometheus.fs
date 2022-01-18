@@ -110,7 +110,7 @@ type LogSink(customTags: seq<string * string>) =
             | MetricEvent cm -> cm |> function
                 | Op       (Operation.Tip,      m) -> observeTip  ("query",    "tip",           "ok", "200") m
                 | Op       (Operation.Tip404,   m) -> observeTip  ("query",    "tip",           "ok", "404") m
-                | Op       (Operation.Tip302,   m) -> observeTip  ("query",    "tip",           "ok", "302") m
+                | Op       (Operation.Tip304,   m) -> observeTip  ("query",    "tip",           "ok", "304") m
                 | Op       (Operation.Query,    m) -> observe     ("query",    "query",         "ok")        m
                 | QueryRes (_direction,         m) -> observeRes  ("query",    "queryPage")                  m
                 | Op       (Operation.Write,    m) -> observe     ("transact", "sync",          "ok")        m

@@ -122,7 +122,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
    - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)
    - Replaced `BatchingPolicy`, `RetryPolicy` with `TipOptions`, `QueryOptions` to better align with Cosmos SDK V4 [#253](https://github.com/jet/equinox/pull/253)
    - Reorganized `QueryRetryPolicy` to handle `IAsyncEnumerable` coming in Cosmos SDK V4 [#246](https://github.com/jet/equinox/pull/246) :pray: [@ylibrach](https://github.com/ylibrach)
-   - Remove exceptions from 302/404 paths when reading Tip [#257](https://github.com/jet/equinox/pull/257)
+   - Remove exceptions from 304/404 paths when reading Tip [#257](https://github.com/jet/equinox/pull/257)
    - Removed [warmup call](https://github.com/Azure/azure-cosmos-dotnet-v3/issues/1436)
    - Rename `Equinox.Cosmos` DLL and namespace to `Equinox.CosmosStore` [#243](https://github.com/jet/equinox/pull/243)
         - Rename `Equinox.Cosmos.Store` -> `Equinox.CosmosStore.Core` 
