@@ -410,7 +410,7 @@ module Dump =
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (streamName : FsCodec.StreamName) = async {
             let stream = cat.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
-            let! _token, events = stream.Load(storeLog, Equinox.LoadOption.Load)
+            let! _token, events = stream.Load(storeLog, allowStale = false)
             let mutable prevTs = None
             for x in events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
                 let ty,render = if x.IsUnfold then "U", render Newtonsoft.Json.Formatting.Indented else "E", render fo

@@ -6,12 +6,8 @@ namespace Equinox.Core
 type private Stream<'event, 'state, 'context>(category : ICategory<'event, 'state, string, 'context>, streamId: string, empty : StreamToken * 'state, ?context : 'context, ?init : unit -> Async<unit>) =
 
     interface IStream<'event, 'state> with
-        member _.Load(log, opt) =
-            match opt with
-            | Equinox.LoadOption.AssumeEmpty -> async { return empty }
-            | Equinox.LoadOption.FromMemento (streamToken, state) -> async { return (streamToken, state) }
-            | Equinox.LoadOption.AllowStale -> category.Load(log, streamId, true)
-            | Equinox.LoadOption.Load -> category.Load(log, streamId, false)
+        member _.LoadEmpty() = empty
+        member _.Load(log, allowStale) = category.Load(log, streamId, allowStale)
         member _.TrySync(log, token: StreamToken, originState: 'state, events: 'event list) =
             let sync = category.TrySync(log, streamId, token, originState, events, context)
             match init with

@@ -5,20 +5,6 @@ type [<NoComparison>] StreamToken = { value : obj; version: int64 }
 
 namespace Equinox
 
-/// Store-agnostic Loading Options
-[<NoComparison; NoEquality>]
-type LoadOption<'state> =
-    /// No special requests; Obtain latest state from store based on consistency level configured
-    | Load
-    /// If the Cache holds any state, use that without checking the backing store for updates, implying:
-    /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
-    /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`
-    | AllowStale
-    /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet
-    | AssumeEmpty
-    /// <summary>Instead of loading from database, seed the loading process with the supplied memento, obtained via <c>ISyncContext.CreateMemento()</c></summary>
-    | FromMemento of memento : (Core.StreamToken * 'state)
-
 /// Exposed by TransactEx / QueryEx, providing access to extended state information for cases where that's required
 type ISyncContext<'state> =
 
@@ -52,8 +38,10 @@ type SyncResult<'state> =
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
 type IStream<'event, 'state> =
 
+    abstract LoadEmpty : unit -> StreamToken * 'state
+
     /// Obtain the state from the target stream
-    abstract Load : log: ILogger * opt : Equinox.LoadOption<'state> -> Async<StreamToken * 'state>
+    abstract Load : log: ILogger * allowStale : bool -> Async<StreamToken * 'state>
 
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
@@ -131,12 +119,12 @@ module internal Flow =
         // Commence, processing based on the incoming state
         loop 1
 
-    let transact opt (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) (stream : IStream<_, _>, log) decide mapResult : Async<'result> = async {
-        let! streamState = stream.Load(log, opt)
+    let transact load (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) (stream : IStream<_, _>, log) decide mapResult : Async<'result> = async {
+        let! streamState = load log
         let context = SyncContext(streamState, stream.TrySync)
         return! run log (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) context decide mapResult }
 
-    let query opt (stream : IStream<'event, 'state>, log : ILogger) (project: SyncContext<'event, 'state> -> 'result) : Async<'result> = async {
-        let! streamState = stream.Load(log, opt)
+    let query load (stream : IStream<'event, 'state>, log : ILogger) (project: SyncContext<'event, 'state> -> 'result) : Async<'result> = async {
+        let! streamState = load log
         let context = SyncContext(streamState, stream.TrySync)
         return project context }

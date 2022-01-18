@@ -3,6 +3,20 @@
 open Equinox.Core
 open System.Runtime.InteropServices
 
+/// Store-agnostic Loading Options
+[<NoComparison; NoEquality>]
+type LoadOption<'state> =
+    /// No special requests; Obtain latest state from store based on consistency level configured
+    | RequireLoad
+    /// If the Cache holds any state, use that without checking the backing store for updates, implying:
+    /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
+    /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`
+    | AllowStale
+    /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet
+    | AssumeEmpty
+    /// <summary>Instead of loading from database, seed the loading process with the supplied memento, obtained via <c>ISyncContext.CreateMemento()</c></summary>
+    | FromMemento of memento : (StreamToken * 'state)
+
 /// Exception yielded by Decider.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
 type MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Concurrency violation; aborting after %i attempts." count)
@@ -12,19 +26,22 @@ type Decider<'event, 'state>
     (   log, stream : IStream<'event, 'state>, maxAttempts : int,
         [<Optional; DefaultParameterValue(null)>] ?createAttemptsExhaustedException : int -> exn,
         [<Optional; DefaultParameterValue(null)>] ?resyncPolicy,
-        ?defaultOption) =
+        ?allowStale) =
 
-    let resolveOptions : LoadOption<'state> option -> LoadOption<'state> = function
-        | None -> defaultArg defaultOption LoadOption.Load
-        | Some o -> o
+    let load : LoadOption<'state> option -> _ = function
+        | None when allowStale = Some true -> fun log -> stream.Load(log, true)
+        | None | Some RequireLoad -> fun log -> stream.Load(log, false)
+        | Some AllowStale -> fun log -> stream.Load(log, true)
+        | Some AssumeEmpty -> fun _log -> async { return stream.LoadEmpty() }
+        | Some (FromMemento (streamToken, state)) -> fun _log -> async { return (streamToken, state) }
 
     let transact maybeOverride decide mapResult =
         let resyncPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
         let createDefaultAttemptsExhaustedException attempts : exn = MaxResyncsExhaustedException attempts :> exn
         let createAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
-        Flow.transact (resolveOptions maybeOverride) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
+        Flow.transact (load maybeOverride) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
 
-    let query option args = Flow.query (resolveOptions option) args
+    let query option args = Flow.query (load option) args
 
     /// 0.  Invoke the supplied <c>interpret</c> function with the present state
     /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
