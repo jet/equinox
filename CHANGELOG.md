@@ -16,6 +16,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
+- `CosmosStore`: Fix fallback detection when all events pruned from Tip [#306](https://github.com/jet/equinox/pull/306)
+
 <a name="3.0.5"></a>
 ## [3.0.5] - 2021-11-18
 

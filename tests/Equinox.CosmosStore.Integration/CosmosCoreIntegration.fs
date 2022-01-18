@@ -217,7 +217,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 1L expected res
 
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-        if eventsInTip then verifyRequestChargesMax 3
+        if eventsInTip then verifyRequestChargesMax 4 // 3.54
         else verifyRequestChargesMax 5 // (4.15) // WAS 13 with SDK bugs// 12.81
     }
 
