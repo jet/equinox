@@ -573,8 +573,9 @@ type SqlStreamStoreCategory<'event, 'state, 'context>
             Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
-    member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>]?context) =
-        Stream.create category (FsCodec.StreamName.toString streamName) context
+    let resolve streamName = category, FsCodec.StreamName.toString streamName, None
+    let storeCategory = StoreCategory<'event, 'state, FsCodec.StreamName, 'context>(resolve)
+    member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>] ?context : 'context) = storeCategory.Resolve(streamName, ?context = context)
 
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =

@@ -1,14 +1,22 @@
 ﻿/// Low level stream builders, generally consumed via Store-specific Stream Builders that layer policies such as Caching in at the Category level
-module Equinox.Core.Stream
+namespace Equinox.Core
 
 /// Represents a specific stream in a ICategory
-type private Stream<'event, 'state, 'streamId, 'context>(category : ICategory<'event, 'state, 'streamId, 'context>, streamId: 'streamId, context) =
+[<NoComparison; NoEquality>]
+type private Stream<'event, 'state, 'context>(category : ICategory<'event, 'state, string, 'context>, streamId: string, ?context : 'context, ?init : unit -> Async<unit>) =
+
     interface IStream<'event, 'state> with
-        member _.Load(log, opt) =
-            category.Load(log, streamId, opt)
+        member _.Load(log, allowStale) = category.Load(log, streamId, allowStale)
+        member _.TrySync(log, token: StreamToken, originState: 'state, events: 'event list) =
+            let sync = category.TrySync(log, streamId, token, originState, events, context)
+            match init with
+            | None -> sync
+            | Some f -> async { do! f ()
+                                return! sync }
 
-        member _.TrySync(log: Serilog.ILogger, token: StreamToken, originState: 'state, events: 'event list) =
-            category.TrySync(log, streamId, token, originState, events, context)
+/// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
+type StoreCategory<'event, 'state, 'streamId, 'context>(resolve) =
 
-let create (category : ICategory<'event, 'state, 'streamId, 'context>) streamId context : IStream<'event, 'state> =
-    Stream(category, streamId, context) :> _
+    member _.Resolve(streamName : 'streamId, [<O; D null>]?context) =
+        let category, streamName, maybeContainerInitializationGate = resolve streamName
+        Stream<'event, 'state, 'context>(category, streamName, ?context = context, ?init = maybeContainerInitializationGate) :> IStream<'event, 'state>

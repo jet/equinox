@@ -617,9 +617,9 @@ type EventStoreCategory<'event, 'state, 'context>
             Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
-
-    member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>] ?context) =
-        Stream.create category (FsCodec.StreamName.toString streamName) context
+    let resolve streamName = category, FsCodec.StreamName.toString streamName, None
+    let storeCategory = StoreCategory(resolve)
+    member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>] ?context) = storeCategory.Resolve(streamName, ?context = context)
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with

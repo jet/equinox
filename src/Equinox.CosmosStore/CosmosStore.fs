@@ -1448,23 +1448,12 @@ type CosmosStoreCategory<'event, 'state, 'context>
             Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
 
-    let resolveStream (StreamName.CategoryAndId (categoryName, streamId) as sn) ctx =
-        let container, streamId, maybeContainerInitializationGate = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
-        let category = resolveCategory (categoryName, container)
-        { new IStream<'event, 'state> with
-            member _.Load(log, opt) = category.Load(log, streamId, opt)
-            member _.TrySync(log : ILogger, token : StreamToken, originState : 'state, events : 'event list) =
-                match maybeContainerInitializationGate with
-                | None -> category.TrySync(log, StreamName.toString sn, token, originState, events, ctx)
-                | Some init -> async {
-                    do! init ()
-                    return! category.TrySync(log, StreamName.toString sn, token, originState, events, ctx) } }
+    let resolve (StreamName.CategoryAndId (categoryName, streamId)) =
+        let container, streamName, maybeContainerInitializationGate = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
+        resolveCategory (categoryName, container), streamName, maybeContainerInitializationGate
+    let storeCategory = StoreCategory(resolve)
 
-    member _.Resolve
-        (   streamName : StreamName,
-            /// Context to be passed to IEventCodec
-            [<O; D null>]?context) =
-            resolveStream streamName context
+    member _.Resolve(streamName, ?context) = storeCategory.Resolve(streamName, ?context = context)
 
 namespace Equinox.CosmosStore.Core
 
