@@ -14,7 +14,7 @@ type Decider<'event, 'state>
         [<Optional; DefaultParameterValue(null)>] ?resyncPolicy,
         ?defaultOption) =
 
-    let options : LoadOption option -> LoadOption = function
+    let resolveOptions : LoadOption<'state> option -> LoadOption<'state> = function
         | None -> defaultArg defaultOption LoadOption.Load
         | Some o -> o
 
@@ -22,9 +22,9 @@ type Decider<'event, 'state>
         let resyncPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
         let createDefaultAttemptsExhaustedException attempts : exn = MaxResyncsExhaustedException attempts :> exn
         let createAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
-        Flow.transact (options maybeOverride) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
+        Flow.transact (resolveOptions maybeOverride) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
 
-    let query option args = Flow.query (options option) args
+    let query option args = Flow.query (resolveOptions option) args
 
     /// 0.  Invoke the supplied <c>interpret</c> function with the present state
     /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream

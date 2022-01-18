@@ -1136,10 +1136,10 @@ module internal Caching =
             do! updateCache streamName ts
             return ts }
         interface ICategory<'event, 'state, string, 'context> with
-            member _.Load(log, streamName, opt) : Async<StreamToken * 'state> = async {
+            member _.Load(log, streamName, allowStale) : Async<StreamToken * 'state> = async {
                 match! tryReadCache streamName with
                 | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
-                | Some tokenAndState when opt = Equinox.AllowStale -> return tokenAndState // read already updated TTL, no need to write
+                | Some tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
                 | Some (token, state) -> return! category.Reload(log, streamName, token, state, fold, isOrigin) |> cache streamName }
             member _.TrySync(log : ILogger, streamName, streamToken, state, events : 'event list, context)
                 : Async<SyncResult<'state>> = async {
@@ -1451,7 +1451,8 @@ type CosmosStoreCategory<'event, 'state, 'context>
     let resolve (StreamName.CategoryAndId (categoryName, streamId)) =
         let container, streamName, maybeContainerInitializationGate = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
         resolveCategory (categoryName, container), streamName, maybeContainerInitializationGate
-    let storeCategory = StoreCategory(resolve)
+    let empty = Token.create Position.fromKnownEmpty, initial
+    let storeCategory = StoreCategory(resolve, empty)
 
     member _.Resolve(streamName, ?context) = storeCategory.Resolve(streamName, ?context = context)
 

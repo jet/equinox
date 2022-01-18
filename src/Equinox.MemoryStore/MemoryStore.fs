@@ -76,5 +76,6 @@ type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>,
 type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
     let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
     let resolve streamName = category :> ICategory<_, _, _, _>, FsCodec.StreamName.toString streamName, (None : (unit -> Async<unit>) option)
-    let storeCategory = StoreCategory<'event, 'state, FsCodec.StreamName, 'context>(resolve)
+    let empty = Token.ofEmpty, initial
+    let storeCategory = StoreCategory<'event, 'state, FsCodec.StreamName, 'context>(resolve, empty)
     member _.Resolve(streamName : FsCodec.StreamName, [<Optional; DefaultParameterValue null>] ?context : 'context) = storeCategory.Resolve(streamName, ?context = context)

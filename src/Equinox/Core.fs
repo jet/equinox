@@ -1,23 +1,44 @@
-﻿namespace Equinox
+﻿namespace Equinox.Core
+
+/// Store-specific opaque token to be used for synchronization purposes
+type [<NoComparison>] StreamToken = { value : obj; version: int64 }
+
+namespace Equinox
 
 /// Store-agnostic Loading Options
-type LoadOption =
+[<NoComparison; NoEquality>]
+type LoadOption<'state> =
     /// No special requests; Obtain latest state from store based on consistency level configured
     | Load
     /// If the Cache holds any state, use that without checking the backing store for updates, implying:
     /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
     /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`
     | AllowStale
+    /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet
+    | AssumeEmpty
+    /// <summary>Instead of loading from database, seed the loading process with the supplied memento, obtained via <c>ISyncContext.CreateMemento()</c></summary>
+    | FromMemento of memento : (Core.StreamToken * 'state)
+
+/// Exposed by TransactEx / QueryEx, providing access to extended state information for cases where that's required
+type ISyncContext<'state> =
+
+    /// Exposes the underlying Store's internal Version for the underlying stream.
+    /// An empty stream is Version 0; one with a single event is Version 1 etc.
+    /// It's important to consider that this Version is more authoritative than inspecting the `Index` of the last event passed to
+    /// your `fold` function - the codec may opt to ignore it
+    abstract member Version : int64
+
+    /// The present State of the stream within the context of this Flow
+    abstract member State : 'state
+
+    /// Represents a Checkpoint position on a Stream's timeline; Can be used to manage continuations via LoadOption.Memento
+    abstract member CreateMemento : unit -> Core.StreamToken * 'state
 
 /// Internal data structures/impl. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implementing a Store or a decorator thereof.
 /// i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Decider.fs, not here
 namespace Equinox.Core
 
 open Serilog
-
-/// Store-specific opaque token to be used for synchronization purposes
-[<NoComparison>]
-type StreamToken = { value : obj; version: int64 }
 
 /// Internal type used to represent the outcome of a TrySync operation
 [<NoEquality; NoComparison; RequireQualifiedAccess>]
@@ -32,24 +53,12 @@ type SyncResult<'state> =
 type IStream<'event, 'state> =
 
     /// Obtain the state from the target stream
-    abstract Load : log: ILogger * opt : Equinox.LoadOption -> Async<StreamToken * 'state>
+    abstract Load : log: ILogger * opt : Equinox.LoadOption<'state> -> Async<StreamToken * 'state>
 
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
     /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
     abstract TrySync : log: ILogger * token: StreamToken * originState: 'state * events: 'event list -> Async<SyncResult<'state>>
-
-/// Exposed by TransactEx / QueryEx, providing access to extended state information for cases where that's required
-type ISyncContext<'state> =
-
-    /// Exposes the underlying Store's internal Version for the underlying stream.
-    /// An empty stream is Version 0; one with a single event is Version 1 etc.
-    /// It's important to consider that this Version is more authoritative than inspecting the `Index` of the last event passed to
-    /// your `fold` function - the codec may opt to ignore it
-    abstract member Version : int64
-
-    /// The present State of the stream within the context of this Flow
-    abstract member State : 'state
 
 /// Internal implementation of the Store agnostic load + run/render. See Decider.fs for App-facing APIs.
 module internal Flow =
@@ -69,9 +78,10 @@ module internal Flow =
                 tokenAndState <- token', streamState'
                 return true }
 
-        interface ISyncContext<'state> with
+        interface Equinox.ISyncContext<'state> with
             member _.State = snd tokenAndState
             member _.Version = (fst tokenAndState).version
+            member _.CreateMemento() = tokenAndState
 
         member _.TryWithoutResync(log : ILogger, events) : Async<bool> =
             trySyncOr log events (fun _resync -> async { return false })
@@ -89,7 +99,7 @@ module internal Flow =
     /// 2b. if conflicting changes, retry by recommencing at step 1 with the updated state
     let run (log : ILogger) (maxSyncAttempts : int, resyncRetryPolicy, createMaxAttemptsExhaustedException)
         (context : SyncContext<'event, 'state>)
-        (decide : ISyncContext<'state> -> Async<'result * 'event list>)
+        (decide : Equinox.ISyncContext<'state> -> Async<'result * 'event list>)
         (mapResult : 'result -> SyncContext<'event, 'state> -> 'view)
         : Async<'view> =
 
@@ -98,7 +108,7 @@ module internal Flow =
         /// Run a decision cycle - decide what events should be appended given the presented state
         let rec loop attempt : Async<'view> = async {
             let log = if attempt = 1 then log else log.ForContext("syncAttempt", attempt)
-            let! result, events = decide (context :> ISyncContext<'state>)
+            let! result, events = decide (context :> Equinox.ISyncContext<'state>)
             if List.isEmpty events then
                 log.Debug "No events generated"
                 return mapResult result context

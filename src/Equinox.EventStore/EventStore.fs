@@ -378,6 +378,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
     let isResolvedEventEventType (tryDecode, predicate) (x : ResolvedEvent) = predicate (tryDecode x.Event.Data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
 
+    member _.TokenEmpty = Token.ofUncompactedVersion batching.BatchSize -1L
     member _.LoadBatched streamName log (tryDecode, isCompactionEventType) : Async<StreamToken * 'event[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
@@ -552,13 +553,13 @@ module Caching =
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     let batched log streamName = category.Load fold initial streamName log
     interface ICategory<'event, 'state, string, 'context> with
-        member _.Load(log, streamName, opt) : Async<StreamToken * 'state> =
+        member _.Load(log, streamName, allowStale) : Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log streamName
             | Some (cache : ICache, prefix : string) -> async {
                 match! cache.TryGet(prefix + streamName) with
                 | None -> return! batched log streamName
-                | Some tokenAndState when opt = AllowStale -> return tokenAndState
+                | Some tokenAndState when allowStale -> return tokenAndState
                 | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
 
         member _.TrySync(log : ILogger, streamName, token, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
@@ -618,7 +619,8 @@ type EventStoreCategory<'event, 'state, 'context>
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
     let resolve streamName = category, FsCodec.StreamName.toString streamName, None
-    let storeCategory = StoreCategory(resolve)
+    let empty = context.TokenEmpty, initial
+    let storeCategory = StoreCategory(resolve, empty)
     member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>] ?context) = storeCategory.Resolve(streamName, ?context = context)
 
 type private SerilogAdapter(log : ILogger) =
