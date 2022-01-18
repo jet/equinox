@@ -704,8 +704,7 @@ elements you'll touch in a normal application are:
 - [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L11) -
   surface API one uses to `Transact` or `Query` against a specific stream's state
 - [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L59) -
-  used to specify optimization overrides to be applied when 
-  `resolve` hydrates a `Decider`
+  used to specify optimization overrides to be applied when a `Decider`'s `Query` or `Transact` operations establishes the state of the stream
 
 Its recommended to read the examples in conjunction with perusing the code in
 order to see the relatively simple implementations that underlie the
@@ -1318,10 +1317,11 @@ let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
 type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-        let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
+        let decider = resolve cartId
+        let opt = if optimistic then Equinox.AllowStale else Equinox.RequireLoad
         decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
-            return interpretMany Fold.fold (Seq.map interpret commands) state })
+            return interpretMany Fold.fold (Seq.map interpret commands) state }, opt)
 ```
 
 <a name="accumulator"></a>
@@ -1379,14 +1379,15 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
 
 type Service ... =
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-        let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
+        let decider = resolve cartId
+        let opt = if optimistic then Some Equinox.AllowStale else Equinox.RequireLoad
         decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
                 acc.Transact(interpret cmd)
             return acc.State, acc.Accumulated
-        })
+        }, opt)
 ```
 
 # Equinox Architectural Overview

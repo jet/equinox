@@ -142,13 +142,14 @@ type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.St
 #if ACCUMULATOR
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
-                acc.Transact(interpret cmd, opt)
+                acc.Transact(interpret cmd)
             return acc.State, acc.Accumulated }
 #else
             return interpretMany Fold.fold (Seq.map interpret commands) state }
 #endif
         let decider = resolve cartId
-        decider.Transact(interpret, (if optimistic then Equinox.AllowStale else Equinox.RequireLoad))
+        let opt = if optimistic then Equinox.AllowStale else Equinox.RequireLoad
+        decider.Transact(interpret, opt)
 
     member x.ExecuteManyAsync(cartId, optimistic, commands : Command seq, ?prepare) : Async<unit> =
         x.Run(cartId, optimistic, commands, ?prepare=prepare) |> Async.Ignore
