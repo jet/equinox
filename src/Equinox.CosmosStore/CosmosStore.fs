@@ -232,7 +232,7 @@ module Log =
             e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty(PropertyTag, Serilog.Events.ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
     let internal (|BlobLen|) (x : EventBody) = if x.ValueKind = JsonValueKind.Null then 0 else x.GetRawText().Length
-    let internal (|EventLen|) (x : #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes + metaBytes + 80
+    let internal (|EventLen|) (x : #IEventData<_>) = let BlobLen bytes, BlobLen metaBytes = x.Data, x.Meta in bytes + metaBytes + 80
     let internal (|BatchLen|) = Seq.sumBy (|EventLen|)
     let internal (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | :? Serilog.Events.ScalarValue as x -> Some x.Value
@@ -479,12 +479,12 @@ module internal Sync =
     let private logged (container, stream) (maxEventsInTip, maxStringifyLen) (exp : SyncExp, req : Tip) (log : ILogger)
         : Async<Result> = async {
         let! t, (ru, result) = run (container, stream) (maxEventsInTip, maxStringifyLen) (exp, req) |> Stopwatch.Time
-        let verbose = log.IsEnabled Serilog.Events.LogEventLevel.Debug
-        let (Log.BatchLen bytes), count = Enum.Events req, req.e.Length
+        let Log.BatchLen bytes, count = Enum.Events req, req.e.Length
         let log =
             let inline mkMetric ru : Log.Measurement =
                 { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
             let inline propConflict log = log |> Log.prop "conflict" true |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in req.e -> x.c }))
+            let verbose = log.IsEnabled Events.LogEventLevel.Debug
             if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log
             |> match exp with
                 | SyncExp.Etag et ->     Log.prop "expectedEtag" et
@@ -613,7 +613,7 @@ module internal Tip =
             (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {stream} {res} {ms}ms rc={ru}", "Tip", stream, 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.Found tip ->
             let log =
-                let (Log.BatchLen bytes), count = Enum.Unfolds tip.u, tip.u.Length
+                let Log.BatchLen bytes, count = Enum.Unfolds tip.u, tip.u.Length
                 log bytes count Log.Metric.Tip
             let log = if verbose then log |> Log.propDataUnfolds tip.u else log
             let log = match maybePos with Some p -> log |> Log.propStartPos p |> Log.propStartEtag p | None -> log
@@ -676,10 +676,10 @@ module internal Query =
             Enum.Events(b, ?minIndex = minIndex, ?maxIndex = maxIndex)
             |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
-        let verbose = log.IsEnabled Events.LogEventLevel.Debug
-        let (Log.BatchLen bytes), count = events, events.Length
+        let Log.BatchLen bytes, count = events, events.Length
         let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = t; bytes = bytes; count = count; ru = ru }
         let log = let evt = Log.Metric.QueryResponse (direction, reqMetric) in log |> Log.event evt
+        let verbose = log.IsEnabled Events.LogEventLevel.Debug
         let log = if verbose then log |> Log.propEvents events else log
         let index = if count = 0 then Nullable () else Nullable <| Seq.min (seq { for x in batches -> x.i })
         (log|> Log.prop "bytes" bytes
@@ -691,7 +691,7 @@ module internal Query =
         events, maybePosition, ru
 
     let private logQuery direction queryMaxItems (container : Container, streamName) interval (responsesCount, events : ITimelineEvent<EventBody>[]) n (ru : float) (log : ILogger) =
-        let (Log.BatchLen bytes), count = events, events.Length
+        let Log.BatchLen bytes, count = events, events.Length
         let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
