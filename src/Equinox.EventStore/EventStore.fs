@@ -16,18 +16,18 @@ module Log =
     let [<Literal>] PropertyTag = "esEvt"
 
     [<NoEquality; NoComparison>]
-    type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int }
+    type Measurement = { stream : string; interval : StopwatchInterval; bytes : int; count : int }
 
     [<NoEquality; NoComparison>]
     type Event =
         | WriteSuccess of Measurement
         | WriteConflict of Measurement
         | Slice of Direction * Measurement
-        | Batch of Direction * slices: int * Measurement
+        | Batch of Direction * slices : int * Measurement
 
     let prop name value (log : ILogger) = log.ForContext(name, value)
 
-    let propEvents name (kvps : System.Collections.Generic.KeyValuePair<string,string> seq) (log : ILogger) =
+    let propEvents name (kvps : System.Collections.Generic.KeyValuePair<string, string> seq) (log : ILogger) =
         let items = seq { for kv in kvps do yield sprintf "{\"%s\": %s}" kv.Key kv.Value }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
 
@@ -35,14 +35,14 @@ module Log =
         log |> propEvents name (seq {
             for x in events do
                 if x.IsJson then
-                    yield System.Collections.Generic.KeyValuePair<_,_>(x.Type, System.Text.Encoding.UTF8.GetString x.Data) })
+                    yield System.Collections.Generic.KeyValuePair<_, _>(x.Type, System.Text.Encoding.UTF8.GetString x.Data) })
 
     let propResolvedEvents name (events : ResolvedEvent[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
                 let e = x.Event
                 if e.IsJson then
-                    yield System.Collections.Generic.KeyValuePair<_,_>(e.EventType, System.Text.Encoding.UTF8.GetString e.Data) })
+                    yield System.Collections.Generic.KeyValuePair<_, _>(e.EventType, System.Text.Encoding.UTF8.GetString e.Data) })
 
     open Serilog.Events
 
@@ -50,7 +50,7 @@ module Log =
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let event (value : Event) (log : ILogger) =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty(PropertyTag, ScalarValue(value)))
-        log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt,_) = enrich evt })
+        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
 
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log : Async<'t> =
         match retryPolicy with
@@ -71,14 +71,14 @@ module Log =
             let inline (|Stats|) ({ interval = i } : Measurement) = let e = i.Elapsed in int64 e.TotalMilliseconds
 
             let (|Read|Write|Resync|Rollup|) = function
-                | Slice (_, (Stats s)) -> Read s
+                | Slice (_, Stats s) -> Read s
                 | WriteSuccess (Stats s) -> Write s
                 | WriteConflict (Stats s) -> Resync s
                 // slices are rolled up into batches so be sure not to double-count
-                | Batch (_, _, (Stats s)) -> Rollup s
+                | Batch (_, _, Stats s) -> Rollup s
 
             let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
-                | (:? ScalarValue as x) -> Some x.Value
+                | :? ScalarValue as x -> Some x.Value
                 | _ -> None
 
             let (|EsMetric|_|) (logEvent : LogEvent) : Event option =
@@ -89,9 +89,9 @@ module Log =
             type Counter =
                 { mutable count : int64; mutable ms : int64 }
                 static member Create() = { count = 0L; ms = 0L }
-                member __.Ingest(ms) =
-                    System.Threading.Interlocked.Increment(&__.count) |> ignore
-                    System.Threading.Interlocked.Add(&__.ms, ms) |> ignore
+                member x.Ingest(ms) =
+                    System.Threading.Interlocked.Increment(&x.count) |> ignore
+                    System.Threading.Interlocked.Add(&x.ms, ms) |> ignore
 
             type LogSink() =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
@@ -106,7 +106,7 @@ module Log =
                     epoch.Restart()
                     span
                 interface Serilog.Core.ILogEventSink with
-                    member __.Emit logEvent = logEvent |> function
+                    member _.Emit logEvent = logEvent |> function
                         | EsMetric (Read stats) -> LogSink.Read.Ingest stats
                         | EsMetric (Write stats) -> LogSink.Write.Ingest stats
                         | EsMetric (Resync stats) -> LogSink.Resync.Ingest stats
@@ -115,7 +115,7 @@ module Log =
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
         /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
-        let dump (log : Serilog.ILogger) =
+        let dump (log : ILogger) =
             let stats =
               [ "Read", Stats.LogSink.Read
                 "Write", Stats.LogSink.Write
@@ -138,7 +138,7 @@ module Log =
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict of actualVersion: int64
+type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict of actualVersion : int64
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
@@ -220,7 +220,7 @@ module private Read =
                 yield version, slice.Events
                 if not slice.IsEndOfStream then
                     yield! loop (batchCount + 1) slice.NextEventNumber
-            | x -> raise <| System.ArgumentOutOfRangeException("SliceReadStatus", x, "Unknown result value") }
+            | x -> raise <| ArgumentOutOfRangeException("SliceReadStatus", x, "Unknown result value") }
         loop 0 startPosition
 
     let resolvedEventBytes events = events |> Array.sumBy (|ResolvedEventLen|)
@@ -237,11 +237,11 @@ module private Read =
 
     let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
         : Async<int64 * ResolvedEvent[]> = async {
-        let mergeBatches (batches: AsyncSeq<int64 option * ResolvedEvent[]>) = async {
+        let mergeBatches (batches : AsyncSeq<int64 option * ResolvedEvent[]>) = async {
             let mutable versionFromStream = None
             let! (events : ResolvedEvent[]) =
                 batches
-                |> AsyncSeq.map (function None, events -> events | (Some _) as reportedVersion, events -> versionFromStream <- reportedVersion; events)
+                |> AsyncSeq.map (function None, events -> events | Some _ as reportedVersion, events -> versionFromStream <- reportedVersion; events)
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.toArrayAsync
             let version = match versionFromStream with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
@@ -257,7 +257,7 @@ module private Read =
         return version, events }
 
     let partitionPayloadFrom firstUsedEventNumber : ResolvedEvent[] -> int * int =
-        let acc (tu, tr) ((ResolvedEventLen bytes) as y) = if y.Event.EventNumber < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
+        let acc (tu, tr) (ResolvedEventLen bytes as y) = if y.Event.EventNumber < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
         Array.fold acc (0, 0)
 
     let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName (tryDecode, isOrigin)
@@ -269,13 +269,13 @@ module private Read =
                 batchesBackward
                 |> AsyncSeq.map (fun batch ->
                     match batch with
-                    | None, events -> lastBatch := Some events; events
-                    | (Some _) as reportedVersion, events -> versionFromStream := reportedVersion; lastBatch := Some events; events
+                    | None, events -> lastBatch.Value <- Some events; events
+                    | Some _ as reportedVersion, events -> versionFromStream.Value <- reportedVersion; lastBatch.Value <- Some events; events
                     |> Array.map (fun e -> e, tryDecode e))
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.takeWhileInclusive (function
                     | x, Some e when isOrigin e ->
-                        match !lastBatch with
+                        match lastBatch.Value with
                         | None -> log.Information("GesStop stream={stream} at={eventNumber}", streamName, x.Event.EventNumber)
                         | Some batch ->
                             let used, residual = batch |> partitionPayloadFrom x.Event.EventNumber
@@ -284,7 +284,7 @@ module private Read =
                     | _ -> true) // continue the search
                 |> AsyncSeq.toArrayAsync
             let eventsForward = Array.Reverse(tempBackward); tempBackward // sic - relatively cheap, in-place reverse of something we own
-            let version = match !versionFromStream with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
+            let version = match versionFromStream.Value with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
             return version, eventsForward }
 
         let call pos = loggedReadSlice conn streamName Direction.Backward batchSize pos
@@ -351,7 +351,7 @@ module Token =
         ofCompactionEventNumber compactedEventNumber eventsLength batchSize previousToken.stream.name streamVersion
 
     /// Use an event just read from the stream to infer headroom
-    let ofCompactionResolvedEventAndVersion (compactionEvent: ResolvedEvent) batchSize streamName streamVersion : StreamToken =
+    let ofCompactionResolvedEventAndVersion (compactionEvent : ResolvedEvent) batchSize streamName streamVersion : StreamToken =
         ofCompactionEventNumber (Some compactionEvent.Event.EventNumber) 0 batchSize streamName streamVersion
 
     /// Use an event we are about to write to the stream to infer headroom
@@ -365,21 +365,21 @@ module Token =
         newVersion > currentVersion
 
 type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy) =
-    member __.ReadConnection = readConnection
-    member __.ReadRetryPolicy = readRetryPolicy
-    member __.WriteConnection = defaultArg writeConnection readConnection
-    member __.WriteRetryPolicy = writeRetryPolicy
+    member _.ReadConnection = readConnection
+    member _.ReadRetryPolicy = readRetryPolicy
+    member _.WriteConnection = defaultArg writeConnection readConnection
+    member _.WriteRetryPolicy = writeRetryPolicy
 
 type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>] ?batchCountLimit) =
     new (maxBatchSize) = BatchingPolicy(fun () -> maxBatchSize)
-    member __.BatchSize = getMaxBatchSize()
-    member __.MaxBatches = batchCountLimit
+    member _.BatchSize = getMaxBatchSize()
+    member _.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown of StreamToken
 
 type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
-    let isResolvedEventEventType (tryDecode, predicate) (x : ResolvedEvent) = predicate (tryDecode (x.Event.Data))
+    let isResolvedEventEventType (tryDecode, predicate) (x : ResolvedEvent) = predicate (tryDecode x.Event.Data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
 
     member internal __.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
@@ -430,7 +430,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
             return GatewaySyncResult.Written token }
 
-    member __.Sync(log, streamName, streamVersion, events: FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
+    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with
@@ -442,7 +442,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
             return GatewaySyncResult.Written token }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
-type AccessStrategy<'event,'state> =
+type AccessStrategy<'event, 'state> =
     /// Load only the single most recent event defined in <c>'event</c> and trust that doing a <c>fold</c> from any such event
     /// will yield a correct and complete state
     /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
@@ -455,7 +455,7 @@ type AccessStrategy<'event,'state> =
 
 type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
-    member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
+    member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state, 'context>(context : EventStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access : AccessStrategy<'event, 'state>) =
     let tryDecode (e : ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
@@ -472,7 +472,7 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> isValid
 
     let loadAlgorithm load streamName initial log =
-        let batched = load initial (context.LoadBatched streamName log (tryDecode,None))
+        let batched = load initial (context.LoadBatched streamName log (tryDecode, None))
         let compacted = load initial (context.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode, isOrigin))
         match access with
         | None -> batched
@@ -483,14 +483,14 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
         let! token, events = f
         return token, fold initial events }
 
-    member __.Load (fold : 'state -> 'event seq -> 'state) (initial : 'state) (streamName : string) (log : ILogger) : Async<StreamToken * 'state> =
+    member _.Load (fold : 'state -> 'event seq -> 'state) (initial : 'state) (streamName : string) (log : ILogger) : Async<StreamToken * 'state> =
         loadAlgorithm (load fold) streamName initial log
 
     member _.LoadFromToken (fold : 'state -> 'event seq -> 'state) (state : 'state) (streamName : string) token (log : ILogger) : Async<StreamToken * 'state> =
         (load fold) state (context.LoadFromToken false streamName log token (tryDecode, compactionPredicate))
 
     member _.TrySync<'context>
-        (   log : ILogger, fold: 'state -> 'event seq -> 'state,
+        (   log : ILogger, fold : 'state -> 'event seq -> 'state,
             (Token.StreamPos (stream, pos) as streamToken), state : 'state, events : 'event list, ctx : 'context option) : Async<SyncResult<'state>> = async {
         let encode e = codec.Encode(ctx, e)
         let events =
@@ -510,7 +510,7 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner: ICategory<'event, 'state, string, 'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
+    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
         let intercept streamName tokenAndState = async {
             let! _ = tee streamName tokenAndState
             return tokenAndState }
@@ -555,7 +555,7 @@ module Caching =
             cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
         CategoryTee<'event, 'state, 'context>(category, addOrUpdateFixedLifetimeCacheEntry) :> _
 
-type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
+type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     let batched log streamName = category.Load fold initial streamName log
     interface ICategory<'event, 'state, string, 'context> with
         member _.Load(log, streamName, opt) : Async<StreamToken * 'state> =
@@ -571,7 +571,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
             let! syncRes = category.TrySync(log, fold, token, initialState, events, context)
             match syncRes with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
-            | SyncResult.Written (token',state') -> return SyncResult.Written (token',state') }
+            | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 
 /// For EventStoreDB, caching is less critical than it is for e.g. CosmosDB
 /// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
@@ -638,12 +638,12 @@ type EventStoreCategory<'event, 'state, 'context>
 
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
-        member __.Debug(format : string, args : obj []) =           log.Debug(format, args)
-        member __.Debug(ex : exn, format : string, args : obj []) = log.Debug(ex, format, args)
-        member __.Info(format : string, args : obj []) =            log.Information(format, args)
-        member __.Info(ex : exn, format : string, args : obj []) =  log.Information(ex, format, args)
-        member __.Error(format : string, args : obj []) =           log.Error(format, args)
-        member __.Error(ex : exn, format : string, args : obj []) = log.Error(ex, format, args)
+        member _.Debug(format : string, args : obj []) =            log.Debug(format, args)
+        member _.Debug(ex : exn, format : string, args : obj []) =  log.Debug(ex, format, args)
+        member _.Info(format : string, args : obj []) =             log.Information(format, args)
+        member _.Info(ex : exn, format : string, args : obj []) =   log.Information(ex, format, args)
+        member _.Error(format : string, args : obj []) =            log.Error(format, args)
+        member _.Error(ex : exn, format : string, args : obj []) =  log.Error(ex, format, args)
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type Logger =
@@ -699,11 +699,11 @@ module private Discovery =
         x.SetGossipSeedEndPoints(seedEndpoints)
 
     // converts a Discovery mode to a ClusterSettings or a Uri as appropriate
-    let (|DiscoverViaUri|DiscoverViaGossip|) : Discovery * NodePreference -> Choice<Uri,ClusterSettings> = function
-        | (Discovery.Uri uri), _ ->                         DiscoverViaUri    uri
-        | (Discovery.GossipSeeded seedEndpoints), np ->     DiscoverViaGossip (buildSeeded np   (configureSeeded seedEndpoints))
-        | (Discovery.GossipDns clusterDns), np ->           DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
-        | (Discovery.GossipDnsCustomPort (dns, port)), np ->DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
+    let (|DiscoverViaUri|DiscoverViaGossip|) : Discovery * NodePreference -> Choice<Uri, ClusterSettings> = function
+        | Discovery.Uri uri, _ ->                           DiscoverViaUri    uri
+        | Discovery.GossipSeeded seedEndpoints, np ->       DiscoverViaGossip (buildSeeded np   (configureSeeded seedEndpoints))
+        | Discovery.GossipDns clusterDns, np ->             DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
+        | Discovery.GossipDnsCustomPort (dns, port), np ->  DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
 
 // see https://github.com/EventStore/EventStore/issues/1652
 [<RequireQualifiedAccess; NoComparison>]
@@ -714,8 +714,8 @@ type ConnectionStrategy =
     | ClusterSingle of NodePreference
 
 type Connector
-    (   username, password, reqTimeout: TimeSpan, reqRetries: int,
-        [<O; D(null)>] ?log : Logger, [<O; D(null)>] ?heartbeatTimeout: TimeSpan, [<O; D(null)>] ?concurrentOperationsLimit,
+    (   username, password, reqTimeout : TimeSpan, reqRetries : int,
+        [<O; D(null)>] ?log : Logger, [<O; D(null)>] ?heartbeatTimeout : TimeSpan, [<O; D(null)>] ?concurrentOperationsLimit,
         [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy,
         [<O; D(null)>] ?gossipTimeout, [<O; D(null)>] ?clientConnectionTimeout,
         /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
@@ -747,7 +747,7 @@ type Connector
         |> fun s -> s.Build()
 
     /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` and `clusterNodePrefence` preference
-    member __.Connect
+    member _.Connect
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name,
             discovery : Discovery, [<O; D null>] ?clusterNodePreference) : Async<IEventStoreConnection> = async {
@@ -757,7 +757,7 @@ type Connector
             yield name
             yield string clusterNodePreference
             match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
-        let sanitizedName = name.Replace('\'','_').Replace(':','_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
+        let sanitizedName = name.Replace('\'', '_').Replace(':', '_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
         let connection =
             match discovery, clusterNodePreference with
             | Discovery.DiscoverViaUri uri ->
@@ -771,16 +771,16 @@ type Connector
         return connection }
 
     /// Yields a Connection (which may internally be twin connections) configured per the specified strategy
-    member __.Establish
+    member x.Establish
         (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
             name,
             discovery : Discovery, strategy : ConnectionStrategy) : Async<EventStoreConnection> = async {
         match strategy with
         | ConnectionStrategy.ClusterSingle nodePreference ->
-            let! conn = __.Connect(name, discovery, nodePreference)
+            let! conn = x.Connect(name, discovery, nodePreference)
             return EventStoreConnection(conn, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
         | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
-            let! masterInParallel = Async.StartChild (__.Connect(name + "-TwinW", discovery, NodePreference.Master))
-            let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
+            let! masterInParallel = Async.StartChild (x.Connect(name + "-TwinW", discovery, NodePreference.Master))
+            let! slave = x.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
             let! master = masterInParallel
             return EventStoreConnection(readConnection = slave, writeConnection = master, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }
