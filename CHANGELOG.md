@@ -13,6 +13,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 - `eqx`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing [#313](https://github.com/jet/equinox/pull/313)
 - `CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.0.25` [#310](https://github.com/jet/equinox/pull/310)
+- `EventStore/SqlStreamStore`: rename `Equinox.XXXStore.Log.Event` -> `Metric` to match `CosmosStore` [#311](https://github.com/jet/equinox/pull/311)
 - `SqlStreamStore`.*: Target `SqlStreamStore` v `1.2.0` (`Postgres` remains at `1.2.0-beta.8` as that's the last released version) [#227](https://github.com/jet/equinox/pull/227) :pray: [@rajivhost](https://github.com/rajivhost)
 - Update all non-Client dependencies except `FSharp.Core`, `FSharp.Control.AsyncSeq` [#310](https://github.com/jet/equinox/pull/310)
 
