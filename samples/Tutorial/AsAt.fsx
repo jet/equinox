@@ -26,7 +26,7 @@
 #r "Equinox.Core.dll"
 #r "Equinox.dll"
 #r "TypeShape.dll"
-#r "FsCodec.NewtonsoftJson.dll"
+#r "FsCodec.SystemTextJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
@@ -66,7 +66,7 @@ module Events =
         e,None,None
 
     // unlike most normal codecs, we have a mapping to supply as we want the Index to be added to each event so we can track it in the State as we fold
-    let codec = FsCodec.NewtonsoftJson.Codec.Create(up,down)
+    let codec = FsCodec.SystemTextJson.Codec.Create(up,down)
 
 module Fold =
 

@@ -7,7 +7,7 @@ open System
 type StreamResolver(storage) =
     member _.Resolve
         (   codec : FsCodec.IEventCodec<'event,byte[],_>,
-            fold : 'state -> 'event seq -> 'state,
+            fold: 'state -> 'event seq -> 'state,
             initial : 'state,
             snapshot : ('event -> bool) * ('state -> 'event)) =
         match storage with

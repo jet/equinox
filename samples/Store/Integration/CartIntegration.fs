@@ -14,7 +14,7 @@ let createMemoryStore () = MemoryStore.VolatileStore<byte[]>()
 let createServiceMemory log store =
     Cart.create log (fun (id,opt) -> MemoryStore.MemoryStoreCategory(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
 
-let codec = Domain.Cart.Events.codec
+let codec = Cart.Events.codec
 
 let resolveGesStreamWithRollingSnapshots context =
     fun (id,opt) -> EventStore.EventStoreCategory(context, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)

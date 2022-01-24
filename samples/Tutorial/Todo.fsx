@@ -13,7 +13,7 @@
 #r "Equinox.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
-#r "FsCodec.NewtonsoftJson.dll"
+#r "FsCodec.SystemTextJson.dll"
 #r "FSharp.Control.AsyncSeq.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
@@ -40,7 +40,7 @@ type Event =
     | Cleared
     | Snapshotted       of Snapshotted
     interface TypeShape.UnionContract.IUnionContract
-let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 type State = { items : Todo list; nextId : int }
 let initial = { items = []; nextId = 0 }
