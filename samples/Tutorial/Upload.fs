@@ -17,17 +17,6 @@ module CompanyId =
 let [<Literal>] Category = "Upload"
 let streamName (companyId, purchaseOrderId) = FsCodec.StreamName.compose Category [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId]
 
-// shim for net461
-module Seq =
-    let tryLast (source : seq<_>) =
-        use e = source.GetEnumerator()
-        if e.MoveNext() then
-            let mutable res = e.Current
-            while (e.MoveNext()) do res <- e.Current
-            Some res
-        else
-            None
-
 type UploadId = string<uploadId>
 and [<Measure>] uploadId
 module UploadId =

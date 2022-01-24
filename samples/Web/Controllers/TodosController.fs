@@ -15,7 +15,7 @@ type GetByIdArgsTemplate = { id: int }
 
 // Fulfills contract dictated by https://www.todobackend.com
 // To run:
-//     & dotnet run -f netcoreapp3.1 -p samples/TodoBackend
+//     & dotnet run -p samples/TodoBackend
 //     https://www.todobackend.com/client/index.html?https://localhost:5001/todos
 // Stolen from https://github.com/ChristianAlexander/dotnetcore-todo-webapi/blob/master/src/TodoWebApi/Controllers/TodosController.cs
 // even more stolen from https://github.com/joeaudette/playground/blob/master/spa-stack/src/FSharp.WebLib/Controllers.fs

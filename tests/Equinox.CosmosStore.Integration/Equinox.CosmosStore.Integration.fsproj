@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
@@ -26,7 +26,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.17.0" />
-<!--    <PackageReference Include="Microsoft.Azure.Cosmos.Direct" Version="3.17.1" />-->
     <PackageReference Include="FsCheck.xUnit" Version="2.14.0" />
     <PackageReference Include="JsonDiffPatch.Net" Version="2.1.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.3.0" />

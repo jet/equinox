@@ -14,6 +14,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `eqx`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing [#313](https://github.com/jet/equinox/pull/313)
 
 ### Removed
+ 
+- Remove explicit `net461` handling; minimum target now `netstandard 2.1` / `net6.0` [#310](https://github.com/jet/equinox/pull/310)
+
 ### Fixed
 
 <a name="3.0.6"></a>

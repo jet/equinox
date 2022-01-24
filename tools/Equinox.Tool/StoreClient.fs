@@ -8,21 +8,21 @@ open System.Net.Http
 
 type Session(client: HttpClient, clientId: ClientId) =
 
-    member __.Send(req : HttpRequestMessage) : Async<HttpResponseMessage> =
+    member _.Send(req : HttpRequestMessage) : Async<HttpResponseMessage> =
         let req = req |> HttpReq.withHeader "COMPLETELY_INSECURE_CLIENT_ID" (ClientId.toString clientId)
-        client.Send(req)
+        client.SendAsync2(req)
 
-type Favorited = { date: System.DateTimeOffset; skuId: SkuId }
+type Favorited = { date: DateTimeOffset; skuId: SkuId }
 
 type FavoritesClient(session: Session) =
 
-    member __.Favorite(skus: SkuId[]) = async {
+    member _.Favorite(skus: SkuId[]) = async {
         let request = HttpReq.post () |> HttpReq.withPath "api/favorites" |> HttpReq.withJsonNet skus
         let! response = session.Send request
         return! response.EnsureStatusCode(HttpStatusCode.NoContent)
     }
 
-    member __.List = async {
+    member _.List = async {
         let request = HttpReq.get () |> HttpReq.withPath "api/favorites"
         let! response = session.Send request
         return! response |> HttpRes.deserializeOkJsonNet<Favorited[]>
@@ -33,8 +33,8 @@ type Saved = { skuId : SkuId; dateSaved : DateTimeOffset }
 type SavesClient(session: Session) =
 
     // this (returning a bool indicating whether it got saved) is fine for now
-    // IRL we don't want to be leaning on the fact we get a 400 when we exceed the max imems limit as a core API design element
-    member __.Save(skus: SkuId[]) : Async<bool> = async {
+    // IRL we don't want to be leaning on the fact we get a 400 when we exceed the max items limit as a core API design element
+    member _.Save(skus: SkuId[]) : Async<bool> = async {
         let request = HttpReq.post () |> HttpReq.withPath "api/saves" |> HttpReq.withJsonNet skus
         let! response = session.Send request
         if response.StatusCode = HttpStatusCode.BadRequest then
@@ -44,13 +44,13 @@ type SavesClient(session: Session) =
             return true
     }
 
-    member __.Remove(skus: SkuId[]) : Async<unit> = async {
+    member _.Remove(skus: SkuId[]) : Async<unit> = async {
         let request = HttpReq.delete () |> HttpReq.withPath "api/saves" |> HttpReq.withJsonNet skus
         let! response = session.Send request
         return! response.EnsureStatusCode(HttpStatusCode.NoContent)
     }
 
-    member __.List = async {
+    member _.List = async {
         let request = HttpReq.get () |> HttpReq.withPath "api/saves"
         let! response = session.Send request
         return! response |> HttpRes.deserializeOkJsonNet<Saved[]>

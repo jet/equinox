@@ -9,9 +9,9 @@ open System
 open System.Threading
 
 module Cart =
-    let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
-    let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
-    let codec = Domain.Cart.Events.codec
+    let fold, initial = Cart.Fold.fold, Cart.Fold.initial
+    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
+    let codec = Cart.Events.codec
     let createServiceWithoutOptimization log context =
         let resolve (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Cart.create log resolve

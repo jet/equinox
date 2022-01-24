@@ -3,37 +3,11 @@
 module internal Equinox.Core.Infrastructure
 
 open FSharp.Control
-open System
 open System.Diagnostics
 open System.Threading.Tasks
 
 type OAttribute = System.Runtime.InteropServices.OptionalAttribute
 type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
-
-#if NET461
-module Array =
-    let tryHead (array : 'T[]) =
-        if array.Length = 0 then None
-        else Some array.[0]
-    let tryFindBack predicate (array: _[]) =
-        let rec loop i =
-            if i < 0 then None
-            elif predicate array.[i] then Some array.[i]
-            else loop (i - 1)
-        loop (array.Length - 1)
-    let tryFindIndexBack predicate (array: _[]) =
-        let rec loop i =
-            if i < 0 then None
-            elif predicate array.[i] then Some i
-            else loop (i - 1)
-        loop (array.Length - 1)
-
-module Option =
-    let filter predicate option = match option with None -> None | Some x -> if predicate x then Some x else None
-    let toNullable option = match option with Some x -> Nullable x | None -> Nullable ()
-    let ofObj obj = match obj with null -> None | x -> Some x
-    let toObj option = match option with None -> null | Some x -> x
-#endif
 
 type Async with
     /// <summary>

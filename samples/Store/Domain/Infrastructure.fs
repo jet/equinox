@@ -6,18 +6,6 @@ open FSharp.UMX
 open Newtonsoft.Json
 open System
 
-#if NET461
-module Seq =
-    let tryLast (source : seq<_>) =
-        use e = source.GetEnumerator()
-        if e.MoveNext() then
-            let mutable res = e.Current
-            while (e.MoveNext()) do res <- e.Current
-            Some res
-        else
-            None
-#endif
-
 /// Endows any type that inherits this class with standard .NET comparison semantics using a supplied token identifier
 [<AbstractClass>]
 type Comparable<'TComp, 'Token when 'TComp :> Comparable<'TComp, 'Token> and 'Token : comparison>(token : 'Token) =
