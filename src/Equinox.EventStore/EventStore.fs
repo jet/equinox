@@ -384,7 +384,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
 
     member internal __.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
 
-    member __.LoadBatched streamName log (tryDecode, isCompactionEventType) : Async<StreamToken * 'event[]> = async {
+    member _.LoadBatched streamName log (tryDecode, isCompactionEventType) : Async<StreamToken * 'event[]> = async {
         let! version, events = Read.loadForwardsFrom log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting streamName version, Array.choose tryDecode events

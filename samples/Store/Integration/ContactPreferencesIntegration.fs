@@ -7,13 +7,13 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
+let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
     ContactPreferences.create log (MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
 
-let codec = Domain.ContactPreferences.Events.codec
+let codec = ContactPreferences.Events.codec
 let resolveStreamGesWithOptimizedStorageSemantics context =
     EventStore.EventStoreCategory(context 1, codec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamGesWithoutAccessStrategy context =
@@ -24,7 +24,7 @@ let resolveStreamCosmosWithLatestKnownEventSemantics context =
 let resolveStreamCosmosUnoptimized context =
     CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve
 let resolveStreamCosmosRollingUnfolds context =
-    let access = CosmosStore.AccessStrategy.Custom(Domain.ContactPreferences.Fold.isOrigin, Domain.ContactPreferences.Fold.transmute)
+    let access = CosmosStore.AccessStrategy.Custom(ContactPreferences.Fold.isOrigin, ContactPreferences.Fold.transmute)
     CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access).Resolve
 
 type Tests(testOutputHelper) =

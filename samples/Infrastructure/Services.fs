@@ -5,11 +5,11 @@ open Microsoft.Extensions.DependencyInjection
 open System
 
 type StreamResolver(storage) =
-    member __.Resolve
+    member _.Resolve
         (   codec : FsCodec.IEventCodec<'event,byte[],_>,
-            fold: ('state -> 'event seq -> 'state),
-            initial: 'state,
-            snapshot: (('event -> bool) * ('state -> 'event))) =
+            fold : 'state -> 'event seq -> 'state,
+            initial : 'state,
+            snapshot : ('event -> bool) * ('state -> 'event)) =
         match storage with
         | Storage.StorageConfig.Cosmos (store, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.CosmosStore.AccessStrategy.Snapshot snapshot else Equinox.CosmosStore.AccessStrategy.Unoptimized

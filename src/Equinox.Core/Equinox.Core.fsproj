@@ -11,7 +11,7 @@
   <ItemGroup>
     <Compile Include="Infrastructure.fs" />
     <Compile Include="Types.fs" />
-    <Compile Include="Stream.fs" />
+    <Compile Include="StoreCategory.fs" />
     <Compile Include="Retry.fs" />
     <Compile Include="AsyncCacheCell.fs" />
     <Compile Include="Cache.fs" />

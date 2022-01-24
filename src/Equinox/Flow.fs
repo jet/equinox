@@ -52,7 +52,7 @@ module internal Flow =
             trySync : ILogger * StreamToken * 'state * 'event list -> Async<SyncResult<'state>>) =
         let mutable tokenAndState = originState
 
-        let trySyncOr log events (handleFailureResync : Async<StreamToken*'state> -> Async<bool>) : Async<bool> = async {
+        let trySyncOr log events (handleFailureResync : Async<StreamToken * 'state> -> Async<bool>) : Async<bool> = async {
             let! res = let token, state = tokenAndState in trySync (log,token,state,events)
             match res with
             | SyncResult.Conflict resync ->
@@ -62,13 +62,13 @@ module internal Flow =
                 return true }
 
         interface ISyncContext<'state> with
-            member __.CreateMemento() = tokenAndState
-            member __.State = snd tokenAndState
-            member __.Version = (fst tokenAndState).version
+            member _.CreateMemento() = tokenAndState
+            member _.State = snd tokenAndState
+            member _.Version = (fst tokenAndState).version
 
-        member __.TryWithoutResync(log : ILogger, events) : Async<bool> =
+        member _.TryWithoutResync(log : ILogger, events) : Async<bool> =
             trySyncOr log events (fun _resync -> async { return false })
-        member __.TryOrResync(runResync, attemptNumber: int, log : ILogger, events) : Async<bool> =
+        member _.TryOrResync(runResync, attemptNumber: int, log : ILogger, events) : Async<bool> =
             let resyncInPreparationForRetry resync = async {
                 let! streamState' = runResync log attemptNumber resync
                 tokenAndState <- streamState'

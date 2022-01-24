@@ -6,7 +6,7 @@ open Swensen.Unquote
 
 let createMemoryStore () = VolatileStore<_>()
 let createServiceMemory log store =
-    let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Domain.Cart.Fold.fold, Domain.Cart.Fold.initial)
+    let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Cart.Fold.fold, Cart.Fold.initial)
     let resolveStream (id, opt) = cat.Resolve(id, ?option=opt)
     Cart.create log resolveStream
 
@@ -25,7 +25,7 @@ type Tests(testOutputHelper) =
             cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = Async.RunSynchronously <| async {
         let log, store = createLog (), createMemoryStore ()
         let service = createServiceMemory log store
-        let command = Domain.Cart.SyncItem (ctx,skuId,quantity,waive)
+        let command = Cart.SyncItem (ctx,skuId,quantity,waive)
 
         // Act: Run the decision twice...
         let actTrappingStateAsSaved cartId =
@@ -42,8 +42,8 @@ type Tests(testOutputHelper) =
 
         // Assert 2. Verify that the Command got correctly reflected in the state, with no extraneous effects
         let verifyFoldedStateReflectsCommand = function
-            | { Domain.Cart.Fold.State.items = [ item ] } ->
-                let expectedItem : Domain.Cart.Fold.ItemInfo = { skuId = skuId; quantity = quantity.Value; returnsWaived = waive }
+            | { Cart.Fold.State.items = [ item ] } ->
+                let expectedItem : Cart.Fold.ItemInfo = { skuId = skuId; quantity = quantity.Value; returnsWaived = waive }
                 test <@ expectedItem = item @>
             | x -> x |> failwithf "Expected to find item, got %A"
         verifyFoldedStateReflectsCommand expected
@@ -51,7 +51,7 @@ type Tests(testOutputHelper) =
     }
 
 let createFavoritesServiceMemory log store =
-    let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Domain.Favorites.Fold.fold, Domain.Favorites.Fold.initial)
+    let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Favorites.Fold.fold, Favorites.Fold.initial)
     Favorites.create log cat.Resolve
 
 type ChangeFeed(testOutputHelper) =
@@ -68,7 +68,7 @@ type ChangeFeed(testOutputHelper) =
             List.ofArray xs
         use _ = store.Committed.Subscribe(fun (s, xs) -> events.Add((s, List.ofArray xs)))
         let service = createFavoritesServiceMemory log store
-        let expectedStream = Domain.Favorites.streamName clientId
+        let expectedStream = Favorites.streamName clientId
 
         do! service.Favorite(clientId, [sku])
         let written = takeCaptured ()
@@ -77,7 +77,7 @@ type ChangeFeed(testOutputHelper) =
                 stream = expectedStream
                 && env.Index = 0L
                 && env.EventType = "Favorited"
-                && env.Data |> unbox<Domain.Favorites.Events.Favorited> |> fun x -> x.skuId = sku @>
+                && env.Data |> unbox<Favorites.Events.Favorited> |> fun x -> x.skuId = sku @>
         do! service.Unfavorite(clientId, sku)
         let written = takeCaptured ()
         test <@ let stream, xs = written |> List.exactlyOne
@@ -85,7 +85,7 @@ type ChangeFeed(testOutputHelper) =
                 stream = expectedStream
                 && env.Index = 1L
                 && env.EventType = "Unfavorited"
-                && env.Data |> unbox<Domain.Favorites.Events.Unfavorited> |> fun x -> x.skuId = sku @> }
+                && env.Data |> unbox<Favorites.Events.Unfavorited> |> fun x -> x.skuId = sku @> }
 
 type Versions(testOutputHelper) =
     let log = TestOutputAdapter testOutputHelper |> createLogger

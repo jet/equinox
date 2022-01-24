@@ -60,11 +60,11 @@ type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'co
 let createContext connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
 
 module Cart =
-    let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
-    let codec = Domain.Cart.Events.codec
-    let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
+    let fold, initial = Cart.Fold.fold, Cart.Fold.initial
+    let codec = Cart.Events.codec
+    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
-        let resolve (id,opt) = Category(context, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt)
+        let resolve (id,opt) = Category(context, Cart.Events.codec, fold, initial).Resolve(id,?option=opt)
         Cart.create log resolve
     let createServiceWithCompaction log context =
         let resolve (id,opt) = Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
@@ -77,8 +77,8 @@ module Cart =
         Cart.create log (fun (id,opt) -> Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
 
 module ContactPreferences =
-    let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
-    let codec = Domain.ContactPreferences.Events.codec
+    let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
+    let codec = ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let context = createContext connection defaultBatchSize
         ContactPreferences.create log (Category(context, codec, fold, initial).Resolve)
@@ -94,9 +94,9 @@ type Tests(testOutputHelper) =
     let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
         service.ExecuteManyAsync(cartId, optimistic, seq {
             for i in 1..count do
-                yield Domain.Cart.SyncItem (context, skuId, Some i, None)
+                yield Cart.SyncItem (context, skuId, Some i, None)
                 if not exceptTheLastOne || i <> count then
-                    yield Domain.Cart.SyncItem (context, skuId, Some 0, None) })
+                    yield Cart.SyncItem (context, skuId, Some 0, None) })
     let addAndThenRemoveItemsManyTimes context cartId skuId service count =
         addAndThenRemoveItems false false context cartId skuId service count
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
@@ -170,7 +170,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Cart.Service) log skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Domain.Cart.SyncItem (ctx, skuId, Some count, None)])
+            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Cart.SyncItem (ctx, skuId, Some count, None)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()

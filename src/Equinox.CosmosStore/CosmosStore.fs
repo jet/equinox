@@ -271,7 +271,7 @@ module Log =
     let internal event (value : Metric) (log : ILogger) =
         let enrich (e : Serilog.Events.LogEvent) =
             e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty(PropertyTag, Serilog.Events.ScalarValue(value)))
-        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
+        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt,_) = enrich evt })
     let internal (|BlobLen|) = function null -> 0 | (x : byte[]) -> x.Length
     let internal (|EventLen|) (x : #IEventData<_>) = let (BlobLen bytes), (BlobLen metaBytes) = x.Data, x.Meta in bytes + metaBytes + 80
     let internal (|BatchLen|) = Seq.sumBy (|EventLen|)
@@ -523,7 +523,8 @@ module internal Sync =
         let verbose = log.IsEnabled Serilog.Events.LogEventLevel.Debug
         let (Log.BatchLen bytes), count = Enum.Events req, req.e.Length
         let log =
-            let inline mkMetric ru : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
+            let inline mkMetric ru : Log.Measurement =
+                { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
             let inline propConflict log = log |> Log.prop "conflict" true |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in req.e -> x.c }))
             if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log
             |> match exp with
@@ -1100,7 +1101,7 @@ type StoreClient(container : Container, fallback : Container option, query : Que
         | Tip.Result.NotFound -> return Token.create stream Position.fromKnownEmpty
         | Tip.Result.NotModified -> return Token.create stream pos.Value
         | Tip.Result.Found (pos, _i, _unfoldsAndEvents) -> return Token.create stream pos }
-    member store.Reload(log, (stream, pos), (tryDecode, isOrigin), ?preview) : Async<LoadFromTokenResult<'event>> =
+    member store.Reload(log, (stream, pos), (tryDecode, isOrigin), ?preview): Async<LoadFromTokenResult<'event>> =
         let read tipContent = async {
             let! res = store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), minIndex = pos.index, tip = tipContent)
             return LoadFromTokenResult.Found res }
@@ -1181,7 +1182,7 @@ module internal Caching =
                 | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
                 | Some tokenAndState when opt = Some Equinox.AllowStale -> return tokenAndState // read already updated TTL, no need to write
                 | Some (token, state) -> return! category.Reload(log, token, state, fold, isOrigin) |> cache streamName }
-            member __.TrySync(log : ILogger, (Token.Unpack (streamName, _) as streamToken), state, events : 'event list, context)
+            member _.TrySync(log : ILogger, (Token.Unpack (streamName, _) as streamToken), state, events : 'event list, context)
                 : Async<SyncResult<'state>> = async {
                 match! category.Sync(log, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) with
                 | SyncResult.Conflict resync ->

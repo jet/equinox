@@ -357,8 +357,8 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
         let data = e.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
         predicate (tryDecode data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
-    member internal __.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
-    member __.LoadBatched streamName log (tryDecode,isCompactionEventType): Async<StreamToken * 'event[]> = async {
+    member internal _.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
+    member _.LoadBatched streamName log (tryDecode,isCompactionEventType): Async<StreamToken * 'event[]> = async {
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting streamName version, Array.choose tryDecode events
@@ -366,13 +366,13 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
             match events |> Array.tryFindBack isCompactionEvent with
             | None -> return Token.ofUncompactedVersion batching.BatchSize streamName version, Array.choose tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose tryDecode events }
-    member __.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode,isOrigin): Async<StreamToken * 'event []> = async {
+    member _.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode,isOrigin): Async<StreamToken * 'event []> = async {
         let! version, events =
             Read.loadBackwardsUntilCompactionOrStart log connection.ReadRetryPolicy connection.ReadConnection batching.BatchSize batching.MaxBatches streamName (tryDecode,isOrigin)
         match Array.tryHead events |> Option.filter (function _, Some e -> isOrigin e | _ -> false) with
         | None -> return Token.ofUncompactedVersion batching.BatchSize streamName version, Array.choose snd events
         | Some (resolvedEvent,_) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose snd events }
-    member __.LoadFromToken useWriteConn streamName log (Token.Unpack token as streamToken) (tryDecode,isCompactionEventType)
+    member _.LoadFromToken useWriteConn streamName log (Token.Unpack token as streamToken) (tryDecode,isCompactionEventType)
         : Async<StreamToken * 'event[]> = async {
         let streamPosition = token.pos.streamVersion + 1L
         let connToUse = if useWriteConn then connection.WriteConnection else connection.ReadConnection
@@ -383,7 +383,7 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
             match events |> Array.tryFindBack (fun re -> match tryDecode re with Some e -> isCompactionEvent e | _ -> false) with
             | None -> return Token.ofPreviousTokenAndEventsLength streamToken events.Length batching.BatchSize version, Array.choose tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose tryDecode events }
-    member __.TrySync log (Token.Unpack token as streamToken) (events, encodedEvents: EventData array) (isCompactionEventType) : Async<GatewaySyncResult> = async {
+    member _.TrySync log (Token.Unpack token as streamToken) (events, encodedEvents: EventData array) (isCompactionEventType) : Async<GatewaySyncResult> = async {
         let streamVersion = token.pos.streamVersion
         let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection token.stream.name streamVersion encodedEvents
         match wr with
@@ -448,11 +448,11 @@ type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext,
     let load (fold: 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
         return token, fold initial events }
-    member __.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (streamName : string) (log : ILogger) : Async<StreamToken * 'state> =
+    member _.Load (fold: 'state -> 'event seq -> 'state) (initial: 'state) (streamName : string) (log : ILogger) : Async<StreamToken * 'state> =
         loadAlgorithm (load fold) streamName initial log
-    member __.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) (streamName : string) token (log : ILogger) : Async<StreamToken * 'state> =
+    member _.LoadFromToken (fold: 'state -> 'event seq -> 'state) (state: 'state) (streamName : string) token (log : ILogger) : Async<StreamToken * 'state> =
         (load fold) state (context.LoadFromToken false streamName log token (tryDecode,compactionPredicate))
-    member __.TrySync<'context>
+    member _.TrySync<'context>
         (   log : ILogger, fold: 'state -> 'event seq -> 'state,
             (Token.StreamPos (stream,pos) as streamToken), state : 'state, events : 'event list, ctx : 'context option): Async<SyncResult<'state>> = async {
         let encode e = codec.Encode(ctx,e)
@@ -481,9 +481,9 @@ module Caching =
             let! tokenAndState = load
             return! intercept streamName tokenAndState }
         interface ICategory<'event, 'state, string, 'context> with
-            member __.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
+            member _.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
                 loadAndIntercept (inner.Load(log, streamName, opt)) streamName
-            member __.TrySync(log : ILogger, (Token.StreamPos (stream,_) as token), state, events : 'event list, context) : Async<SyncResult<'state>> = async {
+            member _.TrySync(log : ILogger, (Token.StreamPos (stream,_) as token), state, events : 'event list, context) : Async<SyncResult<'state>> = async {
                 let! syncRes = inner.TrySync(log, token, state, events, context)
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync stream.name)
@@ -518,7 +518,7 @@ module Caching =
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold: 'state -> 'event seq -> 'state, initial: 'state, ?readCache) =
     let batched log streamName = category.Load fold initial streamName log
     interface ICategory<'event, 'state, string, 'context> with
-        member __.Load(log, streamName, opt) : Async<StreamToken * 'state> =
+        member _.Load(log, streamName, opt) : Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log streamName
             | Some (cache : ICache, prefix : string) -> async {
@@ -526,7 +526,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
                 | None -> return! batched log streamName
                 | Some tokenAndState when opt = Some AllowStale -> return tokenAndState
                 | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
-        member __.TrySync(log : ILogger, token, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
+        member _.TrySync(log : ILogger, token, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
             let! syncRes = category.TrySync(log, fold, token, initialState, events, context)
             match syncRes with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
@@ -593,7 +593,7 @@ type SqlStreamStoreCategory<'event, 'state, 'context>
 [<AbstractClass>]
 type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
 
-    abstract member Connect : unit -> Async<SqlStreamStore.IStreamStore>
+    abstract member Connect : unit -> Async<IStreamStore>
 
     member __.Establish() : Async<SqlStreamStoreConnection> = async {
         let! store = __.Connect()
