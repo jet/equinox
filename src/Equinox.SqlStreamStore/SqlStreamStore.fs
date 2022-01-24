@@ -19,7 +19,7 @@ type Direction = Forward | Backward with
 module Log =
 
     /// <summary>Name of Property used for <c>Metric</c> in <c>LogEvent</c>s.</summary>
-    let [<Literal>] PropertyTag = "esEvt"
+    let [<Literal>] PropertyTag = "ssEvt"
 
     [<NoEquality; NoComparison>]
     type Measurement = { stream : string; interval : StopwatchInterval; bytes : int; count : int }
