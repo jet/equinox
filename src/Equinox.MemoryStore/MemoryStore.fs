@@ -3,7 +3,6 @@
 /// 2. Illustrates a minimal implementation of the Storage interface interconnects for the purpose of writing Store connectors
 namespace Equinox.MemoryStore
 
-open Equinox
 open Equinox.Core
 open System.Runtime.InteropServices
 
@@ -48,7 +47,7 @@ module private Token =
 
     let private streamTokenOfEventCount (eventCount : int) : StreamToken =
         { value = box { eventCount = eventCount }; version = int64 eventCount }
-    let (|Unpack|) (token: StreamToken) : int = let t = unbox<Token> token.value in t.eventCount
+    let (|Unpack|) (token : StreamToken) : int = let t = unbox<Token> token.value in t.eventCount
     /// Represent a stream known to be empty
     let ofEmpty = streamTokenOfEventCount 0
     let ofValue (value : 'event array) = streamTokenOfEventCount value.Length

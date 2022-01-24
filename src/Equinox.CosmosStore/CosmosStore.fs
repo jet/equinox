@@ -1523,7 +1523,7 @@ type EventsContext internal
 
     /// Establishes the current position of the stream in as efficient a manner as possible
     /// (The ideal situation is that the preceding token is supplied as input in order to avail of 1RU low latency state checks)
-    member __.Sync(stream, [<O; D null>] ?position : Position) : Async<Position> = async {
+    member _.Sync(stream, [<O; D null>] ?position : Position) : Async<Position> = async {
         let! Token.Unpack pos' = store.GetPosition(log, stream, ?pos = position)
         return pos' }
 

@@ -1,6 +1,5 @@
 ﻿namespace Equinox.EventStore
 
-open Equinox
 open Equinox.Core
 open EventStore.ClientAPI
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
@@ -407,7 +406,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
             | None -> return Token.ofPreviousTokenAndEventsLength streamToken events.Length batching.BatchSize version, Array.choose tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.choose tryDecode events }
 
-    member _.TrySync log streamName (Token.Unpack token as streamToken) (events, encodedEvents: EventData array) (isCompactionEventType) : Async<GatewaySyncResult> = async {
+    member _.TrySync log streamName (Token.Unpack token as streamToken) (events, encodedEvents : EventData array) isCompactionEventType : Async<GatewaySyncResult> = async {
         let streamVersion = token.streamVersion
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with

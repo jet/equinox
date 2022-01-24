@@ -1,6 +1,5 @@
 ﻿namespace Equinox.SqlStreamStore
 
-open Equinox
 open Equinox.Core
 open Serilog
 open System
