@@ -51,6 +51,14 @@ type IStream<'event, 'state> =
 /// Internal implementation of the Store agnostic load + run/render. See Decider.fs for App-facing APIs.
 module internal Flow =
 
+    let query (load : Async<StreamToken * 'state>) (project: Equinox.ISyncContext<'state> -> 'result) : Async<'result> = async {
+        let! tokenAndState = load
+        let context = { new Equinox.ISyncContext<'state> with
+                            member _.State = snd tokenAndState
+                            member _.Version = (fst tokenAndState).version
+                            member _.CreateMemento() = tokenAndState }
+        return project context }
+
     /// Represents stream and folding state between the load and run/render phases
     type SyncContext<'event, 'state>
         (   originState : StreamToken * 'state,
@@ -123,8 +131,3 @@ module internal Flow =
         let! streamState = load log
         let context = SyncContext(streamState, stream.TrySync)
         return! run log (maxAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) context decide mapResult }
-
-    let query load (stream : IStream<'event, 'state>, log : ILogger) (project: SyncContext<'event, 'state> -> 'result) : Async<'result> = async {
-        let! streamState = load log
-        let context = SyncContext(streamState, stream.TrySync)
-        return project context }

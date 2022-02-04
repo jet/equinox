@@ -34,14 +34,12 @@ type Decider<'event, 'state>
         | Some AllowStale -> fun log -> stream.Load(log, true)
         | Some AssumeEmpty -> fun _log -> async { return stream.LoadEmpty() }
         | Some (FromMemento (streamToken, state)) -> fun _log -> async { return (streamToken, state) }
-
-    let transact maybeOverride decide mapResult =
+    let query option = Flow.query (load option log)
+    let transact option decide mapResult =
         let resyncPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
         let createDefaultAttemptsExhaustedException attempts : exn = MaxResyncsExhaustedException attempts :> exn
         let createAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
-        Flow.transact (load maybeOverride) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
-
-    let query option args = Flow.query (load option) args
+        Flow.transact (load option) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
 
     /// 0.  Invoke the supplied <c>interpret</c> function with the present state
     /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
@@ -73,8 +71,8 @@ type Decider<'event, 'state>
 
     /// Project from the folded <c>'state</c>, without executing a decision flow as <c>Transact</c> does
     member _.Query(projection : 'state -> 'view, ?option) : Async<'view> =
-        query option (stream, log) (fun context -> projection (context :> ISyncContext<'state>).State)
+        query option (fun context -> projection context.State)
 
     /// Project from the stream's <c>'state<c> (including extended context), without executing a decision flow as <c>Transact<c> does
     member _.QueryEx(projection : ISyncContext<'state> -> 'view, ?option) : Async<'view> =
-        query option (stream, log) projection
+        query option projection
