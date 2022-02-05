@@ -12,22 +12,22 @@ type Decider<'event, 'state>
     (   log, stream : IStream<'event, 'state>, maxAttempts : int,
         [<Optional; DefaultParameterValue(null)>] ?createAttemptsExhaustedException : int -> exn,
         [<Optional; DefaultParameterValue(null)>] ?resyncPolicy,
-        ?allowStale) =
+        [<Optional; DefaultParameterValue(null)>] ?allowStale) =
 
-    let load : LoadOption<'state> option -> (Serilog.ILogger -> Async<StreamToken * 'state>) = function
-        | None when allowStale = Some true -> fun log -> stream.Load(log, true)
-        | None | Some RequireLoad -> fun log -> stream.Load(log, false)
-        | Some AllowStale -> fun log -> stream.Load(log, true)
-        | Some AssumeEmpty -> fun _log -> async { return stream.LoadEmpty() }
+    let fetch : LoadOption<'state> option -> (Serilog.ILogger -> Async<StreamToken * 'state>) = function
+        | None when allowStale = Some true ->       fun log -> stream.Load(log, allowStale = true)
+        | None | Some RequireLoad ->                fun log -> stream.Load(log, allowStale = false)
+        | Some AllowStale ->                        fun log -> stream.Load(log, allowStale = true)
+        | Some AssumeEmpty ->                       fun _log -> async { return stream.LoadEmpty() }
         | Some (FromMemento (streamToken, state)) -> fun _log -> async { return (streamToken, state) }
-    let query option project = async {
-        let! tokenAndState = load option log
+    let query maybeOption project = async {
+        let! tokenAndState = fetch maybeOption log
         return project tokenAndState }
-    let transact option decide mapResult =
+    let transact maybeOption decide mapResult =
         let resyncPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
         let createDefaultAttemptsExhaustedException attempts : exn = MaxResyncsExhaustedException attempts :> exn
         let createAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
-        Flow.transact (load option) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
+        Flow.transact (fetch maybeOption) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
     let (|Context|) (token, state) =
         { new ISyncContext<'state> with
             member _.State = state
@@ -72,13 +72,13 @@ type Decider<'event, 'state>
 
 /// Store-agnostic Loading Options
 and [<NoComparison; NoEquality>] LoadOption<'state> =
-    /// No special requests; Obtain latest state from store based on consistency level configured
+    /// Default policy; Obtain latest state from store based on consistency level configured
     | RequireLoad
     /// If the Cache holds any state, use that without checking the backing store for updates, implying:
     /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
     /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`
     | AllowStale
-    /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet
+    /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet, and we will be generating events
     | AssumeEmpty
     /// <summary>Instead of loading from database, seed the loading process with the supplied memento, obtained via <c>ISyncContext.CreateMemento()</c></summary>
     | FromMemento of memento : (StreamToken * 'state)
@@ -88,12 +88,12 @@ and ISyncContext<'state> =
 
     /// Exposes the underlying Store's internal Version for the underlying stream.
     /// An empty stream is Version 0; one with a single event is Version 1 etc.
-    /// It's important to consider that this Version is more authoritative than inspecting the `Index` of the last event passed to
-    /// your `fold` function - the codec may opt to ignore it
+    /// It's important to consider that this Version is more authoritative than counting the events seen, or adding 1 to
+    ///   the `Index` of the last event passed to your `fold` function - the codec may opt to ignore events
     abstract member Version : int64
 
     /// The present State of the stream within the context of this Flow
     abstract member State : 'state
 
-    /// Represents a Checkpoint position on a Stream's timeline; Can be used to manage continuations via LoadOption.Memento
+    /// Represents a Checkpoint position on a Stream's timeline; Can be used to manage continuations via LoadOption.FromMemento
     abstract member CreateMemento : unit -> StreamToken * 'state

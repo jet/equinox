@@ -27,13 +27,14 @@ and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
 /// Store-specific opaque token to be used for synchronization purposes
 and [<NoComparison>] StreamToken = { value : obj; version: int64 }
 
-/// Internal implementation of the Store agnostic load + run/render. See Decider.fs for App-facing APIs.
+/// Internal implementation of the Optimistic Concurrency Control loop within which a decider function runs. See Decider.fs for App-facing APIs.
 module internal Flow =
 
-    /// Represents stream and folding state between the load and run/render phases
+    /// Represents current token and state within the OCC retry loop
     type SyncContext<'event, 'state>
         (   originState : StreamToken * 'state,
             trySync : Serilog.ILogger * StreamToken * 'state * 'event list -> Async<SyncResult<'state>>) =
+
         let mutable tokenAndState = originState
 
         let trySyncOr log events (handleFailureResync : Async<StreamToken * 'state> -> Async<bool>) : Async<bool> = async {
@@ -45,6 +46,7 @@ module internal Flow =
                 tokenAndState <- token', streamState'
                 return true }
 
+        member _.CurrentTokenAndState = tokenAndState
         member _.TryWithoutResync(log : Serilog.ILogger, events) : Async<bool> =
             trySyncOr log events (fun _resync -> async { return false })
         member _.TryOrResync(runResync, attemptNumber: int, log : Serilog.ILogger, events) : Async<bool> =
@@ -53,7 +55,6 @@ module internal Flow =
                 tokenAndState <- streamState'
                 return false }
             trySyncOr log events resyncInPreparationForRetry
-        member _.CurrentTokenAndState = tokenAndState
 
     /// Process a command, ensuring a consistent final state is established on the stream.
     /// 1.  make a decision predicated on the known state
