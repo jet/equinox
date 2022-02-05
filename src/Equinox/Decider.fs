@@ -11,11 +11,9 @@ type MaxResyncsExhaustedException(count) =
 type Decider<'event, 'state>
     (   log, stream : IStream<'event, 'state>, maxAttempts : int,
         [<Optional; DefaultParameterValue(null)>] ?createAttemptsExhaustedException : int -> exn,
-        [<Optional; DefaultParameterValue(null)>] ?resyncPolicy,
-        [<Optional; DefaultParameterValue(null)>] ?allowStale) =
+        [<Optional; DefaultParameterValue(null)>] ?resyncPolicy) =
 
     let fetch : LoadOption<'state> option -> (Serilog.ILogger -> Async<StreamToken * 'state>) = function
-        | None when allowStale = Some true ->       fun log -> stream.Load(log, allowStale = true)
         | None | Some RequireLoad ->                fun log -> stream.Load(log, allowStale = false)
         | Some AllowStale ->                        fun log -> stream.Load(log, allowStale = true)
         | Some AssumeEmpty ->                       fun _log -> async { return stream.LoadEmpty() }
