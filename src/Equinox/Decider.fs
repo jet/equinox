@@ -25,7 +25,7 @@ type Decider<'event, 'state>
         let resyncPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
         let createDefaultAttemptsExhaustedException attempts : exn = MaxResyncsExhaustedException attempts :> exn
         let createAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
-        Flow.transact (fetch maybeOption) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) (stream, log) decide mapResult
+        Flow.transact log (fetch maybeOption) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) decide stream.TrySync mapResult
     let (|Context|) (token, state) =
         { new ISyncContext<'state> with
             member _.State = state
