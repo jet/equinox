@@ -21,8 +21,7 @@ type Decider<'event, 'state>
     let query maybeOption project = async {
         let! tokenAndState = fetch maybeOption log
         return project tokenAndState }
-    let transact maybeOption decide mapResult = async {
-        let! originTokenAndState = fetch maybeOption log
+    let run originTokenAndState decide mapResult =
         let resyncRetryPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
         let createDefaultAttemptsExhaustedException attempts : exn = MaxResyncsExhaustedException attempts :> exn
         let createMaxAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
@@ -44,7 +43,10 @@ type Decider<'event, 'state>
                         return raise (createMaxAttemptsExhaustedException attempt)
                 | Core.SyncResult.Written (token', streamState') ->
                     return mapResult result (token', streamState') }
-        return! loop originTokenAndState 1 }
+        loop originTokenAndState 1
+    let transact maybeOption decide mapResult = async {
+        let! originTokenAndState = fetch maybeOption log
+        return! run originTokenAndState decide mapResult }
     let (|Context|) (token : Core.StreamToken, state) =
         { new ISyncContext<'state> with
             member _.State = state
