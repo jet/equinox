@@ -13,6 +13,7 @@ type Decider<'event, 'state>
         [<Optional; DefaultParameterValue(null)>] ?createAttemptsExhaustedException : int -> exn,
         [<Optional; DefaultParameterValue(null)>] ?resyncPolicy) =
 
+    do if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")
     let fetch : LoadOption<'state> option -> (Serilog.ILogger -> Async<StreamToken * 'state>) = function
         | None | Some RequireLoad ->                fun log -> stream.Load(log, allowStale = false)
         | Some AllowStale ->                        fun log -> stream.Load(log, allowStale = true)
@@ -21,11 +22,12 @@ type Decider<'event, 'state>
     let query maybeOption project = async {
         let! tokenAndState = fetch maybeOption log
         return project tokenAndState }
-    let transact maybeOption decide mapResult =
+    let transact maybeOption decide mapResult = async {
+        let! tokenAndState = fetch maybeOption log
         let resyncPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
         let createDefaultAttemptsExhaustedException attempts : exn = MaxResyncsExhaustedException attempts :> exn
         let createAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
-        Flow.transact log (fetch maybeOption) (maxAttempts, resyncPolicy, createAttemptsExhaustedException) decide stream.TrySync mapResult
+        return! Flow.transact tokenAndState decide log stream.TrySync (maxAttempts, resyncPolicy, createAttemptsExhaustedException) mapResult }
     let (|Context|) (token, state) =
         { new ISyncContext<'state> with
             member _.State = state

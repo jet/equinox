@@ -35,9 +35,9 @@ module internal Flow =
     /// 2a. if no changes required, exit with known state
     /// 2b. if conflicting changes, retry by recommencing at step 1 with the updated state
     /// 2c. if saved without conflict, exit with updated state
-    let run (log : Serilog.ILogger)
-        (originState : StreamToken * 'state)
+    let transact (originState : StreamToken * 'state)
         (decide : StreamToken * 'state -> Async<'result * 'event list>)
+        (log : Serilog.ILogger)
         (trySync : Serilog.ILogger * StreamToken * 'state * 'event list -> Async<SyncResult<'state>>)
         (maxSyncAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException)
         (mapResult : 'result -> StreamToken * 'state -> 'view) : Async<'view> =
@@ -63,8 +63,3 @@ module internal Flow =
                     return mapResult result (token', streamState') }
         // Commence, processing based on the incoming state
         loop originState 1
-
-    let transact log load (maxSyncAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) decide trySync mapResult : Async<'result> = async {
-        if maxSyncAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxSyncAttempts", maxSyncAttempts, "should be >= 1")
-        let! streamState = load log
-        return! run log streamState decide trySync (maxSyncAttempts, resyncRetryPolicy, createMaxAttemptsExhaustedException) mapResult }
