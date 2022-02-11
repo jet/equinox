@@ -1,6 +1,5 @@
 ﻿namespace Equinox
 
-open Equinox.Core
 open System.Runtime.InteropServices
 
 /// Exception yielded by Decider.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
@@ -9,12 +8,12 @@ type MaxResyncsExhaustedException(count) =
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 type Decider<'event, 'state>
-    (   log, stream : IStream<'event, 'state>, maxAttempts : int,
+    (   log, stream : Core.IStream<'event, 'state>, maxAttempts : int,
         [<Optional; DefaultParameterValue(null)>] ?createAttemptsExhaustedException : int -> exn,
         [<Optional; DefaultParameterValue(null)>] ?resyncPolicy) =
 
     do if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")
-    let fetch : LoadOption<'state> option -> (Serilog.ILogger -> Async<StreamToken * 'state>) = function
+    let fetch : LoadOption<'state> option -> (Serilog.ILogger -> Async<Core.StreamToken * 'state>) = function
         | None | Some RequireLoad ->                fun log -> stream.Load(log, allowStale = false)
         | Some AllowStale ->                        fun log -> stream.Load(log, allowStale = true)
         | Some AssumeEmpty ->                       fun _log -> async { return stream.LoadEmpty() }
@@ -23,12 +22,30 @@ type Decider<'event, 'state>
         let! tokenAndState = fetch maybeOption log
         return project tokenAndState }
     let transact maybeOption decide mapResult = async {
-        let! tokenAndState = fetch maybeOption log
-        let resyncPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
+        let! originTokenAndState = fetch maybeOption log
+        let resyncRetryPolicy = defaultArg resyncPolicy (fun _log _attemptNumber resyncF -> async { return! resyncF })
         let createDefaultAttemptsExhaustedException attempts : exn = MaxResyncsExhaustedException attempts :> exn
-        let createAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
-        return! Flow.transact tokenAndState decide log stream.TrySync (maxAttempts, resyncPolicy, createAttemptsExhaustedException) mapResult }
-    let (|Context|) (token, state) =
+        let createMaxAttemptsExhaustedException = defaultArg createAttemptsExhaustedException createDefaultAttemptsExhaustedException
+        let rec loop (token, state) attempt : Async<'view> = async {
+            let log = if attempt = 1 then log else log.ForContext("syncAttempt", attempt)
+            match! decide (token, state) with
+            | result, [] ->
+                log.Debug "No events generated"
+                return mapResult result (token, state)
+            | result, events ->
+                match! stream.TrySync (log, token, state, events) with
+                | Core.SyncResult.Conflict resync ->
+                    if attempt <> maxAttempts then
+                        let! streamState' = resyncRetryPolicy log attempt resync
+                        log.Debug "Resyncing and retrying"
+                        return! loop streamState' (attempt + 1)
+                    else
+                        log.Debug "Max Sync Attempts exceeded"
+                        return raise (createMaxAttemptsExhaustedException attempt)
+                | Core.SyncResult.Written (token', streamState') ->
+                    return mapResult result (token', streamState') }
+        return! loop originTokenAndState 1 }
+    let (|Context|) (token : Core.StreamToken, state) =
         { new ISyncContext<'state> with
             member _.State = state
             member _.Version = token.version
@@ -81,7 +98,7 @@ and [<NoComparison; NoEquality>] LoadOption<'state> =
     /// Inhibit load from database based on the fact that the stream is likely not to have been initialized yet, and we will be generating events
     | AssumeEmpty
     /// <summary>Instead of loading from database, seed the loading process with the supplied memento, obtained via <c>ISyncContext.CreateMemento()</c></summary>
-    | FromMemento of memento : (StreamToken * 'state)
+    | FromMemento of memento : (Core.StreamToken * 'state)
 
 /// Exposed by TransactEx / QueryEx, providing access to extended state information for cases where that's required
 and ISyncContext<'state> =
@@ -96,4 +113,4 @@ and ISyncContext<'state> =
     abstract member State : 'state
 
     /// Represents a Checkpoint position on a Stream's timeline; Can be used to manage continuations via LoadOption.FromMemento
-    abstract member CreateMemento : unit -> StreamToken * 'state
+    abstract member CreateMemento : unit -> Core.StreamToken * 'state
