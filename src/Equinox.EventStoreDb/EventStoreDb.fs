@@ -771,7 +771,7 @@ type EventStoreConnector
         settings.ConnectionName <- sanitizedName
         match clusterNodePreference with None -> () | Some np -> settings.ConnectivitySettings.NodePreference <- np
         match customize with None -> () | Some f -> f settings
-        settings.OperationOptions.TimeoutAfter <- reqTimeout
+        settings.DefaultDeadline <- reqTimeout
         // TODO implement reqRetries
         new EventStoreClient(settings)
 
