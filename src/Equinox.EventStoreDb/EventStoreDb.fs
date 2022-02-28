@@ -5,6 +5,8 @@ open EventStore.Client
 open Serilog
 open System
 
+type EventBody = ReadOnlyMemory<byte>
+
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward with
     override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -15,7 +17,7 @@ type Direction = Forward | Backward with
 
 module Log =
 
-    /// <summary>Name of Property used for <c>Event</c> in <c>LogEvent</c>s.</summary>
+    /// <summary>Name of Property used for <c>Metric</c> in <c>LogEvent</c>s.</summary>
     let [<Literal>] PropertyTag = "esdbEvt"
 
     [<NoEquality; NoComparison>]
@@ -51,7 +53,7 @@ module Log =
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let event (value : Metric) (log : ILogger) =
-        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("esEvt", ScalarValue(value)))
+        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty(PropertyTag, ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
 
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log : Async<'t> =
@@ -266,20 +268,20 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
-    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.ITimelineEvent<byte[]> =
+    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.ITimelineEvent<EventBody> =
         let e = x.Event
         // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
         let ts = DateTimeOffset(e.Created)
         // TODO something like let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
         // TOCONSIDER wire e.Metadata.["$correlationId"] and .["$causationId"] into correlationId and causationId
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        let n, d, m = e.EventNumber, e.Data, e.Metadata
-        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), e.EventType, d.ToArray(), m.ToArray(), correlationId = null, causationId = null, timestamp = ts)
+        let n = e.EventNumber
+        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), e.EventType, e.Data, e.Metadata, correlationId = null, causationId = null, timestamp = ts)
 
-    let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
+    let eventDataOfEncodedEvent (x : FsCodec.IEventData<EventBody>) =
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        EventData(Uuid.NewUuid(), x.EventType, contentType = "application/json", data = ReadOnlyMemory(x.Data), metadata = ReadOnlyMemory(x.Meta))
+        EventData(Uuid.NewUuid(), x.EventType, contentType = "application/json", data = x.Data, metadata = x.Meta)
 
 
 type Position = { streamVersion : int64; compactionEventNumber : int64 option; batchCapacityLimit : int option }
@@ -394,7 +396,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
             return GatewaySyncResult.Written token }
 
-    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
+    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<EventBody>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
         match wr with
@@ -759,7 +761,7 @@ type EventStoreConnector
         ?customize : EventStoreClientSettings -> unit) =
 
     member _.Connect
-        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+        (   // Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery, ?clusterNodePreference) : EventStoreClient =
         let settings = match discovery with Discovery.Uri uri -> EventStoreClientSettings.Create(string uri)
         if name = null then nullArg "name"

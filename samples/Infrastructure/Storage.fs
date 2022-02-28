@@ -9,7 +9,7 @@ type StorageConfig =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
     | Memory of Equinox.MemoryStore.VolatileStore<ReadOnlyMemory<byte>>
     | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool
-    | Es     of Equinox.EventStore.EventStoreContext * Equinox.EventStore.CachingStrategy option * unfolds: bool
+    | Es     of Equinox.EventStoreDb.EventStoreContext * Equinox.EventStoreDb.CachingStrategy option * unfolds: bool
     | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
@@ -132,9 +132,8 @@ module EventStore =
         | [<AltCommandLine("-V")>]      VerboseStore
         | [<AltCommandLine("-o")>]      Timeout of float
         | [<AltCommandLine("-r")>]      Retries of int
-        | [<AltCommandLine("-g")>]      Host of string
-        | [<AltCommandLine("-u")>]      Username of string
-        | [<AltCommandLine("-p")>]      Password of string
+        | [<AltCommandLine("-g")>]      ConnectionString of string
+        | [<AltCommandLine("-p")>]      Credentials of string
         | [<AltCommandLine("-c")>]      ConcurrentOperationsLimit of int
         | [<AltCommandLine("-h")>]      HeartbeatTimeout of float
         | [<AltCommandLine("-b")>]      MaxEvents of int
@@ -143,17 +142,17 @@ module EventStore =
                 | VerboseStore ->       "include low level Store logging."
                 | Timeout _ ->          "specify operation timeout in seconds (default: 5)."
                 | Retries _ ->          "specify operation retries (default: 1)."
-                | Host _ ->             "specify a DNS query, using Gossip-driven discovery against all A records returned (default: localhost)."
-                | Username _ ->         "specify a username (default: admin)."
-                | Password _ ->         "specify a Password (default: changeit)."
+                | ConnectionString _ -> "Portion of connection string that's safe to write to console or log. default: esdb://localhost:2113?tls=false"
+                | Credentials _ ->      "specify a sensitive portion of the connection string that should not be logged. Default: none"
                 | ConcurrentOperationsLimit _ -> "max concurrent operations in flight (default: 5000)."
                 | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 1.5)."
                 | MaxEvents _ ->        "Maximum number of Events to request per batch. Default 500."
-    open Equinox.EventStore
+    open Equinox.EventStoreDb
 
     type Info(args : ParseResults<Arguments>) =
-        member _.Host =                 args.GetResult(Host,"localhost")
-        member _.Credentials =          args.GetResult(Username,"admin"), args.GetResult(Password,"changeit")
+        member _.Host =                args.GetResult(ConnectionString,"esdb://localhost:2113?tls=false")
+        member _.Credentials =         args.GetResult(Credentials, null)
+
         member _.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member _.Retries =              args.GetResult(Retries, 1)
         member _.HeartbeatTimeout =     args.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
@@ -162,12 +161,12 @@ module EventStore =
 
     open Serilog
 
-    let private connect (log: ILogger) (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
-        EventStoreConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
-                heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
-                log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
+    let private connect (log: ILogger) (connectionString, heartbeatTimeout, col) credentialsString (operationTimeout, operationRetries) =
+        EventStoreConnector(reqTimeout=operationTimeout, reqRetries=operationRetries,
+                // TODO heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
+                // TODO log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
-            .Establish(appName, Discovery.GossipDns dnsQuery, ConnectionStrategy.ClusterTwinPreferSlaveReads)
+            .Establish(appName, Discovery.Uri (String.Join(";", connectionString, credentialsString) |> Uri), ConnectionStrategy.ClusterTwinPreferSlaveReads)
     let private createContext connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
     let config (log: ILogger, storeLog) (cache, unfolds) (args : ParseResults<Arguments>) =
         let a = Info(args)
@@ -176,7 +175,7 @@ module EventStore =
         let concurrentOperationsLimit = a.ConcurrentOperationsLimit
         log.Information("EventStoreDB {host} heartbeat: {heartbeat}s timeout: {timeout}s concurrent reqs: {concurrency} retries {retries}",
             a.Host, heartbeatTimeout.TotalSeconds, timeout.TotalSeconds, concurrentOperationsLimit, retries)
-        let connection = connect storeLog (a.Host, heartbeatTimeout, concurrentOperationsLimit) a.Credentials operationThrottling |> Async.RunSynchronously
+        let connection = connect storeLog (a.Host, heartbeatTimeout, concurrentOperationsLimit) a.Credentials operationThrottling
         let cacheStrategy = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
         StorageConfig.Es ((createContext connection a.MaxEvents), cacheStrategy, unfolds)
 

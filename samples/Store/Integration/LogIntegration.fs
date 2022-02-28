@@ -9,7 +9,7 @@ open System
 open System.Collections.Concurrent
 
 module EquinoxEsInterop =
-    open Equinox.EventStore
+    open Equinox.EventStoreDb
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
         override x.ToString() = $"%s{x.action}-Stream=%s{x.stream} %s{x.action}-Elapsed={x.interval.Elapsed}"
@@ -18,8 +18,8 @@ module EquinoxEsInterop =
             match evt with
             | Log.WriteSuccess m -> "AppendToStreamAsync", m, None
             | Log.WriteConflict m -> "AppendToStreamAsync", m, None
-            | Log.Slice (Direction.Forward,m) -> "ReadStreamEventsForwardAsync", m, None
-            | Log.Slice (Direction.Backward,m) -> "ReadStreamEventsBackwardAsync", m, None
+//            | Log.Slice (Direction.Forward,m) -> "ReadStreamEventsForwardAsync", m, None
+//            | Log.Slice (Direction.Backward,m) -> "ReadStreamEventsBackwardAsync", m, None
             | Log.Batch (Direction.Forward,c,m) -> "ReadStreamAsyncF", m, Some c
             | Log.Batch (Direction.Backward,c,m) -> "ReadStreamAsyncB", m, Some c
         { action = action; stream = metric.stream; interval = metric.interval; bytes = metric.bytes; count = metric.count; batches = batches }
@@ -60,7 +60,7 @@ type SerilogMetricsExtractor(emit : string -> unit) =
     let (|EsMetric|CosmosMetric|GenericMessage|) (logEvent : Serilog.Events.LogEvent) =
         logEvent.Properties
         |> Seq.tryPick (function
-            | KeyValue (k, SerilogScalar (:? Equinox.EventStore.Log.Metric as m)) -> Some <| Choice1Of3 (k,m)
+            | KeyValue (k, SerilogScalar (:? Equinox.EventStoreDb.Log.Metric as m)) -> Some <| Choice1Of3 (k,m)
             | KeyValue (k, SerilogScalar (:? Equinox.CosmosStore.Core.Log.Metric as m)) -> Some <| Choice2Of3 (k,m)
             | _ -> None)
         |> Option.defaultValue (Choice3Of3 ())
@@ -106,7 +106,7 @@ type Tests(testOutputHelper) =
         let batchSize = defaultBatchSize
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
-        let! client = connectToLocalEventStoreNode log
+        let client = connectToLocalEventStoreNode log
         let context = createContext client batchSize
         let service = Cart.create log (CartIntegration.resolveGesStreamWithRollingSnapshots context)
         let itemCount = batchSize / 2 + 1
