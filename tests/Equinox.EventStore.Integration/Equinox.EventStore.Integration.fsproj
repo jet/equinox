@@ -4,6 +4,7 @@
     <TargetFramework>net6.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
+    <DefineConstants>$(DefineConstants);STORE_EVENTSTORE_LEGACY</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

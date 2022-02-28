@@ -15,7 +15,11 @@ type FsCheckGenerators =
 #if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL
 open Equinox.SqlStreamStore
 #else
+#if STORE_EVENTSTORE_LEGACY
 open Equinox.EventStore
+#else
+open Equinox.EventStoreDb
+#endif
 #endif
 
 [<AutoOpen>]

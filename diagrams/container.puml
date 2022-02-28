@@ -4,8 +4,8 @@
 title Containers Diagram for Equinox (+Propulsion)
 caption Packages / Elements breakdown of an event sourced system using Equinox
 
-rectangle "Ingesters" as ingesters <<External System>> 
-rectangle "Input Feeds" as inputs <<External System>> 
+rectangle "Ingesters" as ingesters <<External System>>
+rectangle "Input Feeds" as inputs <<External System>>
 actor "Applications" as apps <<Internal>>
 
 together {
@@ -28,12 +28,12 @@ frame "Consistent Event Stores" as stores <<Expanded>> {
         rectangle "Azure.Cosmos" <<ExternalComponent>> as cc
     }
     frame "EventStore" <<Internal>> {
-        rectangle "Equinox.EventStore" <<Component>> as es
+        rectangle "Equinox.EventStoreDb" <<Component>> as es
         rectangle "Propulsion.EventStore" <<External Component>> as er
-        rectangle "EventStore.ClientAPI" <<External Component>> as esc
+        rectangle "EventStore.Client.Grpc.Streams" <<External Component>> as esc
     }
     frame "Integration Test Support" <<Internal>> {
-        rectangle "Equinox.MemoryStore" <<Component>> as ms 
+        rectangle "Equinox.MemoryStore" <<Component>> as ms
     }
     interface IStream <<Component>>
     rectangle "Equinox.Core" as core <<External>> {
@@ -49,9 +49,9 @@ frame "Consistent Event Stores" as stores <<Expanded>> {
     }
 }
 
-rectangle "Reactors" as reactors <<External System>> 
-rectangle "Publishers" as publishers <<External System>> 
-rectangle "Output Feeds" as outputs <<External System>> 
+rectangle "Reactors" as reactors <<External System>>
+rectangle "Publishers" as publishers <<External System>>
+rectangle "Output Feeds" as outputs <<External System>>
 
 apps         .> caches     : reference\neventually consistent
 apps        <-> aggs       : transact\nagainst

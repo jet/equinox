@@ -1,11 +1,23 @@
-﻿namespace Equinox.EventStore
+﻿namespace Equinox.EventStoreDb
 
 open Equinox.Core
 open EventStore.Client
 open Serilog
 open System
 
+[<RequireQualifiedAccess>]
+type Direction = Forward | Backward with
+    override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
+    member x.op_Implicit =
+        match x with
+        | Forward -> EventStore.Client.Direction.Forwards
+        | Backward -> EventStore.Client.Direction.Backwards
+
 module Log =
+
+    /// <summary>Name of Property used for <c>Event</c> in <c>LogEvent</c>s.</summary>
+    let [<Literal>] PropertyTag = "esdbEvt"
+
     [<NoEquality; NoComparison>]
     type Measurement = { stream: string; interval: StopwatchInterval; bytes: int; count: int }
 
@@ -13,7 +25,6 @@ module Log =
     type Metric =
         | WriteSuccess of Measurement
         | WriteConflict of Measurement
-        | Slice of Direction * Measurement
         | Batch of Direction * slices: int * Measurement
 
     let prop name value (log : ILogger) = log.ForContext(name, value)
@@ -61,12 +72,11 @@ module Log =
         module Stats =
             let inline (|Stats|) ({ interval = i } : Measurement) = let e = i.Elapsed in int64 e.TotalMilliseconds
 
-            let (|Read|Write|Resync|Rollup|) = function
-                | Slice (_, Stats s) -> Read s
+            let (|Read|Write|Resync|) = function
                 | WriteSuccess (Stats s) -> Write s
                 | WriteConflict (Stats s) -> Resync s
-                // slices are rolled up into batches so be sure not to double-count
-                | Batch (_, _, Stats s) -> Rollup s
+                // No slices, so no rolling up
+                | Batch (_, _, Stats s) -> Read s
 
             let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
                 | :? ScalarValue as x -> Some x.Value
@@ -101,7 +111,6 @@ module Log =
                         | EsMetric (Read stats) -> LogSink.Read.Ingest stats
                         | EsMetric (Write stats) -> LogSink.Write.Ingest stats
                         | EsMetric (Resync stats) -> LogSink.Resync.Ingest stats
-                        | EsMetric (Rollup _) -> ()
                         | _ -> ()
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
@@ -176,7 +185,7 @@ module private Read =
     let private readAsyncEnum (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : StreamPosition)
         : Async<AsyncSeq<ResolvedEvent>> = async {
         let! ct = Async.CancellationToken
-        return conn.ReadStreamAsync(direction, streamName, startPos, int64 batchSize, resolveLinkTos = false, cancellationToken = ct)
+        return conn.ReadStreamAsync(direction.op_Implicit, streamName, startPos, int64 batchSize, resolveLinkTos = false, cancellationToken = ct)
             |> AsyncSeq.ofAsyncEnum }
 
     let readAsyncEnumVer (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : StreamPosition) : Async<int64*ResolvedEvent[]> = async {
@@ -184,9 +193,9 @@ module private Read =
             let! events = res |> AsyncSeq.toArrayAsync
             let version =
                 match events with
-                | [||] when direction = Direction.Backwards -> -1L // When reading backwards, the startPos is End, which is not directly convertible
+                | [||] when direction = Direction.Backward -> -1L // When reading backwards, the startPos is End, which is not directly convertible
                 | [||] -> startPos.ToInt64() // e.g. if reading forward from (verified existing) event 10 and there are none, the version is still 10
-                | xs when direction = Direction.Backwards -> let le = xs.[0].Event.EventNumber in le.ToInt64() // the events arrive backwards, so first is the 'version'
+                | xs when direction = Direction.Backward -> let le = xs.[0].Event.EventNumber in le.ToInt64() // the events arrive backwards, so first is the 'version'
                 | xs -> let le = xs.[xs.Length - 1].Event.EventNumber in le.ToInt64() // In normal case, the last event represents the version of the stream
             return version, events
         with :? StreamNotFoundException -> return -1L, [||] }
@@ -197,9 +206,9 @@ module private Read =
         let! t, (version, events) = readAsyncEnumVer conn streamName direction batchSize startPos |> Stopwatch.Time
         let bytes, count = events |> Array.sumBy (|ResolvedEventLen|), events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
-        let evt = Log.Slice (direction, reqMetric)
+//        let evt = Log.Slice (direction, reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" events
-        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Ges{action:l} count={count} version={version}",
+        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes).Information("Ges{action:l} count={count} version={version}",
             "Read", count, version)
         return version, events }
 
@@ -209,7 +218,7 @@ module private Read =
         let bytes, count = resolvedEventBytes events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1) / batchSize + 1
-        let action = if direction = Direction.Forwards then "LoadF" else "LoadB"
+        let action = if direction = Direction.Forward then "LoadF" else "LoadB"
         let evt = Log.Metric.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Ges{action:l} stream={stream} count={count}/{batches} version={version}",
@@ -217,9 +226,9 @@ module private Read =
 
     let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize streamName startPosition
         : Async<int64 * ResolvedEvent[]> = async {
-        let call pos = loggedReadAsyncEnumVer conn streamName Direction.Forwards batchSize pos
+        let call pos = loggedReadAsyncEnumVer conn streamName Direction.Forward batchSize pos
         let retryingLoggingRead pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
-        let direction = Direction.Forwards
+        let direction = Direction.Forward
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
         let! t, (version, events) = retryingLoggingRead startPosition log |> Stopwatch.Time
         log |> logBatchRead direction streamName t events batchSize version
@@ -245,11 +254,11 @@ module private Read =
             |> Seq.toArray
     let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize streamName (tryDecode, isOrigin)
         : Async<int64 * (ResolvedEvent * 'event option)[]> = async {
-        let call pos = loggedReadAsyncEnumVer conn streamName Direction.Backwards batchSize pos
+        let call pos = loggedReadAsyncEnumVer conn streamName Direction.Backward batchSize pos
         let retryingLoggingRead pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let startPosition = StreamPosition.End
-        let direction = Direction.Backwards
+        let direction = Direction.Backward
         let readLog = log |> Log.prop "direction" direction
         let! t, (version, eventsBackward) = retryingLoggingRead startPosition readLog |> Stopwatch.Time
         let events = mergeFromCompactionPointOrStartFromBackwardsStream streamName (tryDecode, isOrigin) log eventsBackward
@@ -326,7 +335,7 @@ type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; 
     member _.WriteConnection = defaultArg writeConnection readConnection
     member _.WriteRetryPolicy = writeRetryPolicy
 
-type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>] ?batchCountLimit) =
+type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>] ?batchCountLimit) = // TODO batchCountLimit
     new (maxBatchSize) = BatchingPolicy(fun () -> maxBatchSize)
     member _.BatchSize = getMaxBatchSize()
 //    member _.MaxBatches = batchCountLimit
