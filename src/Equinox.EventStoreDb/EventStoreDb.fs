@@ -15,7 +15,7 @@ type Direction = Forward | Backward with
 
 module Log =
 
-    /// <summary>Name of Property used for <c>Event</c> in <c>LogEvent</c>s.</summary>
+    /// <summary>Name of Property used for <c>Metric</c> in <c>LogEvent</c>s.</summary>
     let [<Literal>] PropertyTag = "esdbEvt"
 
     [<NoEquality; NoComparison>]
@@ -51,7 +51,7 @@ module Log =
     /// Attach a property to the log context to hold the metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let event (value : Metric) (log : ILogger) =
-        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty("esEvt", ScalarValue(value)))
+        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty(PropertyTag, ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
 
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log : Async<'t> =

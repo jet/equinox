@@ -23,7 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.EventStoreDb\Equinox.EventStoreDb.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
   </ItemGroup>
 
