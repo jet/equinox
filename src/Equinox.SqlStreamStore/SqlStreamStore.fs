@@ -48,7 +48,7 @@ module Log =
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let event (value : Event) (log : ILogger) =
         let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty(PropertyTag, ScalarValue(value)))
-        log.ForContext({ new Serilog.Core.ILogEventEnricher with member __.Enrich(evt, _) = enrich evt })
+        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log : Async<'t> =
         match retryPolicy with
         | None -> f log
@@ -83,9 +83,9 @@ module Log =
             type Counter =
                 { mutable count : int64; mutable ms : int64 }
                 static member Create() = { count = 0L; ms = 0L }
-                member __.Ingest(ms) =
-                    System.Threading.Interlocked.Increment(&__.count) |> ignore
-                    System.Threading.Interlocked.Add(&__.ms, ms) |> ignore
+                member x.Ingest(ms) =
+                    System.Threading.Interlocked.Increment(&x.count) |> ignore
+                    System.Threading.Interlocked.Add(&x.ms, ms) |> ignore
             type LogSink() =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
                 static member val Read = Counter.Create() with get, set
@@ -99,7 +99,7 @@ module Log =
                     epoch.Restart()
                     span
                 interface Serilog.Core.ILogEventSink with
-                    member __.Emit logEvent = logEvent |> function
+                    member _.Emit logEvent = logEvent |> function
                         | EsMetric (Read stats) -> LogSink.Read.Ingest stats
                         | EsMetric (Write stats) -> LogSink.Write.Ingest stats
                         | EsMetric (Resync stats) -> LogSink.Resync.Ingest stats
@@ -339,26 +339,26 @@ module Token =
         newVersion > currentVersion
 
 type SqlStreamStoreConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    member __.ReadConnection = readConnection
-    member __.ReadRetryPolicy = readRetryPolicy
-    member __.WriteConnection = defaultArg writeConnection readConnection
-    member __.WriteRetryPolicy = writeRetryPolicy
+    member _.ReadConnection = readConnection
+    member _.ReadRetryPolicy = readRetryPolicy
+    member _.WriteConnection = defaultArg writeConnection readConnection
+    member _.WriteRetryPolicy = writeRetryPolicy
 
 type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>]?batchCountLimit) =
     new (maxBatchSize) = BatchingPolicy(fun () -> maxBatchSize)
-    member __.BatchSize = getMaxBatchSize()
-    member __.MaxBatches = batchCountLimit
+    member _.BatchSize = getMaxBatchSize()
+    member _.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
 type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : BatchingPolicy) =
-    let isResolvedEventEventType (tryDecode, predicate) (e:StreamMessage) =
+    let isResolvedEventEventType (tryDecode, predicate) (e : StreamMessage) =
         let data = e.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
         predicate (tryDecode data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     member internal _.LoadEmpty streamName = Token.ofUncompactedVersion batching.BatchSize streamName -1L
-    member _.LoadBatched streamName log (tryDecode, isCompactionEventType): Async<StreamToken * 'event[]> = async {
+    member _.LoadBatched streamName log (tryDecode, isCompactionEventType) : Async<StreamToken * 'event[]> = async {
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.ReadConnection batching.BatchSize batching.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting streamName version, Array.choose tryDecode events
@@ -366,7 +366,7 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
             match events |> Array.tryFindBack isCompactionEvent with
             | None -> return Token.ofUncompactedVersion batching.BatchSize streamName version, Array.choose tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize streamName version, Array.choose tryDecode events }
-    member _.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode, isOrigin): Async<StreamToken * 'event []> = async {
+    member _.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode, isOrigin) : Async<StreamToken * 'event []> = async {
         let! version, events =
             Read.loadBackwardsUntilCompactionOrStart log connection.ReadRetryPolicy connection.ReadConnection batching.BatchSize batching.MaxBatches streamName (tryDecode, isOrigin)
         match Array.tryHead events |> Option.filter (function _, Some e -> isOrigin e | _ -> false) with
@@ -400,7 +400,7 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
                     | Some compactionEventIndex ->
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
             return GatewaySyncResult.Written token }
-    member __.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
+    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents
         match wr with
@@ -425,7 +425,7 @@ type AccessStrategy<'event, 'state> =
 
 type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
-    member __.IsCompactionDue = eventsLen > capacityBeforeCompaction
+    member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access : AccessStrategy<'event, 'state>) =
     let tryDecode (e : ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
@@ -453,13 +453,13 @@ type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext,
     member _.LoadFromToken (fold : 'state -> 'event seq -> 'state) (state : 'state) (streamName : string) token (log : ILogger) : Async<StreamToken * 'state> =
         (load fold) state (context.LoadFromToken false streamName log token (tryDecode, compactionPredicate))
     member _.TrySync<'context>
-        (   log : ILogger, fold: 'state -> 'event seq -> 'state,
+        (   log : ILogger, fold : 'state -> 'event seq -> 'state,
             (Token.StreamPos (stream,pos) as streamToken), state : 'state, events : 'event list, ctx : 'context option): Async<SyncResult<'state>> = async {
-        let encode e = codec.Encode(ctx,e)
+        let encode e = codec.Encode(ctx, e)
         let events =
             match access with
             | None | Some AccessStrategy.LatestKnownEvent -> events
-            | Some (AccessStrategy.RollingSnapshots (_,compact)) ->
+            | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
                 let cc = CompactionContext(List.length events, pos.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
 
@@ -595,7 +595,7 @@ type ConnectorBase([<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPoli
 
     abstract member Connect : unit -> Async<IStreamStore>
 
-    member __.Establish() : Async<SqlStreamStoreConnection> = async {
-        let! store = __.Connect()
+    member x.Establish() : Async<SqlStreamStoreConnection> = async {
+        let! store = x.Connect()
         return SqlStreamStoreConnection(readConnection=store, writeConnection=store, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
     }

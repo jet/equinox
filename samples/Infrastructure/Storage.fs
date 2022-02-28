@@ -171,7 +171,7 @@ module EventStore =
     let private createContext connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
     let config (log: ILogger, storeLog) (cache, unfolds) (args : ParseResults<Arguments>) =
         let a = Info(args)
-        let (timeout, retries) as operationThrottling = a.Timeout, a.Retries
+        let timeout, retries as operationThrottling = a.Timeout, a.Retries
         let heartbeatTimeout = a.HeartbeatTimeout
         let concurrentOperationsLimit = a.ConcurrentOperationsLimit
         log.Information("EventStoreDB {host} heartbeat: {heartbeat}s timeout: {timeout}s concurrent reqs: {concurrency} retries {retries}",

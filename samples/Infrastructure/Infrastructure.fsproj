@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <WarningLevel>5</WarningLevel>
     <IsTestProject>false</IsTestProject>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
@@ -28,10 +28,9 @@
 
   <ItemGroup>
     <PackageReference Include="Argu" Version="6.0.0" />
-    <!--Note .NetCore sufficed package is not an officially suported package and is not longer needed-->
-    <PackageReference Include="Destructurama.FSharp" Version="1.1.1-dev-00033" />
+    <PackageReference Include="Destructurama.FSharp" Version="1.2.0" />
     <PackageReference Include="FSharp.Core" Version="4.3.4" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="2.1.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="5.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
     <PackageReference Include="Microsoft.Azure.Cosmos.Direct" Version="3.9.0" />
