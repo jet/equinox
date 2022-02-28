@@ -583,7 +583,15 @@ type EventStoreCategory<'event, 'state, 'context>
     let storeCategory = StoreCategory(resolve, empty)
     member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>] ?context) = storeCategory.Resolve(streamName, ?context = context)
 
-#if PREVIEW3 // - there's no logging implemented in V3 as yet, so disabling for now
+// see https://github.com/EventStore/EventStore/issues/1652
+[<RequireQualifiedAccess; NoComparison>]
+type ConnectionStrategy =
+    /// Pair of master and slave connections, writes direct, often can't read writes, resync without backoff (kind to master, writes+resyncs optimal)
+    | ClusterTwinPreferSlaveReads
+    /// Single connection, with resync backoffs appropriate to the NodePreference
+    | ClusterSingle of NodePreference
+
+#if false
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
         member __.Debug(format : string, args : obj []) =           log.Debug(format, args)
@@ -605,7 +613,6 @@ type Logger =
         | SerilogNormal logger -> b.UseCustomLogger(SerilogAdapter(logger))
         | CustomVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(logger)
         | CustomNormal logger -> b.UseCustomLogger(logger)
-#endif
 
 [<RequireQualifiedAccess; NoComparison>]
 type NodePreference =
@@ -730,3 +737,45 @@ type Connector
             let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
             let! master = masterInParallel
             return Connection(readConnection = slave, writeConnection = master, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }
+#endif
+
+[<RequireQualifiedAccess; NoComparison>]
+type Discovery =
+    // Allow Uri-based connection definition (esdb://, etc)
+    | Uri of Uri
+
+type EventStoreConnector
+    (   reqTimeout : TimeSpan, reqRetries : int,
+        ?readRetryPolicy, ?writeRetryPolicy, ?tags,
+        ?customize : EventStoreClientSettings -> unit) =
+
+    member _.Connect
+        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+            name, discovery : Discovery, ?clusterNodePreference) : EventStoreClient =
+        let settings = match discovery with Discovery.Uri uri -> EventStoreClientSettings.Create(string uri)
+        if name = null then nullArg "name"
+        let name = String.concat ";" <| seq {
+            name
+            string clusterNodePreference
+            match tags with None -> () | Some tags -> for key, value in tags do sprintf "%s=%s" key value }
+        let sanitizedName = name.Replace('\'','_').Replace(':','_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
+        settings.ConnectionName <- sanitizedName
+        match clusterNodePreference with None -> () | Some np -> settings.ConnectivitySettings.NodePreference <- np
+        match customize with None -> () | Some f -> f settings
+        settings.OperationOptions.TimeoutAfter <- reqTimeout
+        // TODO implement reqRetries
+        new EventStoreClient(settings)
+
+    /// Yields a Connection (which may internally be twin connections) configured per the specified strategy
+    member x.Establish
+        (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
+            name,
+            discovery : Discovery, strategy : ConnectionStrategy) : EventStoreConnection =
+        match strategy with
+        | ConnectionStrategy.ClusterSingle nodePreference ->
+            let client = x.Connect(name, discovery, nodePreference)
+            EventStoreConnection(client, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
+        | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
+            let leader = x.Connect(name + "-TwinW", discovery, NodePreference.Leader)
+            let follower = x.Connect(name + "-TwinR", discovery, NodePreference.Follower)
+            EventStoreConnection(readConnection = follower, writeConnection = leader, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
