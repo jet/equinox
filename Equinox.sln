@@ -93,6 +93,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.CosmosStore.Prometh
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.EventStoreDb", "src\Equinox.EventStoreDb\Equinox.EventStoreDb.fsproj", "{C828E360-6FE8-47F9-9415-0A21869D7A93}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.EventStoreDb.Integration", "tests\Equinox.EventStoreDb.Integration\Equinox.EventStoreDb.Integration.fsproj", "{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -203,6 +205,10 @@ Global
 		{C828E360-6FE8-47F9-9415-0A21869D7A93}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C828E360-6FE8-47F9-9415-0A21869D7A93}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C828E360-6FE8-47F9-9415-0A21869D7A93}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

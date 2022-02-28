@@ -21,9 +21,9 @@ rectangle "Application Consistent Processing" <<External Container>> {
     interface IStream <<Component>>
 }
 
-rectangle "Equinox.EventStore" <<Container>> {
+rectangle "Equinox.EventStoreDb" <<Container>> {
     rectangle eqxes <<Component>> [
-        Equinox.EventStore OR
+        Equinox.EventStoreDb OR
         Equinox.SqlStreamStore
     ]
     database esstore <<Internal>> [

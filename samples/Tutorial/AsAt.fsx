@@ -41,7 +41,7 @@
 #r "nuget:Serilog.Sinks.Console"
 #r "nuget:Serilog.Sinks.Seq"
 #r "nuget:Equinox.CosmosStore, *-*"
-#r "nuget:Equinox.EventStore, *-*"
+#r "nuget:Equinox.EventStoreDb, *-*"
 #r "nuget:FsCodec.SystemTextJson, *-*"
 #endif
 open System

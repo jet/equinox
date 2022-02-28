@@ -1,7 +1,11 @@
 ﻿module Equinox.EventStore.Tests.EventStoreTokenTests
 
 open Equinox.Core
+#if STORE_EVENTSTORE_LEGACY
 open Equinox.EventStore
+#else
+open Equinox.EventStoreDb
+#endif
 open FsCheck.Xunit
 open Swensen.Unquote.Assertions
 open Xunit
