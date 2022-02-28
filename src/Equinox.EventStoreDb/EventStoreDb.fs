@@ -338,7 +338,7 @@ type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; 
 type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>] ?batchCountLimit) = // TODO batchCountLimit
     new (maxBatchSize) = BatchingPolicy(fun () -> maxBatchSize)
     member _.BatchSize = getMaxBatchSize()
-//    member _.MaxBatches = batchCountLimit
+//TODO    member _.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown of StreamToken
@@ -592,23 +592,15 @@ type EventStoreCategory<'event, 'state, 'context>
     let storeCategory = StoreCategory(resolve, empty)
     member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>] ?context) = storeCategory.Resolve(streamName, ?context = context)
 
-// see https://github.com/EventStore/EventStore/issues/1652
-[<RequireQualifiedAccess; NoComparison>]
-type ConnectionStrategy =
-    /// Pair of master and slave connections, writes direct, often can't read writes, resync without backoff (kind to master, writes+resyncs optimal)
-    | ClusterTwinPreferSlaveReads
-    /// Single connection, with resync backoffs appropriate to the NodePreference
-    | ClusterSingle of NodePreference
-
-#if false
+(* TODO
 type private SerilogAdapter(log : ILogger) =
     interface EventStore.ClientAPI.ILogger with
-        member __.Debug(format : string, args : obj []) =           log.Debug(format, args)
-        member __.Debug(ex : exn, format : string, args : obj []) = log.Debug(ex, format, args)
-        member __.Info(format : string, args : obj []) =            log.Information(format, args)
-        member __.Info(ex : exn, format : string, args : obj []) =  log.Information(ex, format, args)
-        member __.Error(format : string, args : obj []) =           log.Error(format, args)
-        member __.Error(ex : exn, format : string, args : obj []) = log.Error(ex, format, args)
+        member _.Debug(format : string, args : obj []) =           log.Debug(format, args)
+        member _.Debug(ex : exn, format : string, args : obj []) = log.Debug(ex, format, args)
+        member _.Info(format : string, args : obj []) =            log.Information(format, args)
+        member _.Info(ex : exn, format : string, args : obj []) =  log.Information(ex, format, args)
+        member _.Error(format : string, args : obj []) =           log.Error(format, args)
+        member _.Error(ex : exn, format : string, args : obj []) = log.Error(ex, format, args)
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type Logger =
@@ -622,22 +614,13 @@ type Logger =
         | SerilogNormal logger -> b.UseCustomLogger(SerilogAdapter(logger))
         | CustomVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(logger)
         | CustomNormal logger -> b.UseCustomLogger(logger)
-
-[<RequireQualifiedAccess; NoComparison>]
-type NodePreference =
-    /// Track master via gossip, writes direct, reads should immediately reflect writes, resync without backoff (highest load on master, good write perf)
-    | Master
-    /// Take the first connection that comes along, ideally a master, but do not track master changes
-    | PreferMaster
-    /// Prefer slave node, writes normally need forwarding, often can't read writes, resync requires backoff (kindest to master, writes and resyncs expensive)
-    | PreferSlave
-    /// Take random node, writes may need forwarding, sometimes can't read writes, resync requires backoff (balanced load on master, balanced write perf)
-    | Random
+*)
 
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
-    // Allow Uri-based connection definition (discovery://, tcp:// or
+    // Allow Uri-based connection definition (esdb://, etc)
     | Uri of Uri
+(* TODO
     /// Supply a set of pre-resolved EndPoints instead of letting Gossip resolution derive from the DNS outcome
     | GossipSeeded of seedManagerEndpoints : System.Net.IPEndPoint []
     // Standard Gossip-based discovery based on Dns query and standard manager port
@@ -669,6 +652,7 @@ module private Discovery =
         | (Discovery.GossipSeeded seedEndpoints), np ->     DiscoverViaGossip (buildSeeded np   (configureSeeded seedEndpoints))
         | (Discovery.GossipDns clusterDns), np ->           DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
         | (Discovery.GossipDnsCustomPort (dns, port)), np ->DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
+*)
 
 // see https://github.com/EventStore/EventStore/issues/1652
 [<RequireQualifiedAccess; NoComparison>]
@@ -678,14 +662,11 @@ type ConnectionStrategy =
     /// Single connection, with resync backoffs appropriate to the NodePreference
     | ClusterSingle of NodePreference
 
-type Connector
-    (   username, password, reqTimeout: TimeSpan, reqRetries: int,
-        [<O; D(null)>] ?log : Logger, [<O; D(null)>] ?heartbeatTimeout: TimeSpan, [<O; D(null)>] ?concurrentOperationsLimit,
-        [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy,
-        [<O; D(null)>] ?gossipTimeout, [<O; D(null)>] ?clientConnectionTimeout,
-        /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
-        /// NB as this will enter server and client logs, it should not contain sensitive information
-        [<O; D(null)>] ?tags : (string*string) seq) =
+type EventStoreConnector
+    (   reqTimeout : TimeSpan, reqRetries : int,
+        ?readRetryPolicy, ?writeRetryPolicy, ?tags,
+        ?customize : EventStoreClientSettings -> unit) =
+(* TODO port
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
         .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
@@ -707,61 +688,18 @@ type Connector
         |> fun s -> match clientConnectionTimeout with Some v -> s.WithConnectionTimeoutOf v | None -> s // default: 1000 ms
         |> fun s -> match log with Some log -> log.Configure s | None -> s
         |> fun s -> s.Build()
-
-    /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` and `clusterNodePrefence` preference
-    member __.Connect
-        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
-            name,
-            discovery : Discovery, ?clusterNodePreference) : Async<IEventStoreConnection> = async {
-        if name = null then nullArg "name"
-        let clusterNodePreference = defaultArg clusterNodePreference NodePreference.Master
-        let name = String.concat ";" <| seq {
-            yield name
-            yield string clusterNodePreference
-            match tags with None -> () | Some tags -> for key, value in tags do yield sprintf "%s=%s" key value }
-        let sanitizedName = name.Replace('\'','_').Replace(':','_') // ES internally uses `:` and `'` as separators in log messages and ... people regex logs
-        let conn =
-            match discovery, clusterNodePreference with
-            | Discovery.DiscoverViaUri uri ->
-                // This overload picks up the discovery settings via ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode
-                EventStoreConnection.Create(connSettings clusterNodePreference, uri, sanitizedName)
-            | Discovery.DiscoverViaGossip clusterSettings ->
-                // NB This overload's implementation ignores the calls to ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode and
-                // requires equivalent ones on the GossipSeedClusterSettingsBuilder or ClusterSettingsBuilder
-                EventStoreConnection.Create(connSettings clusterNodePreference, clusterSettings, sanitizedName)
-        do! conn.ConnectAsync() |> Async.AwaitTaskCorrect
-        return conn }
-
-    /// Yields a Connection (which may internally be twin connections) configured per the specified strategy
-    member __.Establish
-        (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
-            name,
-            discovery : Discovery, strategy : ConnectionStrategy) : Async<Connection> = async {
-        match strategy with
-        | ConnectionStrategy.ClusterSingle nodePreference ->
-            let! conn = __.Connect(name, discovery, nodePreference)
-            return Connection(conn, ?readRetryPolicy=readRetryPolicy, ?writeRetryPolicy=writeRetryPolicy)
-        | ConnectionStrategy.ClusterTwinPreferSlaveReads ->
-            let! masterInParallel = Async.StartChild (__.Connect(name + "-TwinW", discovery, NodePreference.Master))
-            let! slave = __.Connect(name + "-TwinR", discovery, NodePreference.PreferSlave)
-            let! master = masterInParallel
-            return Connection(readConnection = slave, writeConnection = master, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy) }
-#endif
-
-[<RequireQualifiedAccess; NoComparison>]
-type Discovery =
-    // Allow Uri-based connection definition (esdb://, etc)
-    | Uri of Uri
-
-type EventStoreConnector
-    (   reqTimeout : TimeSpan, reqRetries : int,
-        ?readRetryPolicy, ?writeRetryPolicy, ?tags,
-        ?customize : EventStoreClientSettings -> unit) =
-
+*)
     member _.Connect
         (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery, ?clusterNodePreference) : EventStoreClient =
-        let settings = match discovery with Discovery.Uri uri -> EventStoreClientSettings.Create(string uri)
+        let settings =
+            match discovery with
+            | Discovery.Uri uri -> EventStoreClientSettings.Create(string uri)
+(* TODO
+            | Discovery.DiscoverViaGossip clusterSettings ->
+                // NB This overload's implementation ignores the calls to ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode and
+                // requires equivalent ones on the GossipSeedClusterSettingsBuilder or ClusterSettingsBuilder
+                EventStoreConnection.Create(connSettings clusterNodePreference, clusterSettings, sanitizedName) *)
         if name = null then nullArg "name"
         let name = String.concat ";" <| seq {
             name
@@ -773,7 +711,7 @@ type EventStoreConnector
         match customize with None -> () | Some f -> f settings
         settings.DefaultDeadline <- reqTimeout
         // TODO implement reqRetries
-        new EventStoreClient(settings)
+        EventStoreClient(settings)
 
     /// Yields a Connection (which may internally be twin connections) configured per the specified strategy
     member x.Establish
