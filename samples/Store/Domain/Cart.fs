@@ -144,7 +144,7 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
                 acc.Transact(interpret cmd)
-            return acc.State, acc.Accumulated }
+            return acc.State, acc.Accumulated })
 #else
             return interpretMany Fold.fold (Seq.map interpret commands) state })
 #endif

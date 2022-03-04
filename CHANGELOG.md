@@ -10,12 +10,12 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `Equinox`: `Decider.Transact(interpret : 'state -> Async<'event list>)` [#308](https://github.com/jet/equinox/pull/308)
+- `Equinox`: `Decider.Transact(interpret : 'state -> Async<'event list>)` [#314](https://github.com/jet/equinox/pull/314)
 
 ### Changed
 
 - `eqx`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing [#313](https://github.com/jet/equinox/pull/313)
-- `Equinox`: rename `Decider.TransactAsync` to `Transact` [#308](https://github.com/jet/equinox/pull/308)
+- `Equinox`: rename `Decider.TransactAsync` to `Transact` [#314](https://github.com/jet/equinox/pull/314)
 - `CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.0.25` [#310](https://github.com/jet/equinox/pull/310)
 - `CosmosStore`: Switch to natively using `JsonElement` event bodies [#305](https://github.com/jet/equinox/pull/305) :pray: [@ylibrach](https://github.com/ylibrach)
 - `CosmosStore`: Switch to natively using `System.Text.Json` for serialization of all `Microsoft.Azure.Cosmos` round-trips [#305](https://github.com/jet/equinox/pull/305) :pray: [@ylibrach](https://github.com/ylibrach)
