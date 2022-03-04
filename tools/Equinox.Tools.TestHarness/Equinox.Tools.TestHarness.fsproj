@@ -19,14 +19,14 @@
 
   <ItemGroup>
     <PackageReference Include="MinVer" Version="2.5.0" PrivateAssets="All" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
 
     <!-- 4.7.0 has broken Async.Sequential, Async.Parallel with degree of parallelism parameter -->
     <PackageReference Include="FSharp.Core" Version="4.7.1" />
 
     <PackageReference Include="MathNet.Numerics" Version="4.7.0" />
     <PackageReference Include="Serilog" Version="2.7.1" />
-    <PackageReference Include="System.Reactive" Version="4.1.2" />
+    <PackageReference Include="System.Reactive" Version="5.0.0" />
   </ItemGroup>
 
 </Project>
