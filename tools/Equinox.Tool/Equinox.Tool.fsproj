@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <WarningLevel>5</WarningLevel>
@@ -12,7 +12,7 @@
 
     <PackageId>Equinox.Tool</PackageId>
     <AssemblyName>eqx</AssemblyName>
-    <!-- Allow to run on SDK >= 5-->
+    <!-- Allow to run on SDK >= 6-->
     <RollForward>Major</RollForward>
 
     <!-- workaround for not being able to make Domain inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
@@ -21,7 +21,6 @@
 
   <ItemGroup>
     <Compile Include="Infrastructure\Infrastructure.fs" />
-    <Compile Include="Infrastructure\HttpHelpers.fs" />
     <Compile Include="StoreClient.fs" />
     <Compile Include="TodoClient.fs" />
     <Compile Include="Tests.fs" />
@@ -39,24 +38,21 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="2.5.0" PrivateAssets="All" />
 
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.17.0" />
-<!--    <PackageReference Include="Microsoft.Azure.Cosmos.Direct" Version="3.17.1" />-->
-
 <!--    NOTE cannot be 4.7.0 as Async.Sequential is broken-->
     <PackageReference Include="FSharp.Core" Version="4.7.1" />
 
 <!-- Disambigurate to remove warning-->
-	  <PackageReference Include="System.Configuration.ConfigurationManager" Version="5.0.0" />
+	  <PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
 	  <PackageReference Include="System.Security.Cryptography.Cng" Version="5.0.0" />
-    
-    <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
+
+    <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
   </ItemGroup>
 
   <!-- workaround for not being able to make Domain inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
   <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>
-      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths -> WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths -&gt; WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
     </ItemGroup>
   </Target>
 

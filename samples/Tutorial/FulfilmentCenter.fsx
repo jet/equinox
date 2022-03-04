@@ -8,7 +8,7 @@
 #r "Equinox.Core.dll"
 #r "FSharp.UMX.dll"
 #r "FSCodec.dll"
-#r "FsCodec.NewtonsoftJson.dll"
+#r "FsCodec.SystemTextJson.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Microsoft.Azure.Cosmos.Direct.dll"
 #r "System.Net.Http"
@@ -63,7 +63,7 @@ module FulfilmentCenter =
             | FcDetailsChanged of FcData
             | FcRenamed of FcName
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+        let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
 
     module Fold =
 

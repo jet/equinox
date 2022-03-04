@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <WarningLevel>5</WarningLevel>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
@@ -25,12 +25,11 @@
     <ProjectReference Include="..\..\src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
   </ItemGroup>
 
 </Project>

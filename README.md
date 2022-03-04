@@ -112,7 +112,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 
 # Components
 
-The components within this repository are delivered as multi-targeted Nuget packages supporting `net461` (F# 3.1+) and `netstandard2.0` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
+The components within this repository are delivered as multi-targeted Nuget packages supporting `netstandard2.1` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
 ## Core library
 
@@ -136,7 +136,7 @@ The components within this repository are delivered as multi-targeted Nuget pack
 - `Equinox.Core` [![NuGet](https://img.shields.io/nuget/v/Equinox.Core.svg)](https://www.nuget.org/packages/Equinox.Core/): Interfaces and helpers used in the concrete Store implementations, together with the default [`System.Runtime.Caching.Cache`-based] `Cache` implementation. Hosts generic utility types frequently useful alongside Equinox: [`AsyncCacheCell`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/AsyncCacheCell.fs#L36), [`AsyncBatchingGate`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/AsyncBatchingGate.fs#L41). ([depends](https://www.fuget.org/packages/Equinox.Core) on `Equinox`, `System.Runtime.Caching`)
 - `Equinox.MemoryStore` [![MemoryStore NuGet](https://img.shields.io/nuget/v/Equinox.MemoryStore.svg)](https://www.nuget.org/packages/Equinox.MemoryStore/): In-memory store for integration testing/performance base-lining/providing out-of-the-box zero dependency storage for examples. ([depends](https://www.fuget.org/packages/Equinox.MemoryStore) on `Equinox.Core`, `FsCodec`)
 - `Equinox.EventStore` [![EventStore NuGet](https://img.shields.io/nuget/v/Equinox.EventStore.svg)](https://www.nuget.org/packages/Equinox.EventStore/): [EventStoreDB](https://eventstore.org/) Adapter designed to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.EventStore) on `Equinox.Core`, `EventStore.Client >= 20.6`, `FSharp.Control.AsyncSeq >= 2.0.23`)
-- `Equinox.CosmosStore` [![CosmosStore NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.svg)](https://www.nuget.org/packages/Equinox.CosmosStore/) [*NOTE: `Equinox.Cosmos` from the `/v2` branch is the only version on NuGet atm*](https://github.com/jet/equinox/pull/250#issuecomment-706031334): Azure CosmosDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore) on `Equinox.Core`, `Microsoft.Azure.Cosmos >= 3.9`, `FsCodec.NewtonsoftJson`, `FSharp.Control.AsyncSeq >= 2.0.23`)
+- `Equinox.CosmosStore` [![CosmosStore NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.svg)](https://www.nuget.org/packages/Equinox.CosmosStore/): Azure CosmosDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore) on `Equinox.Core`, `Microsoft.Azure.Cosmos >= 3.25`, `FsCodec.NewtonsoftJson`, `FSharp.Control.AsyncSeq >= 2.0.23`)
 - `Equinox.CosmosStore.Prometheus` [![CosmosStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.CosmosStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.CosmosStore`, `prometheus-net >= 3.6.0`)
 - `Equinox.SqlStreamStore` [![SqlStreamStore NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore/): [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) Adapter derived from `Equinox.EventStore` - provides core facilities (but does not connect to a specific database; see sibling `SqlStreamStore`.* packages). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore) on `Equinox.Core`, `FsCodec`, `SqlStreamStore >= 1.2.0-beta.8`, `FSharp.Control.AsyncSeq`)
 - `Equinox.SqlStreamStore.MsSql` [![MsSql NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.MsSql.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore.MsSql/): [SqlStreamStore.MsSql](https://sqlstreamstore.readthedocs.io/en/latest/sqlserver) Sql Server `Connector` implementation for `Equinox.SqlStreamStore` package). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore.MsSql) on `Equinox.SqlStreamStore`, `SqlStreamStore.MsSql >= 1.2.0-beta.8`)
@@ -213,7 +213,7 @@ The `samples/` folder contains various further examples (some of the templates a
 
 The repo contains a vanilla ASP.NET Core 2.1 implementation of [the well-known TodoBackend Spec](https://www.todobackend.com). **NB the implementation is largely dictated by spec; no architectural guidance expressed or implied ;)**. It can be run via:
 
-    & dotnet run -f netcoreapp3.1 -p samples/Web -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE
+    & dotnet run -p samples/Web -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE
     start https://www.todobackend.com/specs/index.html?https://localhost:5001/todos # for low-level debugging / validation of hosting arrangements
     start https://www.todobackend.com/client/index.html?https://localhost:5001/todos # standard JavaScript UI
     start http://localhost:5341/#/events # see logs triggered by `-S` above in https://getseq.net        
@@ -461,10 +461,10 @@ SqlStreamStore is provided in the samples and the `eqx` tool:
 cd ~/code/equinox
 
 # set up the DB/schema
-dotnet run -f netcoreapp3.1 -p tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+dotnet run -p tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 
 # run a benchmark
-dotnet run -c Release -f netcoreapp3.1 -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+dotnet run -c Release -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 
 # run the webserver, -A to autocreate schema on connection
 dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring" -A
@@ -517,18 +517,11 @@ Run, including running the tests that assume you've got a local EventStore and p
 
     ./build -se -scp
 
-### Run EventStore benchmark on Full Framework (when [provisioned](#provisioning))
-
-Continually reads and writes very small events across multiple streams on .NET Full Framework
-
-    dotnet pack -c Release ./build.proj
-    & ./tools/Equinox.Tool/bin/Release/net461/eqx.exe run -f 2500 -C -U es
-
 ### Run EventStore benchmark on .NET Core (when provisioned)
 
 At present, .NET Core seems to show comparable perf under normal load, but becomes very unpredictable under load. The following benchmark should produce pretty consistent levels of reads and writes, and can be used as a baseline for investigation:
 
-    & dotnet run -c Release -f netcoreapp3.1 -p tools/Equinox.Tool -- run -t saveforlater -f 1000 -d 5 -C -U es
+    & dotnet run -c Release -p tools/Equinox.Tool -- run -t saveforlater -f 1000 -d 5 -C -U es
 
 ### run Web benchmark
 
@@ -536,7 +529,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 #### in Window 1
 
-    & dotnet run -c Release -f netcoreapp3.1 -p samples/Web -- -C -U es
+    & dotnet run -c Release -p samples/Web -- -C -U es
 
 #### in Window 2
 
@@ -549,9 +542,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
     $env:EQUINOX_COSMOS_DATABASE="equinox-test"
     $env:EQUINOX_COSMOS_CONTAINER="equinox-test"
 
-    tools/Equinox.Tool/bin/Release/net461/eqx run `
-      cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
-    dotnet run -f netcoreapp3.1 -p tools/Equinox.Tool -- run `
+    dotnet run -p tools/Equinox.Tool -- run `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ## PROVISIONING

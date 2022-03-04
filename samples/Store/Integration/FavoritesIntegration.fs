@@ -7,8 +7,8 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial = Domain.Favorites.Fold.fold, Domain.Favorites.Fold.initial
-let snapshot = Domain.Favorites.Fold.isOrigin, Domain.Favorites.Fold.snapshot
+let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
+let snapshot = Favorites.Fold.isOrigin, Favorites.Fold.snapshot
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
@@ -24,7 +24,7 @@ let createServiceCosmosSnapshotsUncached log context =
     Favorites.create log cat.Resolve
 
 let createServiceCosmosRollingStateUncached log context =
-    let access = CosmosStore.AccessStrategy.RollingState Domain.Favorites.Fold.snapshot
+    let access = CosmosStore.AccessStrategy.RollingState Favorites.Fold.snapshot
     let cat = CosmosStore.CosmosStoreCategory(context, codec, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
     Favorites.create log cat.Resolve
 

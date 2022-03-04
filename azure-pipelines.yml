@@ -1,4 +1,8 @@
 name: $(Rev:r)
+trigger:
+  - master
+  - main
+  - refs/tags/*
 jobs:
 - job: Windows
   pool:
@@ -18,7 +22,7 @@ jobs:
     displayName: dotnet pack build.proj
     env:
       BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
-      BUILD_ID: $(BUILD.BUILDNUMBER) 
+      BUILD_ID: $(BUILD.BUILDNUMBER)
   - task: PublishBuildArtifacts@1
     inputs:
       pathtoPublish: 'bin/nupkg'
@@ -42,12 +46,19 @@ jobs:
     displayName: dotnet pack
     env:
       BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
-      BUILD_ID: $(BUILD.BUILDNUMBER) 
+      BUILD_ID: $(BUILD.BUILDNUMBER)
 
 - job: MacOS
   pool:
     vmImage: 'macOS-latest'
   steps:
+    - task: UseDotNet@2
+      displayName: 'Install .NET Core sdk'
+      inputs:
+        packageType: sdk
+        version: 6.x
+        installationPath:
+          $(Agent.ToolsDirectory)/dotnet
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
     env:
@@ -62,4 +73,4 @@ jobs:
     displayName: dotnet pack
     env:
       BUILD_PR: $(SYSTEM.PULLREQUEST.PULLREQUESTNUMBER)
-      BUILD_ID: $(BUILD.BUILDNUMBER) 
+      BUILD_ID: $(BUILD.BUILDNUMBER)

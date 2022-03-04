@@ -10,9 +10,9 @@ type Todo = { id: int; url: string; order: int; title: string; completed: bool }
 
 type Session(client: HttpClient, clientId: ClientId) =
 
-    member __.Send(req : HttpRequestMessage) : Async<HttpResponseMessage> =
+    member _.Send(req : HttpRequestMessage) : Async<HttpResponseMessage> =
         let req = req |> HttpReq.withHeader "COMPLETELY_INSECURE_CLIENT_ID" (ClientId.toString clientId)
-        client.Send(req)
+        client.SendAsync2(req)
 
 type TodosClient(session: Session) =
 
@@ -37,7 +37,7 @@ type TodosClient(session: Session) =
     }
 
     member __.Clear() : Async<unit> = async {
-        let request = HttpReq.delete () |> HttpReq.withPath basePath 
+        let request = HttpReq.delete () |> HttpReq.withPath basePath
         let! response = session.Send request
         return! response.EnsureStatusCode(HttpStatusCode.NoContent)
     }

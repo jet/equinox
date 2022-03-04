@@ -7,14 +7,14 @@ open Swensen.Unquote
 
 #nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
-let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
-let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
+let fold, initial = Cart.Fold.fold, Cart.Fold.initial
+let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
 
 let createMemoryStore () = MemoryStore.VolatileStore<byte[]>()
 let createServiceMemory log store =
     Cart.create log (fun (id,opt) -> MemoryStore.MemoryStoreCategory(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
 
-let codec = Domain.Cart.Events.codec
+let codec = Cart.Events.codec
 
 let resolveGesStreamWithRollingSnapshots context =
     fun (id,opt) -> EventStore.EventStoreCategory(context, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
@@ -29,9 +29,9 @@ let resolveCosmosStreamWithoutCustomAccessStrategy context =
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {
         for i in 1..count do
-            yield Domain.Cart.SyncItem (context, skuId, Some i, None)
+            yield Cart.SyncItem (context, skuId, Some i, None)
             if i <> count then
-                yield Domain.Cart.SyncItem (context, skuId, Some 0, None) })
+                yield Cart.SyncItem (context, skuId, Some 0, None) })
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

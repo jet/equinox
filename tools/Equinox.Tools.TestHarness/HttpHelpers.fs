@@ -31,7 +31,7 @@ type InvalidHttpResponseException =
     val ReasonPhrase : string
     val ResponseBody : string
 
-    member __.RequestMethod = new HttpMethod(__.requestMethod)
+    member x.RequestMethod = HttpMethod(x.requestMethod)
 
     private new (userMessage : string, requestMethod : HttpMethod, requestUri : Uri, requestBody : string,
                    statusCode : HttpStatusCode, reasonPhrase : string, responseBody : string,
@@ -70,11 +70,11 @@ type InvalidHttpResponseException =
         let! requestBody = request.Content.ReadAsStringDiapered()
         let! responseBody = responseBodyC
         return
-            new InvalidHttpResponseException(
+            InvalidHttpResponseException(
                 userMessage, request.Method, request.RequestUri, requestBody,
                 response.StatusCode, response.ReasonPhrase, responseBody,
                 ?innerException = innerException)
     }
 
     static member Create(response : HttpResponseMessage, ?innerException : exn) =
-        InvalidHttpResponseException.Create("HTTP request yielded unexpected response.", response, ?innerException = innerException) 
+        InvalidHttpResponseException.Create("HTTP request yielded unexpected response.", response, ?innerException = innerException)

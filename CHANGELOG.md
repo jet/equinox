@@ -12,8 +12,13 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Changed
 
 - `eqx`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing [#313](https://github.com/jet/equinox/pull/313)
+- `CosmosStore`: Require `Microsoft.Azure.Cosmos` v `3.0.25` [#310](https://github.com/jet/equinox/pull/310)
+- Update all non-Client dependencies except `FSharp.Core`, `FSharp.Control.AsyncSeq` [#310](https://github.com/jet/equinox/pull/310)
 
 ### Removed
+ 
+- Remove explicit `net461` handling; minimum target now `netstandard 2.1` / `net6.0` [#310](https://github.com/jet/equinox/pull/310)
+
 ### Fixed
 
 <a name="3.0.6"></a>

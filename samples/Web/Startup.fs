@@ -43,12 +43,11 @@ type Startup() =
         services
             .AddMvc()
             .AddJsonOptions(fun o ->
-                // NOTE this is technically superfluous as we don't use `option`s in the models at present
+                FsCodec.SystemTextJson.Options.Create().Converters
+                // NOTE this is technically superfluous as we don't use any constructs that require custom behavior in the models at present
                 // The key side-effect we want to guarantee is that we reference `FsCodec.SystemTextJson`,
-                // which will trigger a dependency on `System.Text.Json` >= `5.0.0-preview.3`
-                // This makes F# records roundtrip (System.Text.Json v4 required parameterless constructors on records)
-                o.JsonSerializerOptions.Converters.Add(FsCodec.SystemTextJson.Converters.JsonOptionConverter()))
-            .SetCompatibilityVersion(CompatibilityVersion.Latest) |> ignore
+                // which will trigger a dependency on `System.Text.Json` >= `6.0.1`
+                |> Seq.iter o.JsonSerializerOptions.Converters.Add) |> ignore
 
         let verbose = args.Contains Verbose
         let maybeSeq = if args.Contains LocalSeq then Some "http://localhost:5341" else None

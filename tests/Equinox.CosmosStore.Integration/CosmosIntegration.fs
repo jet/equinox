@@ -9,15 +9,15 @@ open System
 open System.Threading
 
 module Cart =
-    let fold, initial = Domain.Cart.Fold.fold, Domain.Cart.Fold.initial
-    let snapshot = Domain.Cart.Fold.isOrigin, Domain.Cart.Fold.snapshot
-    let codec = Domain.Cart.Events.codec
+    let fold, initial = Cart.Fold.fold, Cart.Fold.initial
+    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
+    let codec = Cart.Events.codec
     let createServiceWithoutOptimization log context =
         let resolve (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
         Cart.create log resolve
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds log context =
-        let unfArgs = Domain.Cart.Fold.isOrigin, fun _ -> Seq.empty
+        let unfArgs = Cart.Fold.isOrigin, fun _ -> Seq.empty
         let resolve (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
         Cart.create log resolve
     let createServiceWithSnapshotStrategy log context =
@@ -28,13 +28,13 @@ module Cart =
         let resolveStream (id,opt) = CosmosStoreCategory(context, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
         Cart.create log resolveStream
     let createServiceWithRollingState log context =
-        let access = AccessStrategy.RollingState Domain.Cart.Fold.snapshot
+        let access = AccessStrategy.RollingState Cart.Fold.snapshot
         let resolveStream (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
         Cart.create log resolveStream
 
 module ContactPreferences =
-    let fold, initial = Domain.ContactPreferences.Fold.fold, Domain.ContactPreferences.Fold.initial
-    let codec = Domain.ContactPreferences.Events.codec
+    let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
+    let codec = ContactPreferences.Events.codec
     let createServiceWithoutOptimization createContext queryMaxItems log _ignoreWindowSize _ignoreCompactionPredicate =
         let context = createContext queryMaxItems
         let resolveStream = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
@@ -55,9 +55,9 @@ type Tests(testOutputHelper) =
     let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
         service.ExecuteManyAsync(cartId, optimistic, seq {
             for i in 1..count do
-                yield Domain.Cart.SyncItem (context, skuId, Some i, None)
+                yield Cart.SyncItem (context, skuId, Some i, None)
                 if not exceptTheLastOne || i <> count then
-                    yield Domain.Cart.SyncItem (context, skuId, Some 0, None) })
+                    yield Cart.SyncItem (context, skuId, Some 0, None) })
     let addAndThenRemoveItemsManyTimes context cartId skuId service count =
         addAndThenRemoveItems false false context cartId skuId service count
     let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
@@ -125,7 +125,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Domain.Cart.SyncItem (cartContext, skuId, Some count, None)])
+            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Cart.SyncItem (cartContext, skuId, Some count, None)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()
@@ -282,7 +282,7 @@ type Tests(testOutputHelper) =
                     return Some (skuId, addRemoveCount) }
 
         let act prepare (service : Cart.Service) skuId count =
-            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Domain.Cart.SyncItem (cartContext, skuId, Some count, None)])
+            service.ExecuteManyAsync(cartId, false, prepare = prepare, commands = [Cart.SyncItem (cartContext, skuId, Some count, None)])
 
         let eventWaitSet () = let e = new ManualResetEvent(false) in (Async.AwaitWaitHandle e |> Async.Ignore), async { e.Set() |> ignore }
         let w0, s0 = eventWaitSet ()

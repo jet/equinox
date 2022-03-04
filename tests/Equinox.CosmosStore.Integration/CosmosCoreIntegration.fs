@@ -69,14 +69,14 @@ type Tests(testOutputHelper) =
     }
 
     let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
-    let stringOfUtf8 (x: byte[]) = Encoding.UTF8.GetString(x)
+    let stringOfEventBody (x: byte[]) = Encoding.UTF8.GetString(x)
     let xmlDiff (x: string) (y: string) =
         match JsonDiffPatchDotNet.JsonDiffPatch().Diff(JToken.Parse x,JToken.Parse y) with
         | null -> ""
         | d -> string d
     let verifyUtf8JsonEquals i x y =
-        let sx,sy = stringOfUtf8 x, stringOfUtf8 y
-        test <@ ignore i; blobEquals x y || "" = xmlDiff sx sy @>
+        let sx,sy = stringOfEventBody x, stringOfEventBody y
+        test <@ ignore i; x = y || "" = xmlDiff sx sy @>
 
     let add6EventsIn2BatchesEx ctx streamName splitAt = async {
         let index = 0L
@@ -92,7 +92,7 @@ type Tests(testOutputHelper) =
 
     let add6EventsIn2Batches ctx streamName = add6EventsIn2BatchesEx ctx streamName 1
 
-    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<byte[]>[]) =
+    let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<_>[]) =
         let xs, baseIndex =
             if direction = Equinox.CosmosStore.Core.Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L

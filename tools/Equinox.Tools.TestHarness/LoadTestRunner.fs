@@ -132,7 +132,7 @@ module private LocalLoadTestImpl =
                 }
 
                 do! [|for _i in 1 .. (minSessions - availableSessions) -> alloc |]
-                    |> Async.ParallelThrottled (max (throughput / 10) 1)
+                    |> fun workflows -> Async.Parallel(workflows, max (throughput / 10) 1)
                     |> Async.Ignore
 
                 return! allocatorLoop (n + 1L)
@@ -368,7 +368,7 @@ type LoadTestRunner with
 
     /// Specifies a threshold after which the load test should be aborted
     member runner.WithErrorCutoff(errorThreshold : int64) : LoadTestRunner =
-        let errors = new ConcurrentCounter()
+        let errors = ConcurrentCounter()
         let callback e =
             if LoadTestEvent.IsErrorEvent e.payload &&
                errors.Increment() = errorThreshold
