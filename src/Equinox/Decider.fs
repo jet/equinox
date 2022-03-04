@@ -45,14 +45,14 @@ type Decider<'event, 'state>
     /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
     /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
     /// 2.  Yield result
-    member _.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> =
+    member _.Transact(decide : 'state -> Async<'result * 'event list>) : Async<'result> =
         transact (fun context -> decide context.State) (fun result _context -> result)
 
     /// 0.  Invoke the supplied <c>_Async_</c> <c>decide</c> function with the present state (including extended context), holding the <c>'result</c>
     /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
     /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
-    /// 2.  Uses <c>mapResult</c> to render the final outcome from the <c>'result</c> and/or the final <c>ISyncContext</c>
-    /// 3.  Yields the outcome
+    /// 2.  Uses <c>mapResult</c> to render the final 'view from the <c>'result</c> and/or the final <c>ISyncContext</c>
+    /// 3.  Yields the 'view
     member _.TransactEx(decide : ISyncContext<'state> -> Async<'result * 'event list>, mapResult : 'result -> ISyncContext<'state> -> 'view) : Async<'view> =
         transact decide mapResult
 

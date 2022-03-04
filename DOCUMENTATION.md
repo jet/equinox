@@ -1326,7 +1326,7 @@ type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.St
 
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        decider.TransactAsync(fun state -> async {
+        decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             return interpretMany Fold.fold (Seq.map interpret commands) state })
 ```
@@ -1368,7 +1368,7 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
         interpret x.State |> accumulated.AddRange
     /// Invoke an Async decision function, gathering the events (if any) that
     /// it decides are necessary into the `Accumulated` sequence
-    member x.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+    member x.Transact(interpret : 'state -> Async<'event list>) : Async<unit> = async {
         let! events = interpret x.State
         accumulated.AddRange events }
     /// Invoke a decision function, while also propagating a result yielded as
@@ -1379,21 +1379,22 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
         result
     /// Invoke a decision function, while also propagating a result yielded as
     /// the fst of an (result, events) pair
-    member x.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+    member x.Transact(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
         let! result, newEvents = decide x.State
         accumulated.AddRange newEvents
         return result }
 
 type Service ... =
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-        let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        decider.TransactAsync(fun state -> async {
+        let decider = resolve cartId
+        let opt = if optimistic then Some Equinox.AllowStale else Equinox.RequireLoad
+        decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
                 acc.Transact(interpret cmd)
             return acc.State, acc.Accumulated
-        })
+        }, opt)
 ```
 
 # Equinox Architectural Overview
