@@ -38,8 +38,6 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="2.5.0" PrivateAssets="All" />
 
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.25.0" />
-
 <!--    NOTE cannot be 4.7.0 as Async.Sequential is broken-->
     <PackageReference Include="FSharp.Core" Version="4.7.1" />
 
