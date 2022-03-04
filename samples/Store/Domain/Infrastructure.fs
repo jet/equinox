@@ -32,7 +32,7 @@ module Guid =
 /// - Ensures canonical rendering without dashes via ToString + Newtonsoft.Json
 /// - Guards against XSS by only permitting initialization based on Guid.Parse
 /// - Implements comparison/equality solely to enable tests to leverage structural equality
-[<Sealed; AutoSerializable(false); JsonConverter(typeof<SkuIdJsonConverter>)>]
+[<Sealed; AutoSerializable(false); JsonConverter(typeof<SkuIdJsonConverter>); System.Text.Json.Serialization.JsonConverter(typeof<SkuIdJsonConverterStj>)>]
 type SkuId private (id : string) =
     inherit StringId<SkuId>(id)
     new(value : Guid) = SkuId(value.ToString "N")
@@ -45,6 +45,10 @@ and private SkuIdJsonConverter() =
     override __.Pickle value = string value
     /// Input must be a `Guid.Parse`able value
     override __.UnPickle input = Guid.Parse input |> SkuId
+and private SkuIdJsonConverterStj() =
+    inherit FsCodec.SystemTextJson.JsonIsomorphism<SkuId, string>()
+    override _.Pickle value = string value
+    override _.UnPickle input = Guid.Parse input |> SkuId
 
 /// RequestId strongly typed id, represented internally as a string
 /// - Ensures canonical rendering without dashes via ToString, Newtonsoft.Json, sprintf "%s" etc

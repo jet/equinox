@@ -14,7 +14,7 @@ module Events =
     type Event =
         | Reserved of Reserved
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
+    let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
 
 module Fold =
 
