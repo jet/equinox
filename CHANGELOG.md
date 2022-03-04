@@ -22,6 +22,9 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
+- `EventStore/SqlStreamStore`: rename `Equinox.XXXStore.Log.Event` -> `Metric` to match `CosmosStore` [#311](https://github.com/jet/equinox/pull/311)
+- `SqlStreamStore`: Fix `Metric` key to be `ssEvt` (was `esEvt`) [#311](https://github.com/jet/equinox/pull/311)
+
 <a name="3.0.6"></a>
 ## [3.0.6] - 2022-01-19
 

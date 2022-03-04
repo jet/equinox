@@ -13,7 +13,7 @@ module EquinoxEsInterop =
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
         override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed
-    let flatten (evt : Log.Event) : FlatMetric =
+    let flatten (evt : Log.Metric) : FlatMetric =
         let action, metric, batches =
             match evt with
             | Log.WriteSuccess m -> "AppendToStreamAsync", m, None
@@ -66,7 +66,7 @@ type SerilogMetricsExtractor(emit : string -> unit) =
     let (|EsMetric|CosmosMetric|GenericMessage|) (logEvent : Serilog.Events.LogEvent) =
         logEvent.Properties
         |> Seq.tryPick (function
-            | KeyValue (k, SerilogScalar (:? Equinox.EventStore.Log.Event as m)) -> Some <| Choice1Of3 (k,m)
+            | KeyValue (k, SerilogScalar (:? Equinox.EventStore.Log.Metric as m)) -> Some <| Choice1Of3 (k,m)
             | KeyValue (k, SerilogScalar (:? Equinox.CosmosStore.Core.Log.Metric as m)) -> Some <| Choice2Of3 (k,m)
             | _ -> None)
         |> Option.defaultValue (Choice3Of3 ())

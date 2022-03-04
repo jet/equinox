@@ -1,8 +1,8 @@
 name: $(Rev:r)
 trigger:
-  - master
-  - main
-  - refs/tags/*
+- master
+- main
+- refs/tags/*
 jobs:
 - job: Windows
   pool:
