@@ -697,7 +697,7 @@ Equinox’s Command Handling consists of < 200 lines including interfaces and
 comments in https://github.com/jet/equinox/tree/master/src/Equinox - the
 elements you'll touch in a normal application are:
 
-- [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs#L34) -
+- [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Core.fs#L34) -
   internal implementation of Optimistic Concurrency Control / retry loop used
   by `Decider`. It's recommended to at least scan this file as it defines the
   Transaction semantics that are central to Equinox and the overall `Decider` concept.
@@ -853,13 +853,6 @@ let create resolve =
         Equinox.Decider(log, resolve streamName, maxAttempts = 3)
     Service(resolve)
 ```
-
-The `Decider`-related functions in a given Aggregate establish the access
-patterns used across when Service methods access streams (see below). Typically
-these are relatively straightforward calls forwarding to a `Equinox.Decider`
-equivalent (see [`src/Equinox/Decider.fs`](src/Equinox/Decider.fs)), which in
-turn use the Optimistic Concurrency retry-loop in
-[`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
 state (in `AllowStale` mode, the store roundtrip can be optimized out by
