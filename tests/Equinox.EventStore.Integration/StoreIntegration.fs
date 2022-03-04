@@ -86,8 +86,6 @@ module ContactPreferences =
         let cat = Category(createContext connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
         ContactPreferences.create log cat.Resolve
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
-
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
 

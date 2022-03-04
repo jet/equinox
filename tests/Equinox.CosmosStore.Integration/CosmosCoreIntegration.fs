@@ -8,9 +8,6 @@ open Newtonsoft.Json.Linq
 open Swensen.Unquote
 open Serilog
 open System
-open System.Text
-
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type TestEvents() =
     static member private Create(i, ?eventType, ?json) =

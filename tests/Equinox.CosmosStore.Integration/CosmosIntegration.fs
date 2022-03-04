@@ -46,8 +46,6 @@ module ContactPreferences =
         let resolveStream = CosmosStoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
         ContactPreferences.create log resolveStream
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
-
 type Tests(testOutputHelper) =
     inherit TestsWithLogCapture(testOutputHelper)
     let log,capture = base.Log, base.Capture

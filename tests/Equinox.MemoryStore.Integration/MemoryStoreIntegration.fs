@@ -9,8 +9,6 @@ let createServiceMemory log store =
     let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Cart.Fold.fold, Cart.Fold.initial)
     Cart.create log cat.Resolve
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
-
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper
     let createLog () = createLogger testOutput

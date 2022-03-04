@@ -5,8 +5,6 @@ open Equinox
 open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
-
 let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()

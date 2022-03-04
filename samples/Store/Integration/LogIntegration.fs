@@ -95,8 +95,6 @@ let createLoggerWithMetricsExtraction emit =
     let capture = SerilogMetricsExtractor emit
     createLogger capture
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
-
 type Tests() =
     let act buffer (service : Cart.Service) itemCount context cartId skuId resultTag = async {
         do! CartIntegration.addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service itemCount
