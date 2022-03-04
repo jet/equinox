@@ -53,7 +53,7 @@ and [<NoComparison; NoEquality>]InitArguments =
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosInitInfo(args : ParseResults<InitArguments>) =
-    member __.ProvisioningMode =
+    member _.ProvisioningMode =
         let throughput () =
             if args.Contains Autoscale
             then CosmosInit.Throughput.Autoscale (args.GetResult(Rus, 4000))
@@ -114,7 +114,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | MySql _ ->                    "Parameters for MySql."
             | Postgres _ ->                 "Parameters for Postgres."
 and DumpInfo(args: ParseResults<DumpArguments>) =
-    member __.ConfigureStore(log : ILogger, createStoreLog) =
+    member _.ConfigureStore(log : ILogger, createStoreLog) =
         let storeConfig = None, true
         match args.TryGetSubCommand() with
         | Some (DumpArguments.Cosmos sargs) ->
@@ -172,45 +172,45 @@ and [<NoComparison; NoEquality>]TestArguments =
             | Postgres _ ->                 "Run transactions in-process against Postgres."
             | Web _ ->                      "Run transactions against a Web endpoint."
 and TestInfo(args: ParseResults<TestArguments>) =
-    member __.Options =                     args.GetResults Cached @ args.GetResults Unfolds
-    member __.Cache =                       __.Options |> List.exists (function Cached ->  true | _ -> false)
-    member __.Unfolds =                     __.Options |> List.exists (function Unfolds -> true | _ -> false)
-    member __.Test =                        args.GetResult(Name,Test.Favorite)
-    member __.ErrorCutoff =                 args.GetResult(ErrorCutoff,10000L)
-    member __.TestsPerSecond =              args.GetResult(TestsPerSecond,1000)
-    member __.Duration =                    args.GetResult(DurationM,30.) |> TimeSpan.FromMinutes
-    member __.ReportingIntervals =
+    member _.Options =                     args.GetResults Cached @ args.GetResults Unfolds
+    member x.Cache =                       x.Options |> List.exists (function Cached ->  true | _ -> false)
+    member x.Unfolds =                     x.Options |> List.exists (function Unfolds -> true | _ -> false)
+    member _.Test =                        args.GetResult(Name,Test.Favorite)
+    member _.ErrorCutoff =                 args.GetResult(ErrorCutoff,10000L)
+    member _.TestsPerSecond =              args.GetResult(TestsPerSecond,1000)
+    member _.Duration =                    args.GetResult(DurationM,30.) |> TimeSpan.FromMinutes
+    member x.ReportingIntervals =
         match args.GetResults(ReportIntervalS) with
         | [] -> TimeSpan.FromSeconds 10.|> Seq.singleton
         | intervals -> seq { for i in intervals -> TimeSpan.FromSeconds(float i) }
-        |> fun intervals -> [| yield __.Duration; yield! intervals |]
-    member __.ConfigureStore(log : ILogger, createStoreLog) =
-        let cache = if __.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
+        |> fun intervals -> [| yield x.Duration; yield! intervals |]
+    member x.ConfigureStore(log : ILogger, createStoreLog) =
+        let cache = if x.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
         match args.TryGetSubCommand() with
         | Some (Cosmos sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
-            log.Information("Running transactions in-process against CosmosDB with storage options: {options:l}", __.Options)
-            storeLog, Storage.Cosmos.config log (cache, __.Unfolds) (Storage.Cosmos.Info sargs)
+            log.Information("Running transactions in-process against CosmosDB with storage options: {options:l}", x.Options)
+            storeLog, Storage.Cosmos.config log (cache, x.Unfolds) (Storage.Cosmos.Info sargs)
         | Some (Es sargs) ->
             let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
-            log.Information("Running transactions in-process against EventStore with storage options: {options:l}", __.Options)
-            storeLog, Storage.EventStore.config (log,storeLog) (cache, __.Unfolds) sargs
+            log.Information("Running transactions in-process against EventStore with storage options: {options:l}", x.Options)
+            storeLog, Storage.EventStore.config (log,storeLog) (cache, x.Unfolds) sargs
         | Some (MsSql sargs) ->
             let storeLog = createStoreLog false
-            log.Information("Running transactions in-process against MsSql with storage options: {options:l}", __.Options)
-            storeLog, Storage.Sql.Ms.config log (cache, __.Unfolds) sargs
+            log.Information("Running transactions in-process against MsSql with storage options: {options:l}", x.Options)
+            storeLog, Storage.Sql.Ms.config log (cache, x.Unfolds) sargs
         | Some (MySql sargs) ->
             let storeLog = createStoreLog false
-            log.Information("Running transactions in-process against MySql with storage options: {options:l}", __.Options)
-            storeLog, Storage.Sql.My.config log (cache, __.Unfolds) sargs
+            log.Information("Running transactions in-process against MySql with storage options: {options:l}", x.Options)
+            storeLog, Storage.Sql.My.config log (cache, x.Unfolds) sargs
         | Some (Postgres sargs) ->
             let storeLog = createStoreLog false
-            log.Information("Running transactions in-process against Postgres with storage options: {options:l}", __.Options)
-            storeLog, Storage.Sql.Pg.config log (cache, __.Unfolds) sargs
+            log.Information("Running transactions in-process against Postgres with storage options: {options:l}", x.Options)
+            storeLog, Storage.Sql.Pg.config log (cache, x.Unfolds) sargs
         | _  | Some (Memory _) ->
-            log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", __.Options)
+            log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", x.Options)
             createStoreLog false, Storage.MemoryStore.config ()
-    member __.Tests =
+    member _.Tests =
         match args.GetResult(Name,Favorite) with
         | Favorite ->     Tests.Favorite
         | SaveForLater -> Tests.SaveForLater
@@ -274,7 +274,7 @@ module LoadTest =
                 decorateWithLogger (log,verbose) execForClient
             | Some storeConfig, _ ->
                 let services = ServiceCollection()
-                Samples.Infrastructure.Services.register(services, storeConfig, storeLog)
+                Services.register(services, storeConfig, storeLog)
                 let container = services.BuildServiceProvider()
                 let execForClient = Tests.executeLocal container test
                 decorateWithLogger (log, verbose) execForClient
@@ -362,7 +362,7 @@ module CosmosStats =
         member container.QueryValue<'T>(sqlQuery : string) =
             let query : Microsoft.Azure.Cosmos.FeedResponse<'T> = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
             query |> Seq.exactlyOne
-    let run (log : ILogger, verboseConsole, maybeSeq) (args : ParseResults<StatsArguments>) = async {
+    let run (log : ILogger, _verboseConsole, _maybeSeq) (args : ParseResults<StatsArguments>) = async {
         match args.TryGetSubCommand() with
         | Some (StatsArguments.Cosmos sargs) ->
             let doS,doD,doE = args.Contains StatsArguments.Streams, args.Contains StatsArguments.Documents, args.Contains StatsArguments.Events
@@ -392,7 +392,7 @@ module Dump =
         let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
         let doU, doE = not (args.Contains EventsOnly), not (args.Contains UnfoldsOnly)
         let doC,doJ,doP,doT = args.Contains Correlation, not (args.Contains JsonSkip), args.Contains Pretty, not (args.Contains TimeRegular)
-        let cat = Samples.Infrastructure.Services.StreamResolver(storeConfig)
+        let cat = Services.StreamResolver(storeConfig)
 
         let streams = args.GetResults DumpArguments.Stream
         log.ForContext("streams",streams).Information("Reading...")
@@ -453,6 +453,6 @@ let main argv =
             | _ -> failwith "Please specify a valid subcommand :- init, config, dump, stats or run"
             0
         with e -> log.Debug(e, "Fatal error; exiting"); reraise ()
-    with :? Argu.ArguParseException as e -> eprintfn "%s" e.Message; 1
+    with :? ArguParseException as e -> eprintfn "%s" e.Message; 1
         | Storage.MissingArg msg -> eprintfn "%s" msg; 1
         | e -> eprintfn "%s" e.Message; 1

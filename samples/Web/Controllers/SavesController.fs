@@ -11,7 +11,7 @@ type SavesController(service : SavedForLater.Service) =
     inherit ControllerBase()
 
     [<HttpGet>]
-    member __.Get
+    member _.Get
         (   [<FromClientIdHeader>]clientId : ClientId) = async {
         let! res = service.List(clientId)
         return ActionResult<_> res
@@ -19,15 +19,15 @@ type SavesController(service : SavedForLater.Service) =
 
     // Returns 400 if item limit exceeded
     [<HttpPost>]
-    member __.Save
+    member x.Save
         (   [<FromClientIdHeader>]clientId : ClientId,
             [<FromBody>]skuIds : SkuId[]) : Async<ActionResult> = async {
         let! ok = service.Save(clientId, List.ofArray skuIds)
-        if ok then return __.NoContent() :> _ else return __.BadRequest("Exceeded maximum number of items in Saved list; please validate before requesting Save.") :> _
+        if ok then return x.NoContent() :> _ else return x.BadRequest("Exceeded maximum number of items in Saved list; please validate before requesting Save.") :> _
     }
 
     [<HttpDelete>]
-    member __.Remove
+    member _.Remove
         (   [<FromClientIdHeader>]clientId : ClientId,
             [<FromBody>]skuIds : SkuId[]) : Async<unit> = async {
         let resolveSkus _hasSavedSku = async { return skuIds }

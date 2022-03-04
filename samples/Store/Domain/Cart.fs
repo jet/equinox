@@ -101,28 +101,28 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
     let accumulated = ResizeArray<'event>()
 
     /// The Events that have thus far been pended via the `decide` functions `Execute`/`Decide`d during the course of this flow
-    member __.Accumulated : 'event list =
+    member _.Accumulated : 'event list =
         accumulated |> List.ofSeq
 
     /// The current folded State, based on the Stream's `originState` + any events that have been Accumulated during the the decision flow
-    member __.State : 'state =
+    member _.State : 'state =
         accumulated |> fold originState
 
     /// Invoke a decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
-    member __.Transact(interpret : 'state -> 'event list) : unit =
-        interpret __.State |> accumulated.AddRange
+    member x.Transact(interpret : 'state -> 'event list) : unit =
+        interpret x.State |> accumulated.AddRange
     /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
-    member __.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
-        let! events = interpret __.State
+    member x.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+        let! events = interpret x.State
         accumulated.AddRange events }
     /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
-    member __.Transact(decide : 'state -> 'result * 'event list) : 'result =
-        let result, newEvents = decide __.State
+    member x.Transact(decide : 'state -> 'result * 'event list) : 'result =
+        let result, newEvents = decide x.State
         accumulated.AddRange newEvents
         result
     /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
-    member __.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
-        let! result, newEvents = decide __.State
+    member x.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+        let! result, newEvents = decide x.State
         accumulated.AddRange newEvents
         return result }
 #else
@@ -136,7 +136,7 @@ let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
 
 type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member __.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
+    member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
         decider.TransactAsync(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
@@ -149,16 +149,16 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
             return interpretMany Fold.fold (Seq.map interpret commands) state })
 #endif
 
-    member __.ExecuteManyAsync(cartId, optimistic, commands : Command seq, ?prepare) : Async<unit> =
-        __.Run(cartId, optimistic, commands, ?prepare=prepare) |> Async.Ignore
+    member x.ExecuteManyAsync(cartId, optimistic, commands : Command seq, ?prepare) : Async<unit> =
+        x.Run(cartId, optimistic, commands, ?prepare=prepare) |> Async.Ignore
 
-    member __.Execute(cartId, command) =
-         __.ExecuteManyAsync(cartId, false, [command])
+    member x.Execute(cartId, command) =
+        x.ExecuteManyAsync(cartId, false, [command])
 
-    member __.Read cartId =
+    member _.Read cartId =
         let decider = resolve (cartId,None)
         decider.Query id
-    member __.ReadStale cartId =
+    member _.ReadStale cartId =
         let decider = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
         decider.Query id
 

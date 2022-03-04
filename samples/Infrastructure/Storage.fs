@@ -66,23 +66,23 @@ module Cosmos =
                 | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Info(args : ParseResults<Arguments>) =
-        member __.Mode =                args.TryGetResult ConnectionMode
-        member __.Connection =          args.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
-        member __.Database =            args.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
-        member __.Container =           args.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
-        member private __.Connection2 = args.TryGetResult Connection2
-        member private __.Database2 =   args.TryGetResult Database2  |> Option.defaultWith (fun () -> __.Database)
-        member private __.Container2 =  args.TryGetResult Container2 |> Option.defaultWith (fun () -> __.Container)
-        member __.Secondary =           if args.Contains Connection2 || args.Contains Database2 || args.Contains Container2
-                                        then Some (__.Connection2, __.Database2, __.Container2)
+        member _.Mode =                 args.TryGetResult ConnectionMode
+        member _.Connection =           args.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
+        member _.Database =             args.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
+        member _.Container =            args.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
+        member private _.Connection2 =  args.TryGetResult Connection2
+        member private x.Database2 =    args.TryGetResult Database2  |> Option.defaultWith (fun () -> x.Database)
+        member private x.Container2 =   args.TryGetResult Container2 |> Option.defaultWith (fun () -> x.Container)
+        member x.Secondary =            if args.Contains Connection2 || args.Contains Database2 || args.Contains Container2
+                                        then Some (x.Connection2, x.Database2, x.Container2)
                                         else None
 
-        member __.Timeout =             args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
-        member __.Retries =             args.GetResult(Retries,1)
-        member __.MaxRetryWaitTime =    args.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
-        member __.TipMaxEvents =        args.GetResult(TipMaxEvents, 256)
-        member __.TipMaxJsonLength =    args.GetResult(TipMaxJsonLength, 30000)
-        member __.QueryMaxItems =       args.GetResult(QueryMaxItems, 10)
+        member x.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
+        member x.Retries =              args.GetResult(Retries,1)
+        member x.MaxRetryWaitTime =     args.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
+        member x.TipMaxEvents =         args.GetResult(TipMaxEvents, 256)
+        member x.TipMaxJsonLength =     args.GetResult(TipMaxJsonLength, 30000)
+        member x.QueryMaxItems =        args.GetResult(QueryMaxItems, 10)
 
     /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
     /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
@@ -151,14 +151,14 @@ module EventStore =
     open Equinox.EventStore
 
     type Info(args : ParseResults<Arguments>) =
-        member __.Host =                args.GetResult(Host,"localhost")
-        member __.Credentials =         args.GetResult(Username,"admin"), args.GetResult(Password,"changeit")
+        member _.Host =                 args.GetResult(Host,"localhost")
+        member _.Credentials =          args.GetResult(Username,"admin"), args.GetResult(Password,"changeit")
 
-        member __.Timeout =             args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
-        member __.Retries =             args.GetResult(Retries, 1)
-        member __.HeartbeatTimeout =    args.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
-        member __.ConcurrentOperationsLimit = args.GetResult(ConcurrentOperationsLimit,5000)
-        member __.MaxEvents =           args.GetResult(MaxEvents, 500)
+        member _.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
+        member _.Retries =              args.GetResult(Retries, 1)
+        member _.HeartbeatTimeout =     args.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
+        member _.ConcurrentOperationsLimit = args.GetResult(ConcurrentOperationsLimit,5000)
+        member _.MaxEvents =            args.GetResult(MaxEvents, 500)
 
     open Serilog
 
@@ -199,11 +199,11 @@ module Sql =
                     | AutoCreate _ ->       "AutoCreate schema"
                     | MaxEvents _ ->        "Maximum number of Events to request per batch. Default 500."
         type Info(args : ParseResults<Arguments>) =
-            member __.ConnectionString =    args.GetResult ConnectionString
-            member __.Schema =              args.GetResult(Schema,null)
-            member __.Credentials =         args.GetResult(Credentials,null)
-            member __.AutoCreate =          args.Contains AutoCreate
-            member __.MaxEvents =           args.GetResult(MaxEvents, 500)
+            member _.ConnectionString =     args.GetResult ConnectionString
+            member _.Schema =               args.GetResult(Schema,null)
+            member _.Credentials =          args.GetResult(Credentials,null)
+            member _.AutoCreate =           args.Contains AutoCreate
+            member _.MaxEvents =            args.GetResult(MaxEvents, 500)
         let connect (log : ILogger) (connectionString,schema,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore MsSql Connection {connectionString} Schema {schema} AutoCreate {autoCreate}", connectionString, schema, autoCreate)
@@ -226,10 +226,10 @@ module Sql =
                     | AutoCreate _ ->       "AutoCreate schema"
                     | MaxEvents _ ->        "Maximum number of Events to request per batch. Default 500."
         type Info(args : ParseResults<Arguments>) =
-            member __.ConnectionString =    args.GetResult ConnectionString
-            member __.Credentials =         args.GetResult(Credentials,null)
-            member __.AutoCreate =          args.Contains AutoCreate
-            member __.MaxEvents =           args.GetResult(MaxEvents, 500)
+            member _.ConnectionString =     args.GetResult ConnectionString
+            member _.Credentials =          args.GetResult(Credentials,null)
+            member _.AutoCreate =           args.Contains AutoCreate
+            member _.MaxEvents =            args.GetResult(MaxEvents, 500)
         let connect (log : ILogger) (connectionString,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore MySql Connection {connectionString} AutoCreate {autoCreate}", connectionString, autoCreate)
@@ -254,11 +254,11 @@ module Sql =
                     | AutoCreate _ ->       "AutoCreate schema"
                     | MaxEvents _ ->        "Maximum number of Events to request per batch. Default 500."
         type Info(args : ParseResults<Arguments>) =
-            member __.ConnectionString =    args.GetResult ConnectionString
-            member __.Schema =              args.GetResult(Schema,null)
-            member __.Credentials =         args.GetResult(Credentials,null)
-            member __.AutoCreate =          args.Contains AutoCreate
-            member __.MaxEvents =           args.GetResult(MaxEvents, 500)
+            member _.ConnectionString =     args.GetResult ConnectionString
+            member _.Schema =               args.GetResult(Schema,null)
+            member _.Credentials =          args.GetResult(Credentials,null)
+            member _.AutoCreate =           args.Contains AutoCreate
+            member _.MaxEvents =            args.GetResult(MaxEvents, 500)
         let connect (log : ILogger) (connectionString,schema,credentials,autoCreate) =
             let sssConnectionString = String.Join(";", connectionString, credentials)
             log.Information("SqlStreamStore Postgres Connection {connectionString} Schema {schema} AutoCreate {autoCreate}", connectionString, schema, autoCreate)

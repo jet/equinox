@@ -63,20 +63,20 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
             let state' = Fold.fold state events
             state'.items,events)
 
-    member __.List(clientId) : Async<Events.Todo seq> =
+    member _.List(clientId) : Async<Events.Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
 
-    member __.TryGet(clientId, id) =
+    member _.TryGet(clientId, id) =
         query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
 
-    member __.Execute(clientId, command) : Async<unit> =
+    member _.Execute(clientId, command) : Async<unit> =
         execute clientId command
 
-    member __.Create(clientId, template: Events.Todo) : Async<Events.Todo> = async {
+    member _.Create(clientId, template: Events.Todo) : Async<Events.Todo> = async {
         let! state' = handle clientId (Command.Add template)
         return List.head state' }
 
-    member __.Patch(clientId, item: Events.Todo) : Async<Events.Todo> = async {
+    member _.Patch(clientId, item: Events.Todo) : Async<Events.Todo> = async {
         let! state' = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }
 

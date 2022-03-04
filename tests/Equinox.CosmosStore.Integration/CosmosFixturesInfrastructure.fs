@@ -5,7 +5,6 @@ open Domain
 open FsCheck
 open Serilog
 open System
-open Serilog.Core
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
@@ -20,10 +19,10 @@ type AutoDataAttribute() =
 
     member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
 
-    override __.Skip =
-        match Option.ofObj __.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
+    override x.Skip =
+        match Option.ofObj x.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
         | Some value when value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase) ->
-            sprintf "Skipped as requested via %s" __.SkipIfRequestedViaEnvironmentVariable
+            sprintf "Skipped as requested via %s" x.SkipIfRequestedViaEnvironmentVariable
         | _ -> null
 
 // Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
@@ -34,7 +33,7 @@ type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
         use writer = new System.IO.StringWriter()
         formatter.Format(logEvent, writer)
         writer |> string |> testOutput.WriteLine
-    interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
+    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
 
 [<AutoOpen>]
 module SerilogHelpers =
@@ -114,21 +113,21 @@ module SerilogHelpers =
         let writeSerilogEvent (logEvent: LogEvent) =
             logEvent.RenderMessage () |> System.Diagnostics.Trace.WriteLine
             captured.Add logEvent
-        interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
-        member __.Clear () = captured.Clear()
-        member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
-        member __.ExternalCalls = __.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
-        member __.RequestCharges = __.ChooseCalls (function EqxEvent (TotalRequestCharge e) -> Some e | _ -> None)
+        interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
+        member _.Clear () = captured.Clear()
+        member _.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
+        member x.ExternalCalls = x.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
+        member x.RequestCharges = x.ChooseCalls (function EqxEvent (TotalRequestCharge e) -> Some e | _ -> None)
 
 type TestsWithLogCapture(testOutputHelper) =
     let log, capture = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
 
     /// NB the returned Logger must be Dispose()'d to guarantee all log output has been flushed upon completion of a test
-    static member CreateLoggerWithCapture testOutputHelper : Logger* LogCaptureBuffer =
+    static member CreateLoggerWithCapture testOutputHelper : Serilog.Core.Logger * LogCaptureBuffer =
         let testOutput = TestOutputAdapter testOutputHelper
         let capture = LogCaptureBuffer()
         let logger =
-            Serilog.LoggerConfiguration()
+            LoggerConfiguration()
                 .MinimumLevel.Debug()
                 .WriteTo.Seq("http://localhost:5341")
                 .WriteTo.Sink(testOutput)
@@ -136,7 +135,7 @@ type TestsWithLogCapture(testOutputHelper) =
                 .CreateLogger()
         logger, capture
 
-    member __.Capture = capture
-    member __.Log = log
+    member _.Capture = capture
+    member _.Log = log
 
-    interface IDisposable with member __.Dispose() = log.Dispose()
+    interface IDisposable with member _.Dispose() = log.Dispose()

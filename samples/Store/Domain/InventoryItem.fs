@@ -58,11 +58,11 @@ let interpret command (state : Fold.State) =
 
 type Service internal (resolve : InventoryItemId -> Equinox.Decider<Events.Event, Fold.State>) =
 
-    member __.Execute(itemId, command) =
+    member _.Execute(itemId, command) =
         let decider = resolve itemId
         decider.Transact(interpret command)
 
-    member __.Read(itemId) =
+    member _.Read(itemId) =
         let decider = resolve itemId
         decider.Query id
 

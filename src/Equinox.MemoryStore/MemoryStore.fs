@@ -21,10 +21,9 @@ type VolatileStore<'Format>() =
             committed.Trigger(streamName, events |> Seq.collect snd |> Seq.sortBy (fun x -> x.Index) |> Seq.toArray) }
     let publishCommit = AsyncBatchingGate(publishBatches, System.TimeSpan.FromMilliseconds 2.)
 
-    [<CLIEvent>]
     /// Notifies of a batch of events being committed to a given Stream. Guarantees no out of order and/or overlapping raising of the event<br/>
     /// NOTE in some cases, two or more overlapping commits can be coalesced into a single <c>Committed</c> event
-    member _.Committed : IEvent<FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[]> = committed.Publish
+    [<CLIEvent>] member _.Committed : IEvent<FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[]> = committed.Publish
 
     /// Loads state from a given stream
     member _.TryLoad streamName = match streams.TryGetValue streamName with false, _ -> None | true, packed -> Some packed

@@ -364,11 +364,11 @@ let decideY ... (state : Fold.State) : Decision * Events list = ...
 ```fsharp
 type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State) = ...`
 
-    member __.Execute(id, command) : Async<unit> =
+    member _.Execute(id, command) : Async<unit> =
         let decider = resolve id
         decider.Transact(interpretX command)
 
-    member __.Decide(id, inputs) : Async<Decision> =
+    member _.Decide(id, inputs) : Async<Decision> =
         let decider = resolve id
         decider.Transact(decideX inputs)
 
@@ -606,13 +606,13 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         let decider = resolve clientId
         decider.Query id
 
-    member __.Execute(clientId, command) =
+    member _.Execute(clientId, command) =
         execute clientId command
-    member __.Favorite(clientId, skus) =
+    member _.Favorite(clientId, skus) =
         execute clientId (Command.Favorite(DateTimeOffset.Now, skus))
-    member __.Unfavorite(clientId, skus) =
+    member _.Unfavorite(clientId, skus) =
         execute clientId (Command.Unfavorite skus)
-    member __.List clientId : Async<Events.Favorited []> =
+    member _.List clientId : Async<Events.Favorited []> =
         read clientId
 
 let create resolveStream : Service =
@@ -718,13 +718,13 @@ follow!
 type Equinox.Decider(stream : IStream<'event, 'state>, log, maxAttempts) =
 StoreIntegration
     // Run interpret function with present state, retrying with Optimistic Concurrency
-    member __.Transact(interpret : State -> Event list) : Async<unit>
+    member _.Transact(interpret : State -> Event list) : Async<unit>
 
     // Run decide function with present state, retrying with Optimistic Concurrency, yielding Result on exit
-    member __.Transact(decide : State -> Result*Event list) : Async<Result>
+    member _.Transact(decide : State -> Result*Event list) : Async<Result>
 
     // Runs a Null Flow that simply yields a `projection` of `Context.State`
-    member __.Query(projection : State -> View) : Async<View>
+    member _.Query(projection : State -> View) : Async<View>
 ```
 
 ### Favorites walkthrough
@@ -906,11 +906,11 @@ result in you ending up with a model that's potentially both:
 #### `Service` Members
 
 ```fsharp
-    member __.Favorite(clientId, sku) =
+    member _.Favorite(clientId, sku) =
         execute clientId (Add sku)
-    member __.Unfavorite(clientId, skus) =
+    member _.Unfavorite(clientId, skus) =
         execute clientId (Remove skus)
-    member __.List clientId : Async<string list> =
+    member _.List clientId : Async<string list> =
         read clientId
 ```
 
@@ -1057,16 +1057,16 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         let decider = resolve clientId
         decider.Query projection
 
-    member __.List clientId : Async<Todo seq> =
+    member _.List clientId : Async<Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
-    member __.TryGet(clientId, id) =
+    member _.TryGet(clientId, id) =
         query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
-    member __.Execute(clientId, command) : Async<unit> =
+    member _.Execute(clientId, command) : Async<unit> =
         execute clientId command
-    member __.Create(clientId, template: Todo) : Async<Todo> = async {
+    member _.Create(clientId, template: Todo) : Async<Todo> = async {
         let! updated = handle clientId (Command.Add template)
         return List.head updated }
-    member __.Patch(clientId, item: Todo) : Async<Todo> = async {
+    member _.Patch(clientId, item: Todo) : Async<Todo> = async {
         let! updated = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) updated }
 ```
@@ -1113,12 +1113,12 @@ lead to the leaking of decision logic outside of the Aggregate's `module`.
 
 ```fsharp
 // Query function exposing part of the state
-member __.ReadAddress(clientId) =
+member _.ReadAddress(clientId) =
     let decider = resolve clientId
     decider.Query(fun state -> state.address)
 
 // Return the entire state we hold for this aggregate (NOTE: generally not a good idea)
-member __.Read(clientId) =
+member _.Read(clientId) =
     let decider = resolve clientId
     decider.Query id
 ```
@@ -1168,13 +1168,13 @@ let interpret (context, command) state : Events.Event list =
 type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>)
 
     // Given the supplied context, apply the command for the specified clientId
-    member __.Execute(clientId, context, command) : Async<unit> =
+    member _.Execute(clientId, context, command) : Async<unit> =
         let decider = resolve clientId
         decider.Transact(fun state -> interpretCommand (context, command) state)
 
     // Given the supplied context, apply the command for the specified clientId
     // Throws if this client's data is marked Read Only
-    member __.Execute(clientId, context, command) : Async<unit> =
+    member _.Execute(clientId, context, command) : Async<unit> =
         let decider = resolve clientId
         decider.Transact(fun state ->
             if state.isReadOnly then raise AccessDeniedException() // Mapped to 403 externally
@@ -1214,7 +1214,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
     // NOTE Try will return the `fst` of the tuple that `decide` returned
     // If >1 attempt was necessary (e.g., due to conflicting events), the `fst`
     // from the last attempt is the outcome
-    member __.Try(clientId, context, command) : Async<int> =
+    member _.Try(clientId, context, command) : Async<int> =
         let decider = resolve clientId
         decider.Transact(fun state ->
             decide (context, command) state)
@@ -1364,23 +1364,23 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
 
     /// Invoke a decision function, gathering the events (if any) that it
     /// decides are necessary into the `Accumulated` sequence
-    member _.Transact(interpret : 'state -> 'event list) : unit =
-        interpret __.State |> accumulated.AddRange
+    member x.Transact(interpret : 'state -> 'event list) : unit =
+        interpret x.State |> accumulated.AddRange
     /// Invoke an Async decision function, gathering the events (if any) that
     /// it decides are necessary into the `Accumulated` sequence
-    member _.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
-        let! events = interpret __.State
+    member x.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+        let! events = interpret x.State
         accumulated.AddRange events }
     /// Invoke a decision function, while also propagating a result yielded as
     /// the fst of an (result, events) pair
-    member _.Transact(decide : 'state -> 'result * 'event list) : 'result =
-        let result, newEvents = decide __.State
+    member x.Transact(decide : 'state -> 'result * 'event list) : 'result =
+        let result, newEvents = decide x.State
         accumulated.AddRange newEvents
         result
     /// Invoke a decision function, while also propagating a result yielded as
     /// the fst of an (result, events) pair
-    member _.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
-        let! result, newEvents = decide __.State
+    member x.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+        let! result, newEvents = decide x.State
         accumulated.AddRange newEvents
         return result }
 

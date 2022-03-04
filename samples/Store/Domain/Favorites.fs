@@ -26,10 +26,10 @@ module Fold =
         let favorite (e : Events.Favorited) =   dict.[e.skuId] <- e
         let favoriteAll (xs: Events.Favorited seq) = for x in xs do favorite x
         do favoriteAll input
-        member __.ReplaceAllWith xs =           dict.Clear(); favoriteAll xs
-        member __.Favorite(e : Events.Favorited) =  favorite e
-        member __.Unfavorite id =               dict.Remove id |> ignore
-        member __.AsState() =                   Seq.toArray dict.Values
+        member _.ReplaceAllWith xs =           dict.Clear(); favoriteAll xs
+        member _.Favorite(e : Events.Favorited) =  favorite e
+        member _.Unfavorite id =               dict.Remove id |> ignore
+        member _.AsState() =                   Seq.toArray dict.Values
 
     let initial : State = [||]
     let private evolve (s: InternalState) = function

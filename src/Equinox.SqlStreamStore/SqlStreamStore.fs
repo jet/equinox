@@ -581,13 +581,13 @@ type SqlStreamStoreCategory<'event, 'state, 'context>
             Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
     let resolveStream = Stream.create category
     let loadEmpty sn = context.LoadEmpty sn,initial
-    member __.Resolve(streamName : FsCodec.StreamName, [<O; D null>]?option, [<O; D null>]?context) =
+    member _.Resolve(streamName : FsCodec.StreamName, [<O; D null>]?option, [<O; D null>]?context) =
         match FsCodec.StreamName.toString streamName, option with
         | sn, (None|Some AllowStale) -> resolveStream sn option context
         | sn, Some AssumeEmpty -> Stream.ofMemento (loadEmpty sn) (resolveStream sn option context)
 
     /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member __.FromMemento(Token.Unpack token as streamToken, state, [<O; D null>] ?context) =
+    member _.FromMemento(Token.Unpack token as streamToken, state, [<O; D null>] ?context) =
         Stream.ofMemento (streamToken,state) (resolveStream token.stream.name context None)
 
 [<AbstractClass>]

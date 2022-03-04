@@ -24,10 +24,10 @@ type AutoDataAttribute() =
 
     member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
 
-    override __.Skip =
-        match Option.ofObj __.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
+    override x.Skip =
+        match Option.ofObj x.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
         | Some value when value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase) ->
-            sprintf "Skipped as requested via %s" __.SkipIfRequestedViaEnvironmentVariable
+            sprintf "Skipped as requested via %s" x.SkipIfRequestedViaEnvironmentVariable
         | _ -> null
 
 // Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
@@ -38,7 +38,7 @@ type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
         use writer = new System.IO.StringWriter()
         formatter.Format(logEvent, writer);
         writer |> string |> testOutput.WriteLine
-    interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
+    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
 
 [<AutoOpen>]
 module SerilogHelpers =
@@ -81,8 +81,8 @@ module SerilogHelpers =
         let writeSerilogEvent (logEvent: LogEvent) =
             logEvent.RenderMessage () |> System.Diagnostics.Trace.WriteLine
             captured.Add logEvent
-        interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
-        member __.Clear () = captured.Clear()
-        member __.Entries = captured.ToArray()
-        member __.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
-        member __.ExternalCalls = __.ChooseCalls (function EsEvent (EsAction act) -> Some act | _ -> None)
+        interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
+        member _.Clear () = captured.Clear()
+        member _.Entries = captured.ToArray()
+        member _.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
+        member x.ExternalCalls = x.ChooseCalls(function EsEvent (EsAction act) -> Some act | _ -> None)

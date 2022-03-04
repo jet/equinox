@@ -118,10 +118,10 @@ type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.St
         let decider = resolve clientId
         decider.Query projection
 
-    member __.Add(clientId, count) = execute clientId (Add count)
-    member __.Remove(clientId, count) = execute clientId (Remove count)
-    member __.Read(clientId) = query clientId (Fold.State.balance)
-    member __.AsAt(clientId,index) = query clientId (fun state -> state.[index])
+    member _.Add(clientId, count) = execute clientId (Add count)
+    member _.Remove(clientId, count) = execute clientId (Remove count)
+    member _.Read(clientId) = query clientId Fold.State.balance
+    member _.AsAt(clientId,index) = query clientId (fun state -> state.[index])
 
 module Log =
     open Serilog

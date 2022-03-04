@@ -27,17 +27,17 @@ type StreamResolver(storage) =
 type ServiceBuilder(storageConfig, handlerLog) =
      let cat = StreamResolver(storageConfig)
 
-     member __.CreateFavoritesService() =
+     member _.CreateFavoritesService() =
         let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
         let snapshot = Favorites.Fold.isOrigin,Favorites.Fold.snapshot
         Favorites.create handlerLog (cat.Resolve(Favorites.Events.codec,fold,initial,snapshot))
 
-     member __.CreateSaveForLaterService() =
+     member _.CreateSaveForLaterService() =
         let fold, initial = SavedForLater.Fold.fold, SavedForLater.Fold.initial
         let snapshot = SavedForLater.Fold.isOrigin,SavedForLater.Fold.compact
         SavedForLater.create 50 handlerLog (cat.Resolve(SavedForLater.Events.codec,fold,initial,snapshot))
 
-     member __.CreateTodosService() =
+     member _.CreateTodosService() =
         let fold, initial = TodoBackend.Fold.fold, TodoBackend.Fold.initial
         let snapshot = TodoBackend.Fold.isOrigin, TodoBackend.Fold.snapshot
         TodoBackend.create handlerLog (cat.Resolve(TodoBackend.Events.codec,fold,initial,snapshot))

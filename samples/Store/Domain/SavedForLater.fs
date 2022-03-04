@@ -38,16 +38,16 @@ module Fold =
         let index = Dictionary<_,_>()
         do for i in externalState do index.[i.skuId] <- i
 
-        member __.Replace (skus : seq<Item>) =
+        member _.Replace (skus : seq<Item>) =
             index.Clear() ; for s in skus do index.[s.skuId] <- s
-        member __.Append(skus : seq<Item>) =
+        member _.Append(skus : seq<Item>) =
             for sku in skus do
                 let ok,found = index.TryGetValue sku.skuId
                 if not ok || found |> isSupersededAt sku.dateSaved then
                     index.[sku.skuId] <- sku
-        member __.Remove (skus : seq<SkuId>) =
+        member _.Remove (skus : seq<SkuId>) =
             for sku in skus do index.Remove sku |> ignore
-        member __.ToExernalState () =
+        member _.ToExernalState () =
             index.Values |> Seq.sortBy (fun s -> -s.dateSaved.Ticks, s.skuId) |> Seq.toArray
 
     type State = Item []
@@ -77,7 +77,7 @@ type private Index(state : Events.Item seq) =
     let index = Dictionary<_,_>()
     do for i in state do do index.[i.skuId] <- i
 
-    member __.DoesNotAlreadyContainSameOrMoreRecent effectiveDate sku =
+    member _.DoesNotAlreadyContainSameOrMoreRecent effectiveDate sku =
         match index.TryGetValue sku with
         | true,item when item.dateSaved >= effectiveDate -> false
         | _ -> true
@@ -125,20 +125,20 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
             let _, events = decide maxSavedItems cmd state
             return (),events } )
 
-    member __.MaxSavedItems = maxSavedItems
+    member _.MaxSavedItems = maxSavedItems
 
-    member __.List clientId : Async<Events.Item []> = read clientId
+    member _.List clientId : Async<Events.Item []> = read clientId
 
-    member __.Save(clientId, skus : seq<SkuId>) : Async<bool> =
+    member _.Save(clientId, skus : seq<SkuId>) : Async<bool> =
         execute clientId <| Add (DateTimeOffset.Now, Seq.toArray skus)
 
-    member __.Remove(clientId, resolve : (SkuId -> bool) -> Async<SkuId[]>) : Async<unit> =
+    member _.Remove(clientId, resolve : (SkuId -> bool) -> Async<SkuId[]>) : Async<unit> =
         let resolve hasSku = async {
             let! skus = resolve hasSku
             return Remove skus }
         remove clientId resolve
 
-    member __.Merge(clientId, targetId) : Async<bool> = async {
+    member _.Merge(clientId, targetId) : Async<bool> = async {
         let! state = read clientId
         return! execute targetId (Merge state) }
 

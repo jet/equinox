@@ -9,9 +9,9 @@ open System
 /// Endows any type that inherits this class with standard .NET comparison semantics using a supplied token identifier
 [<AbstractClass>]
 type Comparable<'TComp, 'Token when 'TComp :> Comparable<'TComp, 'Token> and 'Token : comparison>(token : 'Token) =
-    member private __.Token = token
+    member private _.Token = token
     override x.Equals y = match y with :? Comparable<'TComp, 'Token> as y -> x.Token = y.Token | _ -> false
-    override __.GetHashCode() = hash token
+    override _.GetHashCode() = hash token
     interface IComparable with
         member x.CompareTo y =
             match y with
@@ -23,7 +23,7 @@ type Comparable<'TComp, 'Token when 'TComp :> Comparable<'TComp, 'Token> and 'To
 [<AbstractClass>]
 type StringId<'TComp when 'TComp :> Comparable<'TComp, string>>(token : string) =
     inherit Comparable<'TComp,string>(token)
-    override __.ToString() = token
+    override _.ToString() = token
 
 module Guid =
     let inline toStringN (x : Guid) = x.ToString "N"
@@ -42,9 +42,9 @@ type SkuId private (id : string) =
 and private SkuIdJsonConverter() =
     inherit JsonIsomorphism<SkuId, string>()
     /// Renders as per `Guid.ToString("N")`, i.e. no dashes
-    override __.Pickle value = string value
+    override _.Pickle value = string value
     /// Input must be a `Guid.Parse`able value
-    override __.UnPickle input = Guid.Parse input |> SkuId
+    override _.UnPickle input = Guid.Parse input |> SkuId
 and private SkuIdJsonConverterStj() =
     inherit FsCodec.SystemTextJson.JsonIsomorphism<SkuId, string>()
     override _.Pickle value = string value
@@ -56,7 +56,7 @@ and private SkuIdJsonConverterStj() =
 type RequestId = string<requestId>
 and [<Measure>] requestId
 module RequestId =
-    /// - For web inputs, should guard against XSS by only permitting initialization based on Skud.parse
+    /// - For web inputs, should guard against XSS by only permitting initialization based on RequestId.parse
     /// - For json deserialization where the saved representation is not trusted to be in canonical Guid form,
     ///     it is recommended to bind to a Guid and then upconvert to string<requestId>
     let parse (value : Guid<requestId>) : string<requestId> = % Guid.toStringN %value

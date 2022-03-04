@@ -28,10 +28,10 @@ type StopwatchInterval (startTicks : int64, endTicks : int64) =
         let totalSeconds = double ticks / ticksPerSecond
         TimeSpan.FromSeconds totalSeconds
 
-    member __.StartTicks = startTicks
-    member __.EndTicks = endTicks
-    member __.Elapsed = timeSpanFromStopwatchTicks(endTicks - startTicks)
-    override __.ToString () = let e = __.Elapsed in sprintf "%g ms" e.TotalMilliseconds
+    member _.StartTicks = startTicks
+    member _.EndTicks = endTicks
+    member _.Elapsed = timeSpanFromStopwatchTicks(endTicks - startTicks)
+    override x.ToString () = let e = x.Elapsed in sprintf "%g ms" e.TotalMilliseconds
 
 type Stopwatch =
     /// <summary>

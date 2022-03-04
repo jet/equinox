@@ -9,15 +9,15 @@ type CacheItemOptions =
 [<AllowNullLiteral>]
 type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state, supersedes: StreamToken -> StreamToken -> bool) =
     let mutable currentToken, currentState = initialToken, initialState
-    member __.UpdateIfNewer(other : CacheEntry<'state>) =
-        lock __ <| fun () ->
+    member x.UpdateIfNewer(other : CacheEntry<'state>) =
+        lock x <| fun () ->
             let otherToken, otherState = other.Value
             if otherToken |> supersedes currentToken then
                 currentToken <- otherToken
                 currentState <- otherState
 
-    member __.Value : StreamToken * 'state =
-        lock __ <| fun () ->
+    member x.Value : StreamToken * 'state =
+        lock x <| fun () ->
             currentToken, currentState
 
 type ICache =
@@ -41,14 +41,14 @@ type Cache(name, sizeMb : int) =
         | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
 
     interface ICache with
-        member __.UpdateIfNewer(key, options, entry) = async {
+        member _.UpdateIfNewer(key, options, entry) = async {
             let policy = toPolicy options
             match cache.AddOrGetExisting(key, box entry, policy) with
             | null -> ()
             | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x }
 
-        member __.TryGet key = async {
+        member _.TryGet key = async {
             return
                 match cache.Get key with
                 | null -> None

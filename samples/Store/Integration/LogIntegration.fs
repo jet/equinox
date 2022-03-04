@@ -12,7 +12,7 @@ module EquinoxEsInterop =
     open Equinox.EventStore
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; batches: int option } with
-        override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" __.action __.stream __.action __.interval.Elapsed
+        override x.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O" x.action x.stream x.action x.interval.Elapsed
     let flatten (evt : Log.Metric) : FlatMetric =
         let action, metric, batches =
             match evt with
@@ -27,7 +27,7 @@ module EquinoxCosmosInterop =
     open Equinox.CosmosStore.Core
     [<NoEquality; NoComparison>]
     type FlatMetric = { action: string; stream : string; interval: StopwatchInterval; bytes: int; count: int; responses: int option; ru: float } with
-        override __.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" __.action __.stream __.action __.interval.Elapsed __.ru
+        override x.ToString() = sprintf "%s-Stream=%s %s-Elapsed=%O Ru=%O" x.action x.stream x.action x.interval.Elapsed x.ru
     let flatten (evt : Log.Metric) : FlatMetric =
         let action, metric, batches, ru =
             match evt with
@@ -89,7 +89,7 @@ type SerilogMetricsExtractor(emit : string -> unit) =
             emitEvent logEvent
         | GenericMessage () as logEvent ->
             emitEvent logEvent
-    interface Serilog.Core.ILogEventSink with member __.Emit logEvent = handleLogEvent logEvent
+    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = handleLogEvent logEvent
 
 let createLoggerWithMetricsExtraction emit =
     let capture = SerilogMetricsExtractor emit

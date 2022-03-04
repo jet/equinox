@@ -18,25 +18,25 @@ type TodosClient(session: Session) =
 
     let basePath = "/todos"
 
-    member __.List() : Async<Todo[]> = async {
+    member _.List() : Async<Todo[]> = async {
         let request = HttpReq.get () |> HttpReq.withPath basePath
         let! response = session.Send request
         return! response |> HttpRes.deserializeOkJsonNet<Todo[]>
     }
 
-    member __.Add(x: Todo) = async {
+    member _.Add(x: Todo) = async {
         let request = HttpReq.post () |> HttpReq.withPath basePath |> HttpReq.withJsonNet x
         let! response = session.Send request
         return! response |> HttpRes.deserializeOkJsonNet<Todo>
     }
 
-    member __.Update(x: Todo)= async {
+    member _.Update(x: Todo)= async {
         let request = HttpReq.patch () |> HttpReq.withUri (Uri x.url) |> HttpReq.withJsonNet x
         let! response = session.Send request
         return! response |> HttpRes.deserializeOkJsonNet<Todo>
     }
 
-    member __.Clear() : Async<unit> = async {
+    member _.Clear() : Async<unit> = async {
         let request = HttpReq.delete () |> HttpReq.withPath basePath
         let! response = session.Send request
         return! response.EnsureStatusCode(HttpStatusCode.NoContent)

@@ -45,10 +45,10 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State>
         let command = let (Id email) = email in Update { email = email; preferences = value }
         decider.Transact(interpret command)
 
-    member __.Update(email, value) =
+    member _.Update(email, value) =
         update email value
 
-    member __.Read(email) =
+    member _.Read(email) =
         let decider = resolve email
         decider.Query id
 

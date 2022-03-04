@@ -15,7 +15,7 @@ type Connector
 
     let store = new MsSqlStreamStoreV3(settings)
 
-    override __.Connect() = async {
+    override _.Connect() = async {
         if autoCreate = Some true then do! store.CreateSchemaIfNotExists() |> Async.AwaitTaskCorrect
         return store :> IStreamStore
     }

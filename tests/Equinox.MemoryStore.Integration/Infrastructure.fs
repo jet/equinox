@@ -20,7 +20,7 @@ type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
         use writer = new System.IO.StringWriter()
         formatter.Format(logEvent, writer);
         writer |> string |> testOutput.WriteLine
-    interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
+    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
 
 let createLogger sink =
     LoggerConfiguration()

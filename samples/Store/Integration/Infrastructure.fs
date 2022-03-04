@@ -18,10 +18,10 @@ type AutoDataAttribute() =
 
     member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
 
-    override __.Skip =
-        match Option.ofObj __.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
+    override x.Skip =
+        match Option.ofObj x.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
         | Some value when value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase) ->
-           sprintf "Skipped as requested via %s" __.SkipIfRequestedViaEnvironmentVariable
+           sprintf "Skipped as requested via %s" x.SkipIfRequestedViaEnvironmentVariable
         | _ -> null
 
 // Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
@@ -32,7 +32,7 @@ type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
         use writer = new System.IO.StringWriter()
         formatter.Format(logEvent, writer)
         writer |> string |> testOutput.WriteLine
-    interface Serilog.Core.ILogEventSink with member __.Emit logEvent = writeSerilogEvent logEvent
+    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
 
 [<AutoOpen>]
 module SerilogHelpers =

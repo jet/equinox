@@ -13,7 +13,7 @@ type Connector
     let settings = MySqlStreamStoreSettings(connectionString)
     let store = new MySqlStreamStore(settings)
 
-    override __.Connect() = async {
+    override _.Connect() = async {
         if autoCreate = Some true then do! store.CreateSchemaIfNotExists() |> Async.AwaitTaskCorrect
         return store :> IStreamStore
     }

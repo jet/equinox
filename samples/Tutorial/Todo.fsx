@@ -81,19 +81,19 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
         let decider = resolve clientId
         decider.Query projection
 
-    member __.List clientId : Async<Todo seq> =
+    member _.List clientId : Async<Todo seq> =
         query clientId (fun s -> s.items |> Seq.ofList)
-    member __.TryGet(clientId, id) =
+    member _.TryGet(clientId, id) =
         query clientId (fun x -> x.items |> List.tryFind (fun x -> x.id = id))
-    member __.Execute(clientId, command) : Async<unit> =
+    member _.Execute(clientId, command) : Async<unit> =
         execute clientId command
-    member __.Create(clientId, template: Todo) : Async<Todo> = async {
+    member _.Create(clientId, template: Todo) : Async<Todo> = async {
         let! state' = handle clientId (Add template)
         return List.head state' }
-    member __.Patch(clientId, item: Todo) : Async<Todo> = async {
+    member _.Patch(clientId, item: Todo) : Async<Todo> = async {
         let! state' = handle clientId (Update item)
         return List.find (fun x -> x.id = item.id) state' }
-    member __.Clear clientId : Async<unit> =
+    member _.Clear clientId : Async<unit> =
         execute clientId Clear
 
 (*

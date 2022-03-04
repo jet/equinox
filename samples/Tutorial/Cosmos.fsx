@@ -72,13 +72,13 @@ module Favorites =
 
     type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
-        member __.Favorite(clientId, sku) =
+        member _.Favorite(clientId, sku) =
             let decider = resolve clientId
             decider.Transact(interpret (Add sku))
-        member __.Unfavorite(clientId, skus) =
+        member _.Unfavorite(clientId, skus) =
             let decider = resolve clientId
             decider.Transact(interpret (Remove skus))
-        member __.List clientId: Async<string list> =
+        member _.List clientId: Async<string list> =
             let decider = resolve clientId
             decider.Query id
 

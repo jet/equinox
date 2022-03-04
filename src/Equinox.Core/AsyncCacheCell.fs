@@ -6,7 +6,7 @@ type AsyncLazy<'T>(workflow : Async<'T>) =
 
     /// Await the outcome of the computation.
     /// NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this
-    member __.AwaitValue() = Async.AwaitTaskCorrect task.Value
+    member _.AwaitValue() = Async.AwaitTaskCorrect task.Value
 
     /// Synchronously check whether the value has been computed (and/or remains valid)
     member this.IsValid(?isExpired) =
@@ -37,9 +37,9 @@ type AsyncCacheCell<'T>(workflow : Async<'T>, ?isExpired : 'T -> bool) =
     let mutable cell = AsyncLazy workflow
 
     /// Synchronously check the value remains valid (to short-circuit an Async AwaitValue step where value not required)
-    member __.IsValid() = cell.IsValid(?isExpired=isExpired)
+    member _.IsValid() = cell.IsValid(?isExpired=isExpired)
     /// Gets or asynchronously recomputes a cached value depending on expiry and availability
-    member __.AwaitValue() = async {
+    member _.AwaitValue() = async {
         let current = cell
         match! current.TryAwaitValid(?isExpired=isExpired) with
         | Some res -> return res

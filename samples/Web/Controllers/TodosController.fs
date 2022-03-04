@@ -25,38 +25,38 @@ type TodosController(service: Service) =
 
     let toModel (value : TodoView) : Events.Todo = { id = value.id; order = value.order; title = value.title; completed = value.completed }
 
-    member private __.WithUri(x : Events.Todo) : TodoView =
-        let url = __.Url.RouteUrl("GetTodo", { id=x.id }, __.Request.Scheme) // Supplying scheme is secret sauce for making it absolute as required by client
+    member private this.WithUri(x : Events.Todo) : TodoView =
+        let url = this.Url.RouteUrl("GetTodo", { id=x.id }, this.Request.Scheme) // Supplying scheme is secret sauce for making it absolute as required by client
         { id = x.id; url = url; order = x.order; title = x.title; completed = x.completed }
 
     [<HttpGet>]
-    member __.Get([<FromClientIdHeader>]clientId : ClientId) = async {
+    member this.Get([<FromClientIdHeader>]clientId : ClientId) = async {
         let! xs = service.List(clientId)
-        return seq { for x in xs -> __.WithUri(x) }
+        return seq { for x in xs -> this.WithUri(x) }
     }
 
     [<HttpGet("{id}", Name="GetTodo")>]
-    member __.Get([<FromClientIdHeader>]clientId : ClientId, id) : Async<IActionResult> = async {
+    member this.Get([<FromClientIdHeader>]clientId : ClientId, id) : Async<IActionResult> = async {
         let! x = service.TryGet(clientId, id)
-        return match x with None -> __.NotFound() :> _ | Some x -> ObjectResult(__.WithUri x) :> _
+        return match x with None -> this.NotFound() :> _ | Some x -> ObjectResult(this.WithUri x) :> _
     }
 
     [<HttpPost>]
-    member __.Post([<FromClientIdHeader>]clientId : ClientId, [<FromBody>]value : TodoView) : Async<TodoView> = async {
+    member this.Post([<FromClientIdHeader>]clientId : ClientId, [<FromBody>]value : TodoView) : Async<TodoView> = async {
         let! created = service.Create(clientId, toModel value)
-        return __.WithUri created
+        return this.WithUri created
     }
 
     [<HttpPatch "{id}">]
-    member __.Patch([<FromClientIdHeader>]clientId : ClientId, id, [<FromBody>]value : TodoView) : Async<TodoView> = async {
+    member this.Patch([<FromClientIdHeader>]clientId : ClientId, id, [<FromBody>]value : TodoView) : Async<TodoView> = async {
         let! updated = service.Patch(clientId, { toModel value with id = id })
-        return __.WithUri updated
+        return this.WithUri updated
     }
 
     [<HttpDelete "{id}">]
-    member __.Delete([<FromClientIdHeader>]clientId : ClientId, id): Async<unit> =
+    member _.Delete([<FromClientIdHeader>]clientId : ClientId, id): Async<unit> =
         service.Execute(clientId, Delete id)
 
     [<HttpDelete>]
-    member __.DeleteAll([<FromClientIdHeader>]clientId : ClientId): Async<unit> =
+    member _.DeleteAll([<FromClientIdHeader>]clientId : ClientId): Async<unit> =
         service.Execute(clientId, Clear)

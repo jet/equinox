@@ -1474,7 +1474,7 @@ type CosmosStoreCategory<'event, 'state, 'context>
         match resolveStreamConfig streamName, option with
         | streamArgs,(None|Some AllowStale) ->
             resolveStream streamArgs option context
-        | (_, _, streamId, _) as streamArgs,Some AssumeEmpty ->
+        | _, _, streamId, _ as streamArgs,Some AssumeEmpty ->
             let stream = resolveStream streamArgs option context
             Stream.ofMemento (Token.create streamId Position.fromKnownEmpty,initial) stream
 

@@ -15,7 +15,7 @@ type Connector
 
     let store = new PostgresStreamStore(settings)
 
-    override __.Connect() = async {
+    override _.Connect() = async {
         if autoCreate = Some true then do! store.CreateSchemaIfNotExists() |> Async.AwaitTaskCorrect
         return store :> IStreamStore
     }
