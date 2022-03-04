@@ -1,9 +1,9 @@
 ﻿module Samples.Infrastructure.Services
 
 open Domain
+open FsCodec.SystemTextJson
 open Microsoft.Extensions.DependencyInjection
 open System
-open FsCodec.SystemTextJson
 
 type StreamResolver(storage) =
     member _.Resolve

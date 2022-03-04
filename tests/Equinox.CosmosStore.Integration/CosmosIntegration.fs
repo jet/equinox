@@ -98,7 +98,7 @@ type Tests(testOutputHelper) =
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
         test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        if eventsInTip then verifyRequestChargesMax 9 // 8.05
+        if eventsInTip then verifyRequestChargesMax 8 // 7.46
         else verifyRequestChargesMax 15 // 14.01
     }
 
