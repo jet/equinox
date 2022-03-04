@@ -745,7 +745,7 @@ Ouch, not looking forward to reading all that logic :frown: ? [Have a read, it's
 
 > I'm having some trouble understanding how Equinox+ESDB handles "expected version". Most of the examples use `Equinox.Decider.Transact` which is storage agnostic and doesn't offer any obvious concurrency checking. In `Equinox.EventStore.Context`, there's a `Sync` and `TrySync` that take a `Token` which holds a `streamVersion`. Should I be be using that instead of `Transact`?
 
-The bulk of the implementation is in [`Equinox/Flow.fs`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs)
+The bulk of the implementation is in [`Equinox/Decider.fs`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs)
 
 There are [sequence diagrams in Documentation MD](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#code-diagrams-for-equinoxeventstore--equinoxsqlstreamstore) but I'll summarize here:
 
@@ -763,7 +763,7 @@ b. for CosmosDB, the `expectedVersion` can actually be an `expectedEtag` - this 
 
 (The second usage did not necessitate an interface change - i.e. the Token mechanism was introduced to handle the first case, and just happened to fit the second case)
 
-> Alternatively, I'm seeing in `proReactor` that there's a decide that does version checking. Is this recommended? [code](https://github.com/jet/dotnet-templates/blob/3329510601450ab77bcc40df7a407c5f0e3c8464/propulsion-reactor/TodoSummary.fs#L30-L52) 
+> Alternatively, I'm seeing in `proReactor` that there's a `decide` that does version checking. Is this recommended? [code](https://github.com/jet/dotnet-templates/blob/3329510601450ab77bcc40df7a407c5f0e3c8464/propulsion-reactor/TodoSummary.fs#L30-L52) 
 
 If you need to know the version in your actual handler, QueryEx and other such APIs alongside Transact expose it (e.g. if you want to include a version to accompany a directly rendered piece of data). (Note that doing this - including a version in a rendering of something should not be a goto strategy - i.e. having APIs that pass around expectedVersion is not a good idea in general)
 

@@ -697,7 +697,7 @@ Equinox’s Command Handling consists of < 200 lines including interfaces and
 comments in https://github.com/jet/equinox/tree/master/src/Equinox - the
 elements you'll touch in a normal application are:
 
-- [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Flow.fs#L34) -
+- [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Core.fs#L34) -
   internal implementation of Optimistic Concurrency Control / retry loop used
   by `Decider`. It's recommended to at least scan this file as it defines the
   Transaction semantics that are central to Equinox and the overall `Decider` concept.
@@ -853,13 +853,6 @@ let create resolve =
         Equinox.Decider(log, resolve streamName, maxAttempts = 3)
     Service(resolve)
 ```
-
-The `Decider`-related functions in a given Aggregate establish the access
-patterns used across when Service methods access streams (see below). Typically
-these are relatively straightforward calls forwarding to a `Equinox.Decider`
-equivalent (see [`src/Equinox/Decider.fs`](src/Equinox/Decider.fs)), which in
-turn use the Optimistic Concurrency retry-loop in
-[`src/Equinox/Flow.fs`](src/Equinox/Flow.fs).
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
 state (in `AllowStale` mode, the store roundtrip can be optimized out by
@@ -1326,7 +1319,7 @@ type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.St
 
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        decider.TransactAsync(fun state -> async {
+        decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             return interpretMany Fold.fold (Seq.map interpret commands) state })
 ```
@@ -1368,7 +1361,7 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
         interpret x.State |> accumulated.AddRange
     /// Invoke an Async decision function, gathering the events (if any) that
     /// it decides are necessary into the `Accumulated` sequence
-    member x.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+    member x.Transact(interpret : 'state -> Async<'event list>) : Async<unit> = async {
         let! events = interpret x.State
         accumulated.AddRange events }
     /// Invoke a decision function, while also propagating a result yielded as
@@ -1379,7 +1372,7 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
         result
     /// Invoke a decision function, while also propagating a result yielded as
     /// the fst of an (result, events) pair
-    member x.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+    member x.Transact(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
         let! result, newEvents = decide x.State
         accumulated.AddRange newEvents
         return result }
@@ -1387,7 +1380,7 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
 type Service ... =
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        decider.TransactAsync(fun state -> async {
+        decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do

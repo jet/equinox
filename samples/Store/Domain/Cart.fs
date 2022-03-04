@@ -112,7 +112,7 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
     member x.Transact(interpret : 'state -> 'event list) : unit =
         interpret x.State |> accumulated.AddRange
     /// Invoke an Async decision function, gathering the events (if any) that it decides are necessary into the `Accumulated` sequence
-    member x.TransactAsync(interpret : 'state -> Async<'event list>) : Async<unit> = async {
+    member x.Transact(interpret : 'state -> Async<'event list>) : Async<unit> = async {
         let! events = interpret x.State
         accumulated.AddRange events }
     /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
@@ -121,7 +121,7 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
         accumulated.AddRange newEvents
         result
     /// Invoke a decision function, while also propagating a result yielded as the fst of an (result, events) pair
-    member x.TransactAsync(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
+    member x.Transact(decide : 'state -> Async<'result * 'event list>) : Async<'result> = async {
         let! result, newEvents = decide x.State
         accumulated.AddRange newEvents
         return result }
@@ -138,7 +138,7 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
 
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
         let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        decider.TransactAsync(fun state -> async {
+        decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
 #if ACCUMULATOR
             let acc = Accumulator(Fold.fold, state)
