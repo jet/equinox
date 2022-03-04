@@ -1386,15 +1386,14 @@ type Accumulator<'event, 'state>(fold : 'state -> 'event seq -> 'state, originSt
 
 type Service ... =
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-        let decider = resolve cartId
-        let opt = if optimistic then Some Equinox.AllowStale else Equinox.RequireLoad
+        let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
         decider.Transact(fun state -> async {
             match prepare with None -> () | Some prep -> do! prep
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
                 acc.Transact(interpret cmd)
             return acc.State, acc.Accumulated
-        }, opt)
+        })
 ```
 
 # Equinox Architectural Overview
