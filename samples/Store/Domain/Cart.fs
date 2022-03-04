@@ -134,20 +134,22 @@ let interpretMany fold interpreters (state : 'state) : 'state * 'event list =
         state', acc @ events)
 #endif
 
-type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Run(cartId, optimistic, commands : Command seq, ?prepare) : Async<Fold.State> =
-        let decider = resolve (cartId,if optimistic then Some Equinox.AllowStale else None)
-        decider.Transact(fun state -> async {
+        let interpret state = async {
             match prepare with None -> () | Some prep -> do! prep
 #if ACCUMULATOR
             let acc = Accumulator(Fold.fold, state)
             for cmd in commands do
                 acc.Transact(interpret cmd)
-            return acc.State, acc.Accumulated })
+            return acc.State, acc.Accumulated }
 #else
-            return interpretMany Fold.fold (Seq.map interpret commands) state })
+            return interpretMany Fold.fold (Seq.map interpret commands) state }
 #endif
+        let decider = resolve cartId
+        let opt = if optimistic then Equinox.AllowStale else Equinox.RequireLoad
+        decider.Transact(interpret, opt)
 
     member x.ExecuteManyAsync(cartId, optimistic, commands : Command seq, ?prepare) : Async<unit> =
         x.Run(cartId, optimistic, commands, ?prepare=prepare) |> Async.Ignore
@@ -156,14 +158,14 @@ type Service internal (resolve : CartId * Equinox.ResolveOption option -> Equino
         x.ExecuteManyAsync(cartId, false, [command])
 
     member _.Read cartId =
-        let decider = resolve (cartId,None)
+        let decider = resolve cartId
         decider.Query id
     member _.ReadStale cartId =
-        let decider = resolve (cartId,Some Equinox.ResolveOption.AllowStale)
-        decider.Query id
+        let decider = resolve cartId
+        decider.Query(id, Equinox.LoadOption.AllowStale)
 
 let create log resolveStream =
-    let resolve (id, opt) =
-        let stream = resolveStream (streamName id, opt)
+    let resolve id =
+        let stream = resolveStream (streamName id)
         Equinox.Decider(log, stream, maxAttempts = 3)
     Service(resolve)

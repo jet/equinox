@@ -64,17 +64,17 @@ module Cart =
     let codec = Cart.Events.codec
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
-        let resolve (id,opt) = Category(context, Cart.Events.codec, fold, initial).Resolve(id,?option=opt)
-        Cart.create log resolve
+        let cat = Category(context, Cart.Events.codec, fold, initial)
+        Cart.create log cat.Resolve
     let createServiceWithCompaction log context =
-        let resolve (id,opt) = Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
-        Cart.create log resolve
+        let cat = Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
+        Cart.create log cat.Resolve
     let createServiceWithCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Cart.create log (fun (id,opt) -> Category(context, codec, fold, initial, sliding20m).Resolve(id,?option=opt))
+        Cart.create log (Category(context, codec, fold, initial, sliding20m).Resolve)
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Cart.create log (fun (id,opt) -> Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt))
+        Cart.create log (Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve)
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
@@ -85,8 +85,6 @@ module ContactPreferences =
     let createService log connection =
         let cat = Category(createContext connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
         ContactPreferences.create log cat.Resolve
-
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutputAdapter testOutputHelper

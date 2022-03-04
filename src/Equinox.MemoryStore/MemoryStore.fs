@@ -3,7 +3,6 @@
 /// 2. Illustrates a minimal implementation of the Storage interface interconnects for the purpose of writing Store connectors
 namespace Equinox.MemoryStore
 
-open Equinox
 open Equinox.Core
 open System.Runtime.InteropServices
 
@@ -41,47 +40,41 @@ type VolatileStore<'Format>() =
             return true, res
         | res -> return false, res }
 
-type Token = { streamName : string; eventCount : int }
+type Token = { eventCount : int }
 
 /// Internal implementation detail of MemoryStore
 module private Token =
 
-    let private streamTokenOfEventCount streamName (eventCount : int) : StreamToken =
-        { value = box { streamName = streamName; eventCount = eventCount }; version = int64 eventCount }
-    let (|Unpack|) (token : StreamToken) : Token = unbox<Token> token.value
+    let private streamTokenOfEventCount (eventCount : int) : StreamToken =
+        { value = box { eventCount = eventCount }; version = int64 eventCount }
+    let (|Unpack|) (token : StreamToken) : int = let t = unbox<Token> token.value in t.eventCount
     /// Represent a stream known to be empty
-    let ofEmpty streamName = streamTokenOfEventCount streamName 0
-    let ofValue streamName (value : 'event array) = streamTokenOfEventCount streamName value.Length
+    let ofEmpty = streamTokenOfEventCount 0
+    let ofValue (value : 'event array) = streamTokenOfEventCount value.Length
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
     interface ICategory<'event, 'state, string, 'context> with
         member _.Load(_log, streamName, _opt) = async {
             match store.TryLoad streamName with
-            | None -> return Token.ofEmpty streamName, initial
-            | Some value -> return Token.ofValue streamName value, fold initial (value |> Seq.choose codec.TryDecode) }
-        member _.TrySync(_log, Token.Unpack token, state, events : 'event list, context : 'context option) = async {
+            | None -> return Token.ofEmpty, initial
+            | Some value -> return Token.ofValue value, fold initial (value |> Seq.choose codec.TryDecode) }
+        member _.TrySync(_log, streamName, Token.Unpack eventCount, state, events : 'event list, context : 'context option) = async {
             let inline map i (e : FsCodec.IEventData<'Format>) =
                 FsCodec.Core.TimelineEvent.Create(int64 i, e.EventType, e.Data, e.Meta, e.EventId, e.CorrelationId, e.CausationId, e.Timestamp)
-            let encoded = events |> Seq.mapi (fun i e -> map (token.eventCount + i) (codec.Encode(context, e))) |> Array.ofSeq
-            match! store.TrySync(token.streamName, token.eventCount, encoded) with
+            let encoded = events |> Seq.mapi (fun i e -> map (eventCount + i) (codec.Encode(context, e))) |> Array.ofSeq
+            match! store.TrySync(streamName, eventCount, encoded) with
             | true, streamEvents' ->
-                return SyncResult.Written (Token.ofValue token.streamName streamEvents', fold state events)
+                return SyncResult.Written (Token.ofValue streamEvents', fold state events)
             | false, conflictingEvents ->
                 let resync = async {
-                    let token' = Token.ofValue token.streamName conflictingEvents
-                    return token', fold state (conflictingEvents |> Seq.skip token.eventCount |> Seq.choose codec.TryDecode) }
+                    let token' = Token.ofValue conflictingEvents
+                    return token', fold state (conflictingEvents |> Seq.skip eventCount |> Seq.choose codec.TryDecode) }
                 return SyncResult.Conflict resync }
 
 type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
     let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
-    let resolveStream streamName context = Stream.create category streamName None context
-
-    member _.Resolve(streamName : FsCodec.StreamName, [<Optional; DefaultParameterValue null>] ?option, [<Optional; DefaultParameterValue null>] ?context : 'context) =
-        match FsCodec.StreamName.toString streamName, option with
-        | sn, (None | Some AllowStale) -> resolveStream sn context
-        | sn, Some AssumeEmpty -> Stream.ofMemento (Token.ofEmpty sn, initial) (resolveStream sn context)
-
-    /// Resolve from a Memento being used in a Continuation [based on position and state typically from Stream.CreateMemento]
-    member _.FromMemento(Token.Unpack stream as streamToken, state, [<Optional; DefaultParameterValue null>] ?context) =
-        Stream.ofMemento (streamToken, state) (resolveStream stream.streamName context)
+    let resolve streamName = category :> ICategory<_, _, _, _>, FsCodec.StreamName.toString streamName, (None : (unit -> Async<unit>) option)
+    let empty = Token.ofEmpty, initial
+    let storeCategory = StoreCategory<'event, 'state, FsCodec.StreamName, 'context>(resolve, empty)
+    member _.Resolve(streamName : FsCodec.StreamName, [<Optional; DefaultParameterValue null>] ?context : 'context) = storeCategory.Resolve(streamName, ?context = context)

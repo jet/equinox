@@ -5,27 +5,25 @@ open Equinox
 open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
-
 let fold, initial = Cart.Fold.fold, Cart.Fold.initial
 let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
 
 let createMemoryStore () = MemoryStore.VolatileStore<byte[]>()
 let createServiceMemory log store =
-    Cart.create log (fun (id,opt) -> MemoryStore.MemoryStoreCategory(store, Domain.Cart.Events.codec, fold, initial).Resolve(id,?option=opt))
+    Cart.create log (MemoryStore.MemoryStoreCategory(store, Cart.Events.codec, fold, initial).Resolve)
 
 let codec = Cart.Events.codec
 let codecStj = Cart.Events.codecStj
 
 let resolveGesStreamWithRollingSnapshots context =
-    fun (id,opt) -> EventStore.EventStoreCategory(context, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve(id,?option=opt)
+    EventStore.EventStoreCategory(context, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
 let resolveGesStreamWithoutCustomAccessStrategy context =
-    fun (id,opt) -> EventStore.EventStoreCategory(context, codec, fold, initial).Resolve(id,?option=opt)
+    EventStore.EventStoreCategory(context, codec, fold, initial).Resolve
 
 let resolveCosmosStreamWithSnapshotStrategy context =
-    fun (id,opt) -> CosmosStore.CosmosStoreCategory(context, codecStj, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
+    CosmosStore.CosmosStoreCategory(context, codecStj, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve
 let resolveCosmosStreamWithoutCustomAccessStrategy context =
-    fun (id,opt) -> CosmosStore.CosmosStoreCategory(context, codecStj, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve(id,?option=opt)
+    CosmosStore.CosmosStoreCategory(context, codecStj, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {

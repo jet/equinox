@@ -5,8 +5,6 @@ open Equinox
 open Equinox.CosmosStore.Integration
 open Swensen.Unquote
 
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
-
 let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
 let snapshot = Favorites.Fold.isOrigin, Favorites.Fold.snapshot
 

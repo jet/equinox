@@ -13,24 +13,24 @@ module Cart =
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let codec = Cart.Events.codecStj
     let createServiceWithoutOptimization log context =
-        let resolve (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve(id,?option=opt)
+        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Cart.create log resolve
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds log context =
         let unfArgs = Cart.Fold.isOrigin, fun _ -> Seq.empty
-        let resolve (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve(id,?option=opt)
+        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve
         Cart.create log resolve
     let createServiceWithSnapshotStrategy log context =
-        let resolveStream (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
-        Cart.create log resolveStream
+        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
+        Cart.create log resolve
     let createServiceWithSnapshotStrategyAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolveStream (id,opt) = CosmosStoreCategory(context, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve(id,?option=opt)
-        Cart.create log resolveStream
+        let resolve = CosmosStoreCategory(context, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve
+        Cart.create log resolve
     let createServiceWithRollingState log context =
         let access = AccessStrategy.RollingState Cart.Fold.snapshot
-        let resolveStream (id,opt) = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve(id,?option=opt)
-        Cart.create log resolveStream
+        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve
+        Cart.create log resolve
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
@@ -45,8 +45,6 @@ module ContactPreferences =
     let createServiceWithLatestKnownEvent context log cachingStrategy =
         let resolveStream = CosmosStoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
         ContactPreferences.create log resolveStream
-
-#nowarn "1182" // From hereon in, we may have some 'unused' privates (the tests)
 
 type Tests(testOutputHelper) =
     inherit TestsWithLogCapture(testOutputHelper)
@@ -98,7 +96,7 @@ type Tests(testOutputHelper) =
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
         test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
-        if eventsInTip then verifyRequestChargesMax 8 // 7.46
+        if eventsInTip then verifyRequestChargesMax 9 // 8.05
         else verifyRequestChargesMax 15 // 14.01
     }
 
