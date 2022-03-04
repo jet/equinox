@@ -90,7 +90,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
     | [<AltCommandLine "-s">]               Stream of FsCodec.StreamName
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-J"; Unique>]       JsonSkip
-    | [<AltCommandLine "-P"; Unique>]       PrettySkip
+    | [<AltCommandLine "-P"; Unique>]       Pretty
     | [<AltCommandLine "-T"; Unique>]       TimeRegular
     | [<AltCommandLine "-U"; Unique>]       UnfoldsOnly
     | [<AltCommandLine "-E"; Unique >]      EventsOnly
@@ -104,7 +104,7 @@ and [<NoComparison; NoEquality>]DumpArguments =
             | Stream _ ->                   "Specify stream(s) to dump."
             | Correlation ->                "Include Correlation/Causation identifiers"
             | JsonSkip ->                   "Don't attempt to decode JSON"
-            | PrettySkip ->                 "Don't pretty print the JSON over multiple lines"
+            | Pretty ->                     "Pretty print the JSON over multiple lines"
             | TimeRegular ->                "Don't humanize time intervals between events"
             | UnfoldsOnly ->                "Exclude Events. Default: show both Events and Unfolds"
             | EventsOnly ->                 "Exclude Unfolds/Snapshots. Default: show both Events and Unfolds."
@@ -390,18 +390,15 @@ module Dump =
         let a = DumpInfo args
         let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
         let storeLog, storeConfig = a.ConfigureStore(log,createStoreLog)
-        let doU,doE = not(args.Contains EventsOnly),not(args.Contains UnfoldsOnly)
-        let doC,doJ,doP,doT = args.Contains Correlation,not(args.Contains JsonSkip),not(args.Contains PrettySkip),not(args.Contains TimeRegular)
+        let doU, doE = not (args.Contains EventsOnly), not (args.Contains UnfoldsOnly)
+        let doC,doJ,doP,doT = args.Contains Correlation, not (args.Contains JsonSkip), args.Contains Pretty, not (args.Contains TimeRegular)
         let cat = Samples.Infrastructure.Services.StreamResolver(storeConfig)
 
         let streams = args.GetResults DumpArguments.Stream
         log.ForContext("streams",streams).Information("Reading...")
         let initial = List.empty
         let fold state events = (events,state) ||> Seq.foldBack (fun e l -> e :: l)
-        let mutable unfolds = List.empty
-        let tryDecode (x : FsCodec.ITimelineEvent<byte[]>) =
-            if x.IsUnfold then unfolds <- x :: unfolds
-            Some x
+        let tryDecode (x : FsCodec.ITimelineEvent<byte[]>) = Some x
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold),fun _state -> failwith "no snapshot required"
         let fo = if doP then Newtonsoft.Json.Formatting.Indented else Newtonsoft.Json.Formatting.None
@@ -413,10 +410,9 @@ module Dump =
             with e -> log.ForContext("str", System.Text.Encoding.UTF8.GetString data).Warning(e, "Parse failure"); reraise()
         let readStream (streamName : FsCodec.StreamName) = async {
             let stream = cat.Resolve(idCodec,fold,initial,isOriginAndSnapshot) streamName
-            let! _token,events = stream.Load storeLog
-            let source = if not doE && not (List.isEmpty unfolds) then Seq.ofList unfolds else Seq.append events unfolds
+            let! _token, events = stream.Load storeLog
             let mutable prevTs = None
-            for x in source |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
+            for x in events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
                 let ty,render = if x.IsUnfold then "U", render Newtonsoft.Json.Formatting.Indented else "E", render fo
                 let interval =
                     match prevTs with Some p when not x.IsUnfold -> Some (x.Timestamp - p) | _ -> None
