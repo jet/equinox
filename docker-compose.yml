@@ -13,6 +13,21 @@ services:
     ports:
       - "5432:5432"
 
+  equinox-mssql:
+    container_name: equinox-mssql
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    restart: unless-stopped
+    ports:
+      - 1433:1433
+    environment:
+      - SA_PASSWORD=!Passw0rd
+      - ACCEPT_EULA=Y
+
+#  MANUAL STEP re https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719; after docker compose up, run:
+#  docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
+#    -S localhost -U sa -P "!Passw0rd" \
+#    -Q "CREATE database EQUINOX_TEST_DB"
+
   equinox-mysql:
     container_name: equinox-mysql
     image: mysql:5.6

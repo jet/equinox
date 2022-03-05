@@ -24,7 +24,15 @@ open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MsSql
 
 let connectToLocalStore (_ : ILogger) =
-    Connector(sprintf "Server=localhost,1433;User=sa;Password=!Passw0rd;Database=test",autoCreate=true).Establish()
+    Connector(sprintf "Server=localhost,1433;User=sa;Password=!Passw0rd;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
+
+(* WORKAROUND FOR https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719
+AFTER `docker compose up`, run:
+
+docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
+    -S localhost -U sa -P "!Passw0rd" \
+    -Q "CREATE database EQUINOX_TEST_DB"
+*)
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>

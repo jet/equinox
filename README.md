@@ -556,6 +556,16 @@ For more complete instructions, follow https://developers.eventstore.com/server/
 
 There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` rigs local `equinox-mssql`, `equinox-mysql` and `equinox-postgres` servers and databases at known ports. _NOTE The `Equinox.SqlStreamStore.*.Integration` suites currently assume this is in place and will otherwise fail_.
 
+### Provisioning MSSQL for `SqlStreamStore.MsSql`
+
+Until https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719 is resolved, after the `docker compose up`:
+
+```zsh
+docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
+    -S localhost -U sa -P "!Passw0rd" \
+    -Q "CREATE database EQUINOX_TEST_DB"
+```
+
 ## DEPROVISIONING
 
 ### Deprovisioning (aka nuking) EventStore data resulting from tests to reset baseline
