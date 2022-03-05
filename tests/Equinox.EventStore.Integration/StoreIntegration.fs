@@ -14,7 +14,7 @@ open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.Postgres
 
 let connectToLocalStore (_ : ILogger) =
-    Connector("Host=localhost;User Id=postgres;database=EQUINOX_TEST_DB",autoCreate=true).Establish()
+    Connector("Host=localhost;User Id=postgres;password=password;database=EQUINOX_TEST_DB",autoCreate=true).Establish()
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
