@@ -20,7 +20,7 @@ services:
     ports:
       - 1433:1433
     environment:
-      - SA_PASSWORD=!Passw0rd
+      - SA_PASSWORD=mssql1Ipw
       - ACCEPT_EULA=Y
 
 #  MANUAL STEP re https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719; after docker compose up, run:
