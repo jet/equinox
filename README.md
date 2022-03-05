@@ -558,7 +558,7 @@ There's a `docker-compose.yml` file in the root, so installing `docker-compose` 
 
 ### Provisioning MSSQL for `SqlStreamStore.MsSql`
 
-Until https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719 is resolved, after the `docker compose up`:
+Until https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719 is resolved (see [#315](https://github.com/jet/equinox/pull/315), after the `docker compose up`:
 
 ```zsh
 docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
