@@ -541,7 +541,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 ### Provisioning EventStore (when not using -s or -se)
 
-There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` rigs a local 3-node cluster, which is assumed to be configured for `Equinox.EventStore.Integration`
+There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` rigs a local 3-node cluster, which is assumed to be configured for `Equinox.EventStore.Integration` and `Equinox.EventStoreDb.Integration`
 
 For more complete instructions, follow https://developers.eventstore.com/server/v21.10/installation.html#use-docker-compose
 

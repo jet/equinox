@@ -30,8 +30,9 @@
 #r "FSharp.Control.AsyncSeq.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
-#r "EventStore.ClientAPI.dll"
-#r "Equinox.EventStore.dll"
+#r "Equinox.EventStoreDb.dll"
+#r "EventStore.Client.dll"
+#r "EventStore.Client.Streams.dll"
 #r "Microsoft.Azure.Cosmos.Direct.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
@@ -131,28 +132,30 @@ module Log =
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Equinox.EventStoreDb.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
     let dumpMetrics () =
         Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
-        Equinox.EventStore.Log.InternalMetrics.dump log
+        Equinox.EventStoreDb.Log.InternalMetrics.dump log
 
 let [<Literal>] AppName = "equinox-tutorial"
 let cache = Equinox.Cache(AppName, 20)
 
 module EventStore =
 
-    open Equinox.EventStore
+    open Equinox.EventStoreDb
 
     let snapshotWindow = 500
-    // see QuickStart for how to run a local instance in a mode that emulates the behavior of a cluster
-    let host, username, password = "localhost", "admin", "changeit"
-    let connector = EventStoreConnector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
-    let esc = connector.Connect(AppName, Discovery.GossipDns host) |> Async.RunSynchronously
-    let log = Logger.SerilogNormal Log.log
+    // NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
+    let connector =
+        EventStoreConnector(
+            // NOTE: disable cert validation for this test suite. ABSOLUTELY DO NOT DO THIS FOR ANY CODE THAT WILL EVER HIT A STAGING OR PROD SERVER
+            customize = (fun c -> c.ConnectivitySettings.Insecure <- true),
+            reqTimeout = TimeSpan.FromSeconds 5., reqRetries = 3)
+    let esc = connector.Connect(AppName, Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, BatchingPolicy(maxBatchSize=snapshotWindow))
     // cache so normal read pattern is to read from whatever we've built in memory

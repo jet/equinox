@@ -140,7 +140,7 @@ module EventStore =
                 | VerboseStore ->       "include low level Store logging."
                 | Timeout _ ->          "specify operation timeout in seconds (default: 5)."
                 | Retries _ ->          "specify operation retries (default: 1)."
-                | ConnectionString _ -> "Portion of connection string that's safe to write to console or log. default: esdb://localhost:2113?tls=false"
+                | ConnectionString _ -> "Portion of connection string that's safe to write to console or log. default: esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false"
                 | Credentials _ ->      "specify a sensitive portion of the connection string that should not be logged. Default: none"
                 | ConcurrentOperationsLimit _ -> "max concurrent operations in flight (default: 5000)."
                 | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 1.5)."
@@ -148,7 +148,7 @@ module EventStore =
     open Equinox.EventStoreDb
 
     type Info(args : ParseResults<Arguments>) =
-        member _.Host =                args.GetResult(ConnectionString,"esdb://localhost:2113?tls=false")
+        member _.Host =                args.GetResult(ConnectionString, "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
         member _.Credentials =         args.GetResult(Credentials, null)
 
         member _.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
@@ -164,7 +164,7 @@ module EventStore =
                 // TODO heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
                 // TODO log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
-            .Establish(appName, Discovery.Uri (String.Join(";", connectionString, credentialsString) |> Uri), ConnectionStrategy.ClusterTwinPreferSlaveReads)
+            .Establish(appName, Discovery.ConnectionString (String.Join(";", connectionString, credentialsString)), ConnectionStrategy.ClusterTwinPreferSlaveReads)
     let private createContext connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
     let config (log: ILogger, storeLog) (cache, unfolds) (args : ParseResults<Arguments>) =
         let a = Info(args)

@@ -193,12 +193,12 @@ module private Read =
             let! events = res |> AsyncSeq.toArrayAsync
             let version =
                 match events with
-                | [||] when direction = Direction.Backward -> -1L // When reading backwards, the startPos is End, which is not directly convertible
+                | [||] when direction = Direction.Backward -> 0L // When reading backwards, the startPos is End, which is not directly convertible
                 | [||] -> startPos.ToInt64() // e.g. if reading forward from (verified existing) event 10 and there are none, the version is still 10
-                | xs when direction = Direction.Backward -> let le = xs.[0].Event.EventNumber in le.ToInt64() // the events arrive backwards, so first is the 'version'
+//                | xs when direction = Direction.Backward -> let le = xs.[0].Event.EventNumber in le.ToInt64() // the events arrive backwards, so first is the 'version'
                 | xs -> let le = xs.[xs.Length - 1].Event.EventNumber in le.ToInt64() // In normal case, the last event represents the version of the stream
             return version, events
-        with :? StreamNotFoundException -> return -1L, [||] }
+        with :? AggregateException as e when (e.InnerExceptions.Count = 1 && e.InnerExceptions[0] :? StreamNotFoundException) -> return 0L, [||] }
 
     let (|ResolvedEventLen|) (x : ResolvedEvent) = match x.Event.Data, x.Event.Metadata with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
 
@@ -357,9 +357,9 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
             | None -> return Token.ofUncompactedVersion batching.BatchSize version, Array.choose tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.choose tryDecode events }
 
-    member _.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode, isOrigin) : Async<StreamToken * 'event []> = async {
+    member _.LoadBackwardsStoppingAtCompactionEvent(streamName, log, limit, (tryDecode, isOrigin)) : Async<StreamToken * 'event []> = async {
         let! version, events =
-            Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.ReadConnection batching.BatchSize streamName (tryDecode, isOrigin)
+            Read.loadBackwardsUntilCompactionOrStart log conn.ReadRetryPolicy conn.ReadConnection (defaultArg limit Int32.MaxValue) streamName (tryDecode, isOrigin)
         match Array.tryHead events |> Option.filter (function _, Some e -> isOrigin e | _ -> false) with
         | None -> return Token.ofUncompactedVersion batching.BatchSize version, Array.choose snd events
         | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.choose snd events }
@@ -437,11 +437,11 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
 
     let loadAlgorithm load streamName initial log =
         let batched = load initial (context.LoadBatched streamName log (tryDecode, None))
-        let compacted = load initial (context.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode, isOrigin))
+        let compacted limit = load initial (context.LoadBackwardsStoppingAtCompactionEvent(streamName, log, limit, (tryDecode, isOrigin)))
         match access with
         | None -> batched
-        | Some AccessStrategy.LatestKnownEvent
-        | Some (AccessStrategy.RollingSnapshots _) -> compacted
+        | Some AccessStrategy.LatestKnownEvent -> compacted (Some 1)
+        | Some (AccessStrategy.RollingSnapshots _) -> compacted None
 
     let load (fold : 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
@@ -556,14 +556,14 @@ type CachingStrategy =
 
 type EventStoreCategory<'event, 'state, 'context>
     (   context : EventStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, fold, initial,
-        /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
-        /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
+        // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
+        // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>] ?caching,
         [<O; D(null)>] ?access) =
 
     do  match access with
         | Some AccessStrategy.LatestKnownEvent when Option.isSome caching ->
-            "Equinox.EventStore does not support (and it would make things _less_ efficient even if it did)"
+            "Equinox.EventStoreDb does not support (and it would make things _less_ efficient even if it did)"
             + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
             |> invalidOp
         | _ -> ()
@@ -619,13 +619,13 @@ type Logger =
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     // Allow Uri-based connection definition (esdb://, etc)
-    | Uri of Uri
+    | ConnectionString of string
 (* TODO
     /// Supply a set of pre-resolved EndPoints instead of letting Gossip resolution derive from the DNS outcome
     | GossipSeeded of seedManagerEndpoints : System.Net.IPEndPoint []
     // Standard Gossip-based discovery based on Dns query and standard manager port
     | GossipDns of clusterDns : string
-    // Standard Gossip-based discovery based on Dns query (with manager port overriding default 30778)
+    // Standard Gossip-based discovery based on Dns query (with manager port overriding default 2113)
     | GossipDnsCustomPort of clusterDns : string * managerPortOverride : int
 
 module private Discovery =
@@ -690,11 +690,11 @@ type EventStoreConnector
         |> fun s -> s.Build()
 *)
     member _.Connect
-        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+        (   // Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery, ?clusterNodePreference) : EventStoreClient =
         let settings =
             match discovery with
-            | Discovery.Uri uri -> EventStoreClientSettings.Create(string uri)
+            | Discovery.ConnectionString s -> EventStoreClientSettings.Create(s)
 (* TODO
             | Discovery.DiscoverViaGossip clusterSettings ->
                 // NB This overload's implementation ignores the calls to ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode and
@@ -715,7 +715,7 @@ type EventStoreConnector
 
     /// Yields a Connection (which may internally be twin connections) configured per the specified strategy
     member x.Establish
-        (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
+        (   // Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
             name,
             discovery : Discovery, strategy : ConnectionStrategy) : EventStoreConnection =
         match strategy with
