@@ -17,8 +17,6 @@
     <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MsSql\Equinox.SqlStreamStore.MsSql.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MySql\Equinox.SqlStreamStore.MySql.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.Postgres\Equinox.SqlStreamStore.Postgres.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox.SqlStreamStore\Equinox.SqlStreamStore.fsproj" />
-    <ProjectReference Include="..\..\src\Equinox\Equinox.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />

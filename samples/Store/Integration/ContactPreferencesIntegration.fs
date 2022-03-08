@@ -27,8 +27,8 @@ let resolveStreamCosmosRollingUnfolds context =
     CosmosStore.CosmosStoreCategory(context, codecStj, fold, initial, CosmosStore.CachingStrategy.NoCaching, access).Resolve
 
 type Tests(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger testOutput
+    let testOutput = TestOutput testOutputHelper
+    let log = testOutput.CreateLogger()
 
     let act (service : ContactPreferences.Service) (id,value) = async {
         do! service.Update(id, value)
@@ -38,13 +38,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let log, store = createLog (), createMemoryStore ()
+        let store = createMemoryStore ()
         let service = createServiceMemory log store
         do! act service args
     }
 
     let arrangeEs connect choose resolveStream = async {
-        let log = createLog ()
         let! client = connect log
         let context = choose client
         return ContactPreferences.create log (resolveStream context) }
@@ -62,7 +61,6 @@ type Tests(testOutputHelper) =
     }
 
     let arrangeCosmos connect resolveStream queryMaxItems =
-        let log = createLog ()
         let context: CosmosStore.CosmosStoreContext = connect log queryMaxItems
         ContactPreferences.create log (resolveStream context)
 

@@ -16,11 +16,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".project", ".project", "{7E
 		CONTRIBUTING.md = CONTRIBUTING.md
 		Directory.Build.props = Directory.Build.props
 		Directory.Build.targets = Directory.Build.targets
+		docker-compose.env = docker-compose.env
+		docker-compose.yml = docker-compose.yml
 		DOCUMENTATION.md = DOCUMENTATION.md
 		LICENSE = LICENSE
 		README.md = README.md
 		SECURITY.md = SECURITY.md
-		docker-compose.yml = docker-compose.yml
 		global.json = global.json
 		nuget.config = nuget.config
 	EndProjectSection

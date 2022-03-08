@@ -4,6 +4,9 @@
 
 .DS_Store
 
+# EventStoreDB docker compose certs
+certs/
+
 # Cli logs
 eqx.log
 

@@ -33,8 +33,8 @@ let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service
                 yield Cart.SyncItem (context, skuId, Some 0, None) })
 
 type Tests(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger testOutput
+    let testOutput = TestOutput testOutputHelper
+    let log = testOutput.CreateLogger()
 
     let act service (context,cartId,skuId) = async {
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service 5
@@ -45,13 +45,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let log, store = createLog (), createMemoryStore ()
+        let store = createMemoryStore ()
         let service = createServiceMemory log store
         do! act service args
     }
 
     let arrangeEs connect choose resolveStream = async {
-        let log = createLog ()
         let! client = connect log
         let context = choose client defaultBatchSize
         return Cart.create log (resolveStream context) }
@@ -69,7 +68,6 @@ type Tests(testOutputHelper) =
     }
 
     let arrangeCosmos connect resolveStream =
-        let log = createLog ()
         let context : CosmosStore.CosmosStoreContext = connect log defaultQueryMaxItems
         Cart.create log (resolveStream context)
 

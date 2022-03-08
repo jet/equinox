@@ -44,8 +44,8 @@ let execute (service : Favorites.Service) clientId = function
     | Unfavorite sku ->         service.Unfavorite(clientId, sku)
 
 type Tests(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger testOutput
+    let testOutput = TestOutput testOutputHelper
+    let log = testOutput.CreateLogger()
 
     let act (service : Favorites.Service) (clientId, command) = async {
         do! execute service clientId command
@@ -60,7 +60,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData>]
     let ``Can roundtrip in Memory, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let log, store = createLog (), createMemoryStore ()
+        let store = createMemoryStore ()
         let service = createServiceMemory log store
         let! version, items = act service args
         version =! items.LongLength
@@ -68,7 +68,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let log = createLog ()
         let! client = connectToLocalEventStoreNode log
         let context = createContext client defaultBatchSize
         let service = createServiceGes log context
@@ -78,7 +77,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with caching`` (clientId, cmd) = Async.RunSynchronously <| async {
-        let log = createLog ()
         let context = createPrimaryContext log defaultQueryMaxItems
         let service = createServiceCosmosUnoptimizedButCached log context
         let clientId = clientId () // generate a fresh one per test so repeated runs start from a stable base
@@ -97,7 +95,6 @@ type Tests(testOutputHelper) =
     }
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events`` args = Async.RunSynchronously <| async {
-        let log = createLog ()
         let context = createPrimaryContext log defaultQueryMaxItems
         let service = createServiceCosmosSnapshotsUncached log context
         let! version, items = act service args
@@ -106,7 +103,6 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with rolling unfolds`` args = Async.RunSynchronously <| async {
-        let log = createLog ()
         let context = createPrimaryContext log defaultQueryMaxItems
         let service = createServiceCosmosRollingStateUncached log context
         let! version, _items = act service args

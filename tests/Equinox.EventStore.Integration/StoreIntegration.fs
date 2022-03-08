@@ -1,7 +1,6 @@
 ﻿module Equinox.Store.Integration.StoreIntegration
 
 open Domain
-open Equinox.Integration.Infrastructure
 open FSharp.UMX
 open Serilog
 open Swensen.Unquote
@@ -42,14 +41,18 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 #else // STORE_EVENTSTORE
 open Equinox.EventStore
 
-/// Connect directly to a locally running EventStore Node without using Gossip-driven discovery
-/// To establish a local node to run the tests against:
-///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-/// (For this specific suite only, omitting the args will also work as the Gossip-related ports are irrelevant, but other tests would fail)
+// NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
 let connectToLocalStore log =
-    Connector("admin", "changeit", reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string])
-        .Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"),ConnectionStrategy.ClusterSingle NodePreference.Master)
+    // NOTE: disable cert validation for this test suite. ABSOLUTELY DO NOT DO THIS FOR ANY CODE THAT WILL EVER HIT A STAGING OR PROD SERVER
+    EventStoreConnector("admin", "changeit", custom = (fun c -> c.DisableServerCertificateValidation()),
+                        reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string]
+#if EVENTSTORE_NO_CLUSTER
+    // Connect directly to the locally running EventStore Node without using Gossip-driven discovery
+    ).Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"), ConnectionStrategy.ClusterSingle NodePreference.Master)
+#else
+    // Connect directly to the locally running EventStore Node using Gossip-driven discovery
+    ).Establish("Equinox-integration", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
+#endif
 
 type Context = EventStoreContext
 type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
@@ -87,7 +90,8 @@ module ContactPreferences =
         ContactPreferences.create log cat.Resolve
 
 type Tests(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
+
+    let output = TestContext(testOutputHelper)
 
     let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
         service.ExecuteManyAsync(cartId, optimistic, seq {
@@ -102,23 +106,13 @@ type Tests(testOutputHelper) =
     let addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service count =
         addAndThenRemoveItems true true context cartId skuId service count
 
-    let createLoggerWithCapture () =
-        let capture = LogCaptureBuffer()
-        let logger =
-            Serilog.LoggerConfiguration()
-                .WriteTo.Sink(testOutput)
-                .WriteTo.Sink(capture)
-                .WriteTo.Seq("http://localhost:5341")
-                .CreateLogger()
-        logger, capture
-
-    let singleSliceForward = EsAct.SliceForward
-    let singleBatchForward = [EsAct.SliceForward; EsAct.BatchForward]
+    let sliceForward = [EsAct.SliceForward]
+    let singleBatchForward = sliceForward @ [EsAct.BatchForward]
     let batchForwardAndAppend = singleBatchForward @ [EsAct.Append]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly batching the reads [without any optimizations]`` (ctx, skuId) = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
+    let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = Async.RunSynchronously <| async {
+        let log, capture = output.CreateLoggerWithCapture()
         let! connection = connectToLocalStore log
 
         let batchSize = 3
@@ -127,7 +121,7 @@ type Tests(testOutputHelper) =
 
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 6
-        let cartId = % System.Guid.NewGuid()
+        let cartId = % Guid.NewGuid()
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service addRemoveCount
         test <@ batchForwardAndAppend = capture.ExternalCalls @>
@@ -142,24 +136,25 @@ type Tests(testOutputHelper) =
 
         // Need to read 4 batches to read 11 events in batches of 3
         let expectedBatches = ceil(float expectedEventCount/float batchSize) |> int
-        test <@ List.replicate (expectedBatches-1) singleSliceForward @ singleBatchForward = capture.ExternalCalls @>
+        test <@ (List.replicate (expectedBatches-1) sliceForward |> List.concat) @ singleBatchForward = capture.ExternalCalls @>
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = Async.RunSynchronously <| async {
-        let log1, capture1 = createLoggerWithCapture ()
+    let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = Async.RunSynchronously <| async {
+        let log1, capture1 = output.CreateLoggerWithCapture()
+
         let! connection = connectToLocalStore log1
         // Ensure batching is included at some point in the proceedings
         let batchSize = 3
 
         let ctx, (sku11, sku12, sku21, sku22) = ctx
-        let cartId = % System.Guid.NewGuid()
+        let cartId = % Guid.NewGuid()
 
         // establish base stream state
         let context = createContext connection batchSize
         let service1 = Cart.createServiceWithoutOptimization log1 context
         let! maybeInitialSku =
-            let (streamEmpty, skuId) = initialState
+            let streamEmpty, skuId = initialState
             async {
                 if streamEmpty then return None
                 else
@@ -188,7 +183,7 @@ type Tests(testOutputHelper) =
             do! act prepare service1 log1 sku12 12
             // Signal conflict generated
             do! s4 }
-        let log2, capture2 = createLoggerWithCapture ()
+        let log2, capture2 = output.CreateLoggerWithCapture()
         let context = createContext connection batchSize
         let service2 = Cart.createServiceWithoutOptimization log2 context
         let t2 = async {
@@ -220,19 +215,20 @@ type Tests(testOutputHelper) =
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
-    let singleBatchBackwards = [EsAct.SliceBackward; EsAct.BatchBackward]
+    let sliceBackward = [EsAct.SliceBackward]
+    let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly compacting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
+    let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
         let context = createContext client batchSize
         let service = Cart.createServiceWithCompaction log context
 
         // Trigger 10 events, then reload
-        let cartId = % System.Guid.NewGuid()
+        let cartId = % Guid.NewGuid()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 5
         let! _ = service.Read cartId
 
@@ -265,8 +261,8 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can correctly read and update against EventStore, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
+    let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
+        let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let service = ContactPreferences.createService log client
 
@@ -281,14 +277,13 @@ type Tests(testOutputHelper) =
         do! service.Update(id, value)
 
         let! result = service.Read id
-        test <@ value = result @>
-
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+        test <@ value = result @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against EventStore, correctly caching to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
+    let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
         let cache = Equinox.Cache("cart", sizeMb = 50)
@@ -341,17 +336,17 @@ type Tests(testOutputHelper) =
         let skuId4 = SkuId <| Guid.NewGuid()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId4 service3 1
         // Need 2 batches to do the reading
-        test <@ [EsAct.SliceForward] @ singleBatchForward @ [EsAct.Append] = capture.ExternalCalls @>
+        test <@ sliceForward @ singleBatchForward @ [EsAct.Append] = capture.ExternalCalls @>
         // we've engineered a clash with the cache state (service3 doest participate in caching)
         // Conflict with cached state leads to a read forward to resync; Then we'll idempotently decide not to do any append
         capture.Clear()
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne ctx cartId skuId4 service2 1
-        test <@ [EsAct.AppendConflict; EsAct.SliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
+        test <@ [EsAct.AppendConflict; yield! sliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can combine compaction with caching against EventStore`` (ctx, skuId) = Async.RunSynchronously <| async {
-        let log, capture = createLoggerWithCapture ()
+    let ``Can combine compaction with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
+        let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
         let context = createContext client batchSize
@@ -361,7 +356,7 @@ type Tests(testOutputHelper) =
         let service2 = Cart.createServiceWithCompactionAndCaching log context cache
 
         // Trigger 10 events, then reload
-        let cartId = % System.Guid.NewGuid()
+        let cartId = % Guid.NewGuid()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 5
         let! _ = service2.Read cartId
 
@@ -390,6 +385,6 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
         // and we _could_ reload the 24 events with a single read if reading backwards. However we are using the cache, which last saw it with 10 events, which necessitates two reads
         let! _ = service2.Read cartId
-        let suboptimalExtraSlice = [singleSliceForward]
+        let suboptimalExtraSlice : EsAct list = sliceForward
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }

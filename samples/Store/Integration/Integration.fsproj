@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="AutoDataAttribute.fs" />
+    <Compile Include="TestOutput.fs" />
     <Compile Include="Infrastructure.fs" />
     <Compile Include="CodecIntegration.fs" />
     <Compile Include="EventStoreIntegration.fs" />
@@ -18,8 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
-    <ProjectReference Include="..\..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\..\..\tests\Equinox.CosmosStore.Integration\Equinox.CosmosStore.Integration.fsproj" />
     <ProjectReference Include="..\..\..\tests\Equinox.EventStore.Integration\Equinox.EventStore.Integration.fsproj" />

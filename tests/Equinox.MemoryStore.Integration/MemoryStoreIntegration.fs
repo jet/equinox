@@ -2,7 +2,14 @@
 
 open Domain
 open Equinox.MemoryStore
+open FsCheck
 open Swensen.Unquote
+
+type FsCheckGenerators =
+    static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
+
+type AutoDataAttribute() =
+    inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
 
 let createMemoryStore () = VolatileStore<_>()
 let createServiceMemory log store =
@@ -10,8 +17,7 @@ let createServiceMemory log store =
     Cart.create log cat.Resolve
 
 type Tests(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger testOutput
+    let log = TestOutput(testOutputHelper).CreateLogger()
 
     let (|NonZero|) = function
         | None -> Some 1
@@ -20,7 +26,7 @@ type Tests(testOutputHelper) =
     [<AutoData>]
     let ``Basic tracer bullet, sending a command and verifying the folded result directly and via a reload``
             cartId1 cartId2 (ctx,skuId,NonZero quantity,waive) = Async.RunSynchronously <| async {
-        let log, store = createLog (), createMemoryStore ()
+        let store = createMemoryStore ()
         let service = createServiceMemory log store
         let command = Cart.SyncItem (ctx,skuId,quantity,waive)
 
@@ -52,12 +58,11 @@ let createFavoritesServiceMemory log store =
     Favorites.create log cat.Resolve
 
 type ChangeFeed(testOutputHelper) =
-    let testOutput = TestOutputAdapter testOutputHelper
-    let createLog () = createLogger testOutput
+    let log = TestOutput(testOutputHelper).CreateLogger()
 
     [<AutoData>]
     let ``Commits get reported`` (clientId, sku) = Async.RunSynchronously <| async {
-        let log, store = createLog (), createMemoryStore ()
+        let store = createMemoryStore ()
         let events = ResizeArray()
         let takeCaptured () =
             let xs = events.ToArray()
@@ -85,7 +90,7 @@ type ChangeFeed(testOutputHelper) =
                 && env.Data |> unbox<Favorites.Events.Unfavorited> |> fun x -> x.skuId = sku @> }
 
 type Versions(testOutputHelper) =
-    let log = TestOutputAdapter testOutputHelper |> createLogger
+    let log = TestOutput(testOutputHelper).CreateLogger()
 
     [<AutoData>]
     let ``Post-Version is computed correctly`` (clientId, sku) = Async.RunSynchronously <| async {

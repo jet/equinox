@@ -1,7 +1,6 @@
 ﻿module Equinox.CosmosStore.Integration.CosmosCoreIntegration
 
 open Equinox.CosmosStore.Core
-open Equinox.CosmosStore.Integration.Infrastructure
 open FsCodec
 open FSharp.Control
 open Newtonsoft.Json.Linq
@@ -19,17 +18,17 @@ type TestEvents() =
     static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
 
 type Tests(testOutputHelper) =
-    inherit TestsWithLogCapture(testOutputHelper)
-    let log, capture = base.Log, base.Capture
+    let testContext = TestContext(testOutputHelper)
+    let log, capture = testContext.CreateLoggerWithCapture()
 
     /// As we generate side-effects per run, we want each  FSCheck-triggered invocation of the test run to work in its own stream
-    let testIterations = ref 0
+    let mutable testIterations = 0
     let (|TestStream|) (name: Guid) =
-        incr testIterations
-        sprintf "events-%O-%i" name !testIterations
+        testIterations <- testIterations + 1
+        $"events-{name}-%i{testIterations}"
 
     let verifyRequestChargesMax rus =
-        let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
+        let tripRequestCharges = [ for e, c in capture.RequestCharges -> $"%A{e}", c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -63,10 +62,9 @@ type Tests(testOutputHelper) =
 
         let index = 0L
         let! res = Events.append ctx streamName index (TestEvents.Create(0,0)) |> Async.Catch
-        test <@ match res with Choice2Of2 ((:? InvalidOperationException) as ex) -> ex.Message.StartsWith "Must write either events or unfolds." | x -> failwithf "%A" x @>
+        test <@ match res with Choice2Of2 (:? InvalidOperationException as ex) -> ex.Message.StartsWith "Must write either events or unfolds." | x -> failwith $"%A{x}" @>
     }
 
-    let blobEquals (x: byte[]) (y: byte[]) = System.Linq.Enumerable.SequenceEqual(x,y)
     let stringOfEventBody (x : System.Text.Json.JsonElement) = x.GetRawText()
     let xmlDiff (x: string) (y: string) =
         match JsonDiffPatchDotNet.JsonDiffPatch().Diff(JToken.Parse x,JToken.Parse y) with
@@ -92,14 +90,14 @@ type Tests(testOutputHelper) =
 
     let verifyCorrectEventsEx direction baseIndex (expected: IEventData<_>[]) (xs: ITimelineEvent<_>[]) =
         let xs, baseIndex =
-            if direction = Equinox.CosmosStore.Core.Direction.Forward then xs, baseIndex
+            if direction = Direction.Forward then xs, baseIndex
             else Array.rev xs, baseIndex - int64 (Array.length expected) + 1L
         test <@ [for i in 0..expected.Length - 1 -> baseIndex + int64 i] = [for r in xs -> r.Index] @>
         test <@ [for e in expected -> e.EventType] = [ for r in xs -> r.EventType ] @>
         for i,x,y in Seq.mapi2 (fun i x y -> i,x,y) [for e in expected -> e.Data] [for r in xs -> r.Data] do
             verifyUtf8JsonEquals i x y
-    let verifyCorrectEventsBackward = verifyCorrectEventsEx Equinox.CosmosStore.Core.Direction.Backward
-    let verifyCorrectEvents = verifyCorrectEventsEx Equinox.CosmosStore.Core.Direction.Forward
+    let verifyCorrectEventsBackward = verifyCorrectEventsEx Direction.Backward
+    let verifyCorrectEvents = verifyCorrectEventsEx Direction.Forward
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``appendAtEnd and getNextIndex`` (eventsInTip, extras, TestStream streamName) = Async.RunSynchronously <| async {
@@ -247,7 +245,7 @@ type Tests(testOutputHelper) =
         verifyCorrectEvents 0L expected res
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         let queryRoundTripsAndItemCounts = function
-            | EqxEvent (Equinox.CosmosStore.Core.Log.Metric.Query (Equinox.CosmosStore.Core.Direction.Forward, responses, { count = c })) -> Some (responses,c)
+            | EqxEvent (Equinox.CosmosStore.Core.Log.Metric.Query (Direction.Forward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         // validate that, because we stopped after 1 item, we only needed one trip (which contained 4 events)
         [1,4] =! capture.ChooseCalls queryRoundTripsAndItemCounts
@@ -310,7 +308,7 @@ type Tests(testOutputHelper) =
         test <@ [yield! Seq.replicate pages EqxAct.ResponseBackward; EqxAct.QueryBackward] = capture.ExternalCalls @>
         // validate that, despite only requesting max 1 item, we only needed one trip, bearing 5 items (from which one item was omitted)
         let queryRoundTripsAndItemCounts = function
-            | EqxEvent (Equinox.CosmosStore.Core.Log.Metric.Query (Equinox.CosmosStore.Core.Direction.Backward, responses, { count = c })) -> Some (responses,c)
+            | EqxEvent (Equinox.CosmosStore.Core.Log.Metric.Query (Direction.Backward, responses, { count = c })) -> Some (responses,c)
             | _ -> None
         let expectedPagesAndEvents = [pages, 2]
         expectedPagesAndEvents =! capture.ChooseCalls queryRoundTripsAndItemCounts
