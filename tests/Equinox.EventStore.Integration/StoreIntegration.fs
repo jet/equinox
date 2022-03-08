@@ -63,7 +63,7 @@ let connectToLocalStore log =
     // NOTE: disable cert validation for this test suite. ABSOLUTELY DO NOT DO THIS FOR ANY CODE THAT WILL EVER HIT A STAGING OR PROD SERVER
     EventStoreConnector("admin", "changeit", custom = (fun c -> c.DisableServerCertificateValidation()),
     reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string]
-#if !EVENTSTORE_NO_CLUSTER
+#if EVENTSTORE_NO_CLUSTER
     // Connect directly to the locally running EventStore Node without using Gossip-driven discovery
     ).Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"), ConnectionStrategy.ClusterSingle NodePreference.Master)
 #else
