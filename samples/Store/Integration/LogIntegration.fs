@@ -18,8 +18,9 @@ module EquinoxEsInterop =
             match evt with
             | Log.WriteSuccess m -> "AppendToStreamAsync", m, None
             | Log.WriteConflict m -> "AppendToStreamAsync", m, None
-//            | Log.Slice (Direction.Forward,m) -> "ReadStreamEventsForwardAsync", m, None
-//            | Log.Slice (Direction.Backward,m) -> "ReadStreamEventsBackwardAsync", m, None
+// For the gRPC edition, no slice information is available
+//          | Log.Slice (Direction.Forward,m) -> "ReadStreamEventsForwardAsync", m, None
+//          | Log.Slice (Direction.Backward,m) -> "ReadStreamEventsBackwardAsync", m, None
             | Log.Batch (Direction.Forward,c,m) -> "ReadStreamAsyncF", m, Some c
             | Log.Batch (Direction.Backward,c,m) -> "ReadStreamAsyncB", m, Some c
         { action = action; stream = metric.stream; interval = metric.interval; bytes = metric.bytes; count = metric.count; batches = batches }
