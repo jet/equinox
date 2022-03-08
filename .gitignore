@@ -4,6 +4,9 @@
 
 .DS_Store
 
+# ephemeral EventStoreDB certs created via `docker compose up`
+certs/
+
 # Cli logs
 eqx.log
 

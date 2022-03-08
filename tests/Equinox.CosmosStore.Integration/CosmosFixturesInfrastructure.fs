@@ -1,9 +1,7 @@
-﻿[<AutoOpen>]
-module Equinox.CosmosStore.Integration.Infrastructure
+﻿namespace global
 
 open Domain
 open FsCheck
-open Serilog
 open System
 
 type FsCheckGenerators =
@@ -14,39 +12,12 @@ type FsCheckGenerators =
         |> Gen.map ContactPreferences.Id
         |> Arb.fromGen
 
-type AutoDataAttribute() =
-    inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
-
-    member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
-
-    override x.Skip =
-        match Option.ofObj x.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
-        | Some value when value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase) ->
-            sprintf "Skipped as requested via %s" x.SkipIfRequestedViaEnvironmentVariable
-        | _ -> null
-
-// Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
-// NB VS does not surface these atm, but other test runners / test reports do
-type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
-    let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Properties}{Exception}", null);
-    let writeSerilogEvent logEvent =
-        use writer = new System.IO.StringWriter()
-        formatter.Format(logEvent, writer)
-        writer |> string |> testOutput.WriteLine
-    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
-
 [<AutoOpen>]
 module SerilogHelpers =
     open Serilog.Events
 
-    let createLogger sink =
-        LoggerConfiguration()
-            .WriteTo.Sink(sink)
-            .WriteTo.Seq("http://localhost:5341")
-            .CreateLogger()
-
-    let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
-        | (:? ScalarValue as x) -> Some x.Value
+    let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
+        | :? ScalarValue as x -> Some x.Value
         | _ -> None
     open Equinox.CosmosStore.Core
     open Equinox.CosmosStore.Core.Log
@@ -108,34 +79,14 @@ module SerilogHelpers =
     let (|SerilogString|_|) : LogEventPropertyValue -> string option = function SerilogScalar (:? string as y) -> Some y | _ -> None
     let (|SerilogBool|_|) : LogEventPropertyValue -> bool option = function SerilogScalar (:? bool as y) -> Some y | _ -> None
 
-    type LogCaptureBuffer() =
-        let captured = ResizeArray()
-        let writeSerilogEvent (logEvent: LogEvent) =
-            logEvent.RenderMessage () |> System.Diagnostics.Trace.WriteLine
-            captured.Add logEvent
-        interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
-        member _.Clear () = captured.Clear()
-        member _.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
-        member x.ExternalCalls = x.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
-        member x.RequestCharges = x.ChooseCalls (function EqxEvent (TotalRequestCharge e) -> Some e | _ -> None)
+type LogCapture() =
+    inherit LogCaptureBuffer()
+    member _.ExternalCalls = base.ChooseCalls (function EqxEvent (EqxAction act) -> Some act | _ -> None)
+    member _.RequestCharges = base.ChooseCalls (function EqxEvent (TotalRequestCharge e) -> Some e | _ -> None)
 
-type TestsWithLogCapture(testOutputHelper) =
-    let log, capture = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
+type TestContext(testOutputHelper) =
+    let output = TestOutput testOutputHelper
 
-    /// NB the returned Logger must be Dispose()'d to guarantee all log output has been flushed upon completion of a test
-    static member CreateLoggerWithCapture testOutputHelper : Serilog.Core.Logger * LogCaptureBuffer =
-        let testOutput = TestOutputAdapter testOutputHelper
-        let capture = LogCaptureBuffer()
-        let logger =
-            LoggerConfiguration()
-                .MinimumLevel.Debug()
-                .WriteTo.Seq("http://localhost:5341")
-                .WriteTo.Sink(testOutput)
-                .WriteTo.Sink(capture)
-                .CreateLogger()
-        logger, capture
-
-    member _.Capture = capture
-    member _.Log = log
-
-    interface IDisposable with member _.Dispose() = log.Dispose()
+    member _.CreateLoggerWithCapture() : Serilog.Core.Logger * LogCapture =
+        let capture = LogCapture()
+        output.CreateLogger(capture), capture

@@ -2,7 +2,6 @@
 
 open Domain
 open Equinox.CosmosStore
-open Equinox.CosmosStore.Integration.Infrastructure
 open FSharp.UMX
 open Swensen.Unquote
 open System
@@ -47,8 +46,8 @@ module ContactPreferences =
         ContactPreferences.create log resolveStream
 
 type Tests(testOutputHelper) =
-    inherit TestsWithLogCapture(testOutputHelper)
-    let log,capture = base.Log, base.Capture
+    let testContext = TestContext(testOutputHelper)
+    let log, capture = testContext.CreateLoggerWithCapture()
 
     let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
         service.ExecuteManyAsync(cartId, optimistic, seq {
@@ -114,7 +113,7 @@ type Tests(testOutputHelper) =
         // establish base stream state
         let service1 = Cart.createServiceWithEmptyUnfolds log1 context
         let! maybeInitialSku =
-            let (streamEmpty, skuId) = initialState
+            let streamEmpty, skuId = initialState
             async {
                 if streamEmpty then return None
                 else
@@ -143,7 +142,7 @@ type Tests(testOutputHelper) =
             do! act prepare service1 sku12 12
             // Signal conflict generated
             do! s4 }
-        let log2, capture2 = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
+        let log2, capture2 = testContext.CreateLoggerWithCapture()
         use _flush = log2
         let service2 = Cart.createServiceWithEmptyUnfolds log2 context
         let t2 = async {
@@ -182,9 +181,6 @@ type Tests(testOutputHelper) =
                     && [EqxAct.Conflict] = c2 @>
     }
 
-    let singleBatchBackwards = [EqxAct.ResponseBackward; EqxAct.QueryBackward]
-    let batchBackwardsAndAppend = singleBatchBackwards @ [EqxAct.Append]
-
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` (eventsInTip, value : ContactPreferences.Events.Preferences) = Async.RunSynchronously <| async {
         let context = createPrimaryContextEx log 1 (if eventsInTip then 1 else 0)
@@ -192,7 +188,7 @@ type Tests(testOutputHelper) =
         // We need to be sure every Update changes something as we rely on an expected number of events in the end
         let value = if value <> ContactPreferences.Fold.initial then value else { value with manyPromotions = true }
 
-        let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
+        let id = ContactPreferences.Id (let g = Guid.NewGuid() in g.ToString "N")
         // Ensure there will be something to be changed by the Update below
         for i in 0..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
@@ -245,7 +241,7 @@ type Tests(testOutputHelper) =
         let context = createPrimaryContextEx log 1 10
         let service = ContactPreferences.createServiceWithLatestKnownEvent context log CachingStrategy.NoCaching
 
-        let id = ContactPreferences.Id (let g = System.Guid.NewGuid() in g.ToString "N")
+        let id = ContactPreferences.Id (let g = Guid.NewGuid() in g.ToString "N")
         // Ensure there will be something to be changed by the Update below
         for i in 1..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
@@ -271,7 +267,7 @@ type Tests(testOutputHelper) =
         // establish base stream state
         let service1 = Cart.createServiceWithRollingState log1 context
         let! maybeInitialSku =
-            let (streamEmpty, skuId) = initialState
+            let streamEmpty, skuId = initialState
             async {
                 if streamEmpty then return None
                 else
@@ -300,7 +296,7 @@ type Tests(testOutputHelper) =
             do! act prepare service1 sku12 12
             // Signal conflict generated
             do! s4 }
-        let log2, capture2 = TestsWithLogCapture.CreateLoggerWithCapture testOutputHelper
+        let log2, capture2 = testContext.CreateLoggerWithCapture()
         use _flush = log2
         let service2 = Cart.createServiceWithRollingState log2 context
         let t2 = async {
@@ -445,3 +441,5 @@ type Tests(testOutputHelper) =
         // Charges are 1 RU regardless of whether a reload occurs, as the snapshot is tiny
         verifyRequestChargesMax 1
     }
+
+    interface IDisposable with member _.Dispose() = log.Dispose()

@@ -11,13 +11,13 @@
 // - the same general point applies to over-using querying of streams for read purposes as we do here;
 //   applying CQRS principles can often lead to a better model regardless of raw necessity
 
-#if LOCAL
+#if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
 #r "netstandard"
 #endif
-#I "bin/Debug/netstandard2.1/"
+#I "bin/Debug/net6.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
@@ -40,6 +40,7 @@
 #r "nuget:Serilog.Sinks.Seq"
 #r "nuget:Equinox.CosmosStore"
 #r "nuget:Equinox.EventStore"
+#r "nuget:FsCodec.SystemTextJson"
 #endif
 open System
 
@@ -95,7 +96,7 @@ module Fold =
     // generate a snapshot when requested
     let snapshot state : Events.Event = -1L,Events.Snapshot { balanceLog = state }
     // Recognize a relevant snapshot when we meet one in the chain
-    let isValid : Events.Event -> bool = function (_,Events.Snapshot _) -> true | _ -> false
+    let isValid : Events.Event -> bool = function _, Events.Snapshot _ -> true | _ -> false
 
 type Command =
     | Add of int
@@ -105,7 +106,7 @@ let interpret command state =
     | Add delta -> [-1L,Events.Added { count = delta}]
     | Remove delta ->
         let bal = state |> Fold.State.balance
-        if bal < delta then invalidArg "delta" (sprintf "delta %d exceeds balance %d" delta bal)
+        if bal < delta then invalidArg "delta" $"delta %d{delta} exceeds balance %d{bal}"
         else [-1L,Events.Removed {count = delta}]
 
 type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
@@ -149,16 +150,17 @@ module EventStore =
     let snapshotWindow = 500
     // see QuickStart for how to run a local instance in a mode that emulates the behavior of a cluster
     let host, username, password = "localhost", "admin", "changeit"
-    let connector = Connector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
+    let connector = EventStoreConnector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
     let esc = connector.Connect(AppName, Discovery.GossipDns host) |> Async.RunSynchronously
-    let log = Logger.SerilogNormal (Log.log)
+    let log = Logger.SerilogNormal Log.log
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, BatchingPolicy(maxBatchSize=snapshotWindow))
     // cache so normal read pattern is to read from whatever we've built in memory
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    open FsCodec.SystemTextJson
+    let cat = EventStoreCategory(context, Events.codec.ToByteArrayCodec(), Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve id = Equinox.Decider(Log.log, cat.Resolve(streamName id), maxAttempts = 3)
 
 module Cosmos =

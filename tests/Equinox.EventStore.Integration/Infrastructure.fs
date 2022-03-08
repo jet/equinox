@@ -1,15 +1,8 @@
-﻿[<AutoOpen>]
-module Equinox.Integration.Infrastructure
+﻿namespace global
 
 open Domain
 open FsCheck
 open System
-
-#if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL
-open Equinox.SqlStreamStore
-#else
-open Equinox.EventStore
-#endif
 
 type FsCheckGenerators =
     static member SkuId = Arb.generate |> Gen.map SkuId |> Arb.fromGen
@@ -19,40 +12,18 @@ type FsCheckGenerators =
         |> Gen.map ContactPreferences.Id
         |> Arb.fromGen
 
-type AutoDataAttribute() =
-    inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
-
-    member val SkipIfRequestedViaEnvironmentVariable : string = null with get, set
-
-    override x.Skip =
-        match Option.ofObj x.SkipIfRequestedViaEnvironmentVariable |> Option.map Environment.GetEnvironmentVariable |> Option.bind Option.ofObj with
-        | Some value when value.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase) ->
-            sprintf "Skipped as requested via %s" x.SkipIfRequestedViaEnvironmentVariable
-        | _ -> null
-
-// Derived from https://github.com/damianh/CapturingLogOutputWithXunit2AndParallelTests
-// NB VS does not surface these atm, but other test runners / test reports do
-type TestOutputAdapter(testOutput : Xunit.Abstractions.ITestOutputHelper) =
-    let formatter = Serilog.Formatting.Display.MessageTemplateTextFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] {Message}{NewLine}{Exception}", null);
-    let writeSerilogEvent logEvent =
-        use writer = new System.IO.StringWriter()
-        formatter.Format(logEvent, writer);
-        writer |> string |> testOutput.WriteLine
-    interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
+#if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL
+open Equinox.SqlStreamStore
+#else
+open Equinox.EventStore
+#endif
 
 [<AutoOpen>]
 module SerilogHelpers =
-    open Serilog
     open Serilog.Events
 
-    let createLogger sink =
-        LoggerConfiguration()
-            .WriteTo.Sink(sink)
-            .WriteTo.Seq("http://localhost:5341")
-            .CreateLogger()
-
-    let (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
-        | (:? ScalarValue as x) -> Some x.Value
+    let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
+        | :? ScalarValue as x -> Some x.Value
         | _ -> None
     [<RequireQualifiedAccess>]
     type EsAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward
@@ -60,8 +31,10 @@ module SerilogHelpers =
         match evt with
         | Log.WriteSuccess _ -> EsAct.Append
         | Log.WriteConflict _ -> EsAct.AppendConflict
+#if !STORE_EVENTSTOREDB // For gRPC, no slice information is available
         | Log.Slice (Direction.Forward,_) -> EsAct.SliceForward
         | Log.Slice (Direction.Backward,_) -> EsAct.SliceBackward
+#endif
         | Log.Batch (Direction.Forward,_,_) -> EsAct.BatchForward
         | Log.Batch (Direction.Backward,_,_) -> EsAct.BatchBackward
     let (|EsEvent|_|) (logEvent : LogEvent) : Log.Metric option =
@@ -76,13 +49,13 @@ module SerilogHelpers =
     let (|SerilogString|_|) : LogEventPropertyValue -> string option = function SerilogScalar (:? string as y) -> Some y | _ -> None
     let (|SerilogBool|_|) : LogEventPropertyValue -> bool option = function SerilogScalar (:? bool as y) -> Some y | _ -> None
 
-    type LogCaptureBuffer() =
-        let captured = ResizeArray()
-        let writeSerilogEvent (logEvent: LogEvent) =
-            logEvent.RenderMessage () |> System.Diagnostics.Trace.WriteLine
-            captured.Add logEvent
-        interface Serilog.Core.ILogEventSink with member _.Emit logEvent = writeSerilogEvent logEvent
-        member _.Clear () = captured.Clear()
-        member _.Entries = captured.ToArray()
-        member _.ChooseCalls chooser = captured |> Seq.choose chooser |> List.ofSeq
-        member x.ExternalCalls = x.ChooseCalls(function EsEvent (EsAction act) -> Some act | _ -> None)
+type LogCapture() =
+    inherit LogCaptureBuffer()
+    member _.ExternalCalls = base.ChooseCalls(function EsEvent (EsAction act) -> Some act | _ -> None)
+
+type TestContext(testOutputHelper) =
+    let output = TestOutput testOutputHelper
+
+    member x.CreateLoggerWithCapture() =
+        let capture = LogCapture()
+        output.CreateLogger(capture), capture

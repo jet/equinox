@@ -84,10 +84,10 @@ module Cosmos =
         member x.TipMaxJsonLength =     args.GetResult(TipMaxJsonLength, 30000)
         member x.QueryMaxItems =        args.GetResult(QueryMaxItems, 10)
 
-    /// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
-    /// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
-    /// 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net6.0/eqx.exe `
-    ///     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
+    // Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
+    // 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
+    // 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net6.0/eqx.exe `
+    //     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
     open Equinox.CosmosStore
     open Serilog
 
@@ -101,7 +101,7 @@ module Cosmos =
         let connector = CosmosStoreConnector(Discovery.ConnectionString connectionString, a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
         connector.CreateUninitialized()
     let connect (log : ILogger) (a : Info) =
-        let (primaryClient, primaryDatabase, primaryContainer) as primary = createClient a a.Connection, a.Database, a.Container
+        let primaryClient, primaryDatabase, primaryContainer as primary = createClient a a.Connection, a.Database, a.Container
         logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)
         let secondary =
             match a.Secondary with
@@ -123,9 +123,8 @@ module Cosmos =
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Cosmos (context, cacheStrategy, unfolds)
 
-/// To establish a local node to run the tests against:
-///   1. cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-///   2. & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+/// To establish a local node to run the tests against, follow https://developers.eventstore.com/server/v21.10/installation.html#use-docker-compose
+/// and/or do `docker compose up` in github.com/jet/equinox
 module EventStore =
     type [<NoEquality; NoComparison>] Arguments =
         | [<AltCommandLine("-V")>]      VerboseStore
@@ -153,7 +152,6 @@ module EventStore =
     type Info(args : ParseResults<Arguments>) =
         member _.Host =                 args.GetResult(Host,"localhost")
         member _.Credentials =          args.GetResult(Username,"admin"), args.GetResult(Password,"changeit")
-
         member _.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member _.Retries =              args.GetResult(Retries, 1)
         member _.HeartbeatTimeout =     args.GetResult(HeartbeatTimeout,1.5) |> float |> TimeSpan.FromSeconds
@@ -163,7 +161,7 @@ module EventStore =
     open Serilog
 
     let private connect (log: ILogger) (dnsQuery, heartbeatTimeout, col) (username, password) (operationTimeout, operationRetries) =
-        Connector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
+        EventStoreConnector(username, password, reqTimeout=operationTimeout, reqRetries=operationRetries,
                 heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
                 log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])

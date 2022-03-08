@@ -4,11 +4,12 @@
     <TargetFramework>net6.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <WarningLevel>5</WarningLevel>
-    <DefineConstants>$(DefineConstants);STORE_EVENTSTORE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
     <Compile Include="Infrastructure.fs" />
+    <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs" Link="AutoDataAttribute.fs" />
     <Compile Include="StoreIntegration.fs" />
     <Compile Include="EventStoreTokenTests.fs" />
   </ItemGroup>

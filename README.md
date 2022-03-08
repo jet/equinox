@@ -135,9 +135,9 @@ The components within this repository are delivered as multi-targeted Nuget pack
 
 - `Equinox.Core` [![NuGet](https://img.shields.io/nuget/v/Equinox.Core.svg)](https://www.nuget.org/packages/Equinox.Core/): Interfaces and helpers used in the concrete Store implementations, together with the default [`System.Runtime.Caching.Cache`-based] `Cache` implementation. Hosts generic utility types frequently useful alongside Equinox: [`AsyncCacheCell`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/AsyncCacheCell.fs#L36), [`AsyncBatchingGate`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/AsyncBatchingGate.fs#L41). ([depends](https://www.fuget.org/packages/Equinox.Core) on `Equinox`, `System.Runtime.Caching`)
 - `Equinox.MemoryStore` [![MemoryStore NuGet](https://img.shields.io/nuget/v/Equinox.MemoryStore.svg)](https://www.nuget.org/packages/Equinox.MemoryStore/): In-memory store for integration testing/performance base-lining/providing out-of-the-box zero dependency storage for examples. ([depends](https://www.fuget.org/packages/Equinox.MemoryStore) on `Equinox.Core`, `FsCodec`)
-- `Equinox.EventStore` [![EventStore NuGet](https://img.shields.io/nuget/v/Equinox.EventStore.svg)](https://www.nuget.org/packages/Equinox.EventStore/): [EventStoreDB](https://eventstore.org/) Adapter designed to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.EventStore) on `Equinox.Core`, `EventStore.Client >= 20.6`, `FSharp.Control.AsyncSeq >= 2.0.23`)
 - `Equinox.CosmosStore` [![CosmosStore NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.svg)](https://www.nuget.org/packages/Equinox.CosmosStore/): Azure CosmosDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore) on `Equinox.Core`, `Microsoft.Azure.Cosmos >= 3.25`, `FsCodec`, `System.Text.Json`, `FSharp.Control.AsyncSeq >= 2.0.23`)
 - `Equinox.CosmosStore.Prometheus` [![CosmosStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.CosmosStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.CosmosStore`, `prometheus-net >= 3.6.0`)
+- `Equinox.EventStore` [![EventStore NuGet](https://img.shields.io/nuget/v/Equinox.EventStore.svg)](https://www.nuget.org/packages/Equinox.EventStore/): [EventStoreDB](https://eventstore.org/) Adapter designed to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.EventStore) on `Equinox.Core`, `EventStore.Client >= 22.0.0-preview`, `FSharp.Control.AsyncSeq >= 2.0.23`), EventStore Server version `21.10` or later)
 - `Equinox.SqlStreamStore` [![SqlStreamStore NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore/): [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) Adapter derived from `Equinox.EventStore` - provides core facilities (but does not connect to a specific database; see sibling `SqlStreamStore`.* packages). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore) on `Equinox.Core`, `FsCodec`, `SqlStreamStore >= 1.2.0`, `FSharp.Control.AsyncSeq`)
 - `Equinox.SqlStreamStore.MsSql` [![MsSql NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.MsSql.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore.MsSql/): [SqlStreamStore.MsSql](https://sqlstreamstore.readthedocs.io/en/latest/sqlserver) Sql Server `Connector` implementation for `Equinox.SqlStreamStore` package). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore.MsSql) on `Equinox.SqlStreamStore`, `SqlStreamStore.MsSql >= 1.2.0`)
 - `Equinox.SqlStreamStore.MySql` [![MySql NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.MySql.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore.MySql/): `SqlStreamStore.MySql` MySQL `Connector` implementation for `Equinox.SqlStreamStore` package). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore.MySql) on `Equinox.SqlStreamStore`, `SqlStreamStore.MySql >= 1.2.0`)
@@ -283,21 +283,12 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
 	- For OSX, install with `brew cask install eventstore` 
 
-2. start the local EventStore instance
+2. start the local EventStore instance on any OS:
 
-    - Windows
+    - Check out the github.com/jet/equinox repo
+    - `docker compose up`
 
-      ```powershell
-      # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
-      & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-      ```
-
-    - OSX:
-
-  	  ```bash
-      # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
-      eventstore --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
-	  ```
+    For more complete instructions, follow https://developers.eventstore.com/server/v21.10/installation.html#use-docker-compose
 
 3. generate sample app with EventStore wiring from template and start
 
@@ -306,7 +297,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     dotnet run -p Web
     ```
 
-4. browse writes at http://localhost:30778/web/index.html#/streams
+4. browse writes at http://localhost:2113/web/index.html#/streams
 
 ### Store data in [Azure CosmosDB](https://docs.microsoft.com/en-us/azure/cosmos-db/introduction)
 
@@ -549,12 +540,9 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 ### Provisioning EventStore (when not using -s or -se)
 
-For EventStore, the tests assume a running local instance configured as follows to replicate as much as possible the external appearance of a Production EventStore Commercial cluster :-
+There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` rigs a local 3-node cluster, which is assumed to be configured for `Equinox.EventStore.Integration`
 
-    # requires admin privilege
-    cinst eventstore-oss -y # where cinst is an invocation of the Chocolatey Package Installer on Windows
-    # run as a single-node cluster to allow connection logic to use cluster mode as for a commercial cluster
-    & $env:ProgramData\chocolatey\bin\EventStore.ClusterNode.exe --gossip-on-single-node --discover-via-dns 0 --ext-http-port=30778
+For more complete instructions, follow https://developers.eventstore.com/server/v21.10/installation.html#use-docker-compose
 
 ### Provisioning CosmosDB (when not using -sc)
 

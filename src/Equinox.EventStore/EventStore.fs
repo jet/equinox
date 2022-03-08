@@ -663,7 +663,7 @@ type Discovery =
     | GossipSeeded of seedManagerEndpoints : System.Net.EndPoint []
     // Standard Gossip-based discovery based on Dns query and standard manager port
     | GossipDns of clusterDns : string
-    // Standard Gossip-based discovery based on Dns query (with manager port overriding default 30778)
+    // Standard Gossip-based discovery based on Dns query (with manager port overriding default 2113)
     | GossipDnsCustomPort of clusterDns : string * managerPortOverride : int
 
 module private Discovery =
@@ -699,7 +699,7 @@ type ConnectionStrategy =
     /// Single connection, with resync backoffs appropriate to the NodePreference
     | ClusterSingle of NodePreference
 
-type Connector
+type EventStoreConnector
     (   username, password, reqTimeout : TimeSpan, reqRetries : int,
         [<O; D(null)>] ?log : Logger, [<O; D(null)>] ?heartbeatTimeout : TimeSpan, [<O; D(null)>] ?concurrentOperationsLimit,
         [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy,
