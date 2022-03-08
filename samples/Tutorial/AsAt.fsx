@@ -150,11 +150,7 @@ module EventStore =
 
     let snapshotWindow = 500
     // NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
-    let connector =
-        EventStoreConnector(
-            // NOTE: disable cert validation for this test suite. ABSOLUTELY DO NOT DO THIS FOR ANY CODE THAT WILL EVER HIT A STAGING OR PROD SERVER
-            customize = (fun c -> c.ConnectivitySettings.Insecure <- true),
-            reqTimeout = TimeSpan.FromSeconds 5., reqRetries = 3)
+    let connector = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 5., reqRetries = 3)
     let esc = connector.Connect(AppName, Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, BatchingPolicy(maxBatchSize=snapshotWindow))
