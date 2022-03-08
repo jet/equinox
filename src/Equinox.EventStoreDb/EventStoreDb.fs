@@ -10,10 +10,6 @@ type EventBody = ReadOnlyMemory<byte>
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward with
     override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
-    member x.op_Implicit =
-        match x with
-        | Forward -> EventStore.Client.Direction.Forwards
-        | Backward -> EventStore.Client.Direction.Backwards
 
 module Log =
 
@@ -185,89 +181,18 @@ module private Write =
 
 module private Read =
     open FSharp.Control
-(*
-    let private readAsyncEnum (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : StreamPosition)
-        : Async<AsyncSeq<ResolvedEvent>> = async {
-        let! ct = Async.CancellationToken
-        return conn.ReadStreamAsync(direction.op_Implicit, streamName, startPos, int64 batchSize, resolveLinkTos = false, cancellationToken = ct)
-            |> AsyncSeq.ofAsyncEnum }
-
-    let readAsyncEnumVer (conn : EventStoreClient) (streamName : string) (direction : Direction) (batchSize : int) (startPos : StreamPosition) : Async<int64*ResolvedEvent[]> = async {
-        try let! res = readAsyncEnum conn streamName direction batchSize startPos
-            let! events = res |> AsyncSeq.toArrayAsync
-            let version =
-                match events with
-                | [||] when direction = Direction.Backward -> 0L // When reading backwards, the startPos is End, which is not directly convertible
-                | [||] -> startPos.ToInt64() // e.g. if reading forward from (verified existing) event 10 and there are none, the version is still 10
-//                | xs when direction = Direction.Backward -> let le = xs.[0].Event.EventNumber in le.ToInt64() // the events arrive backwards, so first is the 'version'
-                | xs -> let le = xs.[xs.Length - 1].Event.EventNumber in le.ToInt64() // In normal case, the last event represents the version of the stream
-            return version, events
-        with :? AggregateException as e when (e.InnerExceptions.Count = 1 && e.InnerExceptions[0] :? StreamNotFoundException) -> return 0L, [||] }
-*)
     let resolvedEventBytes (x : ResolvedEvent) = let Log.BlobLen bytes, Log.BlobLen metaBytes = x.Event.Data, x.Event.Metadata in bytes + metaBytes
     let resolvedEventsBytes events = events |> Array.sumBy resolvedEventBytes
-(*
-    let private loggedReadAsyncEnumVer conn streamName direction batchSize startPos (log : ILogger) : Async<int64 * ResolvedEvent[]> = async {
-        let! t, (version, events) = readAsyncEnumVer conn streamName direction batchSize startPos |> Stopwatch.Time
-        let bytes, count = resolvedEventsBytes events, events.Length
-        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
-//        let evt = Log.Slice (direction, reqMetric)
-        let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" events
-        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes).Information("Ges{action:l} count={count} version={version}",
-            "Read", count, version)
-        return version, events }
-*)
     let logBatchRead direction streamName t events batchSize version (log : ILogger) =
         let bytes, count = resolvedEventsBytes events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = match batchSize with Some batchSize -> (events.Length - 1) / batchSize + 1 | None -> -1
         let action = if direction = Direction.Forward then "LoadF" else "LoadB"
+        let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" events
         let evt = Log.Metric.Batch (direction, batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Esdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
-(*
-    let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize streamName startPosition
-        : Async<int64 * ResolvedEvent[]> = async {
-        let call pos = loggedReadAsyncEnumVer conn streamName Direction.Forward batchSize pos
-        let retryingLoggingRead pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
-        let direction = Direction.Forward
-        let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
-        let! t, (version, events) = retryingLoggingRead startPosition log |> Stopwatch.Time
-        log |> logBatchRead direction streamName t events batchSize version
-        return version, events }
-
-    let takeWhileInclusive (predicate: 'T -> bool) (source: 'T seq) = seq {
-        let enumerator = source.GetEnumerator()
-        let mutable fin = false
-        while not fin && enumerator.MoveNext() do
-            yield enumerator.Current
-            if not (predicate enumerator.Current) then
-                fin <- true }
-    let mergeFromCompactionPointOrStartFromBackwardsStream streamName (tryDecode, isOrigin) (log : ILogger) (itemsBackward : ResolvedEvent[])
-        : (ResolvedEvent * 'event option)[] =
-            itemsBackward
-            |> Seq.map (fun x -> x, tryDecode x)
-            |> takeWhileInclusive (function
-                | x, Some e when isOrigin e ->
-                    log.Information("GesStop stream={stream} at={eventNumber}", streamName, x.Event.EventNumber)
-                    false
-                | _ -> true) // continue the search
-            |> Seq.rev
-            |> Seq.toArray
-    let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy (conn : EventStoreClient)  batchSize streamName (tryDecode, isOrigin)
-        : Async<int64 * (ResolvedEvent * 'event option)[]> = async {
-        let call pos = loggedReadAsyncEnumVer conn streamName Direction.Backward batchSize pos
-        let retryingLoggingRead pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
-        let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let startPosition = StreamPosition.End
-        let direction = Direction.Backward
-        let readLog = log |> Log.prop "direction" direction
-        let! t, (version, eventsBackward) = retryingLoggingRead startPosition readLog |> Stopwatch.Time
-        let events = mergeFromCompactionPointOrStartFromBackwardsStream streamName (tryDecode, isOrigin) log eventsBackward
-        log |> logBatchRead direction streamName t (Array.map fst events) batchSize version
-        return version, events }
-*)
     let loadBackwardsUntilOrigin (log : ILogger) (conn : EventStoreClient) batchSize streamName (tryDecode, isOrigin)
         : Async<int64 * (ResolvedEvent * 'event option)[]> = async {
         let! ct = Async.CancellationToken
@@ -286,7 +211,6 @@ module private Read =
             return v, events
         with :? AggregateException as e when (e.InnerExceptions.Count = 1 && e.InnerExceptions[0] :? StreamNotFoundException) ->
             return -1L, [||] }
-
     let loadBackwards (log : ILogger) (conn : EventStoreClient) batchSize streamName (tryDecode, isOrigin)
         : Async<int64 * (ResolvedEvent * 'event option)[]> = async {
         let! t, (version, events) = loadBackwardsUntilOrigin log conn batchSize streamName (tryDecode, isOrigin) |> Stopwatch.Time
@@ -303,7 +227,6 @@ module private Read =
             return v, events
         with :? AggregateException as e when (e.InnerExceptions.Count = 1 && e.InnerExceptions[0] :? StreamNotFoundException) ->
             return -1L, [||] }
-
     let loadForwards log conn streamName startPosition
         : Async<int64 * ResolvedEvent[]> = async {
         let direction = Direction.Forward
@@ -383,6 +306,7 @@ type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; 
 
 type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>] ?batchCountLimit) = // TODO batchCountLimit
     new (maxBatchSize) = BatchingPolicy(fun () -> maxBatchSize)
+// TOCONSIDER remove if Client does not start to expose it
     member _.BatchSize = getMaxBatchSize()
 //TODO    member _.MaxBatches = batchCountLimit
 

@@ -63,12 +63,12 @@ let connectToLocalStore log =
     // NOTE: disable cert validation for this test suite. ABSOLUTELY DO NOT DO THIS FOR ANY CODE THAT WILL EVER HIT A STAGING OR PROD SERVER
     EventStoreConnector("admin", "changeit", custom = (fun c -> c.DisableServerCertificateValidation()),
     reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string]
-#if EVENTSTORE_NO_CLUSTER
+#if !EVENTSTORE_NO_CLUSTER
     // Connect directly to the locally running EventStore Node without using Gossip-driven discovery
     ).Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"), ConnectionStrategy.ClusterSingle NodePreference.Master)
 #else
     // Connect directly to the locally running EventStore Node using Gossip-driven discovery
-    ).Establish("Equinox-integration", Discovery.GossipDns ("localhost"), ConnectionStrategy.ClusterTwinPreferSlaveReads)
+    ).Establish("Equinox-integration", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
 #endif
 #endif
 type Context = EventStoreContext
@@ -123,7 +123,11 @@ type Tests(testOutputHelper) =
     let addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service count =
         addAndThenRemoveItems true true context cartId skuId service count
 
+#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
+    let sliceForward = []
+#else
     let sliceForward = [EsAct.SliceForward]
+#endif
     let singleBatchForward = sliceForward @ [EsAct.BatchForward]
     let batchForwardAndAppend = singleBatchForward @ [EsAct.Append]
 
@@ -232,7 +236,11 @@ type Tests(testOutputHelper) =
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
+#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
+    let sliceBackward = []
+#else
     let sliceBackward = [EsAct.SliceBackward]
+#endif
     let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
 
