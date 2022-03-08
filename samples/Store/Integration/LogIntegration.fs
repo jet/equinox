@@ -2,7 +2,7 @@
 
 open Domain
 open Equinox.Core
-open Equinox.CosmosStore.Integration
+open Equinox.CosmosStore.Integration.CosmosFixtures
 open FSharp.UMX
 open Swensen.Unquote
 open System

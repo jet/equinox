@@ -8,11 +8,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="AutoDataAttribute.fs" />
     <Compile Include="TestOutput.fs" />
     <Compile Include="Infrastructure.fs" />
+    <Compile Include="AutoDataAttribute.fs" />
     <Compile Include="CodecIntegration.fs" />
     <Compile Include="EventStoreIntegration.fs" />
+    <Compile Include="..\..\..\tests\Equinox.CosmosStore.Integration\CosmosFixtures.fs" Link="CosmosFixtures.fs" />
     <Compile Include="CartIntegration.fs" />
     <Compile Include="ContactPreferencesIntegration.fs" />
     <Compile Include="FavoritesIntegration.fs" />
@@ -21,8 +22,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
-    <ProjectReference Include="..\..\..\tests\Equinox.CosmosStore.Integration\Equinox.CosmosStore.Integration.fsproj" />
-    <ProjectReference Include="..\..\..\tests\Equinox.EventStore.Integration\Equinox.EventStore.Integration.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
+    <ProjectReference Include="..\..\..\src\Equinox.EventStore\Equinox.EventStore.fsproj" />
     <ProjectReference Include="..\Domain\Domain.fsproj" />
   </ItemGroup>
 

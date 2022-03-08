@@ -1,5 +1,4 @@
-﻿[<AutoOpen>]
-module Samples.Store.Integration.Infrastructure
+﻿namespace global
 
 open Domain
 open FsCheck

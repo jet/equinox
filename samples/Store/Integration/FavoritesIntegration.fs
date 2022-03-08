@@ -2,7 +2,7 @@
 
 open Domain
 open Equinox
-open Equinox.CosmosStore.Integration
+open Equinox.CosmosStore.Integration.CosmosFixtures
 open Swensen.Unquote
 
 let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial

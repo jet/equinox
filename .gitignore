@@ -4,7 +4,7 @@
 
 .DS_Store
 
-# EventStoreDB docker compose certs
+# ephemeral EventStoreDB certs created via `docker compose up`
 certs/
 
 # Cli logs
