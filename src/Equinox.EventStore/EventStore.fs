@@ -143,8 +143,7 @@ module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
     let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> = async {
-        try
-            let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
+        try let! wr = conn.AppendToStreamAsync(streamName, version, events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? EventStore.ClientAPI.Exceptions.WrongExpectedVersionException as ex ->
             log.Information(ex, "Ges TrySync WrongExpectedVersionException writing {EventTypes}, actual {ActualVersion}",
@@ -408,8 +407,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
 
     member _.TrySync log streamName (Token.Unpack token as streamToken) (events, encodedEvents : EventData array) isCompactionEventType : Async<GatewaySyncResult> = async {
         let streamVersion = token.streamVersion
-        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
-        match wr with
+        match! Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents with
         | EsSyncResult.Conflict actualVersion ->
             return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting actualVersion)
         | EsSyncResult.Written wr ->
@@ -426,8 +424,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
 
     member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
-        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
-        match wr with
+        match! Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents with
         | EsSyncResult.Conflict actualVersion ->
             return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting actualVersion)
         | EsSyncResult.Written wr ->
@@ -493,10 +490,8 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
             | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
                 let cc = CompactionContext(List.length events, token.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
-
         let encodedEvents : EventData[] = events |> Seq.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
-        let! syncRes = context.TrySync log streamName streamToken (events, encodedEvents) compactionPredicate
-        match syncRes with
+        match! context.TrySync log streamName streamToken (events, encodedEvents) compactionPredicate with
         | GatewaySyncResult.ConflictUnknown _ ->
             return SyncResult.Conflict  (load fold state (context.LoadFromToken true streamName log streamToken (tryDecode, compactionPredicate)))
         | GatewaySyncResult.Written token' ->
@@ -504,26 +499,20 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, tee : string -> StreamToken * 'state -> unit) =
-        let intercept streamName tokenAndState =
-            let _ = tee streamName tokenAndState
-            tokenAndState
-
-        let loadAndIntercept load streamName = async {
-            let! tokenAndState = load
-            return intercept streamName tokenAndState }
-
+    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, updateCache : string -> StreamToken * 'state -> unit) =
+        let cache streamName inner = async {
+            let! tokenAndState = inner
+            updateCache streamName tokenAndState
+            return tokenAndState }
         interface ICategory<'event, 'state, string, 'context> with
             member _.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
-                loadAndIntercept (inner.Load(log, streamName, opt)) streamName
-
-            member _.TrySync(log : ILogger, stream, token, state, events : 'event list, context) : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync(log, stream, token, state, events, context)
-                match syncRes with
-                | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync stream)
+                inner.Load(log, streamName, opt) |> cache streamName
+            member _.TrySync(log : ILogger, streamName, token, state, events : 'event list, context) : Async<SyncResult<'state>> = async {
+                match! inner.TrySync(log, streamName, token, state, events, context) with
+                | SyncResult.Conflict resync -> return SyncResult.Conflict (resync |> cache streamName)
                 | SyncResult.Written (token', state') ->
-                    let intercepted = intercept stream (token', state')
-                    return SyncResult.Written intercepted }
+                    updateCache streamName (token', state')
+                    return SyncResult.Written (token', state') }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache : ICache)
@@ -555,15 +544,13 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
         member _.Load(log, streamName, allowStale) : Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log streamName
-            | Some (cache : ICache, prefix : string) -> async {
+            | Some (cache : ICache, prefix : string) ->
                 match cache.TryGet(prefix + streamName) with
-                | None -> return! batched log streamName
-                | Some tokenAndState when allowStale -> return tokenAndState
-                | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
-
-        member _.TrySync(log : ILogger, streamName, token, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
-            let! syncRes = category.TrySync(log, fold, streamName, token, initialState, events, context)
-            match syncRes with
+                | None -> batched log streamName
+                | Some tokenAndState when allowStale -> async { return tokenAndState }
+                | Some (token, state) -> category.LoadFromToken fold state streamName token log
+        member _.TrySync(log, streamName, token, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
+            match! category.TrySync(log, fold, streamName, token, initialState, events, context) with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 
@@ -597,7 +584,6 @@ type EventStoreCategory<'event, 'state, 'context>
             + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
             |> invalidOp
         | _ -> ()
-
     let inner = Category<'event, 'state, 'context>(context, codec, ?access = access)
     let readCacheOption =
         match caching with
@@ -605,9 +591,7 @@ type EventStoreCategory<'event, 'state, 'context>
         | Some (CachingStrategy.SlidingWindow (cache, _))
         | Some (CachingStrategy.FixedTimeSpan (cache, _)) -> Some (cache, null)
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, _, prefix)) -> Some (cache, prefix)
-
     let folder = Folder<'event, 'state, 'context>(inner, fold, initial, ?readCache = readCacheOption)
-
     let category : ICategory<_, _, _, 'context> =
         match caching with
         | None -> folder :> _

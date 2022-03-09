@@ -136,8 +136,7 @@ module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
     let private writeEventsAsync (log : ILogger) (conn : IEventStoreConnection) (streamName : string) (version : int64) (events : EventData[])
         : Async<EsSyncResult> = async {
-        try
-            let! wr = conn.AppendToStream(StreamId streamName, (if version = -1L then ExpectedVersion.NoStream else int version), events) |> Async.AwaitTaskCorrect
+        try let! wr = conn.AppendToStream(StreamId streamName, (if version = -1L then ExpectedVersion.NoStream else int version), events) |> Async.AwaitTaskCorrect
             return EsSyncResult.Written wr
         with :? WrongExpectedVersionException as ex ->
             log.Information(ex, "SqlEs TrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
@@ -379,8 +378,7 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
             | None -> return Token.ofPreviousTokenAndEventsLength streamToken events.Length batching.BatchSize version, Array.choose tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.choose tryDecode events }
     member _.TrySync log streamName (Token.Unpack pos as streamToken) (events, encodedEvents : EventData array) isCompactionEventType : Async<GatewaySyncResult> = async {
-        let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName pos.streamVersion encodedEvents
-        match wr with
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName pos.streamVersion encodedEvents with
         | EsSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | EsSyncResult.Written wr ->
@@ -396,8 +394,7 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
             return GatewaySyncResult.Written token }
     member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
-        let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents
-        match wr with
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents with
         | EsSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | EsSyncResult.Written wr ->
@@ -456,10 +453,8 @@ type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext,
             | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
                 let cc = CompactionContext(List.length events, token.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
-
         let encodedEvents : EventData[] = events |> Seq.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
-        let! syncRes = context.TrySync log streamName streamToken (events, encodedEvents) compactionPredicate
-        match syncRes with
+        match! context.TrySync log streamName streamToken (events, encodedEvents) compactionPredicate with
         | GatewaySyncResult.ConflictUnknown ->
             return SyncResult.Conflict  (load fold state (context.LoadFromToken true streamName log streamToken (tryDecode, compactionPredicate)))
         | GatewaySyncResult.Written token' ->
@@ -467,23 +462,20 @@ type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext,
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, tee : string -> StreamToken * 'state -> unit) =
-        let intercept streamName tokenAndState =
-            let _ = tee streamName tokenAndState
-            tokenAndState
-        let loadAndIntercept load streamName = async {
-            let! tokenAndState = load
-            return intercept streamName tokenAndState }
+    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, updateCache : string -> StreamToken * 'state -> unit) =
+        let cache streamName inner = async {
+            let! tokenAndState = inner
+            updateCache streamName tokenAndState
+            return tokenAndState }
         interface ICategory<'event, 'state, string, 'context> with
             member _.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
-                loadAndIntercept (inner.Load(log, streamName, opt)) streamName
+                inner.Load(log, streamName, opt) |> cache streamName
             member _.TrySync(log : ILogger, streamName, streamToken, state, events : 'event list, context) : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync(log, streamName, streamToken, state, events, context)
-                match syncRes with
-                | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync streamName)
+                match! inner.TrySync(log, streamName, streamToken, state, events, context) with
+                | SyncResult.Conflict resync -> return SyncResult.Conflict (resync |> cache streamName)
                 | SyncResult.Written (token', state') ->
-                    let intercepted = intercept streamName (token', state')
-                    return SyncResult.Written intercepted }
+                    updateCache streamName (token', state')
+                    return SyncResult.Written (token', state') }
 
     let applyCacheUpdatesWithSlidingExpiration
             (cache : ICache)
@@ -515,14 +507,13 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
         member _.Load(log, streamName, allowStale) : Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log streamName
-            | Some (cache : ICache, prefix : string) -> async {
+            | Some (cache : ICache, prefix : string) ->
                 match cache.TryGet(prefix + streamName) with
-                | None -> return! batched log streamName
-                | Some tokenAndState when allowStale -> return tokenAndState
-                | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
+                | None -> batched log streamName
+                | Some tokenAndState when allowStale -> async { return tokenAndState }
+                | Some (token, state) -> category.LoadFromToken fold state streamName token log
         member _.TrySync(log : ILogger, streamName, streamToken, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
-            let! syncRes = category.TrySync(log, fold, streamName, streamToken, initialState, events, context)
-            match syncRes with
+            match! category.TrySync(log, fold, streamName, streamToken, initialState, events, context) with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 
