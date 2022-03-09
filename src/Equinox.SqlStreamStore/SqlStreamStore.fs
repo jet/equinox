@@ -460,47 +460,6 @@ type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext,
         | GatewaySyncResult.Written token' ->
             return SyncResult.Written   (token', fold state (Seq.ofList events)) }
 
-module Caching =
-    /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, updateCache : string -> StreamToken * 'state -> unit) =
-        let cache streamName inner = async {
-            let! tokenAndState = inner
-            updateCache streamName tokenAndState
-            return tokenAndState }
-        interface ICategory<'event, 'state, string, 'context> with
-            member _.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
-                inner.Load(log, streamName, opt) |> cache streamName
-            member _.TrySync(log : ILogger, streamName, streamToken, state, events : 'event list, context) : Async<SyncResult<'state>> = async {
-                match! inner.TrySync(log, streamName, streamToken, state, events, context) with
-                | SyncResult.Conflict resync -> return SyncResult.Conflict (resync |> cache streamName)
-                | SyncResult.Written (token', state') ->
-                    updateCache streamName (token', state')
-                    return SyncResult.Written (token', state') }
-
-    let applyCacheUpdatesWithSlidingExpiration
-            (cache : ICache)
-            (prefix : string)
-            (slidingExpiration : TimeSpan)
-            (category : ICategory<'event, 'state, string, 'context>)
-            : ICategory<'event, 'state, string, 'context> =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
-        let options = CacheItemOptions.RelativeExpiration slidingExpiration
-        let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
-        CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
-
-    let applyCacheUpdatesWithFixedTimeSpan
-            (cache : ICache)
-            (prefix : string)
-            (lifetime : TimeSpan)
-            (category : ICategory<'event, 'state, string, 'context>)
-            : ICategory<'event, 'state, string, 'context> =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
-        let addOrUpdateFixedLifetimeCacheEntry streamName value =
-            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add lifetime
-            let options = CacheItemOptions.AbsoluteExpiration expirationPoint
-            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
-        CategoryTee<'event, 'state, 'context>(category, addOrUpdateFixedLifetimeCacheEntry) :> _
-
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     let batched log streamName = category.Load fold initial streamName log
     interface ICategory<'event, 'state, string, 'context> with
@@ -559,11 +518,11 @@ type SqlStreamStoreCategory<'event, 'state, 'context>
         match caching with
         | None -> folder :> _
         | Some (CachingStrategy.SlidingWindow (cache, window)) ->
-            Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+            Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder Token.supersedes
         | Some (CachingStrategy.FixedTimeSpan (cache, period)) ->
-            Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder
+            Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder Token.supersedes
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
-            Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
+            Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder Token.supersedes
     let resolve streamName = category, FsCodec.StreamName.toString streamName, None
     let empty = context.TokenEmpty, initial
     let storeCategory = StoreCategory<'event, 'state, FsCodec.StreamName, 'context>(resolve, empty)
