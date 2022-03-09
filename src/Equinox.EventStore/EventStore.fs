@@ -504,14 +504,14 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
 
 module Caching =
     /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
-        let intercept streamName tokenAndState = async {
-            let! _ = tee streamName tokenAndState
-            return tokenAndState }
+    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, tee : string -> StreamToken * 'state -> unit) =
+        let intercept streamName tokenAndState =
+            let _ = tee streamName tokenAndState
+            tokenAndState
 
         let loadAndIntercept load streamName = async {
             let! tokenAndState = load
-            return! intercept streamName tokenAndState }
+            return intercept streamName tokenAndState }
 
         interface ICategory<'event, 'state, string, 'context> with
             member _.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
@@ -522,7 +522,7 @@ module Caching =
                 match syncRes with
                 | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync stream)
                 | SyncResult.Written (token', state') ->
-                    let! intercepted = intercept stream (token', state')
+                    let intercepted = intercept stream (token', state')
                     return SyncResult.Written intercepted }
 
     let applyCacheUpdatesWithSlidingExpiration
@@ -556,7 +556,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
             match readCache with
             | None -> batched log streamName
             | Some (cache : ICache, prefix : string) -> async {
-                match! cache.TryGet(prefix + streamName) with
+                match cache.TryGet(prefix + streamName) with
                 | None -> return! batched log streamName
                 | Some tokenAndState when allowStale -> return tokenAndState
                 | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }

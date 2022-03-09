@@ -1133,11 +1133,11 @@ module internal Caching =
             mapUnfolds : Choice<unit, 'event list -> 'state -> 'event seq, 'event list -> 'state -> 'event list * 'event list>) =
         let cache streamName inner = async {
             let! ts = inner
-            do! updateCache streamName ts
+            do updateCache streamName ts
             return ts }
         interface ICategory<'event, 'state, string, 'context> with
             member _.Load(log, streamName, allowStale) : Async<StreamToken * 'state> = async {
-                match! tryReadCache streamName with
+                match tryReadCache streamName with
                 | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
                 | Some tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
                 | Some (token, state) -> return! category.Reload(log, streamName, token, state, fold, isOrigin) |> cache streamName }
@@ -1433,7 +1433,7 @@ type CosmosStoreCategory<'event, 'state, 'context>
         let createCategory _name : ICategory<_, _, string, 'context> =
             let tryReadCache, updateCache =
                 match caching with
-                | CachingStrategy.NoCaching -> (fun _ -> async { return None }), fun _ _ -> async { () }
+                | CachingStrategy.NoCaching -> (fun _ -> None), fun _ _ -> ()
                 | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration (cache, null) window
                 | CachingStrategy.FixedTimeSpan (cache, period) -> cache.TryGet, Caching.applyCacheUpdatesWithFixedTimeSpan (cache, null) period
             let isOrigin, checkUnfolds, mapUnfolds =
