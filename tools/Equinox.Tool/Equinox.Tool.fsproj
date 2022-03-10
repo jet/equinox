@@ -6,7 +6,6 @@
     <WarningLevel>5</WarningLevel>
     <IsTestProject>false</IsTestProject>
 
-    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
 
     <PackageId>Equinox.Tool</PackageId>
@@ -36,16 +35,6 @@
 
   <ItemGroup>
     <PackageReference Include="MinVer" Version="2.5.0" PrivateAssets="All" />
-
-<!--    NOTE cannot be 4.7.0 as Async.Sequential is broken-->
-    <PackageReference Include="FSharp.Core" Version="4.7.1" />
-
-<!-- Disambigurate to remove warning-->
-	  <PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
-	  <PackageReference Include="System.Security.Cryptography.Cng" Version="5.0.0" />
-
-    <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
   </ItemGroup>
 
   <!-- workaround for not being able to make Domain inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
