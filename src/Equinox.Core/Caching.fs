@@ -1,10 +1,10 @@
 module Equinox.Core.Caching
 
-type internal Decorator<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, updateCache : string -> StreamToken * 'state -> unit) =
+type internal Decorator<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, updateCache : string -> StreamToken * 'state -> Async<unit>) =
 
     let cache streamName inner = async {
         let! tokenAndState = inner
-        updateCache streamName tokenAndState
+        do! updateCache streamName tokenAndState
         return tokenAndState }
 
     interface ICategory<'event, 'state, string, 'context> with
@@ -15,7 +15,7 @@ type internal Decorator<'event, 'state, 'context>(inner : ICategory<'event, 'sta
             match! inner.TrySync(log, streamName, streamToken, state, events, context) with
             | SyncResult.Conflict resync -> return SyncResult.Conflict (resync |> cache streamName)
             | SyncResult.Written (token', state') ->
-                updateCache streamName (token', state')
+                do! updateCache streamName (token', state')
                 return SyncResult.Written (token', state') }
 
 let applyCacheUpdatesWithSlidingExpiration

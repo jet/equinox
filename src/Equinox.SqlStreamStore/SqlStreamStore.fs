@@ -466,11 +466,11 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
         member _.Load(log, streamName, allowStale) : Async<StreamToken * 'state> =
             match readCache with
             | None -> batched log streamName
-            | Some (cache : ICache, prefix : string) ->
-                match cache.TryGet(prefix + streamName) with
-                | None -> batched log streamName
-                | Some tokenAndState when allowStale -> async { return tokenAndState }
-                | Some (token, state) -> category.LoadFromToken fold state streamName token log
+            | Some (cache : ICache, prefix : string) -> async {
+                match! cache.TryGet(prefix + streamName) with
+                | None -> return! batched log streamName
+                | Some tokenAndState when allowStale -> return tokenAndState
+                | Some (token, state) -> return! category.LoadFromToken fold state streamName token log }
         member _.TrySync(log : ILogger, streamName, streamToken, initialState, events : 'event list, context) : Async<SyncResult<'state>> = async {
             match! category.TrySync(log, fold, streamName, streamToken, initialState, events, context) with
             | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
