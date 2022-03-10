@@ -16,7 +16,6 @@
     <Compile Include="AsyncCacheCell.fs" />
     <Compile Include="Cache.fs" />
     <Compile Include="AsyncBatchingGate.fs" />
-    <Compile Include="Caching.fs" />
   </ItemGroup>
 
   <ItemGroup>

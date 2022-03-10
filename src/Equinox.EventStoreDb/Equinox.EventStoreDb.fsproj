@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="Caching.fs" />
     <Compile Include="EventStoreDb.fs" />
   </ItemGroup>
 
