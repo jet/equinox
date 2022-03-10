@@ -1132,23 +1132,22 @@ module internal Caching =
             checkUnfolds, compressUnfolds,
             mapUnfolds : Choice<unit, 'event list -> 'state -> 'event seq, 'event list -> 'state -> 'event list * 'event list>) =
         let cache streamName inner = async {
-            let! ts = inner
-            do! updateCache streamName ts
-            return ts }
+            let! tokenAndState = inner
+            do! updateCache streamName tokenAndState
+            return tokenAndState }
         interface ICategory<'event, 'state, string, 'context> with
             member _.Load(log, streamName, allowStale) : Async<StreamToken * 'state> = async {
                 match! tryReadCache streamName with
                 | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
                 | Some tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
                 | Some (token, state) -> return! category.Reload(log, streamName, token, state, fold, isOrigin) |> cache streamName }
-            member _.TrySync(log : ILogger, streamName, streamToken, state, events : 'event list, context)
-                : Async<SyncResult<'state>> = async {
+            member _.TrySync(log : ILogger, streamName, streamToken, state, events : 'event list, context) : Async<SyncResult<'state>> = async {
                 match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) with
                 | SyncResult.Conflict resync ->
                     return SyncResult.Conflict (cache streamName resync)
                 | SyncResult.Written (token', state') ->
-                    let! res = cache streamName (async { return token', state' })
-                    return SyncResult.Written res }
+                    do! updateCache streamName (token', state')
+                    return SyncResult.Written (token', state') }
 
 module ConnectionString =
 
@@ -1159,12 +1158,10 @@ module ConnectionString =
 
 namespace Equinox.CosmosStore
 
-open Equinox
 open Equinox.Core
 open Equinox.CosmosStore.Core
 open FsCodec
 open Microsoft.Azure.Cosmos
-open Serilog
 open System
 
 [<RequireQualifiedAccess; NoComparison>]
@@ -1447,13 +1444,11 @@ type CosmosStoreCategory<'event, 'state, 'context>
             let cosmosCat = Category<'event, 'state, 'context>(container, codec)
             Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
-
     let resolve (StreamName.CategoryAndId (categoryName, streamId)) =
         let container, streamName, maybeContainerInitializationGate = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
         resolveCategory (categoryName, container), streamName, maybeContainerInitializationGate
     let empty = Token.create Position.fromKnownEmpty, initial
     let storeCategory = StoreCategory(resolve, empty)
-
     member _.Resolve(streamName, ?context) = storeCategory.Resolve(streamName, ?context = context)
 
 namespace Equinox.CosmosStore.Core
