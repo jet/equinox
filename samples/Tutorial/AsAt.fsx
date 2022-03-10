@@ -24,7 +24,7 @@
 #r "System.Configuration.ConfigurationManager.dll"
 #r "Equinox.Core.dll"
 #r "Newtonsoft.Json.dll"
-#r "FSharp.UMX.dll"
+//#r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "Equinox.dll"
 #r "TypeShape.dll"
