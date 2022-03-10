@@ -441,53 +441,6 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
         | GatewaySyncResult.Written token' ->
             return SyncResult.Written   (token', fold state (Seq.ofList events)) }
 
-module Caching =
-    /// Forwards all state changes in all streams of an ICategory to a `tee` function
-    type CategoryTee<'event, 'state, 'context>(inner : ICategory<'event, 'state, string, 'context>, tee : string -> StreamToken * 'state -> Async<unit>) =
-        let intercept streamName tokenAndState = async {
-            let! _ = tee streamName tokenAndState
-            return tokenAndState }
-
-        let loadAndIntercept load streamName = async {
-            let! tokenAndState = load
-            return! intercept streamName tokenAndState }
-
-        interface ICategory<'event, 'state, string, 'context> with
-            member _.Load(log, streamName : string, opt) : Async<StreamToken * 'state> =
-                loadAndIntercept (inner.Load(log, streamName, opt)) streamName
-
-            member _.TrySync(log : ILogger, stream, token, state, events : 'event list, context) : Async<SyncResult<'state>> = async {
-                let! syncRes = inner.TrySync(log, stream, token, state, events, context)
-                match syncRes with
-                | SyncResult.Conflict resync -> return SyncResult.Conflict (loadAndIntercept resync stream)
-                | SyncResult.Written (token', state') ->
-                    let! intercepted = intercept stream (token', state')
-                    return SyncResult.Written intercepted }
-
-    let applyCacheUpdatesWithSlidingExpiration
-            (cache : ICache)
-            (prefix : string)
-            (slidingExpiration : TimeSpan)
-            (category : ICategory<'event, 'state, string, 'context>)
-            : ICategory<'event, 'state, string, 'context> =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, Token.supersedes)
-        let options = CacheItemOptions.RelativeExpiration slidingExpiration
-        let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
-        CategoryTee<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
-
-    let applyCacheUpdatesWithFixedTimeSpan
-            (cache : ICache)
-            (prefix : string)
-            (period : TimeSpan)
-            (category : ICategory<'event, 'state, string, 'context>)
-            : ICategory<'event, 'state, string, 'context> =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
-        let addOrUpdateFixedLifetimeCacheEntry streamName value =
-            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
-            let options = CacheItemOptions.AbsoluteExpiration expirationPoint
-            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
-        CategoryTee<'event, 'state, 'context>(category, addOrUpdateFixedLifetimeCacheEntry) :> _
-
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     let batched log streamName = category.Load(fold, initial, streamName, log)
     interface ICategory<'event, 'state, string, 'context> with
@@ -536,7 +489,6 @@ type EventStoreCategory<'event, 'state, 'context>
             + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
             |> invalidOp
         | _ -> ()
-
     let inner = Category<'event, 'state, 'context>(context, codec, ?access = access)
     let readCacheOption =
         match caching with
@@ -544,18 +496,16 @@ type EventStoreCategory<'event, 'state, 'context>
         | Some (CachingStrategy.SlidingWindow (cache, _))
         | Some (CachingStrategy.FixedTimeSpan (cache, _)) -> Some (cache, null)
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, _, prefix)) -> Some (cache, prefix)
-
     let folder = Folder<'event, 'state, 'context>(inner, fold, initial, ?readCache = readCacheOption)
-
     let category : ICategory<_, _, _, 'context> =
         match caching with
         | None -> folder :> _
         | Some (CachingStrategy.SlidingWindow (cache, window)) ->
-            Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder
+            Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder Token.supersedes
         | Some (CachingStrategy.FixedTimeSpan (cache, period)) ->
-            Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder
+            Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder Token.supersedes
         | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
-            Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder
+            Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder Token.supersedes
     let resolve streamName = category, FsCodec.StreamName.toString streamName, None
     let empty = context.TokenEmpty, initial
     let storeCategory = StoreCategory(resolve, empty)
