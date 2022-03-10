@@ -20,21 +20,21 @@
 #I "bin/Debug/net6.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
-#r "Newtonsoft.Json.dll"
-#r "FSharp.UMX.dll"
-#r "FsCodec.dll"
+#r "Serilog.Sinks.Seq.dll"
+#r "System.Configuration.ConfigurationManager.dll"
 #r "Equinox.Core.dll"
+#r "Newtonsoft.Json.dll"
+//#r "FSharp.UMX.dll"
+#r "FsCodec.dll"
 #r "Equinox.dll"
 #r "TypeShape.dll"
 #r "FsCodec.SystemTextJson.dll"
-#r "FSharp.Control.AsyncSeq.dll"
-#r "System.Net.Http"
-#r "Serilog.Sinks.Seq.dll"
+//#r "FSharp.Control.AsyncSeq.dll"
+//#r "System.Net.Http"
+//#r "EventStore.Client.dll"
+//#r "EventStore.Client.Streams.dll"
 #r "Equinox.EventStoreDb.dll"
-#r "EventStore.Client.dll"
-#r "EventStore.Client.Streams.dll"
-#r "Microsoft.Azure.Cosmos.Direct.dll"
-#r "Microsoft.Azure.Cosmos.Client.dll"
+//#r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
 #else
 #r "nuget:Serilog.Sinks.Console"
@@ -176,8 +176,8 @@ module Cosmos =
     let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 
-//let serviceES = Service(EventStore.resolve)
-let service= Service(Cosmos.resolve)
+let service = Service(EventStore.resolve)
+//let service= Service(Cosmos.resolve)
 
 let client = "ClientA"
 service.Add(client, 1) |> Async.RunSynchronously

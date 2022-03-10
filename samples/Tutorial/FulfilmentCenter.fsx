@@ -1,16 +1,16 @@
-#if LOCAL
-#I "bin/Debug/netstandard2.1/"
+#if !LOCAL
+#I "bin/Debug/net6.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
-#r "TypeShape.dll"
 #r "Equinox.dll"
 #r "Equinox.Core.dll"
 #r "FSharp.UMX.dll"
-#r "FSCodec.dll"
+#r "FsCodec.dll"
+#r "TypeShape.dll"
+#r "FsCodec.NewtonsoftJson.dll"
 #r "FsCodec.SystemTextJson.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
-#r "Microsoft.Azure.Cosmos.Direct.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.CosmosStore.dll"
@@ -18,6 +18,7 @@
 #r "nuget:Equinox.MemoryStore"
 #r "nuget:Equinox.CosmosStore"
 #r "nuget:FsCodec.NewtonsoftJson"
+#r "nuget:FsCodec.SystemTextJson"
 #r "nuget:Serilog.Sinks.Console"
 #r "nuget:Serilog.Sinks.Seq"
 #endif
@@ -141,6 +142,7 @@ module Store =
 
 open FulfilmentCenter
 
+open FsCodec.SystemTextJson
 let category = CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
 let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 let service = Service(resolve)
