@@ -32,6 +32,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
+- `eqx dump`/`Equinox.Tool`: Use `System.Text.Json` for pretty printing to handle `null` values correctly [#318](https://github.com/jet/equinox/pull/318)
 - `EventStore`: Revise test rig to target a Docker-hosted cluster [#317](https://github.com/jet/equinox/pull/317)
 - `EventStore/SqlStreamStore`: rename `Equinox.XXXStore.Log.Event` -> `Metric` to match `CosmosStore` [#311](https://github.com/jet/equinox/pull/311)
 - `SqlStreamStore`: Fix `Metric` key to be `ssEvt` (was `esEvt`) [#311](https://github.com/jet/equinox/pull/311)
