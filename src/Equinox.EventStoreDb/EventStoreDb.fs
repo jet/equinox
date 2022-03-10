@@ -680,7 +680,7 @@ type EventStoreConnector
         match customize with None -> () | Some f -> f settings
         settings.DefaultDeadline <- reqTimeout
         // TODO implement reqRetries
-        EventStoreClient(settings)
+        new EventStoreClient(settings)
 
     /// Yields a Connection (which may internally be twin connections) configured per the specified strategy
     member x.Establish

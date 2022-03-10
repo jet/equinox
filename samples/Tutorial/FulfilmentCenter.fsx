@@ -1,4 +1,4 @@
-#if LOCAL
+#if !LOCAL
 #I "bin/Debug/net6.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
@@ -142,6 +142,7 @@ module Store =
 
 open FulfilmentCenter
 
+open FsCodec.SystemTextJson
 let category = CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
 let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 let service = Service(resolve)

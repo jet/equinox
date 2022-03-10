@@ -2,8 +2,6 @@
 
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
-        <IsPackable>false</IsPackable>
-        <WarningLevel>5</WarningLevel>
         <DefineConstants>$(DefineConstants);STORE_EVENTSTOREDB</DefineConstants>
     </PropertyGroup>
 
