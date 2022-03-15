@@ -145,6 +145,29 @@ services:
         clusternetwork:
           ipv4_address: 172.30.240.13
 
+  dynamodb-local:
+    image: amazon/dynamodb-local
+    container_name: dynamodb-local
+    hostname: dynamodb-local
+    restart: always
+    volumes:
+      - ./docker-dynamodblocal-data:/home/dynamodblocal/data
+    ports:
+      - 8000:8000
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data/"
+    
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin
+    ports:
+      - "8001:8001"
+    environment:
+      DYNAMO_ENDPOINT: "http://dynamodb-local:8000"
+      AWS_REGION: "us-west-2"
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    depends_on:
+      - dynamodb-local
+
 networks:
   clusternetwork:
     name: eventstoredb.local
