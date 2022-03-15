@@ -12,9 +12,8 @@ type Union =
     | B of Embedded
     interface TypeShape.UnionContract.IUnionContract
 
-let defaultOptions = FsCodec.SystemTextJson.Options.CreateDefault()
-
 type Base64ZipUtf8Tests() =
+    let defaultOptions = FsCodec.SystemTextJson.Options.CreateDefault() // TODO replace with System.Text.Json.JsonSerializerOptions.Default
     let eventCodec = FsCodec.SystemTextJson.Codec.Create(defaultOptions)
 
     let ser eventType data =

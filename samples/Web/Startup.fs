@@ -43,7 +43,7 @@ type Startup() =
         services
             .AddMvc()
             .AddJsonOptions(fun o ->
-                FsCodec.SystemTextJson.Options.Create().Converters
+                FsCodec.SystemTextJson.Options.Default.Converters
                 // NOTE this is technically superfluous as we don't use any constructs that require custom behavior in the models at present
                 // The key side-effect we want to guarantee is that we reference `FsCodec.SystemTextJson`,
                 // which will trigger a dependency on `System.Text.Json` >= `6.0.1`
