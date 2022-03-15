@@ -1,8 +1,6 @@
-module Equinox.CosmosStore.Integration.AsyncBatchingGateTests
+module Equinox.MemoryStore.Integration.AsyncBatchingGateTests
 
-open System
 open System.Collections.Concurrent
-open System.Threading.Tasks
 open Equinox.Core
 open FsCheck.Xunit
 open Swensen.Unquote
@@ -11,13 +9,14 @@ open Xunit
 
 [<Fact>]
 let ``AsyncBatchingGate correctness`` () = async {
-    let batches, active = ref 0, ref 0
+    let batches = ref 0
+    let mutable active = 0
     let dispatch (reqs : int[]) = async {
-        let concurrency = Interlocked.Increment active
+        let concurrency = Interlocked.Increment &active
         1 =! concurrency
         Interlocked.Increment batches |> ignore
         do! Async.Sleep(10 * reqs.Length)
-        let concurrency = Interlocked.Decrement active
+        let concurrency = Interlocked.Decrement &active
         0 =! concurrency
         return reqs
     }
@@ -25,7 +24,7 @@ let ``AsyncBatchingGate correctness`` () = async {
     let! results = [1 .. 100] |> Seq.map cell.Execute |> Async.Parallel
     test <@ set (Seq.collect id results) = set [1 .. 100] @>
     // Default linger of 5ms makes this tend strongly to only be 1 batch
-    test <@ !batches < 2 @>
+    test <@ batches.Value < 2 @>
 }
 
 [<Property>]
@@ -34,7 +33,7 @@ let ``AsyncBatchingGate error handling`` shouldFail = Async.RunSynchronously <| 
     let dispatch (reqs : int[]) = async {
         if shouldFail () then
             reqs |> Seq.iter fails.Add
-            failwithf "failing %A" reqs
+            failwith $"failing %A{reqs}"
         return reqs
     }
     let cell = AsyncBatchingGate dispatch

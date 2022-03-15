@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
     <Compile Include="MemoryStoreIntegration.fs" />
+    <Compile Include="AsyncBatchingGateTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

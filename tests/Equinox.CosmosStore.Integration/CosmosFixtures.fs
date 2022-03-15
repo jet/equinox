@@ -9,7 +9,7 @@ module Option =
 
 /// Standing up an Equinox instance is necessary to run for test purposes; either:
 /// - replace connection below with a connection string or Uri+Key for an initialized Equinox instance
-/// - Create a local Equinox via (e.g.) dotnet run cli/Equinox.Tool init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_CONTAINER
+/// - Create a local Equinox via (e.g.) dotnet run tools/Equinox.Tool init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d test -c $env:EQUINOX_COSMOS_CONTAINER
 let private tryRead env = Environment.GetEnvironmentVariable env |> Option.ofObj
 let (|Default|) def name = (tryRead name),def ||> defaultArg
 

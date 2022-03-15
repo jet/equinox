@@ -9,8 +9,8 @@ open Xunit
 [<Fact>]
 let ``AsyncLazy correctness`` () = async {
     // ensure that the encapsulated computation fires only once
-    let count = ref 0
-    let cell = AsyncLazy (async { return Interlocked.Increment count })
+    let mutable count = 0
+    let cell = AsyncLazy (async { return Interlocked.Increment &count })
     false =! cell.IsValid()
     let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.AwaitValue()) |> Async.Parallel
     true =! cell.IsValid()
@@ -20,16 +20,16 @@ let ``AsyncLazy correctness`` () = async {
 [<Fact>]
 let ``AsyncCacheCell correctness`` () = async {
     // ensure that the encapsulated computation fires only once and that expiry functions as expected
-    let state = ref 0
-    let expectedValue = ref 1
-    let cell = AsyncCacheCell (async { return Interlocked.Increment state }, fun value -> value <> !expectedValue)
+    let mutable state = 0
+    let mutable expectedValue = 1
+    let cell = AsyncCacheCell (async { return Interlocked.Increment &state }, fun value -> value <> expectedValue)
     false =! cell.IsValid()
 
     let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.AwaitValue()) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 1) @>
     true =! cell.IsValid()
 
-    incr expectedValue
+    expectedValue <- expectedValue + 1
 
     let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.AwaitValue()) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 2) @>
@@ -39,18 +39,18 @@ let ``AsyncCacheCell correctness`` () = async {
 [<Theory; InlineData false; InlineData true>]
 let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
     // ensure that the encapsulated computation fires only once and that expiry functions as expected
-    let state = ref 0
-    let expectedValue = ref 1
+    let mutable state = 0
+    let mutable expectedValue = 1
     let mutable throwing = initiallyThrowing
     let update = async {
-        let r = Interlocked.Increment state
+        let r = Interlocked.Increment &state
         if throwing then
             do! Async.Sleep 2000
             invalidOp "fails"
         return r
     }
 
-    let cell = AsyncCacheCell (update, fun value -> value <> !expectedValue)
+    let cell = AsyncCacheCell (update, fun value -> value <> expectedValue)
     false =! cell.IsValid()
 
     // If the runner is throwing, we want to be sure it doesn't place us in a failed state forever, per the semantics of Lazy<T>
@@ -65,14 +65,14 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
         true =! cell.IsValid()
         test <@ 1 = r @>
 
-    incr expectedValue
+    expectedValue <- expectedValue + 1
 
     let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.AwaitValue()) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 2) @>
     true =! cell.IsValid()
 
     // invalidate the cached value
-    incr expectedValue
+    expectedValue <- expectedValue + 1
     false =! cell.IsValid()
     // but make the computation ultimately fail
     throwing <- true
@@ -83,7 +83,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
     throwing <- false
     false =! cell.IsValid()
 
-    incr expectedValue
+    expectedValue <- expectedValue + 1
 
     let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.AwaitValue()) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 4) @>
