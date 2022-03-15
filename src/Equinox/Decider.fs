@@ -59,6 +59,13 @@ type Decider<'event, 'state>
     member _.Transact(interpret : 'state -> 'event list, ?option) : Async<unit> =
         transact option (fun (_token, state) -> async { return (), interpret state }) (fun () _context -> ())
 
+    /// 0.  Invoke the supplied <c>interpret</c> function with the present state
+    /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
+    /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
+    /// 2.  Uses <c>render</c> to generate a 'view from the final state
+    member _.Transact(interpret : 'state -> 'event list, render : 'state -> 'view, ?option) : Async<'view> =
+        transact option (fun (_token, state) -> async { return (), interpret state }) (fun () (_token, state) -> render state)
+
     /// 0.  Invoke the supplied <c>decide</c> function with the present state, holding the <c>'result</c>
     /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
     /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
@@ -80,6 +87,13 @@ type Decider<'event, 'state>
     /// 3.  Yields the 'view
     member _.TransactEx(decide : ISyncContext<'state> -> Async<'result * 'event list>, mapResult : 'result -> ISyncContext<'state> -> 'view, ?option) : Async<'view> =
         transact option (fun (Context c) -> decide c) (fun r (Context c) -> mapResult r c)
+
+    /// 0.  Invoke the supplied <c>interpret</c> function with the present state
+    /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
+    /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
+    /// 2.  Uses <c>render</c> to generate a 'view from the final <c>ISyncContext</c>
+    member _.TransactEx(interpret : 'state -> 'event list, render : ISyncContext<'state> -> 'view, ?option) : Async<'view> =
+        transact option (fun (_token, state) -> async { let es = interpret state in return (), es}) (fun () (Context c) -> render c)
 
     /// Project from the folded <c>'state</c>, without executing a decision flow as <c>Transact</c> does
     member _.Query(projection : 'state -> 'view, ?option) : Async<'view> =

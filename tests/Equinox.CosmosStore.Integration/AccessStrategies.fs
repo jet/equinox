@@ -67,7 +67,7 @@ module SequenceCheck =
 
         member _.Add(instance : Guid, value : int, count) : Async<int array> =
             let decider = resolve instance
-            decider.TransactEx((fun c -> async { return (), decide (value, count) c.State }), fun () c -> c.State)
+            decider.Transact(decide (value, count), id)
 
     let private create log resolveStream =
         let resolve = streamName >> resolveStream >> createDecider log
