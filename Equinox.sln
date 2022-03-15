@@ -95,6 +95,10 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.EventStoreDb", "src
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.EventStoreDb.Integration", "tests\Equinox.EventStoreDb.Integration\Equinox.EventStoreDb.Integration.fsproj", "{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore", "src\Equinox.DynamoStore\Equinox.DynamoStore.fsproj", "{E04E86B4-4E35-4AC9-8D8F-B01297484FC1}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Integration", "tests\Equinox.DynamoStore.Integration\Equinox.DynamoStore.Integration.fsproj", "{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -209,6 +213,14 @@ Global
 		{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BA63048B-3CA3-448D-A4CD-0C772D57B6F8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E04E86B4-4E35-4AC9-8D8F-B01297484FC1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E04E86B4-4E35-4AC9-8D8F-B01297484FC1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E04E86B4-4E35-4AC9-8D8F-B01297484FC1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E04E86B4-4E35-4AC9-8D8F-B01297484FC1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
