@@ -2,36 +2,34 @@ namespace Equinox.DynamoStore.Core
 
 open Equinox.Core
 open FsCodec
+open FSharp.AWS.DynamoDB
 open FSharp.Control
-open Microsoft.Azure.Cosmos
 open Serilog
 open System
-open System.Text.Json
 
-type EventBody = JsonElement
+type EventBody = System.IO.MemoryStream
 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
-type Event = // TODO for STJ v5: All fields required unless explicitly optional
+type Event =
     {   /// Creation datetime (as opposed to system-defined _lastUpdated which is touched by triggers, replication etc.)
-        t: DateTimeOffset // ISO 8601
+        t : DateTimeOffset
 
         /// The Case (Event Type); used to drive deserialization
-        c: string // required
+        c : string
 
-        /// Event body, as UTF-8 encoded json ready to be injected into the Json being rendered for CosmosDB
-        d: EventBody // TODO for STJ v5: Required, but can be null so Nullary cases can work
+        /// Event body, as UTF-8 encoded json
+        d : EventBody // required
 
-        /// Optional metadata, as UTF-8 encoded json, ready to emit directly
-        m: EventBody // TODO for STJ v5: Optional, not serialized if missing
+        /// Optional metadata, encoded as per 'd'
+        m : EventBody //can be null
 
-        /// Optional correlationId
-        correlationId : string // TODO for STJ v5: Optional, not serialized if missing
+        /// correlationId, or null
+        correlationId : string
 
-        /// Optional causationId
-        causationId : string // TODO for STJ v5: Optional, not serialized if missing
+        /// causationId, or null
+        causationId : string
     }
-
     interface IEventData<EventBody> with
         member x.EventType = x.c
         member x.Data = x.d
@@ -43,85 +41,67 @@ type Event = // TODO for STJ v5: All fields required unless explicitly optional
 
 /// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
 [<NoEquality; NoComparison>]
-type Batch = // TODO for STJ v5: All fields required unless explicitly optional
-    {   /// CosmosDB-mandated Partition Key, must be maintained within the document
-        /// Not actually required if running in single partition mode, but for simplicity, we always write it
-        p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
-
-        /// CosmosDB-mandated unique row key; needs to be unique within any partition it is maintained; must be string
-        /// At the present time, one can't perform an ORDER BY on this field, hence we also have i shadowing it
-        /// NB Tip uses a well known value here while it's actively 'open'
-        id: string // "{index}"
-
-        /// When we read, we need to capture the value so we can retain it for caching purposes
-        /// NB this is not relevant to fill in when we pass it to the writing stored procedure
-        /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
-        _etag: string // TODO for STJ v5: Optional, not serialized if missing
+type Batch =
+    {   [<HashKey>]
+        p : string // "{streamName}"
 
         /// base 'i' value for the Events held herein
-        i: int64 // {index}
+        i : int64
 
-        // `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
-        n: int64 // {index}
+        /// `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
+        [<RangeKey>]
+        n : int64 // WellKnownDocumentId for the Tip
+
+        /// Marker on which compare-and-swap operations on Tip are predicated
+        etag : string
 
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
         e: Event[] }
-    /// Unless running in single partition mode (which would restrict us to 10GB per container)
-    /// we need to nominate a partition key that will be in every document
-    static member internal PartitionKeyField = "p"
-    /// As one cannot sort by the implicit `id` field, we have an indexed `i` field for sort and range query use
-    static member internal IndexedFields = [Batch.PartitionKeyField; "i"; "n"]
 
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoEquality; NoComparison>]
 type Unfold =
-    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
-        i: int64
+    {   /// Base: Stream Position (Version) of State from which this Unfold was generated
+        i : int64
 
         /// Generation datetime
-        t: DateTimeOffset // ISO 8601 // Not written by versions <= 2.0.0-rc9
+        t : DateTimeOffset
 
-        /// The Case (Event Type) of this compaction/snapshot, used to drive deserialization
-        c: string // required
+        /// The Case (Event Type) of this snapshot, used to drive deserialization
+        c : string // required
 
-        /// Event body - Json -> Deflate -> Base64 -> JsonElement
-        [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
-        d: EventBody // required
+        /// Event body - Json -> byte[] -> (maybe) Deflate
+        d : EventBody // required
 
         /// Optional metadata, same encoding as `d` (can be null; not written if missing)
-        [<Serialization.JsonConverter(typeof<JsonCompressedBase64Converter>)>]
-        m: EventBody // TODO for STJ v5: Optional, not serialized if missing
-    }
+        m : EventBody }
 
 /// The special-case 'Pending' Batch Format used to read the currently active (and mutable) document
-/// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch: a) `id` = `-1` b) contains unfolds (`u`)
-/// NB the type does double duty as a) model for when we read it b) encoding a batch being sent to the stored proc
+/// Stored representation has the following diffs vs a 'normal' (frozen/completed) Batch:
+/// a) `n` = WellKnownDocumentId
+/// b) contains unfolds (`u`)
 [<NoEquality; NoComparison>]
-type Tip = // TODO for STJ v5: All fields required unless explicitly optional
-    {
-        /// Partition key, as per Batch
-        p: string // "{streamName}" TODO for STJ v5: Optional, not requested in queries
-
-        /// Document Id within partition, as per Batch
-        id: string // "{-1}" - Well known IdConstant used while this remains the pending batch
-
-        /// When we read, we need to capture the value so we can retain it for caching purposes
-        /// NB this is not relevant to fill in when we pass it to the writing stored procedure
-        /// as it will do: 1. read 2. merge 3. write merged version contingent on the _etag not having changed
-        _etag: string // TODO for STJ v5: Optional, not serialized if missing
+type Tip =
+    {   /// Partition key, as per Batch
+        [<HashKey>]
+        p : string // "{streamName}"
 
         /// base 'i' value for the Events held herein
-        i: int64
+        i : int64
 
         /// `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
-        n: int64 // {index}
+        [<RangeKey>]
+        n : int64 // WellKnownDocumentId for the Tip
+
+        /// Marker on which compare-and-swap operations on Tip are predicated
+        etag : string
 
         /// Domain Events, will eventually move out to a Batch
-        e: Event[]
+        e : Event[]
 
         /// Compaction/Snapshot/Projection events - owned and managed by the sync stored proc
-        u: Unfold[] }
-    static member internal WellKnownDocumentId = "-1"
+        u : Unfold[] }
+    static member internal WellKnownDocumentId = Int64.MaxValue
 
 /// Position and Etag to which an operation is relative
 [<NoComparison>]
@@ -136,11 +116,11 @@ module internal Position =
     let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
     let fromEtag (value : string) = { fromI -2L with etag = Some value }
     /// Create Position from Tip record context (facilitating 1 RU reads)
-    let fromTip (x : Tip) = { index = x.n; etag = match x._etag with null -> None | x -> Some x }
+    let fromTip (x : Tip) = { index = x.n; etag = match x.etag with null -> None | x -> Some x }
     /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
     let tryFromBatch (x : Batch) =
-        if x.id <> Tip.WellKnownDocumentId then None
-        else Some { index = x.n; etag = match x._etag with null -> None | x -> Some x }
+        if x.n <> Tip.WellKnownDocumentId then None
+        else Some { index = x.n; etag = match x.etag with null -> None | x -> Some x }
 
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -152,7 +132,7 @@ type internal Enum() =
             let index = i + int64 offset
             // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
             if index >= indexMin && index < indexMax then
-                let x = e.[offset]
+                let x = e[offset]
                 yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, Guid.Empty, x.correlationId, x.causationId, x.t) }
     static member internal Events(t : Tip, ?minIndex, ?maxIndex) : ITimelineEvent<EventBody> seq =
         Enum.Events(t.i, t.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
@@ -171,11 +151,11 @@ type IRetryPolicy = abstract member Execute : (int -> Async<'T>) -> Async<'T>
 module Log =
 
     /// <summary>Name of Property used for <c>Metric</c> in <c>LogEvent</c>s.</summary>
-    let [<Literal>] PropertyTag = "cosmosEvt"
+    let [<Literal>] PropertyTag = "dynamoEvt"
 
     [<NoEquality; NoComparison>]
     type Measurement =
-       {   database : string; container : string; stream : string
+       {   table : string; stream : string
            interval : StopwatchInterval; bytes : int; count : int; ru : float }
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Metric =
@@ -209,7 +189,7 @@ module Log =
         | Trim of Measurement
     let internal prop name value (log : ILogger) = log.ForContext(name, value)
     let internal propData name (events : #IEventData<EventBody> seq) (log : ILogger) =
-        let render (body : EventBody) = body.GetRawText()
+        let render (body : EventBody) = body.ToArray() |> System.Text.Encoding.UTF8.GetString
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let internal propEvents = propData "events"
@@ -231,8 +211,8 @@ module Log =
         let enrich (e : Serilog.Events.LogEvent) =
             e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty(PropertyTag, Serilog.Events.ScalarValue(value)))
         log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt,_) = enrich evt })
-    let internal (|BlobLen|) (x : EventBody) = if x.ValueKind = JsonValueKind.Null then 0 else x.GetRawText().Length
-    let internal eventLen (x: #IEventData<_>) = let BlobLen bytes, BlobLen metaBytes = x.Data, x.Meta in bytes + metaBytes + 80
+    let internal (|BlobLen|) (x : EventBody) = match x with null -> 0 | x -> int x.Length
+    let internal eventLen (x: #IEventData<_>) = let BlobLen bytes, BlobLen metaBytes = x.Data, x.Meta in bytes + metaBytes + 80 // TODO revise for Dynamo
     let internal batchLen = Seq.sumBy eventLen
     let internal (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
         | :? Serilog.Events.ScalarValue as x -> Some x.Value
@@ -342,10 +322,16 @@ module Log =
             let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d)
 
-[<AutoOpen>]
-module private MicrosoftAzureCosmosWrappers =
+type Container(context : TableContext<Batch>) =
 
-    type ReadResult<'T> = Found of 'T | NotFound | NotModified
+    static member Create(client, tableName, ?verifyTable) = async {
+        let! context = TableContext.CreateAsync<_>(client, tableName, ?verifyTable = verifyTable)
+        return Container(context) }
+
+    member _.TableName = context.TableName
+
+type ReadResult<'T> = Found of 'T | NotFound | NotModified
+(*
     type Container with
         member private container.DeserializeResponseBody<'T>(rm : ResponseMessage) : 'T =
             rm.EnsureSuccessStatusCode().Content
@@ -357,9 +343,9 @@ module private MicrosoftAzureCosmosWrappers =
                 | System.Net.HttpStatusCode.NotFound -> NotFound
                 | System.Net.HttpStatusCode.NotModified -> NotModified
                 | _ -> container.DeserializeResponseBody<'T>(rm) |> Found }
-
+*)
 // NB don't nest in a private module, or serialization will fail miserably ;)
-[<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
+[<NoEquality; NoComparison>]
 type SyncResponse = { etag : string; n : int64; conflicts : Unfold[]; e : Event[] }
 
 module internal SyncStoredProc =
@@ -463,6 +449,7 @@ module internal Sync =
             | SyncExp.Etag et -> Position.fromEtag et
             | SyncExp.Any -> Position.fromAppendAtEnd
         let! ct = Async.CancellationToken
+        return failwith "TODO" } (*
         let args = [| box req; box ep.index; box (Option.toObj ep.etag); box maxEventsInTip; box maxStringifyLen |]
         let! (res : Scripts.StoredProcedureExecuteResponse<SyncResponse>) =
             container.Scripts.ExecuteStoredProcedureAsync<SyncResponse>(SyncStoredProc.name, PartitionKey stream, args, cancellationToken = ct) |> Async.AwaitTaskCorrect
@@ -474,7 +461,7 @@ module internal Sync =
             return res.RequestCharge, Result.ConflictUnknown newPos
         | unfolds -> // stored proc only returns events and unfolds with index >= req.i - no need to trim to a minIndex
             let events = (Enum.Events(ep.index, res.Resource.e), Enum.Unfolds unfolds) ||> Seq.append |> Array.ofSeq
-            return res.RequestCharge, Result.Conflict (newPos, events) }
+            return res.RequestCharge, Result.Conflict (newPos, events) *)
 
     let private logged (container, stream) (maxEventsInTip, maxStringifyLen) (exp : SyncExp, req : Tip) (log : ILogger)
         : Async<Result> = async {
@@ -483,7 +470,7 @@ module internal Sync =
         let count, bytes = req.e.Length, if verbose then Enum.Events req |> Log.batchLen else 0
         let log =
             let inline mkMetric ru : Log.Measurement =
-                { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
+                { table = container.TableName; stream = stream; interval = t; bytes = bytes; count = count; ru = ru }
             let inline propConflict log = log |> Log.prop "conflict" true |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in req.e -> x.c }))
             if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log
             |> match exp with
@@ -498,7 +485,7 @@ module internal Sync =
                 | Result.Conflict (pos', xs) ->
                     if verbose then Log.propData "conflicts" xs else id
                     >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Metric.SyncResync (mkMetric ru))
-        log.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
+        log.Information("EqxDynamo {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
             "Sync", stream, count, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
         return result }
 
@@ -506,10 +493,12 @@ module internal Sync =
         let call = logged containerStream (maxEventsInTip, maxStringifyLen) expBatch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
+    let mkBody (x : byte[]) : System.IO.MemoryStream =
+        new System.IO.MemoryStream(x) // TODO perhaps push further out
     let private mkEvent (e : IEventData<_>) =
-        {   t = e.Timestamp; c = e.EventType; d = JsonHelper.fixup e.Data; m = JsonHelper.fixup e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId }
+        {   t = e.Timestamp; c = e.EventType; d = mkBody e.Data; m = mkBody e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId }
     let mkBatch (stream : string) (events : IEventData<_>[]) unfolds : Tip =
-        {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
+        {   p = stream; n = Tip.WellKnownDocumentId; i = -1L(*TODO NOT Server-managed*); etag = null
             e = Array.map mkEvent events; u = Array.ofSeq unfolds }
     let mkUnfold compressor baseIndex (unfolds : IEventData<_> seq) : Unfold seq =
         unfolds
@@ -567,16 +556,10 @@ module Initialization =
         cp.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
         // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
         for k in Batch.IndexedFields do cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
-    let createSyncStoredProcIfNotExists (log : ILogger option) container = async {
-        let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name, SyncStoredProc.body) |> Stopwatch.Time
-        match log with
-        | None -> ()
-        | Some log -> log.Information("Created stored procedure {procName} in {ms}ms {ru}RU", SyncStoredProc.name, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
     let init log (client : CosmosClient) (dName, cName) mode skipStoredProc = async {
         let! d = createOrProvisionDatabase client dName mode
         let! c = createOrProvisionContainer d (cName, sprintf "/%s" Batch.PartitionKeyField, applyBatchAndTipContainerProperties) mode // as per Cosmos team, Partition Key must be "/id"
-        if not skipStoredProc then
-            do! createSyncStoredProcIfNotExists (Some log) c }
+        () }
 
     let private applyAuxContainerProperties (cp : ContainerProperties) =
         // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
@@ -1156,12 +1139,12 @@ module ConnectionString =
         | true, (:? string as s) when not (String.IsNullOrEmpty s) -> s
         | _ -> invalidOp "Connection string does not contain an \"AccountEndpoint\""
 
-namespace Equinox.CosmosStore
+namespace Equinox.DynamoStore
 
+open Amazon.DynamoDBv2
 open Equinox.Core
-open Equinox.CosmosStore.Core
+open Equinox.DynamoStore.Core
 open FsCodec
-open Microsoft.Azure.Cosmos
 open System
 
 [<RequireQualifiedAccess; NoComparison>]
@@ -1174,7 +1157,7 @@ type Discovery =
         | Discovery.AccountUriAndKey (u, _k) -> u
         | Discovery.ConnectionString (ConnectionString.AccountEndpoint e) -> Uri e
 
-/// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
+/// Manages establishing a CosmosClient, which is used by DynamoStoreClient to read from the underlying Dynamo Table
 [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
 type CosmosClientFactory
     (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
@@ -1219,7 +1202,7 @@ type CosmosClientFactory
         co
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
+    /// It's recommended to use <c>Connect()</c> and/or <c>DynamoStoreClient.Connect()</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
     member x.CreateUninitialized(discovery : Discovery) = discovery |> function
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
@@ -1232,8 +1215,8 @@ type CosmosClientFactory
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct) |> Async.AwaitTaskCorrect
         | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options) |> Async.AwaitTaskCorrect }
 
-/// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
-type CosmosStoreConnector
+/// Manages establishing a CosmosClient, which is used by DynamoStoreClient to read from the underlying Cosmos DB Container.
+type DynamoStoreConnector
     (   /// CosmosDB endpoint/credentials specification.
         discovery : Discovery,
         /// Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
@@ -1265,7 +1248,7 @@ type CosmosStoreConnector
     member _.Endpoint = discovery.Endpoint
 
     /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>CosmosStoreClient.Connect()</c> in preference to this API
+    /// It's recommended to use <c>Connect()</c> and/or <c>DynamoStoreClient.Connect()</c> in preference to this API
     ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
     member _.CreateUninitialized() = factory.CreateUninitialized(discovery)
 
@@ -1275,72 +1258,57 @@ type CosmosStoreConnector
 /// Holds all relevant state for a Store within a given CosmosDB Database
 /// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
 /// - The (singleton) per Container Stored Procedure initialization state
-type CosmosStoreClient
-    (   /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
-        categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
-        createContainer : string * string -> Container,
-        createSecondaryContainer : string * string -> Container option,
-        [<O; D(null)>]?primaryDatabaseAndContainerToSecondary : string * string -> string * string,
-        /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
-        [<O; D(null)>]?createGateway,
-        /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
-        [<O; D(null)>]?disableInitialization) =
-    let createGateway = match createGateway with Some creator -> creator | None -> id
-    let primaryDatabaseAndContainerToSecondary = defaultArg primaryDatabaseAndContainerToSecondary id
+type DynamoStoreClient
+    (   /// Facilitates custom mapping of Stream Category Name to underlying Table and Stream names
+        categoryAndStreamNameToTableStream : string * string -> string * string,
+        createContainer : string -> Container,
+        createSecondaryContainer : string -> Container option,
+        [<O; D(null)>]?primaryContainerToSecondary : string -> string) =
+    let primaryTableToSecondary = defaultArg primaryContainerToSecondary id
     // Index of database*container -> Initialization Context
-    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, Initialization.ContainerInitializerGuard>()
-    new(client, databaseId : string, containerId : string,
-        /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
-        [<O; D(null)>]?disableInitialization,
-        /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
-        [<O; D(null)>]?createGateway : Container -> Container,
-        /// Client to use for fallback Containers. Default: use same as <c>primary</c>
-        [<O; D(null)>]?client2 : CosmosClient,
-        /// Database to use for fallback Containers. Default: use same as <c>databaseId</c>
-        [<O; D(null)>]?databaseId2,
-        /// Container to use for fallback Containers. Default: use same as <c>containerId</c>
-        [<O; D(null)>]?containerId2) =
+    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string, Initialization.ContainerInitializerGuard>()
+    new(client : IAmazonDynamoDB, tableName : string,
+        [<O; D(null)>]?client2 : IAmazonDynamoDB,
+        /// Container to use for fallback Containers. Default: use same as <c>tableName</c>
+        [<O; D(null)>]?tableName2) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
-        let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
-        let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
+        let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
+        let primaryContainer t = Container.Create(client, t)
         let secondaryContainer =
-            if Option.isNone client2 && Option.isNone databaseId2 && Option.isNone containerId2 then fun (_, _) -> None
-            else fun (d, c) -> Some ((defaultArg client2 client).GetDatabase(defaultArg databaseId2 d).GetContainer(defaultArg containerId2 c))
-        CosmosStoreClient(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
-            ?disableInitialization = disableInitialization, ?createGateway = createGateway)
+            if Option.isNone client2 && Option.isNone tableName2 then fun _ -> None
+            else fun t -> Some (Container.Create(defaultArg client2 client, defaultArg tableName2 t))
+        DynamoStoreClient(catAndStreamToTableStream, primaryContainer, secondaryContainer)
     member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
-        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
-        let createContainerInitializerGuard (d, c) =
-            let init =
-                if Some true = disableInitialization then None
-                else Some (fun cosmosContainer -> Initialization.createSyncStoredProcIfNotExists None cosmosContainer |> Async.Ignore)
-            let secondaryD, secondaryC = primaryDatabaseAndContainerToSecondary (d, c)
-            let primaryContainer, secondaryContainer = createContainer (d, c), createSecondaryContainer (secondaryD, secondaryC)
-            Initialization.ContainerInitializerGuard(createGateway primaryContainer, Option.map createGateway secondaryContainer, ?initContainer = init)
-        let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
+        let tableName, streamName = categoryAndStreamNameToTableStream (categoryName, streamId)
+        let createContainerInitializerGuard t =
+            let init = Some (fun cosmosContainer -> async { ()  })
+            let secondaryT = primaryTableToSecondary tableName
+            let primaryContainer, secondaryContainer = createContainer tableName, createSecondaryContainer secondaryT
+            Initialization.ContainerInitializerGuard(primaryContainer, secondaryContainer, ?initContainer = init)
+        let g = containerInitGuards.GetOrAdd(tableName, createContainerInitializerGuard)
         g, streamName
 
-    /// Connect to an Equinox.CosmosStore in the specified Container
-    /// NOTE: The returned CosmosStoreClient instance should be held as a long-lived singleton within the application.
+    /// Connect to an Equinox.DynamoStore in the specified Container
+    /// NOTE: The returned DynamoStoreClient instance should be held as a long-lived singleton within the application.
     /// <example><code>
     /// let createStoreClient (connectionString, database, container) =
-    ///     let connector = CosmosStoreConnector(Discovery.ConnectionString connectionString, System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
-    ///     CosmosStoreClient.Connect(connector.CreateAndInitialize, database, container)
+    ///     let connector = DynamoStoreConnector(Discovery.ConnectionString connectionString, System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
+    ///     DynamoStoreClient.Connect(connector.CreateAndInitialize, database, container)
     /// </code></example>
-    static member Connect(connectContainers, databaseId : string, containerId : string) : Async<CosmosStoreClient> = async {
-        let! client = connectContainers [| struct (databaseId, containerId) |]
-        return CosmosStoreClient(client, databaseId, containerId) }
+    static member Connect(connectContainers, tableName : string) : Async<DynamoStoreClient> = async {
+        let! client = connectContainers [| tableName |]
+        return DynamoStoreClient(client, tableName) }
 
-    /// Connect to a hot-warm CosmosStore pair within the same account
+    /// Connect to a hot-warm DynamoStore pair within the same account
     /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where necessary.
-    /// NOTE: The returned CosmosStoreClient instance should be held as a long-lived singleton within the application.
-    static member Connect(connectContainers, databaseId : string, primaryContainerId : string, fallbackContainerId) : Async<CosmosStoreClient> = async {
-        let! client = connectContainers [| struct (databaseId, primaryContainerId); struct (databaseId, fallbackContainerId) |]
-        return CosmosStoreClient(client, databaseId, primaryContainerId, containerId2=fallbackContainerId) }
+    /// NOTE: The returned DynamoStoreClient instance should be held as a long-lived singleton within the application.
+    static member Connect(connectContainers, primaryTableName : string, fallbackTableName) : Async<DynamoStoreClient> = async {
+        let! client = connectContainers [| primaryTableName; fallbackTableName |]
+        return DynamoStoreClient(client, primaryTableName, fallbackTableName = fallbackTableName) }
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
-type CosmosStoreContext(storeClient : CosmosStoreClient, tipOptions, queryOptions) =
-    new(    storeClient : CosmosStoreClient,
+type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOptions) =
+    new(    storeClient : DynamoStoreClient,
             /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
             /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
             tipMaxEvents,
@@ -1354,7 +1322,7 @@ type CosmosStoreContext(storeClient : CosmosStoreClient, tipOptions, queryOption
             [<O; D null>]?queryMaxRequests) =
         let tipOptions = TipOptions(maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
-        CosmosStoreContext(storeClient, tipOptions, queryOptions)
+        DynamoStoreContext(storeClient, tipOptions, queryOptions)
     member val StoreClient = storeClient
     member val QueryOptions = queryOptions
     member val TipOptions = tipOptions
@@ -1419,10 +1387,9 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin : ('event -> bool) * transmute : ('event list -> 'state -> 'event list*'event list)
 
-type CosmosStoreCategory<'event, 'state, 'context>
-    (   context : CosmosStoreContext, codec, fold, initial, caching, access,
+type DynamoStoreCategory<'event, 'state, 'context>
+    (   context : DynamoStoreContext, codec, fold, initial, caching, access,
         /// Compress Unfolds in Tip. Default: <c>true</c>.
-        /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
         [<O; D null>]?compressUnfolds) =
     let compressUnfolds = defaultArg compressUnfolds true
     let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, string, 'context>>()
@@ -1451,7 +1418,7 @@ type CosmosStoreCategory<'event, 'state, 'context>
     let storeCategory = StoreCategory(resolve, empty)
     member _.Resolve(streamName, ?context) = storeCategory.Resolve(streamName, ?context = context)
 
-namespace Equinox.CosmosStore.Core
+namespace Equinox.DynamoStore.Core
 
 open Equinox.Core
 open FsCodec
@@ -1464,9 +1431,9 @@ type AppendResult<'t> =
     | Conflict of index : 't * conflictingEvents : ITimelineEvent<EventBody>[]
     | ConflictUnknown of index : 't
 
-/// Encapsulates the core facilities Equinox.CosmosStore offers for operating directly on Events in Streams.
+/// Encapsulates the core facilities Equinox.DynamoStore offers for operating directly on Events in Streams.
 type EventsContext internal
-    (   context : Equinox.CosmosStore.CosmosStoreContext, store : StoreClient,
+    (   context : Equinox.DynamoStore.DynamoStoreContext, store : StoreClient,
         /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger) =
     do if log = null then nullArg "log"
@@ -1487,7 +1454,7 @@ type EventsContext internal
         | Direction.Forward -> startPos, None
         | Direction.Backward -> None, startPos
 
-    new (context : Equinox.CosmosStore.CosmosStoreContext, log) =
+    new (context : Equinox.DynamoStore.DynamoStoreContext, log) =
         let store, _streamId, _init = context.ResolveContainerClientAndStreamIdAndInit(null, null)
         EventsContext(context, store, log)
 
@@ -1562,7 +1529,7 @@ type EventData() =
     static member FromUtf8Bytes(eventType, data, ?meta) : IEventData<_> = FsCodec.Core.EventData.Create(eventType, data, ?meta = meta) :> _
 
 /// Api as defined in the Equinox Specification
-/// Note the CosmosContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
+/// Note the DynamoContext APIs can yield better performance due to the fact that a Position tracks the etag of the Stream's Tip
 module Events =
 
     let private (|PositionIndex|) (x : Position) = x.index

@@ -21,11 +21,13 @@
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
     <PackageReference Include="MinVer" Version="2.5.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="4.3.4" />
+    <!-- No point taking a lower dep as FSharp.AWS.DynamoDB requires same -->
+    <PackageReference Include="FSharp.Core" Version="4.7.2" />
 
     <PackageReference Include="FsCodec" Version="2.3.1" />
-<!--    <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />-->
-<!--    <PackageReference Include="System.Text.Json" Version="6.0.1" />-->
+    <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.9.3-beta" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
+  <!--    <PackageReference Include="System.Text.Json" Version="6.0.1" />-->
   </ItemGroup>
 
 </Project>
