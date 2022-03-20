@@ -238,18 +238,15 @@ module private Read =
 module UnionEncoderAdapters =
     let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.ITimelineEvent<EventBody> =
         let e = x.Event
-        // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
-        let ts = DateTimeOffset(e.Created)
-        // TODO something like let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
-        // TOCONSIDER wire e.Metadata.["$correlationId"] and .["$causationId"] into correlationId and causationId
+        // TOCONSIDER wire e.Metadata["$correlationId"] and ["$causationId"] into correlationId and causationId
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        let n = e.EventNumber
-        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), e.EventType, e.Data, e.Metadata, correlationId = null, causationId = null, timestamp = ts)
+        let n, eu, ts = e.EventNumber, e.EventId, DateTimeOffset e.Created
+        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), e.EventType, e.Data, e.Metadata, eu.ToGuid(), correlationId = null, causationId = null, timestamp = ts)
 
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<EventBody>) =
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        EventData(Uuid.NewUuid(), x.EventType, contentType = "application/json", data = x.Data, metadata = x.Meta)
+        EventData(Uuid.FromGuid x.EventId, x.EventType, contentType = "application/json", data = x.Data, metadata = x.Meta)
 
 type Position = { streamVersion : int64; compactionEventNumber : int64 option; batchCapacityLimit : int option }
 type Token = { pos : Position }
