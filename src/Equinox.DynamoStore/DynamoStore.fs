@@ -1,5 +1,6 @@
 namespace Equinox.DynamoStore.Core
 
+open Amazon.DynamoDBv2
 open Equinox.Core
 open FsCodec
 open FSharp.AWS.DynamoDB
@@ -324,8 +325,10 @@ module Log =
 
 type Container(context : TableContext<Batch>) =
 
-    static member Create(client, tableName, ?verifyTable) = async {
-        let! context = TableContext.CreateAsync<_>(client, tableName, ?verifyTable = verifyTable)
+    static member Create(client, tableName,
+                         // Validate that the table is present and has the correct schema. Default: false.
+                         ?verifyTable) = async {
+        let! context = TableContext.CreateAsync<_>(client, tableName, verifyTable = (verifyTable = Some true))
         return Container(context) }
 
     member _.TableName = context.TableName
@@ -512,64 +515,13 @@ module internal Sync =
 
 module Initialization =
 
-    // Note: the Cosmos SDK does not (currently) support changing the Throughput mode of an existing Database or Container.
-    type [<RequireQualifiedAccess>] Throughput = Manual of rus : int | Autoscale of maxRus : int
-    type [<RequireQualifiedAccess>] Provisioning = Container of Throughput | Database of Throughput | Serverless
-    let private (|ThroughputProperties|) = function
-        | Throughput.Manual rus -> ThroughputProperties.CreateManualThroughput(rus)
-        | Throughput.Autoscale maxRus -> ThroughputProperties.CreateAutoscaleThroughput(maxRus)
-    let private createOrProvisionDatabase (client : CosmosClient) dName mode = async {
-        let! ct = Async.CancellationToken
-        let createDatabaseIfNotExists maybeTp = async {
-            let! r = client.CreateDatabaseIfNotExistsAsync(dName, throughputProperties = Option.toObj maybeTp, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return r.Database }
-        match mode with
-        | Provisioning.Container _ | Provisioning.Serverless -> return! createDatabaseIfNotExists None
-        | Provisioning.Database (ThroughputProperties tp) ->
-            let! d = createDatabaseIfNotExists (Some tp)
-            let! _ = d.ReplaceThroughputAsync(tp, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return d }
-    let private createOrProvisionContainer (d : Database) (cName, pkPath, customizeContainer) mode = async {
-        let cp = ContainerProperties(id = cName, partitionKeyPath = pkPath)
-        customizeContainer cp
-        let! ct = Async.CancellationToken
-        let createContainerIfNotExists maybeTp = async {
-            let! r = d.CreateContainerIfNotExistsAsync(cp, throughputProperties = Option.toObj maybeTp, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return r.Container }
-        match mode with
-        | Provisioning.Database _ | Provisioning.Serverless -> return! createContainerIfNotExists None
-        | Provisioning.Container (ThroughputProperties throughput) ->
-            let! c = createContainerIfNotExists (Some throughput)
-            let! _ = c.ReplaceThroughputAsync(throughput, cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return c }
+    [<NoComparison; NoEquality>]
+    type Mode = ProvisionedThroughput of ProvisionedThroughput
 
-    let private createStoredProcIfNotExists (c : Container) (name, body) : Async<float> = async {
-        let! ct = Async.CancellationToken
-        try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct) |> Async.AwaitTaskCorrect
-            return r.RequestCharge
-        with :? CosmosException as ce when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
-    let private applyBatchAndTipContainerProperties (cp : ContainerProperties) =
-        cp.IndexingPolicy.IndexingMode <- IndexingMode.Consistent
-        cp.IndexingPolicy.Automatic <- true
-        // Can either do a blacklist or a whitelist
-        // Given how long and variable the blacklist would be, we whitelist instead
-        cp.IndexingPolicy.ExcludedPaths.Add(ExcludedPath(Path="/*"))
-        // NB its critical to index the nominated PartitionKey field defined above or there will be runtime errors
-        for k in Batch.IndexedFields do cp.IndexingPolicy.IncludedPaths.Add(IncludedPath(Path = sprintf "/%s/?" k))
-    let init log (client : CosmosClient) (dName, cName) mode skipStoredProc = async {
-        let! d = createOrProvisionDatabase client dName mode
-        let! c = createOrProvisionContainer d (cName, sprintf "/%s" Batch.PartitionKeyField, applyBatchAndTipContainerProperties) mode // as per Cosmos team, Partition Key must be "/id"
-        () }
-
-    let private applyAuxContainerProperties (cp : ContainerProperties) =
-        // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
-        cp.IndexingPolicy.Automatic <- false
-        cp.IndexingPolicy.IndexingMode <- IndexingMode.None
-    let initAux (client : CosmosClient) (dName, cName) rus = async {
-        // Hardwired for now to be Container level manual provisioning; need to be very far from normal usage to want to vary that
-        let mode = Provisioning.Container (Throughput.Manual rus)
-        let! d = createOrProvisionDatabase client dName mode
-        return! createOrProvisionContainer d (cName, "/id", applyAuxContainerProperties) mode } // as per Cosmos team, Partition Key must be "/id"
+    let init (client : IAmazonDynamoDB) tableName mode = async {
+        let (ProvisionedThroughput pt) = mode
+        let! tc = TableContext.CreateAsync<Batch>(client, tableName, createIfNotExists = true, provisionedThroughput = pt)
+        do! tc.UpdateProvisionedThroughputAsync pt }
 
     /// Holds Container state, coordinating initialization activities
     type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> Async<unit>) =
