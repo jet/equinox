@@ -8,7 +8,7 @@ open FSharp.Control
 open Serilog
 open System
 
-type EventBody = System.IO.MemoryStream
+type EventBody = byte[]
 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
@@ -190,7 +190,7 @@ module Log =
         | Trim of Measurement
     let internal prop name value (log : ILogger) = log.ForContext(name, value)
     let internal propData name (events : #IEventData<EventBody> seq) (log : ILogger) =
-        let render (body : EventBody) = body.ToArray() |> System.Text.Encoding.UTF8.GetString
+        let render (body : EventBody) : string = body (*.ToArray()*) |> System.Text.Encoding.UTF8.GetString
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let internal propEvents = propData "events"
@@ -330,13 +330,11 @@ module Log =
 type Container(tip : TableContext<Tip>) =
     let batches = lazy tip.WithRecordType<Batch>()
 
-    static member Create(client, tableName,
-                         // Validate that the table is present and has the correct schema. Default: false.
-                         ?verifyTable) = async {
-        // As per Equinox.CosmosStore, we assume the table to be provisioned correctly
-        // TOCONSIDER add CreateUnverified overload that is not Async
-        let! context = TableContext.CreateAsync<_>(client, tableName, verifyTable = (verifyTable = Some true))
-        return Container(context) }
+    /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly
+    static member Create(client, tableName) =
+        // TODO Use CreateUnverified
+        let context = TableContext.CreateAsync<_>(client, tableName, verifyTable = false) |> Async.RunSynchronously
+        Container(context)
 
     member _.TableName = tip.TableName
     member _.TryGetTip(stream) = async {
@@ -513,11 +511,9 @@ module internal Sync =
         let call = logged containerStream (maxEventsInTip, maxStringifyLen) expBatch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
-    let mkBody (x : byte[]) : System.IO.MemoryStream =
-        new System.IO.MemoryStream(x) // TODO perhaps push further out
-    let private mkEvent (e : IEventData<_>) =
-        {   t = e.Timestamp; c = e.EventType; d = mkBody e.Data; m = mkBody e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId }
-    let mkBatch (stream : string) (events : IEventData<_>[]) unfolds : Tip =
+    let private mkEvent (e : IEventData<EventBody>) =
+        {   t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = e.CorrelationId; causationId = e.CausationId }
+    let mkBatch (stream : string) (events : IEventData<EventBody>[]) unfolds : Tip =
         {   p = stream; n = Tip.WellKnownI; i = -1L(*TODO NOT Server-managed*); etag = null
             e = Array.map mkEvent events; u = Array.ofSeq unfolds }
     let mkUnfold compressor baseIndex (unfolds : IEventData<_> seq) : Unfold seq =
@@ -532,12 +528,18 @@ module internal Sync =
 
 module Initialization =
 
-    [<NoComparison; NoEquality>]
-    type Mode = ProvisionedThroughput of ProvisionedThroughput
+    let private prepare (client : IAmazonDynamoDB) tableName (maybeProvision : ProvisionedThroughput option) = async {
+        let! tc = TableContext.CreateAsync<Batch>(client, tableName, createIfNotExists = true, ?provisionedThroughput = maybeProvision)
+        match maybeProvision with None -> () | Some pt -> do! tc.UpdateProvisionedThroughputAsync pt }
 
-    let init (client : IAmazonDynamoDB) tableName (ProvisionedThroughput pt) = async {
-        let! tc = TableContext.CreateAsync<Batch>(client, tableName, createIfNotExists = true, provisionedThroughput = pt)
-        do! tc.UpdateProvisionedThroughputAsync pt }
+    /// Verify the specified <c>tableName</c> is present and adheres to the correct schema
+    let verify (client : IAmazonDynamoDB) tableName = prepare client tableName None
+
+    [<NoComparison; NoEquality>]
+    type Configuration = ProvisionedThroughput of ProvisionedThroughput
+
+    /// Provision (or re-provision) the specified table with the specified <c>Configuration</c>. Will throw if schema mismatches.
+    let initialize (client : IAmazonDynamoDB) tableName (ProvisionedThroughput pt) = prepare client tableName (Some pt)
 
     /// Holds Container state, coordinating initialization activities
     type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> Async<unit>) =
@@ -1022,6 +1024,7 @@ type StoreClient(container : Container, fallback : Container option, query : Que
 #endif
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EventBody, 'context>) =
+//    let tryDecode e = codec.TryDecode e |> Option.map (fun x -> x.ToArray())
     member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin) : Async<StreamToken * 'state> = async {
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds)
         return token, fold initial events }
@@ -1040,7 +1043,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
                 let events', unfolds = transmute events state'
                 SyncExp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
-        let compressor = id // TODO if compressUnfolds then JsonCompressedBase64Converter.Compress else JsonHelper.fixup
+        let compressor = id // (body : byte[]) : EventBody = new System.IO.MemoryStream(body) // TODO if compressUnfolds then JsonCompressedBase64Converter.Compress else JsonHelper.fixup
         let projections = Sync.mkUnfold compressor baseIndex projectionsEncoded
         let batch = Sync.mkBatch streamName eventsEncoded projections
         match! store.Sync(log, streamName, exp, batch) with
@@ -1087,13 +1090,6 @@ module internal Caching =
                     do! updateCache streamName (token', state')
                     return SyncResult.Written (token', state') }
 
-module ConnectionString =
-
-    let (|AccountEndpoint|) connectionString =
-        match System.Data.Common.DbConnectionStringBuilder(ConnectionString = connectionString).TryGetValue "AccountEndpoint" with
-        | true, (:? string as s) when not (String.IsNullOrEmpty s) -> s
-        | _ -> invalidOp "Connection string does not contain an \"AccountEndpoint\""
-
 namespace Equinox.DynamoStore
 
 open Amazon.DynamoDBv2
@@ -1102,117 +1098,9 @@ open Equinox.DynamoStore.Core
 open FsCodec
 open System
 
-[<RequireQualifiedAccess; NoComparison>]
-type Discovery =
-    /// Separated Account Uri and Key (for interop with previous versions)
-    | AccountUriAndKey of accountUri : Uri * key : string
-    /// Cosmos SDK Connection String
-    | ConnectionString of connectionString : string
-    member x.Endpoint : Uri = x |> function
-        | Discovery.AccountUriAndKey (u, _k) -> u
-        | Discovery.ConnectionString (ConnectionString.AccountEndpoint e) -> Uri e
-
-/// Manages establishing a CosmosClient, which is used by DynamoStoreClient to read from the underlying Dynamo Table
-[<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-type CosmosClientFactory
-    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
-        requestTimeout : TimeSpan,
-        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default : 9
-        maxRetryAttemptsOnRateLimitedRequests : int,
-        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default : 30s
-        maxRetryWaitTimeOnRateLimitedRequests : TimeSpan,
-        /// Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
-        /// NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
-        [<O; D(null)>]?mode : ConnectionMode,
-        /// Connection limit for Gateway Mode. CosmosDB default: 50
-        [<O; D(null)>]?gatewayModeMaxConnectionLimit,
-        /// consistency mode (default: ConsistencyLevel.Session)
-        [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
-        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
-        [<O; D(null)>]?bypassCertificateValidation : bool) =
-
-    /// CosmosClientOptions for this CosmosClientFactory as configured
-    member val Options =
-        let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
-        let co =
-            CosmosClientOptions(
-                MaxRetryAttemptsOnRateLimitedRequests = maxAttempts,
-                MaxRetryWaitTimeOnRateLimitedRequests = maxWait,
-                RequestTimeout = timeout,
-                Serializer = CosmosJsonSerializer(System.Text.Json.JsonSerializerOptions()))
-        match mode with
-        | None | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
-        | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // only supports Https
-        match gatewayModeMaxConnectionLimit with
-        | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
-        | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 50
-        match defaultConsistencyLevel with
-        | Some x -> co.ConsistencyLevel <- Nullable x
-        | None -> ()
-        // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
-        if bypassCertificateValidation = Some true && co.ConnectionMode = ConnectionMode.Gateway then
-            let cb = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            let ch = new System.Net.Http.HttpClientHandler(ServerCertificateCustomValidationCallback = cb)
-            co.HttpClientFactory <- fun () -> new System.Net.Http.HttpClient(ch)
-        co
-
-    /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>DynamoStoreClient.Connect()</c> in preference to this API
-    ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
-    member x.CreateUninitialized(discovery : Discovery) = discovery |> function
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> new CosmosClient(string uri, key, x.Options)
-        | Discovery.ConnectionString cs -> new CosmosClient(cs, x.Options)
-
-    /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
-    member x.CreateAndInitialize(discovery : Discovery, containers) = async {
-        let! ct = Async.CancellationToken
-       match discovery with //
-        | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct) |> Async.AwaitTaskCorrect
-        | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options) |> Async.AwaitTaskCorrect }
-
-/// Manages establishing a CosmosClient, which is used by DynamoStoreClient to read from the underlying Cosmos DB Container.
-type DynamoStoreConnector
-    (   /// CosmosDB endpoint/credentials specification.
-        discovery : Discovery,
-        /// Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
-        requestTimeout : TimeSpan,
-        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
-        maxRetryAttemptsOnRateLimitedRequests : int,
-        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
-        maxRetryWaitTimeOnRateLimitedRequests : TimeSpan,
-        /// Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
-        /// NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
-        [<O; D(null)>]?mode : ConnectionMode,
-        /// Connection limit for Gateway Mode. CosmosDB default: 50
-        [<O; D(null)>]?gatewayModeMaxConnectionLimit,
-        /// consistency mode (default: ConsistencyLevel.Session)
-        [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
-        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
-        [<O; D(null)>]?bypassCertificateValidation : bool) =
-
-    let factory =
-        CosmosClientFactory
-          ( requestTimeout, maxRetryAttemptsOnRateLimitedRequests, maxRetryWaitTimeOnRateLimitedRequests, ?mode = mode,
-            ?gatewayModeMaxConnectionLimit = gatewayModeMaxConnectionLimit, ?defaultConsistencyLevel = defaultConsistencyLevel,
-            ?bypassCertificateValidation = bypassCertificateValidation)
-
-    /// The <c>CosmosClientOptions</c> used when connecting to CosmosDB
-    member _.Options = factory.Options
-
-    /// The Endpoint Uri for the target CosmosDB
-    member _.Endpoint = discovery.Endpoint
-
-    /// Creates an instance of CosmosClient without actually validating or establishing the connection
-    /// It's recommended to use <c>Connect()</c> and/or <c>DynamoStoreClient.Connect()</c> in preference to this API
-    ///   in order to avoid latency spikes, and/or deferring discovery of connectivity or permission issues.
-    member _.CreateUninitialized() = factory.CreateUninitialized(discovery)
-
-    /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
-    member _.CreateAndInitialize(containers) = factory.CreateAndInitialize(discovery, containers)
-
-/// Holds all relevant state for a Store within a given CosmosDB Database
-/// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
-/// - The (singleton) per Container Stored Procedure initialization state
+/// Holds all relevant state for a Store
+/// - The Client (IAmazonDynamoDB). there should be a single one of these per process, plus an optional fallback one for pruning scenarios.
+/// - The (singleton) per-Table initialization state // TOCONSIDER remove if we don't end up with any
 type DynamoStoreClient
     (   /// Facilitates custom mapping of Stream Category Name to underlying Table and Stream names
         categoryAndStreamNameToTableStream : string * string -> string * string,
@@ -1220,29 +1108,31 @@ type DynamoStoreClient
         createSecondaryContainer : string -> Container option,
         [<O; D(null)>]?primaryContainerToSecondary : string -> string) =
     let primaryTableToSecondary = defaultArg primaryContainerToSecondary id
-    // Index of database*container -> Initialization Context
+    // Index of tableName -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string, Initialization.ContainerInitializerGuard>()
     new(client : IAmazonDynamoDB, tableName : string,
         [<O; D(null)>]?client2 : IAmazonDynamoDB,
-        /// Container to use for fallback Containers. Default: use same as <c>tableName</c>
-        [<O; D(null)>]?tableName2) =
+        /// Table name to use for fallback/archive store. Default: use same as <c>tableName</c> via <c>client2</c>.
+        [<O; D(null)>]?fallbackTableName) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
         let primaryContainer t = Container.Create(client, t)
         let secondaryContainer =
-            if Option.isNone client2 && Option.isNone tableName2 then fun _ -> None
-            else fun t -> Some (Container.Create(defaultArg client2 client, defaultArg tableName2 t))
+            if Option.isNone client2 && Option.isNone fallbackTableName then fun _ -> None
+            else fun t -> Some (Container.Create(defaultArg client2 client, defaultArg fallbackTableName t))
         DynamoStoreClient(catAndStreamToTableStream, primaryContainer, secondaryContainer)
+    // TOCONSIDER remove this facility unless we end up using it
     member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
         let tableName, streamName = categoryAndStreamNameToTableStream (categoryName, streamId)
         let createContainerInitializerGuard t =
-            let init = Some (fun cosmosContainer -> async { ()  })
-            let secondaryT = primaryTableToSecondary tableName
-            let primaryContainer, secondaryContainer = createContainer tableName, createSecondaryContainer secondaryT
-            Initialization.ContainerInitializerGuard(primaryContainer, secondaryContainer, ?initContainer = init)
+            let init = Some (fun _container -> async { () })
+            let fallbackTableName = primaryTableToSecondary tableName
+            let primaryContainer, fallbackContainer = createContainer tableName, createSecondaryContainer fallbackTableName
+            Initialization.ContainerInitializerGuard(primaryContainer, fallbackContainer, ?initContainer = init)
         let g = containerInitGuards.GetOrAdd(tableName, createContainerInitializerGuard)
         g, streamName
 
+#if SYNC_CONNECT_REQUIRED // Not sure if DDB SDK exposes such a facility
     /// Connect to an Equinox.DynamoStore in the specified Container
     /// NOTE: The returned DynamoStoreClient instance should be held as a long-lived singleton within the application.
     /// <example><code>
@@ -1260,14 +1150,14 @@ type DynamoStoreClient
     static member Connect(connectContainers, primaryTableName : string, fallbackTableName) : Async<DynamoStoreClient> = async {
         let! client = connectContainers [| primaryTableName; fallbackTableName |]
         return DynamoStoreClient(client, primaryTableName, fallbackTableName = fallbackTableName) }
+#endif
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOptions) =
     new(    storeClient : DynamoStoreClient,
             /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
-            /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
             tipMaxEvents,
-            /// Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
+            /// Maximum serialized size permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
             [<O; D null>]?tipMaxJsonLength,
             /// Inhibit throwing when events are missing, but no fallback Container has been supplied
             [<O; D null>]?ignoreMissingEvents,
