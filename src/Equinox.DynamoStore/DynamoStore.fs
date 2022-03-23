@@ -1111,15 +1111,15 @@ type DynamoStoreClient
     // Index of tableName -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string, Initialization.ContainerInitializerGuard>()
     new(client : IAmazonDynamoDB, tableName : string,
-        [<O; D(null)>]?client2 : IAmazonDynamoDB,
+        [<O; D(null)>]?fallbackClient : IAmazonDynamoDB,
         /// Table name to use for fallback/archive store. Default: use same as <c>tableName</c> via <c>client2</c>.
         [<O; D(null)>]?fallbackTableName) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
         let primaryContainer t = Container.Create(client, t)
         let secondaryContainer =
-            if Option.isNone client2 && Option.isNone fallbackTableName then fun _ -> None
-            else fun t -> Some (Container.Create(defaultArg client2 client, defaultArg fallbackTableName t))
+            if Option.isNone fallbackClient && Option.isNone fallbackTableName then fun _ -> None
+            else fun t -> Some (Container.Create(defaultArg fallbackClient client, defaultArg fallbackTableName t))
         DynamoStoreClient(catAndStreamToTableStream, primaryContainer, secondaryContainer)
     // TOCONSIDER remove this facility unless we end up using it
     member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =

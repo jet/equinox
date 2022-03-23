@@ -19,8 +19,13 @@ module SerilogHelpers =
     let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
         | :? ScalarValue as x -> Some x.Value
         | _ -> None
+#if STORE_DYNAMO
+    open Equinox.DynamoStore.Core
+    open Equinox.DynamoStore.Core.Log
+#else
     open Equinox.CosmosStore.Core
     open Equinox.CosmosStore.Core.Log
+#endif
     [<RequireQualifiedAccess>]
     type EqxAct =
         | Tip | TipNotFound | TipNotModified
@@ -63,7 +68,11 @@ module SerilogHelpers =
         | Metric.Delete s -> Delete s
         | Metric.Trim s -> Trim s
 
+#if STORE_DYNAMO
+    let inline (|Rc|) ({ rru = rru; wru = wru }: Measurement) = rru, wru
+#else
     let inline (|Rc|) ({ ru = ru }: Measurement) = ru
+#endif
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|TotalRequestCharge|ResponseBreakdown|) = function
         | Load (Rc rc) | Write (Rc rc)

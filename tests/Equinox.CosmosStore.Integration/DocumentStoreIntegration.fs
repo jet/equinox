@@ -5,13 +5,22 @@ open FSharp.UMX
 open Swensen.Unquote
 open System
 open System.Threading
+#if STORE_DYNAMO
+open Equinox.DynamoStore
+open Equinox.DynamoStore.Integration.CosmosFixtures
+#else
 open Equinox.CosmosStore
 open Equinox.CosmosStore.Integration.CosmosFixtures
+#endif
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
+#if STORE_DYNAMO
+    let codec = Cart.Events.codec
+#else
     let codec = Cart.Events.codecJe
+#endif
     let createServiceWithoutOptimization log context =
         let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Cart.create log resolve
@@ -34,7 +43,11 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
+#if STORE_DYNAMO
+    let codec = ContactPreferences.Events.codec
+#else
     let codec = ContactPreferences.Events.codecJe
+#endif
     let private createServiceWithLatestKnownEvent context log cachingStrategy =
         let resolveStream = StoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
         ContactPreferences.create log resolveStream
@@ -63,7 +76,11 @@ type Tests(testOutputHelper) =
         addAndThenRemoveItems true true context cartId skuId service count
 
     let verifyRequestChargesMax rus =
+#if STORE_DYNAMO
+        let tripRequestCharges = [ for e, (rc, wc) in capture.RequestCharges -> sprintf "%A" e, rc + wc ]
+#else
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
+#endif
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -202,6 +219,7 @@ type Tests(testOutputHelper) =
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
 
+#if !STORE_DYNAMO
         (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
 
         // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
@@ -236,6 +254,7 @@ type Tests(testOutputHelper) =
         test <@ value = result @>
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 1
+#endif
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -362,6 +381,7 @@ type Tests(testOutputHelper) =
         let! _ = service2.Read cartId
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
 
+#if !STORE_DYNAMO
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
         let ctx = Core.EventsContext(context, log)
@@ -385,6 +405,7 @@ type Tests(testOutputHelper) =
         let! _ = service2.Read cartId
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 1
+#endif
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -423,6 +444,7 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne cartContext cartId skuId service1 1
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
 
+#if !STORE_DYNAMO
         (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
         let ctx = Core.EventsContext(context, log)
@@ -448,6 +470,7 @@ type Tests(testOutputHelper) =
         test <@ [if eventsInTip then EqxAct.Tip else EqxAct.TipNotModified] = capture.ExternalCalls @>
         // Charges are 1 RU regardless of whether a reload occurs, as the snapshot is tiny
         verifyRequestChargesMax 1
+#endif
     }
 
     interface IDisposable with member _.Dispose() = log.Dispose()

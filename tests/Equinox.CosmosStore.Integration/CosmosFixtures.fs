@@ -1,4 +1,48 @@
-﻿[<AutoOpen>]
+﻿#if STORE_DYNAMO
+[<AutoOpen>]
+module Equinox.DynamoStore.Integration.CosmosFixtures
+
+open Amazon.DynamoDBv2
+open Equinox.DynamoStore
+open System
+
+// docker compose up dynamodb-local will stand up a simulator instance that this wiring can connect to
+let private tryRead env = Environment.GetEnvironmentVariable env |> Option.ofObj
+let private tableName = tryRead "EQUINOX_DYNAMO_TABLE" |> Option.defaultValue "equinox-test"
+let private tableNameFallback = tryRead "EQUINOX_DYNAMO_TABLE2" |> Option.defaultValue "equinox-test2"
+
+let discoverConnection () =
+    match tryRead "EQUINOX_DYNAMO_CONNECTION" with
+    | None -> "dynamodb-local", "http://localhost:8000"
+    | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString
+
+let createClient (log : Serilog.ILogger) name serviceUrl =
+    // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html#docker for details of how to deploy a simulator instance
+    let clientConfig = AmazonDynamoDBConfig(ServiceURL = serviceUrl)
+    log.Information("DynamoDB Connecting {name} to {endpoint}", name, serviceUrl)
+    // Credentials are not validated if connecting to local instance so anything will do (this avoids it looking for profiles to be configured)
+    let credentials = Amazon.Runtime.BasicAWSCredentials("A", "A")
+    new AmazonDynamoDBClient(credentials, clientConfig) :> IAmazonDynamoDB
+
+let connectPrimary log =
+    let name, serviceUrl = discoverConnection ()
+    let client = createClient log name serviceUrl
+    DynamoStoreClient(client, tableName)
+
+let connectArchive log =
+    let name, serviceUrl = discoverConnection ()
+    let client = createClient log name serviceUrl
+    DynamoStoreClient(client, tableNameFallback)
+
+let connectWithFallback log =
+    let name, serviceUrl = discoverConnection ()
+    let client = createClient log name serviceUrl
+    DynamoStoreClient(client, tableName, fallbackTableName = tableNameFallback)
+
+type StoreContext = DynamoStoreContext
+type StoreCategory<'E, 'S> = DynamoStoreCategory<'E, 'S, obj>
+#else
+[<AutoOpen>]
 module Equinox.CosmosStore.Integration.CosmosFixtures
 
 open Equinox.CosmosStore
@@ -44,6 +88,7 @@ type DocStoreCollection() =
 
 type StoreContext = CosmosStoreContext
 type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, obj>
+#endif
 
 let createPrimaryContextIgnoreMissing client queryMaxItems tipMaxEvents ignoreMissing =
     StoreContext(client, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
