@@ -8,8 +8,8 @@ open System
 
 // docker compose up dynamodb-local will stand up a simulator instance that this wiring can connect to
 let private tryRead env = Environment.GetEnvironmentVariable env |> Option.ofObj
-let private tableName = tryRead "EQUINOX_DYNAMO_TABLE" |> Option.defaultValue "equinox-test"
-let private tableNameFallback = tryRead "EQUINOX_DYNAMO_TABLE2" |> Option.defaultValue "equinox-test2"
+let private tableName = tryRead "EQUINOX_DYNAMO_TABLE" |> Option.defaultValue "equinox-test-2"
+let private tableNameFallback = tryRead "EQUINOX_DYNAMO_TABLE2" |> Option.defaultValue "equinox-test-2b"
 
 let discoverConnection () =
     match tryRead "EQUINOX_DYNAMO_CONNECTION" with

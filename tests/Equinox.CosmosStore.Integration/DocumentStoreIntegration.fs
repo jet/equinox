@@ -189,10 +189,14 @@ type Tests(testOutputHelper) =
                 && has sku21 21 && has sku22 22 @>
         // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
+#if !STORE_DYNAMO
         if eventsInTip then
             test <@ let c2 = List.choose conflict capture2.ExternalCalls
                     [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
                     && [EqxAct.Resync] = c2 @>
+#else
+        if false then ()
+#endif
         else
             test <@ let c2 = List.choose conflict capture2.ExternalCalls
                     [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
@@ -350,9 +354,15 @@ type Tests(testOutputHelper) =
                 && has sku21 21 && has sku22 22 @>
         // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
+#if STORE_DYNAMO // Failed conditions do not yield the conflicting state, so it needs to be a separate load
+        test <@ let c2 = List.choose conflict capture2.ExternalCalls
+                [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
+                && [EqxAct.Conflict] = c2 @>
+#else
         test <@ let c2 = List.choose conflict capture2.ExternalCalls
                 [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
                 && [EqxAct.Resync] = c2 @>
+#endif
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
