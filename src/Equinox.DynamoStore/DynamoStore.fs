@@ -466,20 +466,33 @@ module internal Sync =
                     t = DateTimeOffset.UtcNow
                 } : Unfold)
 
+// TODO remove when FSharp.AWS.DynamoDB merges support
+[<NoComparison; NoEquality>]
+type Throughput =
+    | OnDemand
+    | Provisioned of ProvisionedThroughput
+
 module Initialization =
 
-    let private prepare (client : IAmazonDynamoDB) tableName (maybeProvision : ProvisionedThroughput option) = async {
-        let! tc = TableContext.CreateAsync<Batch>(client, tableName, createIfNotExists = true, ?provisionedThroughput = maybeProvision)
-        match maybeProvision with None -> () | Some pt -> do! tc.UpdateProvisionedThroughputAsync pt }
+    let private prepare (client : IAmazonDynamoDB) tableName maybeThroughput =
+        TableContext.CreateAsync<Batch>(client, tableName, createIfNotExists = true, ?provisionedThroughput = maybeThroughput)
 
-    /// Verify the specified <c>tableName</c> is present and adheres to the correct schema
-    let verify (client : IAmazonDynamoDB) tableName = prepare client tableName None
+    /// Verify the specified <c>tableName</c> is present and adheres to the correct schema.
+    let verify (client : IAmazonDynamoDB) tableName = prepare client tableName None |> Async.Ignore
 
-    [<NoComparison; NoEquality>]
-    type Configuration = ProvisionedThroughput of ProvisionedThroughput
+    /// Create the specified <c>tableName</c> if it does not exist. Will throw if it exists but the schema mismatches.
+    let createIfNotExists (client : IAmazonDynamoDB) tableName = function
+        | Throughput.OnDemand -> failwith "TODO"
+        | Throughput.Provisioned throughput -> prepare client tableName (Some throughput) |> Async.Ignore
 
-    /// Provision (or re-provision) the specified table with the specified <c>Configuration</c>. Will throw if schema mismatches.
-    let initialize (client : IAmazonDynamoDB) tableName (ProvisionedThroughput pt) = prepare client tableName (Some pt)
+    /// Provision (or re-provision) the specified table with the specified <c>Throughput</c>. Will throw if schema mismatches.
+    let provision (client : IAmazonDynamoDB) tableName throughput = async {
+        match throughput with
+        | Throughput.OnDemand -> failwith "TODO"
+        | Throughput.Provisioned throughput ->
+            let! tc = prepare client tableName (Some throughput)
+            // TODO remove try/catch and replace with (upcoming) TableContext.ProvisionAsync
+            try do! tc.UpdateProvisionedThroughputAsync throughput with _ -> () }
 
     /// Holds Container state, coordinating initialization activities
     type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> Async<unit>) =
@@ -869,11 +882,11 @@ module Internal =
 
 /// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
 type QueryOptions
-    (   /// Max number of Batches to return per paged query response. Default: 10.
+    (   // Max number of Batches to return per paged query response. Default: 10.
         [<O; D(null)>]?maxItems : int,
-        /// Dynamic version of `maxItems`, allowing one to react to dynamic configuration changes. Default: use `maxItems` value.
+        // Dynamic version of `maxItems`, allowing one to react to dynamic configuration changes. Default: use `maxItems` value.
         [<O; D(null)>]?getMaxItems : unit -> int,
-        /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
+        // Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
         [<O; D(null)>]?maxRequests) =
     let getMaxItems = defaultArg getMaxItems (fun () -> defaultArg maxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
@@ -895,7 +908,7 @@ type TipOptions
         [<O; D(null)>]?writeRetryPolicy) =
     /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
     member val MaxEvents : int = maxEvents
-    /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
+    /// Maximum serialized size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
     member val MaxJsonLength = defaultArg maxJsonLength 30_000
     /// Whether to inhibit throwing when events are missing, but no fallback Container has been supplied
     member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
@@ -964,7 +977,6 @@ type StoreClient(container : Container, fallback : Container option, query : Que
 #endif
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EventBody, 'context>) =
-//    let tryDecode e = codec.TryDecode e |> Option.map (fun x -> x.ToArray())
     member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin) : Async<StreamToken * 'state> = async {
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds)
         return token, fold initial events }
@@ -1032,11 +1044,32 @@ module internal Caching =
 
 namespace Equinox.DynamoStore
 
-open Amazon.DynamoDBv2
 open Equinox.Core
 open Equinox.DynamoStore.Core
-open FsCodec
 open System
+
+/// Manages Creating an IAmazonDynamoDB
+type DynamoStoreConnector(credentials : Amazon.Runtime.AWSCredentials, clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig) =
+
+    new (serviceUrl, accessKey, secretKey) =
+        let credentials = Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey)
+        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl)
+        DynamoStoreConnector(credentials, clientConfig)
+
+    member _.Endpoint = clientConfig.ServiceURL
+
+    member _.CreateClient() = new Amazon.DynamoDBv2.AmazonDynamoDBClient(credentials, clientConfig) :> Amazon.DynamoDBv2.IAmazonDynamoDB
+
+[<NoComparison; NoEquality>]
+type ConnectMode =
+    | SkipVerify
+    | Verify
+    | CreateIfNotExists of Throughput
+module ConnectMode =
+    let apply client tableName = function
+        | SkipVerify -> async { () }
+        | Verify -> Initialization.verify client tableName
+        | CreateIfNotExists throughput -> Initialization.createIfNotExists client tableName throughput
 
 /// Holds all relevant state for a Store
 /// - The Client (IAmazonDynamoDB). there should be a single one of these per process, plus an optional fallback one for pruning scenarios.
@@ -1050,10 +1083,10 @@ type DynamoStoreClient
     let primaryTableToSecondary = defaultArg primaryContainerToSecondary id
     // Index of tableName -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string, Initialization.ContainerInitializerGuard>()
-    new(client : IAmazonDynamoDB, tableName : string,
-        [<O; D(null)>]?fallbackClient : IAmazonDynamoDB,
-        // Table name to use for fallback/archive store. Default: use same as <c>tableName</c> via <c>fallbackClient</c>.
-        [<O; D(null)>]?fallbackTableName) =
+    new(client : Amazon.DynamoDBv2.IAmazonDynamoDB, tableName : string,
+        // Table name to use for fallback/archive store. Default: (if <c>fallbackClient</c> specified) use same <c>tableName</c> but via <c>fallbackClient</c>
+        [<O; D(null)>]?fallbackTableName,
+        [<O; D(null)>]?fallbackClient : Amazon.DynamoDBv2.IAmazonDynamoDB) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
         let primaryContainer t = Container.Create(client, t)
@@ -1072,25 +1105,13 @@ type DynamoStoreClient
         let g = containerInitGuards.GetOrAdd(tableName, createContainerInitializerGuard)
         g, streamName
 
-#if SYNC_CONNECT_REQUIRED // Not sure if DDB SDK exposes such a facility
-    /// Connect to an Equinox.DynamoStore in the specified Container
-    /// NOTE: The returned DynamoStoreClient instance should be held as a long-lived singleton within the application.
-    /// <example><code>
-    /// let createStoreClient (connectionString, database, container) =
-    ///     let connector = DynamoStoreConnector(Discovery.ConnectionString connectionString, System.TimeSpan.FromSeconds 5., 2, System.TimeSpan.FromSeconds 5.)
-    ///     DynamoStoreClient.Connect(connector.CreateAndInitialize, database, container)
-    /// </code></example>
-    static member Connect(connectContainers, tableName : string) : Async<DynamoStoreClient> = async {
-        let! client = connectContainers [| tableName |]
-        return DynamoStoreClient(client, tableName) }
-
-    /// Connect to a hot-warm DynamoStore pair within the same account
-    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where necessary.
-    /// NOTE: The returned DynamoStoreClient instance should be held as a long-lived singleton within the application.
-    static member Connect(connectContainers, primaryTableName : string, fallbackTableName) : Async<DynamoStoreClient> = async {
-        let! client = connectContainers [| primaryTableName; fallbackTableName |]
-        return DynamoStoreClient(client, primaryTableName, fallbackTableName = fallbackTableName) }
-#endif
+    /// Connect to an Equinox.DynamoStore in the specified Table
+    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where that is provided
+    static member Connect(client, tableName : string, ?fallbackTableName, ?mode : ConnectMode) : Async<DynamoStoreClient> = async {
+        let init t = ConnectMode.apply client t (defaultArg mode ConnectMode.Verify)
+        do! init tableName
+        match fallbackTableName with None -> () | Some fallbackTable -> do! init fallbackTable
+        return DynamoStoreClient(client, tableName, ?fallbackTableName = fallbackTableName) }
 
 /// Defines a set of related access policies for a given Table, together with a Containers map defining mappings from (category, streamId) to (tableName, streamName)
 type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOptions) =
@@ -1197,7 +1218,7 @@ type DynamoStoreCategory<'event, 'state, 'context>
             let cosmosCat = Category<'event, 'state, 'context>(container, codec)
             Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
-    let resolve (StreamName.CategoryAndId (categoryName, streamId)) =
+    let resolve (FsCodec.StreamName.CategoryAndId (categoryName, streamId)) =
         let container, streamName, maybeContainerInitializationGate = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
         resolveCategory (categoryName, container), streamName, maybeContainerInitializationGate
     let empty = Token.create Position.fromKnownEmpty, initial

@@ -17,6 +17,9 @@ type StreamResolver(storage) =
         | Storage.StorageConfig.Cosmos (store, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.CosmosStore.AccessStrategy.Snapshot snapshot else Equinox.CosmosStore.AccessStrategy.Unoptimized
             Equinox.CosmosStore.CosmosStoreCategory<'event,'state,_>(store, codec.ToJsonElementCodec(), fold, initial, caching, accessStrategy).Resolve
+        | Storage.StorageConfig.Dynamo (store, caching, unfolds) ->
+            let accessStrategy = if unfolds then Equinox.DynamoStore.AccessStrategy.Snapshot snapshot else Equinox.DynamoStore.AccessStrategy.Unoptimized
+            Equinox.DynamoStore.DynamoStoreCategory<'event,'state,_>(store, codec, fold, initial, caching, accessStrategy).Resolve
         | Storage.StorageConfig.Es (context, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.EventStoreDb.AccessStrategy.RollingSnapshots snapshot |> Some else None
             Equinox.EventStoreDb.EventStoreCategory<'event,'state,_>(context, codec, fold, initial, ?caching = caching, ?access = accessStrategy).Resolve

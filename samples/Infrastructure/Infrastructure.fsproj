@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MySql\Equinox.SqlStreamStore.MySql.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.Postgres\Equinox.SqlStreamStore.Postgres.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.CosmosStore\Equinox.CosmosStore.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.DynamoStore\Equinox.DynamoStore.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.EventStoreDb\Equinox.EventStoreDb.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.MemoryStore\Equinox.MemoryStore.fsproj" />
     <ProjectReference Include="..\Store\Domain\Domain.fsproj" />
@@ -25,7 +26,7 @@
   <ItemGroup>
     <PackageReference Include="Argu" Version="6.1.1" />
     <PackageReference Include="Destructurama.FSharp" Version="1.2.0" />
-    <PackageReference Include="FSharp.Core" Version="4.5.4" />
+    <PackageReference Include="FSharp.Core" Version="4.7.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="6.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />

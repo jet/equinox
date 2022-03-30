@@ -16,6 +16,7 @@ type Arguments =
     | [<AltCommandLine "-U">]                                   Unfolds
     | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Storage.Cosmos.Arguments>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Dynamo   of ParseResults<Storage.Dynamo.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">]  MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">]  MySql    of ParseResults<Storage.Sql.My.Arguments>
@@ -27,6 +28,7 @@ type Arguments =
             | Cached ->                     "employ a 50MB cache."
             | Unfolds ->                    "employ a store-appropriate Rolling Snapshots and/or Unfolding strategy."
             | Cosmos _ ->                   "specify storage in CosmosDB (--help for options)."
+            | Dynamo _ ->                   "specify storage in DynamoDB (--help for options)."
             | Es _ ->                       "specify storage in EventStore (--help for options)."
             | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
             | MsSql _ ->                    "specify storage in Sql Server (--help for options)."
@@ -68,6 +70,10 @@ type Startup() =
                 let storeLog = createStoreLog <| sargs.Contains Storage.Cosmos.Arguments.VerboseStore
                 log.Information("CosmosDB Storage options: {options:l}", options)
                 Storage.Cosmos.config log (cache, unfolds) (Storage.Cosmos.Info sargs), storeLog
+            | Some (Dynamo sargs) ->
+                let storeLog = createStoreLog <| sargs.Contains Storage.Dynamo.Arguments.VerboseStore
+                log.Information("DynamoDB Storage options: {options:l}", options)
+                Storage.Dynamo.config log (cache, unfolds) (Storage.Dynamo.Info sargs), storeLog
             | Some (Es sargs) ->
                 let storeLog = createStoreLog <| sargs.Contains Storage.EventStore.Arguments.VerboseStore
                 log.Information("EventStoreDB Storage options: {options:l}", options)
