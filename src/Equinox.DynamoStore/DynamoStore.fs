@@ -117,9 +117,6 @@ module internal Position =
     let fromI (i : int64) = { index = i; etag = None }
     /// If we have strong reason to suspect a stream is empty, we won't have an etag (and Writer Stored Procedure special cases this)
     let fromKnownEmpty = fromI 0L
-    /// Just Do It mode
-    let fromAppendAtEnd = fromI -1L // sic - needs to yield -1
-    let fromEtag (value : string) = { fromI -2L with etag = Some value }
     /// Create Position from Tip record context (facilitating 1 RU reads)
     let fromTip (x : Tip) = { index = x.n; etag = match x.etag with null -> None | x -> Some x }
     /// If we encounter the tip (id=-1) item/document, we're interested in its etag so we can re-sync for 1 RU
@@ -156,7 +153,7 @@ type IRetryPolicy = abstract member Execute : (int -> Async<'T>) -> Async<'T>
 module Log =
 
     /// <summary>Name of Property used for <c>Metric</c> in <c>LogEvent</c>s.</summary>
-    let [<Literal>] PropertyTag = "dynamoEvt"
+    let [<Literal>] PropertyTag = "ddbEvt"
 
     [<NoEquality; NoComparison>]
     type Measurement =
@@ -178,7 +175,6 @@ module Log =
         | QueryResponse of Direction * Measurement
 
         | SyncSuccess of Measurement
-        | SyncResync of Measurement
         | SyncConflict of Measurement
 
         /// Summarizes outcome of request to trim batches from head of a stream and events in Tip
@@ -227,7 +223,7 @@ module Log =
         | true, SerilogScalar (:? Metric as e) -> Some e
         | _ -> None
     [<RequireQualifiedAccess>]
-    type Operation = Tip | Tip404 | Tip304 | Query | Write | Resync | Conflict | Prune | Delete | Trim
+    type Operation = Tip | Tip404 | Tip304 | Query | Write | Conflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
         | Metric.Tip s                        -> Op (Operation.Tip, s)
         | Metric.TipNotFound s                -> Op (Operation.Tip404, s)
@@ -237,7 +233,6 @@ module Log =
         | Metric.QueryResponse (direction, s) -> QueryRes (direction, s)
 
         | Metric.SyncSuccess s                -> Op (Operation.Write, s)
-        | Metric.SyncResync s                 -> Op (Operation.Resync, s)
         | Metric.SyncConflict s               -> Op (Operation.Conflict, s)
 
         | Metric.Prune (_, s)                 -> Op (Operation.Prune, s)
@@ -265,7 +260,6 @@ module Log =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
                 static member val internal Read = Counter.Create() with get, set
                 static member val internal Write = Counter.Create() with get, set
-                static member val internal Resync = Counter.Create() with get, set
                 static member val internal Conflict = Counter.Create() with get, set
                 static member val internal Prune = Counter.Create() with get, set
                 static member val internal Delete = Counter.Create() with get, set
@@ -273,7 +267,6 @@ module Log =
                 static member Restart() =
                     LogSink.Read <- Counter.Create()
                     LogSink.Write <- Counter.Create()
-                    LogSink.Resync <- Counter.Create()
                     LogSink.Conflict <- Counter.Create()
                     LogSink.Prune <- Counter.Create()
                     LogSink.Delete <- Counter.Create()
@@ -291,7 +284,6 @@ module Log =
                             | QueryRes (_direction,          _)        ->   ()
                             | Op (Operation.Write,            RcsMs m)  ->  LogSink.Write.Ingest m
                             | Op (Operation.Conflict,         RcsMs m)  ->  LogSink.Conflict.Ingest m
-                            | Op (Operation.Resync,           RcsMs m)  ->  LogSink.Resync.Ingest m
                             | Op (Operation.Prune,            RcsMs m)  ->  LogSink.Prune.Ingest m
                             | PruneRes                        _        ->   ()
                             | Op (Operation.Delete,           RcsMs m)  ->  LogSink.Delete.Ingest m
@@ -304,7 +296,6 @@ module Log =
             let stats =
               [ "Read", Stats.LogSink.Read
                 "Write", Stats.LogSink.Write
-                "Resync", Stats.LogSink.Resync
                 "Conflict", Stats.LogSink.Conflict
                 "Prune", Stats.LogSink.Prune
                 "Delete", Stats.LogSink.Delete
@@ -349,7 +340,7 @@ type Container(tip : TableContext<Tip>) =
         with :? ResourceNotFoundException -> return None }
     member _.EnumBatches(stream, minN, maxI, backwards, batchSize) : AsyncSeq<int * StopwatchInterval * Batch[]> = // TODO add emission of timing and request charges
         let table = batches.Value
-        let compile ex = table.Template.PrecomputeConditionalExpr ex
+        let compile = table.Template.PrecomputeConditionalExpr
         let kc = match maxI with
                  | Some maxI -> compile <@ fun (b : Batch) -> b.p = stream && b.i < maxI @>
                  | None -> compile <@ fun (b : Batch) -> b.p = stream @>
@@ -368,21 +359,14 @@ type Container(tip : TableContext<Tip>) =
     member _.Tip = tip
 
 type ConsumedMetrics = { read : float; write : float }
-type ReadResult<'T> = Found of 'T | NotFound | NotModified
-// TODO remove Conflicts/e unless there turns out to be a way to get them
-[<NoEquality; NoComparison>]
-type SyncResponse = { etag : string; n : int64; conflicts : Unfold[]; e : Event[] }
-
-[<RequireQualifiedAccess>]
-type internal SyncExp = Version of int64 | Etag of string //| Any
-
 module internal Sync =
 
-    // NB don't nest in a private module, or serialization will fail miserably ;)
+    [<RequireQualifiedAccess>]
+    type internal Exp = Version of int64 | Etag of string
+
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Result =
         | Written of Position
-        | Conflict of Position * events : ITimelineEvent<EventBody>[]
         | ConflictUnknown
 
     let private run (container : Container, stream : string) (maxEventsInTip, maxStringifyLen) (exp, req : Tip)
@@ -402,26 +386,25 @@ module internal Sync =
                                              u = req.u } @>
                 container.Tip.UpdateItemAsync(container.TableKeyForStreamTip stream, updateExpr, condExpr)
             match exp with
-            | SyncExp.Version 0L
-            | SyncExp.Etag null ->
+            | Exp.Version 0L
+            | Exp.Etag null ->
                 let condExpr : Quotations.Expr<Tip -> bool> = <@ fun t -> NOT_EXISTS t.etag @>
                 let item : Tip = { p = stream; i = Tip.WellKnownI; n = eventCount; e = req.e; u = req.u; etag = updEtag }
                 let! _tk = container.Tip.PutItemAsync(item, condExpr)
                 return item
-            | SyncExp.Etag eetag ->
+            | Exp.Etag eetag ->
                 let condExpr : Quotations.Expr<Tip -> bool> = <@ fun t -> t.etag = eetag @>
                 return! update condExpr
-            | SyncExp.Version ever ->
+            | Exp.Version ever ->
                 let condExpr : Quotations.Expr<Tip -> bool> = <@ fun t -> t.n = ever @>
-                return! update condExpr
-            (*| SyncExp.Any -> return failwith "E_NOTIMPL Position.fromAppendAtEnd" *)}
+                return! update condExpr }
         try let! updated = execute
             let newPos = { index = updated.n; etag = Some updated.etag }
             return { read = 0.; write = 0. }, Result.Written newPos
         with :? ConditionalCheckFailedException ->
             return { read = 0. ; write = 0. }, Result.ConflictUnknown }
 
-    let private logged (container, stream) (maxEventsInTip, maxStringifyLen) (exp : SyncExp, req : Tip) (log : ILogger)
+    let private logged (container, stream) (maxEventsInTip, maxStringifyLen) (exp : Exp, req : Tip) (log : ILogger)
         : Async<Result> = async {
         let! t, (ru, result) = run (container, stream) (maxEventsInTip, maxStringifyLen) (exp, req) |> Stopwatch.Time
         let verbose = log.IsEnabled Serilog.Events.LogEventLevel.Debug
@@ -432,17 +415,13 @@ module internal Sync =
             let inline propConflict log = log |> Log.prop "conflict" true |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in req.e -> x.c }))
             if verbose then log |> Log.propEvents (Enum.Events req) |> Log.propDataUnfolds req.u else log
             |> match exp with
-                | SyncExp.Etag et ->     Log.prop "expectedEtag" et
-                | SyncExp.Version ev ->  Log.prop "expectedVersion" ev
-//TODO                | SyncExp.Any ->         Log.prop "expectedVersion" -1
+                | Exp.Etag et ->     Log.prop "expectedEtag" et
+                | Exp.Version ev ->  Log.prop "expectedVersion" ev
             |> match result with
                 | Result.Written pos ->
                     Log.prop "nextExpectedVersion" pos >> Log.event (Log.Metric.SyncSuccess (mkMetric ru))
                 | Result.ConflictUnknown ->
                     propConflict >> Log.event (Log.Metric.SyncConflict (mkMetric ru))
-                | Result.Conflict (pos', xs) ->
-                    if verbose then Log.propData "conflicts" xs else id
-                    >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Metric.SyncResync (mkMetric ru))
         log.Information("EqxDynamo {action:l} {stream} {count}+{ucount} {ms:f1}ms {rru}/{wru}RU {bytes:n0}b {exp}",
             "Sync", stream, count, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru.read, ru.write, bytes, exp)
         return result }
@@ -504,24 +483,26 @@ module Initialization =
 
 module internal Tip =
 
+    [<RequireQualifiedAccess>]
+    type Res<'T> = Found of 'T | NotFound | NotModified
     let private get (container : Container, stream : string) (maybePos : Position option) = async {
         let expectedEtag = maybePos |> Option.bind (fun x -> x.etag)
         let rc = { read = 0.; write = 0. }
         match! container.TryGetTip stream with
-        | Some { etag = fe } when Option.ofObj fe = expectedEtag -> return rc, ReadResult.NotModified
-        | Some t -> return rc, ReadResult.Found t
-        | None -> return rc, ReadResult.NotFound }
+        | Some { etag = fe } when Option.ofObj fe = expectedEtag -> return rc, Res.NotModified
+        | Some t -> return rc, Res.Found t
+        | None -> return rc, Res.NotFound }
     let private loggedGet (get : Container * string -> Position option -> Async<_>) (container, stream) (maybePos : Position option) (log : ILogger) = async {
         let log = log |> Log.prop "stream" stream
-        let! t, (ru : ConsumedMetrics, res : ReadResult<Tip>) = get (container, stream) maybePos |> Stopwatch.Time
+        let! t, (ru : ConsumedMetrics, res : Res<_>) = get (container, stream) maybePos |> Stopwatch.Time
         let verbose = log.IsEnabled Events.LogEventLevel.Debug
         let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { table = container.TableName; stream = stream; interval = t; bytes = bytes; count = count; rru = ru.read; wru = ru.write })
         match res with
-        | ReadResult.NotModified ->
+        | Res.NotModified ->
             (log 0 0 Log.Metric.TipNotModified).Information("EqxDynamo {action:l} {stream} {res} {ms}ms {rru}/{wru}RU", "Tip", stream, 304, (let e = t.Elapsed in e.TotalMilliseconds), ru.read, ru.write)
-        | ReadResult.NotFound ->
+        | Res.NotFound ->
             (log 0 0 Log.Metric.TipNotFound).Information("EqxDynamo {action:l} {stream} {res} {ms}ms {rru}/{wru}RU", "Tip", stream, 404, (let e = t.Elapsed in e.TotalMilliseconds), ru.read, ru.write)
-        | ReadResult.Found tip ->
+        | Res.Found tip ->
             let log =
                 let count, bytes = tip.u.Length, if verbose then Enum.Unfolds tip.u |> Log.batchLen else 0
                 log bytes count Log.Metric.Tip
@@ -535,9 +516,9 @@ module internal Tip =
     let tryLoad (log : ILogger) retryPolicy containerStream (maybePos : Position option, maxIndex) : Async<Result> = async {
         let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log
         match res with
-        | ReadResult.NotModified -> return Result.NotModified
-        | ReadResult.NotFound -> return Result.NotFound
-        | ReadResult.Found tip ->
+        | Res.NotModified -> return Result.NotModified
+        | Res.NotFound -> return Result.NotFound
+        | Res.Found tip ->
             let minIndex = maybePos |> Option.map (fun x -> x.index)
             return Result.Found (Position.fromTip tip, tip.Base, Enum.EventsAndUnfolds(tip, ?maxIndex = maxIndex, ?minIndex = minIndex) |> Array.ofSeq) }
 
@@ -780,10 +761,10 @@ module Prune =
         }
         let trimTip expectedI count = async {
             match! container.TryReadItem<Tip>(PartitionKey stream, Tip.WellKnownDocumentId) with
-            | _, ReadResult.NotModified -> return failwith "unexpected NotModified; no etag supplied"
-            | _, ReadResult.NotFound -> return failwith "unexpected NotFound"
-            | _, ReadResult.Found tip when tip.i <> expectedI -> return failwithf "Concurrent write detected; Expected i=%d actual=%d" expectedI tip.i
-            | tipRu, ReadResult.Found tip ->
+            | _, Tip.Res.NotModified -> return failwith "unexpected NotModified; no etag supplied"
+            | _, Tip.Res.NotFound -> return failwith "unexpected NotFound"
+            | _, Tip.Res.Found tip when tip.i <> expectedI -> return failwithf "Concurrent write detected; Expected i=%d actual=%d" expectedI tip.i
+            | tipRu, Tip.Res.Found tip ->
 
             let tip = { tip with i = tip.i + int64 count; e = Array.skip count tip.e }
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = Nullable false, IfMatchEtag = tip.etag)
@@ -875,7 +856,7 @@ module Token =
 module Internal =
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type InternalSyncResult = Written of StreamToken | ConflictUnknown | Conflict of Position * ITimelineEvent<EventBody>[]
+    type InternalSyncResult = Written of StreamToken | ConflictUnknown
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type LoadFromTokenResult<'event> = Unchanged | Found of StreamToken * 'event[]
@@ -967,7 +948,6 @@ type StoreClient(container : Container, fallback : Container option, query : Que
     member internal _.Sync(log, stream, exp, batch : Tip) : Async<InternalSyncResult> = async {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
         match! Sync.batch log (tip.WriteRetryPolicy, tip.MaxEvents, tip.MaxJsonLength) (container, stream) (exp, batch) with
-        | Sync.Result.Conflict (pos', events) -> return InternalSyncResult.Conflict (pos', events)
         | Sync.Result.ConflictUnknown -> return InternalSyncResult.ConflictUnknown
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create pos') }
 
@@ -989,17 +969,16 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         let encode e = codec.Encode(context, e)
         let exp, events, eventsEncoded, projectionsEncoded =
             match mapUnfolds with
-            | Choice1Of3 () ->     SyncExp.Version pos.index, events, Seq.map encode events |> Array.ofSeq, Seq.empty
-            | Choice2Of3 unfold -> SyncExp.Version pos.index, events, Seq.map encode events |> Array.ofSeq, Seq.map encode (unfold events state')
+            | Choice1Of3 () ->     Sync.Exp.Version pos.index, events, Seq.map encode events |> Array.ofSeq, Seq.empty
+            | Choice2Of3 unfold -> Sync.Exp.Version pos.index, events, Seq.map encode events |> Array.ofSeq, Seq.map encode (unfold events state')
             | Choice3Of3 transmute ->
                 let events', unfolds = transmute events state'
-                SyncExp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
+                Sync.Exp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
         let compressor = id // (body : byte[]) : EventBody = new System.IO.MemoryStream(body) // TODO if compressUnfolds then JsonCompressedBase64Converter.Compress else JsonHelper.fixup
         let projections = Sync.mkUnfold compressor baseIndex projectionsEncoded
         let batch = Sync.mkBatch streamName eventsEncoded projections
         match! store.Sync(log, streamName, exp, batch) with
-        | InternalSyncResult.Conflict (pos', tipEvents) -> return SyncResult.Conflict (cat.Reload(log, streamName, streamToken, state, fold, isOrigin, (pos', pos.index, tipEvents)))
         | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (cat.Reload(log, streamName, streamToken, state, fold, isOrigin))
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
@@ -1235,8 +1214,6 @@ open FSharp.Control
 [<RequireQualifiedAccess; NoComparison>]
 type AppendResult<'t> =
     | Ok of pos : 't
-    // TOCONSIDER remove
-    | Conflict of index : 't * conflictingEvents : ITimelineEvent<EventBody>[]
     | ConflictUnknown
 
 /// Encapsulates the core facilities Equinox.DynamoStore offers for operating directly on Events in Streams.
@@ -1317,17 +1294,9 @@ type EventsContext internal
         | None -> ()
         | Some init -> do! init ()
         let batch = Sync.mkBatch stream events Seq.empty
-        match! store.Sync(log, stream, SyncExp.Version position.index, batch) with
+        match! store.Sync(log, stream, Sync.Exp.Version position.index, batch) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok pos
-        | InternalSyncResult.Conflict (pos, events) -> return AppendResult.Conflict (pos, events)
         | InternalSyncResult.ConflictUnknown -> return AppendResult.ConflictUnknown }
-
-    /// Low level, non-idempotent call appending events to a stream without a concurrency control mechanism in play
-    /// NB Should be used sparingly; Equinox.Decider enables building equivalent equivalent idempotent handling with minimal code.
-    member x.NonIdempotentAppend(stream, events : IEventData<_>[]) : Async<Position> = async {
-        match! x.Sync(stream, Position.fromAppendAtEnd, events) with
-        | AppendResult.Ok token -> return token
-        | x -> return x |> sprintf "Conflict despite it being disabled %A" |> invalidOp }
 
 #if PRUNE_SUPPORT
     member _.Prune(stream, index) : Async<int * int * int64> =
@@ -1347,7 +1316,6 @@ module Events =
     let private stripSyncResult (f : Async<AppendResult<Position>>) : Async<AppendResult<int64>> = async {
         match! f with
         | AppendResult.Ok (PositionIndex index)-> return AppendResult.Ok index
-        | AppendResult.Conflict (PositionIndex index, events) -> return AppendResult.Conflict (index, events)
         | AppendResult.ConflictUnknown -> return AppendResult.ConflictUnknown }
     let private stripPosition (f : Async<Position>) : Async<int64> = async {
         let! (PositionIndex index) = f
@@ -1381,13 +1349,6 @@ module Events =
     /// and a failure is returned.
     let append (ctx : EventsContext) (streamName : string) (index : int64) (events : IEventData<_>[]) : Async<AppendResult<int64>> =
         ctx.Sync(ctx.StreamId streamName, Position.fromI index, events) |> stripSyncResult
-
-    /// Appends a batch of events to a stream at the the present Position without any conflict checks.
-    /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
-    /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
-    /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx : EventsContext) (streamName : string) (events : IEventData<_>[]) : Async<int64> =
-        ctx.NonIdempotentAppend(ctx.StreamId streamName, events) |> stripPosition
 
 #if PRUNE_SUPPORT
     /// Requests deletion of events up and including the specified <c>index</c>.

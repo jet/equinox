@@ -44,14 +44,20 @@ module SerilogHelpers =
         | Metric.QueryResponse (Direction.Backward, _) -> EqxAct.ResponseBackward
 
         | Metric.SyncSuccess _ -> EqxAct.Append
+#if !STORE_DYNAMO
         | Metric.SyncResync _ -> EqxAct.Resync
+#endif
         | Metric.SyncConflict _ -> EqxAct.Conflict
 
         | Metric.Prune _ -> EqxAct.Prune
         | Metric.PruneResponse _ -> EqxAct.PruneResponse
         | Metric.Delete _ -> EqxAct.Delete
         | Metric.Trim _ -> EqxAct.Trim
+#if !STORE_DYNAMO
     let (|Load|Write|Resync|Prune|Delete|Trim|Response|) = function
+#else
+    let (|Load|Write|Prune|Delete|Trim|Response|) = function
+#endif
         | Metric.Tip s
         | Metric.TipNotFound s
         | Metric.TipNotModified s
@@ -61,7 +67,9 @@ module SerilogHelpers =
 
         | Metric.SyncSuccess s
         | Metric.SyncConflict s -> Write s
+#if !STORE_DYNAMO
         | Metric.SyncResync s -> Resync s
+#endif
 
         | Metric.Prune (_, s) -> Prune s
         | Metric.PruneResponse s -> Response s
@@ -76,7 +84,9 @@ module SerilogHelpers =
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|TotalRequestCharge|ResponseBreakdown|) = function
         | Load (Rc rc) | Write (Rc rc)
+#if !STORE_DYNAMO
         | Resync (Rc rc)
+#endif
         | Delete (Rc rc) | Trim (Rc rc) | Prune (Rc rc) as e -> TotalRequestCharge (e, rc)
         | Response _ -> ResponseBreakdown
     let (|EqxEvent|_|) (logEvent : LogEvent) : Metric option =
