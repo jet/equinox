@@ -519,7 +519,7 @@ let main argv =
             | Run rargs ->
                 let reportFilename = args.GetResult(LogFile, programName + ".log") |> fun n -> System.IO.FileInfo(n).FullName
                 LoadTest.run log (verbose, verboseConsole, maybeSeq) reportFilename rargs
-            | _ -> failwith "Please specify a valid subcommand :- init, table, config, dump, stats or run"
+            | _ -> failwith "Please specify a valid subcommand :- init, initAws, config, dump, stats or run"
             0
         with e -> log.Debug(e, "Fatal error; exiting"); reraise ()
     with :? ArguParseException as e -> eprintfn "%s" e.Message; 1
