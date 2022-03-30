@@ -114,13 +114,13 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
       - The implementation uses [the excellent `FSharp.AWS.DynamoDB` library](https://github.com/fsprojects/FSharp.AWS.DynamoDB)) (which wraps the standard AWS `AWSSDK.DynamoDBv2` SDK Package)
       - While `CosmosStore` requires event bodies (as of V4) to be supplied as `System.Text.Json.JsonElement`s (in order that events can be included in the Document items as JSON), `DynamoStore` accepts event bodies as arbitrary `ReadOnlyMemory<byte>` BLOBs (the AWS SDK round-trips such blobs as a `MemoryStream` and does not impose any restrictions on the blobs in terms of required format). 
     - Azure CosmosDB's ChangeFeed API intrinsically supports replays of all the events in a Store, whereas the DynamoDB Streams facility only retains 24h of events
-      - [ ] have `Propulsion.DynamoStore` provide a Lambda drive from DynamoDB Streams to Index events 
-      - [ ] have `Propulsion.DynamoStore` consume said Index as `Propulsion.CosmosStore` consumes the CosmosDB Change Feed 
+      - [ ] have `Propulsion.DynamoStore` provide a Lambda driven by DynamoDB Streams to Index events ... 
+      - [ ] .. have `Propulsion.DynamoStore` consume said Index akin to how `Propulsion.CosmosStore` consumes the CosmosDB Change Feed 
 
 # Currently Supported Data Stores
 
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db): contains some fragments of code dating back to 2016, however [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking (squash-merged in [#42](https://github.com/jet/equinox/pull/42)). The V2 and V3 release lines are being used in production systems. (The V3 release provides support for significantly more efficient packing of events ([storing events in the 'Tip'](https://github.com/jet/equinox/pull/251))).
-- [Amazon Dynamo DB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html): Shares most features with `Equinox.CosmosStore` ([ported in #321](https://github.com/jet/equinox/pull/321)).
+- [Amazon Dynamo DB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html): Shares most features with `Equinox.CosmosStore` ([ported in #321](https://github.com/jet/equinox/pull/321)). See above for detailed comparison.
 - [EventStoreDB](https://eventstore.org/): this codebase itself has been in production since 2017 (see commit history), with key elements dating back to approx 2016. Current versions require EventStoreDB Server editions `21.10` or later, and communicate over the modern gRPC interface.
 - [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore): bindings for the powerful and widely used SQL-backed Event Storage system, derived from the EventStoreDB adapter. [See SqlStreamStore docs](https://sqlstreamstore.readthedocs.io/en/latest/#introduction). :pray: [@rajivhost](https://github.com/rajivhost)
 - `MemoryStore`: In-memory store (volatile, for unit or integration test purposes). Fulfils the full contract Equinox imposes on a store, but without I/O costs [(it's ~100 LOC wrapping a `ConcurrentDictionary`)](https://github.com/jet/equinox/blob/master/src/Equinox.MemoryStore/MemoryStore.fs). Also enables [take serialization/deserialization out of the picture](https://github.com/jet/FsCodec#boxcodec) in tests.
@@ -153,7 +153,7 @@ The components within this repository are delivered as multi-targeted Nuget pack
 - `Equinox.CosmosStore` [![CosmosStore NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.svg)](https://www.nuget.org/packages/Equinox.CosmosStore/): Azure CosmosDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore) on `Equinox.Core`, `Microsoft.Azure.Cosmos >= 3.25`, `FsCodec`, `System.Text.Json`, `FSharp.Control.AsyncSeq >= 2.0.23`)
 - `Equinox.CosmosStore.Prometheus` [![CosmosStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.CosmosStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.CosmosStore`, `prometheus-net >= 3.6.0`)
 - `Equinox.DynamoStore` [![DynamoStore NuGet](https://img.shields.io/nuget/v/Equinox.DynamoStore.svg)](https://www.nuget.org/packages/Equinox.DynamoStore/): Amazon DynamoDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RC costs, patterned after `Equinox.CosmosStore`. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore) on `Equinox.Core`, `FSharp.AWS.DynamoDB >= 0.9.4-beta`, `FsCodec`, `FSharp.Control.AsyncSeq >= 2.0.23`)
-- `Equinox.DynamoStore.Prometheus` [![DynamoStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.DynamoStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.DynamoStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.DynamoStore`, `prometheus-net >= 3.6.0`)
+- [ ] `Equinox.DynamoStore.Prometheus` [![DynamoStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.DynamoStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.DynamoStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.DynamoStore`, `prometheus-net >= 3.6.0`)
 - `Equinox.EventStore` [![EventStore NuGet](https://img.shields.io/nuget/v/Equinox.EventStore.svg)](https://www.nuget.org/packages/Equinox.EventStore/): [EventStoreDB](https://eventstore.org/) Adapter designed to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.EventStore) on `Equinox.Core`, `EventStore.Client >= 22.0.0-preview`, `FSharp.Control.AsyncSeq >= 2.0.23`), EventStore Server version `21.10` or later)
 - `Equinox.EventStoreDb` [![EventStoreDb NuGet](https://img.shields.io/nuget/v/Equinox.EventStoreDb.svg)](https://www.nuget.org/packages/Equinox.EventStoreDb/): Production-strength [EventStoreDB](https://eventstore.org/) Adapter. ([depends](https://www.fuget.org/packages/Equinox.EventStoreDb) on `Equinox.Core`, `EventStore.Client.Grpc.Streams` >= `22.0.0, `FSharp.Control.AsyncSeq` v `2.0.23`, EventStore Server version `21.10` or later)
 - `Equinox.SqlStreamStore` [![SqlStreamStore NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore/): [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) Adapter derived from `Equinox.EventStore` - provides core facilities (but does not connect to a specific database; see sibling `SqlStreamStore`.* packages). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore) on `Equinox.Core`, `FsCodec`, `SqlStreamStore >= 1.2.0-beta.8`, `FSharp.Control.AsyncSeq`)
@@ -181,7 +181,7 @@ Equinox does not focus on projection logic - each store brings its own strengths
     - can render events from any of the stores via `eqx dump`.
     - incorporates a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
     - can configure indices in Azure CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](https://github.com/jet/equinox#store-data-in-azure-cosmosdb).
-  - can create tables in DynamoDB for `Equinox.DynamoStore` via `eqx initAws`.
+  - can create tables in Amazon DynamoDB for `Equinox.DynamoStore` via `eqx initAws`.
     - can initialize databases for `SqlStreamStore` via `eqx config`
 
 ## Starter Project Templates and Sample Applications 
@@ -494,7 +494,13 @@ eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionst
 <a name="dynamodb"></a>
 ### Use [Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html)
 
-1. export env vars (see [AWS CLI UserGuide for guidance](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html))
+DynamoDB is supported in the samples and the `eqx` tool equivalent to the CosmosDB support as described:
+- being able to supply `dynamo` source to `eqx run` wherever `cosmos` works, e.g. `eqx run -t cart -f 50 -d 5 -CU dynamo -s http://localhost:8000 -t TableName`
+- being able to supply `dynamo` flag to `eqx dump`, e.g. `eqx dump -CU -s "Favorites-ab25cc9f24464d39939000aeb37ea11a" dynamo`
+- being able to supply `dynamo` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- dynamo -s http://localhost:8000`
+- being able to supply `dynamo` flag to `eqx initAws` command e.g. `eqx initAws -rru 10 -wru 10 dynamo -t TableName`
+
+1. The tooling and samples in this repo default to using the following environment variables (see [AWS CLI UserGuide for more detailed guidance as to specific configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html))
 
     ```zsh
     $env:EQUINOX_DYNAMO_SERVICE_URL="https://dynamodb.us-west-2.amazonaws.com" # Simulator: "http://localhost:8000"
@@ -503,30 +509,28 @@ eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionst
     $env:EQUINOX_DYNAMO_TABLE="equinox-test"
     $env:EQUINOX_DYNAMO_TABLE2="equinox-test-archive"
     ```
-- being able to supply `dynamo` source to `eqx run` wherever `cosmos` works, e.g. `eqx run -t cart -f 50 -d 5 -CU dynamo -s http://localhost:8000 -sa AKIAIOSFODNN7EXAMPLE -ss AwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" -t equinox-test`
-- being able to supply `dynamo` flag to `eqx dump`, e.g. `eqx dump -CU -s "Favoritesab25cc9f24464d39939000aeb37ea11a" dynamo`
-- being able to supply `dynamo` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- dynamo -s http://localhost:8000`
-- being able to supply `dynamo` flag to `eqx table` command e.g. `eqx table -rru 10 -wru 10 dynamo -t TableName`
 
-```zsh
-cd ~/code/equinox
+2. Tour of the tools/samples:
 
-# start the simulator at http://localhost:8000 and an admin console at http://localhost:8001/
-docker compose up dynamodb-local dynamodb-admin -d
+    ```zsh
+    cd ~/code/equinox
 
-# Establish the table
-dotnet run --project tools/Equinox.Tool -- table -rru 10 -wru 10 dynamo -t TableName
+    # start the simulator at http://localhost:8000 and an admin console at http://localhost:8001/
+    docker compose up dynamodb-local dynamodb-admin -d
 
-# run a benchmark
-dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -CU dynamo
+    # Establish the table
+    dotnet run --project tools/Equinox.Tool -- initAws -rru 10 -wru 10 dynamo -t TableName
 
-# run the webserver
-dotnet run --project samples/Web/ -- dynamo -t TableName
+    # run a benchmark
+    dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -CU dynamo
 
-# run a benchmark connecting to the webserver
-eqx run -t saveforlater -f 50 -d 5 -CU web
-eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx run output) 
-```
+    # run the webserver
+    dotnet run --project samples/Web/ -- dynamo -t TableName
+
+    # run a benchmark connecting to the webserver
+    eqx run -t saveforlater -f 50 -d 5 -CU web
+    eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx run output) 
+    ```
 
 ### BENCHMARKS
 
@@ -930,7 +934,7 @@ I'd present the fact that Equinox:
 - was initially generalised and extracted from working code using ESDB in (by most measures) a successful startup written in a mix of F# and C# by the usual mix of devs, experience levels, awareness of event sourcing patterns and language/domain backgrounds
 - for a long time only had its MemoryStore as the thing to force it to be store agnostic
 - did not fundamentally change to add idiomatic support for a Document database (CosmosDB)
-- will not fundamentally change to add idiomatic support for DynamoDB
+- did not change to add idiomatic support for DynamoDB
 - can and has been used at every stage in an e-commerce pipeline
 - is presently aligning pretty neatly with diverse domains without any changes/extensions, both for me and others
 
@@ -1017,9 +1021,9 @@ Next, I'd like to call out some things that Equinox is focused on delivering, re
     - to a single consistency control unit (stream) at a time (underlying stores in general rarely provide support for more than that, but more importantly, a huge number of use cases in a huge number of systems have natural mappings to this without anyone having to do evil things or write thousands of lines of code)
     - no major focus on blind-writes, even if there is low level support and/or things work if you go direct and do it out of band)
     - provide a good story for managing the writing of the first event in a stream in an efficient manner
-  - have a story for providing a changefeed
-    - typically via a matching Propulsion library (fully ordered for SSS and ESDB, ordered at stream level for CosmosDB, similar for DynamoDB if/when that happens)
-  - have a story for caching and efficient usage of the store
+  - have a story for providing a Change Feed
+    - typically via a matching Propulsion library (fully ordered for SSS and ESDB, ordered at stream level for CosmosDB and DynamoDB)
+  - have a story for caching and efficient usage of each store to the best degree possible
     - `Equinox.SqlStreamStore`
       - caching is supported and recommended to minimise reads
       - in-stream snapshots sometimes help but there are tradeoffs

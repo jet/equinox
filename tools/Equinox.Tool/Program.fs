@@ -25,8 +25,8 @@ type Arguments =
     | [<AltCommandLine "-S">]               LocalSeq
     | [<AltCommandLine "-l">]               LogFile of string
     | [<CliPrefix(CliPrefix.None); Last>]   Run of ParseResults<TestArguments>
-    | [<CliPrefix(CliPrefix.None); Last>]   Table of ParseResults<TableArguments>
     | [<CliPrefix(CliPrefix.None); Last>]   Init of ParseResults<InitArguments>
+    | [<CliPrefix(CliPrefix.None); Last>]   InitAws of ParseResults<TableArguments>
     | [<CliPrefix(CliPrefix.None); Last>]   Config of ParseResults<ConfigArguments>
     | [<CliPrefix(CliPrefix.None); Last>]   Stats of ParseResults<StatsArguments>
     | [<CliPrefix(CliPrefix.None); Last>]   Dump of ParseResults<DumpArguments>
@@ -37,8 +37,8 @@ type Arguments =
             | LocalSeq ->                   "Configures writing to a local Seq endpoint at http://localhost:5341, see https://getseq.net"
             | LogFile _ ->                  "specify a log file to write the result breakdown into (default: eqx.log)."
             | Run _ ->                      "Run a load test"
-            | Table _ ->                    "Initialize DynamoDB Table (supports `dynamo` stores; also handles RU/s provisioning adjustment)."
             | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
+            | InitAws _ ->                  "Initialize DynamoDB Table (supports `dynamo` stores; also handles RU/s provisioning adjustment)."
             | Config _ ->                   "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events (supports `cosmos` stores)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
@@ -512,8 +512,8 @@ let main argv =
         use log = createDomainLog verbose verboseConsole maybeSeq
         try match args.GetSubCommand() with
             | Init iargs -> CosmosInit.containerAndOrDb log iargs |> Async.RunSynchronously
+            | InitAws targs -> DynamoInit.table log targs |> Async.RunSynchronously
             | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
-            | Table targs -> DynamoInit.table log targs |> Async.RunSynchronously
             | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
             | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
             | Run rargs ->
