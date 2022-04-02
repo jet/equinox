@@ -94,7 +94,11 @@ type Tests(testOutputHelper) =
         let service = Cart.createServiceWithoutOptimization log context
         let expectedResponses n =
             let tipItem = 1
+#if STORE_DYNAMO // For Cosmos, we supply a full query and it notices it is at the end - for Dynamo, another query is required
+            let finalEmptyPage = 1
+#else
             let finalEmptyPage = 0
+#endif
             let expectedItems = tipItem + (if eventsInTip then n / 2 else n) + finalEmptyPage
             max 1 (int (ceil (float expectedItems / float queryMaxItems)))
 

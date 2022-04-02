@@ -73,7 +73,7 @@ type Batch =
 
         /// base 'i' value for the Events held herein
         [<RangeKey>]
-        i : int64 // TipI for the Tip
+        i : int64 // tipMagicI for the Tip
 
         /// `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
         n : int64
@@ -319,7 +319,7 @@ type Container(context : TableContext<Batch>) =
             yield i, t, res.Records
             match res.LastEvaluatedKey with
             | None -> ()
-            | le -> return aux (i + 1, le)
+            | le -> yield! aux (i + 1, le)
         }
         aux (0, None)
     member _.Context = context
@@ -511,7 +511,7 @@ module internal Query =
         let batches, ru = Array.ofSeq res, { read = 0.; write = 0. }
         let unwrapBatch (b : Batch) =
             Enum.Events(b, ?minIndex = minIndex, ?maxIndex = maxIndex)
-            |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
+            |> if direction = Direction.Backward then Seq.rev else id
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
         let count, bytes = events.Length, Batch.allBytes batches
         let reqMetric = Log.metric container.TableName stream t bytes count ru
@@ -526,12 +526,12 @@ module internal Query =
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, ru
 
-    let private logQuery direction queryMaxItems (container : Container, stream) interval (responsesCount, events : ITimelineEvent<EventBody>[]) n (rc : ConsumedMetrics) (log : ILogger) =
+    let private logQuery direction (container : Container, stream) interval (responsesCount, events : ITimelineEvent<EventBody>[]) n (rc : ConsumedMetrics) (log : ILogger) =
         let count, bytes = events.Length, Event.arrayBytes events
         let reqMetric = Log.metric container.TableName stream interval bytes count rc
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
-        (log |> Log.prop "bytes" bytes |> Log.prop "queryMaxItems" queryMaxItems |> Log.event evt).Information(
+        (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "EqxDynamo {action:l} {stream} v{n} {count}/{responses} {ms}ms {rru}/{wru}RU",
             action, stream, n, count, responsesCount, tms interval, rc.read, rc.write)
 
@@ -603,7 +603,7 @@ module internal Query =
             | Some { index = max }, _
             | _, Some (_, max) -> max + 1L
             | None, None -> 0L
-        log |> logQuery direction maxItems (container, stream) t (responseCount, raws) version ru
+        log |> logQuery direction (container, stream) t (responseCount, raws) version ru
         match minMax, maybeTipPos with
         | Some (i, m), _ -> return Some { found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }
         | None, Some { index = tipI } -> return Some { found = found; minIndex = tipI; next = tipI; maybeTipPos = maybeTipPos; events = [||] }
@@ -653,7 +653,7 @@ module internal Query =
         finally
             let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             let t = StopwatchInterval(startTicks, endTicks)
-            log |> logQuery direction maxItems (container, stream) t (i, allEvents.ToArray()) -1L { read = rru; write = wru } }
+            log |> logQuery direction (container, stream) t (i, allEvents.ToArray()) -1L { read = rru; write = wru } }
     type [<NoComparison; NoEquality>] LoadRes = Pos of Position | Empty | Next of int64
     let toPosition = function Pos p -> Some p | Empty -> None | Next _ -> failwith "unexpected"
     /// Manages coalescing of spans of events obtained from various sources:
