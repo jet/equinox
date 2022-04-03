@@ -86,8 +86,8 @@ type Batch =
 
         /// Marker on which compare-and-swap operations on Tip are predicated
         etag : string }
-    /// Computes base Index for the Item (`i` can bear the the magic value TipI when the Item is the Tip)
 module Batch =
+    /// Computes base Index for the Item (`i` can bear the the magic value TipI when the Item is the Tip)
     let baseIndex x = x.n - x.e.LongLength
     let tipMagicI = int64 Int32.MaxValue
     let baseBytes (x : Batch) = 80 + x.p.Length + String.length x.etag + Event.arrayBytes x.e
@@ -300,21 +300,23 @@ type Metrics() =
             w <- w + x.WriteCapacityUnits
     member _.Consumed = { read = r; write = w }
 
-type Container(tableName, context : _ -> TableContext<Batch>) =
+type Container(tableName, createContext : (RequestMetrics -> unit) -> TableContext<Batch>) =
     /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly
     static member Create(client, tableName) =
-        let createContext collector = TableContext.CreateAsync<_>(client, tableName, verifyTable = false, metricsCollector = collector) |> Async.RunSynchronously
+        let createContext collector = TableContext.CreateAsync<Batch>(client, tableName, verifyTable = false, metricsCollector = collector) |> Async.RunSynchronously
         Container(tableName, createContext)
 
     member _.TableKeyForStreamTip(stream) =
         TableKey.Combined(stream, Batch.tipMagicI)
-    member x.TryGetTip(stream) = async {
+    member x.TryGetTip(stream : string) = async {
         let ru = Metrics()
-        try let! item = (context ru.Add).GetItemAsync(x.TableKeyForStreamTip stream) // TODO replace with TryGetItemAsync when released
+        let context = createContext ru.Add
+        let pk = x.TableKeyForStreamTip stream
+        try let! item = context.GetItemAsync(pk) // TODO replace with TryGetItemAsync when released
             return Some item, ru.Consumed
         with :? ResourceNotFoundException -> return None, ru.Consumed }
     member _.EnumBatches(stream, minN, maxI, backwards, batchSize) : AsyncSeq<int * StopwatchInterval * Batch[] * ConsumedMetrics> =
-        let compile = (context ignore).Template.PrecomputeConditionalExpr
+        let compile = (createContext ignore).Template.PrecomputeConditionalExpr
         let kc = match maxI with
                  | Some maxI -> compile <@ fun (b : Batch) -> b.p = stream && b.i < maxI @>
                  | None -> compile <@ fun (b : Batch) -> b.p = stream @>
@@ -324,7 +326,7 @@ type Container(tableName, context : _ -> TableContext<Batch>) =
         let rec aux (i, lastEvaluated) = asyncSeq {
             // TOCONSIDER could avoid projecting `p`
             let ru = Metrics()
-            let context = context ru.Add
+            let context = createContext ru.Add
             let! t, res = context.QueryPaginatedAsync(kc, ?filterCondition = fc, limit = batchSize, ?exclusiveStartKey = lastEvaluated, scanIndexForward = not backwards) |> Stopwatch.Time
             yield i, t, res.Records, ru.Consumed
             match res.LastEvaluatedKey with
@@ -332,7 +334,7 @@ type Container(tableName, context : _ -> TableContext<Batch>) =
             | le -> yield! aux (i + 1, le)
         }
         aux (0, None)
-    member _.Context(collector) = context collector
+    member _.Context(collector) = createContext collector
     member _.TableName = tableName
 
 /// Represents the State of the Stream for the purposes of deciding how to map a Sync request to DynamoDB operations
@@ -360,9 +362,10 @@ module internal Sync =
 
     let private run (container : Container, stream : string) (tipEmpty, exp, n', calve : Event[], append : Event[], unfolds)
         : Async<ConsumedMetrics * Result> = async {
-        let batchDoesNotExistCondition : Quotations.Expr<Batch -> bool> = <@ fun t -> NOT_EXISTS t.i @>
         let metrics = Metrics()
-        let insertItem item = container.Context(metrics.Add).PutItemAsync(item, batchDoesNotExistCondition) |> Async.Ignore
+        let context = container.Context(metrics.Add)
+        let batchDoesNotExistCondition : Quotations.Expr<Batch -> bool> = <@ fun t -> NOT_EXISTS t.i @>
+        let insertItem item = context.PutItemAsync(item, batchDoesNotExistCondition) |> Async.Ignore
         let updEtag = let g = Guid.NewGuid() in g.ToString "N"
         let tipEventCount = append.LongLength
         let insertTip index = async {
@@ -383,7 +386,7 @@ module internal Sync =
                                              etag = updEtag
                                              u = unfolds } @>
                 else    <@ fun t -> { t with etag = updEtag; u = unfolds } @>
-            container.Context(metrics.Add).UpdateItemAsync(container.TableKeyForStreamTip stream, updateExpr, condExpr)
+            context.UpdateItemAsync(container.TableKeyForStreamTip stream, updateExpr, condExpr)
         let updateTip freshTipIndex =
             match exp with
             | Exp.Version 0L
@@ -396,7 +399,7 @@ module internal Sync =
             if calve.Length > 0 then async {
                 let calfEventCount = calve.LongLength
                 let tipIndex = n' - tipEventCount
-                do! insertItem { p = stream; i = tipIndex - calfEventCount; n = tipIndex; e = calve; u = [||]; etag = "_" }
+                do! insertItem { p = stream; i = tipIndex - calfEventCount; n = tipIndex; e = calve; u = null; etag = null } // TODO remove etag, u
                 return! updateTip tipIndex }
             else updateTip 0L
         try let! updated = execute
@@ -469,7 +472,7 @@ module internal Tip =
     [<RequireQualifiedAccess>]
     type Res<'T> = Found of 'T | NotFound | NotModified
     let private get (container : Container, stream : string) (maybePos : Position option) = async {
-        match! container.TryGetTip(stream, ignore) with
+        match! container.TryGetTip(stream) with
         | Some { etag = fe }, rc when fe = Position.toEtag maybePos -> return rc, Res.NotModified
         | Some t, rc -> return rc, Res.Found t
         | None, rc -> return rc, Res.NotFound }

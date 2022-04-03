@@ -3,7 +3,9 @@
 module Equinox.DynamoStore.Integration.CosmosFixtures
 
 open Amazon.DynamoDBv2
+open Amazon.DynamoDBv2.Model
 open Equinox.DynamoStore
+open Equinox.DynamoStore.Core
 open System
 
 // docker compose up dynamodb-local will stand up a simulator instance that this wiring can connect to
@@ -38,6 +40,24 @@ let connectWithFallback log =
     let name, serviceUrl = discoverConnection ()
     let client = createClient log name serviceUrl
     DynamoStoreClient(client, tableName, fallbackTableName = tableNameFallback)
+
+// Prepares the two required tables that the test lea on via connectPrimary/Secondary/WithFallback
+type DynamoTablesFixture() =
+
+    interface Xunit.IAsyncLifetime with
+        member _.InitializeAsync() =
+            let name, serviceUrl = discoverConnection ()
+            let client = createClient Serilog.Log.Logger name serviceUrl
+            let throughput = ProvisionedThroughput (100L, 100L)
+            let throughput = Core.Throughput.Provisioned throughput
+            DynamoStoreClient.Connect(client, tableName, fallbackTableName = tableNameFallback, mode = CreateIfNotExists throughput)
+            |> Async.StartImmediateAsTask
+            :> System.Threading.Tasks.Task
+        member _.DisposeAsync() = task { () }
+
+[<Xunit.CollectionDefinition "DocStore">]
+type DocStoreCollection() =
+    interface Xunit.ICollectionFixture<DynamoTablesFixture>
 
 type StoreContext = DynamoStoreContext
 type StoreCategory<'E, 'S> = DynamoStoreCategory<'E, 'S, obj>
