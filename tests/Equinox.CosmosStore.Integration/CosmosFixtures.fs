@@ -11,7 +11,7 @@ open System
 // docker compose up dynamodb-local will stand up a simulator instance that this wiring can connect to
 let private tryRead env = Environment.GetEnvironmentVariable env |> Option.ofObj
 let private tableName = tryRead "EQUINOX_DYNAMO_TABLE" |> Option.defaultValue "equinox-test"
-let private tableNameFallback = tryRead "EQUINOX_DYNAMO_TABLE2" |> Option.defaultValue "equinox-test-archive"
+let private archiveTableName = tryRead "EQUINOX_DYNAMO_TABLE_ARCHIVE" |> Option.defaultValue "equinox-test-archive"
 
 let discoverConnection () =
     match tryRead "EQUINOX_DYNAMO_CONNECTION" with
@@ -34,14 +34,14 @@ let connectPrimary log =
 let connectArchive log =
     let name, serviceUrl = discoverConnection ()
     let client = createClient log name serviceUrl
-    DynamoStoreClient(client, tableNameFallback)
+    DynamoStoreClient(client, archiveTableName)
 
 let connectWithFallback log =
     let name, serviceUrl = discoverConnection ()
     let client = createClient log name serviceUrl
-    DynamoStoreClient(client, tableName, fallbackTableName = tableNameFallback)
+    DynamoStoreClient(client, tableName, archiveTableName = archiveTableName)
 
-// Prepares the two required tables that the test lea on via connectPrimary/Secondary/WithFallback
+// Prepares the two required tables that the test lea on via connectPrimary/Archive/WithFallback
 type DynamoTablesFixture() =
 
     interface Xunit.IAsyncLifetime with
@@ -50,7 +50,7 @@ type DynamoTablesFixture() =
             let client = createClient Serilog.Log.Logger name serviceUrl
             let throughput = ProvisionedThroughput (100L, 100L)
             let throughput = Core.Throughput.Provisioned throughput
-            DynamoStoreClient.Connect(client, tableName, fallbackTableName = tableNameFallback, mode = CreateIfNotExists throughput)
+            DynamoStoreClient.Connect(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
             |> Async.StartImmediateAsTask
             :> System.Threading.Tasks.Task
         member _.DisposeAsync() = task { () }

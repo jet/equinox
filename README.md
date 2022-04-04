@@ -508,7 +508,7 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
     $env:EQUINOX_DYNAMO_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
     $env:EQUINOX_DYNAMO_SECRET_ACCESS_KEY="AwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
     $env:EQUINOX_DYNAMO_TABLE="equinox-test"
-    $env:EQUINOX_DYNAMO_TABLE2="equinox-test-archive"
+    $env:EQUINOX_DYNAMO_TABLE_ARCHIVE="equinox-test-archive"
     ```
 
 2. Tour of the tools/samples:

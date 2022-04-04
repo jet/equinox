@@ -142,7 +142,7 @@ module Dynamo =
         | [<AltCommandLine "-sa">]      AccessKey of string
         | [<AltCommandLine "-ss">]      SecretKey of string
         | [<AltCommandLine "-t">]       Table of string
-        | [<AltCommandLine "-t2">]      Table2 of string
+        | [<AltCommandLine "-ta">]      ArchiveTable of string
         | [<AltCommandLine "-te">]      TipMaxEvents of int
         | [<AltCommandLine "-tl">]      TipMaxJsonLength of int
         | [<AltCommandLine "-b">]       QueryMaxItems of int
@@ -156,7 +156,7 @@ module Dynamo =
                 | AccessKey _ ->        "specify an access key id for a Dynamo account. (optional if environment variable " + ACCESS_KEY + " specified)"
                 | SecretKey _ ->        "specify a secret access key for a Dynamo account. (optional if environment variable " + SECRET_KEY + " specified)"
                 | Table _ ->            "specify a table name for the primary store. (optional if environment variable " + TABLE + " specified)"
-                | Table2 _ ->           "specify a table name for the secondary store. Default: No fallback store"
+                | ArchiveTable _ ->     "specify a table name for the Archive. Default: Do not attempt to look in an Archive store as a Fallback to locate pruned events."
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: 256"
                 | TipMaxJsonLength _ -> "specify maximum length of JSON to hold in Tip before calving off to a frozen Batch. Default: 30,000"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
@@ -167,7 +167,7 @@ module Dynamo =
         member val Connector =          DynamoStoreConnector(serviceUrl, accessKey, secretKey)
 
         member val Table =              args.TryGetResult Table      |> defaultWithEnvVar TABLE         "Table"
-        member x.Table2 =               args.TryGetResult Table2
+        member val ArchiveTable =       args.TryGetResult ArchiveTable
 
 //        member x.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
 //        member x.Retries =              args.GetResult(Retries,1)
@@ -180,9 +180,9 @@ module Dynamo =
         log.Information("DynamoDB {name:l} {endpoint} Table {table}", role, endpoint, table)
     let createStoreClient (log : ILogger) (a : Info) =
         let client = a.Connector.CreateClient()
-        let storeClient = DynamoStoreClient(client, a.Table, ?fallbackTableName = a.Table2)
+        let storeClient = DynamoStoreClient(client, a.Table, ?archiveTableName = a.ArchiveTable)
         logTable log a.Connector.Endpoint "Primary" a.Table
-        match a.Table2 with None -> () | Some t2 -> logTable log a.Connector.Endpoint "Secondary" t2
+        match a.ArchiveTable with None -> () | Some at -> logTable log a.Connector.Endpoint "Archive" at
         storeClient
     let config (log : ILogger) (cache, unfolds) (a : Info) =
         let storeClient = createStoreClient log a

@@ -671,11 +671,11 @@ module internal Query =
     /// Manages coalescing of spans of events obtained from various sources:
     /// 1) Tip Data and/or Conflicting events
     /// 2) Querying Primary for predecessors of what's obtained from 1
-    /// 2) Querying Secondary for predecessors of what's obtained from 1
+    /// 3) Querying Archive for predecessors of what's obtained from 2
     let load (log : ILogger) (minIndex, maxIndex) (tip : ScanResult<'event> option)
             (primary : int64 option * int64 option -> Async<ScanResult<'event> option>)
             // Choice1Of2 -> indicates whether it's acceptable to ignore missing events; Choice2Of2 -> Fallback store
-            (secondary : Choice<bool, int64 option * int64 option -> Async<ScanResult<'event> option>>)
+            (fallback : Choice<bool, int64 option * int64 option -> Async<ScanResult<'event> option>>)
             : Async<Position option * 'event[]> = async {
         let minI = defaultArg minIndex 0L
         match tip with
@@ -698,26 +698,26 @@ module internal Query =
                     |> fun log -> match maxIndex with None -> log | Some mi -> log |> Log.prop "maxIndex" mi)
                     .Debug(message)
 
-        match primary, secondary with
-        | Some { found = true }, _ -> return toPosition pos, events // origin found in primary, no need to look in secondary
-        | Some { minIndex = i }, _ when i <= minI -> return toPosition pos, events // primary had required earliest event Index, no need to look at secondary
+        match primary, fallback with
+        | Some { found = true }, _ -> return toPosition pos, events // origin found in primary, no need to look in fallback
+        | Some { minIndex = i }, _ when i <= minI -> return toPosition pos, events // primary had required earliest event Index, no need to look at fallback
         | None, _ when Option.isNone tip -> return toPosition pos, events // initial load where no documents present in stream
         | _, Choice1Of2 allowMissing ->
-            logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
+            logMissing (minIndex, i) "Origin event not found; no Archive Table supplied"
             if allowMissing then return toPosition pos, events
-            else return failwithf "Origin event not found; no secondary container supplied"
-        | _, Choice2Of2 secondary ->
+            else return failwithf "Origin event not found; no Archive Table supplied"
+        | _, Choice2Of2 fallback ->
 
         let maxIndex = match primary with Some p -> Some p.minIndex | None -> maxIndex // if no batches in primary, high water mark from tip is max
-        let! secondary = secondary (minIndex, maxIndex)
+        let! fallback = fallback (minIndex, maxIndex)
         let events =
-            match secondary with
+            match fallback with
             | Some s -> Array.append s.events events
             | None -> events
-        match secondary with
+        match fallback with
         | Some { minIndex = i } when i <= minI -> ()
         | Some { found = true } -> ()
-        | _ -> logMissing (minIndex, maxIndex) "Origin event not found in secondary container"
+        | _ -> logMissing (minIndex, maxIndex) "Origin event not found in Archive Table"
         return toPosition pos, events }
 
 #if PRUNE_SUPPORT
@@ -871,7 +871,7 @@ type TipOptions
         maxEvents,
         // Maximum serialized size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
         [<O; D(null)>]?maxJsonLength,
-        // Inhibit throwing when events are missing, but no fallback Container has been supplied. Default: false.
+        // Inhibit throwing when events are missing, but no fallback Table has been supplied. Default: false.
         [<O; D(null)>]?ignoreMissingEvents,
         [<O; D(null)>]?readRetryPolicy,
         [<O; D(null)>]?writeRetryPolicy) =
@@ -886,7 +886,7 @@ type TipOptions
     member val MaxEvents : int = maxEvents
     /// Maximum serialized size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
     member val MaxBytes = defaultArg maxJsonLength 30_000
-    /// Whether to inhibit throwing when events are missing, but no fallback Container has been supplied
+    /// Whether to inhibit throwing when events are missing, but no Archive Table has been supplied as a fallback
     member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
 
     member val ReadRetryPolicy = readRetryPolicy
@@ -908,7 +908,7 @@ type StoreClient(container : Container, fallback : Container option, query : Que
         let walkFallback =
             match fallback with
             | None -> Choice1Of2 ignoreMissing
-            | Some f -> Choice2Of2 (walk (log |> Log.prop "secondary" true) f)
+            | Some f -> Choice2Of2 (walk (log |> Log.prop "fallback" true) f)
 
         let log = log |> Log.prop "stream" stream
         let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log container) walkFallback
@@ -1074,28 +1074,28 @@ type DynamoStoreClient
     (   // Facilitates custom mapping of Stream Category Name to underlying Table and Stream names
         categoryAndStreamIdToTableAndStreamNames : string * string -> string * string,
         createContainer : string -> Container,
-        createSecondaryContainer : string -> Container option,
-        [<O; D(null)>]?primaryContainerToSecondary : string -> string) =
-    let primaryTableToSecondary = defaultArg primaryContainerToSecondary id
+        createFallbackContainer : string -> Container option,
+        [<O; D(null)>]?primaryTableToArchive : string -> string) =
+    let primaryTableToSecondary = defaultArg primaryTableToArchive id
     // Index of tableName -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string, Initialization.ContainerInitializerGuard>()
     new(client : Amazon.DynamoDBv2.IAmazonDynamoDB, tableName : string,
-        // Table name to use for fallback/archive store. Default: (if <c>fallbackClient</c> specified) use same <c>tableName</c> but via <c>fallbackClient</c>
-        [<O; D(null)>]?fallbackTableName,
-        [<O; D(null)>]?fallbackClient : Amazon.DynamoDBv2.IAmazonDynamoDB) =
+        // Table name to use for archive store. Default: (if <c>archiveClient</c> specified) use same <c>tableName</c> but via <c>archiveClient</c>
+        [<O; D(null)>]?archiveTableName,
+        [<O; D(null)>]?archiveClient : Amazon.DynamoDBv2.IAmazonDynamoDB) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
         let primaryContainer t = Container.Create(client, t)
-        let secondaryContainer =
-            if Option.isNone fallbackClient && Option.isNone fallbackTableName then fun _ -> None
-            else fun t -> Some (Container.Create(defaultArg fallbackClient client, defaultArg fallbackTableName t))
-        DynamoStoreClient(catAndStreamToTableStream, primaryContainer, secondaryContainer)
+        let fallbackContainer =
+            if Option.isNone archiveClient && Option.isNone archiveTableName then fun _ -> None
+            else fun t -> Some (Container.Create(defaultArg archiveClient client, defaultArg archiveTableName t))
+        DynamoStoreClient(catAndStreamToTableStream, primaryContainer, fallbackContainer)
     // TOCONSIDER remove this facility unless we end up using it
     member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
         let createContainerInitializerGuard tableName =
             let init = Some (fun _container -> async { () })
             let fallbackTableName = primaryTableToSecondary tableName
-            let primaryContainer, fallbackContainer = createContainer tableName, createSecondaryContainer fallbackTableName
+            let primaryContainer, fallbackContainer = createContainer tableName, createFallbackContainer fallbackTableName
             Initialization.ContainerInitializerGuard(primaryContainer, fallbackContainer, ?initContainer = init)
         let tableName, streamName = categoryAndStreamIdToTableAndStreamNames (categoryName, streamId)
         let g = containerInitGuards.GetOrAdd(tableName, createContainerInitializerGuard)
@@ -1103,11 +1103,11 @@ type DynamoStoreClient
 
     /// Connect to an Equinox.DynamoStore in the specified Table
     /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where that is provided
-    static member Connect(client, tableName : string, ?fallbackTableName, ?mode : ConnectMode) : Async<DynamoStoreClient> = async {
+    static member Connect(client, tableName : string, ?archiveTableName, ?mode : ConnectMode) : Async<DynamoStoreClient> = async {
         let init t = ConnectMode.apply client t (defaultArg mode ConnectMode.Verify)
         do! init tableName
-        match fallbackTableName with None -> () | Some fallbackTable -> do! init fallbackTable
-        return DynamoStoreClient(client, tableName, ?fallbackTableName = fallbackTableName) }
+        match archiveTableName with None -> () | Some archiveTable-> do! init archiveTable
+        return DynamoStoreClient(client, tableName, ?archiveTableName = archiveTableName) }
 
 /// Defines a set of related access policies for a given Table, together with a Containers map defining mappings from (category, streamId) to (tableName, streamName)
 type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOptions) =
@@ -1116,7 +1116,7 @@ type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOption
             tipMaxEvents,
             // Maximum serialized event size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
             [<O; D null>]?tipMaxJsonLength,
-            // Inhibit throwing when events are missing, but no fallback Table has been supplied
+            // Inhibit throwing when events are missing, but no Archive Table has been supplied as a fallback
             [<O; D null>]?ignoreMissingEvents,
             // Max number of Batches to return per paged query response. Default: 10.
             [<O; D null>]?queryMaxItems,
