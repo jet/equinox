@@ -25,7 +25,7 @@
     <PackageReference Include="FSharp.Core" Version="4.7.2" />
 
     <PackageReference Include="FsCodec" Version="2.3.1" />
-    <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.9.3-beta" />
+    <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.9.4-beta" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
   </ItemGroup>
 

@@ -312,9 +312,8 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
         let ru = Metrics()
         let context = createContext ru.Add
         let pk = x.TableKeyForStreamTip stream
-        try let! item = context.GetItemAsync(pk) // TODO replace with TryGetItemAsync when released
-            return Some item, ru.Consumed
-        with :? ResourceNotFoundException -> return None, ru.Consumed }
+        let! item = context.TryGetItemAsync(pk)
+        return item, ru.Consumed }
     member _.EnumBatches(stream, minN, maxI, backwards, batchSize) : AsyncSeq<int * StopwatchInterval * Batch[] * ConsumedMetrics> =
         let compile = (createContext ignore).Template.PrecomputeConditionalExpr
         let kc = match maxI with
