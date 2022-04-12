@@ -143,8 +143,8 @@ module Dynamo =
         | [<AltCommandLine "-ss">]      SecretKey of string
         | [<AltCommandLine "-t">]       Table of string
         | [<AltCommandLine "-ta">]      ArchiveTable of string
+        | [<AltCommandLine "-tb">]      TipMaxBytes of int
         | [<AltCommandLine "-te">]      TipMaxEvents of int
-        | [<AltCommandLine "-tl">]      TipMaxJsonLength of int
         | [<AltCommandLine "-b">]       QueryMaxItems of int
         interface IArgParserTemplate with
             member a.Usage = a |> function
@@ -157,8 +157,8 @@ module Dynamo =
                 | SecretKey _ ->        "specify a secret access key for a Dynamo account. (optional if environment variable " + SECRET_KEY + " specified)"
                 | Table _ ->            "specify a table name for the primary store. (optional if environment variable " + TABLE + " specified)"
                 | ArchiveTable _ ->     "specify a table name for the Archive. Default: Do not attempt to look in an Archive store as a Fallback to locate pruned events."
-                | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: 256"
-                | TipMaxJsonLength _ -> "specify maximum length of JSON to hold in Tip before calving off to a frozen Batch. Default: 30,000"
+                | TipMaxBytes _ ->      "specify maximum number of bytes to hold in Tip before calving off to a frozen Batch. Default: 32K"
+                | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: limited by Max Bytes"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Info(args : ParseResults<Arguments>) =
         let serviceUrl =                args.TryGetResult ServiceUrl |> defaultWithEnvVar SERVICE_URL   "ServiceUrl"
@@ -172,8 +172,8 @@ module Dynamo =
 //        member x.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
 //        member x.Retries =              args.GetResult(Retries,1)
 //        member x.MaxRetryWaitTime =     args.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
-        member x.TipMaxEvents =         args.GetResult(TipMaxEvents, 256)
-        member x.TipMaxJsonLength =     args.GetResult(TipMaxJsonLength, 30_000)
+        member x.TipMaxEvents =         args.TryGetResult TipMaxEvents
+        member x.TipMaxBytes =          args.GetResult(TipMaxBytes, 32 * 1024)
         member x.QueryMaxItems =        args.GetResult(QueryMaxItems, 10)
 
     let logTable (log: ILogger) endpoint role table =
@@ -186,9 +186,9 @@ module Dynamo =
         storeClient
     let config (log : ILogger) (cache, unfolds) (a : Info) =
         let storeClient = createStoreClient log a
-        log.Information("DynamoStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
-                        a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
-        let context = DynamoStoreContext(storeClient, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength)
+        log.Information("DynamoStore Max Events in Tip: {maxTipBytes}b {maxTipEvents}e Items in Query: {queryMaxItems}",
+                        a.TipMaxEvents, a.TipMaxBytes, a.QueryMaxItems)
+        let context = DynamoStoreContext(storeClient, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems, ?tipMaxEvents = a.TipMaxEvents)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Dynamo (context, cacheStrategy, unfolds)
 

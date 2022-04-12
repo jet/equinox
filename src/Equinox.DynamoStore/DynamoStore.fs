@@ -814,8 +814,8 @@ module Prune =
                 "Prune", eventsDeleted, batches, lwm, tms pt, queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm
     }
-#endif
 
+#endif
 type [<NoComparison; NoEquality>] Token = { pos : Position option }
 module Token =
 
@@ -860,10 +860,10 @@ type QueryOptions
 /// - accumulation/retention of Events in Tip
 /// - retrying read and write operations for the Tip
 type TipOptions
-    (   // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
-        maxEvents,
-        // Maximum serialized size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
-        [<O; D(null)>]?maxJsonLength,
+    (   // Maximum serialized size to permit to accumulate in Tip before events get moved out to a standalone Batch. Default: 32K.
+        [<O; D(null)>]?maxBytes,
+        // Optional maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: limited by MaxBytes
+        [<O; D(null)>]?maxEvents,
         // Inhibit throwing when events are missing, but no fallback Table has been supplied. Default: false.
         [<O; D(null)>]?ignoreMissingEvents,
         [<O; D(null)>]?readRetryPolicy,
@@ -875,10 +875,10 @@ type TipOptions
 //        // Compress Data in non-Tip batches. Default: <c>true</c>.
 //        [<O; D null>]?compressCalvedData) =
 //    let compress = (compressUnfolds = Some true), (compressTipData = Some true), (compressCalvedData = Some true)
-    /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
-    member val MaxEvents : int = maxEvents
-    /// Maximum serialized size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
-    member val MaxBytes = defaultArg maxJsonLength 30_000
+    /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: limited by MaxBytes
+    member val MaxEvents : int option = maxEvents
+    /// Maximum serialized size to permit to accumulate in Tip before events get moved out to a standalone Batch. Default: 32K.
+    member val MaxBytes = defaultArg maxBytes 32 * 1024
     /// Whether to inhibit throwing when events are missing, but no Archive Table has been supplied as a fallback
     member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
 
@@ -950,7 +950,8 @@ type StoreClient(container : Container, fallback : Container option, query : Que
         if Array.isEmpty events && Array.isEmpty unfolds then invalidOp "Must write either events or unfolds."
         let cur = Position.flatten pos
         let calve, append =
-            if events.Length + cur.events.Length > tip.MaxEvents || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > tip.MaxBytes then
+            let eventOverflow = tip.MaxEvents |> Option.exists (fun limit -> events.Length + cur.events.Length > limit)
+            if eventOverflow || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > tip.MaxBytes then
                 let calfEvents, residualEvents = ResizeArray(events.Length + cur.events.Length), ResizeArray()
                 let mutable calfFull, calfSize = false, 1024
                 for e in Seq.append cur.events events do
@@ -967,8 +968,8 @@ type StoreClient(container : Container, fallback : Container option, query : Que
 #if PRUNE_SUPPORT
     member _.Prune(log, stream, index) =
         Prune.until log (container, stream) query.MaxItems index
-#endif
 
+#endif
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EventBody, 'context>) =
     member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin) : Async<StreamToken * 'state> = async {
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds)
@@ -979,9 +980,9 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     member cat.Sync(log, stream, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context) : Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
-        let encode e = codec.Encode(context, e)
-        let expVer = Position.toIndex >> Sync.Exp.Version
         let exp, events, eventsEncoded, unfoldsEncoded =
+            let encode e = codec.Encode(context, e)
+            let expVer = Position.toIndex >> Sync.Exp.Version
             match mapUnfolds with
             | Choice1Of3 () ->     expVer, events, Seq.map encode events |> Array.ofSeq, Seq.empty
             | Choice2Of3 unfold -> expVer, events, Seq.map encode events |> Array.ofSeq, Seq.map encode (unfold events state')
@@ -1108,17 +1109,17 @@ type DynamoStoreClient
 /// Defines a set of related access policies for a given Table, together with a Containers map defining mappings from (category, streamId) to (tableName, streamName)
 type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOptions) =
     new(    storeClient : DynamoStoreClient,
-            // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
-            tipMaxEvents,
-            // Maximum serialized event size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
-            [<O; D null>]?tipMaxJsonLength,
+            // Maximum serialized event size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 32K.
+            [<O; D null>]?maxBytes,
+            // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: limited by maxBytes
+            [<O; D null>]?tipMaxEvents,
             // Inhibit throwing when events are missing, but no Archive Table has been supplied as a fallback
             [<O; D null>]?ignoreMissingEvents,
             // Max number of Batches to return per paged query response. Default: 10.
             [<O; D null>]?queryMaxItems,
             // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
             [<O; D null>]?queryMaxRequests) =
-        let tipOptions = TipOptions(maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
+        let tipOptions = TipOptions( ?maxBytes = maxBytes, ?maxEvents = tipMaxEvents, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
         DynamoStoreContext(storeClient, tipOptions, queryOptions)
     member val StoreClient = storeClient
@@ -1307,10 +1308,10 @@ type EventsContext internal
         | InternalSyncResult.ConflictUnknown -> return AppendResult.ConflictUnknown }
 
 #if PRUNE_SUPPORT
+
     member _.Prune(stream, index) : Async<int * int * int64> =
         store.Prune(log, stream, index)
 #endif
-
 /// Provides mechanisms for building `EventData` records to be supplied to the `Events` API
 type EventData() =
     /// Creates an Event record, suitable for supplying to Append et al
