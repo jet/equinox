@@ -2,7 +2,6 @@
 
 open Argu
 open Domain.Infrastructure
-open Equinox.DynamoStore.Core
 open Equinox.Tool.Infrastructure
 open FSharp.Control
 open FSharp.UMX
@@ -378,6 +377,8 @@ module CosmosInit =
 
 module DynamoInit =
 
+    open Equinox.DynamoStore
+
     let table (log : ILogger) (args : ParseResults<TableArguments>) = async {
         match args.TryGetSubCommand() with
         | Some (TableArguments.Dynamo sa) ->
@@ -388,10 +389,10 @@ module DynamoInit =
             match throughput with
             | Some (rcu, wcu) ->
                 log.Information("Provisioning `Equinox.DynamoStore` Table {table} with {read}/{write}CU", tableName, rcu, wcu)
-                do! Equinox.DynamoStore.Core.Initialization.provision client tableName (Throughput.Provisioned (Amazon.DynamoDBv2.Model.ProvisionedThroughput(rcu, wcu)))
+                do! Core.Initialization.provision client tableName (Throughput.Provisioned (ProvisionedThroughput(rcu, wcu)))
             | None ->
                 log.Information("Provisioning `Equinox.DynamoStore` Table {table} with On-Demand capacity management", tableName)
-                do! Equinox.DynamoStore.Core.Initialization.provision client tableName Throughput.OnDemand
+                do! Core.Initialization.provision client tableName Throughput.OnDemand
         | _ -> failwith "please specify a `dynamo` endpoint" }
 
 module SqlInit =

@@ -3,7 +3,6 @@
 module Equinox.DynamoStore.Integration.CosmosFixtures
 
 open Amazon.DynamoDBv2
-open Amazon.DynamoDBv2.Model
 open Equinox.DynamoStore
 open Equinox.DynamoStore.Core
 open System
@@ -49,7 +48,7 @@ type DynamoTablesFixture() =
             let name, serviceUrl = discoverConnection ()
             let client = createClient Serilog.Log.Logger name serviceUrl
             let throughput = ProvisionedThroughput (100L, 100L)
-            let throughput = Core.Throughput.Provisioned throughput
+            let throughput = Throughput.Provisioned throughput
             DynamoStoreClient.Connect(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
             |> Async.StartImmediateAsTask
             :> System.Threading.Tasks.Task

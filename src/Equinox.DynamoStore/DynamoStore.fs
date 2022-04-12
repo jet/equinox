@@ -301,9 +301,9 @@ type Metrics() =
     member _.Consumed = { read = r; write = w }
 
 type Container(tableName, createContext : (RequestMetrics -> unit) -> TableContext<Batch>) =
-    /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly
+    /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly (see DynamoStoreClient.Connect(ConnectMode) re validating on startup)
     static member Create(client, tableName) =
-        let createContext collector = TableContext.CreateAsync<Batch>(client, tableName, verifyTable = false, metricsCollector = collector) |> Async.RunSynchronously
+        let createContext collector = TableContext<Batch>(client, tableName, metricsCollector = collector)
         Container(tableName, createContext)
 
     member _.TableKeyForStreamTip(stream) =
@@ -430,33 +430,27 @@ module internal Sync =
         let call = logged containerStream expBatch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
-// TODO remove when FSharp.AWS.DynamoDB merges support
-[<NoComparison; NoEquality>]
-type Throughput =
-    | OnDemand
-    | Provisioned of ProvisionedThroughput
-
 module Initialization =
 
-    let private prepare (client : IAmazonDynamoDB) tableName maybeThroughput =
-        TableContext.CreateAsync<Batch>(client, tableName, createIfNotExists = true, ?provisionedThroughput = maybeThroughput)
+    let private prepare (client : IAmazonDynamoDB) tableName maybeThroughput : Async<unit> =
+        let context = TableContext<Batch>(client, tableName)
+        match maybeThroughput with Some throughput -> context.VerifyOrCreateTableAsync(throughput) | None -> context.VerifyTableAsync()
 
     /// Verify the specified <c>tableName</c> is present and adheres to the correct schema.
-    let verify (client : IAmazonDynamoDB) tableName = prepare client tableName None |> Async.Ignore
+    let verify (client : IAmazonDynamoDB) tableName : Async<unit> =
+        let context = TableContext<Batch>(client, tableName)
+        context.VerifyTableAsync()
 
     /// Create the specified <c>tableName</c> if it does not exist. Will throw if it exists but the schema mismatches.
-    let createIfNotExists (client : IAmazonDynamoDB) tableName = function
-        | Throughput.OnDemand -> failwith "TODO"
-        | Throughput.Provisioned throughput -> prepare client tableName (Some throughput) |> Async.Ignore
+    let createIfNotExists (client : IAmazonDynamoDB) tableName throughput : Async<unit> =
+        let context = TableContext<Batch>(client, tableName)
+        context.VerifyOrCreateTableAsync(throughput)
 
     /// Provision (or re-provision) the specified table with the specified <c>Throughput</c>. Will throw if schema mismatches.
     let provision (client : IAmazonDynamoDB) tableName throughput = async {
-        match throughput with
-        | Throughput.OnDemand -> failwith "TODO"
-        | Throughput.Provisioned throughput ->
-            let! tc = prepare client tableName (Some throughput)
-            // TODO remove try/catch and replace with (upcoming) TableContext.ProvisionAsync
-            try do! tc.UpdateProvisionedThroughputAsync throughput with _ -> () }
+        let context = TableContext<Batch>(client, tableName)
+        do! context.VerifyOrCreateTableAsync(throughput)
+        do! context.UpdateTableIfRequiredAsync(throughput) }
 
     /// Holds Container state, coordinating initialization activities
     type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> Async<unit>) =
@@ -1055,12 +1049,15 @@ type DynamoStoreConnector(credentials : Amazon.Runtime.AWSCredentials, clientCon
 
     member _.CreateClient() = new Amazon.DynamoDBv2.AmazonDynamoDBClient(credentials, clientConfig) :> Amazon.DynamoDBv2.IAmazonDynamoDB
 
+type ProvisionedThroughput = FSharp.AWS.DynamoDB.ProvisionedThroughput
+type Throughput = FSharp.AWS.DynamoDB.Throughput
+
 [<NoComparison; NoEquality>]
 type ConnectMode =
     | SkipVerify
     | Verify
     | CreateIfNotExists of Throughput
-module ConnectMode =
+module internal ConnectMode =
     let apply client tableName = function
         | SkipVerify -> async { () }
         | Verify -> Initialization.verify client tableName
