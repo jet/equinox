@@ -8,7 +8,7 @@ services:
     environment:
       - PG_TRUST_LOCALNET=true
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=
+      - POSTGRES_PASSWORD=password
       - POSTGRES_DB=EQUINOX_TEST_DB
     ports:
       - "5432:5432"

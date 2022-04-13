@@ -25,7 +25,7 @@
 
     <PackageReference Include="FsCodec" Version="2.3.2" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
-    <PackageReference Include="SqlStreamStore" Version="1.2.0" />
+    <PackageReference Include="SqlStreamStore" Version="1.2.0-beta.8" />
   </ItemGroup>
 
 </Project>
