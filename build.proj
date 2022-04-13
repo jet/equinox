@@ -19,7 +19,7 @@
     <Exec Command="dotnet pack src/Equinox.CosmosStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.CosmosStore.Prometheus $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.DynamoStore $(Cfg) $(PackOptions)" />
-<!-- TODO   <Exec Command="dotnet pack src/Equinox.DynamoStore.Prometheus $(Cfg) $(PackOptions)" />-->
+    <Exec Command="dotnet pack src/Equinox.DynamoStore.Prometheus $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStoreDb $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />

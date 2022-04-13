@@ -99,6 +99,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore", "src\
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Integration", "tests\Equinox.DynamoStore.Integration\Equinox.DynamoStore.Integration.fsproj", "{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Prometheus", "src\Equinox.DynamoStore.Prometheus\Equinox.DynamoStore.Prometheus.fsproj", "{A9AF41B3-AB28-4296-B4A4-B90DA7821476}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -221,6 +223,10 @@ Global
 		{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

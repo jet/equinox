@@ -76,6 +76,7 @@ type Batch =
         i : int64 // tipMagicI for the Tip
 
         /// `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
+        [<LocalSecondaryIndex>]
         n : int64
 
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
