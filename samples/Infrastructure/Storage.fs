@@ -128,6 +128,9 @@ module Cosmos =
 /// To establish a local node to run the tests against, follow https://developers.eventstore.com/server/v21.10/installation.html#use-docker-compose
 /// and/or do `docker compose up` in github.com/jet/equinox
 module EventStore =
+
+    open Equinox.EventStoreDb
+
     type [<NoEquality; NoComparison>] Arguments =
         | [<AltCommandLine("-V")>]      VerboseStore
         | [<AltCommandLine("-o")>]      Timeout of float
@@ -147,11 +150,9 @@ module EventStore =
                 | ConcurrentOperationsLimit _ -> "max concurrent operations in flight (default: 5000)."
                 | HeartbeatTimeout _ -> "specify heartbeat timeout in seconds (default: 1.5)."
                 | MaxEvents _ ->        "Maximum number of Events to request per batch. Default 500."
-    open Equinox.EventStoreDb
-
     type Info(args : ParseResults<Arguments>) =
-        member _.Host =                args.GetResult(ConnectionString, "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
-        member _.Credentials =         args.GetResult(Credentials, null)
+        member _.Host =                 args.GetResult(ConnectionString, "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
+        member _.Credentials =          args.GetResult(Credentials, null)
 
         member _.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member _.Retries =              args.GetResult(Retries, 1)
@@ -159,12 +160,10 @@ module EventStore =
         member _.ConcurrentOperationsLimit = args.GetResult(ConcurrentOperationsLimit,5000)
         member _.MaxEvents =            args.GetResult(MaxEvents, 500)
 
-    open Serilog
-
     let private connect (log: ILogger) (connectionString, heartbeatTimeout, col) credentialsString (operationTimeout, operationRetries) =
         EventStoreConnector(reqTimeout=operationTimeout, reqRetries=operationRetries,
                 // TODO heartbeatTimeout=heartbeatTimeout, concurrentOperationsLimit = col,
-                // TODO log=(if log.IsEnabled(Serilog.Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
+                // TODO log=(if log.IsEnabled(Events.LogEventLevel.Debug) then Logger.SerilogVerbose log else Logger.SerilogNormal log),
                 tags=["M", Environment.MachineName; "I", Guid.NewGuid() |> string])
             .Establish(appName, Discovery.ConnectionString (String.Join(";", connectionString, credentialsString)), ConnectionStrategy.ClusterTwinPreferSlaveReads)
     let private createContext connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
