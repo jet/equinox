@@ -443,6 +443,9 @@ type AccessStrategy<'event, 'state> =
     /// Scanning for events concludes when any event passes the <c>isOrigin</c> test.
     /// See https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html
     | RollingSnapshots of isOrigin : ('event -> bool) * toSnapshot : ('state -> 'event)
+    /// Customize the loading process, walking events toward the the oldest one (in batches)
+    /// Short-circuits if the supplied `isOrigin` identifies the given event as being a valid alternate starting point
+    | CustomOrigin of isOrigin : ('event -> bool)
 
 type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
@@ -453,22 +456,21 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
 
     let compactionPredicate =
         match access with
-        | None -> None
+        | None | Some (AccessStrategy.CustomOrigin _) -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
 
     let isOrigin =
         match access with
         | None | Some AccessStrategy.LatestKnownEvent -> fun _ -> true
-        | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> isValid
+        | Some (AccessStrategy.RollingSnapshots (isValid, _)) | Some (AccessStrategy.CustomOrigin isValid) -> isValid
 
     let loadAlgorithm load streamName initial log =
         let batched = load initial (context.LoadBatched streamName log (tryDecode, None))
         let compacted = load initial (context.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode, isOrigin))
         match access with
         | None -> batched
-        | Some AccessStrategy.LatestKnownEvent
-        | Some (AccessStrategy.RollingSnapshots _) -> compacted
+        | Some AccessStrategy.LatestKnownEvent | Some (AccessStrategy.RollingSnapshots _) | Some (AccessStrategy.CustomOrigin _) -> compacted
 
     let load (fold : 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
@@ -486,7 +488,7 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
         let encode e = codec.Encode(ctx, e)
         let events =
             match access with
-            | None | Some AccessStrategy.LatestKnownEvent -> events
+            | None | Some AccessStrategy.LatestKnownEvent | Some (AccessStrategy.CustomOrigin _) -> events
             | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
                 let cc = CompactionContext(List.length events, token.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then events @ [fold state events |> compact] else events
