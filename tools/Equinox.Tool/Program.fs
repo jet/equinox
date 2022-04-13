@@ -244,7 +244,7 @@ module LoadTest =
         let mutable idx = -1L
         let selectClient () =
             let clientIndex = Interlocked.Increment(&idx) |> int
-            clients.[clientIndex % clients.Length]
+            clients[clientIndex % clients.Length]
         let selectClient = async { return async { return selectClient() } }
         Local.runLoadTest log reportingIntervals testsPerSecond errorCutoff duration selectClient runSingleTest
     let private decorateWithLogger (domainLog : ILogger, verbose) (run: 't -> Async<unit>) =

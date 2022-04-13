@@ -1,16 +1,15 @@
 ﻿module Samples.Infrastructure.Storage
 
 open Argu
+open Serilog
 open System
-
-exception MissingArg of string
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type StorageConfig =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
     | Memory of Equinox.MemoryStore.VolatileStore<byte[]>
-    | Es     of Equinox.EventStore.EventStoreContext * Equinox.EventStore.CachingStrategy option * unfolds: bool
     | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool
+    | Es     of Equinox.EventStore.EventStoreContext * Equinox.EventStore.CachingStrategy option * unfolds: bool
     | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
@@ -24,14 +23,23 @@ module MemoryStore =
 
 let [<Literal>] appName = "equinox-tool"
 
+exception MissingArg of string
+
+let private getEnvVarForArgumentOrThrow varName argName =
+    match Environment.GetEnvironmentVariable varName with
+    | null -> raise (MissingArg(sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName))
+    | x -> x
+let private defaultWithEnvVar varName argName = function
+    | None -> getEnvVarForArgumentOrThrow varName argName
+    | Some x -> x
+
+// Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
+// 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
+// 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net6.0/eqx.exe `
+//     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 module Cosmos =
-    let private getEnvVarForArgumentOrThrow varName argName =
-        match Environment.GetEnvironmentVariable varName with
-        | null -> raise (MissingArg(sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName))
-        | x -> x
-    let private defaultWithEnvVar varName argName = function
-        | None -> getEnvVarForArgumentOrThrow varName argName
-        | Some x -> x
+
+    open Equinox.CosmosStore
 
     type [<NoEquality; NoComparison>] Arguments =
         | [<AltCommandLine "-V">]       VerboseStore
@@ -42,15 +50,14 @@ module Cosmos =
         | [<AltCommandLine "-s">]       Connection of string
         | [<AltCommandLine "-d">]       Database of string
         | [<AltCommandLine "-c">]       Container of string
-        | [<AltCommandLine "-s2">]      Connection2 of string
-        | [<AltCommandLine "-d2">]      Database2 of string
-        | [<AltCommandLine "-c2">]      Container2 of string
+        | [<AltCommandLine "-s2">]      ArchiveConnection of string
+        | [<AltCommandLine "-d2">]      ArchiveDatabase of string
+        | [<AltCommandLine "-c2">]      ArchiveContainer of string
         | [<AltCommandLine "-te">]      TipMaxEvents of int
         | [<AltCommandLine "-tl">]      TipMaxJsonLength of int
         | [<AltCommandLine "-b">]       QueryMaxItems of int
         interface IArgParserTemplate with
-            member a.Usage =
-                match a with
+            member a.Usage = a |> function
                 | VerboseStore ->       "Include low level Store logging."
                 | Timeout _ ->          "specify operation timeout in seconds (default: 5)."
                 | Retries _ ->          "specify operation retries (default: 1)."
@@ -59,9 +66,9 @@ module Cosmos =
                 | Connection _ ->       "specify a connection string for a Cosmos account. (optional if environment variable EQUINOX_COSMOS_CONNECTION specified)"
                 | Database _ ->         "specify a database name for store. (optional if environment variable EQUINOX_COSMOS_DATABASE specified)"
                 | Container _ ->        "specify a container name for store. (optional if environment variable EQUINOX_COSMOS_CONTAINER specified)"
-                | Connection2 _ ->      "specify a connection string for Secondary Cosmos account. Default: use same as Primary Connection"
-                | Database2 _ ->        "specify a database name for Secondary store. Default: use same as Primary Database"
-                | Container2 _ ->       "specify a container name for store. Default: use same as Primary Container"
+                | ArchiveConnection _ ->"specify a connection string for Archive Cosmos account. Default: use same as Primary Connection"
+                | ArchiveDatabase _ ->  "specify a database name for Archive store. Default: use same as Primary Database"
+                | ArchiveContainer _ -> "specify a container name for Archive store. Default: use same as Primary Container"
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: 256"
                 | TipMaxJsonLength _ -> "specify maximum length of JSON (as measured by JSON.stringify) to hold in Tip before calving off to a frozen Batch. Default: 30,000"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
@@ -70,32 +77,27 @@ module Cosmos =
         member _.Connection =           args.TryGetResult Connection |> defaultWithEnvVar "EQUINOX_COSMOS_CONNECTION" "Connection"
         member _.Database =             args.TryGetResult Database   |> defaultWithEnvVar "EQUINOX_COSMOS_DATABASE"   "Database"
         member _.Container =            args.TryGetResult Container  |> defaultWithEnvVar "EQUINOX_COSMOS_CONTAINER"  "Container"
-        member private _.Connection2 =  args.TryGetResult Connection2
-        member private x.Database2 =    args.TryGetResult Database2  |> Option.defaultWith (fun () -> x.Database)
-        member private x.Container2 =   args.TryGetResult Container2 |> Option.defaultWith (fun () -> x.Container)
-        member x.Secondary =            if args.Contains Connection2 || args.Contains Database2 || args.Contains Container2
-                                        then Some (x.Connection2, x.Database2, x.Container2)
+        member private _.ArchiveConnection = args.TryGetResult ArchiveConnection
+        member private x.ArchiveDatabase =   args.TryGetResult ArchiveDatabase  |> Option.defaultWith (fun () -> x.Database)
+        member private x.ArchiveContainer =  args.TryGetResult ArchiveContainer |> Option.defaultWith (fun () -> x.Container)
+        member x.Archive =              if args.Contains ArchiveConnection || args.Contains ArchiveDatabase || args.Contains ArchiveContainer
+                                        then Some (x.ArchiveConnection, x.ArchiveDatabase, x.ArchiveContainer)
                                         else None
 
         member x.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
         member x.Retries =              args.GetResult(Retries,1)
         member x.MaxRetryWaitTime =     args.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
         member x.TipMaxEvents =         args.GetResult(TipMaxEvents, 256)
-        member x.TipMaxJsonLength =     args.GetResult(TipMaxJsonLength, 30000)
+        member x.TipMaxJsonLength =     args.GetResult(TipMaxJsonLength, 30_000)
         member x.QueryMaxItems =        args.GetResult(QueryMaxItems, 10)
 
-    // Standing up an Equinox instance is necessary to run for test purposes; You'll need to either:
-    // 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
-    // 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net6.0/eqx.exe `
-    //     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
-    open Equinox.CosmosStore
-    open Serilog
-
     let logContainer (log: ILogger) name (mode, endpoint, db, container) =
-        log.Information("CosmosDB {name:l} {mode} {connection} Database {database} Container {container}", name, defaultArg mode Microsoft.Azure.Cosmos.ConnectionMode.Direct, endpoint, db, container)
+        log.Information("CosmosDB {name:l} {mode} {connection} Database {database} Container {container}",
+                        name, defaultArg mode Microsoft.Azure.Cosmos.ConnectionMode.Direct, endpoint, db, container)
+
     // NOTE: this is a big song and dance, don't blindly copy!
     // - In normal usage, you typically connect to a single container only.
-    // - In hot-warm scenarios, the secondary/fallback container will frequently within the same account and hence can share a CosmosClient
+    // - In hot-warm scenarios, the Archive Container will frequently be within the same account and hence can share a CosmosClient
     // For these typical purposes, CosmosStoreClient.Connect should be used to establish the Client and Connection, not custom wiring as we have here
     let createClient (a : Info) connectionString =
         let connector = CosmosStoreConnector(Discovery.ConnectionString connectionString, a.Timeout, a.Retries, a.MaxRetryWaitTime, ?mode=a.Mode)
@@ -103,20 +105,20 @@ module Cosmos =
     let connect (log : ILogger) (a : Info) =
         let primaryClient, primaryDatabase, primaryContainer as primary = createClient a a.Connection, a.Database, a.Container
         logContainer log "Primary" (a.Mode, primaryClient.Endpoint, primaryDatabase, primaryContainer)
-        let secondary =
-            match a.Secondary with
+        let archive =
+            match a.Archive with
             | Some (Some c2, db, container) -> Some (createClient a c2, db, container)
             | Some (None, db, container) -> Some (primaryClient, db, container)
             | None -> None
-        secondary |> Option.iter (fun (client, db, container) -> logContainer log "Secondary" (a.Mode, client.Endpoint, db, container))
-        primary, secondary
+        archive |> Option.iter (fun (client, db, container) -> logContainer log "Archive" (a.Mode, client.Endpoint, db, container))
+        primary, archive
     let config (log : ILogger) (cache, unfolds) (a : Info) =
         let connection =
             match connect log a with
             | (client, databaseId, containerId), None ->
                 CosmosStoreClient(client, databaseId, containerId)
-            | (client, databaseId, containerId), Some (client2, db2, cont2) ->
-                CosmosStoreClient(client, databaseId, containerId, client2 = client2, databaseId2 = db2, containerId2 = cont2)
+            | (client, databaseId, containerId), Some (aClient, aDatabaseId, aContainerId) ->
+                CosmosStoreClient(client, databaseId, containerId, archiveClient = aClient, archiveDatabaseId = aDatabaseId, archiveContainerId = aContainerId)
         log.Information("CosmosStore Max Events in Tip: {maxTipEvents}e {maxTipJsonLength}b Items in Query: {queryMaxItems}",
                         a.TipMaxEvents, a.TipMaxJsonLength, a.QueryMaxItems)
         let context = CosmosStoreContext(connection, a.TipMaxEvents, queryMaxItems = a.QueryMaxItems, tipMaxJsonLength = a.TipMaxJsonLength)
@@ -179,8 +181,9 @@ module EventStore =
         StorageConfig.Es ((createContext connection a.MaxEvents), cacheStrategy, unfolds)
 
 module Sql =
+
     open Equinox.SqlStreamStore
-    open Serilog
+
     let cacheStrategy cache = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
     module Ms =
         type [<NoEquality; NoComparison>] Arguments =

@@ -50,7 +50,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
-- `CosmosStore`: Fix fallback detection when all events pruned from Tip [#306](https://github.com/jet/equinox/pull/306)
+- `CosmosStore`: Fix Loading Fallback to archive algorithm bug when all events pruned from Tip [#306](https://github.com/jet/equinox/pull/306)
 
 <a name="3.0.5"></a>
 ## [3.0.5] - 2021-11-18
@@ -150,7 +150,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
  
  - `Equinox.CosmosStore`: Forked from `Equinox.Cosmos` to add significant new features (see Removed section for deprecation policy info).
    - Added support for accumulating events in Tip, i.e. being able to operate with a single document per stream until the events (if any) overflow a defined size threshold [#251](https://github.com/jet/equinox/pull/251) see also [#110](https://github.com/jet/equinox/pull/110)
-   - Added Secondary store fallback for Event loading, enabling streams to be hot-migrated (archived to a secondary/clone, then pruned from the primary/active) between Primary and Secondary stores [#247](https://github.com/jet/equinox/pull/247), [#259](https://github.com/jet/equinox/pull/259)
+   - Added Archive store Fallback for Event loading, enabling streams to be hot-migrated (archived to a secondary/clone, then pruned from the primary/active) between Primary and Archival stores [#247](https://github.com/jet/equinox/pull/247), [#259](https://github.com/jet/equinox/pull/259)
    - Added support for pruning events within the Tip document [#258](https://github.com/jet/equinox/pull/258) see also [#233](https://github.com/jet/equinox/pull/233)
    - Added Prometheus integration package [#266](https://github.com/jet/equinox/pull/266) see also [#267](https://github.com/jet/equinox/pull/267)
    - target `Microsoft.Azure.Cosmos` v `3.9.0` (instead of `Microsoft.Azure.DocumentDB`[`.Core`] v 2.x) [#144](https://github.com/jet/equinox/pull/144)

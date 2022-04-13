@@ -1,5 +1,7 @@
-module Equinox.CosmosStore.Integration.AccessStrategies
+module Equinox.Store.Integration.AccessStrategies
 
+open Equinox.CosmosStore
+open Equinox.CosmosStore.Integration.CosmosFixtures
 open Swensen.Unquote
 open System
 
@@ -8,18 +10,18 @@ module WiringHelpers =
 
     let createDecider log stream = Equinox.Decider(log, stream, maxAttempts = 3)
     let private createCategoryUncached codec initial fold accessStrategy context =
-        let noCachingCacheStrategy = Equinox.CosmosStore.CachingStrategy.NoCaching
-        Equinox.CosmosStore.CosmosStoreCategory(context, codec, fold, initial, noCachingCacheStrategy, accessStrategy)
+        let noCachingCacheStrategy = CachingStrategy.NoCaching
+        StoreCategory(context, codec, fold, initial, noCachingCacheStrategy, accessStrategy)
     let private createCategory codec initial fold accessStrategy (context, cache) =
-        let sliding20mCacheStrategy = Equinox.CosmosStore.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Equinox.CosmosStore.CosmosStoreCategory(context, codec, fold, initial, sliding20mCacheStrategy, accessStrategy)
+        let sliding20mCacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        StoreCategory(context, codec, fold, initial, sliding20mCacheStrategy, accessStrategy)
 
     let createCategoryUnoptimizedUncached codec initial fold context =
-        let accessStrategy = Equinox.CosmosStore.AccessStrategy.Unoptimized
+        let accessStrategy = AccessStrategy.Unoptimized
         createCategoryUncached codec initial fold accessStrategy context
 
     let createCategoryUnoptimized codec initial fold (context, cache) =
-        let accessStrategy = Equinox.CosmosStore.AccessStrategy.Unoptimized
+        let accessStrategy = AccessStrategy.Unoptimized
         createCategory codec initial fold accessStrategy (context, cache)
 
 /// Test Aggregation used to validate that the reading logic in Equinox.CosmosStore correctly reads, deserializes and folds the events
@@ -33,7 +35,8 @@ module SequenceCheck =
         type Event =
             | Add of {| value : int |}
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
+        open FsCodec.SystemTextJson
+        let codec = Codec.Create<Event>()
 
     module Fold =
 
@@ -59,7 +62,7 @@ module SequenceCheck =
             decider.TransactEx((fun c -> async { return (), decide (value, count) c.State }), fun () c -> c.State)
 
     let private create log resolveStream =
-        let resolve = streamName >> resolveStream >> (createDecider log)
+        let resolve = streamName >> resolveStream >> createDecider log
         Service(resolve)
 
     module Config =
@@ -88,6 +91,7 @@ module Props =
     type FsCheckAttribute() =
         inherit AutoDataAttribute(MaxTest = maxTest, Arbitrary=[|typeof<GapGen>|])
 
+[<Xunit.Collection "DocStore">]
 type UnoptimizedTipReadingCorrectness(testOutputHelper) =
     let output = TestOutput(testOutputHelper)
     let log = output.CreateLogger()

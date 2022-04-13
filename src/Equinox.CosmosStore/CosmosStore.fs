@@ -152,7 +152,7 @@ type internal Enum() =
             let index = i + int64 offset
             // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
             if index >= indexMin && index < indexMax then
-                let x = e.[offset]
+                let x = e[offset]
                 yield FsCodec.Core.TimelineEvent.Create(index, x.c, x.d, x.m, Guid.Empty, x.correlationId, x.causationId, x.t) }
     static member internal Events(t : Tip, ?minIndex, ?maxIndex) : ITimelineEvent<EventBody> seq =
         Enum.Events(t.i, t.e, ?minIndex = minIndex, ?maxIndex = maxIndex)
@@ -359,7 +359,7 @@ module private MicrosoftAzureCosmosWrappers =
                 | _ -> container.DeserializeResponseBody<'T>(rm) |> Found }
 
 // NB don't nest in a private module, or serialization will fail miserably ;)
-[<CLIMutable; NoEquality; NoComparison; Newtonsoft.Json.JsonObject(ItemRequired=Newtonsoft.Json.Required.AllowNull)>]
+[<CLIMutable; NoEquality; NoComparison>]
 type SyncResponse = { etag : string; n : int64; conflicts : Unfold[]; e : Event[] }
 
 module internal SyncStoredProc =
@@ -608,9 +608,9 @@ module internal Tip =
         let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
         | ReadResult.NotModified ->
-            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms}ms rc={ru}", "Tip", stream, 304, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms}ms {ru}RU", "Tip", stream, 304, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.NotFound ->
-            (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {stream} {res} {ms}ms rc={ru}", "Tip", stream, 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {stream} {res} {ms}ms {ru}RU", "Tip", stream, 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.Found tip ->
             let log =
                 let count, bytes = tip.u.Length, if verbose then Enum.Unfolds tip.u |> Log.batchLen else 0
@@ -618,7 +618,7 @@ module internal Tip =
             let log = if verbose then log |> Log.propDataUnfolds tip.u else log
             let log = match maybePos with Some p -> log |> Log.propStartPos p |> Log.propStartEtag p | None -> log
             let log = log |> Log.prop "_etag" tip._etag |> Log.prop "n" tip.n
-            log.Information("EqxCosmos {action:l} {stream} {res} {ms}ms rc={ru}", "Tip", stream, 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            log.Information("EqxCosmos {action:l} {stream} {res} {ms}ms {ru}RU", "Tip", stream, 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i : int64 * ITimelineEvent<EventBody>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
@@ -674,7 +674,7 @@ module internal Query =
         let batches, ru = Array.ofSeq res, res.RequestCharge
         let unwrapBatch (b : Batch) =
             Enum.Events(b, ?minIndex = minIndex, ?maxIndex = maxIndex)
-            |> if direction = Direction.Backward then System.Linq.Enumerable.Reverse else id
+            |> if direction = Direction.Backward then Seq.rev else id
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
         let verbose = log.IsEnabled Events.LogEventLevel.Debug
         let count, bytes = events.Length, if verbose then events |> Log.batchLen else 0
@@ -685,19 +685,19 @@ module internal Query =
         (log|> Log.prop "bytes" bytes
             |> match minIndex with None -> id | Some i -> Log.prop "minIndex" i
             |> match maxIndex with None -> id | Some i -> Log.prop "maxIndex" i)
-            .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} rc={ru}",
+            .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} {ru}RU",
                 "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, ru
 
-    let private logQuery direction queryMaxItems (container : Container, streamName) interval (responsesCount, events : ITimelineEvent<EventBody>[]) n (ru : float) (log : ILogger) =
+    let private logQuery direction (container : Container, streamName) interval (responsesCount, events : ITimelineEvent<EventBody>[]) n (ru : float) (log : ILogger) =
         let verbose = log.IsEnabled Events.LogEventLevel.Debug
         let count, bytes = events.Length, if verbose then events |> Log.batchLen else 0
         let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = streamName; interval = interval; bytes = bytes; count = count; ru = ru }
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
-        (log |> Log.prop "bytes" bytes |> Log.prop "queryMaxItems" queryMaxItems |> Log.event evt).Information(
-            "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms rc={ru}",
+        (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
+            "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms {ru}RU",
             action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
     let private calculateUsedVersusDroppedPayload stopIndex (xs : ITimelineEvent<EventBody>[]) : int * int =
@@ -768,7 +768,7 @@ module internal Query =
             | Some { index = max }, _
             | _, Some (_, max) -> max + 1L
             | None, None -> 0L
-        log |> logQuery direction maxItems (container, stream) t (responseCount, raws) version ru
+        log |> logQuery direction (container, stream) t (responseCount, raws) version ru
         match minMax, maybeTipPos with
         | Some (i, m), _ -> return Some { found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }
         | None, Some { index = tipI } -> return Some { found = found; minIndex = tipI; next = tipI; maybeTipPos = maybeTipPos; events = [||] }
@@ -818,16 +818,16 @@ module internal Query =
         finally
             let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             let t = StopwatchInterval(startTicks, endTicks)
-            log |> logQuery direction maxItems (container, stream) t (i, allEvents.ToArray()) -1L ru }
+            log |> logQuery direction (container, stream) t (i, allEvents.ToArray()) -1L ru }
 
     /// Manages coalescing of spans of events obtained from various sources:
     /// 1) Tip Data and/or Conflicting events
     /// 2) Querying Primary for predecessors of what's obtained from 1
-    /// 2) Querying Secondary for predecessors of what's obtained from 1
+    /// 3) Querying Archive for predecessors of what's obtained from 2
     let load (log : ILogger) (minIndex, maxIndex) (tip : ScanResult<'event> option)
             (primary : int64 option * int64 option -> Async<ScanResult<'event> option>)
             // Choice1Of2 -> indicates whether it's acceptable to ignore missing events; Choice2Of2 -> Fallback store
-            (secondary : Choice<bool, int64 option * int64 option -> Async<ScanResult<'event> option>>)
+            (fallback : Choice<bool, int64 option * int64 option -> Async<ScanResult<'event> option>>)
             : Async<Position * 'event[]> = async {
         let minI = defaultArg minIndex 0L
         match tip with
@@ -850,26 +850,26 @@ module internal Query =
                     |> fun log -> match maxIndex with None -> log | Some mi -> log |> Log.prop "maxIndex" mi)
                     .Debug(message)
 
-        match primary, secondary with
-        | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in secondary
-        | Some { minIndex = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at secondary
+        match primary, fallback with
+        | Some { found = true }, _ -> return pos, events // origin found in primary, no need to look in fallback
+        | Some { minIndex = i }, _ when i <= minI -> return pos, events // primary had required earliest event Index, no need to look at fallback
         | None, _ when Option.isNone tip -> return pos, events // initial load where no documents present in stream
         | _, Choice1Of2 allowMissing ->
-            logMissing (minIndex, i) "Origin event not found; no secondary container supplied"
+            logMissing (minIndex, i) "Origin event not found; no Archive Container supplied"
             if allowMissing then return pos, events
-            else return failwithf "Origin event not found; no secondary container supplied"
-        | _, Choice2Of2 secondary ->
+            else return failwithf "Origin event not found; no Archive Container supplied"
+        | _, Choice2Of2 fallback ->
 
         let maxIndex = match primary with Some p -> Some p.minIndex | None -> maxIndex // if no batches in primary, high water mark from tip is max
-        let! secondary = secondary (minIndex, maxIndex)
+        let! fallback = fallback (minIndex, maxIndex)
         let events =
-            match secondary with
+            match fallback with
             | Some s -> Array.append s.events events
             | None -> events
-        match secondary with
+        match fallback with
         | Some { minIndex = i } when i <= minI -> ()
         | Some { found = true } -> ()
-        | _ -> logMissing (minIndex, maxIndex) "Origin event not found in secondary container"
+        | _ -> logMissing (minIndex, maxIndex) "Origin event not found in Archive Container"
         return pos, events }
 
 // Manages deletion of (full) Batches, and trimming of events in Tip, maintaining ordering guarantees by never updating non-Tip batches
@@ -888,7 +888,7 @@ module Prune =
             let rc, ms = res.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
-            log.Information("EqxCosmos {action:l} {id} {ms}ms rc={ru}", "Delete", id, ms, rc)
+            log.Information("EqxCosmos {action:l} {id} {ms}ms {ru}RU", "Delete", id, ms, rc)
             return rc
         }
         let trimTip expectedI count = async {
@@ -904,7 +904,7 @@ module Prune =
             let rc, ms = tipRu + updateRes.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
-            log.Information("EqxCosmos {action:l} {count} {ms}ms rc={ru}", "Trim", count, ms, rc)
+            log.Information("EqxCosmos {action:l} {count} {ms}ms {ru}RU", "Trim", count, ms, rc)
             return rc
         }
         let log = log |> Log.prop "index" indexInclusive
@@ -917,7 +917,7 @@ module Prune =
             let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
-            log.Information("EqxCosmos {action:l} {batches} {ms}ms n={next} rc={ru}", "PruneResponse", batches.Length, ms, next, rc)
+            log.Information("EqxCosmos {action:l} {batches} {ms}ms n={next} {ru}RU", "PruneResponse", batches.Length, ms, next, rc)
             batches, rc
         let! pt, outcomes =
             let isTip (x : BatchIndices) = x.id = Tip.WellKnownDocumentId
@@ -994,11 +994,11 @@ module Internal =
 
 /// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
 type QueryOptions
-    (   /// Max number of Batches to return per paged query response. Default: 10.
+    (   // Max number of Batches to return per paged query response. Default: 10.
         [<O; D(null)>]?maxItems : int,
-        /// Dynamic version of `maxItems`, allowing one to react to dynamic configuration changes. Default: use `maxItems` value.
+        // Dynamic version of `maxItems`, allowing one to react to dynamic configuration changes. Default: use `maxItems` value.
         [<O; D(null)>]?getMaxItems : unit -> int,
-        /// Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
+        // Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
         [<O; D(null)>]?maxRequests) =
     let getMaxItems = defaultArg getMaxItems (fun () -> defaultArg maxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
@@ -1010,11 +1010,11 @@ type QueryOptions
 /// - accumulation/retention of Events in Tip
 /// - retrying read and write operations for the Tip
 type TipOptions
-    (   /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
+    (   // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
         maxEvents,
-        /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
+        // Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
         [<O; D(null)>]?maxJsonLength,
-        /// Inhibit throwing when events are missing, but no fallback Container has been supplied. Default: false.
+        // Inhibit throwing when events are missing, but no Archive Container has been supplied. Default: false.
         [<O; D(null)>]?ignoreMissingEvents,
         [<O; D(null)>]?readRetryPolicy,
         [<O; D(null)>]?writeRetryPolicy) =
@@ -1022,13 +1022,13 @@ type TipOptions
     member val MaxEvents : int = maxEvents
     /// Maximum serialized size (length of JSON.stringify representation) to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 30_000.
     member val MaxJsonLength = defaultArg maxJsonLength 30_000
-    /// Whether to inhibit throwing when events are missing, but no fallback Container has been supplied
+    /// Whether to inhibit throwing when events are missing, but no Archive Container has been supplied
     member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
 
     member val ReadRetryPolicy = readRetryPolicy
     member val WriteRetryPolicy = writeRetryPolicy
 
-type StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
+type StoreClient(container : Container, archive : Container option, query : QueryOptions, tip : TipOptions) =
 
     let loadTip log stream pos = Tip.tryLoad log tip.ReadRetryPolicy (container, stream) (pos, None)
     let ignoreMissing = tip.IgnoreMissingEvents
@@ -1039,9 +1039,9 @@ type StoreClient(container : Container, fallback : Container option, query : Que
         let includeTip = Option.isNone tip
         let walk log container = Query.scan log (container, stream) includeTip query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
-            match fallback with
+            match archive with
             | None -> Choice1Of2 ignoreMissing
-            | Some f -> Choice2Of2 (walk (log |> Log.prop "secondary" true) f)
+            | Some f -> Choice2Of2 (walk (log |> Log.prop "fallback" true) f)
 
         let log = log |> Log.prop "stream" stream
         let! pos, events = Query.load log (minIndex, maxIndex) tip (walk log container) walkFallback
@@ -1177,20 +1177,20 @@ type Discovery =
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
 type CosmosClientFactory
-    (   /// Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
+    (   // Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
         requestTimeout : TimeSpan,
-        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default : 9
+        // Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default : 9
         maxRetryAttemptsOnRateLimitedRequests : int,
-        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default : 30s
+        // Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default : 30s
         maxRetryWaitTimeOnRateLimitedRequests : TimeSpan,
-        /// Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
-        /// NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
+        // Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
+        // NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
         [<O; D(null)>]?mode : ConnectionMode,
-        /// Connection limit for Gateway Mode. CosmosDB default: 50
+        // Connection limit for Gateway Mode. CosmosDB default: 50
         [<O; D(null)>]?gatewayModeMaxConnectionLimit,
-        /// consistency mode (default: ConsistencyLevel.Session)
+        // consistency mode (default: ConsistencyLevel.Session)
         [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
-        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
+        // Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
         [<O; D(null)>]?bypassCertificateValidation : bool) =
 
     /// CosmosClientOptions for this CosmosClientFactory as configured
@@ -1234,22 +1234,22 @@ type CosmosClientFactory
 
 /// Manages establishing a CosmosClient, which is used by CosmosStoreClient to read from the underlying Cosmos DB Container.
 type CosmosStoreConnector
-    (   /// CosmosDB endpoint/credentials specification.
+    (   // CosmosDB endpoint/credentials specification.
         discovery : Discovery,
-        /// Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
+        // Timeout to apply to individual reads/write round-trips going to CosmosDB. CosmosDB Default: 1m.
         requestTimeout : TimeSpan,
-        /// Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
+        // Maximum number of times to attempt when failure reason is a 429 from CosmosDB, signifying RU limits have been breached. CosmosDB default: 9
         maxRetryAttemptsOnRateLimitedRequests : int,
-        /// Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
+        // Maximum number of seconds to wait (especially if a higher wait delay is suggested by CosmosDB in the 429 response). CosmosDB default: 30s
         maxRetryWaitTimeOnRateLimitedRequests : TimeSpan,
-        /// Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
-        /// NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
+        // Connection mode (default: ConnectionMode.Direct (best performance, same as Microsoft.Azure.Cosmos SDK default)
+        // NOTE: default for Equinox.Cosmos.Connector (i.e. V2) was Gateway (worst performance, least trouble, Microsoft.Azure.DocumentDb SDK default)
         [<O; D(null)>]?mode : ConnectionMode,
-        /// Connection limit for Gateway Mode. CosmosDB default: 50
+        // Connection limit for Gateway Mode. CosmosDB default: 50
         [<O; D(null)>]?gatewayModeMaxConnectionLimit,
-        /// consistency mode (default: ConsistencyLevel.Session)
+        // consistency mode (default: ConsistencyLevel.Session)
         [<O; D(null)>]?defaultConsistencyLevel : ConsistencyLevel,
-        /// Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
+        // Inhibits certificate verification when set to <c>true</c>, i.e. for working with the CosmosDB Emulator (default <c>false</c>)
         [<O; D(null)>]?bypassCertificateValidation : bool) =
 
     let factory =
@@ -1276,47 +1276,47 @@ type CosmosStoreConnector
 /// - The CosmosDB CosmosClient (there should be a single one of these per process, plus an optional fallback one for pruning scenarios)
 /// - The (singleton) per Container Stored Procedure initialization state
 type CosmosStoreClient
-    (   /// Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
+    (   // Facilitates custom mapping of Stream Category Name to underlying Cosmos Database/Container names
         categoryAndStreamNameToDatabaseContainerStream : string * string -> string * string * string,
         createContainer : string * string -> Container,
-        createSecondaryContainer : string * string -> Container option,
-        [<O; D(null)>]?primaryDatabaseAndContainerToSecondary : string * string -> string * string,
-        /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+        createFallbackContainer : string * string -> Container option,
+        [<O; D(null)>]?primaryDatabaseAndContainerToArchive : string * string -> string * string,
+        // Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
         [<O; D(null)>]?createGateway,
-        /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
+        // Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
         [<O; D(null)>]?disableInitialization) =
     let createGateway = match createGateway with Some creator -> creator | None -> id
-    let primaryDatabaseAndContainerToSecondary = defaultArg primaryDatabaseAndContainerToSecondary id
+    let primaryDatabaseAndContainerToArchive = defaultArg primaryDatabaseAndContainerToArchive id
     // Index of database*container -> Initialization Context
     let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string*string, Initialization.ContainerInitializerGuard>()
     new(client, databaseId : string, containerId : string,
-        /// Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
+        // Inhibit <c>CreateStoredProcedureIfNotExists</c> when a given Container is used for the first time
         [<O; D(null)>]?disableInitialization,
-        /// Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
+        // Admits a hook to enable customization of how <c>Equinox.CosmosStore</c> handles the low level interactions with the underlying <c>CosmosContainer</c>.
         [<O; D(null)>]?createGateway : Container -> Container,
-        /// Client to use for fallback Containers. Default: use same as <c>primary</c>
-        [<O; D(null)>]?client2 : CosmosClient,
-        /// Database to use for fallback Containers. Default: use same as <c>databaseId</c>
-        [<O; D(null)>]?databaseId2,
-        /// Container to use for fallback Containers. Default: use same as <c>containerId</c>
-        [<O; D(null)>]?containerId2) =
+        // Client to use for fallback Containers. Default: use <c>client</c>
+        [<O; D(null)>]?archiveClient : CosmosClient,
+        // Database Name to use for locating missing events. Default: use <c>databaseId</c>
+        [<O; D(null)>]?archiveDatabaseId,
+        // Container Name to use for locating missing events. Default: use <c>containerId</c>
+        [<O; D(null)>]?archiveContainerId) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
-        let secondaryContainer =
-            if Option.isNone client2 && Option.isNone databaseId2 && Option.isNone containerId2 then fun (_, _) -> None
-            else fun (d, c) -> Some ((defaultArg client2 client).GetDatabase(defaultArg databaseId2 d).GetContainer(defaultArg containerId2 c))
-        CosmosStoreClient(catAndStreamToDatabaseContainerStream, primaryContainer, secondaryContainer,
+        let fallbackContainer =
+            if Option.isNone archiveClient && Option.isNone archiveDatabaseId && Option.isNone archiveContainerId then fun (_, _) -> None
+            else fun (d, c) -> Some ((defaultArg archiveClient client).GetDatabase(defaultArg archiveDatabaseId d).GetContainer(defaultArg archiveContainerId c))
+        CosmosStoreClient(catAndStreamToDatabaseContainerStream, primaryContainer, fallbackContainer,
             ?disableInitialization = disableInitialization, ?createGateway = createGateway)
     member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
-        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let createContainerInitializerGuard (d, c) =
             let init =
                 if Some true = disableInitialization then None
                 else Some (fun cosmosContainer -> Initialization.createSyncStoredProcIfNotExists None cosmosContainer |> Async.Ignore)
-            let secondaryD, secondaryC = primaryDatabaseAndContainerToSecondary (d, c)
-            let primaryContainer, secondaryContainer = createContainer (d, c), createSecondaryContainer (secondaryD, secondaryC)
-            Initialization.ContainerInitializerGuard(createGateway primaryContainer, Option.map createGateway secondaryContainer, ?initContainer = init)
+            let archiveD, archiveC = primaryDatabaseAndContainerToArchive (d, c)
+            let primaryContainer, fallbackContainer = createContainer (d, c), createFallbackContainer (archiveD, archiveC)
+            Initialization.ContainerInitializerGuard(createGateway primaryContainer, Option.map createGateway fallbackContainer, ?initContainer = init)
+        let databaseId, containerId, streamName = categoryAndStreamNameToDatabaseContainerStream (categoryName, streamId)
         let g = containerInitGuards.GetOrAdd((databaseId, containerId), createContainerInitializerGuard)
         g, streamName
 
@@ -1332,25 +1332,25 @@ type CosmosStoreClient
         return CosmosStoreClient(client, databaseId, containerId) }
 
     /// Connect to a hot-warm CosmosStore pair within the same account
-    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where necessary.
+    /// Events that have been archived and purged (and hence are determined to be missing from the primary) are retrieved from the archive via a fallback request where necessary.
     /// NOTE: The returned CosmosStoreClient instance should be held as a long-lived singleton within the application.
-    static member Connect(connectContainers, databaseId : string, primaryContainerId : string, fallbackContainerId) : Async<CosmosStoreClient> = async {
-        let! client = connectContainers [| struct (databaseId, primaryContainerId); struct (databaseId, fallbackContainerId) |]
-        return CosmosStoreClient(client, databaseId, primaryContainerId, containerId2=fallbackContainerId) }
+    static member Connect(connectContainers, databaseId : string, containerId : string, archiveContainerId) : Async<CosmosStoreClient> = async {
+        let! client = connectContainers [| struct (databaseId, containerId); struct (databaseId, archiveContainerId) |]
+        return CosmosStoreClient(client, databaseId, containerId, archiveContainerId = archiveContainerId) }
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type CosmosStoreContext(storeClient : CosmosStoreClient, tipOptions, queryOptions) =
     new(    storeClient : CosmosStoreClient,
-            /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
-            /// NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
+            // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
+            // NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
             tipMaxEvents,
-            /// Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
+            // Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
             [<O; D null>]?tipMaxJsonLength,
-            /// Inhibit throwing when events are missing, but no fallback Container has been supplied
+            // Inhibit throwing when events are missing, but no Archive Container has been supplied as a fallback.
             [<O; D null>]?ignoreMissingEvents,
-            /// Max number of Batches to return per paged query response. Default: 10.
+            // Max number of Batches to return per paged query response. Default: 10.
             [<O; D null>]?queryMaxItems,
-            /// Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
+            // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
             [<O; D null>]?queryMaxRequests) =
         let tipOptions = TipOptions(maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
@@ -1421,8 +1421,8 @@ type AccessStrategy<'event, 'state> =
 
 type CosmosStoreCategory<'event, 'state, 'context>
     (   context : CosmosStoreContext, codec, fold, initial, caching, access,
-        /// Compress Unfolds in Tip. Default: <c>true</c>.
-        /// NOTE when set to <c>false</c>, requires Equinox.Cosmos / Equinox.CosmosStore Version >= 2.3.0 to be able to read
+        // Compress Unfolds in Tip. Default: <c>true</c>.
+        // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
         [<O; D null>]?compressUnfolds) =
     let compressUnfolds = defaultArg compressUnfolds true
     let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, string, 'context>>()
@@ -1467,7 +1467,7 @@ type AppendResult<'t> =
 /// Encapsulates the core facilities Equinox.CosmosStore offers for operating directly on Events in Streams.
 type EventsContext internal
     (   context : Equinox.CosmosStore.CosmosStoreContext, store : StoreClient,
-        /// Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
+        // Logger to write to - see https://github.com/serilog/serilog/wiki/Provided-Sinks for how to wire to your logger
         log : Serilog.ILogger) =
     do if log = null then nullArg "log"
     let maxCountPredicate count =

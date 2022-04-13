@@ -62,14 +62,17 @@ module SerilogHelpers =
         | Metric.PruneResponse s -> Response s
         | Metric.Delete s -> Delete s
         | Metric.Trim s -> Trim s
-    let inline (|Rc|) ({ ru = ru }: Equinox.CosmosStore.Core.Log.Measurement) = ru
+
+    let inline (|Rc|) ({ ru = ru }: Measurement) = ru
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|TotalRequestCharge|ResponseBreakdown|) = function
-        | Load (Rc rc) | Write (Rc rc) | Resync (Rc rc) | Delete (Rc rc) | Trim (Rc rc) | Prune (Rc rc) as e -> TotalRequestCharge (e, rc)
+        | Load (Rc rc) | Write (Rc rc)
+        | Resync (Rc rc)
+        | Delete (Rc rc) | Trim (Rc rc) | Prune (Rc rc) as e -> TotalRequestCharge (e, rc)
         | Response _ -> ResponseBreakdown
-    let (|EqxEvent|_|) (logEvent : LogEvent) : Equinox.CosmosStore.Core.Log.Metric option =
+    let (|EqxEvent|_|) (logEvent : LogEvent) : Metric option =
         logEvent.Properties.Values |> Seq.tryPick (function
-            | SerilogScalar (:? Equinox.CosmosStore.Core.Log.Metric as e) -> Some e
+            | SerilogScalar (:? Metric as e) -> Some e
             | _ -> None)
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =

@@ -33,8 +33,8 @@ It does not and will not handle projections and subscriptions. See [Propulsion](
 
 # Getting Started
 
-- If you want to start with code samples that run in F# interactive, [there's a simple `Counter` example using `Equinox.MemoryStore`](https://github.com/jet/equinox/blob/master/samples/Tutorial/Counter.fsx#L16)
-- If you are experienced with event sourcing, CosmosDB and F#, you might gain most from this [100 LOC end-to-end example using CosmosDB](https://github.com/jet/equinox/blob/master/samples/Tutorial/Cosmos.fsx#L36) 
+- If you want to start with code samples that run in F# interactive, [there's a simple `Counter` example using `Equinox.MemoryStore`](https://github.com/jet/equinox/blob/master/samples/Tutorial/Counter.fsx#L20)
+- If you are experienced with event sourcing, CosmosDB and F#, you might gain most from this [100 LOC end-to-end example using CosmosDB](https://github.com/jet/equinox/blob/master/samples/Tutorial/Cosmos.fsx#L42) 
 - If you are experienced with CosmosDB and something like [CosmoStore](https://github.com/Dzoukr/CosmoStore), but want to understand what sort of facilities Equinox adds on top of raw event management, see the [Access Strategies guide](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies)
 
 # Design Motivation
@@ -99,7 +99,6 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
         - Uses that check to apply the write OR returns the conflicting events and unfolds
     - No additional round trips to the store needed at either the `Load` or `Sync` points in the flow
   - It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
- 
 - **`Equinox.CosmosStore` `RollingState` and `Custom` 'non-event-sourced' modes**: 
     - Uses 'Tip with Unfolds' encoding to avoid having to write event documents at all. This option benefits from the caching and consistency management mechanisms because the cost of writing and storing infinitely increasing events are removed. Search for `transmute` or `RollingState` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in [the `dotnet-templates` `summaryConsumer` template](https://github.com/jet/dotnet-templates/tree/master/propulsion-summary-consumer).
 
@@ -149,7 +148,8 @@ Equinox does not focus on projection logic - each store brings its own strengths
 
 - `FsKafka` [![FsKafka NuGet](https://img.shields.io/nuget/v/FsKafka.svg)](https://www.nuget.org/packages/FsKafka/): Wraps `Confluent.Kafka` to provide efficient batched Kafka Producer and Consumer configurations, with basic logging instrumentation. Used in the [`propulsion project kafka`](https://github.com/jet/propulsion#dotnet-tool-provisioning--projections-test-tool) tool command; see [`dotnet new proProjector -k; dotnet new proConsumer` to generate a sample app](https://github.com/jet/dotnet-templates#propulsion-related) using it (see the `BatchedAsync` and `BatchedSync` modules in `Examples.fs`).
 - `Propulsion` [![Propulsion NuGet](https://img.shields.io/nuget/v/Propulsion.svg)](https://www.nuget.org/packages/Propulsion/): A library that provides an easy way to implement projection logic. It defines `Propulsion.Streams.StreamEvent` used to interop with `Propulsion.*` in processing pipelines for the `proProjector` and `proSync` templates in the [templates repo](https://github.com/jet/dotnet-templates), together with the `Ingestion`, `Streams`, `Progress` and `Parallel` modules that get composed into those processing pipelines. ([depends](https://www.fuget.org/packages/Propulsion) on `Serilog`)
-- `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/v/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). Used in the [`propulsion project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
+- `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/v/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
+- `Propulsion.CosmosStore` [![Propulsion.CosmosStore NuGet](https://img.shields.io/nuget/v/Propulsion.CosmosStore.svg)](https://www.nuget.org/packages/Propulsion.CosmosStore/): Wraps the CosmosDB V3 SDK's Change Feed API, providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). Used in the [`propulsion project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.CosmosStore) on `Equinox.CosmosStore`)
 - `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/v/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
 - `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/v/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new proProjector -k; dotnet new proConsumer`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `FsKafka`)
 
@@ -157,9 +157,10 @@ Equinox does not focus on projection logic - each store brings its own strengths
 
 - `Equinox.Tool` [![Tool NuGet](https://img.shields.io/nuget/v/Equinox.Tool.svg)](https://www.nuget.org/packages/Equinox.Tool/)
 
+    - can render events from any of the stores via `eqx dump`.
     - incorporates a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
+    - can configure indices in Azure CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](https://github.com/jet/equinox#store-data-in-azure-cosmosdb).
     - can initialize databases for `SqlStreamStore` via `eqx config`
-    - can configure indices in CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](https://github.com/jet/equinox#store-data-in-azure-cosmosdb).
 
 ## Starter Project Templates and Sample Applications 
 
@@ -211,9 +212,9 @@ The `samples/` folder contains various further examples (some of the templates a
 <a name="TodoBackend"></a>
 ### [TODOBACKEND, see samples/TodoBackend](/samples/TodoBackend)
 
-The repo contains a vanilla ASP.NET Core 2.1 implementation of [the well-known TodoBackend Spec](https://www.todobackend.com). **NB the implementation is largely dictated by spec; no architectural guidance expressed or implied ;)**. It can be run via:
+The repo contains a vanilla ASP.NET Core implementation of [the well-known TodoBackend Spec](https://www.todobackend.com). **NB the implementation is largely dictated by spec; no architectural guidance expressed or implied ;)**. It can be run via:
 
-    & dotnet run -p samples/Web -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE
+    & dotnet run --project samples/Web -S es # run against eventstore, omit `es` to use in-memory store, or see PROVISIONING EVENTSTORE
     start https://www.todobackend.com/specs/index.html?https://localhost:5001/todos # for low-level debugging / validation of hosting arrangements
     start https://www.todobackend.com/client/index.html?https://localhost:5001/todos # standard JavaScript UI
     start http://localhost:5341/#/events # see logs triggered by `-S` above in https://getseq.net        
@@ -260,7 +261,7 @@ For fun, there's a direct translation of the `InventoryItem` Aggregate and Comma
 2. Run the `TodoBackend`:
 
     ```powershell
-    dotnet run -p Web
+    dotnet run --project Web
     ```
 
 4. Run the standard `TodoMvc` frontend against your locally-hosted, fresh backend (See generated `README.md` for more details)
@@ -294,7 +295,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     ```powershell
     dotnet new eqxweb -t -e # -t for todos, -e for eventstore
-    dotnet run -p Web
+    dotnet run --project Web
     ```
 
 4. browse writes at http://localhost:2113/web/index.html#/streams
@@ -321,14 +322,14 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 
     ```powershell
     dotnet new eqxweb -t -c # -t for todos, -c for cosmos
-    dotnet run -p Web
+    dotnet run --project Web
     ```
 
 4. Use the `eqx` tool to dump stats relating the contents of the CosmosDB store
 
     ```powershell
     # run queries to determine how many streams, docs, events there are in the container
-    eqx -V -C stats -SDEP cosmos # -P to run in parallel # -V -C to show underlying query being used
+    eqx -VC stats -SDEP cosmos # -P to run in parallel # -V -C to show underlying query being used
     ```
 
 5. Use `propulsion` tool to run a CosmosDB ChangeFeedProcessor
@@ -345,7 +346,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     propulsion -V project -g projector1 stats cosmos
     ```
 
-6. Generate a CosmosDB ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.Cosmos`
+6. Generate a CosmosDB ChangeFeedProcessor sample `.fsproj` (without Kafka producer/consumer), using `Propulsion.CosmosStore`
 
     ```powershell
     dotnet new -i Equinox.Templates
@@ -404,14 +405,14 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     md archiver | cd
    
     # Generate a template app that'll sync from the Primary (i.e. equinox-test)
-    # to the Secondary (i.e. equinox-test-archive)
+    # to the Archive (i.e. equinox-test-archive)
     dotnet new proArchiver
    
     # TODO edit Handler.fs to add criteria for what to Archive
     # - Normally you won't want to Archive stuff like e.g. `Sync-` checkppoint streams
     # - Any other ephemeral application streams can be excluded too
    
-    # -w 4 # constrain parallel writers in order to leave headroom for readers; Secondary container should be cheaper to run
+    # -w 4 # constrain parallel writers in order to leave headroom for readers; Archive container should be cheaper to run
     # -S -t 40 # emit log messages for Sync calls costing > 40 RU
     # -md 20 (or lower) is recommended to be nice to the writers - the archiver can afford to lag
     dotnet run -c Release -- -w 4 -S -t 40 -g ArchiverConsumer `
@@ -432,7 +433,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
     # - While its possible to prune the minute it's archived, normally you'll want to allow a time lag before doing so
     
     # -w 2 # constrain parallel pruners in order to not consume RUs excessively on Primary
-    # -md 10 (or lower) is recommended to contrain consumption on the Secondary - Pruners lagging is rarely critical
+    # -md 10 (or lower) is recommended to contrain consumption on the Archive - Pruners lagging is rarely critical
     dotnet run -c Release -- -w 2 -g PrunerConsumer `
       cosmos -md 10 -c equinox-test-archive -a equinox-test-aux `
       cosmos -c equinox-test
@@ -444,21 +445,21 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 SqlStreamStore is provided in the samples and the `eqx` tool:
 
 - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
-- being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -CEU -s "Favoritesab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
-- being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring"`
+- being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -CU -s "Favorites-ab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
+- being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- my -c "mysqlconnectionstring"`
 - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx config pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
 
 ```powershell
 cd ~/code/equinox
 
 # set up the DB/schema
-dotnet run -p tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+dotnet run --project tools/Equinox.Tool -- config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 
 # run a benchmark
-dotnet run -c Release -p tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
+dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 
 # run the webserver, -A to autocreate schema on connection
-dotnet run -p samples/Web/ -- my -c "mysqlconnectionstring" -A
+dotnet run --project samples/Web/ -- my -c "mysqlconnectionstring" -A
 
 # set up the DB/schema
 eqx config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
@@ -512,7 +513,7 @@ Run, including running the tests that assume you've got a local EventStore and p
 
 At present, .NET Core seems to show comparable perf under normal load, but becomes very unpredictable under load. The following benchmark should produce pretty consistent levels of reads and writes, and can be used as a baseline for investigation:
 
-    & dotnet run -c Release -p tools/Equinox.Tool -- run -t saveforlater -f 1000 -d 5 -C -U es
+    & dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 1000 -d 5 -C -U es
 
 ### run Web benchmark
 
@@ -520,7 +521,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 #### in Window 1
 
-    & dotnet run -c Release -p samples/Web -- -C -U es
+    & dotnet run -c Release --project samples/Web -- -C -U es
 
 #### in Window 2
 
@@ -529,11 +530,7 @@ The CLI can drive the Store and TodoBackend samples in the `samples/Web` ASP.NET
 
 ### run CosmosDB benchmark (when provisioned)
 
-    $env:EQUINOX_COSMOS_CONNECTION="AccountEndpoint=https://....;AccountKey=....=;"
-    $env:EQUINOX_COSMOS_DATABASE="equinox-test"
-    $env:EQUINOX_COSMOS_CONTAINER="equinox-test"
-
-    dotnet run -p tools/Equinox.Tool -- run `
+    dotnet run --project tools/Equinox.Tool -- run `
       cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
 
 ## PROVISIONING
@@ -546,11 +543,12 @@ For more complete instructions, follow https://developers.eventstore.com/server/
 
 ### Provisioning CosmosDB (when not using -sc)
 
-    dotnet run -p tools/Equinox.Tool -- init -ru 400 `
+    dotnet run --project tools/Equinox.Tool -- init -ru 400 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
-    # Same for a Secondary container for integration testing of the fallback mechanism
-    dotnet run -p tools/Equinox.Tool -- init -ru 400 `
-        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER2
+    # Same for a Archive Container for integration testing of the archive store fallback mechanism
+    $env:EQUINOX_COSMOS_CONTAINER_ARCHIVE="equinox-test-archive"
+    dotnet run --project tools/Equinox.Tool -- init -ru 400 `
+        cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER_ARCHIVE
 
 ### Provisioning SqlStreamStore
 
@@ -601,9 +599,11 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
   - [Provision](#provisioning):
     - Start Local EventStore running in simulated cluster mode
     - Set environment variables x 4 for a CosmosDB database and container (you might need to `eqx init`)
-    - Add a `EQUINOX_COSMOS_CONTAINER2` environment variable referencing a separate (`eqx init` initialized) CosmosDB Container that will be used to store fallback events in the [Fallback mechanism's tests](https://github.com/jet/equinox/pull/247)
-    - `docker-compose up` to start 3 servers for the `SqlStreamStore.*.Integration` test suites
-        - [NB `SqlStreamStore.MsSql` has not been tested yet](https://github.com/jet/equinox/issues/175) :see_no_evil: **
+    - Add a `EQUINOX_COSMOS_CONTAINER_ARCHIVE` environment variable referencing a separate (`eqx init` initialized) CosmosDB Container that will be used to house fallback events in the [Fallback mechanism's tests](https://github.com/jet/equinox/pull/247)
+    - `docker-compose up` to start
+      - 3 servers for the `SqlStreamStore.*.Integration` test suites (NOTE: manual step for MS SQL)
+      - 3 `EventStoreDB` cluster nodes
+      - DynamoDB local and admin images and (`dynamodb-local`, `dynamodb-admin`) 
   - Run `./build.ps1` in PowerShell (or PowerShell Core on MacOS via `brew install cask pwsh`)
 
 - [CHANGELOG](CHANGELOG.md) should be up to date
@@ -626,7 +626,7 @@ OK, I've read the README and the tagline. I still don't know what it does! Reall
   - providing an in-memory store that implements the same interface as the EventStore and CosmosDB stores do
 - There is a projection story, but it's not the last word - any 3 proper architects can come up with at least 3 wrong and 3 right ways of running those perfectly
   - For EventStore, you use its' projections; they're great. There's a `Propulsion.EventStore` which serves the needs of `dotnet new proSync`, [but it's not intended for application level projections as yet](https://github.com/jet/propulsion/issues/8).
-  - for CosmosDB, you use the `Propulsion.Cosmos.*` libraries to work off the CosmosDB ChangeFeed using the Microsoft ChangeFeedProcessor library (and, optionally, project to/consume from Kafka) using the sample app templates (`dotnet new proProjector`).
+  - for CosmosDB, you use the `Propulsion.CosmosStore.*` libraries to work off the CosmosDB ChangeFeed using the `Microsoft.Azure.Cosmos` library's change feed support (and, optionally, project to/consume from Kafka) using the sample app templates (`dotnet new proProjector`).
 
 ### Should I use Equinox to learn event sourcing ?
 
@@ -687,7 +687,7 @@ The secondary benefit is of course that you have an absolute guarantee there wil
 
 `Equinox.SqlStreamStore` implements this scheme too - it's easier to do things like e.g. replace the bodies of snapshot events with `nulls` as a maintenance task in that instance
 
-Initially, `Equinox.CosmosStore` implemented the same strategy as the `Equinox.EventStore` (it started as a cut and paste of the it). However the present implementation takes advantage of the fact that in a Document Store, you can ... update documents - thus, snapshots (termed unfolds) are saved in a custom field (it's an array) in the Tip document - every update includes an updated snapshot (which is zipped to save read and write costs) which overwrites the preceding unfolds. You're currently always guaranteed that the snapshots are in sync with the latest event by virtue of how the stored proc writes. A DynamoDb impl would likely follow the same strategy
+Initially, `Equinox.CosmosStore` implemented the same strategy as the `Equinox.EventStore` (it started as a cut and paste of the it). However the present implementation takes advantage of the fact that in a Document Store, you can ... update documents - thus, snapshots (termed unfolds) are saved in a custom field (it's an array) in the Tip document - every update includes an updated snapshot (which is zipped to save read and write costs) that overwrites the unfolds entirely. You're currently always guaranteed that the snapshots are in sync with the latest event by virtue of how the stored proc writes. The DynamoDb impl follows the same strategy.
 
 I expand (too much!) on some more of the considerations in https://github.com/jet/equinox/blob/master/DOCUMENTATION.md
 
@@ -792,7 +792,7 @@ Note that for `Equinox.CosmosStore` with a
 [pruner](https://github.com/jet/dotnet-templates/tree/master/propulsion-pruner)-[archiver](https://github.com/jet/dotnet-templates/tree/master/propulsion-archiver)
 pair configured, the primary store may have been stripped of events due to the operation of the pruner.
 In this case, it will however retain the version of the stream in the tip document, and if that's non-`0`,
-will attempt to load the archived events from the secondary store.
+will attempt to load the archived events from the Archive store.
 
 ### What is Equinox's behavior if one does a `Query` on a 'non-existent' stream? :pray: [@ragiano215](https://github.com/ragiano215)
 

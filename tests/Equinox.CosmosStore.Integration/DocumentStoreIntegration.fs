@@ -1,50 +1,50 @@
-﻿module Equinox.CosmosStore.Integration.CosmosIntegration
+﻿module Equinox.Store.Integration.DocumentStoreIntegration
 
 open Domain
-open Equinox.CosmosStore
 open FSharp.UMX
 open Swensen.Unquote
 open System
 open System.Threading
+open Equinox.CosmosStore
+open Equinox.CosmosStore.Integration.CosmosFixtures
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let codec = Cart.Events.codecStj
     let createServiceWithoutOptimization log context =
-        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
+        let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Cart.create log resolve
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds log context =
         let unfArgs = Cart.Fold.isOrigin, fun _ -> Seq.empty
-        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve
+        let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve
         Cart.create log resolve
     let createServiceWithSnapshotStrategy log context =
-        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
+        let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
         Cart.create log resolve
     let createServiceWithSnapshotStrategyAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolve = CosmosStoreCategory(context, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve
+        let resolve = StoreCategory(context, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve
         Cart.create log resolve
     let createServiceWithRollingState log context =
         let access = AccessStrategy.RollingState Cart.Fold.snapshot
-        let resolve = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve
+        let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve
         Cart.create log resolve
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
     let codec = ContactPreferences.Events.codecStj
-    let createServiceWithoutOptimization createContext queryMaxItems log _ignoreWindowSize _ignoreCompactionPredicate =
-        let context = createContext queryMaxItems
-        let resolveStream = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
+    let private createServiceWithLatestKnownEvent context log cachingStrategy =
+        let resolveStream = StoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
         ContactPreferences.create log resolveStream
-    let createService log context =
-        let resolveStream = CosmosStoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.LatestKnownEvent).Resolve
-        ContactPreferences.create log resolveStream
-    let createServiceWithLatestKnownEvent context log cachingStrategy =
-        let resolveStream = CosmosStoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
-        ContactPreferences.create log resolveStream
+    let createServiceWithoutCaching log context =
+        createServiceWithLatestKnownEvent context log CachingStrategy.NoCaching
+    let createServiceWithCaching log context cache =
+        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        createServiceWithLatestKnownEvent context log sliding20m
 
+[<Xunit.Collection "DocStore">]
 type Tests(testOutputHelper) =
     let testContext = TestContext(testOutputHelper)
     let log, capture = testContext.CreateLoggerWithCapture()
@@ -67,7 +67,7 @@ type Tests(testOutputHelper) =
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly batching the reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore, correctly batching the reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
         capture.Clear() // for re-runs of the test
         let addRemoveCount = 40
         let eventsPerAction = addRemoveCount * 2 - 1
@@ -76,8 +76,10 @@ type Tests(testOutputHelper) =
 
         let service = Cart.createServiceWithoutOptimization log context
         let expectedResponses n =
-            let expectedBatches = 1 + if eventsInTip then n / 2 else n
-            max 1 (int (ceil (float expectedBatches / float queryMaxItems)))
+            let tipItem = 1
+            let finalEmptyPage = 0
+            let expectedItems = tipItem + (if eventsInTip then n / 2 else n) + finalEmptyPage
+            max 1 (int (ceil (float expectedItems / float queryMaxItems)))
 
         let cartId = % Guid.NewGuid()
         // The command processing will trigger QueryB operations as no snapshots etc are being used
@@ -91,7 +93,6 @@ type Tests(testOutputHelper) =
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
         let! state = service.Read cartId
-        let expectedEventCount = transactions * eventsPerAction
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
         test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
@@ -100,7 +101,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, managing sync conflicts by retrying`` (eventsInTip, ctx, initialState) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore, managing sync conflicts by retrying`` (eventsInTip, ctx, initialState) = Async.RunSynchronously <| async {
         capture.Clear()
         let log1, capture1 = log, capture
         let queryMaxItems = 3
@@ -182,9 +183,9 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update against Cosmos with LatestKnownEvent Access Strategy`` (eventsInTip, value : ContactPreferences.Events.Preferences) = Async.RunSynchronously <| async {
+    let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent without Caching`` (eventsInTip, value : ContactPreferences.Events.Preferences) = Async.RunSynchronously <| async {
         let context = createPrimaryContextEx log 1 (if eventsInTip then 1 else 0)
-        let service = ContactPreferences.createService log context
+        let service = ContactPreferences.createServiceWithoutCaching log context
         // We need to be sure every Update changes something as we rely on an expected number of events in the end
         let value = if value <> ContactPreferences.Fold.initial then value else { value with manyPromotions = true }
 
@@ -216,7 +217,8 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
         test <@ match res with
-                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no Archive Container supplied"
+                                  || e.Message.StartsWith "Origin event not found; no Archive Table supplied"
                 | x -> failwithf "Unexpected %A" x @>
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.99
@@ -237,9 +239,10 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can correctly read and update Contacts against Cosmos with RollingUnfolds Access Strategy`` value = Async.RunSynchronously <| async {
+    let ``Can correctly read and update Contacts against DocStore with LatestKnownEvent`` value = Async.RunSynchronously <| async {
         let context = createPrimaryContextEx log 1 10
-        let service = ContactPreferences.createServiceWithLatestKnownEvent context log CachingStrategy.NoCaching
+        let cache = Equinox.Cache("contacts", sizeMb = 50)
+        let service = ContactPreferences.createServiceWithCaching log context cache
 
         let id = ContactPreferences.Id (let g = Guid.NewGuid() in g.ToString "N")
         // Ensure there will be something to be changed by the Update below
@@ -252,11 +255,14 @@ type Tests(testOutputHelper) =
         let! result = service.Read id
         test <@ value = result @>
 
-        test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
+        let! result = service.ReadStale id // should not trigger roundtrip
+        test <@ value = result @>
+
+        test <@ [EqxAct.TipNotModified; EqxAct.Append; EqxAct.TipNotModified] = capture.ExternalCalls @>
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip Cart against Cosmos with RollingUnfolds, detecting conflicts based on _etag`` (ctx, initialState) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore with RollingState, detecting conflicts based on etag`` (ctx, initialState) = Async.RunSynchronously <| async {
         let log1, capture1 = log, capture
         capture1.Clear()
         let context = createPrimaryContextEx log1 1 10
@@ -331,7 +337,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, using Snapshotting to avoid queries`` (cartContext, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore, using Snapshotting to avoid queries`` (cartContext, skuId) = Async.RunSynchronously <| async {
         let queryMaxItems = 10
         let context = createPrimaryContextEx log queryMaxItems 10
         let createServiceIndexed () = Cart.createServiceWithSnapshotStrategy log context
@@ -368,7 +374,8 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
         test <@ match res with
-                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no Archive Container supplied"
+                                  || e.Message.StartsWith "Origin event not found; no Archive Table supplied"
                 | x -> failwithf "Unexpected %A" x @>
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.99
@@ -381,7 +388,7 @@ type Tests(testOutputHelper) =
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can roundtrip against Cosmos, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
+    let ``Can roundtrip against DocStore, correctly using Snapshotting and Cache to avoid redundant reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
         let context = createPrimaryContextEx log 10 (if eventsInTip then 10 else 0)
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let createServiceCached () = Cart.createServiceWithSnapshotStrategyAndCaching log context cache
@@ -428,7 +435,8 @@ type Tests(testOutputHelper) =
         capture.Clear()
         let! res = Core.Events.get ctx streamName 0L Int32.MaxValue |> Async.Catch
         test <@ match res with
-                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no secondary container supplied"
+                | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no Archive Container supplied"
+                                  || e.Message.StartsWith "Origin event not found; no Archive Table supplied"
                 | x -> failwithf "Unexpected %A" x @>
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.99

@@ -52,6 +52,10 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State>
         let decider = resolve email
         decider.Query id
 
+    member _.ReadStale(email) =
+        let decider = resolve email
+        decider.Query(id, Equinox.AllowStale)
+
 let create log resolveStream =
     let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts  = 3)
     Service(resolve)

@@ -2,7 +2,6 @@ namespace Web
 
 open Argu
 open Microsoft.AspNetCore.Builder
-open Microsoft.AspNetCore.Mvc
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Samples.Infrastructure
@@ -15,9 +14,9 @@ type Arguments =
     | [<AltCommandLine "-S">]                                 LocalSeq
     | [<AltCommandLine "-C">]                                 Cached
     | [<AltCommandLine "-U">]                                 Unfolds
+    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Arguments>
-    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">]  MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">]  MySql    of ParseResults<Storage.Sql.My.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">]  Postgres of ParseResults<Storage.Sql.Pg.Arguments>

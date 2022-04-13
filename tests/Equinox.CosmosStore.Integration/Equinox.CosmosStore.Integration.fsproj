@@ -12,7 +12,7 @@
     <Compile Include="CosmosFixtures.fs" />
     <Compile Include="CosmosFixturesInfrastructure.fs" />
     <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs" Link="AutoDataAttribute.fs" />
-    <Compile Include="CosmosIntegration.fs" />
+    <Compile Include="DocumentStoreIntegration.fs" />
     <Compile Include="AccessStrategies.fs" />
     <Compile Include="CosmosCoreIntegration.fs" />
     <Compile Include="JsonConverterTests.fs" />

@@ -40,7 +40,7 @@ services:
 # it _almost_ (but doesnt) works with the default mysql using the following
 #    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
 
-  setup:
+  setup.eventstore:
     image: eventstore/es-gencert-cli:1.0.2
     entrypoint: bash
     user: "1000:1000"
@@ -51,7 +51,7 @@ services:
       && es-gencert-cli create-node -out ./node2 -ip-addresses 127.0.0.1,172.30.240.12 -dns-names localhost
       && es-gencert-cli create-node -out ./node3 -ip-addresses 127.0.0.1,172.30.240.13 -dns-names localhost
       && find . -type f -print0 | xargs -0 chmod 666"
-    container_name: setup
+    container_name: setup.eventstore
     volumes:
       - ./certs:/certs
 
@@ -83,7 +83,7 @@ services:
       volumes:
         - ./certs:/certs
       depends_on:
-        - setup
+        - setup.eventstore
       restart: always
       networks:
         clusternetwork:

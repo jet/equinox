@@ -200,14 +200,14 @@ Next, we extend the scenario to show:
 ![Equinox.CosmosStore c4model.com Code - with cache, snapshotting](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=1&fmt=svg)
 
 After the write, we circle back to illustrate the effect of the caching when we
-have correct state (we get a `304 Not Mofified` and pay only `1 RU`)
+have correct state (we get a `304 Not Modified` and pay only `1 RU`)
 
 ![Equinox.CosmosStore c4model.com Code - next time; same process, i.e. cached](http://www.plantuml.com/plantuml/proxy?cache=no&src=https://raw.github.com/jet/equinox/master/diagrams/CosmosCode.puml&idx=2&fmt=svg)
 
 In other processes (when a cache is not fully in sync), the sequence runs
 slightly differently:
 - we read the _Tip_ document, and can work from that snapshot
-- the same fallback sequence shown in the initial read will take place if no
+- the same Loading Fallback sequence shown in the initial read will take place if no
   suitable snapshot that passes the `isOrigin` predicate is found within the
   _Tip_
 
@@ -2165,13 +2165,13 @@ The writing of the event to move the active Epoch id forward in the _Series_ agg
 
 As with 'Database epochs', once a given 'Stream epoch' has been marked active in a Series, we gain options as to what to do with the preceding ones:
 - we may opt to retain them in order to enable replaying of projections for currently-unknown reasons
-- if we intend to retain them for a significant period: we can replicate/sync/mirror/archive them to a secondary archive, then prune them from the primary dataset
+- if we intend to retain them for a significant period: we can replicate/sync/mirror/archive them to a archive store, then prune them from the primary dataset
 - if they are only relevant to assist troubleshooting over some short term: we can delete them after a given period (without copying them anywhere)
 
-When writing to a secondary store, there's also an opportunity to vary the writing process from that forced by the constraints imposed when writing as part of normal online transaction processing:
-- it will often make sense to have the archiver add a minimal placeholder to the secondary store regardless of whether a given stream is being archived, which can then be used to drive the walk of the primary instead of placing avoidable load on the primary by having to continually loop over all the data in order to re-assess archival criteria over time
-- when copying from primary to secondary, there's an opportunity to optimally pack events into batches (for instance in `Equinox.CosmosStore`, batching writes means less documents, which reduces document count, per-document overhead, the overall data and index size in the container and hence query costs)
-- when writing to warm secondary storage, it may make sense to compress the events (under normal circumstances, compressing event data is rarely considered a worthwhile tradeoff).
+When writing to a archival store, there's also an opportunity to vary the writing process from that forced by the constraints imposed when writing as part of normal online transaction processing:
+- it will often make sense to have the archiver add a minimal placeholder to the archival store regardless of whether a given stream is being archived, which can then be used to drive the walk of the primary instead of placing avoidable load on the primary by having to continually loop over all the data in order to re-assess archival criteria over time
+- when copying from primary to archive, there's an opportunity to optimally pack events into batches (for instance in `Equinox.CosmosStore`, batching writes means less documents, which reduces document count, per-document overhead, the overall data and index size in the container and hence query costs)
+- when writing to warm archival storage, it may make sense to compress the events (under normal circumstances, compressing event data is rarely considered a worthwhile tradeoff).
 - where the nature of traffic on the system has peaks and troughs, there's an opportunity to shift the process of traversing the data for archival purposes to a window outside of the peak load period (although, in general, the impact of reads for the purposes of archival won't be significant enough to warrant optimizing this factor)
 
 ### Archiver + Pruner roles
@@ -2179,7 +2179,7 @@ When writing to a secondary store, there's also an opportunity to vary the writi
 > _Outlining the roles of the `proArchiver` and `proPruner` templates_
 
 It's conceivable that one might establish a single service combining the activities of:
-1. copying (archiving) to the secondary store in reaction to changes in the primary
+1. copying (archiving) to the archive store in reaction to changes in the primary
 2. pruning from the primary when the copying is complete
 3. deleting immediately
 4. continually visiting all streams in the primary in order to archive and/or prune streams that have fallen out of use
@@ -2193,15 +2193,15 @@ However, splitting the work into two distinct facilities allows better delineati
 An archiver tails a monitored store and bears the following responsibilities:
 - minimizing the load on the source it's monitoring
 - listens to all event writes (via `$all` in the case of EventStoreDB or a ChangeFeed Processor in the case of CosmosDB)
-- ensuring the secondary becomes aware of all new streams (especially in the case of `Equinox.CosmosStore` streams in `AccessStrategy.RollingState` mode, which do not yield a new event-batch per write)
+- ensuring the archive becomes aware of all new streams (especially in the case of `Equinox.CosmosStore` streams in `AccessStrategy.RollingState` mode, which do not yield a new event-batch per write)
 
 #### Pruner
 
-The pruner cyclically (i.e., when it reaches the end, it loops back to the start) walks the secondary store:
-- visiting each stream, identifying the current write position in the secondary
-- uses that as input into a decision as to whether / how many events can be trimmed from the primary (deletion does not need to take place right away - Equinox will deal with events spread over a Primary/Secondary pair of Containers via the [Fallback mechanism](https://github.com/jet/equinox/pull/247)
+The pruner cyclically (i.e., when it reaches the end, it loops back to the start) walks the archive store:
+- visiting each stream, identifying the current write position in the archive
+- uses that as input into a decision as to whether / how many events can be trimmed from the primary (deletion does not need to take place right away - Equinox will deal with events spread over a Primary/Archive pair of Containers via the [Loading Fallback mechanism](https://github.com/jet/equinox/pull/247)
 - (for `Equinox.CosmosStore`) can optimize the packing of the events (e.g. if the most recent 4 events have arrived as 2 batches, the pruner can merge the two batches to minimize storage and index size). When writing to a primary collection, batches are never mutated for packing purposes both due to write costs and read amplification.
-- (for `Equinox.CosmosStore`) can opt to delete from the primary if one or more full Batches have been copied to the secondary (note the unit of deletion is a Batch - mutating a Batch in order to remove an event would trigger a reordering of the document's position in the logical partition)
+- (for `Equinox.CosmosStore`) can opt to delete from the primary if one or more full Batches have been copied to the archive (note the unit of deletion is a Batch - mutating a Batch in order to remove an event would trigger a reordering of the document's position in the logical partition)
 
 # Ideas
 

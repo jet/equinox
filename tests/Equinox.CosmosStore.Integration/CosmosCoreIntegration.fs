@@ -391,7 +391,7 @@ type Tests(testOutputHelper) =
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
 
         let! expected = add6EventsIn2BatchesEx ctx1 streamName 4
-        // Add the same events to the secondary container
+        // Add the same events to the archive container
         let! _ = add6EventsIn2Batches ctx2 streamName
 
         // Trigger deletion of first batch from primary
@@ -408,14 +408,14 @@ type Tests(testOutputHelper) =
         if eventsInTip then verifyRequestChargesMax 3 // 2.83
         else verifyRequestChargesMax 4 // 3.04
 
-        // Prove the full set exists in the secondary
+        // Prove the full set exists in the Archive
         capture.Clear()
         let! res = Events.get ctx2 streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyCorrectEvents 0L expected res
         verifyRequestChargesMax 4 // 3.09
 
-        // Prove we can fallback with full set in secondary
+        // Prove we can fallback with full set in Archive
         capture.Clear()
         let! res = Events.get ctx12 streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
@@ -441,7 +441,7 @@ type Tests(testOutputHelper) =
         test <@ 6L = res @>
         verifyRequestChargesMax 1
 
-        // Fallback queries secondary (unless we actually delete the Tip too)
+        // Fallback queries Archive (unless we actually delete the Tip too)
         capture.Clear()
         let! res = Events.get ctx12 streamName 0L Int32.MaxValue
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
