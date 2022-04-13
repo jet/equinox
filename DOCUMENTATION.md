@@ -2232,7 +2232,7 @@ rich relative to the need of consumers to date. Some things remain though:
 
 - Provide a low level walking events in F# API akin to
   `Equinox.CosmosStore.Core.Events`; this would allow consumers to jump from direct
-  use of `EventStore.ClientAPI` -> `Equinox.EventStore.Core.Events` ->
+  use of `EventStore.Client` -> `Equinox.EventStore.Core.Events` ->
   `Equinox.Decider` (with the potential to swap stores once one gets to using
   `Equinox.Decider`)
 - Get conflict handling as efficient and predictable as for `Equinox.CosmosStore`
