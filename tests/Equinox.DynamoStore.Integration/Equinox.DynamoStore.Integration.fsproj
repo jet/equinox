@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <WarningLevel>5</WarningLevel>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <DefineConstants>$(DefineConstants);STORE_DYNAMO</DefineConstants>
   </PropertyGroup>
@@ -34,7 +32,6 @@
 
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.16.4" />
-    <PackageReference Include="JsonDiffPatch.Net" Version="2.3.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
     <PackageReference Include="unquote" Version="6.1.0" />

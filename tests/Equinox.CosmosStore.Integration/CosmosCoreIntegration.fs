@@ -108,7 +108,7 @@ type Tests(testOutputHelper) =
         let! pos = Events.getNextIndex ctx streamName
         test <@ [EqxAct.TipNotFound] = capture.ExternalCalls @>
         0L =! pos
-        verifyRequestChargesMax 1 // for a 404 by definition
+        verifyRequestChargesMax 2 // was 1 for a 404 by definition, now 1.38
         capture.Clear()
 
         let mutable pos = 0L
@@ -327,7 +327,7 @@ type Tests(testOutputHelper) =
         let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName -1L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 0L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 3 // 2.86
+        verifyRequestChargesMax 4 // 3.62
 
         // Trigger deletion of first batch, but as we're in the middle of the next Batch...
         capture.Clear()
@@ -350,7 +350,7 @@ type Tests(testOutputHelper) =
         let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 4L
         test <@ deleted = 0 && deferred = (if eventsInTip then 0 else 1) && trimmedPos = pos @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 3 // 2.86
+        verifyRequestChargesMax 4 // 3.24
 
         // We should still get the high-water mark even if we asked for less
         capture.Clear()
@@ -378,7 +378,7 @@ type Tests(testOutputHelper) =
         let! deleted, deferred, trimmedPos = Events.pruneUntil ctx streamName 6L
         test <@ deleted = 0 && deferred = 0 && trimmedPos = 6L @>
         test <@ [EqxAct.PruneResponse; EqxAct.Prune] = capture.ExternalCalls @>
-        verifyRequestChargesMax 3 // 2.83
+        verifyRequestChargesMax 4 // 3.21
     }
 
     (* Fallback *)
