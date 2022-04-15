@@ -14,10 +14,10 @@ module EventBody = let (|Bytes|) : EventBody -> int = function null -> 0 | x -> 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
 type Event =
-    {   /// Creation datetime (as opposed to system-defined _lastUpdated which is touched by triggers, replication etc.)
+    {   /// Creation Timestamp, as set by the application layer at the point of rendering the Event
         t : DateTimeOffset
 
-        /// The Case (Event Type); used to drive deserialization
+        /// The Event Type (Case) that defines the content of the Data (and Metadata) fields
         c : string
 
         /// Event body, as UTF-8 encoded json
@@ -26,10 +26,10 @@ type Event =
         /// Optional metadata, encoded as per 'd'
         m : EventBody // can be null
 
-        /// correlationId, or null
+        /// CorrelationId; stored as x (signifying transactionId), or null
         correlationId : string option
 
-        /// causationId, or null
+        /// CausationId; stored as y (signifying why), or null
         causationId : string option
     }
     interface IEventData<EventBody> with
@@ -65,35 +65,66 @@ module Unfold =
     let bytes (x : Unfold) = let EventBody.Bytes db, EventBody.Bytes mb = x.d, x.m in x.c.Length + db + mb + 50
     let arrayBytes (xs : Unfold[]) = match xs with null -> 0 | u -> Array.sumBy bytes u
 
-/// A 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
+/// The abstract storage format for a 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
+/// NOTE See BatchSchema for what actually gets stored
+/// NOTE names are intended to generally align with CosmosStore naming. Key Diffs:
+/// - no mandatory `id` and/or requirement for it to be a `string` -> replaced with `i` as an int64 (also Tip magic value is tipMagicI: int.MaxValue, not "-1")
+/// - etag is managed explicitly (on Cosmos DB, its managed by the service and named "_etag")
+/// NOTE see the BatchSchema buddy type for what the store internally has
 [<NoEquality; NoComparison>]
 type Batch =
-    {   [<HashKey>]
-        p : string // "{streamName}"
+    {   p : string // "{streamName}"
 
         /// base 'i' value for the Events held herein
-        [<RangeKey>]
         i : int64 // tipMagicI for the Tip
 
+        /// Marker on which compare-and-swap operations on Tip are predicated
+        etag : string
+
         /// `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
-        [<LocalSecondaryIndex>]
         n : int64
 
         /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
         e : Event[]
 
         /// Compaction/Snapshot/Projection quasi-events
-        u : Unfold[]
-
-        /// Marker on which compare-and-swap operations on Tip are predicated
-        etag : string }
+        u : Unfold[] }
 module Batch =
+    /// The concrete storage format
+    [<NoEquality; NoComparison>]
+    type Schema =
+        {   [<HashKey>]
+            p : string
+            [<RangeKey>]
+            i : int64 // tipMagicI for the Tip
+            etag : string
+            n : int64
+            // Count of items written in the most recent insert/update - used by the DDB Streams Consumer to identify the fresh events
+            a : int
+            // NOTE the per-event e.c values are actually stored here, so they can be selected out without hydrating the bodies
+            c : string[]
+            // NOTE as per Event, but without a 'c' field; we instead uroll those into the top level `c` array
+            e : EventSchema[]
+            u : Unfold[] }
+     and EventSchema =
+        {   t : DateTimeOffset
+            d : EventBody
+            m : EventBody
+            x : string option
+            y : string option
+        }
     /// Computes base Index for the Item (`i` can bear the the magic value TipI when the Item is the Tip)
-    let baseIndex x = x.n - x.e.LongLength
+    let baseIndex (x : Batch) = x.n - x.e.LongLength
     let tipMagicI = int64 Int32.MaxValue
     let baseBytes (x : Batch) = 80 + x.p.Length + String.length x.etag + Event.arrayBytes x.e
     let unfoldsBytes (x : Batch) = Unfold.arrayBytes x.u
     let allBytes (xs : Batch seq) = xs |> Seq.sumBy (fun x -> baseBytes x + unfoldsBytes x)
+    let toSchema (xs : Event[]) : string[] * EventSchema[] =
+        let toEventSchema (x : Event) : EventSchema = { t = x.t; d = x.d; m = x.m; x = x.correlationId; y = x.causationId }
+        xs |> Array.map (fun x -> x.c), xs |> Array.map toEventSchema
+    let ofSchema (x : Schema) : Batch =
+        let e' = (x.e, x.c) ||> Array.map2 (fun e c -> { t = e.t; d = e.d; m = e.m; correlationId = e.x; causationId = e.y; c = c })
+        { p = x.p; i = x.i; etag = x.etag; n = x.n; e = e'; u = x.u }
 
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -301,10 +332,10 @@ type Metrics() =
             w <- w + x.WriteCapacityUnits
     member _.Consumed = { read = r; write = w }
 
-type Container(tableName, createContext : (RequestMetrics -> unit) -> TableContext<Batch>) =
+type Container(tableName, createContext : (RequestMetrics -> unit) -> TableContext<Batch.Schema>) =
     /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly (see DynamoStoreClient.Connect(ConnectMode) re validating on startup)
     static member Create(client, tableName) =
-        let createContext collector = TableContext<Batch>(client, tableName, metricsCollector = collector)
+        let createContext collector = TableContext<Batch.Schema>(client, tableName, metricsCollector = collector)
         Container(tableName, createContext)
 
     member _.TableKeyForStreamTip(stream) =
@@ -314,21 +345,21 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
         let context = createContext ru.Add
         let pk = x.TableKeyForStreamTip stream
         let! item = context.TryGetItemAsync(pk)
-        return item, ru.Consumed }
+        return item |> Option.map Batch.ofSchema, ru.Consumed }
     member _.EnumBatches(stream, minN, maxI, backwards, batchSize) : AsyncSeq<int * StopwatchInterval * Batch[] * ConsumedMetrics> =
         let compile = (createContext ignore).Template.PrecomputeConditionalExpr
         let kc = match maxI with
-                 | Some maxI -> compile <@ fun (b : Batch) -> b.p = stream && b.i < maxI @>
-                 | None -> compile <@ fun (b : Batch) -> b.p = stream @>
+                 | Some maxI -> compile <@ fun (b : Batch.Schema) -> b.p = stream && b.i < maxI @>
+                 | None -> compile <@ fun (b : Batch.Schema) -> b.p = stream @>
         let fc = match minN with
-                 | Some minN -> compile <@ fun (b : Batch) -> b.n > minN @> |> Some
+                 | Some minN -> compile <@ fun (b : Batch.Schema) -> b.n > minN @> |> Some
                  | None -> None
         let rec aux (i, lastEvaluated) = asyncSeq {
             // TOCONSIDER could avoid projecting `p`
             let ru = Metrics()
             let context = createContext ru.Add
             let! t, res = context.QueryPaginatedAsync(kc, ?filterCondition = fc, limit = batchSize, ?exclusiveStartKey = lastEvaluated, scanIndexForward = not backwards) |> Stopwatch.Time
-            yield i, t, res.Records, ru.Consumed
+            yield i, t, Array.map Batch.ofSchema res.Records, ru.Consumed
             match res.LastEvaluatedKey with
             | None -> ()
             | le -> yield! aux (i + 1, le)
@@ -360,60 +391,66 @@ module internal Sync =
         | Written of Position
         | ConflictUnknown
 
-    let private run (container : Container, stream : string) (tipEmpty, exp, n', calve : Event[], append : Event[], unfolds)
+    let private run (container : Container, stream : string) (tipEmpty, exp, n', calve : Event[], append_ : Event[], unfolds, eventCount)
         : Async<ConsumedMetrics * Result> = async {
         let metrics = Metrics()
         let context = container.Context(metrics.Add)
-        let batchDoesNotExistCondition : Quotations.Expr<Batch -> bool> = <@ fun t -> NOT_EXISTS t.i @>
+        let batchDoesNotExistCondition : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> NOT_EXISTS t.i @>
+        let appendC, appendE = Batch.toSchema append_
+        let tipEventCount = append_.LongLength
         let insertItem item = context.PutItemAsync(item, batchDoesNotExistCondition) |> Async.Ignore
         let updEtag = let g = Guid.NewGuid() in g.ToString "N"
-        let tipEventCount = append.LongLength
+        let appendA = min eventCount append_.Length
         let insertTip index = async {
-            let item = { p = stream; i = Batch.tipMagicI; n = index + tipEventCount; e = append; u = unfolds; etag = updEtag }
+            let item : Batch.Schema = { p = stream; i = Batch.tipMagicI; n = index + tipEventCount; a = appendA; c = appendC; e = appendE; u = unfolds; etag = updEtag }
             do! insertItem item
             return item }
-        let update (condExpr : Quotations.Expr<_ -> bool>) =
-            let updateExpr : Quotations.Expr<_ -> _> =
+        let update (condExpr : Quotations.Expr<Batch.Schema -> bool>) =
+            let updateExpr : Quotations.Expr<Batch.Schema -> _> =
                 // TOCONSIDER figure out whether there is a way to stop DDB choking on the Array.append below when its empty instead of this special casing
                 if calve.Length <> 0 || (tipEmpty && tipEventCount <> 0) then
-                        <@ fun t -> { t with e = append
+                        <@ fun t -> { t with a = appendA; c = appendC; e = appendE
                                              n = n'
                                              etag = updEtag
                                              u = unfolds } @>
                 elif tipEventCount <> 0 then
-                        <@ fun t -> { t with e = Array.append t.e append
+                        <@ fun t -> { t with a = appendA; c = Array.append t.c appendC; e = Array.append t.e appendE
                                              n = t.n + tipEventCount
                                              etag = updEtag
                                              u = unfolds } @>
                 else    <@ fun t -> { t with etag = updEtag; u = unfolds } @>
-            context.UpdateItemAsync(container.TableKeyForStreamTip stream, updateExpr, condExpr)
+            async {
+                let! updated = context.UpdateItemAsync(container.TableKeyForStreamTip stream, updateExpr, condExpr)
+                return updated }
         let updateTip freshTipIndex =
             match exp with
             | Exp.Version 0L
             | Exp.Etag null ->      insertTip freshTipIndex
-            | Exp.Etag eetag ->     let condExpr : Quotations.Expr<Batch -> bool> = <@ fun t -> t.etag = eetag @>
+            | Exp.Etag eetag ->     let condExpr : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> t.etag = eetag @>
                                     update condExpr
-            | Exp.Version ever ->   let condExpr : Quotations.Expr<Batch -> bool> = <@ fun t -> t.n = ever @>
+            | Exp.Version ever ->   let condExpr : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> t.n = ever @>
                                     update condExpr
         let execute =
             if calve.Length > 0 then async {
                 let calfEventCount = calve.LongLength
                 let tipIndex = n' - tipEventCount
-                do! insertItem { p = stream; i = tipIndex - calfEventCount; n = tipIndex; e = calve; u = null; etag = null } // TODO remove etag, u
+                let c, e' = Batch.toSchema calve
+                let calveA = eventCount - appendA
+                do! insertItem { p = stream; i = tipIndex - calfEventCount; n = tipIndex; a = calveA; c = c; e = e'; u = null; etag = null } // TODO remove etag, u
                 return! updateTip tipIndex }
             else updateTip 0L
         try let! updated = execute
-            return metrics.Consumed, Result.Written (Position.fromTip updated)
+            return metrics.Consumed, Result.Written (Position.fromTip (Batch.ofSchema updated))
         with :? ConditionalCheckFailedException ->
             return metrics.Consumed, Result.ConflictUnknown }
 
-    let private logged (container, stream) (tipEmpty, exp : Exp, n', calve, append, unfolds) (log : ILogger)
+    let private logged (container, stream) (tipEmpty, exp : Exp, n', calve, append, unfolds, eventCount) (log : ILogger)
         : Async<Result> = async {
-        let! t, (rc, result) = run (container, stream) (tipEmpty, exp, n', calve, append, unfolds) |> Stopwatch.Time
+        let! t, (rc, result) = run (container, stream) (tipEmpty, exp, n', calve, append, unfolds, eventCount) |> Stopwatch.Time
         let calveBytes, tipBytes = Event.arrayBytes calve, Event.arrayBytes append + Unfold.arrayBytes unfolds
-        let ecount, ucount = Array.length append, Array.length unfolds
+        let ucount = Array.length unfolds
         let log =
-            let reqMetric = Log.metric container.TableName stream t (calveBytes + tipBytes) (ecount+ucount) rc
+            let reqMetric = Log.metric container.TableName stream t (calveBytes + tipBytes) (eventCount+ucount) rc
             if log.IsEnabled Events.LogEventLevel.Debug then log |> Log.propDataEvents (Enum.Events(n', append)) |> Log.propDataUnfolds unfolds else log
             |> match exp with
                 | Exp.Etag et ->            Log.prop "expectedEtag" et
@@ -424,7 +461,7 @@ module internal Sync =
                                             >> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in append -> x.c }))
                                             >> Log.event (Log.Metric.SyncConflict reqMetric)
         log.Information("EqxDynamo {action:l} {stream:l} {ecount}+{ucount} {ms:f1}ms {rru}/{wru}RU {calveBytes}+{tipBytes:n0}b {exp}",
-            "Sync", stream, ecount, ucount, tms t, rc.read, rc.write, calveBytes, tipBytes, exp)
+            "Sync", stream, eventCount, ucount, tms t, rc.read, rc.write, calveBytes, tipBytes, exp)
         return result }
 
     let batch (log : ILogger) retryPolicy containerStream expBatch : Async<Result> =
@@ -434,22 +471,22 @@ module internal Sync =
 module Initialization =
 
     let private prepare (client : IAmazonDynamoDB) tableName maybeThroughput : Async<unit> =
-        let context = TableContext<Batch>(client, tableName)
+        let context = TableContext<Batch.Schema>(client, tableName)
         match maybeThroughput with Some throughput -> context.VerifyOrCreateTableAsync(throughput) | None -> context.VerifyTableAsync()
 
     /// Verify the specified <c>tableName</c> is present and adheres to the correct schema.
     let verify (client : IAmazonDynamoDB) tableName : Async<unit> =
-        let context = TableContext<Batch>(client, tableName)
+        let context = TableContext<Batch.Schema>(client, tableName)
         context.VerifyTableAsync()
 
     /// Create the specified <c>tableName</c> if it does not exist. Will throw if it exists but the schema mismatches.
     let createIfNotExists (client : IAmazonDynamoDB) tableName throughput : Async<unit> =
-        let context = TableContext<Batch>(client, tableName)
+        let context = TableContext<Batch.Schema>(client, tableName)
         context.VerifyOrCreateTableAsync(throughput)
 
     /// Provision (or re-provision) the specified table with the specified <c>Throughput</c>. Will throw if schema mismatches.
     let provision (client : IAmazonDynamoDB) tableName throughput = async {
-        let context = TableContext<Batch>(client, tableName)
+        let context = TableContext<Batch.Schema>(client, tableName)
         do! context.VerifyOrCreateTableAsync(throughput)
         do! context.UpdateTableIfRequiredAsync(throughput) }
 
@@ -961,8 +998,8 @@ type StoreClient(container : Container, fallback : Container option, query : Que
                     | _ -> calfFull <- true; residualEvents.Add e
                 calfEvents.ToArray(), residualEvents.ToArray()
             else Array.empty, events
-        let tipEmpty = Array.isEmpty cur.events
-        match! Sync.batch log tip.WriteRetryPolicy (container, stream) (tipEmpty, exp pos, n', calve, append, unfolds) with
+        let tipEmpty, eventCount = Array.isEmpty cur.events, Array.length events
+        match! Sync.batch log tip.WriteRetryPolicy (container, stream) (tipEmpty, exp pos, n', calve, append, unfolds, eventCount) with
         | Sync.Result.ConflictUnknown -> return InternalSyncResult.ConflictUnknown
         | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create pos') }
 
