@@ -149,7 +149,10 @@ type internal Enum() =
         |> Seq.sortBy (fun x -> x.Index, x.IsUnfold)
 
 type IRetryPolicy = abstract member Execute : (int -> Async<'T>) -> Async<'T>
-type ConsumedMetrics = { read : float; write : float }
+
+// We only capture the total RUs, without attempting to split them into read/write as the service does not actually populate the associated fields
+// See https://github.com/aws/aws-sdk-go/issues/2699#issuecomment-514378464
+type [<Struct>] RequestConsumption = { total : float }
 
 module [<AutoOpen>] internal Helpers =
 
@@ -163,9 +166,9 @@ module Log =
     [<NoEquality; NoComparison>]
     type Measurement =
        {   table : string; stream : string
-           interval : StopwatchInterval; bytes : int; count : int; rru : float; wru : float }
+           interval : StopwatchInterval; bytes : int; count : int; ru : float }
     let inline metric table stream t bytes count rc : Measurement =
-        { table = table; stream = stream; interval = t; bytes = bytes; count = count; rru = rc.read; wru = rc.write }
+        { table = table; stream = stream; interval = t; bytes = bytes; count = count; ru = rc.total }
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Metric =
         /// Individual read request for the Tip
@@ -250,14 +253,13 @@ module Log =
         module Stats =
 
             type internal Counter =
-                 { mutable rrux100 : int64; mutable wrux100 : int64; mutable count : int64; mutable ms : int64 }
-                 static member Create() = { rrux100 = 0L; wrux100 = 0L; count = 0L; ms = 0L }
-                 member x.Ingest(rru, wru, ms) =
+                 { mutable rux100 : int64; mutable count : int64; mutable ms : int64 }
+                 static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
+                 member x.Ingest(ru, ms) =
                      System.Threading.Interlocked.Increment(&x.count) |> ignore
-                     System.Threading.Interlocked.Add(&x.rrux100, int64 (rru * 100.)) |> ignore
-                     System.Threading.Interlocked.Add(&x.wrux100, int64 (wru * 100.)) |> ignore
+                     System.Threading.Interlocked.Add(&x.rux100, int64 (ru * 100.)) |> ignore
                      System.Threading.Interlocked.Add(&x.ms, ms) |> ignore
-            let inline private (|RcsMs|) ({ interval = i; rru = rru; wru = wru } : Measurement) = rru, wru, int64 (tms i)
+            let inline private (|RuMs|) ({ interval = i; ru = ru } : Measurement) = ru, int64 (tms i)
             type LogSink() =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
                 static member val internal Read = Counter.Create() with get, set
@@ -281,15 +283,15 @@ module Log =
                         match logEvent with
                         | MetricEvent cm ->
                             match cm with
-                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304 | Operation.Query), RcsMs m)  ->
+                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304 | Operation.Query), RuMs m)  ->
                                                                             LogSink.Read.Ingest m
                             | QueryRes (_direction,          _)        ->   ()
-                            | Op (Operation.Write,            RcsMs m)  ->  LogSink.Write.Ingest m
-                            | Op (Operation.Conflict,         RcsMs m)  ->  LogSink.Conflict.Ingest m
-                            | Op (Operation.Prune,            RcsMs m)  ->  LogSink.Prune.Ingest m
+                            | Op (Operation.Write,            RuMs m)  ->  LogSink.Write.Ingest m
+                            | Op (Operation.Conflict,         RuMs m)  ->  LogSink.Conflict.Ingest m
+                            | Op (Operation.Prune,            RuMs m)  ->  LogSink.Prune.Ingest m
                             | PruneRes                        _        ->   ()
-                            | Op (Operation.Delete,           RcsMs m)  ->  LogSink.Delete.Ingest m
-                            | Op (Operation.Trim,             RcsMs m)  ->  LogSink.Trim.Ingest m
+                            | Op (Operation.Delete,           RuMs m)  ->  LogSink.Delete.Ingest m
+                            | Op (Operation.Trim,             RuMs m)  ->  LogSink.Trim.Ingest m
                         | _ -> ()
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
@@ -302,35 +304,32 @@ module Log =
                 "Prune", Stats.LogSink.Prune
                 "Delete", Stats.LogSink.Delete
                 "Trim", Stats.LogSink.Trim ]
-            let mutable rows, totalCount, totalRRc, totalWRc, totalMs = 0, 0L, 0., 0., 0L
-            let logActivity name count rrc wrc lat =
-                let arrc, awrc, ams = (if count = 0L then Double.NaN else rrc/float count), (if count = 0L then Double.NaN else wrc/float count), (if count = 0L then Double.NaN else float lat/float count)
-                log.Information("{name}: {count:n0} requests costing {rru:n0}/{wru:n0}RU (average: {avgR:n2} {avgW:n2}); Average latency: {lat:n0}ms",
-                    name, count, rrc, wrc, arrc, awrc, ams)
+            let mutable rows, totalCount, totalRu, totalMs = 0, 0L, 0., 0L
+            let logActivity name count ru lat =
+                let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
+                log.Information("{name}: {count:n0} requests costing {ru:n0}RU (average: {avgRu:n1}); Average latency: {lat:n0}ms",
+                    name, count, ru, aru, ams)
             for name, stat in stats do
                 if stat.count <> 0L then
-                    let rru = float stat.rrux100 / 100.
-                    let wru = float stat.wrux100 / 100.
+                    let ru = float stat.rux100 / 100.
                     totalCount <- totalCount + stat.count
-                    totalRRc <- totalRRc + rru
-                    totalWRc <- totalWRc + wru
+                    totalRu <- totalRu + ru
                     totalMs <- totalMs + stat.ms
-                    logActivity name stat.count rru wru stat.ms
+                    logActivity name stat.count ru stat.ms
                     rows <- rows + 1
             // Yes, there's a minor race here between the use of the values and the reset
             let duration = Stats.LogSink.Restart()
-            if rows > 1 then logActivity "TOTAL" totalCount totalRRc totalWRc totalMs
+            if rows > 1 then logActivity "TOTAL" totalCount totalRu totalMs
             let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
-            let logPeriodicRate name count rru wru = log.Information("rp{name} {count:n0} = ~{rru:n0} RRU ~{wru:n0} WRU", name, count, rru, wru)
-            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRc/d) (totalWRc/d)
+            let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
+            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRu/d)
 
 type Metrics() =
-    let mutable r, w = 0., 0.
+    let mutable t = 0.
     member _.Add(x : RequestMetrics) =
         for x in x.ConsumedCapacity do
-            r <- r + x.ReadCapacityUnits
-            w <- w + x.WriteCapacityUnits
-    member _.Consumed = { read = r; write = w }
+            t <- t + x.CapacityUnits
+    member _.Consumed = { total = t }
 
 type Container(tableName, createContext : (RequestMetrics -> unit) -> TableContext<Batch.Schema>) =
     /// As per Equinox.CosmosStore, we assume the table to be provisioned correctly (see DynamoStoreClient.Connect(ConnectMode) re validating on startup)
@@ -346,7 +345,7 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
         let pk = x.TableKeyForStreamTip stream
         let! item = context.TryGetItemAsync(pk)
         return item |> Option.map Batch.ofSchema, ru.Consumed }
-    member _.EnumBatches(stream, minN, maxI, backwards, batchSize) : AsyncSeq<int * StopwatchInterval * Batch[] * ConsumedMetrics> =
+    member _.EnumBatches(stream, minN, maxI, backwards, batchSize) : AsyncSeq<int * StopwatchInterval * Batch[] * RequestConsumption> =
         let compile = (createContext ignore).Template.PrecomputeConditionalExpr
         let kc = match maxI with
                  | Some maxI -> compile <@ fun (b : Batch.Schema) -> b.p = stream && b.i < maxI @>
@@ -392,7 +391,7 @@ module internal Sync =
         | ConflictUnknown
 
     let private run (container : Container, stream : string) (tipEmpty, exp, n', calve : Event[], append_ : Event[], unfolds, eventCount)
-        : Async<ConsumedMetrics * Result> = async {
+        : Async<struct (RequestConsumption * Result)> = async {
         let metrics = Metrics()
         let context = container.Context(metrics.Add)
         let batchDoesNotExistCondition : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> NOT_EXISTS t.i @>
@@ -446,7 +445,7 @@ module internal Sync =
 
     let private logged (container, stream) (tipEmpty, exp : Exp, n', calve, append, unfolds, eventCount) (log : ILogger)
         : Async<Result> = async {
-        let! t, (rc, result) = run (container, stream) (tipEmpty, exp, n', calve, append, unfolds, eventCount) |> Stopwatch.Time
+        let! t, ({ total = ru } as rc, result) = run (container, stream) (tipEmpty, exp, n', calve, append, unfolds, eventCount) |> Stopwatch.Time
         let calveBytes, tipBytes = Event.arrayBytes calve, Event.arrayBytes append + Unfold.arrayBytes unfolds
         let ucount = Array.length unfolds
         let log =
@@ -460,8 +459,8 @@ module internal Sync =
                 | Result.ConflictUnknown -> Log.prop "conflict" true
                                             >> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in append -> x.c }))
                                             >> Log.event (Log.Metric.SyncConflict reqMetric)
-        log.Information("EqxDynamo {action:l} {stream:l} {ecount}+{ucount} {ms:f1}ms {rru}/{wru}RU {calveBytes}+{tipBytes:n0}b {exp}",
-            "Sync", stream, eventCount, ucount, tms t, rc.read, rc.write, calveBytes, tipBytes, exp)
+        log.Information("EqxDynamo {action:l} {stream:l} {ecount}+{ucount} {ms:f1}ms {ru}RU {calveBytes}+{tipBytes:n0}b {exp}",
+            "Sync", stream, eventCount, ucount, tms t, ru, calveBytes, tipBytes, exp)
         return result }
 
     let batch (log : ILogger) retryPolicy containerStream expBatch : Async<Result> =
@@ -509,22 +508,21 @@ module internal Tip =
         | None, rc -> return rc, Res.NotFound }
     let private loggedGet (get : Container * string -> Position option -> Async<_>) (container, stream) (maybePos : Position option) (log : ILogger) = async {
         let log = log |> Log.prop "stream" stream
-        let! t, (ru : ConsumedMetrics, res : Res<_>) = get (container, stream) maybePos |> Stopwatch.Time
-        let rc, wc, ms = ru.read, ru.write, tms t
-        let logMetric bytes count (f : Log.Measurement -> _) = log |> Log.event (f (Log.metric container.TableName stream t bytes count ru))
+        let! t, ({ total = ru } as rc, res : Res<_>) = get (container, stream) maybePos |> Stopwatch.Time
+        let logMetric bytes count (f : Log.Measurement -> _) = log |> Log.event (f (Log.metric container.TableName stream t bytes count rc))
         match res with
         | Res.NotModified ->
-            (logMetric 0 0 Log.Metric.TipNotModified).Information("EqxDynamo {action:l} {stream:l} {res} {ms}ms {rru}/{wru}RU", "Tip", stream, 304, ms, rc, wc)
+            (logMetric 0 0 Log.Metric.TipNotModified).Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU", "Tip", stream, 304, tms t, ru)
         | Res.NotFound ->
-            (logMetric 0 0 Log.Metric.TipNotFound).Information("EqxDynamo {action:l} {stream:l} {res} {ms}ms {rru}/{wru}RU", "Tip", stream, 404, ms, rc, wc)
+            (logMetric 0 0 Log.Metric.TipNotFound).Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU", "Tip", stream, 404, tms t, ru)
         | Res.Found tip ->
             let count, bb, ub = tip.u.Length, Batch.baseBytes tip, Batch.unfoldsBytes tip
             let log = logMetric (bb + ub) count Log.Metric.Tip
             let log = if log.IsEnabled Events.LogEventLevel.Debug then log |> Log.propDataUnfolds tip.u else log
             let log = match maybePos with Some p -> log |> Log.prop "startPos" p |> Log.prop "startEtag" p | None -> log
             let log = log |> Log.prop "etag" tip.etag |> Log.prop "n" tip.n
-            log.Information("EqxDynamo {action:l} {stream:l} {res} {ms}ms {rru}/{wru}RU {baseBytes}+{unfoldsBytes}b", "Tip", stream, 200, ms, rc, wc, bb, ub)
-        return rc, res }
+            log.Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU {baseBytes}+{unfoldsBytes}b", "Tip", stream, 200, tms t, ru, bb, ub)
+        return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i : int64 * ITimelineEvent<EventBody>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
     let tryLoad (log : ILogger) retryPolicy containerStream (maybePos : Position option, maxIndex) : Async<Result> = async {
@@ -546,8 +544,8 @@ module internal Query =
     // Unrolls the Batches in a response
     // NOTE when reading backwards, the events are emitted in reverse Index order to suit the takeWhile consumption
     let private mapPage direction (container : Container, stream : string) (minIndex, maxIndex) (maxRequests : int option)
-            (log : ILogger) (i, t, batches : Batch[], ru)
-        : ITimelineEvent<EventBody>[] * Position option * ConsumedMetrics =
+            (log : ILogger) (i, t, batches : Batch[], rc)
+        : ITimelineEvent<EventBody>[] * Position option * RequestConsumption =
         let log = log |> Log.prop "batchIndex" i
         match maxRequests with
         | Some mr when i >= mr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
@@ -557,26 +555,26 @@ module internal Query =
             |> if direction = Direction.Backward then Seq.rev else id
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
         let count, bytes = events.Length, Batch.allBytes batches
-        let reqMetric = Log.metric container.TableName stream t bytes count ru
+        let reqMetric = Log.metric container.TableName stream t bytes count rc
         let log = let evt = Log.Metric.QueryResponse (direction, reqMetric) in log |> Log.event evt
         let log = if log.IsEnabled Events.LogEventLevel.Debug then log |> Log.propDataEvents events else log
         let index = if count = 0 then Nullable () else Nullable (Seq.map Batch.baseIndex batches |> Seq.min)
         (log|> Log.prop "bytes" bytes
             |> match minIndex with None -> id | Some i -> Log.prop "minIndex" i
             |> match maxIndex with None -> id | Some i -> Log.prop "maxIndex" i)
-            .Information("EqxDynamo {action:l} {count}/{batches} {direction} {ms}ms i={index} {rru}/{wru}RU",
-                "Response", count, batches.Length, direction, tms t, index, ru.read, ru.write)
+            .Information("EqxDynamo {action:l} {count}/{batches} {direction} {ms:f1}ms i={index} {ru}RU",
+                "Response", count, batches.Length, direction, tms t, index, rc.total)
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
-        events, maybePosition, ru
+        events, maybePosition, rc
 
-    let private logQuery direction (container : Container, stream) interval (responsesCount, events : ITimelineEvent<EventBody>[]) n (rc : ConsumedMetrics) (log : ILogger) =
+    let private logQuery direction (container : Container, stream) interval (responsesCount, events : ITimelineEvent<EventBody>[]) n (rc : RequestConsumption) (log : ILogger) =
         let count, bytes = events.Length, Event.arrayBytes events
         let reqMetric = Log.metric container.TableName stream interval bytes count rc
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            "EqxDynamo {action:l} {stream} v{n} {count}/{responses} {ms}ms {rru}/{wru}RU",
-            action, stream, n, count, responsesCount, tms interval, rc.read, rc.write)
+            "EqxDynamo {action:l} {stream} v{n} {count}/{responses} {ms:f1}ms {ru}RU",
+            action, stream, n, count, responsesCount, tms interval, rc.total)
 
     let private calculateUsedVersusDroppedPayload stopIndex (xs : ITimelineEvent<EventBody>[]) : int * int =
         let mutable used, dropped = 0, 0
@@ -609,13 +607,13 @@ module internal Query =
         : Async<ScanResult<'event> option> = async {
         let mutable found = false
         let mutable responseCount = 0
-        let mergeBatches (log : ILogger) (batchesBackward : AsyncSeq<ITimelineEvent<EventBody>[] * Position option * ConsumedMetrics>) = async {
-            let mutable lastResponse, maybeTipPos, rru, wru = None, None, 0., 0.
+        let mergeBatches (log : ILogger) (batchesBackward : AsyncSeq<ITimelineEvent<EventBody>[] * Position option * RequestConsumption>) = async {
+            let mutable lastResponse, maybeTipPos, ru = None, None, 0.
             let! events =
                 batchesBackward
                 |> AsyncSeq.map (fun (events, maybePos, rc) ->
                     if Option.isNone maybeTipPos then maybeTipPos <- maybePos
-                    lastResponse <- Some events; rru <- rru + rc.read; wru <- wru + rc.write
+                    lastResponse <- Some events; ru <- ru + rc.total
                     responseCount <- responseCount + 1
                     seq { for x in events -> x, tryDecode x })
                 |> AsyncSeq.concatSeq
@@ -631,10 +629,10 @@ module internal Query =
                         false
                     | _ -> true)
                 |> AsyncSeq.toArrayAsync
-            return events, maybeTipPos, { read = rru; write = wru } }
+            return events, maybeTipPos, { total = ru } }
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
-        let batches : AsyncSeq<ITimelineEvent<EventBody>[] * Position option * ConsumedMetrics> =
+        let batches : AsyncSeq<ITimelineEvent<EventBody>[] * Position option * RequestConsumption> =
             mkQuery readLog (container, stream) maxItems (direction, minIndex, maxIndex)
             |> AsyncSeq.map (mapPage direction (container, stream) (minIndex, maxIndex) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
@@ -664,7 +662,7 @@ module internal Query =
         let query = query |> AsyncSeq.map (readPage readLog)
         let startTicks = System.Diagnostics.Stopwatch.GetTimestamp()
         let allEvents = ResizeArray()
-        let mutable i, rru, wru = 0, 0., 0.
+        let mutable i, ru = 0, 0.
         try let mutable ok = true
             let e = query.GetEnumerator()
             while ok do
@@ -677,7 +675,7 @@ module internal Query =
                 | None -> ok <- false // rest of block does not happen, while exits
                 | Some (events, _pos, rc) ->
 
-                rru <- rru + rc.read; wru <- wru + rc.write
+                ru <- ru + rc.total
                 allEvents.AddRange(events)
 
                 let acc = ResizeArray()
@@ -696,7 +694,7 @@ module internal Query =
         finally
             let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             let t = StopwatchInterval(startTicks, endTicks)
-            log |> logQuery direction (container, stream) t (i, allEvents.ToArray()) -1L { read = rru; write = wru } }
+            log |> logQuery direction (container, stream) t (i, allEvents.ToArray()) -1L { total = ru } }
     type [<NoComparison; NoEquality>] LoadRes = Pos of Position | Empty | Next of int64
     let toPosition = function Pos p -> Some p | Empty -> None | Next _ -> failwith "unexpected"
     /// Manages coalescing of spans of events obtained from various sources:
@@ -768,7 +766,7 @@ module Prune =
             let rc = res.RequestCharge
             let reqMetric = Log.metric container.TableName stream t -1 count rc
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
-            log.Information("EqxDynamo {action:l} {id} {ms}ms {ru}RU", "Delete", id, tms t, rc)
+            log.Information("EqxDynamo {action:l} {id} {ms:f1}ms {ru}RU", "Delete", id, tms t, rc)
             return rc
         }
         let trimTip expectedI count = async {
@@ -784,7 +782,7 @@ module Prune =
             let rc = tipRu + updateRes.RequestCharge
             let reqMetric = Log.metric container.TableName stream t -1 count rc
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
-            log.Information("EqxDynamo {action:l} {count} {ms}ms {ru}RU", "Trim", count, tms t, rc)
+            log.Information("EqxDynamo {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, tms t, rc)
             return rc
         }
         let log = log |> Log.prop "index" indexInclusive
@@ -797,7 +795,7 @@ module Prune =
             let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
             let reqMetric = Log.metric container.TableName stream t -1 batches.Length rc
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
-            log.Information("EqxDynamo {action:l} {batches} {ms}ms n={next} {ru}RU", "PruneResponse", batches.Length, tms t, next, rc)
+            log.Information("EqxDynamo {action:l} {batches} {ms:f1}ms n={next} {ru}RU", "PruneResponse", batches.Length, tms t, next, rc)
             batches, rc
         let! pt, outcomes =
             let isTip (x : BatchIndices) = x.id = Tip.WellKnownDocumentId
@@ -848,7 +846,7 @@ module Prune =
         let reqMetric = Log.metric container.TableName stream pt eventsDeleted batches queryCharges
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
-        log.Information("EqxDynamo {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
+        log.Information("EqxDynamo {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
                 "Prune", eventsDeleted, batches, lwm, tms pt, queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm
     }

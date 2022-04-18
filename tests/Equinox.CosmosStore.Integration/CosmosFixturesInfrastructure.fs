@@ -76,11 +76,7 @@ module SerilogHelpers =
         | Metric.Delete s -> Delete s
         | Metric.Trim s -> Trim s
 
-#if STORE_DYNAMO
-    let inline (|Rc|) ({ rru = rru; wru = wru }: Measurement) = rru, wru
-#else
     let inline (|Rc|) ({ ru = ru }: Measurement) = ru
-#endif
     /// Facilitates splitting between events with direct charges vs synthetic events Equinox generates to avoid double counting
     let (|TotalRequestCharge|ResponseBreakdown|) = function
         | Load (Rc rc) | Write (Rc rc)

@@ -255,6 +255,7 @@ let createStoreLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes()
     let c = if verbose then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.DynamoStore.Core.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStoreDb.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let level =
@@ -271,6 +272,8 @@ let dumpStats storeConfig log =
     match storeConfig with
     | Some (Storage.StorageConfig.Cosmos _) ->
         Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
+    | Some (Storage.StorageConfig.Dynamo _) ->
+        Equinox.DynamoStore.Core.Log.InternalMetrics.dump log
     | Some (Storage.StorageConfig.Es _) ->
         Equinox.EventStoreDb.Log.InternalMetrics.dump log
     | Some (Storage.StorageConfig.Sql _) ->
@@ -330,6 +333,7 @@ module LoadTest =
             test, a.Duration, a.TestsPerSecond, clients.Length, a.ErrorCutoff, a.ReportingIntervals, reportFilename)
         // Reset the start time based on which the shared global metrics will be computed
         let _ = Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink.Restart()
+        let _ = Equinox.DynamoStore.Core.Log.InternalMetrics.Stats.LogSink.Restart()
         let _ = Equinox.EventStoreDb.Log.InternalMetrics.Stats.LogSink.Restart()
         let _ = Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink.Restart()
         let results = runLoadTest log a.TestsPerSecond (duration.Add(TimeSpan.FromSeconds 5.)) a.ErrorCutoff a.ReportingIntervals clients runSingleTest |> Async.RunSynchronously
@@ -344,6 +348,7 @@ let createDomainLog verbose verboseConsole maybeSeqEndpoint =
     let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
     let c = if verbose then c.MinimumLevel.Debug() else c
     let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink())
+    let c = c.WriteTo.Sink(Equinox.DynamoStore.Core.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.EventStoreDb.Log.InternalMetrics.Stats.LogSink())
     let c = c.WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
     let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"
@@ -515,7 +520,7 @@ let main argv =
             | Init iargs -> CosmosInit.containerAndOrDb log iargs |> Async.RunSynchronously
             | InitAws targs -> DynamoInit.table log targs |> Async.RunSynchronously
             | Config cargs -> SqlInit.databaseOrSchema log cargs |> Async.RunSynchronously
-            | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs |> Async.RunSynchronously
+            | Dump dargs -> Dump.run (log, verboseConsole, maybeSeq) dargs
             | Stats sargs -> CosmosStats.run (log, verboseConsole, maybeSeq) sargs |> Async.RunSynchronously
             | Run rargs ->
                 let reportFilename = args.GetResult(LogFile, programName + ".log") |> fun n -> System.IO.FileInfo(n).FullName

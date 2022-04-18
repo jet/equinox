@@ -76,11 +76,7 @@ type Tests(testOutputHelper) =
         addAndThenRemoveItems true true context cartId skuId service count
 
     let verifyRequestChargesMax rus =
-#if STORE_DYNAMO
-        let tripRequestCharges = [ for e, (rc, wc) in capture.RequestCharges -> sprintf "%A" e, rc + wc ]
-#else
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
-#endif
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -117,7 +113,11 @@ type Tests(testOutputHelper) =
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
         test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+#if STORE_DYNAMO
+        if eventsInTip then verifyRequestChargesMax 12 // 11.5
+#else
         if eventsInTip then verifyRequestChargesMax 9 // 8.05
+#endif
         else verifyRequestChargesMax 15 // 14.01
     }
 
