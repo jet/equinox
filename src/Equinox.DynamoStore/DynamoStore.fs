@@ -59,7 +59,7 @@ type [<NoEquality; NoComparison>] Unfold =
         /// Event body - Json -> byte[] -> (maybe) Deflate
         d : EventBody // required
 
-        /// Optional metadata, same encoding as `d` (can be null; not written if missing)
+        /// Optional metadata, same encoding as `d` (can be null, which is mapped to empty)
         m : EventBody }
 module Unfold =
     let bytes (x : Unfold) = let EventBody.Bytes db, EventBody.Bytes mb = x.d, x.m in x.c.Length + db + mb + 50
@@ -97,18 +97,18 @@ module Batch =
             p : string
             [<RangeKey>]
             i : int64 // tipMagicI for the Tip
-            etag : string
+            etag : string option
             n : int64
             // Count of items written in the most recent insert/update - used by the DDB Streams Consumer to identify the fresh events
             a : int
-            // NOTE the per-event e.c values are actually stored here, so they can be selected out without hydrating the bodies
+            // NOTE the per-event e.c and e.t values are actually stored here, so they can be selected out without hydrating the bodies
             c : string[]
-            // NOTE as per Event, but without a 'c' field; we instead uroll those into the top level `c` array
+            t : DateTimeOffset[]
+            // NOTE as per Event, but without c and t fields; we instead unroll those as arrays at top level
             e : EventSchema[]
             u : Unfold[] }
      and EventSchema =
-        {   t : DateTimeOffset
-            d : EventBody
+        {   d : EventBody
             m : EventBody
             x : string option
             y : string option
@@ -119,12 +119,12 @@ module Batch =
     let baseBytes (x : Batch) = 80 + x.p.Length + String.length x.etag + Event.arrayBytes x.e
     let unfoldsBytes (x : Batch) = Unfold.arrayBytes x.u
     let allBytes (xs : Batch seq) = xs |> Seq.sumBy (fun x -> baseBytes x + unfoldsBytes x)
-    let toSchema (xs : Event[]) : string[] * EventSchema[] =
-        let toEventSchema (x : Event) : EventSchema = { t = x.t; d = x.d; m = x.m; x = x.correlationId; y = x.causationId }
-        xs |> Array.map (fun x -> x.c), xs |> Array.map toEventSchema
+    let toSchema (xs : Event[]) : (*case*) string[] * (*timestamp*) DateTimeOffset[] * EventSchema[] =
+        let toEventSchema (x : Event) : EventSchema = { d = x.d; m = (match x.m with null -> Array.empty | x -> x); x = x.correlationId; y = x.causationId }
+        xs |> Array.map (fun x -> x.c), xs |> Array.map (fun x -> x.t), xs |> Array.map toEventSchema
     let ofSchema (x : Schema) : Batch =
-        let e' = (x.e, x.c) ||> Array.map2 (fun e c -> { t = e.t; d = e.d; m = e.m; correlationId = e.x; causationId = e.y; c = c })
-        { p = x.p; i = x.i; etag = x.etag; n = x.n; e = e'; u = x.u }
+        let e' = (x.e, x.c, x.t) |||> Array.map3 (fun e c t -> { t = t; d = e.d; m = e.m; correlationId = e.x; causationId = e.y; c = c })
+        { p = x.p; i = x.i; etag = Option.toObj x.etag; n = x.n; e = e'; u = x.u }
 
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -396,29 +396,29 @@ module internal Sync =
         let metrics = Metrics()
         let context = container.Context(metrics.Add)
         let batchDoesNotExistCondition : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> NOT_EXISTS t.i @>
-        let appendC, appendE = Batch.toSchema append_
+        let appendC, appendT, appendE = Batch.toSchema append_
         let tipEventCount = append_.LongLength
         let insertItem item = context.PutItemAsync(item, batchDoesNotExistCondition) |> Async.Ignore
         let updEtag = let g = Guid.NewGuid() in g.ToString "N"
         let appendA = min eventCount append_.Length
         let insertTip index = async {
-            let item : Batch.Schema = { p = stream; i = Batch.tipMagicI; n = index + tipEventCount; a = appendA; c = appendC; e = appendE; u = unfolds; etag = updEtag }
+            let item : Batch.Schema = { p = stream; i = Batch.tipMagicI; n = index + tipEventCount; a = appendA; c = appendC; t = appendT; e = appendE; u = unfolds; etag = Some updEtag }
             do! insertItem item
             return item }
         let update (condExpr : Quotations.Expr<Batch.Schema -> bool>) =
             let updateExpr : Quotations.Expr<Batch.Schema -> _> =
                 // TOCONSIDER figure out whether there is a way to stop DDB choking on the Array.append below when its empty instead of this special casing
                 if calve.Length <> 0 || (tipEmpty && tipEventCount <> 0) then
-                        <@ fun t -> { t with a = appendA; c = appendC; e = appendE
+                        <@ fun t -> { t with a = appendA; c = appendC; t = appendT; e = appendE
                                              n = n'
-                                             etag = updEtag
+                                             etag = Some updEtag
                                              u = unfolds } @>
                 elif tipEventCount <> 0 then
-                        <@ fun t -> { t with a = appendA; c = Array.append t.c appendC; e = Array.append t.e appendE
+                        <@ fun t -> { t with a = appendA; c = Array.append t.c appendC; t = Array.append t.t appendT; e = Array.append t.e appendE
                                              n = t.n + tipEventCount
-                                             etag = updEtag
+                                             etag = Some updEtag
                                              u = unfolds } @>
-                else    <@ fun t -> { t with etag = updEtag; u = unfolds } @>
+                else    <@ fun t -> { t with etag = Some updEtag; u = unfolds } @>
             async {
                 let! updated = context.UpdateItemAsync(container.TableKeyForStreamTip stream, updateExpr, condExpr)
                 return updated }
@@ -426,7 +426,7 @@ module internal Sync =
             match exp with
             | Exp.Version 0L
             | Exp.Etag null ->      insertTip freshTipIndex
-            | Exp.Etag eetag ->     let condExpr : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> t.etag = eetag @>
+            | Exp.Etag eetag ->     let condExpr : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> t.etag = Some eetag @>
                                     update condExpr
             | Exp.Version ever ->   let condExpr : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> t.n = ever @>
                                     update condExpr
@@ -434,9 +434,9 @@ module internal Sync =
             if calve.Length > 0 then async {
                 let calfEventCount = calve.LongLength
                 let tipIndex = n' - tipEventCount
-                let c, e' = Batch.toSchema calve
+                let c, t', e' = Batch.toSchema calve
                 let calveA = eventCount - appendA
-                do! insertItem { p = stream; i = tipIndex - calfEventCount; n = tipIndex; a = calveA; c = c; e = e'; u = null; etag = null } // TODO remove etag, u
+                do! insertItem { p = stream; i = tipIndex - calfEventCount; n = tipIndex; a = calveA; c = c; t = t'; e = e'; u = [||]; etag = None }
                 return! updateTip tipIndex }
             else updateTip 0L
         try let! updated = execute
@@ -981,7 +981,7 @@ type StoreClient(container : Container, fallback : Container option, query : Que
                 {   i = n' + int64 offset
                     c = x.EventType
                     d = x.Data
-                    m = x.Meta
+                    m = match x.Meta with null -> Array.empty | x -> x
                     t = DateTimeOffset.UtcNow
                 } : Unfold)
             |> Seq.toArray
