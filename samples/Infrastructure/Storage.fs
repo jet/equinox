@@ -186,8 +186,8 @@ module Dynamo =
         storeClient
     let config (log : ILogger) (cache, unfolds) (a : Info) =
         let storeClient = createStoreClient log a
-        log.Information("DynamoStore Max Events in Tip: {maxTipBytes}b {maxTipEvents}e Items in Query: {queryMaxItems}",
-                        a.TipMaxEvents, a.TipMaxBytes, a.QueryMaxItems)
+        log.Information("DynamoStore Max Events in Tip: {maxTipBytes}b {maxTipEvents}e Query Limit: {queryMaxItems} items",
+                        a.TipMaxBytes, a.TipMaxEvents, a.QueryMaxItems)
         let context = DynamoStoreContext(storeClient, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems, ?tipMaxEvents = a.TipMaxEvents)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Dynamo (context, cacheStrategy, unfolds)
