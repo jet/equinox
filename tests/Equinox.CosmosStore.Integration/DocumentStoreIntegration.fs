@@ -227,7 +227,6 @@ type Tests(testOutputHelper) =
 
         test <@ [EqxAct.Tip; EqxAct.Append; EqxAct.Tip] = capture.ExternalCalls @>
 
-#if !STORE_DYNAMO
         (* Verify pruning does not affect the copies of the events maintained as Unfolds *)
 
         // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
@@ -246,7 +245,11 @@ type Tests(testOutputHelper) =
                 | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no Archive Container supplied"
                                   || e.Message.StartsWith "Origin event not found; no Archive Table supplied"
                 | x -> failwithf "Unexpected %A" x @>
+#if STORE_DYNAMO // Extra null query
+        test <@ [EqxAct.ResponseForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+#else
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+#endif
         verifyRequestChargesMax 3 // 2.99
 
         // But not forgotten
@@ -262,7 +265,6 @@ type Tests(testOutputHelper) =
         test <@ value = result @>
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 1
-#endif
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -395,7 +397,6 @@ type Tests(testOutputHelper) =
         let! _ = service2.Read cartId
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
 
-#if !STORE_DYNAMO
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
         let ctx = Core.EventsContext(context, log)
@@ -419,7 +420,6 @@ type Tests(testOutputHelper) =
         let! _ = service2.Read cartId
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 1
-#endif
     }
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -458,7 +458,6 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne cartContext cartId skuId service1 1
         test <@ [EqxAct.Append] = capture.ExternalCalls @>
 
-#if !STORE_DYNAMO
         (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
         let ctx = Core.EventsContext(context, log)
@@ -484,7 +483,6 @@ type Tests(testOutputHelper) =
         test <@ [if eventsInTip then EqxAct.Tip else EqxAct.TipNotModified] = capture.ExternalCalls @>
         // Charges are 1 RU regardless of whether a reload occurs, as the snapshot is tiny
         verifyRequestChargesMax 1
-#endif
     }
 
     interface IDisposable with member _.Dispose() = log.Dispose()
