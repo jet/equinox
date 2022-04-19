@@ -68,20 +68,23 @@ and CosmosInitInfo(args : ParseResults<InitArguments>) =
             CosmosInit.Provisioning.Serverless
 and [<NoComparison; NoEquality>] TableArguments =
     | [<AltCommandLine "-D">]               OnDemand
+    | [<AltCommandLine "-S">]               Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
     | [<AltCommandLine "-rru">]             ReadCu of int64
     | [<AltCommandLine "-wru">]             WriteCu of int64
     | [<CliPrefix(CliPrefix.None)>]         Dynamo of ParseResults<Storage.Dynamo.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | OnDemand ->                   "Specify On-Demand Capacity Mode."
+            | Streaming _ ->                "Specify Streaming Mode. Default NEW_IMAGE"
             | ReadCu _ ->                   "Specify Read Capacity Units to provision for the Table. (Ignored in On-Demand mode)"
             | WriteCu _ ->                  "Specify Write Capacity Units to provision for the Table. (Ignored in On-Demand mode)"
             | Dynamo _ ->                   "DynamoDB Connection parameters."
 and DynamoInitInfo(args : ParseResults<TableArguments>) =
+    let streaming =                         args.GetResult(Streaming, Equinox.DynamoStore.Core.Initialization.StreamingMode.Default)
     let onDemand =                          args.Contains OnDemand
     let readCu =                            args.GetResult ReadCu
     let writeCu =                           args.GetResult WriteCu
-    member _.ProvisioningMode =             if onDemand then None else Some (readCu, writeCu)
+    member _.ProvisioningMode =             streaming, if onDemand then None else Some (readCu, writeCu)
 and [<NoComparison; NoEquality>]ConfigArguments =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Arguments>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Arguments>
@@ -389,15 +392,15 @@ module DynamoInit =
         | Some (TableArguments.Dynamo sa) ->
             let info = Storage.Dynamo.Info sa
             let client = info.Connector.CreateClient()
-            let throughput = (DynamoInitInfo args).ProvisioningMode
+            let streaming, throughput = (DynamoInitInfo args).ProvisioningMode
             let tableName = info.Table
             match throughput with
             | Some (rcu, wcu) ->
-                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with {read}/{write}CU", tableName, rcu, wcu)
-                do! Core.Initialization.provision client tableName (Throughput.Provisioned (ProvisionedThroughput(rcu, wcu)))
+                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with {read}/{write}CU; streaming {streaming}", tableName, rcu, wcu, streaming)
+                do! Core.Initialization.provision client tableName (Throughput.Provisioned (ProvisionedThroughput(rcu, wcu)), streaming)
             | None ->
-                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with On-Demand capacity management", tableName)
-                do! Core.Initialization.provision client tableName Throughput.OnDemand
+                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with On-Demand capacity management; streaming {streaming}", tableName, streaming)
+                do! Core.Initialization.provision client tableName (Throughput.OnDemand, streaming)
         | _ -> failwith "please specify a `dynamo` endpoint" }
 
 module SqlInit =

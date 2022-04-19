@@ -478,16 +478,23 @@ module Initialization =
         let context = TableContext<Batch.Schema>(client, tableName)
         context.VerifyTableAsync()
 
+    [<RequireQualifiedAccess>]
+    type StreamingMode = Off | Default | NewAndOld
+    let toStreaming = function
+        | StreamingMode.Off -> Streaming.Disabled
+        | StreamingMode.Default -> Streaming.Enabled StreamViewType.NEW_IMAGE
+        | StreamingMode.NewAndOld -> Streaming.Enabled StreamViewType.NEW_AND_OLD_IMAGES
+
     /// Create the specified <c>tableName</c> if it does not exist. Will throw if it exists but the schema mismatches.
-    let createIfNotExists (client : IAmazonDynamoDB) tableName throughput : Async<unit> =
+    let createIfNotExists (client : IAmazonDynamoDB) tableName (throughput, streamingMode) : Async<unit> =
         let context = TableContext<Batch.Schema>(client, tableName)
-        context.VerifyOrCreateTableAsync(throughput)
+        context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
 
     /// Provision (or re-provision) the specified table with the specified <c>Throughput</c>. Will throw if schema mismatches.
-    let provision (client : IAmazonDynamoDB) tableName throughput = async {
+    let provision (client : IAmazonDynamoDB) tableName (throughput, streamingMode) = async {
         let context = TableContext<Batch.Schema>(client, tableName)
-        do! context.VerifyOrCreateTableAsync(throughput)
-        do! context.UpdateTableIfRequiredAsync(throughput) }
+        do! context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
+        do! context.UpdateTableIfRequiredAsync(throughput, toStreaming streamingMode) }
 
     /// Holds Container state, coordinating initialization activities
     type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> Async<unit>) =
@@ -1088,6 +1095,8 @@ type DynamoStoreConnector(credentials : Amazon.Runtime.AWSCredentials, clientCon
 
 type ProvisionedThroughput = FSharp.AWS.DynamoDB.ProvisionedThroughput
 type Throughput = FSharp.AWS.DynamoDB.Throughput
+type Streaming = FSharp.AWS.DynamoDB.Streaming
+type StreamViewType = Amazon.DynamoDBv2.StreamViewType
 
 [<NoComparison; NoEquality>]
 type ConnectMode =
@@ -1098,7 +1107,7 @@ module internal ConnectMode =
     let apply client tableName = function
         | SkipVerify -> async { () }
         | Verify -> Initialization.verify client tableName
-        | CreateIfNotExists throughput -> Initialization.createIfNotExists client tableName throughput
+        | CreateIfNotExists throughput -> Initialization.createIfNotExists client tableName (throughput, Initialization.StreamingMode.Default)
 
 /// Holds all relevant state for a Store
 /// - The Client (IAmazonDynamoDB). there should be a single one of these per process, plus an optional fallback one for pruning scenarios.
