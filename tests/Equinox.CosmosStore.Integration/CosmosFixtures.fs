@@ -4,7 +4,6 @@ module Equinox.DynamoStore.Integration.CosmosFixtures
 
 open Amazon.DynamoDBv2
 open Equinox.DynamoStore
-open Equinox.DynamoStore.Core
 open System
 
 // docker compose up dynamodb-local will stand up a simulator instance that this wiring can connect to

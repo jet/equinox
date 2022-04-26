@@ -201,7 +201,7 @@ module Log =
         | Trim of Measurement
     let internal prop name value (log : ILogger) = log.ForContext(name, value)
     let internal propData name (events : #IEventData<EventBody> seq) (log : ILogger) =
-        let render (body : EventBody) : string = body (*.ToArray()*) |> System.Text.Encoding.UTF8.GetString
+        let render (body : EventBody) : string = match body with null -> null | b -> System.Text.Encoding.UTF8.GetString b
         let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
     let internal propDataEvents = propData "events"
@@ -483,8 +483,8 @@ module internal Sync =
                 | Result.ConflictUnknown -> Log.prop "conflict" true
                                             >> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in append -> x.c }))
                                             >> Log.event (Log.Metric.SyncConflict reqMetric)
-        log.Information("EqxDynamo {action:l} {stream:l} {ecount}+{ucount} {ms:f1}ms {ru}RU {calveBytes}+{tipBytes:n0}b {exp}",
-            "Sync", stream, eventCount, ucount, tms t, ru, calveBytes, tipBytes, exp)
+        log.Information("EqxDynamo {action:l} {stream:l} {ecount}+{ucount} {ms:f1}ms {ru}RU {tipBytes:n0}+{calveBytes:n0}b {exp}",
+            "Sync", stream, eventCount, ucount, tms t, ru, tipBytes, calveBytes, exp)
         return result }
 
     let batch (log : ILogger) retryPolicy containerStream expBatch : Async<Result> =
@@ -1108,8 +1108,9 @@ type DynamoStoreConnector(credentials : Amazon.Runtime.AWSCredentials, clientCon
 
 type ProvisionedThroughput = FSharp.AWS.DynamoDB.ProvisionedThroughput
 type Throughput = FSharp.AWS.DynamoDB.Throughput
-type Streaming = FSharp.AWS.DynamoDB.Streaming
+
 type StreamViewType = Amazon.DynamoDBv2.StreamViewType
+type Streaming = FSharp.AWS.DynamoDB.Streaming
 
 [<NoComparison; NoEquality>]
 type ConnectMode =
@@ -1177,7 +1178,7 @@ type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOption
             [<O; D null>]?queryMaxItems,
             // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
             [<O; D null>]?queryMaxRequests) =
-        let tipOptions = TipOptions( ?maxBytes = maxBytes, ?maxEvents = tipMaxEvents, ?ignoreMissingEvents = ignoreMissingEvents)
+        let tipOptions = TipOptions(?maxBytes = maxBytes, ?maxEvents = tipMaxEvents, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
         DynamoStoreContext(storeClient, tipOptions, queryOptions)
     member val StoreClient = storeClient
@@ -1343,6 +1344,7 @@ type EventsContext internal
     /// Reads all Events from a `Position` in a given `direction`
     member x.Read(stream, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?maxCount, [<O; D null>] ?direction) : Async<Position * ITimelineEvent<EventBody>[]> =
         x.GetInternal(stream, ?minIndex = minIndex, ?maxIndex = maxIndex, ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
+#if APPEND_SUPPORT
 
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
@@ -1354,10 +1356,10 @@ type EventsContext internal
         match x.ResolveStream stream |> snd with
         | None -> ()
         | Some init -> do! init ()
-//        let batch = Sync.mkBatch stream events Seq.empty
         match! store.Sync(log, stream, Some position, Position.toIndex >> Sync.Exp.Version, position.index, events, Seq.empty) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok (Position.flatten pos)
         | InternalSyncResult.ConflictUnknown -> return AppendResult.ConflictUnknown }
+#endif
 
     member _.Prune(stream, index) : Async<int * int * int64> =
         store.Prune(log, stream, index)
