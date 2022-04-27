@@ -520,14 +520,6 @@ module Initialization =
         do! context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
         do! context.UpdateTableIfRequiredAsync(throughput, toStreaming streamingMode) }
 
-    /// Holds Container state, coordinating initialization activities
-    type internal ContainerInitializerGuard(container : Container, fallback : Container option, ?initContainer : Container -> Async<unit>) =
-        let initGuard = initContainer |> Option.map (fun init -> AsyncCacheCell<unit>(init container))
-
-        member _.Container = container
-        member _.Fallback = fallback
-        member internal _.InitializationGate = match initGuard with Some g when not (g.IsValid())  -> Some g.AwaitValue | _ -> None
-
 module internal Tip =
 
     [<RequireQualifiedAccess>]
@@ -1133,8 +1125,6 @@ type DynamoStoreClient
         createFallbackContainer : string -> Container option,
         [<O; D(null)>]?primaryTableToArchive : string -> string) =
     let primaryTableToSecondary = defaultArg primaryTableToArchive id
-    // Index of tableName -> Initialization Context
-    let containerInitGuards = System.Collections.Concurrent.ConcurrentDictionary<string, Initialization.ContainerInitializerGuard>()
     new(client : Amazon.DynamoDBv2.IAmazonDynamoDB, tableName : string,
         // Table name to use for archive store. Default: (if <c>archiveClient</c> specified) use same <c>tableName</c> but via <c>archiveClient</c>
         [<O; D(null)>]?archiveTableName,
@@ -1146,16 +1136,11 @@ type DynamoStoreClient
             if Option.isNone archiveClient && Option.isNone archiveTableName then fun _ -> None
             else fun t -> Some (Container.Create(defaultArg archiveClient client, defaultArg archiveTableName t))
         DynamoStoreClient(catAndStreamToTableStream, primaryContainer, fallbackContainer)
-    // TOCONSIDER remove this facility unless we end up using it
-    member internal _.ResolveContainerGuardAndStreamName(categoryName, streamId) : Initialization.ContainerInitializerGuard * string =
-        let createContainerInitializerGuard tableName =
-            let init = Some (fun _container -> async { () })
-            let fallbackTableName = primaryTableToSecondary tableName
-            let primaryContainer, fallbackContainer = createContainer tableName, createFallbackContainer fallbackTableName
-            Initialization.ContainerInitializerGuard(primaryContainer, fallbackContainer, ?initContainer = init)
+    member internal _.ResolveContainerFallbackAndStreamName(categoryName, streamId) : Container * Container option * string =
         let tableName, streamName = categoryAndStreamIdToTableAndStreamNames (categoryName, streamId)
-        let g = containerInitGuards.GetOrAdd(tableName, createContainerInitializerGuard)
-        g, streamName
+        let fallbackTableName = primaryTableToSecondary tableName
+        let primaryContainer, fallbackContainer = createContainer tableName, createFallbackContainer fallbackTableName
+        primaryContainer, fallbackContainer, streamName
 
     /// Connect to an Equinox.DynamoStore in the specified Table
     /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where that is provided
@@ -1184,10 +1169,9 @@ type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOption
     member val StoreClient = storeClient
     member val QueryOptions = queryOptions
     member val TipOptions = tipOptions
-    member internal x.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId) =
-        let cg, streamId = storeClient.ResolveContainerGuardAndStreamName(categoryName, streamId)
-        let store = StoreClient(cg.Container, cg.Fallback, x.QueryOptions, x.TipOptions)
-        store, streamId, cg.InitializationGate
+    member internal x.ResolveContainerClientAndStreamId(categoryName, streamId) =
+        let container, fallback, streamId = storeClient.ResolveContainerFallbackAndStreamName(categoryName, streamId)
+        StoreClient(container, fallback, x.QueryOptions, x.TipOptions), streamId
 
 /// For DynamoDB, caching is critical in order to reduce RU consumption.
 /// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
@@ -1266,8 +1250,8 @@ type DynamoStoreCategory<'event, 'state, 'context>(context : DynamoStoreContext,
             Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, mapUnfolds) :> _
         categories.GetOrAdd(categoryName, createCategory)
     let resolve (FsCodec.StreamName.CategoryAndId (categoryName, streamId)) =
-        let container, streamName, maybeContainerInitializationGate = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
-        resolveCategory (categoryName, container), streamName, maybeContainerInitializationGate
+        let container, streamName = context.ResolveContainerClientAndStreamId(categoryName, streamId)
+        resolveCategory (categoryName, container), streamName, None
     let empty = Token.empty, initial
     let storeCategory = StoreCategory(resolve, empty)
     member _.Resolve(streamName, ?context) = storeCategory.Resolve(streamName, ?context = context)
@@ -1302,13 +1286,10 @@ type EventsContext internal
         return Position.flatten pos', data }
 
     new (context : Equinox.DynamoStore.DynamoStoreContext, log) =
-        let store, _streamId, _init = context.ResolveContainerClientAndStreamIdAndInit(null, null)
-        EventsContext(context, store, log)
+        let storeClient, _streamId = context.ResolveContainerClientAndStreamId(null, null)
+        EventsContext(context, storeClient, log)
 
-    member _.ResolveStream(streamName) =
-        let _cc, streamId, init = context.ResolveContainerClientAndStreamIdAndInit(null, streamName)
-        streamId, init
-    member x.StreamId(streamName) : string = x.ResolveStream streamName |> fst
+    member x.StreamId(streamName) : string = context.ResolveContainerClientAndStreamId(null, streamName) |> snd
 
     member internal _.GetLazy(stream, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<EventBody>[]> =
         let direction = defaultArg direction Direction.Forward
@@ -1349,13 +1330,6 @@ type EventsContext internal
     /// Appends the supplied batch of events, subject to a consistency check based on the `position`
     /// Callers should implement appropriate idempotent handling, or use Equinox.Decider for that purpose
     member x.Sync(stream, position, events : IEventData<_>[]) : Async<AppendResult<Position>> = async {
-        // TODO FIX COMMENT
-        // Writes go through the stored proc, which we need to provision per container
-        // Having to do this here in this way is far from ideal, but work on caching, external snapshots and caching is likely
-        //   to move this about before we reach a final destination in any case
-        match x.ResolveStream stream |> snd with
-        | None -> ()
-        | Some init -> do! init ()
         match! store.Sync(log, stream, Some position, Position.toIndex >> Sync.Exp.Version, position.index, events, Seq.empty) with
         | InternalSyncResult.Written (Token.Unpack pos) -> return AppendResult.Ok (Position.flatten pos)
         | InternalSyncResult.ConflictUnknown -> return AppendResult.ConflictUnknown }
