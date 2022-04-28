@@ -538,12 +538,12 @@ module internal Tip =
         | Res.NotFound ->
             (logMetric 0 0 Log.Metric.TipNotFound).Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU", "Tip", stream, 404, tms t, ru)
         | Res.Found tip ->
-            let count, bb, ub = tip.u.Length, Batch.baseBytes tip, Batch.unfoldsBytes tip
-            let log = logMetric (bb + ub) count Log.Metric.Tip
+            let ecount, ucount, bb, ub = tip.e.Length, tip.u.Length, Batch.baseBytes tip, Batch.unfoldsBytes tip
+            let log = logMetric (bb + ub) (ecount + ucount) Log.Metric.Tip
             let log = if log.IsEnabled Events.LogEventLevel.Debug then log |> Log.propDataUnfolds tip.u else log
             let log = match maybePos with Some p -> log |> Log.prop "startPos" p |> Log.prop "startEtag" p | None -> log
-            let log = log |> Log.prop "etag" tip.etag |> Log.prop "n" tip.n
-            log.Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU {baseBytes}+{unfoldsBytes}b", "Tip", stream, 200, tms t, ru, bb, ub)
+            let log = log |> Log.prop "etag" tip.etag //|> Log.prop "n" tip.n
+            log.Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU v{n} {events}+{unfolds}e {baseBytes}+{unfoldsBytes}b", "Tip", stream, 200, tms t, ru, tip.n, ecount, ucount, bb, ub)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i : int64 * ITimelineEvent<EventBody>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified

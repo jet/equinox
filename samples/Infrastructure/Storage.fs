@@ -135,9 +135,6 @@ module Dynamo =
     let [<Literal>] TABLE =             "EQUINOX_DYNAMO_TABLE"
     type [<NoEquality; NoComparison>] Arguments =
         | [<AltCommandLine "-V">]       VerboseStore
-//        | [<AltCommandLine "-o">]       Timeout of float
-//        | [<AltCommandLine "-r">]       Retries of int
-//        | [<AltCommandLine "-rt">]      RetriesWaitTimeS of float
         | [<AltCommandLine "-s">]       ServiceUrl of string
         | [<AltCommandLine "-sa">]      AccessKey of string
         | [<AltCommandLine "-ss">]      SecretKey of string
@@ -149,9 +146,6 @@ module Dynamo =
         interface IArgParserTemplate with
             member a.Usage = a |> function
                 | VerboseStore ->       "Include low level Store logging."
-//                | Timeout _ ->          "specify operation timeout in seconds (default: 5)."
-//                | Retries _ ->          "specify operation retries (default: 1)."
-//                | RetriesWaitTimeS _ -> "specify max wait-time for retry when being throttled in seconds (default: 5)"
                 | ServiceUrl _ ->       "specify a server endpoint for a Dynamo account. (optional if environment variable " + SERVICE_URL + " specified)"
                 | AccessKey _ ->        "specify an access key id for a Dynamo account. (optional if environment variable " + ACCESS_KEY + " specified)"
                 | SecretKey _ ->        "specify a secret access key for a Dynamo account. (optional if environment variable " + SECRET_KEY + " specified)"
@@ -169,9 +163,6 @@ module Dynamo =
         member val Table =              args.TryGetResult Table      |> defaultWithEnvVar TABLE         "Table"
         member val ArchiveTable =       args.TryGetResult ArchiveTable
 
-//        member x.Timeout =              args.GetResult(Timeout,5.) |> TimeSpan.FromSeconds
-//        member x.Retries =              args.GetResult(Retries,1)
-//        member x.MaxRetryWaitTime =     args.GetResult(RetriesWaitTimeS, 5.) |> TimeSpan.FromSeconds
         member x.TipMaxEvents =         args.TryGetResult TipMaxEvents
         member x.TipMaxBytes =          args.GetResult(TipMaxBytes, 32 * 1024)
         member x.QueryMaxItems =        args.GetResult(QueryMaxItems, 10)
