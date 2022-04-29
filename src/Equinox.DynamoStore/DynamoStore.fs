@@ -111,8 +111,7 @@ module Batch =
         {   d : EventBody
             m : EventBody
             x : string option
-            y : string option
-        }
+            y : string option }
     /// Computes base Index for the Item (`i` can bear the the magic value TipI when the Item is the Tip)
     let baseIndex (x : Batch) = x.n - x.e.LongLength
     let tipMagicI = int64 Int32.MaxValue
@@ -304,16 +303,16 @@ module Log =
                 "Prune", Stats.LogSink.Prune
                 "Delete", Stats.LogSink.Delete
                 "Trim", Stats.LogSink.Trim ]
-            let mutable rows, totalCount, totalRu, totalMs = 0, 0L, 0., 0L
+            let mutable rows, totalCount, totalRRu, totalWru, totalMs = 0, 0L, 0., 0L
             let logActivity name count ru lat =
                 let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
-                log.Information("{name}: {count:n0} requests costing {ru:n0}RU (average: {avgRu:n1}); Average latency: {lat:n0}ms",
-                    name, count, ru, aru, ams)
+                let rut = match name with "Read" | "Prune" -> totalRRu <- totalRRu + ru; 'R' else totalWRu <- totalWRu + ru; 'W'
+                log.Information("{name}: {count:n0} requests costing {ru:n0}{rut}RU (average: {avgRu:n1}); Average latency: {lat:n0}ms",
+                    name, count, ru, rut, aru, ams)
             for name, stat in stats do
                 if stat.count <> 0L then
                     let ru = float stat.rux100 / 100.
                     totalCount <- totalCount + stat.count
-                    totalRu <- totalRu + ru
                     totalMs <- totalMs + stat.ms
                     logActivity name stat.count ru stat.ms
                     rows <- rows + 1
@@ -321,8 +320,8 @@ module Log =
             let duration = Stats.LogSink.Restart()
             if rows > 1 then logActivity "TOTAL" totalCount totalRu totalMs
             let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
-            let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
-            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRu/d)
+            let logPeriodicRate name count rru wru = log.Information("rp{name} {count:n0} = ~{rru:n1}R/{wru:n1}W RU", name, count, rru, wru)
+            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
 type Metrics() =
     let mutable t = 0.
