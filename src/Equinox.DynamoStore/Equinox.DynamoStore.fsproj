@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\FSharp.AWS.DynamoDB\src\FSharp.AWS.DynamoDB\FSharp.AWS.DynamoDB.fsproj" />
     <ProjectReference Include="..\Equinox.Core\Equinox.Core.fsproj" />
   </ItemGroup>
 
@@ -23,7 +24,7 @@
     <PackageReference Include="FSharp.Core" Version="4.7.2" />
 
     <PackageReference Include="FsCodec" Version="2.3.1" />
-    <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.10.1-beta" />
+<!--    <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.11.0-beta" />-->
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
   </ItemGroup>
 
