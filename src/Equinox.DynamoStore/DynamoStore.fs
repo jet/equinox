@@ -8,8 +8,12 @@ open FSharp.Control
 open Serilog
 open System
 
-type EventBody = byte[]
-module EventBody = let (|Bytes|) : EventBody -> int = function null -> 0 | x -> x.Length
+type InternalEventBody = System.IO.MemoryStream
+type EventBody = ReadOnlyMemory<byte>
+module EventBody =
+    let (|Bytes|) (x : EventBody) = x.Length
+    let toInternal (x : EventBody) : InternalEventBody = if x.IsEmpty then null else new InternalEventBody(x.ToArray(), writable = false)
+    let ofInternal (x : InternalEventBody) : EventBody = if x = null || x.Length = 0 then EventBody.Empty else EventBody(x.ToArray())
 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
@@ -20,11 +24,11 @@ type Event =
         /// The Event Type (Case) that defines the content of the Data (and Metadata) fields
         c : string
 
-        /// Event body, as UTF-8 encoded json
+        /// Main event body
         d : EventBody // required
 
         /// Optional metadata, encoded as per 'd'
-        m : EventBody // can be null
+        m : EventBody // can be Empty
 
         /// CorrelationId; stored as x (signifying transactionId), or null
         correlationId : string option
@@ -56,10 +60,10 @@ type [<NoEquality; NoComparison>] Unfold =
         /// The Case (Event Type) of this snapshot, used to drive deserialization
         c : string // required
 
-        /// Event body - Json -> byte[] -> (maybe) Deflate
+        /// Event body
         d : EventBody // required
 
-        /// Optional metadata, same encoding as `d` (can be null, which is mapped to empty)
+        /// Optional metadata, can be Empty
         m : EventBody }
 module Unfold =
     let bytes (x : Unfold) = let EventBody.Bytes db, EventBody.Bytes mb = x.d, x.m in x.c.Length + db + mb + 50
@@ -106,12 +110,18 @@ module Batch =
             t : DateTimeOffset[]
             // NOTE as per Event, but without c and t fields; we instead unroll those as arrays at top level
             e : EventSchema[]
-            u : Unfold[] }
-     and EventSchema =
-        {   d : EventBody
-            m : EventBody
+            u : UnfoldSchema[] }
+     and [<NoEquality; NoComparison>] EventSchema =
+        {   d : InternalEventBody
+            m : InternalEventBody
             x : string option
             y : string option }
+    and [<NoEquality; NoComparison>] UnfoldSchema =
+        {   i : int64
+            t : DateTimeOffset
+            c : string // required
+            d : InternalEventBody // required
+            m : InternalEventBody }
     /// Computes base Index for the Item (`i` can bear the the magic value TipI when the Item is the Tip)
     let baseIndex (x : Batch) = x.n - x.e.LongLength
     let tipMagicI = int64 Int32.MaxValue
@@ -119,11 +129,14 @@ module Batch =
     let unfoldsBytes (x : Batch) = Unfold.arrayBytes x.u
     let allBytes (xs : Batch seq) = xs |> Seq.sumBy (fun x -> baseBytes x + unfoldsBytes x)
     let toSchema (xs : Event[]) : (*case*) string[] * (*timestamp*) DateTimeOffset[] * EventSchema[] =
-        let toEventSchema (x : Event) : EventSchema = { d = x.d; m = (match x.m with null -> Array.empty | x -> x); x = x.correlationId; y = x.causationId }
+        let toEventSchema (x : Event) : EventSchema = { d = EventBody.toInternal x.d; m = EventBody.toInternal x.m; x = x.correlationId; y = x.causationId }
         xs |> Array.map (fun x -> x.c), xs |> Array.map (fun x -> x.t), xs |> Array.map toEventSchema
+    let private toUnfoldSchema (x : Unfold) : UnfoldSchema = { i = x.i; t = x.t; c = x.c; d = EventBody.toInternal x.d; m = EventBody.toInternal x.m }
+    let unfoldsToSchema = Array.map toUnfoldSchema
     let ofSchema (x : Schema) : Batch =
-        let e' = (x.e, x.c, x.t) |||> Array.map3 (fun e c t -> { t = t; d = e.d; m = e.m; correlationId = e.x; causationId = e.y; c = c })
-        { p = x.p; i = x.i; etag = Option.toObj x.etag; n = x.n; e = e'; u = x.u }
+        let e' = (x.e, x.c, x.t) |||> Array.map3 (fun e c t -> { t = t; d = EventBody.ofInternal e.d; m = EventBody.ofInternal e.m; correlationId = e.x; causationId = e.y; c = c })
+        let ofUnfoldSchema (x : UnfoldSchema) : Unfold = { i = x.i; t = x.t; c = x.c; d = EventBody.ofInternal x.d; m = EventBody.ofInternal x.m }
+        { p = x.p; i = x.i; etag = Option.toObj x.etag; n = x.n; e = e'; u = x.u |> Array.map ofUnfoldSchema }
 
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -199,12 +212,6 @@ module Log =
         /// Trimmed the Tip
         | Trim of Measurement
     let internal prop name value (log : ILogger) = log.ForContext(name, value)
-    let internal propData name (events : #IEventData<EventBody> seq) (log : ILogger) =
-        let render (body : EventBody) : string = match body with null -> null | b -> System.Text.Encoding.UTF8.GetString b
-        let items = seq { for e in events do yield sprintf "{\"%s\": %s}" e.EventType (render e.Data) }
-        log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
-    let internal propDataEvents = propData "events"
-    let internal propDataUnfolds = Enum.Unfolds >> propData "unfolds"
 
     let internal withLoggedRetries<'t> (retryPolicy : IRetryPolicy option) (contextLabel : string) (f : ILogger -> Async<'t>) log : Async<'t> =
         match retryPolicy with
@@ -423,6 +430,7 @@ module internal Sync =
     let private updateTip stream updater cond = TransactWrite.Update (Container.TableKeyForStreamTip stream, Some (cce cond), cue updater)
 
     let private gen (stream : string) (tipEmpty, exp, n', calve : Event[], append : Event[], u, eventCount) etag' : TransactWrite<Batch.Schema> list =
+        let u = Batch.unfoldsToSchema u
         let tipEventCount = append.LongLength
         let tipIndex = n' - tipEventCount
         let appA = min eventCount append.Length
@@ -475,8 +483,8 @@ module internal Sync =
         let calveBytes, tipBytes = Event.arrayBytes calve, Event.arrayBytes append + Unfold.arrayBytes unfolds
         let ucount = Array.length unfolds
         let log =
-            let reqMetric = Log.metric container.TableName stream t (calveBytes + tipBytes) (eventCount+ucount) rc
-            if log.IsEnabled Events.LogEventLevel.Debug then log |> Log.propDataEvents (Enum.Events(n', append)) |> Log.propDataUnfolds unfolds else log
+            let reqMetric = Log.metric container.TableName stream t (calveBytes + tipBytes) (eventCount + ucount) rc
+            log
             |> match exp with
                 | Exp.Etag et ->            Log.prop "expectedEtag" et
                 | Exp.Version ev ->         Log.prop "expectedVersion" ev
@@ -543,7 +551,6 @@ module internal Tip =
         | Res.Found tip ->
             let ecount, ucount, bb, ub = tip.e.Length, tip.u.Length, Batch.baseBytes tip, Batch.unfoldsBytes tip
             let log = logMetric (bb + ub) (ecount + ucount) Log.Metric.Tip
-            let log = if log.IsEnabled Events.LogEventLevel.Debug then log |> Log.propDataUnfolds tip.u else log
             let log = match maybePos with Some p -> log |> Log.prop "startPos" p |> Log.prop "startEtag" p | None -> log
             let log = log |> Log.prop "etag" tip.etag //|> Log.prop "n" tip.n
             log.Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU v{n} {events}+{unfolds}e {baseBytes}+{unfoldsBytes}b", "Tip", stream, 200, tms t, ru, tip.n, ecount, ucount, bb, ub)
@@ -580,11 +587,9 @@ module internal Query =
             |> if direction = Direction.Backward then Seq.rev else id
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
         let count, bytes = events.Length, Batch.allBytes batches
-        let reqMetric = Log.metric container.TableName stream t bytes count rc
-        let log = let evt = Log.Metric.QueryResponse (direction, reqMetric) in log |> Log.event evt
-        let log = if log.IsEnabled Events.LogEventLevel.Debug then log |> Log.propDataEvents events else log
         let index = if count = 0 then Nullable () else Nullable (Seq.map Batch.baseIndex batches |> Seq.min)
-        (log|> Log.prop "bytes" bytes
+        (log|> Log.event (Log.Metric.QueryResponse (direction, Log.metric container.TableName stream t bytes count rc))
+            |> Log.prop "bytes" bytes
             |> match minIndex with None -> id | Some i -> Log.prop "minIndex" i
             |> match maxIndex with None -> id | Some i -> Log.prop "maxIndex" i)
             .Information("EqxDynamo {action:l} {count}/{batches} {direction} {ms:f1}ms i={index} {ru}RU",
@@ -693,7 +698,7 @@ module internal Query =
             while ok do
                 let batchLog = readLog |> Log.prop "batchIndex" i
                 match maxRequests with
-                | Some mr when i+1 >= mr -> batchLog.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
+                | Some mr when i + 1 >= mr -> batchLog.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
                 | _ -> ()
 
                 match! e.MoveNext() with
@@ -995,7 +1000,7 @@ type StoreClient(container : Container, fallback : Container option, query : Que
                 {   i = n' + int64 offset
                     c = x.EventType
                     d = x.Data
-                    m = match x.Meta with null -> Array.empty | x -> x
+                    m = x.Meta
                     t = DateTimeOffset.UtcNow
                 } : Unfold)
             |> Seq.toArray
