@@ -902,11 +902,11 @@ module Internal =
 /// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
 type QueryOptions
     (   // Max number of Batches to return per paged query response. Default: 10.
-        [<O; D(null)>]?maxItems : int,
+        [<O; D null>] ?maxItems : int,
         // Dynamic version of `maxItems`, allowing one to react to dynamic configuration changes. Default: use `maxItems` value.
-        [<O; D(null)>]?getMaxItems : unit -> int,
+        [<O; D null>] ?getMaxItems : unit -> int,
         // Maximum number of trips to permit when slicing the work into multiple responses based on `MaxItems`. Default: unlimited.
-        [<O; D(null)>]?maxRequests) =
+        [<O; D null>] ?maxRequests) =
     let getMaxItems = defaultArg getMaxItems (fun () -> defaultArg maxItems 10)
     /// Limit for Maximum number of `Batch` records in a single query batch response
     member _.MaxItems = getMaxItems ()
@@ -918,19 +918,19 @@ type QueryOptions
 /// - retrying read and write operations for the Tip
 type TipOptions
     (   // Maximum serialized size to permit to accumulate in Tip before events get moved out to a standalone Batch. Default: 32K.
-        [<O; D(null)>]?maxBytes,
+        [<O; D null>] ?maxBytes,
         // Optional maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: limited by MaxBytes
-        [<O; D(null)>]?maxEvents,
+        [<O; D null>] ?maxEvents,
         // Inhibit throwing when events are missing, but no fallback Table has been supplied. Default: false.
-        [<O; D(null)>]?ignoreMissingEvents,
-        [<O; D(null)>]?readRetryPolicy,
-        [<O; D(null)>]?writeRetryPolicy) =
+        [<O; D null>] ?ignoreMissingEvents,
+        [<O; D null>] ?readRetryPolicy,
+        [<O; D null>] ?writeRetryPolicy) =
 //        // Compress Unfolds in Tip. Default: <c>true</c>.
-//        [<O; D null>]?compressUnfolds,
+//        [<O; D null>] ?compressUnfolds,
 //        // Compress Data in Tip. Default: <c>true</c>.
-//        [<O; D null>]?compressTipData,
+//        [<O; D null>] ?compressTipData,
 //        // Compress Data in non-Tip batches. Default: <c>true</c>.
-//        [<O; D null>]?compressCalvedData) =
+//        [<O; D null>] ?compressCalvedData) =
 //    let compress = (compressUnfolds = Some true), (compressTipData = Some true), (compressCalvedData = Some true)
     /// Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: limited by MaxBytes
     member val MaxEvents : int option = maxEvents
@@ -1131,12 +1131,13 @@ type DynamoStoreClient
         categoryAndStreamIdToTableAndStreamNames : string * string -> string * string,
         createContainer : string -> Container,
         createFallbackContainer : string -> Container option,
-        [<O; D(null)>]?primaryTableToArchive : string -> string) =
+        [<O; D null>] ?primaryTableToArchive : string -> string) =
     let primaryTableToSecondary = defaultArg primaryTableToArchive id
-    new(client : Amazon.DynamoDBv2.IAmazonDynamoDB, tableName : string,
-        // Table name to use for archive store. Default: (if <c>archiveClient</c> specified) use same <c>tableName</c> but via <c>archiveClient</c>
-        [<O; D(null)>]?archiveTableName,
-        [<O; D(null)>]?archiveClient : Amazon.DynamoDBv2.IAmazonDynamoDB) =
+    new(    client : Amazon.DynamoDBv2.IAmazonDynamoDB, tableName : string,
+            // Table name to use for archive store. Default: (if <c>archiveClient</c> specified) use same <c>tableName</c> but via <c>archiveClient</c>.
+            [<O; D null>] ?archiveTableName,
+            // Client to use for archive store. Default: (if <c>archiveTableName</c> specified) use same <c>archiveTableName</c> but via <c>client</c>.
+            [<O; D null>] ?archiveClient : Amazon.DynamoDBv2.IAmazonDynamoDB) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
         let primaryContainer t = Container.Create(client, t)
@@ -1147,12 +1148,11 @@ type DynamoStoreClient
     member internal _.ResolveContainerFallbackAndStreamName(categoryName, streamId) : Container * Container option * string =
         let tableName, streamName = categoryAndStreamIdToTableAndStreamNames (categoryName, streamId)
         let fallbackTableName = primaryTableToSecondary tableName
-        let primaryContainer, fallbackContainer = createContainer tableName, createFallbackContainer fallbackTableName
-        primaryContainer, fallbackContainer, streamName
+        createContainer tableName, createFallbackContainer fallbackTableName, streamName
 
     /// Connect to an Equinox.DynamoStore in the specified Table
-    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the fallback where that is provided
-    static member Connect(client, tableName : string, ?archiveTableName, ?mode : ConnectMode) : Async<DynamoStoreClient> = async {
+    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the archive where that is provided
+    static member Connect(client, tableName : string, [<O; D null>] ?archiveTableName, [<O; D null>] ?mode : ConnectMode) : Async<DynamoStoreClient> = async {
         let init t = ConnectMode.apply client t (defaultArg mode ConnectMode.Verify)
         do! init tableName
         match archiveTableName with None -> () | Some archiveTable-> do! init archiveTable
@@ -1162,15 +1162,15 @@ type DynamoStoreClient
 type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOptions) =
     new(    storeClient : DynamoStoreClient,
             // Maximum serialized event size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 32K.
-            [<O; D null>]?maxBytes,
+            [<O; D null>] ?maxBytes,
             // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: limited by maxBytes
-            [<O; D null>]?tipMaxEvents,
+            [<O; D null>] ?tipMaxEvents,
             // Inhibit throwing when events are missing, but no Archive Table has been supplied as a fallback
-            [<O; D null>]?ignoreMissingEvents,
+            [<O; D null>] ?ignoreMissingEvents,
             // Max number of Batches to return per paged query response. Default: 10.
-            [<O; D null>]?queryMaxItems,
+            [<O; D null>] ?queryMaxItems,
             // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
-            [<O; D null>]?queryMaxRequests) =
+            [<O; D null>] ?queryMaxRequests) =
         let tipOptions = TipOptions(?maxBytes = maxBytes, ?maxEvents = tipMaxEvents, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
         DynamoStoreContext(storeClient, tipOptions, queryOptions)
@@ -1178,8 +1178,8 @@ type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOption
     member val QueryOptions = queryOptions
     member val TipOptions = tipOptions
     member internal x.ResolveContainerClientAndStreamId(categoryName, streamId) =
-        let container, fallback, streamId = storeClient.ResolveContainerFallbackAndStreamName(categoryName, streamId)
-        StoreClient(container, fallback, x.QueryOptions, x.TipOptions), streamId
+        let container, fallback, streamName = storeClient.ResolveContainerFallbackAndStreamName(categoryName, streamId)
+        StoreClient(container, fallback, x.QueryOptions, x.TipOptions), streamName
 
 /// For DynamoDB, caching is critical in order to reduce RU consumption.
 /// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
