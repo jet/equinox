@@ -8,12 +8,12 @@ open FSharp.Control
 open Serilog
 open System
 
-type InternalEventBody = System.IO.MemoryStream
 type EventBody = ReadOnlyMemory<byte>
 module EventBody =
+    type Internal = System.IO.MemoryStream
     let (|Bytes|) (x : EventBody) = x.Length
-    let toInternal (x : EventBody) : InternalEventBody = if x.IsEmpty then null else new InternalEventBody(x.ToArray(), writable = false)
-    let ofInternal (x : InternalEventBody) : EventBody = if x = null || x.Length = 0 then EventBody.Empty else EventBody(x.ToArray())
+    let toInternal (x : EventBody) : Internal = if x.IsEmpty then null else new Internal(x.ToArray(), writable = false)
+    let ofInternal (x : Internal) : EventBody = if x = null || x.Length = 0 then EventBody.Empty else EventBody(x.ToArray())
 
 /// A single Domain Event from the array held in a Batch
 [<NoEquality; NoComparison>]
@@ -112,16 +112,16 @@ module Batch =
             e : EventSchema[]
             u : UnfoldSchema[] }
      and [<NoEquality; NoComparison>] EventSchema =
-        {   d : InternalEventBody
-            m : InternalEventBody
+        {   d : EventBody.Internal
+            m : EventBody.Internal
             x : string option
             y : string option }
     and [<NoEquality; NoComparison>] UnfoldSchema =
         {   i : int64
             t : DateTimeOffset
             c : string // required
-            d : InternalEventBody // required
-            m : InternalEventBody }
+            d : EventBody.Internal // required
+            m : EventBody.Internal }
     /// Computes base Index for the Item (`i` can bear the the magic value TipI when the Item is the Tip)
     let baseIndex (x : Batch) = x.n - x.e.LongLength
     let tipMagicI = int64 Int32.MaxValue
