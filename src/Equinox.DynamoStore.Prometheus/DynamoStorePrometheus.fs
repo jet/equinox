@@ -115,7 +115,6 @@ type LogSink(customTags: seq<string * string>) =
                 | QueryRes (_direction,         m) -> observeRes  ("query",    "queryPage")                  m
                 | Op       (Operation.Write,    m) -> observe     ("transact", "sync",          "ok")        m
                 | Op       (Operation.Conflict, m) -> observe     ("transact", "conflict",      "conflict")  m
-//              | Op       (Operation.Resync,   m) -> observe     ("transact", "resync",        "conflict")  m
                 | Op       (Operation.Prune,    m) -> observe_    ("prune",    "pruneQuery")                 m
                 | PruneRes                      m  -> observeRes  ("prune",    "pruneQueryPage")             m
                 | Op       (Operation.Delete,   m) -> observe     ("prune",    "delete",        "ok")        m

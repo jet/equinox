@@ -1122,8 +1122,7 @@ module internal ConnectMode =
         | Verify -> Initialization.verify client tableName
         | CreateIfNotExists throughput -> Initialization.createIfNotExists client tableName (throughput, Initialization.StreamingMode.Default)
 
-/// Holds all relevant state for a Store
-/// - The Client (IAmazonDynamoDB). there should be a single one of these per process, plus an optional fallback one for pruning scenarios.
+/// Holds all relevant state for a Store. There should be a single one of these per process.
 type DynamoStoreClient
     (   // Facilitates custom mapping of Stream Category Name to underlying Table and Stream names
         categoryAndStreamIdToTableAndStreamNames : string * string -> string * string,
