@@ -105,7 +105,7 @@ type Tests(testOutputHelper) =
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
             test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
 #if STORE_DYNAMO
-            if eventsInTip then verifyRequestChargesMax 175 // 173.5 [5.5; 168]
+            if eventsInTip then verifyRequestChargesMax 177 // 173.5 [8.5; 168]
 #else
             if eventsInTip then verifyRequestChargesMax 76 // 76.0 [3.72; 72.28]
 #endif
