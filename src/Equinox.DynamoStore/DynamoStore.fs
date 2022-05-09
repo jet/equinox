@@ -418,11 +418,6 @@ module internal Sync =
     [<RequireQualifiedAccess>]
     type internal Exp = Version of int64 | Etag of string
 
-    [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type Result =
-        | Written of etag : string
-        | ConflictUnknown
-
     let private cce (ce : Quotations.Expr<Batch.Schema -> bool>) = template.PrecomputeConditionalExpr ce
     let private cue (ue : Quotations.Expr<Batch.Schema -> Batch.Schema>) = template.PrecomputeUpdateExpr ue
     let private batchDoesNotExistCondition = cce <@ fun t -> NOT_EXISTS t.i @>
@@ -460,12 +455,17 @@ module internal Sync =
             | Exp.Etag etag ->                  updateTipIf <@ fun t -> t.etag = Some etag @>
             | Exp.Version ver ->                updateTipIf <@ fun t -> t.n = ver @> ]
 
+    [<RequireQualifiedAccess; NoEquality; NoComparison>]
+    type private TransactResult =
+        | Written of etag' : string
+        | ConflictUnknown
+
     let private (|DynamoDbConflict|_|) : exn -> _ = function
         | Precondition.CheckFailed
         | TransactWriteItemsRequest.TransactionCanceledConditionalCheckFailed -> Some ()
         | _ -> None
-    let private run (container : Container, stream : string) (tipEmpty, exp, n', calve, append, unfolds, eventCount)
-        : Async<struct (RequestConsumption * Result)> = async {
+    let private transact (container : Container, stream : string) (tipEmpty, exp, n', calve, append, unfolds, eventCount)
+        : Async<struct (RequestConsumption * TransactResult)> = async {
         let etag' = let g = Guid.NewGuid() in g.ToString "N"
         let actions = gen stream (tipEmpty, exp, n', calve, append, unfolds, eventCount) etag'
         let rm = Metrics()
@@ -474,12 +474,12 @@ module internal Sync =
                 | [ TransactWrite.Put (item, Some cond) ] -> context.PutItemAsync(item, cond) |> Async.Ignore
                 | [ TransactWrite.Update (key, Some cond, updateExpr) ] -> context.UpdateItemAsync(key, updateExpr, cond) |> Async.Ignore
                 | actions -> context.TransactWriteItems actions
-            return rm.Consumed, Result.Written etag'
-        with DynamoDbConflict -> return rm.Consumed, Result.ConflictUnknown }
+            return rm.Consumed, TransactResult.Written etag'
+        with DynamoDbConflict -> return rm.Consumed, TransactResult.ConflictUnknown }
 
     let private logged (container, stream) (tipEmpty, exp : Exp, n', calve, append, unfolds, eventCount) (log : ILogger)
-        : Async<Result> = async {
-        let! t, ({ total = ru } as rc, result) = run (container, stream) (tipEmpty, exp, n', calve, append, unfolds, eventCount) |> Stopwatch.Time
+        : Async<TransactResult> = async {
+        let! t, ({ total = ru } as rc, result) = transact (container, stream) (tipEmpty, exp, n', calve, append, unfolds, eventCount) |> Stopwatch.Time
         let calveBytes, tipBytes = Event.arrayBytes calve, Event.arrayBytes append + Unfold.arrayBytes unfolds
         let ucount = Array.length unfolds
         let log =
@@ -489,17 +489,57 @@ module internal Sync =
                 | Exp.Etag et ->            Log.prop "expectedEtag" et
                 | Exp.Version ev ->         Log.prop "expectedVersion" ev
             |> match result with
-                | Result.Written etag' ->   Log.prop "nextPos" n' >> Log.prop "nextEtag" etag' >> Log.event (Log.Metric.SyncSuccess reqMetric)
-                | Result.ConflictUnknown -> Log.prop "conflict" true
+                | TransactResult.Written etag' ->
+                                            Log.prop "nextPos" n' >> Log.prop "nextEtag" etag' >> Log.event (Log.Metric.SyncSuccess reqMetric)
+                | TransactResult.ConflictUnknown ->
+                                            Log.prop "conflict" true
                                             >> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in append -> x.c }))
                                             >> Log.event (Log.Metric.SyncConflict reqMetric)
         log.Information("EqxDynamo {action:l} {stream:l} {ecount}+{ucount} {ms:f1}ms {ru}RU {tipBytes:n0}+{calveBytes:n0}b {exp}",
             "Sync", stream, eventCount, ucount, tms t, ru, tipBytes, calveBytes, exp)
         return result }
 
-    let batch (log : ILogger) retryPolicy containerStream expBatch : Async<Result> =
+    let private transactWithRetries (log : ILogger) retryPolicy containerStream expBatch : Async<TransactResult> =
         let call = logged containerStream expBatch
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
+
+    [<RequireQualifiedAccess; NoEquality; NoComparison>]
+    type Result =
+        | Written of etag : string * events : Event array * unfolds : Unfold array
+        | ConflictUnknown
+
+    let handle (log : ILogger) (retryPolicy, maxEvents, maxBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded : IEventData<_> seq) = async {
+        let mkEvent (e : IEventData<EventBody>) =
+            {   t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = Option.ofObj e.CorrelationId; causationId = Option.ofObj e.CausationId }
+        let events = Seq.map mkEvent eventsEncoded |> Array.ofSeq
+        let unfolds =
+            unfoldsEncoded
+            |> Seq.mapi (fun offset x ->
+                {   i = n' + int64 offset
+                    c = x.EventType
+                    d = x.Data
+                    m = x.Meta
+                    t = DateTimeOffset.UtcNow
+                } : Unfold)
+            |> Seq.toArray
+        if Array.isEmpty events && Array.isEmpty unfolds then invalidOp "Must write either events or unfolds."
+        let cur = Position.flatten pos
+        let calve, append, e' =
+            let eventOverflow = maxEvents |> Option.exists (fun limit -> events.Length + cur.events.Length > limit)
+            if eventOverflow || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > maxBytes then
+                let calfEvents, residualEvents = ResizeArray(events.Length + cur.events.Length), ResizeArray()
+                let mutable calfFull, calfSize = false, 1024
+                for e in Seq.append cur.events events do
+                    match calfFull, calfSize + Event.bytes e with
+                    | false, calfSize' when calfSize' < 400 * 1024 -> calfSize <- calfSize'; calfEvents.Add e
+                    | _ -> calfFull <- true; residualEvents.Add e
+                let tipEvents = residualEvents.ToArray()
+                calfEvents.ToArray(), tipEvents, tipEvents
+            else Array.empty, events, Array.append cur.events events
+        let tipEmpty, eventCount = Array.isEmpty cur.events, Array.length events
+        match! transactWithRetries log retryPolicy (container, stream) (tipEmpty, exp pos, n', calve, append, unfolds, eventCount) with
+        | TransactResult.ConflictUnknown -> return Result.ConflictUnknown
+        | TransactResult.Written etag' -> return Result.Written (etag', e', unfolds) }
 
 module Initialization =
 
@@ -942,13 +982,13 @@ type TipOptions
     member val ReadRetryPolicy = readRetryPolicy
     member val WriteRetryPolicy = writeRetryPolicy
 
-type StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
+type internal StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
 
     let loadTip log stream pos = Tip.tryLoad log tip.ReadRetryPolicy (container, stream) (pos, None)
     let ignoreMissing = tip.IgnoreMissingEvents
 
     // Always yields events forward, regardless of direction
-    member internal _.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip) : Async<StreamToken * 'event[]> = async {
+    member _.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip) : Async<StreamToken * 'event[]> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode, isOrigin))
         let maxIndex = match maxIndex with
                        | Some _ as mi -> mi
@@ -990,38 +1030,10 @@ type StoreClient(container : Container, fallback : Container option, query : Que
             | Tip.Result.NotModified -> return LoadFromTokenResult.Unchanged
             | Tip.Result.Found (pos, i, xs) -> return! read (pos, i, xs) }
 
-    member internal _.Sync(log, stream, pos, exp, n', eventsEncoded, unfoldsEncoded : IEventData<_> seq) : Async<InternalSyncResult> = async {
-        let mkEvent (e : IEventData<EventBody>) =
-            {   t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = Option.ofObj e.CorrelationId; causationId = Option.ofObj e.CausationId }
-        let events = Seq.map mkEvent eventsEncoded |> Array.ofSeq
-        let unfolds =
-            unfoldsEncoded
-            |> Seq.mapi (fun offset x ->
-                {   i = n' + int64 offset
-                    c = x.EventType
-                    d = x.Data
-                    m = x.Meta
-                    t = DateTimeOffset.UtcNow
-                } : Unfold)
-            |> Seq.toArray
-        if Array.isEmpty events && Array.isEmpty unfolds then invalidOp "Must write either events or unfolds."
-        let cur = Position.flatten pos
-        let calve, append, e' =
-            let eventOverflow = tip.MaxEvents |> Option.exists (fun limit -> events.Length + cur.events.Length > limit)
-            if eventOverflow || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > tip.MaxBytes then
-                let calfEvents, residualEvents = ResizeArray(events.Length + cur.events.Length), ResizeArray()
-                let mutable calfFull, calfSize = false, 1024
-                for e in Seq.append cur.events events do
-                    match calfFull, calfSize + Event.bytes e with
-                    | false, calfSize' when calfSize' < 400 * 1024 -> calfSize <- calfSize'; calfEvents.Add e
-                    | _ -> calfFull <- true; residualEvents.Add e
-                let tipEvents = residualEvents.ToArray()
-                calfEvents.ToArray(), tipEvents, tipEvents
-            else Array.empty, events, Array.append cur.events events
-        let tipEmpty, eventCount = Array.isEmpty cur.events, Array.length events
-        match! Sync.batch log tip.WriteRetryPolicy (container, stream) (tipEmpty, exp pos, n', calve, append, unfolds, eventCount) with
+    member _.Sync(log, stream, pos, exp, n', eventsEncoded, unfoldsEncoded : IEventData<_> seq) : Async<InternalSyncResult> = async {
+        match! Sync.handle log (tip.WriteRetryPolicy, tip.MaxEvents, tip.MaxBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded) with
         | Sync.Result.ConflictUnknown -> return InternalSyncResult.ConflictUnknown
-        | Sync.Result.Written etag' -> return InternalSyncResult.Written (Token.create (Position.fromElements (stream, n', e', unfolds, etag'))) }
+        | Sync.Result.Written (etag', events, unfolds) -> return InternalSyncResult.Written (Token.create (Position.fromElements (stream, n', events, unfolds, etag'))) }
 
     member _.Prune(log, stream, index) =
         Prune.until log (container, stream) query.MaxItems index
