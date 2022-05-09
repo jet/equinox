@@ -140,6 +140,8 @@ module Dynamo =
         | [<AltCommandLine "-ss">]      SecretKey of string
         | [<AltCommandLine "-t">]       Table of string
         | [<AltCommandLine "-ta">]      ArchiveTable of string
+        | [<AltCommandLine "-r">]       Retries of int
+        | [<AltCommandLine "-rt">]      RetriesTimeoutS of float
         | [<AltCommandLine "-tb">]      TipMaxBytes of int
         | [<AltCommandLine "-te">]      TipMaxEvents of int
         | [<AltCommandLine "-b">]       QueryMaxItems of int
@@ -151,6 +153,8 @@ module Dynamo =
                 | SecretKey _ ->        "specify a secret access key for a Dynamo account. (optional if environment variable " + SECRET_KEY + " specified)"
                 | Table _ ->            "specify a table name for the primary store. (optional if environment variable " + TABLE + " specified)"
                 | ArchiveTable _ ->     "specify a table name for the Archive. Default: Do not attempt to look in an Archive store as a Fallback to locate pruned events."
+                | Retries _ ->          "specify operation retries (default: 1)."
+                | RetriesTimeoutS _ ->  "specify max wait-time including retries in seconds (default: 5)"
                 | TipMaxBytes _ ->      "specify maximum number of bytes to hold in Tip before calving off to a frozen Batch. Default: 32K"
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: limited by Max Bytes"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
@@ -158,7 +162,9 @@ module Dynamo =
         let serviceUrl =                args.TryGetResult ServiceUrl |> defaultWithEnvVar SERVICE_URL   "ServiceUrl"
         let accessKey =                 args.TryGetResult AccessKey  |> defaultWithEnvVar ACCESS_KEY    "AccessKey"
         let secretKey =                 args.TryGetResult SecretKey  |> defaultWithEnvVar SECRET_KEY    "SecretKey"
-        member val Connector =          DynamoStoreConnector(serviceUrl, accessKey, secretKey)
+        let retries =                   args.GetResult(Retries, 1)
+        let timeout =                   args.GetResult(RetriesTimeoutS, 5.) |> TimeSpan.FromSeconds
+        member val Connector =          DynamoStoreConnector(serviceUrl, accessKey, secretKey, retries, timeout)
 
         member val Table =              args.TryGetResult Table      |> defaultWithEnvVar TABLE         "Table"
         member val ArchiveTable =       args.TryGetResult ArchiveTable

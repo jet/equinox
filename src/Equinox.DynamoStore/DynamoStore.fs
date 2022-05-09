@@ -160,8 +160,6 @@ type internal Enum() =
         // where Index is equal, unfolds get delivered after the events so the fold semantics can be 'idempotent'
         |> Seq.sortBy (fun x -> x.Index, x.IsUnfold)
 
-type IRetryPolicy = abstract member Execute : (int -> Async<'T>) -> Async<'T>
-
 // We only capture the total RUs, without attempting to split them into read/write as the service does not actually populate the associated fields
 // See https://github.com/aws/aws-sdk-go/issues/2699#issuecomment-514378464
 type [<Struct>] RequestConsumption = { total : float }
@@ -213,14 +211,6 @@ module Log =
         | Trim of Measurement
     let internal prop name value (log : ILogger) = log.ForContext(name, value)
 
-    let internal withLoggedRetries<'t> (retryPolicy : IRetryPolicy option) (contextLabel : string) (f : ILogger -> Async<'t>) log : Async<'t> =
-        match retryPolicy with
-        | None -> f log
-        | Some retryPolicy ->
-            let withLoggingContextWrapping count =
-                let log = if count = 1 then log else log |> prop contextLabel count
-                f log
-            retryPolicy.Execute withLoggingContextWrapping
     /// Include a LogEvent property bearing metrics
     // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
     let internal event (value : Metric) (log : ILogger) =
@@ -477,7 +467,7 @@ module internal Sync =
             return rm.Consumed, TransactResult.Written etag'
         with DynamoDbConflict -> return rm.Consumed, TransactResult.ConflictUnknown }
 
-    let private logged (container, stream) (tipEmpty, exp : Exp, n', calve, append, unfolds, eventCount) (log : ILogger)
+    let private transactLogged (container, stream) (tipEmpty, exp : Exp, n', calve, append, unfolds, eventCount) (log : ILogger)
         : Async<TransactResult> = async {
         let! t, ({ total = ru } as rc, result) = transact (container, stream) (tipEmpty, exp, n', calve, append, unfolds, eventCount) |> Stopwatch.Time
         let calveBytes, tipBytes = Event.arrayBytes calve, Event.arrayBytes append + Unfold.arrayBytes unfolds
@@ -499,16 +489,12 @@ module internal Sync =
             "Sync", stream, eventCount, ucount, tms t, ru, tipBytes, calveBytes, exp)
         return result }
 
-    let private transactWithRetries (log : ILogger) retryPolicy containerStream expBatch : Async<TransactResult> =
-        let call = logged containerStream expBatch
-        Log.withLoggedRetries retryPolicy "writeAttempt" call log
-
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Result =
         | Written of etag : string * events : Event array * unfolds : Unfold array
         | ConflictUnknown
 
-    let handle (log : ILogger) (retryPolicy, maxEvents, maxBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded : IEventData<_> seq) = async {
+    let handle (log : ILogger) (maxEvents, maxBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded : IEventData<_> seq) = async {
         let mkEvent (e : IEventData<EventBody>) =
             {   t = e.Timestamp; c = e.EventType; d = e.Data; m = e.Meta; correlationId = Option.ofObj e.CorrelationId; causationId = Option.ofObj e.CausationId }
         let events = Seq.map mkEvent eventsEncoded |> Array.ofSeq
@@ -524,7 +510,7 @@ module internal Sync =
             |> Seq.toArray
         if Array.isEmpty events && Array.isEmpty unfolds then invalidOp "Must write either events or unfolds."
         let cur = Position.flatten pos
-        let calve, append, e' =
+        let calfEvents, tipOrAppendEvents, tipEvents' =
             let eventOverflow = maxEvents |> Option.exists (fun limit -> events.Length + cur.events.Length > limit)
             if eventOverflow || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > maxBytes then
                 let calfEvents, residualEvents = ResizeArray(events.Length + cur.events.Length), ResizeArray()
@@ -537,9 +523,9 @@ module internal Sync =
                 calfEvents.ToArray(), tipEvents, tipEvents
             else Array.empty, events, Array.append cur.events events
         let tipEmpty, eventCount = Array.isEmpty cur.events, Array.length events
-        match! transactWithRetries log retryPolicy (container, stream) (tipEmpty, exp pos, n', calve, append, unfolds, eventCount) with
+        match! transactLogged (container, stream) (tipEmpty, exp pos, n', calfEvents, tipOrAppendEvents, unfolds, eventCount) log with
         | TransactResult.ConflictUnknown -> return Result.ConflictUnknown
-        | TransactResult.Written etag' -> return Result.Written (etag', e', unfolds) }
+        | TransactResult.Written etag' -> return Result.Written (etag', tipEvents', unfolds) }
 
 module Initialization =
 
@@ -597,8 +583,8 @@ module internal Tip =
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i : int64 * ITimelineEvent<EventBody>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
-    let tryLoad (log : ILogger) retryPolicy containerStream (maybePos : Position option, maxIndex) : Async<Result> = async {
-        let! _rc, res = Log.withLoggedRetries retryPolicy "readAttempt" (loggedGet get containerStream maybePos) log
+    let tryLoad (log : ILogger) containerStream (maybePos : Position option, maxIndex) : Async<Result> = async {
+        let! _rc, res = loggedGet get containerStream maybePos log
         match res with
         | Res.NotModified -> return Result.NotModified
         | Res.NotFound -> return Result.NotFound
@@ -962,9 +948,7 @@ type TipOptions
         // Optional maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch. Default: limited by MaxBytes
         [<O; D null>] ?maxEvents,
         // Inhibit throwing when events are missing, but no fallback Table has been supplied. Default: false.
-        [<O; D null>] ?ignoreMissingEvents,
-        [<O; D null>] ?readRetryPolicy,
-        [<O; D null>] ?writeRetryPolicy) =
+        [<O; D null>] ?ignoreMissingEvents) =
 //        // Compress Unfolds in Tip. Default: <c>true</c>.
 //        [<O; D null>] ?compressUnfolds,
 //        // Compress Data in Tip. Default: <c>true</c>.
@@ -979,12 +963,9 @@ type TipOptions
     /// Whether to inhibit throwing when events are missing, but no Archive Table has been supplied as a fallback
     member val IgnoreMissingEvents = defaultArg ignoreMissingEvents false
 
-    member val ReadRetryPolicy = readRetryPolicy
-    member val WriteRetryPolicy = writeRetryPolicy
-
 type internal StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
 
-    let loadTip log stream pos = Tip.tryLoad log tip.ReadRetryPolicy (container, stream) (pos, None)
+    let loadTip log stream pos = Tip.tryLoad log (container, stream) (pos, None)
     let ignoreMissing = tip.IgnoreMissingEvents
 
     // Always yields events forward, regardless of direction
@@ -1031,7 +1012,7 @@ type internal StoreClient(container : Container, fallback : Container option, qu
             | Tip.Result.Found (pos, i, xs) -> return! read (pos, i, xs) }
 
     member _.Sync(log, stream, pos, exp, n', eventsEncoded, unfoldsEncoded : IEventData<_> seq) : Async<InternalSyncResult> = async {
-        match! Sync.handle log (tip.WriteRetryPolicy, tip.MaxEvents, tip.MaxBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded) with
+        match! Sync.handle log (tip.MaxEvents, tip.MaxBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded) with
         | Sync.Result.ConflictUnknown -> return InternalSyncResult.ConflictUnknown
         | Sync.Result.Written (etag', events, unfolds) -> return InternalSyncResult.Written (Token.create (Position.fromElements (stream, n', events, unfolds, etag'))) }
 
@@ -1106,15 +1087,21 @@ open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
 
-/// Manages Creating an IAmazonDynamoDB
+/// Manages Creation and configuration of an IAmazonDynamoDB connection
 type DynamoStoreConnector(credentials : Amazon.Runtime.AWSCredentials, clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig) =
 
-    new (serviceUrl, accessKey, secretKey) =
+    /// maxRetries. AWS SDK Default: 10
+    /// timeout. AWS SDK Default: 100s
+    new (serviceUrl, accessKey, secretKey, retries, timeout) =
         let credentials = Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey)
-        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl)
+        let mode, r, t = Amazon.Runtime.RequestRetryMode.Standard, retries, timeout
+        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = mode, MaxErrorRetry = r, Timeout = t)
         DynamoStoreConnector(credentials, clientConfig)
 
-    member _.Endpoint = clientConfig.ServiceURL
+    member _.Options = clientConfig
+    member x.Retries = x.Options.MaxErrorRetry
+    member x.Timeout = let t = x.Options.Timeout in t.Value
+    member x.Endpoint = x.Options.ServiceURL
 
     member _.CreateClient() = new Amazon.DynamoDBv2.AmazonDynamoDBClient(credentials, clientConfig) :> Amazon.DynamoDBv2.IAmazonDynamoDB
 
@@ -1137,7 +1124,6 @@ module internal ConnectMode =
 
 /// Holds all relevant state for a Store
 /// - The Client (IAmazonDynamoDB). there should be a single one of these per process, plus an optional fallback one for pruning scenarios.
-/// - The (singleton) per-Table initialization state // TOCONSIDER remove if we don't end up with any
 type DynamoStoreClient
     (   // Facilitates custom mapping of Stream Category Name to underlying Table and Stream names
         categoryAndStreamIdToTableAndStreamNames : string * string -> string * string,
@@ -1209,7 +1195,7 @@ type CachingStrategy =
     /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
     /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs an etag-contingent Tip read (at a cost of a roundtrip with a 1RU charge if unmodified).
     // NB while a strategy like EventStore.Caching.SlidingWindowPrefixed is obviously easy to implement, the recommended approach is to
-    // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the `u`nfolds in Tip
+    // track all relevant data in the state, and/or have the `unfold` function ensure _all_ relevant events get held in the unfolds in Tip
     | SlidingWindow of ICache * window : TimeSpan
     /// Retain a single 'state per streamName, together with the associated etag.
     /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
