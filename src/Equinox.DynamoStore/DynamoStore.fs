@@ -8,21 +8,6 @@ open Serilog
 open System
 open System.IO
 
-// TODO remove when FsCodec updated
-module TimelineEvent =
-    let mapBody (f : 'x -> 'y) (x : ITimelineEvent<'x>) : ITimelineEvent<'y> =
-        { new ITimelineEvent<'y> with
-            member _.EventType = x.EventType
-            member _.Data = f x.Data
-            member _.Meta = f x.Meta
-            member _.EventId = x.EventId
-            member _.CorrelationId = x.CorrelationId
-            member _.CausationId = x.CausationId
-            member _.Timestamp = x.Timestamp
-            member _.Index = x.Index
-            member _.Context = x.Context
-            member _.IsUnfold = x.IsUnfold }
-
 [<Struct; NoEquality; NoComparison>]
 type EncodedBody = { isCompressed : bool; data : MemoryStream }
 module private EncodedBody =
@@ -209,7 +194,7 @@ module EventBody =
         if encoded.isCompressed then inflate encoded.data |> ReadOnlyMemory
         elif encoded.data = null then ReadOnlyMemory.Empty
         else encoded.data.ToArray() |> ReadOnlyMemory
-    let decodeEvent = TimelineEvent.mapBody decode
+    let decodeEvent = FsCodec.Core.TimelineEvent.Map decode
 
     (* Compression is conditional on the input meeting a minimum size, and the result meeting a required gain *)
 

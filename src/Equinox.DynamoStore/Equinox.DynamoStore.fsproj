@@ -23,7 +23,7 @@
     <!-- No point taking a lower dep as FSharp.AWS.DynamoDB requires same -->
     <PackageReference Include="FSharp.Core" Version="4.7.2" />
 
-    <PackageReference Include="FsCodec" Version="2.3.1" />
+    <PackageReference Include="FsCodec" Version="3.0.0-rc.2" />
 <!--    <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.11.0-beta" />-->
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
   </ItemGroup>
