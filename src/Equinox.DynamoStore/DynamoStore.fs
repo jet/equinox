@@ -199,20 +199,20 @@ module EventBody =
 
     (* All EncodedBody can potentially hold compressed content, that we'll inflate on demand *)
 
-    let private inflate (loaded : MemoryStream) : ReadOnlyMemory<byte> =
+    let private inflate (loaded : MemoryStream) : byte array =
         let decompressor = new System.IO.Compression.DeflateStream(loaded, System.IO.Compression.CompressionMode.Decompress)
         let output = new MemoryStream()
         decompressor.CopyTo(output)
-        output.ToArray() |> ReadOnlyMemory
+        output.ToArray()
     let decode (encoded : EncodedBody) : EventBody =
-        if encoded.isCompressed then inflate encoded.data
+        if encoded.isCompressed then inflate encoded.data |> ReadOnlyMemory
         elif encoded.data = null then ReadOnlyMemory.Empty
-        else ReadOnlyMemory(encoded.data.ToArray())
+        else encoded.data.ToArray() |> ReadOnlyMemory
     let decodeEvent = TimelineEvent.mapBody decode
 
     (* Compression is conditional on the input meeting a minimum size, and the result meeting a required gain *)
 
-    let private compress (eventBody : ReadOnlyMemory<byte>) =
+    let private compress (eventBody : ReadOnlyMemory<byte>) : MemoryStream =
         let output = new MemoryStream() // NB not `use` - Dispose would Close the stream, and AWS SDK requires it open
         let compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
         compressor.Write(eventBody.Span)
