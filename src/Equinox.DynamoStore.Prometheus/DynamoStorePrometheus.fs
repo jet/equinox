@@ -7,12 +7,12 @@ module private Impl =
 
 module private Histograms =
 
-    let labelNames tagNames = Array.append tagNames [| "facet"; "op"; "table"; "cat" |]
-    let labelValues tagValues (facet, op, table, cat) = Array.append tagValues [| facet; op; table; cat |]
+    let labelNames tagNames = Array.append tagNames [| "rut"; "facet"; "op"; "table"; "cat" |]
+    let labelValues tagValues (rut, facet, op, table, cat) = Array.append tagValues [| rut; facet; op; table; cat |]
     let private mkHistogram (cfg : Prometheus.HistogramConfiguration) name desc =
         let h = Prometheus.Metrics.CreateHistogram(name, desc, cfg)
-        fun tagValues (facet : string, op : string) (table, cat : string) s ->
-            h.WithLabels(labelValues tagValues (facet, op, table, cat)).Observe(s)
+        fun tagValues (rut, facet : string, op : string) (table, cat : string) s ->
+            h.WithLabels(labelValues tagValues (rut, facet, op, table, cat)).Observe(s)
     // Given we also have summary metrics with equivalent labels, we focus the bucketing on LAN latencies
     let private sHistogram tagNames =
         let sBuckets = [| 0.0005; 0.001; 0.002; 0.004; 0.008; 0.016; 0.5; 1.; 2.; 4.; 8. |]
@@ -26,9 +26,9 @@ module private Histograms =
         let baseName, baseDesc = Impl.baseName stat, Impl.baseDesc desc
         let observeS = sHistogram tagNames (baseName + "_seconds") (baseDesc + " latency")
         let observeRu = ruHistogram tagNames (baseName + "_ru") (baseDesc + " charge")
-        fun (facet, op) (table, cat, s : System.TimeSpan, ru) ->
-            observeS tagValues (facet, op) (table, cat) s.TotalSeconds
-            observeRu tagValues (facet, op) (table, cat) ru
+        fun (rut, facet, op) (table, cat, s : System.TimeSpan, ru) ->
+            observeS tagValues (rut, facet, op) (table, cat) s.TotalSeconds
+            observeRu tagValues (rut, facet, op) (table, cat) ru
 
 module private Summaries =
 
@@ -84,39 +84,39 @@ type LogSink(customTags: seq<string * string>) =
     let payloadCounters =     Counters.eventsAndBytesPair tags "payload"           "Payload, "
     let cacheCounter =        Counters.total              tags "cache"             "Cache"
 
-    let observeLatencyAndCharge (facet, op) (table, cat, s, ru) =
-        opHistogram (facet, op) (table, cat, s, ru)
+    let observeLatencyAndCharge (rut, facet, op) (table, cat, s, ru) =
+        opHistogram (rut, facet, op) (table, cat, s, ru)
         opSummary facet (table, s, ru)
-    let observeLatencyAndChargeWithEventCounts (facet, op, outcome) (table, cat, s, ru, count, bytes) =
-        observeLatencyAndCharge (facet, op) (table, cat, s, ru)
+    let observeLatencyAndChargeWithEventCounts (rut, facet, op, outcome) (table, cat, s, ru, count, bytes) =
+        observeLatencyAndCharge (rut, facet, op) (table, cat, s, ru)
         payloadCounters (facet, op, outcome) (table, cat, float count, if bytes = -1 then None else Some (float bytes))
 
     let (|CatSRu|) ({ interval = i; ru = ru } : Measurement as m) =
         let cat, _id = FsCodec.StreamName.splitCategoryAndId (FSharp.UMX.UMX.tag m.stream)
         m.table, cat, i.Elapsed, ru
-    let observeRes (facet, _op as stat) (CatSRu (table, cat, s, ru)) =
+    let observeRes (_rut, facet, _op as stat) (CatSRu (table, cat, s, ru)) =
         roundtripHistogram stat (table, cat, s, ru)
         roundtripSummary facet (table, s, ru)
     let observe_ stat (CatSRu (table, cat, s, ru)) =
         observeLatencyAndCharge stat (table, cat, s, ru)
-    let observe (facet, op, outcome) (CatSRu (table, cat, s, ru) as m) =
-        observeLatencyAndChargeWithEventCounts (facet, op, outcome) (table, cat, s, ru, m.count, m.bytes)
-    let observeTip (facet, op, outcome, cacheOutcome) (CatSRu (table, cat, s, ru) as m) =
-        observeLatencyAndChargeWithEventCounts (facet, op, outcome) (table, cat, s, ru, m.count, m.bytes)
+    let observe (rut, facet, op, outcome) (CatSRu (table, cat, s, ru) as m) =
+        observeLatencyAndChargeWithEventCounts (rut, facet, op, outcome) (table, cat, s, ru, m.count, m.bytes)
+    let observeTip (rut, facet, op, outcome, cacheOutcome) (CatSRu (table, cat, s, ru) as m) =
+        observeLatencyAndChargeWithEventCounts (rut, facet, op, outcome) (table, cat, s, ru, m.count, m.bytes)
         cacheCounter (facet, op, cacheOutcome) (table, cat) 1.
 
     interface Serilog.Core.ILogEventSink with
         member _.Emit logEvent = logEvent |> function
             | MetricEvent cm -> cm |> function
-                | Op       (Operation.Tip,      m) -> observeTip  ("query",    "tip",           "ok", "200") m
-                | Op       (Operation.Tip404,   m) -> observeTip  ("query",    "tip",           "ok", "404") m
-                | Op       (Operation.Tip304,   m) -> observeTip  ("query",    "tip",           "ok", "304") m
-                | Op       (Operation.Query,    m) -> observe     ("query",    "query",         "ok")        m
-                | QueryRes (_direction,         m) -> observeRes  ("query",    "queryPage")                  m
-                | Op       (Operation.Write,    m) -> observe     ("transact", "sync",          "ok")        m
-                | Op       (Operation.Conflict, m) -> observe     ("transact", "conflict",      "conflict")  m
-                | Op       (Operation.Prune,    m) -> observe_    ("prune",    "pruneQuery")                 m
-                | PruneRes                      m  -> observeRes  ("prune",    "pruneQueryPage")             m
-                | Op       (Operation.Delete,   m) -> observe     ("prune",    "delete",        "ok")        m
-                | Op       (Operation.Trim,     m) -> observe     ("prune",    "trim",          "ok")        m
+                | Op       (Operation.Tip,      m) -> observeTip  ("R", "query",    "tip",           "ok", "200") m
+                | Op       (Operation.Tip404,   m) -> observeTip  ("R", "query",    "tip",           "ok", "404") m
+                | Op       (Operation.Tip304,   m) -> observeTip  ("R", "query",    "tip",           "ok", "304") m
+                | Op       (Operation.Query,    m) -> observe     ("R", "query",    "query",         "ok")        m
+                | QueryRes (_direction,         m) -> observeRes  ("R", "query",    "queryPage")                  m
+                | Op       (Operation.Write,    m) -> observe     ("W", "transact", "sync",          "ok")        m
+                | Op       (Operation.Conflict, m) -> observe     ("W", "transact", "conflict",      "conflict")  m
+                | Op       (Operation.Prune,    m) -> observe_    ("R", "prune",    "pruneQuery")                 m
+                | PruneRes                      m  -> observeRes  ("R", "prune",    "pruneQueryPage")             m
+                | Op       (Operation.Delete,   m) -> observe     ("W", "prune",    "delete",        "ok")        m
+                | Op       (Operation.Trim,     m) -> observe     ("W", "prune",    "trim",          "ok")        m
             | _ -> ()
