@@ -148,14 +148,14 @@ module Batch =
             n : int64
             // Count of items written in the most recent insert/update - used by the DDB Streams Consumer to identify the fresh events
             a : int
-            // NOTE the per-event e.c and e.t values are actually stored here, so they can be selected out without hydrating the bodies
+            // NOTE the per-event e.c values are actually stored here, so they can be selected out without hydrating the bodies
             c : string array
-            t : DateTimeOffset array
             // NOTE as per Event, but without c and t fields; we instead unroll those as arrays at top level
             e : EventSchema array
             u : UnfoldSchema array }
     and [<NoEquality; NoComparison>] EventSchema =
-        {   d : MemoryStream option; D : MemoryStream option // D if compressed, d if raw // required
+        {   t : DateTimeOffset // NOTE there has to be a single non-`option` field per record, or a trailing insert will be stripped
+            d : MemoryStream option; D : MemoryStream option // D if compressed, d if raw // required
             m : MemoryStream option; M : MemoryStream option // M if compressed, m if raw
             x : string option
             y : string option }
@@ -167,9 +167,9 @@ module Batch =
             m : MemoryStream option; M : MemoryStream option } // M if compressed, m if raw
     let private toEventSchema (x : Event) : EventSchema =
         let (d, D), (m, M) = EncodedBody.toRawAndCompressed x.d, EncodedBody.toRawAndCompressed x.m
-        { d = d; D = D; m = m; M = M; x = x.correlationId; y = x.causationId }
-    let eventsToSchema (xs : Event array) : (*case*) string array * (*timestamp*) DateTimeOffset array * EventSchema array =
-        xs |> Array.map (fun x -> x.c), xs |> Array.map (fun x -> x.t), xs |> Array.map toEventSchema
+        { t = x.t; d = d; D = D; m = m; M = M; x = x.correlationId; y = x.causationId }
+    let eventsToSchema (xs : Event array) : (*case*) string array * EventSchema array =
+        xs |> Array.map (fun x -> x.c), xs |> Array.map toEventSchema
     let private toUnfoldSchema (x : Unfold) : UnfoldSchema =
         let (d, D), (m, M) = EncodedBody.toRawAndCompressed x.d, EncodedBody.toRawAndCompressed x.m
         { i = x.i; t = x.t; c = x.c; d = d; D = D; m = m; M = M }
@@ -178,15 +178,16 @@ module Batch =
         { i = x.i; t = x.t; c = x.c; d = EncodedBody.ofRawAndCompressed (x.d, x.D); m = EncodedBody.ofRawAndCompressed (x.m, x.M) }
     let ofSchema (x : Schema) : Batch =
         let baseIndex = int x.n - x.e.Length
-        let events = ResizeArray()
-        for e, c, t in Seq.zip3 x.e x.c x.t do
-            let d, m = EncodedBody.ofRawAndCompressed (e.d, e.D), EncodedBody.ofRawAndCompressed (e.m, e.M)
-            events.Add { i = baseIndex + events.Count; t = t; d = d; m = m; correlationId = e.x; causationId = e.y; c = c }
-        { p = x.p; i = x.i; etag = Option.toObj x.etag; n = x.n; e = events.ToArray(); u = x.u |> Array.map ofUnfoldSchema }
-    let enumEvents (minIndex, maxIndex) (x : Batch) : Event seq=
+        let events =
+            Seq.zip x.c x.e
+            |> Seq.mapi (fun i (c, e) ->
+                let d, m = EncodedBody.ofRawAndCompressed (e.d, e.D), EncodedBody.ofRawAndCompressed (e.m, e.M)
+                { i = baseIndex + i; t = e.t; d = d; m = m; correlationId = e.x; causationId = e.y; c = c })
+        { p = x.p; i = x.i; etag = Option.toObj x.etag; n = x.n; e = Seq.toArray events; u = x.u |> Array.map ofUnfoldSchema }
+    let enumEvents (minIndex, maxIndex) (x : Batch) : Event seq =
         let indexMin, indexMax = defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
-        x.e |> Seq.filter (fun e -> int64 e.i >= indexMin && int64 e.i < indexMax)
+        x.e |> Seq.filter (fun e -> let i = int64 e.i in i >= indexMin && int64 i < indexMax)
 
     /// Computes base Index for the Item (`i` can bear the the magic value TipI when the Item is the Tip)
     let baseIndex (x : Batch) = x.n - x.e.LongLength
@@ -477,10 +478,10 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
             let rm = Metrics()
             let context = createContext rm.Add
             let keyCond = <@ fun (b : Batch.Schema) -> b.p = stream @>
-            let proj = <@ fun (b : Batch.Schema) -> b.i, b.t, b.n @> // b.t/e/xc.Length explodes in empty array case, so no choice but to return the full thing
+            let proj = <@ fun (b : Batch.Schema) -> b.i, b.c, b.n @> // TOCONSIDER want len of c, but b.e.Length explodes in empty array case, so no choice but to return the full thing
             let! t, res = context.QueryProjectedPaginatedAsync(keyCond, proj, ?exclusiveStartKey = lastEvaluated, scanIndexForward = true, limit = maxItems)
                           |> Stopwatch.Time
-            yield index, t, [| for i, ts, n in res -> { isTip = Batch.isTip i; index = n - int64 ts.Length; n = n } |], rm.Consumed
+            yield index, t, [| for i, c, n in res -> { isTip = Batch.isTip i; index = n - int64 c.Length; n = n } |], rm.Consumed
             match res.LastEvaluatedKey with
             | None -> ()
             | le -> yield! aux (index + 1, le) }
@@ -528,20 +529,20 @@ module internal Sync =
         let appA = min eventCount append.Length
         let insertCalf () =
             let calfEventCount = calve.LongLength
-            let calfC, calfT, calfE = Batch.eventsToSchema calve
+            let calfC, calfE = Batch.eventsToSchema calve
             let calveA = eventCount - appA
-            putItemIfNotExists { p = stream; i = tipIndex - calfEventCount; n = tipIndex; a = calveA; c = calfC; t = calfT; e = calfE; etag = None; u = [||] }
-        let appC, appT, appE = Batch.eventsToSchema append
+            putItemIfNotExists { p = stream; i = tipIndex - calfEventCount; n = tipIndex; a = calveA; c = calfC; e = calfE; etag = None; u = [||] }
+        let appC, appE = Batch.eventsToSchema append
         let insertFreshTip () =
-            putItemIfNotExists { p = stream; i = Batch.tipMagicI; n = n'; a = appA; c = appC; t = appT; e = appE; etag = Some etag'; u = u }
+            putItemIfNotExists { p = stream; i = Batch.tipMagicI; n = n'; a = appA; c = appC; e = appE; etag = Some etag'; u = u }
         let updateTipIf condExpr =
             let updExpr : Quotations.Expr<Batch.Schema -> Batch.Schema> =
                 // TOCONSIDER figure out whether there is a way to stop DDB choking on the Array.append below when its empty instead of this special casing
                 if calve.Length <> 0 || (tipEmpty && tipEventCount <> 0) then
-                     <@ fun t -> { t with a = appA; c = appC; t = appT; e = appE; n = n'
+                     <@ fun t -> { t with a = appA; c = appC; e = appE; n = n'
                                           etag = Some etag'; u = u } @>
                 elif tipEventCount <> 0 then
-                     <@ fun t -> { t with a = appA; c = Array.append t.c appC; t = Array.append t.t appT; e = Array.append t.e appE; n = t.n + tipEventCount
+                     <@ fun t -> { t with a = appA; c = Array.append t.c appC; e = Array.append t.e appE; n = t.n + tipEventCount
                                           etag = Some etag'; u = u } @>
                 else <@ fun t -> { t with etag = Some etag'; u = u } @>
             updateTip stream updExpr condExpr
@@ -910,11 +911,11 @@ module Prune =
             | Some tip, _rc when tip.n <> expectedN -> return failwithf "Concurrent write detected; Expected n=%d actual=%d" expectedN tip.n
             | Some tip, tipRc ->
 
-            let tC, tT, tE = Batch.eventsToSchema tip.e
-            let tC', tT', tE' = Array.skip count tC, Array.skip count tT, Array.skip count tE
+            let tC, tE = Batch.eventsToSchema tip.e
+            let tC', tE' = Array.skip count tC, Array.skip count tE
             let updEtag = let g = Guid.NewGuid() in g.ToString "N"
             let condExpr : Quotations.Expr<Batch.Schema -> bool> = <@ fun t -> t.etag = Some tip.etag @>
-            let updateExpr : Quotations.Expr<Batch.Schema -> _> = <@ fun t -> { t with etag = Some updEtag; c = tC'; t = tT'; e = tE' } @>
+            let updateExpr : Quotations.Expr<Batch.Schema -> _> = <@ fun t -> { t with etag = Some updEtag; c = tC'; e = tE' } @>
             let! t, (_updated, updRc) = container.TryUpdateTip(stream, updateExpr, condExpr) |> Stopwatch.Time
             let rc = { total = tipRc.total + updRc.total }
             let reqMetric = Log.metric container.TableName stream t -1 count rc
