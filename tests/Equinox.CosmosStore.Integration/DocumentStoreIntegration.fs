@@ -11,7 +11,7 @@ open Equinox.CosmosStore.Integration.CosmosFixtures
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
-    let codec = Cart.Events.codecStj
+    let codec = Cart.Events.codecJe
     let createServiceWithoutOptimization log context =
         let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Cart.create log resolve
@@ -34,7 +34,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
-    let codec = ContactPreferences.Events.codecStj
+    let codec = ContactPreferences.Events.codecJe
     let private createServiceWithLatestKnownEvent context log cachingStrategy =
         let resolveStream = StoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
         ContactPreferences.create log resolveStream

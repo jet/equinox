@@ -6,6 +6,7 @@ open System
 open SqlStreamStore
 open SqlStreamStore.Streams
 
+type EventBody = ReadOnlyMemory<byte>
 type EventData = NewStreamMessage
 type IEventStoreConnection = IStreamStore
 type ResolvedEvent = StreamMessage
@@ -279,20 +280,20 @@ module private Read =
 module UnionEncoderAdapters =
 
     let (|Bytes|) = function null -> null | (s : string) -> System.Text.Encoding.UTF8.GetBytes s
-    let encodedEventOfResolvedEvent (e : StreamMessage) : FsCodec.ITimelineEvent<byte[]> =
+    let encodedEventOfResolvedEvent (e : StreamMessage) : FsCodec.ITimelineEvent<EventBody> =
         let (Bytes data) = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
         let (Bytes meta) = e.JsonMetadata
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
         FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, e.MessageId, null, null, let ts = e.CreatedUtc in DateTimeOffset ts)
-    let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
-        let str = function null -> null | s -> System.Text.Encoding.UTF8.GetString s
+    let eventDataOfEncodedEvent (x : FsCodec.IEventData<EventBody>) =
         // SQLStreamStore rejects IsNullOrEmpty data value.
         // TODO: Follow up on inconsistency with ES
-        let str2 = function null -> "{}" | s -> System.Text.Encoding.UTF8.GetString s
+        let mapData (x : EventBody) = if x.IsEmpty then "{}" else System.Text.Encoding.UTF8.GetString(x.Span)
+        let mapMeta (x : EventBody) = if x.IsEmpty then null else System.Text.Encoding.UTF8.GetString(x.Span)
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        NewStreamMessage(x.EventId, x.EventType, str2 x.Data, str x.Meta)
+        NewStreamMessage(x.EventId, x.EventType, mapData x.Data, mapMeta x.Meta)
 
 type Position = { streamVersion : int64; compactionEventNumber : int64 option; batchCapacityLimit : int option }
 type Token = { pos : Position }
@@ -392,7 +393,7 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
                     | Some compactionEventIndex ->
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
             return GatewaySyncResult.Written token }
-    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
+    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<EventBody>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         match! Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents with
         | EsSyncResult.ConflictUnknown ->
@@ -495,8 +496,8 @@ type CachingStrategy =
 
 type SqlStreamStoreCategory<'event, 'state, 'context>
     (   context : SqlStreamStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, fold, initial,
-        /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
-        /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
+        // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
+        // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>]?caching,
         [<O; D(null)>]?access) =
     do  match access with

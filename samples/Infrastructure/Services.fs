@@ -1,13 +1,13 @@
 ﻿module Samples.Infrastructure.Services
 
 open Domain
-open FsCodec.SystemTextJson
+open FsCodec.SystemTextJson.Interop // use ToJsonElementCodec because we are doing an overkill example
 open Microsoft.Extensions.DependencyInjection
 open System
 
 type StreamResolver(storage) =
     member _.Resolve
-        (   codec : FsCodec.IEventCodec<'event,byte[],_>,
+        (   codec : FsCodec.IEventCodec<'event, ReadOnlyMemory<byte>, _>,
             fold: 'state -> 'event seq -> 'state,
             initial : 'state,
             snapshot : ('event -> bool) * ('state -> 'event)) =

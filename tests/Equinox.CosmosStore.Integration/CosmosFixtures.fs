@@ -46,7 +46,7 @@ type StoreContext = CosmosStoreContext
 type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, obj>
 
 let createPrimaryContextIgnoreMissing client queryMaxItems tipMaxEvents ignoreMissing =
-    StoreContext(client, tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
+    StoreContext(client, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)
 
 let createPrimaryContextEx log queryMaxItems tipMaxEvents =
     let connection = connectPrimary log
@@ -57,7 +57,7 @@ let defaultTipMaxEvents = 10
 let createPrimaryContext log queryMaxItems =
     createPrimaryContextEx log queryMaxItems defaultTipMaxEvents
 
-let createSecondaryContext log queryMaxItems =
+let createArchiveContext log queryMaxItems =
     let connection = connectArchive log
     StoreContext(connection, defaultTipMaxEvents, queryMaxItems = queryMaxItems)
 
@@ -78,8 +78,8 @@ let createPrimaryEventsContextWithUnsafe log queryMaxItems tipMaxItems =
         Core.EventsContext(context, log)
     create false, create true
 
-let createSecondaryEventsContext log queryMaxItems =
-    let context = createSecondaryContext log queryMaxItems
+let createArchiveEventsContext log queryMaxItems =
+    let context = createArchiveContext log queryMaxItems
     Core.EventsContext(context, log)
 
 let createFallbackEventsContext log queryMaxItems =

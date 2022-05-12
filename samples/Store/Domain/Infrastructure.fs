@@ -1,7 +1,6 @@
 ﻿[<AutoOpen>]
 module Domain.Infrastructure
 
-open FsCodec.NewtonsoftJson
 open FSharp.UMX
 open Newtonsoft.Json
 open System
@@ -40,7 +39,7 @@ type SkuId private (id : string) =
     [<Obsolete>] new() = SkuId(Guid.NewGuid())
 /// Represent as a Guid.ToString("N") output externally
 and private SkuIdJsonConverter() =
-    inherit JsonIsomorphism<SkuId, string>()
+    inherit FsCodec.NewtonsoftJson.JsonIsomorphism<SkuId, string>()
     /// Renders as per `Guid.ToString("N")`, i.e. no dashes
     override _.Pickle value = string value
     /// Input must be a `Guid.Parse`able value
@@ -75,3 +74,13 @@ module ClientId = let toString (value : ClientId) : string = Guid.toStringN %val
 type InventoryItemId = Guid<inventoryItemId>
 and [<Measure>] inventoryItemId
 module InventoryItemId = let toString (value : InventoryItemId) : string = Guid.toStringN %value
+
+module EventCodec =
+
+    /// For CosmosStore - we encode to JsonElement as that's what the store talks
+    let createJson<'t when 't :> TypeShape.UnionContract.IUnionContract> () =
+        FsCodec.SystemTextJson.CodecJsonElement.Create<'t>()
+
+    /// For stores other than CosmosStore, we encode to UTF-8 and have the store do the right thing
+    let create<'t when 't :> TypeShape.UnionContract.IUnionContract> () =
+        FsCodec.NewtonsoftJson.Codec.Create<'t>()

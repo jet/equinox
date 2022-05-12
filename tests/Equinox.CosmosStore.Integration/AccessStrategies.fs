@@ -35,8 +35,7 @@ module SequenceCheck =
         type Event =
             | Add of {| value : int |}
             interface TypeShape.UnionContract.IUnionContract
-        open FsCodec.SystemTextJson
-        let codec = Codec.Create<Event>()
+        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
 
     module Fold =
 

@@ -18,3 +18,13 @@ and [<Measure>] indexId
 module IndexId =
     let parse (value : string) : IndexId = %value
     let toString (value : IndexId) : string = %value
+
+module EventCodec =
+
+    /// For CosmosStore - we encode to JsonElement as that's what the store talks
+    let createJson<'t when 't :> TypeShape.UnionContract.IUnionContract> () =
+        FsCodec.SystemTextJson.CodecJsonElement.Create<'t>()
+
+    /// For stores other than CosmosStore, we encode to UTF-8 and have the store do the right thing
+    let create<'t when 't :> TypeShape.UnionContract.IUnionContract> () =
+        FsCodec.NewtonsoftJson.Codec.Create<'t>()

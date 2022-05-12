@@ -7,7 +7,7 @@ open System
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type StorageConfig =
     // For MemoryStore, we keep the events as UTF8 arrays - we could use FsCodec.Codec.Box to remove the JSON encoding, which would improve perf but can conceal problems
-    | Memory of Equinox.MemoryStore.VolatileStore<byte[]>
+    | Memory of Equinox.MemoryStore.VolatileStore<ReadOnlyMemory<byte>>
     | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool
     | Es     of Equinox.EventStore.EventStoreContext * Equinox.EventStore.CachingStrategy option * unfolds: bool
     | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool

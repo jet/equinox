@@ -1,26 +1,47 @@
 namespace Equinox.CosmosStore.Core
 
-open Microsoft.Azure.Cosmos
 open System.IO
 open System.Text.Json
-open System.Text.Json.Serialization
 
-module JsonHelper =
+module private Deflate =
 
-    let Null = JsonSerializer.SerializeToElement null
-    let fixup (e : JsonElement) = if e.ValueKind = JsonValueKind.Undefined then Null else e
+    let compress (uncompressedBytes : byte array) =
+        let output = new MemoryStream()
+        let compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
+        compressor.Write(uncompressedBytes)
+        compressor.Flush() // Could `Close`, but not required
+        output.ToArray()
 
-type CosmosJsonSerializer(options: JsonSerializerOptions) =
-    inherit CosmosSerializer()
+    let inflate (compressedBytes : byte array) =
+        let input = new MemoryStream(compressedBytes)
+        let decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
+        let output = new MemoryStream()
+        decompressor.CopyTo(output)
+        output.ToArray()
+
+module JsonElement =
+
+    let private nullElement = JsonSerializer.SerializeToElement null
+    let undefinedToNull (e : JsonElement) = if e.ValueKind = JsonValueKind.Undefined then nullElement else e
+
+    // Avoid introduction of HTML escaping for things like quotes etc (Options.Default uses Options.Create(), which defaults to unsafeRelaxedJsonEscaping=true)
+    let private optionsNoEscaping = JsonSerializerOptions(Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping)
+    let private toUtf8Bytes (value : JsonElement) = JsonSerializer.SerializeToUtf8Bytes(value, options = optionsNoEscaping)
+    let deflate (value : JsonElement) : JsonElement =
+        if value.ValueKind = JsonValueKind.Null then value
+        else value |> toUtf8Bytes |> Deflate.compress |> JsonSerializer.SerializeToElement
+
+type CosmosJsonSerializer(options : JsonSerializerOptions) =
+    inherit Microsoft.Azure.Cosmos.CosmosSerializer()
 
     override _.FromStream<'T>(stream) =
-        use __ = stream
+        use _ = stream
 
         if stream.Length = 0L then Unchecked.defaultof<'T>
         elif typeof<Stream>.IsAssignableFrom(typeof<'T>) then box stream :?> 'T
         else JsonSerializer.Deserialize<'T>(stream, options)
 
-    override _.ToStream<'T>(input: 'T) =
+    override _.ToStream<'T>(input : 'T) =
         let memoryStream = new MemoryStream()
         JsonSerializer.Serialize(memoryStream, input, input.GetType(), options)
         memoryStream.Position <- 0L
@@ -29,29 +50,13 @@ type CosmosJsonSerializer(options: JsonSerializerOptions) =
 /// Manages zipping of the UTF-8 json bytes to make the index record minimal from the perspective of the writer stored proc
 /// Only applied to snapshots in the Tip
 and JsonCompressedBase64Converter() =
-    inherit JsonConverter<JsonElement>()
-
-    static member Compress(value: JsonElement) =
-        if value.ValueKind = JsonValueKind.Undefined then JsonHelper.Null
-        elif value.ValueKind = JsonValueKind.Null then value
-        else
-            let input = System.Text.Encoding.UTF8.GetBytes(value.GetRawText())
-            use output = new MemoryStream()
-            use compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
-            compressor.Write(input, 0, input.Length)
-            compressor.Close()
-            JsonSerializer.Deserialize<JsonElement>("\"" + System.Convert.ToBase64String(output.ToArray()) + "\"")
+    inherit System.Text.Json.Serialization.JsonConverter<JsonElement>()
 
     override _.Read(reader, _typeToConvert, options) =
-        if reader.TokenType <> JsonTokenType.String then
-            JsonSerializer.Deserialize<JsonElement>(&reader, options)
-        else
-            let compressedBytes = reader.GetBytesFromBase64()
-            use input = new MemoryStream(compressedBytes)
-            use decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
-            use output = new MemoryStream()
-            decompressor.CopyTo(output)
-            JsonSerializer.Deserialize<JsonElement>(System.ReadOnlySpan.op_Implicit(output.ToArray()), options)
+        if reader.TokenType = JsonTokenType.String then // TryGetBytesFromBase64 throws on Null
+            let decompressedBytes = reader.GetBytesFromBase64() |> Deflate.inflate
+            JsonSerializer.Deserialize<JsonElement>(decompressedBytes, options)
+        else JsonSerializer.Deserialize<JsonElement>(&reader, options)
 
     override _.Write(writer, value, options) =
         JsonSerializer.Serialize<JsonElement>(writer, value, options)
