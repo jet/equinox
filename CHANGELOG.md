@@ -16,6 +16,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Removed
 ### Fixed
 
+- `CosmosStore`: Fixed mis-Indexing of Unfolds when >1 Unfold present [#322](https://github.com/jet/equinox/issues/322) [#324](https://github.com/jet/equinox/pull/324)
+
 <a name="3.0.6"></a>
 ## [3.0.6] - 2022-01-19
 

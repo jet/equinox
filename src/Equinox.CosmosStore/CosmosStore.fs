@@ -549,15 +549,9 @@ module internal Sync =
     let mkBatch (stream: string) (events: IEventData<_>[]) unfolds : Tip =
         {   p = stream; id = Tip.WellKnownDocumentId; n = -1L(*Server-managed*); i = -1L(*Server-managed*); _etag = null
             e = Array.map mkEvent events; u = Array.ofSeq unfolds }
-    let mkUnfold compressor baseIndex (unfolds: IEventData<_> seq) : Unfold seq =
-        unfolds
-        |> Seq.mapi (fun offset x ->
-                {   i = baseIndex + int64 offset
-                    c = x.EventType
-                    d = compressor x.Data
-                    m = compressor x.Meta
-                    t = DateTimeOffset.UtcNow
-                } : Unfold)
+    let mkUnfold compressor baseIndex (x : IEventData<_>) : Unfold =
+        {   i = baseIndex; t = DateTimeOffset.UtcNow
+            c = x.EventType; d = compressor x.Data; m = compressor x.Meta }
 
 module Initialization =
 
@@ -1139,7 +1133,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
                 SyncExp.Etag (defaultArg pos.etag null), events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseIndex = pos.index + int64 (List.length events)
         let compressor = if compressUnfolds then Base64MaybeDeflateUtf8JsonConverter.Compress else id
-        let projections = Sync.mkUnfold compressor baseIndex projectionsEncoded
+        let projections = projectionsEncoded |> Seq.map (Sync.mkUnfold compressor baseIndex)
         let batch = Sync.mkBatch stream eventsEncoded projections
         match! store.Sync(log, stream, exp, batch) with
         | InternalSyncResult.Conflict (pos', tipEvents) -> return SyncResult.Conflict (cat.Reload(log, token, state, fold, isOrigin, (pos', pos.index, tipEvents)))
