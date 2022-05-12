@@ -22,7 +22,8 @@
 #else
 #r "nuget:Serilog.Sinks.Console"
 #r "nuget:Serilog.Sinks.Seq"
-#r "nuget:Equinox.CosmosStore"
+#r "nuget:Equinox.CosmosStore, *-*"
+#r "nuget:FsCodec.SystemTextJson, *-*"
 #endif
 
 module Log =
@@ -51,7 +52,7 @@ module Favorites =
             | Added of Item
             | Removed of Item
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.SystemTextJson.Codec.Create<Event>() // Coming soon, replace Newtonsoft with SystemTextJson and works same
+        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
 
     module Fold =
 

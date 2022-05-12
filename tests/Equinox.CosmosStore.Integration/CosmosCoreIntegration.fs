@@ -10,12 +10,11 @@ open System
 
 type TestEvents() =
     static member private Create(i, ?eventType, ?json) =
-        let ser = System.Text.Json.JsonSerializer.SerializeToElement
         EventData.FromUtf8Bytes
             (   sprintf "%s:%d" (defaultArg eventType "test_event") i,
-                ser (defaultArg json "{\"d\":\"d\"}"),
-                ser "{\"m\":\"m\"}")
-    static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x+i))
+                System.Text.Json.JsonSerializer.SerializeToElement (defaultArg json "{\"d\":\"d\"}"),
+                System.Text.Json.JsonSerializer.SerializeToElement "{\"m\":\"m\"}")
+    static member Create(i, c) = Array.init c (fun x -> TestEvents.Create(x + i))
 
 type Tests(testOutputHelper) =
     let testContext = TestContext(testOutputHelper)
@@ -387,7 +386,7 @@ type Tests(testOutputHelper) =
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let fallback (eventsInTip, TestStream streamName) = Async.RunSynchronously <| async {
         let ctx1, ctx1Unsafe = createPrimaryEventsContextWithUnsafe log 10 (if eventsInTip then 3 else 0)
-        let ctx2 = createSecondaryEventsContext log defaultQueryMaxItems
+        let ctx2 = createArchiveEventsContext log defaultQueryMaxItems
         let ctx12 = createFallbackEventsContext log defaultQueryMaxItems
 
         let! expected = add6EventsIn2BatchesEx ctx1 streamName 4

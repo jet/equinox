@@ -1,23 +1,24 @@
 #if LOCAL
-#I "bin/Debug/netstandard2.1/"
+#I "bin/Debug/net6.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Newtonsoft.Json.dll"
-#r "TypeShape.dll"
 #r "Equinox.dll"
 #r "Equinox.Core.dll"
 #r "FSharp.UMX.dll"
-#r "FSCodec.dll"
+#r "FsCodec.dll"
+#r "TypeShape.dll"
+#r "FsCodec.NewtonsoftJson.dll"
 #r "FsCodec.SystemTextJson.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
-#r "Microsoft.Azure.Cosmos.Direct.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"
 #r "Equinox.CosmosStore.dll"
 #else
-#r "nuget:Equinox.MemoryStore"
-#r "nuget:Equinox.CosmosStore"
-#r "nuget:FsCodec.NewtonsoftJson"
+#r "nuget:Equinox.MemoryStore, *-*"
+#r "nuget:Equinox.CosmosStore, *-*"
+#r "nuget:FsCodec.NewtonsoftJson, *-*"
+#r "nuget:FsCodec.SystemTextJson, *-*"
 #r "nuget:Serilog.Sinks.Console"
 #r "nuget:Serilog.Sinks.Seq"
 #endif
@@ -63,7 +64,7 @@ module FulfilmentCenter =
             | FcDetailsChanged of FcData
             | FcRenamed of FcName
             interface TypeShape.UnionContract.IUnionContract
-        let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
+        let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
 
     module Fold =
 

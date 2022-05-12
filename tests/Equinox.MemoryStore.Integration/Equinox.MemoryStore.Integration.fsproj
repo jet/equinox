@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <WarningLevel>5</WarningLevel>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +17,6 @@
 
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.16.4" />
-    <PackageReference Include="FsCodec.Box" Version="2.3.2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
     <PackageReference Include="unquote" Version="6.1.0" />
     <PackageReference Include="xunit" Version="2.4.1" />

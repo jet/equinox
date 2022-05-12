@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <WarningLevel>5</WarningLevel>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
@@ -13,10 +12,10 @@
     <Compile Include="Index.fs" />
     <Compile Include="Set.fs" />
     <Compile Include="Upload.fs" />
-    <None Include="Todo.fsx" />
-    <None Include="Favorites.fsx" />
     <None Include="Counter.fsx" />
+    <None Include="Favorites.fsx" />
     <None Include="Cosmos.fsx" />
+    <None Include="Todo.fsx" />
     <None Include="AsAt.fsx" />
     <None Include="FulfilmentCenter.fsx" />
   </ItemGroup>
@@ -28,8 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="2.3.2" />
-    <PackageReference Include="FsCodec.SystemTextJson" Version="2.3.2" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.2" />
+    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.2" />
     <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
   </ItemGroup>

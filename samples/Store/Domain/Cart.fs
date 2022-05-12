@@ -24,8 +24,8 @@ module Events =
         | ItemQuantityChanged       of ItemQuantityChangedInfo
         | ItemPropertiesChanged     of ItemPropertiesChangedInfo
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
+    let codec = EventCodec.create<Event>()
+    let codecJe = EventCodec.createJson<Event>()
 
 module Fold =
 

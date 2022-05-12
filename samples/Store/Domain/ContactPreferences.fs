@@ -12,8 +12,8 @@ module Events =
     type Event =
         | [<System.Runtime.Serialization.DataMember(Name = "contactPreferencesChanged")>]Updated of Value
         interface TypeShape.UnionContract.IUnionContract
-    let codec = FsCodec.NewtonsoftJson.Codec.Create<Event>()
-    let codecStj = FsCodec.SystemTextJson.Codec.Create<Event>()
+    let codec = EventCodec.create<Event>()
+    let codecJe = EventCodec.createJson<Event>()
 
 module Fold =
 

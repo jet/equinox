@@ -8,6 +8,8 @@
     <PackageLicense>Apache-2.0</PackageLicense>
     <Copyright>Copyright © 2016-22</Copyright>
 
+    <WarningLevel>5</WarningLevel>
+    
     <ThisDirAbsolute>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</ThisDirAbsolute>
 
     <!-- SourceLink related properties https://github.com/dotnet/SourceLink#using-sourcelink -->

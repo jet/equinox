@@ -4,16 +4,17 @@ open Domain
 open Equinox
 open Equinox.CosmosStore.Integration.CosmosFixtures
 open Swensen.Unquote
+open System
 
 let fold, initial = Cart.Fold.fold, Cart.Fold.initial
 let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
 
-let createMemoryStore () = MemoryStore.VolatileStore<byte[]>()
+let createMemoryStore () = MemoryStore.VolatileStore<ReadOnlyMemory<byte>>()
 let createServiceMemory log store =
     Cart.create log (MemoryStore.MemoryStoreCategory(store, Cart.Events.codec, fold, initial).Resolve)
 
 let codec = Cart.Events.codec
-let codecStj = Cart.Events.codecStj
+let codecJe = Cart.Events.codecJe
 
 let resolveGesStreamWithRollingSnapshots context =
     EventStore.EventStoreCategory(context, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
@@ -21,9 +22,9 @@ let resolveGesStreamWithoutCustomAccessStrategy context =
     EventStore.EventStoreCategory(context, codec, fold, initial).Resolve
 
 let resolveCosmosStreamWithSnapshotStrategy context =
-    CosmosStore.CosmosStoreCategory(context, codecStj, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve
 let resolveCosmosStreamWithoutCustomAccessStrategy context =
-    CosmosStore.CosmosStoreCategory(context, codecStj, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {

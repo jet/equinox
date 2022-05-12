@@ -5,6 +5,8 @@ open EventStore.ClientAPI
 open Serilog // NB must shadow EventStore.ClientAPI.ILogger
 open System
 
+type EventBody = ReadOnlyMemory<byte>
+
 [<RequireQualifiedAccess>]
 type Direction = Forward | Backward with
     override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
@@ -137,7 +139,7 @@ module Log =
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
-type EsSyncResult = Written of EventStore.ClientAPI.WriteResult | Conflict of actualVersion : int64
+type EsSyncResult = Written of (*EventStore.ClientAPI.*) WriteResult | Conflict of actualVersion : int64
 
 module private Write =
     /// Yields `EsSyncResult.Written` or `EsSyncResult.Conflict` to signify WrongExpectedVersion
@@ -297,7 +299,7 @@ module private Read =
         return version, events }
 
 module UnionEncoderAdapters =
-    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.ITimelineEvent<byte[]> =
+    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.ITimelineEvent<EventBody> =
         let e = x.Event
         // Inspecting server code shows both Created and CreatedEpoch are set; taking this as it's less ambiguous than DateTime in the general case
         let ts = DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedEpoch)
@@ -305,10 +307,11 @@ module UnionEncoderAdapters =
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
         FsCodec.Core.TimelineEvent.Create(e.EventNumber, e.EventType, e.Data, e.Metadata, e.EventId, correlationId = null, causationId = null, timestamp = ts)
 
-    let eventDataOfEncodedEvent (x : FsCodec.IEventData<byte[]>) =
+    let eventDataOfEncodedEvent (x : FsCodec.IEventData<EventBody>) =
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        EventData(x.EventId, x.EventType, isJson = true, data = x.Data, metadata = x.Meta)
+        let map (x : EventBody) : byte[] = x.ToArray()
+        EventData(x.EventId, x.EventType, isJson = true, data = map x.Data, metadata = map x.Meta)
 
 type Position = { streamVersion : int64; compactionEventNumber : int64 option; batchCapacityLimit : int option }
 type Token = { pos : Position }
@@ -422,7 +425,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
             return GatewaySyncResult.Written token }
 
-    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<byte[]>[]) : Async<GatewaySyncResult> = async {
+    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<EventBody>[]) : Async<GatewaySyncResult> = async {
         let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
         match! Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents with
         | EsSyncResult.Conflict actualVersion ->
@@ -532,8 +535,8 @@ type CachingStrategy =
 
 type EventStoreCategory<'event, 'state, 'context>
     (   context : EventStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, fold, initial,
-        /// Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
-        /// e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
+        // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
+        // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
         [<O; D(null)>] ?caching,
         [<O; D(null)>] ?access) =
 
@@ -647,10 +650,10 @@ type EventStoreConnector
         [<O; D(null)>] ?log : Logger, [<O; D(null)>] ?heartbeatTimeout : TimeSpan, [<O; D(null)>] ?concurrentOperationsLimit,
         [<O; D(null)>] ?readRetryPolicy, [<O; D(null)>] ?writeRetryPolicy,
         [<O; D(null)>] ?gossipTimeout, [<O; D(null)>] ?clientConnectionTimeout,
-        /// Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
-        /// NB as this will enter server and client logs, it should not contain sensitive information
+        // Additional strings identifying the context of this connection; should provide enough context to disambiguate all potential connections to a cluster
+        // NB as this will enter server and client logs, it should not contain sensitive information
         [<O; D(null)>] ?tags : (string*string) seq,
-        /// Facilitates arbitrary customization of settings that are not explicitly addressed herein and/or general post-processing of the configuration.
+        // Facilitates arbitrary customization of settings that are not explicitly addressed herein and/or general post-processing of the configuration.
         [<O; D(null)>] ?custom : ConnectionSettingsBuilder -> ConnectionSettingsBuilder) =
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
@@ -677,7 +680,7 @@ type EventStoreConnector
 
     /// Yields an IEventStoreConnection configured and Connect()ed to a node (or the cluster) per the supplied `discovery` and `clusterNodePrefence` preference
     member _.Connect
-        (   /// Name should be sufficient to uniquely identify this connection within a single app instance's logs
+        (   // Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name,
             discovery : Discovery, [<O; D null>] ?clusterNodePreference) : Async<IEventStoreConnection> = async {
         if name = null then nullArg "name"
@@ -701,7 +704,7 @@ type EventStoreConnector
 
     /// Yields a Connection (which may internally be twin connections) configured per the specified strategy
     member x.Establish
-        (   /// Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
+        (   // Name should be sufficient to uniquely identify this (aggregate) connection within a single app instance's logs
             name,
             discovery : Discovery, strategy : ConnectionStrategy) : Async<EventStoreConnection> = async {
         match strategy with

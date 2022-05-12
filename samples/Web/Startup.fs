@@ -8,12 +8,12 @@ open Samples.Infrastructure
 open Serilog
 open Serilog.Events
 
-[<NoComparison>]
+[<NoEquality; NoComparison>]
 type Arguments =
-    | [<AltCommandLine "-V">]                                 Verbose
-    | [<AltCommandLine "-S">]                                 LocalSeq
-    | [<AltCommandLine "-C">]                                 Cached
-    | [<AltCommandLine "-U">]                                 Unfolds
+    | [<AltCommandLine "-V">]                                   Verbose
+    | [<AltCommandLine "-S">]                                   LocalSeq
+    | [<AltCommandLine "-C">]                                   Cached
+    | [<AltCommandLine "-U">]                                   Unfolds
     | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Storage.Cosmos.Arguments>
     | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Arguments>

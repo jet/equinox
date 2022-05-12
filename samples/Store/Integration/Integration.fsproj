@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <WarningLevel>5</WarningLevel>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
   </PropertyGroup>
 
@@ -29,7 +27,6 @@
 
   <ItemGroup>
     <PackageReference Include="FsCheck.xUnit" Version="2.16.4" />
-    <PackageReference Include="FsCodec.Box" Version="2.3.2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
     <PackageReference Include="unquote" Version="6.1.0" />

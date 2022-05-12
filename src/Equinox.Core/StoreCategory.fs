@@ -18,6 +18,6 @@ type private Stream<'event, 'state, 'context>(category : ICategory<'event, 'stat
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
 type StoreCategory<'event, 'state, 'streamId, 'context>(resolve, empty) =
 
-    member _.Resolve(streamName : 'streamId, [<O; D null>]?context) =
+    member _.Resolve(streamName : 'streamId, [<O; D null>] ?context) =
         let category, streamName, maybeContainerInitializationGate = resolve streamName
         Stream<'event, 'state, 'context>(category, streamName, empty, ?context = context, ?init = maybeContainerInitializationGate) :> IStream<'event, 'state>

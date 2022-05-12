@@ -3,8 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <OutputType>Exe</OutputType>
-    <WarningLevel>5</WarningLevel>
-    <IsTestProject>false</IsTestProject>
 
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
 

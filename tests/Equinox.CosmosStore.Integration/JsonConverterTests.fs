@@ -14,28 +14,29 @@ type Union =
 
 type Base64ZipUtf8Tests() =
     let defaultOptions = FsCodec.SystemTextJson.Options.CreateDefault() // TODO replace with System.Text.Json.JsonSerializerOptions.Default
-    let eventCodec = FsCodec.SystemTextJson.Codec.Create(defaultOptions)
+    let eventCodec = FsCodec.SystemTextJson.CodecJsonElement.Create(defaultOptions)
+    let nullElement = System.Text.Json.JsonSerializer.SerializeToElement null
 
     let ser eventType data =
         let e : Core.Unfold =
             {   i = 42L
                 c = eventType
                 d = data
-                m = System.Text.Json.JsonSerializer.SerializeToElement null
+                m = nullElement
                 t = DateTimeOffset.MinValue }
         System.Text.Json.JsonSerializer.Serialize e
 
     [<Fact>]
     let ``serializes, achieving expected compression`` () =
         let encoded = eventCodec.Encode(None,A { embed = String('x',5000) })
-        let res = ser encoded.EventType (Core.JsonCompressedBase64Converter.Compress encoded.Data)
+        let res = ser encoded.EventType (Core.JsonElement.deflate encoded.Data)
         test <@ res.Contains("\"d\":\"") && res.Length < 138 @>
 
     [<Property>]
     let roundtrips compress value =
         let encoded = eventCodec.Encode(None, value)
-        let maybeCompressor = if compress then Core.JsonCompressedBase64Converter.Compress else id
-        let actualData = maybeCompressor encoded.Data
+        let maybeDeflate = if compress then Core.JsonElement.deflate else id
+        let actualData = maybeDeflate encoded.Data
         let ser = ser encoded.EventType actualData
         test <@ if compress then ser.Contains("\"d\":\"")
                 else ser.Contains("\"d\":{") @>
@@ -46,9 +47,8 @@ type Base64ZipUtf8Tests() =
 
     [<Theory; InlineData false; InlineData true>]
     let handlesNulls compress =
-        let maybeCompressor = if compress then Core.JsonCompressedBase64Converter.Compress else id
-        let nullElement = System.Text.Json.JsonSerializer.SerializeToElement null
-        let maybeCompressed = maybeCompressor nullElement
+        let maybeDeflate = if compress then Core.JsonElement.deflate else id
+        let maybeCompressed = maybeDeflate nullElement
         let ser = ser "AnEventType" maybeCompressed
         let des = System.Text.Json.JsonSerializer.Deserialize<Core.Unfold>(ser)
         test <@ System.Text.Json.JsonValueKind.Null = let d = des.d in d.ValueKind @>

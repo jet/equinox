@@ -11,7 +11,7 @@
 // - the same general point applies to over-using querying of streams for read purposes as we do here;
 //   applying CQRS principles can often lead to a better model regardless of raw necessity
 
-#if !LOCAL
+#if LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
@@ -20,10 +20,12 @@
 #I "bin/Debug/net6.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
+#r "Serilog.Sinks.Seq.dll"
+#r "System.Configuration.ConfigurationManager.dll"
+#r "Equinox.Core.dll"
 #r "Newtonsoft.Json.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
-#r "Equinox.Core.dll"
 #r "Equinox.dll"
 #r "TypeShape.dll"
 #r "FsCodec.SystemTextJson.dll"
@@ -38,9 +40,9 @@
 #else
 #r "nuget:Serilog.Sinks.Console"
 #r "nuget:Serilog.Sinks.Seq"
-#r "nuget:Equinox.CosmosStore"
-#r "nuget:Equinox.EventStore"
-#r "nuget:FsCodec.SystemTextJson"
+#r "nuget:Equinox.CosmosStore, *-*"
+#r "nuget:Equinox.EventStore, *-*"
+#r "nuget:FsCodec.SystemTextJson, *-*"
 #endif
 open System
 
@@ -67,6 +69,7 @@ module Events =
         e,None,None
 
     // unlike most normal codecs, we have a mapping to supply as we want the Index to be added to each event so we can track it in the State as we fold
+    let codecJe = FsCodec.SystemTextJson.CodecJsonElement.Create(up,down)
     let codec = FsCodec.SystemTextJson.Codec.Create(up,down)
 
 module Fold =
@@ -122,7 +125,7 @@ type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.St
     member _.Add(clientId, count) = execute clientId (Add count)
     member _.Remove(clientId, count) = execute clientId (Remove count)
     member _.Read(clientId) = query clientId Fold.State.balance
-    member _.AsAt(clientId,index) = query clientId (fun state -> state.[index])
+    member _.AsAt(clientId,index) = query clientId (fun state -> state[index])
 
 module Log =
     open Serilog
@@ -150,7 +153,7 @@ module EventStore =
     let snapshotWindow = 500
     // see QuickStart for how to run a local instance in a mode that emulates the behavior of a cluster
     let host, username, password = "localhost", "admin", "changeit"
-    let connector = EventStoreConnector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
+    let connector = Connector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
     let esc = connector.Connect(AppName, Discovery.GossipDns host) |> Async.RunSynchronously
     let log = Logger.SerilogNormal Log.log
     let connection = EventStoreConnection(esc)
@@ -159,8 +162,7 @@ module EventStore =
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
-    open FsCodec.SystemTextJson
-    let cat = EventStoreCategory(context, Events.codec.ToByteArrayCodec(), Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve id = Equinox.Decider(Log.log, cat.Resolve(streamName id), maxAttempts = 3)
 
 module Cosmos =
@@ -174,7 +176,7 @@ module Cosmos =
     let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let category = CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 
 //let serviceES = Service(EventStore.resolve)

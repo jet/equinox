@@ -9,8 +9,8 @@ type MaxResyncsExhaustedException(count) =
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 type Decider<'event, 'state>
     (   log, stream : Core.IStream<'event, 'state>, maxAttempts : int,
-        [<Optional; DefaultParameterValue(null)>] ?createAttemptsExhaustedException : int -> exn,
-        [<Optional; DefaultParameterValue(null)>] ?resyncPolicy) =
+        [<Optional; DefaultParameterValue null>] ?createAttemptsExhaustedException : int -> exn,
+        [<Optional; DefaultParameterValue null>] ?resyncPolicy) =
 
     do if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")
     let fetch : LoadOption<'state> option -> (Serilog.ILogger -> Async<Core.StreamToken * 'state>) = function
