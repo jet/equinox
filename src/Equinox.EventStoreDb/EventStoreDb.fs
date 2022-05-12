@@ -301,11 +301,10 @@ type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; 
     member _.WriteConnection = defaultArg writeConnection readConnection
     member _.WriteRetryPolicy = writeRetryPolicy
 
-type BatchingPolicy(getMaxBatchSize : unit -> int, [<O; D(null)>] ?batchCountLimit) = // TODO batchCountLimit
+type BatchingPolicy(getMaxBatchSize : unit -> int) =
     new (maxBatchSize) = BatchingPolicy(fun () -> maxBatchSize)
-// TOCONSIDER remove if Client does not start to expose it
+    // TOCONSIDER remove if Client does not start to expose it
     member _.BatchSize = getMaxBatchSize()
-//TODO    member _.MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown of StreamToken
