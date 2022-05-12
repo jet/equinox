@@ -9,14 +9,18 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
-### Changed
 
-- `eqx`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing [#313](https://github.com/jet/equinox/pull/313)
+- `eqx dump`/`Equinox.Tool`: Add `-F` option to opt out of pretty printing unfolds [#319](https://github.com/jet/equinox/pull/319)
+
+- ### Changed
+
+- `eqx dump`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing for events [#313](https://github.com/jet/equinox/pull/313)
 
 ### Removed
 ### Fixed
 
 - `CosmosStore`: Fixed mis-Indexing of Unfolds when >1 Unfold present [#322](https://github.com/jet/equinox/issues/322) [#324](https://github.com/jet/equinox/pull/324)
+- `eqx dump`/`Equinox.Tool`: Use `System.Text.Json` for pretty printing to handle `null` values correctly [#319](https://github.com/jet/equinox/pull/319)
 
 <a name="3.0.6"></a>
 ## [3.0.6] - 2022-01-19
@@ -355,7 +359,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Added
 
-- `SqlStreamStore`: Full support for Microsoft Sql Server, MySQL and Postgres using [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) [#168](https://github.com/jet/equinox/pull/168) :pray: [@rajivhost](https://github.com/rajivhost) 
+- `SqlStreamStore`: Full support for Microsoft Sql Server, MySQL and Postgres using [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) [#168](https://github.com/jet/equinox/pull/168) :pray: [@rajivhost](https://github.com/rajivhost)
 - `Cosmos`: Exposed a `Connector.CreateClient` for interop with V2 ChangeFeedProcessor and `Propulsion.Cosmos` [#171](https://github.com/jet/equinox/pull/171) 
 - `Cosmos`: Codified `AccessStrategy.RollingState` [#178](https://github.com/jet/equinox/pull/178) :pray: [@jgardella](https://github.com/jgardella)
 - `Cosmos`: Added `eqx stats` command to count streams/docs/events in a CosmosDb Container re [#127](https://github.com/jet/equinox/issues/127) [#176](https://github.com/jet/equinox/pull/176) 
