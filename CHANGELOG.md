@@ -11,6 +11,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `eqx dump`/`Equinox.Tool`: Add `-F` option to opt out of pretty printing unfolds [#319](https://github.com/jet/equinox/pull/319)
+- `eqx dump`/`Equinox.Tool`: Show payload statistics [#323](https://github.com/jet/equinox/pull/323)
+- `eqx dump`/`Equinox.Tool`: Add `-B` option to prevent assuming UTF-8 bodies [#323](https://github.com/jet/equinox/pull/323)
 
 - ### Changed
 
