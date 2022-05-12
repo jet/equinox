@@ -11,7 +11,7 @@
 // - the same general point applies to over-using querying of streams for read purposes as we do here;
 //   applying CQRS principles can often lead to a better model regardless of raw necessity
 
-#if LOCAL
+#if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
@@ -29,19 +29,18 @@
 #r "Equinox.dll"
 #r "TypeShape.dll"
 #r "FsCodec.SystemTextJson.dll"
-#r "FSharp.Control.AsyncSeq.dll"
-#r "System.Net.Http"
-#r "Serilog.Sinks.Seq.dll"
-#r "EventStore.ClientAPI.dll"
-#r "Equinox.EventStore.dll"
-#r "Microsoft.Azure.Cosmos.Direct.dll"
-#r "Microsoft.Azure.Cosmos.Client.dll"
+//#r "FSharp.Control.AsyncSeq.dll"
+//#r "System.Net.Http"
+//#r "EventStore.Client.dll"
+//#r "EventStore.Client.Streams.dll"
+#r "Equinox.EventStoreDb.dll"
+//#r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
 #else
 #r "nuget:Serilog.Sinks.Console"
 #r "nuget:Serilog.Sinks.Seq"
 #r "nuget:Equinox.CosmosStore, *-*"
-#r "nuget:Equinox.EventStore, *-*"
+#r "nuget:Equinox.EventStoreDb, *-*"
 #r "nuget:FsCodec.SystemTextJson, *-*"
 #endif
 open System
@@ -134,28 +133,26 @@ module Log =
     let log =
         let c = LoggerConfiguration()
         let c = if verbose then c.MinimumLevel.Debug() else c
-        let c = c.WriteTo.Sink(Equinox.EventStore.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
+        let c = c.WriteTo.Sink(Equinox.EventStoreDb.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Sink(Equinox.CosmosStore.Core.Log.InternalMetrics.Stats.LogSink()) // to power Log.InternalMetrics.dump
         let c = c.WriteTo.Seq("http://localhost:5341") // https://getseq.net
         let c = c.WriteTo.Console(if verbose then LogEventLevel.Debug else LogEventLevel.Information)
         c.CreateLogger()
     let dumpMetrics () =
         Equinox.CosmosStore.Core.Log.InternalMetrics.dump log
-        Equinox.EventStore.Log.InternalMetrics.dump log
+        Equinox.EventStoreDb.Log.InternalMetrics.dump log
 
 let [<Literal>] AppName = "equinox-tutorial"
 let cache = Equinox.Cache(AppName, 20)
 
 module EventStore =
 
-    open Equinox.EventStore
+    open Equinox.EventStoreDb
 
     let snapshotWindow = 500
-    // see QuickStart for how to run a local instance in a mode that emulates the behavior of a cluster
-    let host, username, password = "localhost", "admin", "changeit"
-    let connector = Connector(username,password,TimeSpan.FromSeconds 5., reqRetries=3, log=Logger.SerilogNormal Log.log)
-    let esc = connector.Connect(AppName, Discovery.GossipDns host) |> Async.RunSynchronously
-    let log = Logger.SerilogNormal Log.log
+    // NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
+    let connector = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 5., reqRetries = 3)
+    let esc = connector.Connect(AppName, Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
     let connection = EventStoreConnection(esc)
     let context = EventStoreContext(connection, BatchingPolicy(maxBatchSize=snapshotWindow))
     // cache so normal read pattern is to read from whatever we've built in memory
@@ -179,8 +176,8 @@ module Cosmos =
     let category = CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
 
-//let serviceES = Service(EventStore.resolve)
-let service= Service(Cosmos.resolve)
+let service = Service(EventStore.resolve)
+//let service= Service(Cosmos.resolve)
 
 let client = "ClientA"
 service.Add(client, 1) |> Async.RunSynchronously

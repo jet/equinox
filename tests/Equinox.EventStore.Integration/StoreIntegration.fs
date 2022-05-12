@@ -46,7 +46,16 @@ let connectToLocalStore (_ : ILogger) =
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else // STORE_EVENTSTORE
+#else
+#if !STORE_EVENTSTORE_LEGACY
+open Equinox.EventStoreDb
+
+/// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
+let connectToLocalStore (_log : ILogger) = async {
+    let c = EventStoreConnector(reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, (*, log=Logger.SerilogVerbose log,*) tags=["I",Guid.NewGuid() |> string])
+    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
+    return conn }
+#else // STORE_EVENTSTORE_LEGACY
 open Equinox.EventStore
 
 // NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
@@ -61,7 +70,7 @@ let connectToLocalStore log =
     // Connect directly to the locally running EventStore Node using Gossip-driven discovery
     ).Establish("Equinox-integration", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
 #endif
-
+#endif
 type Context = EventStoreContext
 type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
 #endif
@@ -114,7 +123,11 @@ type Tests(testOutputHelper) =
     let addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service count =
         addAndThenRemoveItems true true context cartId skuId service count
 
+#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
+    let sliceForward = []
+#else
     let sliceForward = [EsAct.SliceForward]
+#endif
     let singleBatchForward = sliceForward @ [EsAct.BatchForward]
     let batchForwardAndAppend = singleBatchForward @ [EsAct.Append]
 
@@ -223,7 +236,11 @@ type Tests(testOutputHelper) =
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
+#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
+    let sliceBackward = []
+#else
     let sliceBackward = [EsAct.SliceBackward]
+#endif
     let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
 

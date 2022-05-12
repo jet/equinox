@@ -2230,10 +2230,9 @@ raise Issues first though ;) ).
 EventStore, and it's Store adapter is the most proven and is pretty feature
 rich relative to the need of consumers to date. Some things remain though:
 
-- __Get impl in `master` ported to the modern gRPC client, currently parked in [#196](https://github.com/jet/equinox/pull/196). See also [#232](https://github.com/jet/equinox/issues/232)__
 - Provide a low level walking events in F# API akin to
   `Equinox.CosmosStore.Core.Events`; this would allow consumers to jump from direct
-  use of `EventStore.ClientAPI` -> `Equinox.EventStore.Core.Events` ->
+  use of `EventStore.Client` -> `Equinox.EventStore.Core.Events` ->
   `Equinox.Decider` (with the potential to swap stores once one gets to using
   `Equinox.Decider`)
 - Get conflict handling as efficient and predictable as for `Equinox.CosmosStore`

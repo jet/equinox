@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net6.0</TargetFramework>
+        <DefineConstants>$(DefineConstants);STORE_EVENTSTOREDB</DefineConstants>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
+        <Compile Include="..\Equinox.EventStore.Integration\Infrastructure.fs" Link="Infrastructure.fs" />
+        <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs" Link="AutoDataAttribute.fs" />
+        <Compile Include="..\Equinox.EventStore.Integration\StoreIntegration.fs" Link="StoreIntegration.fs" />
+        <Compile Include="..\Equinox.EventStore.Integration\EventStoreTokenTests.fs" Link="EventStoreTokenTests.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
+        <ProjectReference Include="..\..\src\Equinox.EventStoreDb\Equinox.EventStoreDb.fsproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="FsCheck.xUnit" Version="2.14.0" />
+        <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.2" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.3.0" />
+        <PackageReference Include="Serilog.Sinks.Seq" Version="4.0.0" />
+        <PackageReference Include="unquote" Version="4.0" />
+        <PackageReference Include="xunit" Version="2.4.1" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.4.1">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+
+</Project>

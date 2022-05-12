@@ -17,9 +17,9 @@ let codec = Cart.Events.codec
 let codecJe = Cart.Events.codecJe
 
 let resolveGesStreamWithRollingSnapshots context =
-    EventStore.EventStoreCategory(context, codec, fold, initial, access = EventStore.AccessStrategy.RollingSnapshots snapshot).Resolve
+    EventStoreDb.EventStoreCategory(context, codec, fold, initial, access = EventStoreDb.AccessStrategy.RollingSnapshots snapshot).Resolve
 let resolveGesStreamWithoutCustomAccessStrategy context =
-    EventStore.EventStoreCategory(context, codec, fold, initial).Resolve
+    EventStoreDb.EventStoreCategory(context, codec, fold, initial).Resolve
 
 let resolveCosmosStreamWithSnapshotStrategy context =
     CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve
@@ -52,7 +52,7 @@ type Tests(testOutputHelper) =
     }
 
     let arrangeEs connect choose resolveStream = async {
-        let! client = connect log
+        let client = connect log
         let context = choose client defaultBatchSize
         return Cart.create log (resolveStream context) }
 

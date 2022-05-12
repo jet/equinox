@@ -28,9 +28,9 @@ frame "Consistent Event Stores" as stores <<Expanded>> {
         rectangle "Azure.Cosmos" <<ExternalComponent>> as cc
     }
     frame "EventStore" <<Internal>> {
-        rectangle "Equinox.EventStore" <<Component>> as es
+        rectangle "Equinox.EventStoreDb" <<Component>> as es
         rectangle "Propulsion.EventStore" <<External Component>> as er
-        rectangle "EventStore.ClientAPI" <<External Component>> as esc
+        rectangle "EventStore.Client.Grpc.Streams" <<External Component>> as esc
     }
     frame "Integration Test Support" <<Internal>> {
         rectangle "Equinox.MemoryStore" <<Component>> as ms

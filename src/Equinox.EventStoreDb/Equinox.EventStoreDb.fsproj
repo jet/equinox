@@ -1,15 +1,15 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
-    <Compile Include="..\Equinox.EventStoreDb\Caching.fs" Link="Caching.fs" />
-    <Compile Include="SqlStreamStore.fs" />
+    <Compile Include="Caching.fs" />
+    <Compile Include="EventStoreDb.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,14 +17,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-    <PackageReference Include="MinVer" Version="2.5.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="2.0.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="4.5.4" />
 
+    <PackageReference Include="EventStore.Client.Grpc.Streams" Version="22.0.0" />
     <PackageReference Include="FsCodec" Version="3.0.0-rc.2" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
-    <PackageReference Include="SqlStreamStore" Version="1.2.0-beta.8" />
   </ItemGroup>
 
 </Project>

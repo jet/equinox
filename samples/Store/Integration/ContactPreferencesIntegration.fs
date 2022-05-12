@@ -14,9 +14,9 @@ let createServiceMemory log store =
 let codec = ContactPreferences.Events.codec
 let codecJe = ContactPreferences.Events.codecJe
 let resolveStreamGesWithOptimizedStorageSemantics context =
-    EventStore.EventStoreCategory(context 1, codec, fold, initial, access = EventStore.AccessStrategy.LatestKnownEvent).Resolve
+    EventStoreDb.EventStoreCategory(context 1, codec, fold, initial, access = EventStoreDb.AccessStrategy.LatestKnownEvent).Resolve
 let resolveStreamGesWithoutAccessStrategy context =
-    EventStore.EventStoreCategory(context defaultBatchSize, codec, fold, initial).Resolve
+    EventStoreDb.EventStoreCategory(context defaultBatchSize, codec, fold, initial).Resolve
 
 let resolveStreamCosmosWithLatestKnownEventSemantics context =
     CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.LatestKnownEvent).Resolve
@@ -44,7 +44,7 @@ type Tests(testOutputHelper) =
     }
 
     let arrangeEs connect choose resolveStream = async {
-        let! client = connect log
+        let client = connect log
         let context = choose client
         return ContactPreferences.create log (resolveStream context) }
 
