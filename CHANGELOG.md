@@ -9,16 +9,17 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
 
-- `eqx dump`/`Equinox.Tool`: Add `-F` option to opt out of pretty printing unfolds [#319](https://github.com/jet/equinox/pull/319)
-- `eqx dump`/`Equinox.Tool`: Show payload statistics [#323](https://github.com/jet/equinox/pull/323)
-- `eqx dump`/`Equinox.Tool`: Add `-B` option to prevent assuming UTF-8 bodies [#323](https://github.com/jet/equinox/pull/323)
+### Added
+
 - `Equinox`: `Decider.Transact(interpret : 'state -> Async<'event list>)` [#314](https://github.com/jet/equinox/pull/314)
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
 
 ### Changed
 
-- `eqx dump`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing for events [#313](https://github.com/jet/equinox/pull/313)
 - `Equinox`: rename `Decider.TransactAsync` to `Transact` [#314](https://github.com/jet/equinox/pull/314)
 - `Equinox`: Merge `ResolveOption` and `XXXStoreCategory.FromMemento` as `LoadOption` [#308](https://github.com/jet/equinox/pull/308)
 - `Equinox`: Merge `XXXStoreCategory.Resolve(sn, ?ResolveOption)` and `XXXStoreCategory.FromMemento` as option `LoadOption` parameter on all `Transact` and `Query` methods [#308](https://github.com/jet/equinox/pull/308)
@@ -37,10 +38,27 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Fixed
 
-- `eqx dump`/`Equinox.Tool`: Use `System.Text.Json` for pretty printing to handle `null` values correctly [#319](https://github.com/jet/equinox/pull/319)
 - `EventStore`: Revise test rig to target a Docker-hosted cluster [#317](https://github.com/jet/equinox/pull/317)
 - `EventStore/SqlStreamStore`: rename `Equinox.XXXStore.Log.Event` -> `Metric` to match `CosmosStore` [#311](https://github.com/jet/equinox/pull/311)
 - `SqlStreamStore`: Fix `Metric` key to be `ssEvt` (was `esEvt`) [#311](https://github.com/jet/equinox/pull/311)
+
+<a name="3.0.7"></a>
+## [3.0.7] - 2022-05-12
+
+### Added
+
+- `eqx dump`/`Equinox.Tool`: Add `-F` option to opt out of pretty printing unfolds [#319](https://github.com/jet/equinox/pull/319)
+- `eqx dump`/`Equinox.Tool`: Show payload statistics [#323](https://github.com/jet/equinox/pull/323)
+- `eqx dump`/`Equinox.Tool`: Add `-B` option to prevent assuming UTF-8 bodies [#323](https://github.com/jet/equinox/pull/323)
+
+### Changed
+
+- `eqx dump`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing for events [#313](https://github.com/jet/equinox/pull/313)
+
+### Fixed
+
+- `CosmosStore`: Fixed mis-Indexing of Unfolds when >1 Unfold present [#322](https://github.com/jet/equinox/issues/322) [#324](https://github.com/jet/equinox/pull/324)
+- `eqx dump`/`Equinox.Tool`: Use `System.Text.Json` for pretty printing to handle `null` values correctly [#319](https://github.com/jet/equinox/pull/319)
 
 <a name="3.0.6"></a>
 ## [3.0.6] - 2022-01-19
@@ -685,7 +703,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.6...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.7...HEAD
+[3.0.7]: https://github.com/jet/equinox/compare/3.0.6...3.0.7
 [3.0.6]: https://github.com/jet/equinox/compare/3.0.5...3.0.6
 [3.0.5]: https://github.com/jet/equinox/compare/3.0.4...3.0.5
 [3.0.4]: https://github.com/jet/equinox/compare/3.0.3...3.0.4
