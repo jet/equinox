@@ -9,16 +9,23 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ## [Unreleased]
 
 ### Added
+### Changed
+### Removed
+### Fixed
+
+<a name="3.0.7"></a>
+## [3.0.7] - 2022-05-12
+
+### Added
 
 - `eqx dump`/`Equinox.Tool`: Add `-F` option to opt out of pretty printing unfolds [#319](https://github.com/jet/equinox/pull/319)
 - `eqx dump`/`Equinox.Tool`: Show payload statistics [#323](https://github.com/jet/equinox/pull/323)
 - `eqx dump`/`Equinox.Tool`: Add `-B` option to prevent assuming UTF-8 bodies [#323](https://github.com/jet/equinox/pull/323)
 
-- ### Changed
+### Changed
 
 - `eqx dump`/`Equinox.Tool`: Flip `-P` option to opt _in_ to pretty printing for events [#313](https://github.com/jet/equinox/pull/313)
 
-### Removed
 ### Fixed
 
 - `CosmosStore`: Fixed mis-Indexing of Unfolds when >1 Unfold present [#322](https://github.com/jet/equinox/issues/322) [#324](https://github.com/jet/equinox/pull/324)
@@ -667,7 +674,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 (For information pertaining to earlier releases, see release notes in https://github.com/jet/equinox/releases and/or can someone please add it!)
 
-[Unreleased]: https://github.com/jet/equinox/compare/3.0.6...HEAD
+[Unreleased]: https://github.com/jet/equinox/compare/3.0.7...HEAD
+[3.0.7]: https://github.com/jet/equinox/compare/3.0.6...3.0.7
 [3.0.6]: https://github.com/jet/equinox/compare/3.0.5...3.0.6
 [3.0.5]: https://github.com/jet/equinox/compare/3.0.4...3.0.5
 [3.0.4]: https://github.com/jet/equinox/compare/3.0.3...3.0.4
