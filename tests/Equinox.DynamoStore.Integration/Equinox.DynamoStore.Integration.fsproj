@@ -1,0 +1,44 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
+    <DefineConstants>$(DefineConstants);STORE_DYNAMO</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
+    <Compile Include="..\Equinox.CosmosStore.Integration\CosmosFixtures.fs">
+      <Link>CosmosFixtures.fs</Link>
+    </Compile>
+    <Compile Include="..\Equinox.CosmosStore.Integration\CosmosFixturesInfrastructure.fs">
+      <Link>CosmosFixturesInfrastructure.fs</Link>
+    </Compile>
+    <Compile Include="..\..\samples\Store\Integration\AutoDataAttribute.fs">
+      <Link>AutoDataAttribute.fs</Link>
+    </Compile>
+    <Compile Include="..\Equinox.CosmosStore.Integration\DocumentStoreIntegration.fs">
+      <Link>DocumentStoreIntegration.fs</Link>
+    </Compile>
+    <Compile Include="..\Equinox.CosmosStore.Integration\AccessStrategies.fs">
+      <Link>AccessStrategies.fs</Link>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\Store\Domain\Domain.fsproj" />
+    <ProjectReference Include="..\..\src\Equinox.DynamoStore\Equinox.DynamoStore.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FsCheck.xUnit" Version="2.16.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
+    <PackageReference Include="unquote" Version="6.1.0" />
+    <PackageReference Include="xunit" Version="2.4.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.3">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

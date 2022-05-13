@@ -101,10 +101,28 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
   - It should be noted that from a querying perspective, the `Tip` shares the same structure as `Batch` documents (a potential future extension would be to carry some events in the `Tip` as [some interim versions of the implementation once did](https://github.com/jet/equinox/pull/58), see also [#109](https://github.com/jet/equinox/pull/109).
 - **`Equinox.CosmosStore` `RollingState` and `Custom` 'non-event-sourced' modes**: 
     - Uses 'Tip with Unfolds' encoding to avoid having to write event documents at all. This option benefits from the caching and consistency management mechanisms because the cost of writing and storing infinitely increasing events are removed. Search for `transmute` or `RollingState` in the `samples` and/or see [the `Checkpoint` Aggregate in Propulsion](https://github.com/jet/propulsion/blob/master/src/Propulsion.EventStore/Checkpoint.fs). One chief use of this mechanism is for tracking Summary Event feeds in [the `dotnet-templates` `summaryConsumer` template](https://github.com/jet/dotnet-templates/tree/master/propulsion-summary-consumer).
+- **`Equinox.DynamoStore`**:
+    - Most features and behaviors are as per `Equinox.CosmosStore`, with the following key differences:
+      - Instead of using a Stored Procedure as `CosmosStore` does, the implementation involves:
+        - conditional `PutItem` and [`UpdateItem`](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html) requests to accumulate events in the Tip (where there is space available).
+        - At the point where the Tip exceeds any of the configured and/or implicit limits, a [`TransactWriteItems`](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html) request is used (see [implementation in `FSharp.AWS.DynamoDB`](https://github.com/fsprojects/FSharp.AWS.DynamoDB/pull/48)):
+          - maximum event count (not limited by default)
+          - maximum accumulated event size (default 32KiB)
+          - DynamoDB Item Size Limit (hard limit of 400KiB)
+      - DynamoDB does not support an etag-checked Read API, which means a cache hit is not as efficient as it is on CosmosDB (and the data hence travels and is deserialized unnecessarily)
+      - Concurrency conflicts necessitate an additional roundtrip to resync [as the DynamoDB Service does not yield the item in the event of a `ConditionalCheckFailedException`](https://stackoverflow.com/questions/71622525)
+      - `Equinox.Cosmos.Core.Events.appendAtEnd`/`NonIdempotentAppend` has not been ported (there's no obvious clean and efficient way to do a conditional insert/update/split as the CosmosDB stored proc can, and this is a low usage feature)
+      - The implementation uses [the excellent `FSharp.AWS.DynamoDB` library](https://github.com/fsprojects/FSharp.AWS.DynamoDB)) (which wraps the standard AWS `AWSSDK.DynamoDBv2` SDK Package), and leans on [significant preparatory research](https://github.com/pierregoudjo/dynamodb_conditional_writes) :pray: [@pierregoudjo](https://github.com/pierregoudjo)
+      - `CosmosStore` dictates (as of V4) that event bodies be supplied as `System.Text.Json.JsonElement`s (in order that events can be included in the Document/ Items as JSON directly. This is also to underscore the fact that the only reasonable format to use is valid JSON; binary data would need to be base64 encoded. `DynamoStore` accepts and yields event bodies as arbitrary `ReadOnlyMemory<byte>` BLOBs (the AWS SDK round-trips such blobs as a `MemoryStream` and does not impose any restrictions on the blobs in terms of required format).
+      - `CosmosStore` defaults to compressing (with `System.IO.Compression.DeflateStream`) the event bodies for Unfolds; `DynamoStore` provides for (and defaults to) compressing event bodies for both Events and Unfolds. While both compression behaviors can be disabled (particularly if your Event Encoding already compresses, or the nature of your data or format is such that it will never compress), it should be noted that the key reason why this facility is provided is that minimizing Request Charges is imperative when request size directly maps to financial charges, 429s, reduced throughput and a lowered scaling ceiling.
+    - Azure CosmosDB's ChangeFeed API intrinsically supports replays of all the events in a Store, whereas the DynamoDB Streams facility only retains 24h of actions. As a result, there are ancillary components that provide equivalent functionality composed of:
+      - `Propulsion.DynamoStore.Lambda`: an AWS Lambda that is configured via a DynamoDB Streams Trigger to Index the Events (represented as Equinox Streams, typically in a separated `<tableName>-index` Table) as they are appended 
+      - `Propulsion.DynamoStore.DynamoStoreSource`: consumes the Index Streams akin to how `Propulsion.CosmosStore.CosmosStoreSource` consumes the CosmosDB Change Feed 
 
 # Currently Supported Data Stores
 
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db): contains some fragments of code dating back to 2016, however [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking (squash-merged in [#42](https://github.com/jet/equinox/pull/42)). The V2 and V3 release lines are being used in production systems. (The V3 release provides support for significantly more efficient packing of events ([storing events in the 'Tip'](https://github.com/jet/equinox/pull/251))).
+- [Amazon Dynamo DB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html): Shares most features with `Equinox.CosmosStore` ([from which it was ported in #321](https://github.com/jet/equinox/pull/321)). See above for detailed comparison.
 - [EventStoreDB](https://eventstore.org/): this codebase itself has been in production since 2017 (see commit history), with key elements dating back to approx 2016. Current versions require EventStoreDB Server editions `21.10` or later, and communicate over the modern gRPC interface.
 - [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore): bindings for the powerful and widely used SQL-backed Event Storage system, derived from the EventStoreDB adapter. [See SqlStreamStore docs](https://sqlstreamstore.readthedocs.io/en/latest/#introduction). :pray: [@rajivhost](https://github.com/rajivhost)
 - `MemoryStore`: In-memory store (volatile, for unit or integration test purposes). Fulfils the full contract Equinox imposes on a store, but without I/O costs [(it's ~100 LOC wrapping a `ConcurrentDictionary`)](https://github.com/jet/equinox/blob/master/src/Equinox.MemoryStore/MemoryStore.fs). Also enables [take serialization/deserialization out of the picture](https://github.com/jet/FsCodec#boxcodec) in tests.
@@ -136,6 +154,8 @@ The components within this repository are delivered as multi-targeted Nuget pack
 - `Equinox.MemoryStore` [![MemoryStore NuGet](https://img.shields.io/nuget/v/Equinox.MemoryStore.svg)](https://www.nuget.org/packages/Equinox.MemoryStore/): In-memory store for integration testing/performance base-lining/providing out-of-the-box zero dependency storage for examples. ([depends](https://www.fuget.org/packages/Equinox.MemoryStore) on `Equinox.Core`, `FsCodec`)
 - `Equinox.CosmosStore` [![CosmosStore NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.svg)](https://www.nuget.org/packages/Equinox.CosmosStore/): Azure CosmosDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RU costs, instrumented to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore) on `Equinox.Core`, `Microsoft.Azure.Cosmos >= 3.25`, `FsCodec`, `System.Text.Json`, `FSharp.Control.AsyncSeq >= 2.0.23`)
 - `Equinox.CosmosStore.Prometheus` [![CosmosStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.CosmosStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.CosmosStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.CosmosStore`, `prometheus-net >= 3.6.0`)
+- `Equinox.DynamoStore` [![DynamoStore NuGet](https://img.shields.io/nuget/v/Equinox.DynamoStore.svg)](https://www.nuget.org/packages/Equinox.DynamoStore/): Amazon DynamoDB Adapter with integrated 'unfolds' feature, facilitating optimal read performance in terms of latency and RC costs, patterned after `Equinox.CosmosStore`. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore) on `Equinox.Core`, `FSharp.AWS.DynamoDB >= 0.11.0-beta`, `FsCodec`, `FSharp.Control.AsyncSeq >= 2.0.23`)
+- `Equinox.DynamoStore.Prometheus` [![DynamoStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.DynamoStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.DynamoStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.DynamoStore`, `prometheus-net >= 3.6.0`)
 - `Equinox.EventStore` [![EventStore NuGet](https://img.shields.io/nuget/v/Equinox.EventStore.svg)](https://www.nuget.org/packages/Equinox.EventStore/): [EventStoreDB](https://eventstore.org/) Adapter designed to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.EventStore) on `Equinox.Core`, `EventStore.Client >= 22.0.0-preview`, `FSharp.Control.AsyncSeq >= 2.0.23`), EventStore Server version `21.10` or later)
 - `Equinox.EventStoreDb` [![EventStoreDb NuGet](https://img.shields.io/nuget/v/Equinox.EventStoreDb.svg)](https://www.nuget.org/packages/Equinox.EventStoreDb/): Production-strength [EventStoreDB](https://eventstore.org/) Adapter. ([depends](https://www.fuget.org/packages/Equinox.EventStoreDb) on `Equinox.Core`, `EventStore.Client.Grpc.Streams` >= `22.0.0, `FSharp.Control.AsyncSeq` v `2.0.23`, EventStore Server version `21.10` or later)
 - `Equinox.SqlStreamStore` [![SqlStreamStore NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore/): [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) Adapter derived from `Equinox.EventStore` - provides core facilities (but does not connect to a specific database; see sibling `SqlStreamStore`.* packages). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore) on `Equinox.Core`, `FsCodec`, `SqlStreamStore >= 1.2.0-beta.8`, `FSharp.Control.AsyncSeq`)
@@ -151,6 +171,7 @@ Equinox does not focus on projection logic - each store brings its own strengths
 - `Propulsion` [![Propulsion NuGet](https://img.shields.io/nuget/v/Propulsion.svg)](https://www.nuget.org/packages/Propulsion/): A library that provides an easy way to implement projection logic. It defines `Propulsion.Streams.StreamEvent` used to interop with `Propulsion.*` in processing pipelines for the `proProjector` and `proSync` templates in the [templates repo](https://github.com/jet/dotnet-templates), together with the `Ingestion`, `Streams`, `Progress` and `Parallel` modules that get composed into those processing pipelines. ([depends](https://www.fuget.org/packages/Propulsion) on `Serilog`)
 - `Propulsion.Cosmos` [![Propulsion.Cosmos NuGet](https://img.shields.io/nuget/v/Propulsion.Cosmos.svg)](https://www.nuget.org/packages/Propulsion.Cosmos/): Wraps the [Microsoft .NET `ChangeFeedProcessor` library](https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet) providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). ([depends](https://www.fuget.org/packages/Propulsion.Cosmos) on `Equinox.Cosmos`, `Microsoft.Azure.DocumentDb.ChangeFeedProcessor >= 2.2.5`)
 - `Propulsion.CosmosStore` [![Propulsion.CosmosStore NuGet](https://img.shields.io/nuget/v/Propulsion.CosmosStore.svg)](https://www.nuget.org/packages/Propulsion.CosmosStore/): Wraps the CosmosDB V3 SDK's Change Feed API, providing a [processor loop](DOCUMENTATION.md#change-feed-processors) that maintains a continuous query loop per CosmosDB Physical Partition (Range) yielding new or updated documents (optionally unrolling events written by `Equinox.CosmosStore` for processing or forwarding). Used in the [`propulsion project stats cosmos`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.CosmosStore) on `Equinox.CosmosStore`)
+- `Propulsion.DynamoStore` [![Propulsion.DynamoStore NuGet](https://img.shields.io/nuget/v/Propulsion.DynamoStore.svg)](https://www.nuget.org/packages/Propulsion.DynamoStore/): Indexes events written by `Equinox.DynamoStore` via a DynamoDB Streams-triggered Lambda. Provides a `DynamoStoreSource` that provides equivalent functionality to `Propulsion.CosmosStore`; see [`dotnet new proProjector` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.DynamoStore) on `Equinox.DynamoStore`)
 - `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/v/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
 - `Propulsion.EventStoreDb` [![Propulsion.EventStoreDb NuGet](https://img.shields.io/nuget/v/Propulsion.EventStoreDb.svg)](https://www.nuget.org/packages/Propulsion.EventStoreDb/) Consumes from `EventStoreDB` v `21.10` or later using the gRPC interface. ([depends](https://www.fuget.org/packages/Propulsion.EventStoreDb) on `Equinox.EventStoreDb`)
 - `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/v/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new proProjector -k; dotnet new proConsumer`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `FsKafka`)
@@ -162,6 +183,7 @@ Equinox does not focus on projection logic - each store brings its own strengths
     - can render events from any of the stores via `eqx dump`.
     - incorporates a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
     - can configure indices in Azure CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](https://github.com/jet/equinox#store-data-in-azure-cosmosdb).
+    - can create tables in Amazon DynamoDB for `Equinox.DynamoStore` via `eqx initAws`.
     - can initialize databases for `SqlStreamStore` via `eqx config`
 
 ## Starter Project Templates and Sample Applications 
@@ -470,6 +492,47 @@ eqx config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
 eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionstring" -p "u=un;p=password" -s "schema" # show stored JSON (Guid shown in eqx run output) 
 ```
+
+<a name="dynamodb"></a>
+### Use [Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html)
+
+DynamoDB is supported in the samples and the `eqx` tool equivalent to the CosmosDB support as described:
+- being able to supply `dynamo` source to `eqx run` wherever `cosmos` works, e.g. `eqx run -t cart -f 50 -d 5 -CU dynamo -s http://localhost:8000 -t TableName`
+- being able to supply `dynamo` flag to `eqx dump`, e.g. `eqx dump -CU -s "Favorites-ab25cc9f24464d39939000aeb37ea11a" dynamo`
+- being able to supply `dynamo` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- dynamo -s http://localhost:8000`
+- being able to supply `dynamo` flag to `eqx initAws` command e.g. `eqx initAws -rru 10 -wru 10 dynamo -t TableName`
+
+1. The tooling and samples in this repo default to using the following environment variables (see [AWS CLI UserGuide for more detailed guidance as to specific configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html))
+
+    ```zsh
+    $env:EQUINOX_DYNAMO_SERVICE_URL="https://dynamodb.us-west-2.amazonaws.com" # Simulator: "http://localhost:8000"
+    $env:EQUINOX_DYNAMO_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+    $env:EQUINOX_DYNAMO_SECRET_ACCESS_KEY="AwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    $env:EQUINOX_DYNAMO_TABLE="equinox-test"
+    $env:EQUINOX_DYNAMO_TABLE_ARCHIVE="equinox-test-archive"
+    ```
+
+2. Tour of the tools/samples:
+
+    ```zsh
+    cd ~/code/equinox
+
+    # start the simulator at http://localhost:8000 and an admin console at http://localhost:8001/
+    docker compose up dynamodb-local dynamodb-admin -d
+
+    # Establish the table
+    dotnet run --project tools/Equinox.Tool -- initAws -rru 10 -wru 10 dynamo -t TableName
+
+    # run a benchmark
+    dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -CU dynamo
+
+    # run the webserver
+    dotnet run --project samples/Web/ -- dynamo -t TableName
+
+    # run a benchmark connecting to the webserver
+    eqx run -t saveforlater -f 50 -d 5 -CU web
+    eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx run output) 
+    ```
 
 ### BENCHMARKS
 
@@ -873,7 +936,7 @@ I'd present the fact that Equinox:
 - was initially generalised and extracted from working code using ESDB in (by most measures) a successful startup written in a mix of F# and C# by the usual mix of devs, experience levels, awareness of event sourcing patterns and language/domain backgrounds
 - for a long time only had its MemoryStore as the thing to force it to be store agnostic
 - did not fundamentally change to add idiomatic support for a Document database (CosmosDB)
-- will not fundamentally change to add idiomatic support for DynamoDB
+- did not change to add idiomatic support for DynamoDB
 - can and has been used at every stage in an e-commerce pipeline
 - is presently aligning pretty neatly with diverse domains without any changes/extensions, both for me and others
 
@@ -960,19 +1023,20 @@ Next, I'd like to call out some things that Equinox is focused on delivering, re
     - to a single consistency control unit (stream) at a time (underlying stores in general rarely provide support for more than that, but more importantly, a huge number of use cases in a huge number of systems have natural mappings to this without anyone having to do evil things or write thousands of lines of code)
     - no major focus on blind-writes, even if there is low level support and/or things work if you go direct and do it out of band)
     - provide a good story for managing the writing of the first event in a stream in an efficient manner
-  - have a story for providing a changefeed
-    - typically via a matching Propulsion library (fully ordered for SSS and ESDB, ordered at stream level for CosmosDB, similar for DynamoDB if/when that happens)
-  - have a story for caching and efficient usage of the store
+  - have a story for providing a Change Feed
+    - typically via a matching Propulsion library (fully ordered for SSS and ESDB, ordered at stream level for CosmosDB and DynamoDB)
+  - have a story for caching and efficient usage of each store to the best degree possible
     - `Equinox.SqlStreamStore`
       - caching is supported and recommended to minimise reads
       - in-stream snapshots sometimes help but there are tradeoffs
     - `Equinox.EventStore`
       - caching is supported, but less important/relevant than it is with SSS as ESDB has good caching support and options
       - Equinox in-stream snapshots sometimes help but there are tradeoffs)
+    - `Equinox.CosmosStore` and `Equinox.DynamoStore`
+        - multiple events are packed into each document (critical to avoid per-Item space and indexing overhead - limits are configurable)
+        - etag-checked RollingState access mode enables allow you to achieve optimal perf and RU cost via the same API without writing an event every time
     - `Equinox.CosmosStore`
       - etag-checked read caching (use without that is not recommended in general, though you absolutely will and should turn it off for some streams)
-      - multiple events are packed into each document (critical to avoid per document overhead - this is configurable)
-      - etag-checked RollingState access mode enables allow you to achieve optimal perf and RU cost via the same API without writing an event every time
 
 **The provision of the changefeed needs to be considered as a primary factor in the overall design if you're trying to build a general store - the nature of what you are seeking to provide (max latency and ordering guarantees etc) will be a major factor in designing the schema for how you manage the encoding and updating of the items in the store**
 

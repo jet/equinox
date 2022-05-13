@@ -5,13 +5,22 @@ open FSharp.UMX
 open Swensen.Unquote
 open System
 open System.Threading
+#if STORE_DYNAMO
+open Equinox.DynamoStore
+open Equinox.DynamoStore.Integration.CosmosFixtures
+#else
 open Equinox.CosmosStore
 open Equinox.CosmosStore.Integration.CosmosFixtures
+#endif
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
+#if STORE_DYNAMO
+    let codec = Cart.Events.codec
+#else
     let codec = Cart.Events.codecJe
+#endif
     let createServiceWithoutOptimization log context =
         let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
         Cart.create log resolve
@@ -34,7 +43,11 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
+#if STORE_DYNAMO
+    let codec = ContactPreferences.Events.codec
+#else
     let codec = ContactPreferences.Events.codecJe
+#endif
     let private createServiceWithLatestKnownEvent context log cachingStrategy =
         let resolveStream = StoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
         ContactPreferences.create log resolveStream
@@ -77,7 +90,11 @@ type Tests(testOutputHelper) =
         let service = Cart.createServiceWithoutOptimization log context
         let expectedResponses n =
             let tipItem = 1
+#if STORE_DYNAMO // For Cosmos, we supply a full query and it notices it is at the end - for Dynamo, another query is required
+            let finalEmptyPage = 1
+#else
             let finalEmptyPage = 0
+#endif
             let expectedItems = tipItem + (if eventsInTip then n / 2 else n) + finalEmptyPage
             max 1 (int (ceil (float expectedItems / float queryMaxItems)))
 
@@ -87,7 +104,11 @@ type Tests(testOutputHelper) =
         for i in [1..transactions] do
             do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
             test <@ i = i && List.replicate (expectedResponses (i-1)) EqxAct.ResponseBackward @ [EqxAct.QueryBackward; EqxAct.Append] = capture.ExternalCalls @>
+#if STORE_DYNAMO
+            if eventsInTip then verifyRequestChargesMax 181 // 180.5 [8.5; 172]
+#else
             if eventsInTip then verifyRequestChargesMax 76 // 76.0 [3.72; 72.28]
+#endif
             else verifyRequestChargesMax 79 // 78.37 [3.15; 75.22]
             capture.Clear()
 
@@ -96,7 +117,11 @@ type Tests(testOutputHelper) =
         test <@ addRemoveCount = match state with { items = [{ quantity = quantity }] } -> quantity | _ -> failwith "nope" @>
 
         test <@ List.replicate (expectedResponses transactions) EqxAct.ResponseBackward @ [EqxAct.QueryBackward] = capture.ExternalCalls @>
+#if STORE_DYNAMO
+        if eventsInTip then verifyRequestChargesMax 12 // 11.5
+#else
         if eventsInTip then verifyRequestChargesMax 9 // 8.05
+#endif
         else verifyRequestChargesMax 15 // 14.01
     }
 
@@ -172,10 +197,14 @@ type Tests(testOutputHelper) =
                 && has sku21 21 && has sku22 22 @>
         // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
+#if !STORE_DYNAMO
         if eventsInTip then
             test <@ let c2 = List.choose conflict capture2.ExternalCalls
                     [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
                     && [EqxAct.Resync] = c2 @>
+#else
+        if false then ()
+#endif
         else
             test <@ let c2 = List.choose conflict capture2.ExternalCalls
                     [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
@@ -220,7 +249,11 @@ type Tests(testOutputHelper) =
                 | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no Archive Container supplied"
                                   || e.Message.StartsWith "Origin event not found; no Archive Table supplied"
                 | x -> failwithf "Unexpected %A" x @>
+#if STORE_DYNAMO // Extra null query
+        test <@ [EqxAct.ResponseForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+#else
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+#endif
         verifyRequestChargesMax 3 // 2.99
 
         // But not forgotten
@@ -331,9 +364,15 @@ type Tests(testOutputHelper) =
                 && has sku21 21 && has sku22 22 @>
         // Intended conflicts arose
         let conflict = function EqxAct.Conflict | EqxAct.Resync as x -> Some x | _ -> None
+#if STORE_DYNAMO // Failed conditions do not yield the conflicting state, so it needs to be a separate load
+        test <@ let c2 = List.choose conflict capture2.ExternalCalls
+                [EqxAct.Conflict] = List.choose conflict capture1.ExternalCalls
+                && [EqxAct.Conflict] = c2 @>
+#else
         test <@ let c2 = List.choose conflict capture2.ExternalCalls
                 [EqxAct.Resync] = List.choose conflict capture1.ExternalCalls
                 && [EqxAct.Resync] = c2 @>
+#endif
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]

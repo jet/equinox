@@ -4,6 +4,9 @@
 
 .DS_Store
 
+# DynamoDb local simulator data directory
+docker-dynamodblocal-data/
+
 # ephemeral EventStoreDB certs created via `docker compose up`
 certs/
 

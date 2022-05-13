@@ -323,24 +323,25 @@ module Log =
                 "Prune", Stats.LogSink.Prune
                 "Delete", Stats.LogSink.Delete
                 "Trim", Stats.LogSink.Trim ]
-            let mutable rows, totalCount, totalRc, totalMs = 0, 0L, 0., 0L
-            let logActivity name count rc lat =
-                log.Information("{name}: {count:n0} requests costing {ru:n0} RU (average: {avg:n2}); Average latency: {lat:n0}ms",
-                    name, count, rc, (if count = 0L then Double.NaN else rc/float count), (if count = 0L then Double.NaN else float lat/float count))
+            let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
+            let logActivity name count ru lat =
+                let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
+                let rut = match name with "TOTAL" -> "" | "Read" | "Prune" -> totalRRu <- totalRRu + ru; "R" | _ -> totalWRu <- totalWRu + ru; "W"
+                log.Information("{name}: {count:n0} requests costing {ru:n0}{rut:l}RU (average: {avgRu:n1}); Average latency: {lat:n0}ms",
+                    name, count, ru, rut, aru, ams)
             for name, stat in stats do
                 if stat.count <> 0L then
                     let ru = float stat.rux100 / 100.
                     totalCount <- totalCount + stat.count
-                    totalRc <- totalRc + ru
                     totalMs <- totalMs + stat.ms
                     logActivity name stat.count ru stat.ms
                     rows <- rows + 1
             // Yes, there's a minor race here between the use of the values and the reset
             let duration = Stats.LogSink.Restart()
-            if rows > 1 then logActivity "TOTAL" totalCount totalRc totalMs
+            if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
             let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
-            let logPeriodicRate name count ru = log.Information("rp{name} {count:n0} = ~{ru:n0} RU", name, count, ru)
-            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRc/d)
+            let logPeriodicRate name count rru wru = log.Information("rp{name} {count:n0} = ~{rru:n1}R/{wru:n1}W RU", name, count, rru, wru)
+            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
 [<AutoOpen>]
 module private MicrosoftAzureCosmosWrappers =
@@ -604,9 +605,9 @@ module internal Tip =
         let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
         | ReadResult.NotModified ->
-            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms}ms {ru}RU", "Tip", stream, 304, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 304, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.NotFound ->
-            (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {stream} {res} {ms}ms {ru}RU", "Tip", stream, 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         | ReadResult.Found tip ->
             let log =
                 let count, bytes = tip.u.Length, if verbose then Enum.Unfolds tip.u |> Log.batchLen else 0
@@ -614,7 +615,7 @@ module internal Tip =
             let log = if verbose then log |> Log.propDataUnfolds tip.u else log
             let log = match maybePos with Some p -> log |> Log.propStartPos p |> Log.propStartEtag p | None -> log
             let log = log |> Log.prop "_etag" tip._etag |> Log.prop "n" tip.n
-            log.Information("EqxCosmos {action:l} {stream} {res} {ms}ms {ru}RU", "Tip", stream, 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            log.Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i : int64 * ITimelineEvent<EventBody>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
@@ -681,7 +682,7 @@ module internal Query =
         (log|> Log.prop "bytes" bytes
             |> match minIndex with None -> id | Some i -> Log.prop "minIndex" i
             |> match maxIndex with None -> id | Some i -> Log.prop "maxIndex" i)
-            .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms}ms i={index} {ru}RU",
+            .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms:f1}ms i={index} {ru}RU",
                 "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, ru
@@ -693,7 +694,7 @@ module internal Query =
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms}ms {ru}RU",
+            "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms:f1}ms {ru}RU",
             action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
 
     let private calculateUsedVersusDroppedPayload stopIndex (xs : ITimelineEvent<EventBody>[]) : int * int =
@@ -884,7 +885,7 @@ module Prune =
             let rc, ms = res.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
-            log.Information("EqxCosmos {action:l} {id} {ms}ms {ru}RU", "Delete", id, ms, rc)
+            log.Information("EqxCosmos {action:l} {id} {ms:f1}ms {ru}RU", "Delete", id, ms, rc)
             return rc
         }
         let trimTip expectedI count = async {
@@ -900,7 +901,7 @@ module Prune =
             let rc, ms = tipRu + updateRes.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
-            log.Information("EqxCosmos {action:l} {count} {ms}ms {ru}RU", "Trim", count, ms, rc)
+            log.Information("EqxCosmos {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, ms, rc)
             return rc
         }
         let log = log |> Log.prop "index" indexInclusive
@@ -913,7 +914,7 @@ module Prune =
             let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
-            log.Information("EqxCosmos {action:l} {batches} {ms}ms n={next} {ru}RU", "PruneResponse", batches.Length, ms, next, rc)
+            log.Information("EqxCosmos {action:l} {batches} {ms:f1}ms n={next} {ru}RU", "PruneResponse", batches.Length, ms, next, rc)
             batches, rc
         let! pt, outcomes =
             let isTip (x : BatchIndices) = x.id = Tip.WellKnownDocumentId
@@ -964,7 +965,7 @@ module Prune =
         let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
-        log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
+        log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
                 "Prune", eventsDeleted, batches, lwm, (let e = pt.Elapsed in e.TotalMilliseconds), queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm
     }

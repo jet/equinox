@@ -1,4 +1,66 @@
-﻿[<AutoOpen>]
+﻿#if STORE_DYNAMO
+[<AutoOpen>]
+module Equinox.DynamoStore.Integration.CosmosFixtures
+
+open Amazon.DynamoDBv2
+open Equinox.DynamoStore
+open System
+
+// docker compose up dynamodb-local will stand up a simulator instance that this wiring can connect to
+let private tryRead env = Environment.GetEnvironmentVariable env |> Option.ofObj
+let private tableName = tryRead "EQUINOX_DYNAMO_TABLE" |> Option.defaultValue "equinox-test"
+let private archiveTableName = tryRead "EQUINOX_DYNAMO_TABLE_ARCHIVE" |> Option.defaultValue "equinox-test-archive"
+
+let discoverConnection () =
+    match tryRead "EQUINOX_DYNAMO_CONNECTION" with
+    | None -> "dynamodb-local", "http://localhost:8000"
+    | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString
+
+let createClient (log : Serilog.ILogger) name serviceUrl =
+    // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html#docker for details of how to deploy a simulator instance
+    let clientConfig = AmazonDynamoDBConfig(ServiceURL = serviceUrl)
+    log.Information("DynamoDB Connecting {name} to {endpoint}", name, serviceUrl)
+    // Credentials are not validated if connecting to local instance so anything will do (this avoids it looking for profiles to be configured)
+    let credentials = Amazon.Runtime.BasicAWSCredentials("A", "A")
+    new AmazonDynamoDBClient(credentials, clientConfig) :> IAmazonDynamoDB
+
+let connectPrimary log =
+    let name, serviceUrl = discoverConnection ()
+    let client = createClient log name serviceUrl
+    DynamoStoreClient(client, tableName)
+
+let connectArchive log =
+    let name, serviceUrl = discoverConnection ()
+    let client = createClient log name serviceUrl
+    DynamoStoreClient(client, archiveTableName)
+
+let connectWithFallback log =
+    let name, serviceUrl = discoverConnection ()
+    let client = createClient log name serviceUrl
+    DynamoStoreClient(client, tableName, archiveTableName = archiveTableName)
+
+// Prepares the two required tables that the test lea on via connectPrimary/Archive/WithFallback
+type DynamoTablesFixture() =
+
+    interface Xunit.IAsyncLifetime with
+        member _.InitializeAsync() =
+            let name, serviceUrl = discoverConnection ()
+            let client = createClient Serilog.Log.Logger name serviceUrl
+            let throughput = ProvisionedThroughput (100L, 100L)
+            let throughput = Throughput.Provisioned throughput
+            DynamoStoreClient.Connect(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
+            |> Async.StartImmediateAsTask
+            :> System.Threading.Tasks.Task
+        member _.DisposeAsync() = task { () }
+
+[<Xunit.CollectionDefinition "DocStore">]
+type DocStoreCollection() =
+    interface Xunit.ICollectionFixture<DynamoTablesFixture>
+
+type StoreContext = DynamoStoreContext
+type StoreCategory<'E, 'S> = DynamoStoreCategory<'E, 'S, obj>
+#else
+[<AutoOpen>]
 module Equinox.CosmosStore.Integration.CosmosFixtures
 
 open Equinox.CosmosStore
@@ -44,6 +106,7 @@ type DocStoreCollection() =
 
 type StoreContext = CosmosStoreContext
 type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, obj>
+#endif
 
 let createPrimaryContextIgnoreMissing client queryMaxItems tipMaxEvents ignoreMissing =
     StoreContext(client, tipMaxEvents = tipMaxEvents, queryMaxItems = queryMaxItems, ignoreMissingEvents = ignoreMissing)

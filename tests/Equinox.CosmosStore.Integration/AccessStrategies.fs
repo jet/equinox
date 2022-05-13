@@ -1,7 +1,12 @@
 module Equinox.Store.Integration.AccessStrategies
 
+#if STORE_DYNAMO
+open Equinox.DynamoStore
+open Equinox.DynamoStore.Integration.CosmosFixtures
+#else
 open Equinox.CosmosStore
 open Equinox.CosmosStore.Integration.CosmosFixtures
+#endif
 open Swensen.Unquote
 open System
 
@@ -35,7 +40,11 @@ module SequenceCheck =
         type Event =
             | Add of {| value : int |}
             interface TypeShape.UnionContract.IUnionContract
+#if STORE_DYNAMO
+        let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
+#else
         let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
+#endif
 
     module Fold =
 
