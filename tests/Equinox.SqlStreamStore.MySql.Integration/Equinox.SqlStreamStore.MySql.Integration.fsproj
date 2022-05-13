@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
+    <DisableImplicitFSharpCoreReference>false</DisableImplicitFSharpCoreReference>
     <DefineConstants>$(DefineConstants);STORE_MYSQL</DefineConstants>
   </PropertyGroup>
 

@@ -1,20 +1,20 @@
 <Project>
   <PropertyGroup>
-    <Authors>@jet @bartelink @eiriktsarpalis and contributors</Authors>
+    <Authors>@jet @moneylion @bartelink @eiriktsarpalis and contributors</Authors>
     <Company>Jet.com</Company>
-    <Description>Composable high performance event sourcing componentry</Description>
+    <Description>Sleek and composable event sourcing componentry</Description>
     <PackageProjectUrl>https://github.com/jet/equinox</PackageProjectUrl>
-    <PackageTags>fsharp unionencoder eventsourcing eventstore cosmosdb sqlserver postgres fscodec typeshape</PackageTags>
+    <PackageTags>eventsourcing eventstore fsharp fscodec cosmosdb dynamodb eventstoredb postgres sqlserver</PackageTags>
     <PackageLicense>Apache-2.0</PackageLicense>
     <Copyright>Copyright © 2016-22</Copyright>
 
     <WarningLevel>5</WarningLevel>
-    
-    <ThisDirAbsolute>$([System.IO.Path]::GetFullPath("$(MSBuildThisFileDirectory)"))</ThisDirAbsolute>
-
-    <!-- SourceLink related properties https://github.com/dotnet/SourceLink#using-sourcelink -->
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- SourceLink etc -->
+    <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.1.1" PrivateAssets="All" />
+  </ItemGroup>
 </Project>

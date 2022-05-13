@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
-    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
-    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,20 +10,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\FSharp.AWS.DynamoDB\src\FSharp.AWS.DynamoDB\FSharp.AWS.DynamoDB.fsproj" />
-    <ProjectReference Include="..\Equinox.Core\Equinox.Core.fsproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-    <PackageReference Include="MinVer" Version="2.5.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="3.1.0" PrivateAssets="All" />
 
     <!-- FSharp.AWS.DynamoDB has this as a minimum requirement -->
     <PackageReference Include="FSharp.Core" Version="4.7.2" />
 
-    <PackageReference Include="FsCodec" Version="3.0.0-rc.2" />
+    <PackageReference Include="FsCodec" Version="3.0.0-rc.2.2" />
     <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.11.0-beta" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Equinox.Core\Equinox.Core.fsproj" />
   </ItemGroup>
 
 </Project>
