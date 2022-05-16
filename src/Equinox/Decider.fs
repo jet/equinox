@@ -80,19 +80,19 @@ type Decider<'event, 'state>
     member _.Transact(decide : 'state -> Async<'result * 'event list>, ?option) : Async<'result> =
         transact option (fun (_token, state) -> decide state) (fun result _context -> result)
 
-    /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the present state (including extended context), holding the <c>'result</c>
-    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
-    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
-    /// 3. Yields a final 'view produced by <c>mapResult</c> from the <c>'result</c> and/or the final persisted <c>ISyncContext</c>
-    member _.TransactEx(decide : ISyncContext<'state> -> Async<'result * 'event list>, mapResult : 'result -> ISyncContext<'state> -> 'view, ?option) : Async<'view> =
-        transact option (fun (Context c) -> decide c) (fun r (Context c) -> mapResult r c)
-
     /// 1. Invoke the supplied <c>interpret</c> function with the present state
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yields a final 'view produced by <c>render</c> from the final persisted <c>ISyncContext</c>
     member _.TransactEx(interpret : 'state -> 'event list, render : ISyncContext<'state> -> 'view, ?option) : Async<'view> =
         transact option (fun (_token, state) -> async { return (), interpret state }) (fun () (Context c) -> render c)
+
+    /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the present state (including extended context), holding the <c>'result</c>
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Yields a final 'view produced by <c>mapResult</c> from the <c>'result</c> and/or the final persisted <c>ISyncContext</c>
+    member _.TransactEx(decide : ISyncContext<'state> -> Async<'result * 'event list>, mapResult : 'result -> ISyncContext<'state> -> 'view, ?option) : Async<'view> =
+        transact option (fun (Context c) -> decide c) (fun r (Context c) -> mapResult r c)
 
     /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
     member _.Query(render : 'state -> 'view, ?option) : Async<'view> =
