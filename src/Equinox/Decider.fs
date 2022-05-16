@@ -53,55 +53,54 @@ type Decider<'event, 'state>
             member _.Version = token.version
             member _.CreateMemento() = token, state }
 
-    /// 0.  Invoke the supplied <c>interpret</c> function with the present state
-    /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
-    /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
+    /// 1.  Invoke the supplied <c>interpret</c> function with the present state to determine whether any write is to occur.
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     member _.Transact(interpret : 'state -> 'event list, ?option) : Async<unit> =
         transact option (fun (_token, state) -> async { return (), interpret state }) (fun () _context -> ())
 
-    /// 0.  Invoke the supplied <c>interpret</c> function with the present state
-    /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
-    /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
-    /// 2.  Uses <c>render</c> to generate a 'view from the final state
+    /// 1. Invoke the supplied <c>interpret</c> function with the present state
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Uses <c>render</c> to generate a 'view from the persisted final state
     member _.Transact(interpret : 'state -> 'event list, render : 'state -> 'view, ?option) : Async<'view> =
         transact option (fun (_token, state) -> async { return (), interpret state }) (fun () (_token, state) -> render state)
 
-    /// 0.  Invoke the supplied <c>decide</c> function with the present state, holding the <c>'result</c>
-    /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
-    /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
-    /// 2.  Yield result
+    /// 1. Invoke the supplied <c>decide</c> function with the present state, holding the <c>'result</c>
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Yield result
     member _.Transact(decide : 'state -> 'result * 'event list, ?option) : Async<'result> =
         transact option (fun (_token, state) -> async { return decide state }) (fun result _context -> result)
 
-    /// 0.  Invoke the supplied <c>_Async_</c> <c>decide</c> function with the present state, holding the <c>'result</c>
-    /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
-    /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
-    /// 2.  Yield result
+    /// 1. Invoke the supplied <c>_Async_</c> <c>decide</c> function with the present state, holding the <c>'result</c>
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Yield result
     member _.Transact(decide : 'state -> Async<'result * 'event list>, ?option) : Async<'result> =
         transact option (fun (_token, state) -> decide state) (fun result _context -> result)
 
-    /// 0.  Invoke the supplied <c>_Async_</c> <c>decide</c> function with the present state (including extended context), holding the <c>'result</c>
-    /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
-    /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
-    /// 2.  Uses <c>mapResult</c> to render the final 'view from the <c>'result</c> and/or the final <c>ISyncContext</c>
-    /// 3.  Yields the 'view
+    /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the present state (including extended context), holding the <c>'result</c>
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Yields a final 'view produced by <c>mapResult</c> from the <c>'result</c> and/or the final persisted <c>ISyncContext</c>
     member _.TransactEx(decide : ISyncContext<'state> -> Async<'result * 'event list>, mapResult : 'result -> ISyncContext<'state> -> 'view, ?option) : Async<'view> =
         transact option (fun (Context c) -> decide c) (fun r (Context c) -> mapResult r c)
 
-    /// 0.  Invoke the supplied <c>interpret</c> function with the present state
-    /// 1a. (if events yielded) Attempt to sync the yielded events events to the stream
-    /// 1b. Tries up to <c>maxAttempts</c> times in the case of a conflict, throwing <c>MaxResyncsExhaustedException</c> to signal failure.
-    /// 2.  Uses <c>render</c> to generate a 'view from the final <c>ISyncContext</c>
+    /// 1. Invoke the supplied <c>interpret</c> function with the present state
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Yields a final 'view produced by <c>render</c> from the final persisted <c>ISyncContext</c>
     member _.TransactEx(interpret : 'state -> 'event list, render : ISyncContext<'state> -> 'view, ?option) : Async<'view> =
         transact option (fun (_token, state) -> async { let es = interpret state in return (), es}) (fun () (Context c) -> render c)
 
-    /// Project from the folded <c>'state</c>, without executing a decision flow as <c>Transact</c> does
-    member _.Query(projection : 'state -> 'view, ?option) : Async<'view> =
-        query option (fun (_token, state) -> projection state)
+    /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
+    member _.Query(render : 'state -> 'view, ?option) : Async<'view> =
+        query option (fun (_token, state) -> render state)
 
-    /// Project from the stream's <c>'state<c> (including extended context), without executing a decision flow as <c>Transact<c> does
-    member _.QueryEx(projection : ISyncContext<'state> -> 'view, ?option) : Async<'view> =
-        query option (fun (Context c) -> projection c)
+    /// Project from the stream's <c>'state<c> (including extended context), but without executing a decision flow as <c>TransactEx<c> does
+    member _.QueryEx(render : ISyncContext<'state> -> 'view, ?option) : Async<'view> =
+        query option (fun (Context c) -> render c)
 
 /// Store-agnostic Loading Options
 and [<NoComparison; NoEquality>] LoadOption<'state> =
