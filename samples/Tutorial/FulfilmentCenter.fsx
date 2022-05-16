@@ -182,7 +182,7 @@ module FulfilmentCenterSummary =
 
         member _.Update(id, version, value) =
             let decider = resolve id
-            decider.Transact(interpret (Update (version,value)))
+            decider.Transact(interpret (Update (version, value)))
         member _.TryRead id : Async<Summary option> =
             let decider = resolve id
             decider.Query(Option.map (fun s -> s.state))
