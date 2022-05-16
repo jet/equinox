@@ -12,7 +12,7 @@
 #r "FsCodec.dll"
 #r "FsCodec.NewtonsoftJson.dll"
 #else
-#r "nuget:Equinox.MemoryStore"
+#r "nuget:Equinox.MemoryStore, *-*"
 #r "nuget:FsCodec.Box"
 #r "nuget:Serilog.Sinks.Console"
 #endif

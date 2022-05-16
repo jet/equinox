@@ -9,7 +9,7 @@
 #r "FSharp.UMX.dll"
 #r "FSCodec.dll"
 #else
-#r "nuget:Equinox.MemoryStore"
+#r "nuget:Equinox.MemoryStore, *-*"
 #r "nuget:Serilog.Sinks.Console"
 #endif
 

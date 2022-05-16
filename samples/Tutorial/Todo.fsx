@@ -77,7 +77,7 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
         decider.Transact(fun state ->
             let events = interpret command state
             let state' = fold state events
-            state'.items,events)
+            state'.items, events)
     let query clientId (projection : State -> 't) : Async<'t> =
         let decider = resolve clientId
         decider.Query projection

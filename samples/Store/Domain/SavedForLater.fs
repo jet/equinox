@@ -36,18 +36,18 @@ module Fold =
     let isSupersededAt effectiveDate (item : Item) = item.dateSaved < effectiveDate
     type private InternalState(externalState : seq<Item>) =
         let index = Dictionary<_,_>()
-        do for i in externalState do index.[i.skuId] <- i
+        do for i in externalState do index[i.skuId] <- i
 
         member _.Replace (skus : seq<Item>) =
-            index.Clear() ; for s in skus do index.[s.skuId] <- s
+            index.Clear() ; for s in skus do index[s.skuId] <- s
         member _.Append(skus : seq<Item>) =
             for sku in skus do
                 let ok,found = index.TryGetValue sku.skuId
                 if not ok || found |> isSupersededAt sku.dateSaved then
-                    index.[sku.skuId] <- sku
+                    index[sku.skuId] <- sku
         member _.Remove (skus : seq<SkuId>) =
             for sku in skus do index.Remove sku |> ignore
-        member _.ToExernalState () =
+        member _.ToExternalState () =
             index.Values |> Seq.sortBy (fun s -> -s.dateSaved.Ticks, s.skuId) |> Seq.toArray
 
     type State = Item []
@@ -61,12 +61,12 @@ module Fold =
             | Removed { skus = skus } ->    index.Remove skus
             | Added { dateSaved = d; skus = skus } ->
                 index.Append(seq { for sku in skus -> { skuId = sku; dateSaved = d }})
-        index.ToExernalState()
+        index.ToExternalState()
     let proposedEventsWouldExceedLimit maxSavedItems events state =
         let newState = fold state events
         Array.length newState > maxSavedItems
     let isOrigin = function Compacted _ -> true | _ -> false
-    let compact state = Events.Compacted { items = state }
+    let compact state = Compacted { items = state }
 
 type Command =
     | Merge of merges : Events.Item []
@@ -75,7 +75,7 @@ type Command =
 
 type private Index(state : Events.Item seq) =
     let index = Dictionary<_,_>()
-    do for i in state do do index.[i.skuId] <- i
+    do for i in state do do index[i.skuId] <- i
 
     member _.DoesNotAlreadyContainSameOrMoreRecent effectiveDate sku =
         match index.TryGetValue sku with
@@ -117,13 +117,13 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         let decider = resolve clientId
         decider.Query id
 
-    let remove clientId (resolveCommand : ((SkuId->bool) -> Async<Command>)) : Async<unit> =
+    let remove clientId (resolveCommand : (SkuId->bool) -> Async<Command>) : Async<unit> =
         let decider = resolve clientId
         decider.Transact(fun (state : Fold.State) -> async {
             let contents = seq { for item in state -> item.skuId } |> set
             let! cmd = resolveCommand contents.Contains
             let _, events = decide maxSavedItems cmd state
-            return (),events } )
+            return (), events } )
 
     member _.MaxSavedItems = maxSavedItems
 
