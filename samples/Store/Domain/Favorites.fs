@@ -75,7 +75,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
     // NOTE not a real world example - used for an integration test; TODO get a better example where it's actually relevant
     member _.UnfavoriteWithPostVersion(clientId, sku) =
         let decider = resolve clientId
-        decider.TransactEx(decideUnfavorite sku, fun c -> c.Version)
+        decider.TransactEx((fun c -> (), decideUnfavorite sku c.State), fun () c -> c.Version)
 
 let create log resolveStream =
     let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts  = 3)
