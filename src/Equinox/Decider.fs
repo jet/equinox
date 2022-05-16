@@ -92,7 +92,7 @@ type Decider<'event, 'state>
     ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
     /// 3. Yields a final 'view produced by <c>render</c> from the final persisted <c>ISyncContext</c>
     member _.TransactEx(interpret : 'state -> 'event list, render : ISyncContext<'state> -> 'view, ?option) : Async<'view> =
-        transact option (fun (_token, state) -> async { let es = interpret state in return (), es}) (fun () (Context c) -> render c)
+        transact option (fun (_token, state) -> async { return (), interpret state }) (fun () (Context c) -> render c)
 
     /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
     member _.Query(render : 'state -> 'view, ?option) : Async<'view> =

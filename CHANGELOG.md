@@ -11,6 +11,8 @@ The `Unreleased` section name is replaced by the expected version of next releas
 ### Added
 
 - `Equinox`: `Decider.Transact(interpret : 'state -> Async<'event list>)` [#314](https://github.com/jet/equinox/pull/314)
+- `Equinox`: `Decider.Transact(interpret : 'state -> 'event list, render : 'state -> 'view)` [#320](https://github.com/jet/equinox/pull/320)
+- `Equinox`: `Decider.TransactEx(interpret : 'state -> 'event list, render : ISyncContext<'state> -> 'view)` [#320](https://github.com/jet/equinox/pull/320)
 - `CosmosStore.Prometheus`: Add `rut` tag to enable filtering/grouping by Read vs Write activity as per `DynamoDB` [#321](https://github.com/jet/equinox/pull/321)
 - `DynamoDb`/`DynamoDb.Prometheus`: Implements the majority of the `CosmosStore` functionality via `FSharp.AWS.DynamoDB` [#321](https://github.com/jet/equinox/pull/321)
 - `EventStoreDb`: As per `EventStore` module, but using the modern `EventStore.Client.Grpc.Streams` client [#196](https://github.com/jet/equinox/pull/196)
