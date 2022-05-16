@@ -309,74 +309,81 @@ module Log =
             type internal Counter =
                  { mutable rux100 : int64; mutable count : int64; mutable ms : int64 }
                  static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
-                 member x.Ingest(ru, ms) =
+                 member x.Ingest(ms, ru) =
                      System.Threading.Interlocked.Increment(&x.count) |> ignore
                      System.Threading.Interlocked.Add(&x.rux100, int64 (ru * 100.)) |> ignore
                      System.Threading.Interlocked.Add(&x.ms, ms) |> ignore
-            let inline private (|RuMs|) ({ interval = i; ru = ru } : Measurement) = ru, int64 (tms i)
+            type internal Counters() =
+                 let tables = System.Collections.Concurrent.ConcurrentDictionary<string, Counter>()
+                 let create (_name : string) = Counter.Create()
+                 member _.Ingest(table, ms, ru) = tables.GetOrAdd(table, create).Ingest(ms, ru)
+                 member _.Tables = tables.Keys
+                 member _.TryTable table = match tables.TryGetValue table with true, t -> Some t | false, _ -> None
+            type Epoch() =
+                let epoch = System.Diagnostics.Stopwatch.StartNew()
+                member val internal Read = Counters() with get, set
+                member val internal Write = Counters() with get, set
+                member val internal Conflict = Counters() with get, set
+                member val internal Prune = Counters() with get, set
+                member val internal Delete = Counters() with get, set
+                member val internal Trim = Counters() with get, set
+                member _.Stop() = epoch.Stop()
+                member _.Elapsed = epoch.Elapsed
+            let inline private (|TableMsRu|) ({ table = t; interval = i; ru = ru } : Measurement) = t, int64 (tms i), ru
             type LogSink() =
-                static let epoch = System.Diagnostics.Stopwatch.StartNew()
-                static member val internal Read = Counter.Create() with get, set
-                static member val internal Write = Counter.Create() with get, set
-                static member val internal Conflict = Counter.Create() with get, set
-                static member val internal Prune = Counter.Create() with get, set
-                static member val internal Delete = Counter.Create() with get, set
-                static member val internal Trim = Counter.Create() with get, set
+                static let mutable epoch = Epoch()
                 static member Restart() =
-                    LogSink.Read <- Counter.Create()
-                    LogSink.Write <- Counter.Create()
-                    LogSink.Conflict <- Counter.Create()
-                    LogSink.Prune <- Counter.Create()
-                    LogSink.Delete <- Counter.Create()
-                    LogSink.Trim <- Counter.Create()
-                    let span = epoch.Elapsed
-                    epoch.Restart()
-                    span
+                    let fresh = Epoch()
+                    let outgoing = System.Threading.Interlocked.Exchange(&epoch, fresh)
+                    outgoing.Stop()
+                    outgoing
                 interface Serilog.Core.ILogEventSink with
                     member _.Emit logEvent =
                         match logEvent with
                         | MetricEvent cm ->
                             match cm with
-                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304 | Operation.Query), RuMs m)  ->
-                                                                            LogSink.Read.Ingest m
-                            | QueryRes (_direction,          _)        ->   ()
-                            | Op (Operation.Write,            RuMs m)  ->  LogSink.Write.Ingest m
-                            | Op (Operation.Conflict,         RuMs m)  ->  LogSink.Conflict.Ingest m
-                            | Op (Operation.Prune,            RuMs m)  ->  LogSink.Prune.Ingest m
-                            | PruneRes                        _        ->   ()
-                            | Op (Operation.Delete,           RuMs m)  ->  LogSink.Delete.Ingest m
-                            | Op (Operation.Trim,             RuMs m)  ->  LogSink.Trim.Ingest m
+                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304 | Operation.Query), TableMsRu m)  ->
+                                                                                epoch.Read.Ingest m
+                            | QueryRes (_direction,          _)        ->       ()
+                            | Op (Operation.Write,            TableMsRu m)  ->  epoch.Write.Ingest m
+                            | Op (Operation.Conflict,         TableMsRu m)  ->  epoch.Conflict.Ingest m
+                            | Op (Operation.Prune,            TableMsRu m)  ->  epoch.Prune.Ingest m
+                            | PruneRes                        _        ->       ()
+                            | Op (Operation.Delete,           TableMsRu m)  ->  epoch.Delete.Ingest m
+                            | Op (Operation.Trim,             TableMsRu m)  ->  epoch.Trim.Ingest m
                         | _ -> ()
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink
         /// Use Stats.LogSink.Restart() to reset the start point (and stats) where relevant
         let dump (log : ILogger) =
+            let res = Stats.LogSink.Restart()
             let stats =
-              [ "Read", Stats.LogSink.Read
-                "Write", Stats.LogSink.Write
-                "Conflict", Stats.LogSink.Conflict
-                "Prune", Stats.LogSink.Prune
-                "Delete", Stats.LogSink.Delete
-                "Trim", Stats.LogSink.Trim ]
-            let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
-            let logActivity name count ru lat =
-                let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
-                let rut = match name with "TOTAL" -> "" | "Read" | "Prune" -> totalRRu <- totalRRu + ru; "R" | _ -> totalWRu <- totalWRu + ru; "W"
-                log.Information("{name}: {count:n0} requests costing {ru:n0}{rut:l}RU (average: {avgRu:n1}); Average latency: {lat:n0}ms",
-                                name, count, ru, rut, aru, ams)
-            for name, stat in stats do
-                if stat.count <> 0L then
-                    let ru = float stat.rux100 / 100.
-                    totalCount <- totalCount + stat.count
-                    totalMs <- totalMs + stat.ms
-                    logActivity name stat.count ru stat.ms
-                    rows <- rows + 1
-            // Yes, there's a minor race here between the use of the values and the reset
-            let duration = Stats.LogSink.Restart()
-            if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
-            let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
-            let logPeriodicRate name count rru wru = log.Information("rp{name} {count:n0} = ~{rru:n1}R/{wru:n1}W RU", name, count, rru, wru)
-            for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
+              [ "Read", res.Read
+                "Write", res.Write
+                "Conflict", res.Conflict
+                "Prune", res.Prune
+                "Delete", res.Delete
+                "Trim", res.Trim ]
+            for table in stats |> Seq.collect (fun (_n, stat) -> stat.Tables) |> Seq.distinct |> Seq.toArray do
+                let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
+                let logActivity name count ru lat =
+                    let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
+                    let rut = match name with "TOTAL" -> "" | "Read" | "Prune" -> totalRRu <- totalRRu + ru; "R" | _ -> totalWRu <- totalWRu + ru; "W"
+                    log.Information("{table} {name}: {count:n0} requests costing {ru:n0}{rut:l}RU (average: {avgRu:n1}); Average latency: {lat:n0}ms",
+                                    table, name, count, ru, rut, aru, ams)
+                for name, stat in stats do
+                    match stat.TryTable table with
+                    | Some stat when stat.count <> 0L ->
+                        let ru = float stat.rux100 / 100.
+                        totalCount <- totalCount + stat.count
+                        totalMs <- totalMs + stat.ms
+                        logActivity name stat.count ru stat.ms
+                        rows <- rows + 1
+                    | _ -> ()
+                if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
+                let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
+                let logPeriodicRate name count rru wru = log.Information("rp{name} {count:n0} = ~{rru:n1}R/{wru:n1}W RU", name, count, rru, wru)
+                for uom, f in measures do let d = f res.Elapsed in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
 module Initialization =
 
@@ -579,7 +586,7 @@ module internal Sync =
                                             Log.prop "conflict" true
                                             >> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in append -> x.c }))
                                             >> Log.event (Log.Metric.SyncConflict reqMetric)
-        log.Information("EqxDynamo {action:l} {stream:l} {events} {ms:f1}ms {ru}RU Tip {tipBase}+{tipBytes}b {tipEvents}e {tipUnfolds}u Calf {calveBytes}b {calveEvents}e {exp:l}",
+        log.Information("EqxDynamo {action:l} {stream:l} {events}e {ms:f1}ms {ru}RU Tip {tipBase}+{tipBytes}b {tipEvents}e {tipUnfolds}u Calf {calveBytes}b {calveEvents}e {exp:l}",
                         "Sync", stream, eventCount, Log.tms t, ru, tipBaseSize, tipBytes, tipEvents, unfoldsCount, calveBytes, calve.Length, exp)
         return result }
 
@@ -876,7 +883,7 @@ module internal Query =
 // Manages deletion of (full) Batches, and trimming of events in Tip, maintaining ordering guarantees by never updating non-Tip batches
 // Additionally, the nature of the fallback algorithm requires that deletions be carried out in sequential order so as not to leave gaps
 // NOTE: module is public so BatchIndices can be deserialized into
-module Prune =
+module internal Prune =
 
     let until (log : ILogger) (container : Container, stream : string) maxItems indexInclusive : Async<int * int * int64> = async {
         let log = log |> Log.prop "stream" stream
@@ -1342,6 +1349,12 @@ type DynamoStoreCategory<'event, 'state, 'context>(context : DynamoStoreContext,
     let empty = Token.empty, initial
     let storeCategory = StoreCategory(resolve, empty)
     member _.Resolve(streamName, ?context) = storeCategory.Resolve(streamName, ?context = context)
+
+module Exceptions =
+
+    let (|ProvisionedThroughputExceeded|_|) : exn -> unit option = function
+        | :? Amazon.DynamoDBv2.Model.ProvisionedThroughputExceededException -> Some ()
+        | _ -> None
 
 namespace Equinox.DynamoStore.Core
 
