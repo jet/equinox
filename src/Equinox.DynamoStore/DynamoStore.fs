@@ -58,7 +58,7 @@ type Event =
         member x.Timestamp = x.t
 module Event =
     let private len = function Some (s : string) -> s.Length | None -> 0
-    let bytes (x : Event) = x.c.Length + EncodedBody.bytes x.d + EncodedBody.bytes x.m + len x.correlationId + len x.causationId + 100
+    let bytes (x : Event) = x.c.Length + EncodedBody.bytes x.d + EncodedBody.bytes x.m + len x.correlationId + len x.causationId + 20 (*t*) + 20 (*overhead*)
     let arrayBytes (xs : Event array) = Array.sumBy bytes xs
 
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
@@ -644,8 +644,8 @@ module internal Tip =
             let log = logMetric (bb + ub) (eventsCount + unfoldsCount) Log.Metric.Tip
             let log = match maybePos with Some p -> log |> Log.prop "startPos" p |> Log.prop "startEtag" p | None -> log
             let log = log |> Log.prop "etag" tip.etag //|> Log.prop "n" tip.n
-            log.Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU v{n} {events}+{unfolds}e {baseBytes}+{unfoldsBytes}b",
-                            "Tip", stream, 200, Log.tms t, ru, tip.n, eventsCount, unfoldsCount, bb, ub)
+            log.Information("EqxDynamo {action:l} {stream:l} v{n} {res} {ms:f1}ms {ru}RU {events}e {unfolds}u {baseBytes}+{unfoldsBytes}b",
+                            "Tip", stream, tip.n, 200, Log.tms t, ru, eventsCount, unfoldsCount, bb, ub)
         return ru, res }
     let private enumEventsAndUnfolds (minIndex, maxIndex) (x : Batch) : ITimelineEvent<EncodedBody> array =
         Seq.append<ITimelineEvent<_>> (Batch.enumEvents (minIndex, maxIndex) x |> Seq.cast) (x.u |> Seq.cast)
@@ -671,36 +671,33 @@ module internal Query =
 
     // Unrolls the Batches in a response
     // NOTE when reading backwards, the events are emitted in reverse Index order to suit the takeWhile consumption
-    let private mapPage direction (container : Container, stream : string) (minIndex, maxIndex) (maxRequests : int option)
+    let private mapPage direction (container : Container, stream : string) (minIndex, maxIndex, maxItems) (maxRequests : int option)
             (log : ILogger) (i, t, batches : Batch array, rc)
         : Event array * Position option * RequestConsumption =
-        let log = log |> Log.prop "batchIndex" i
         match maxRequests with
-        | Some mr when i >= mr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
+        | Some mr when i >= mr -> log.Information("EqxDynamo {action:l} Page {page} Limit exceeded", i); invalidOp "batch Limit exceeded"
         | _ -> ()
         let unwrapBatch (x : Batch) =
             Batch.enumEvents (minIndex, maxIndex) x
             |> if direction = Direction.Backward then Seq.rev else id
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
-        let count, bytes = events.Length, Batch.bytesTotal batches
-        let index = if count = 0 then Nullable () else Nullable (Seq.map Batch.baseIndex batches |> Seq.min)
-        (log|> Log.event (Log.Metric.QueryResponse (direction, Log.metric container.TableName stream t bytes count rc))
-            |> Log.prop "bytes" bytes
-            |> match minIndex with None -> id | Some i -> Log.prop "minIndex" i
-            |> match maxIndex with None -> id | Some i -> Log.prop "maxIndex" i)
-            .Information("EqxDynamo {action:l} {count}/{batches} {direction} {ms:f1}ms i={index} {ru}RU",
-                         "Response", count, batches.Length, direction, Log.tms t, index, rc.total)
+        let usedEventsCount, usedBytes, totalBytes = events.Length, Event.arrayBytes events, Batch.bytesTotal batches
+        let baseIndex = if usedEventsCount = 0 then Nullable () else Nullable (Seq.map Batch.baseIndex batches |> Seq.min)
+        let minI, maxI = match events with [||] -> Nullable(), Nullable() | xs -> Nullable events[0].i, Nullable events[xs.Length - 1].i
+        (log|> Log.event (Log.Metric.QueryResponse (direction, Log.metric container.TableName stream t totalBytes usedEventsCount rc)))
+            .Information("EqxDynamo {action:l} {page} {minIndex}-{maxIndex} {ms:f1}ms {ru}RU {batches}/{batchSize}@{index} {count}e {bytes}/{totalBytes}b {direction:l}",
+                         "Page", i, minI, maxI, Log.tms t, rc.total, batches.Length, maxItems, baseIndex, usedEventsCount, usedBytes, totalBytes, direction)
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, rc
 
-    let private logQuery direction (container : Container, stream) interval (responsesCount, events : Event array) n (rc : RequestConsumption) (log : ILogger) =
+    let private logQuery (direction, minIndex, maxIndex) (container : Container, stream) interval (responsesCount, events : Event array) n (rc : RequestConsumption) (log : ILogger) =
         let count, bytes = events.Length, Event.arrayBytes events
         let reqMetric = Log.metric container.TableName stream interval bytes count rc
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
-        (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            "EqxDynamo {action:l} {stream} v{n} {count}/{responses} {ms:f1}ms {ru}RU",
-            action, stream, n, count, responsesCount, Log.tms interval, rc.total)
+        (log|> Log.event evt).Information(
+            "EqxDynamo {action:l} {stream:l} v{n} {ms:f1}ms {ru}RU {count}e/{responses} {bytes}b >{minN} <{maxI}",
+            action, stream, n, Log.tms interval, rc.total, count, responsesCount, bytes, Option.toNullable minIndex, Option.toNullable maxIndex)
 
     let private calculateUsedVersusDroppedPayload stopIndex (xs : Event array) : int * int =
         let mutable used, dropped = 0, 0
@@ -761,7 +758,7 @@ module internal Query =
         let readLog = log |> Log.prop "direction" direction
         let batches : AsyncSeq<Event array * Position option * RequestConsumption> =
             mkQuery readLog (container, stream) maxItems (direction, minIndex, maxIndex)
-            |> AsyncSeq.map (mapPage direction (container, stream) (minIndex, maxIndex) maxRequests readLog)
+            |> AsyncSeq.map (mapPage direction (container, stream) (minIndex, maxIndex, maxItems) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws = Array.map fst events
         let decoded = if direction = Direction.Forward then Array.choose snd events else Seq.choose snd events |> Seq.rev |> Array.ofSeq
@@ -771,7 +768,7 @@ module internal Query =
             | Some { index = max }, _
             | _, Some (_, max) -> max + 1L
             | None, None -> 0L
-        log |> logQuery direction (container, stream) t (responseCount, raws) version ru
+        log |> logQuery (direction, minIndex, maxIndex) (container, stream) t (responseCount, raws) version ru
         match minMax, maybeTipPos with
         | Some (i, m), _ -> return Some { found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }
         | None, Some { index = tipI } -> return Some { found = found; minIndex = tipI; next = tipI; maybeTipPos = maybeTipPos; events = [||] }
@@ -783,7 +780,7 @@ module internal Query =
         : AsyncSeq<'event array> = asyncSeq {
         let query = mkQuery log (container, stream) maxItems (direction, minIndex, maxIndex)
 
-        let readPage = mapPage direction (container, stream) (minIndex, maxIndex) maxRequests
+        let readPage = mapPage direction (container, stream) (minIndex, maxIndex, maxItems) maxRequests
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
         let query = query |> AsyncSeq.map (readPage readLog)
@@ -821,7 +818,7 @@ module internal Query =
         finally
             let endTicks = System.Diagnostics.Stopwatch.GetTimestamp()
             let t = StopwatchInterval(startTicks, endTicks)
-            log |> logQuery direction (container, stream) t (i, allEvents.ToArray()) -1L { total = ru } }
+            log |> logQuery (direction, minIndex, maxIndex) (container, stream) t (i, allEvents.ToArray()) -1L { total = ru } }
     type [<NoComparison; NoEquality>] LoadRes = Pos of Position | Empty | Next of int64
     let toPosition = function Pos p -> Some p | Empty -> None | Next _ -> failwith "unexpected"
     /// Manages coalescing of spans of events obtained from various sources:
