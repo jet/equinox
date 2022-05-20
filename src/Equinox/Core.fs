@@ -25,4 +25,4 @@ and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
     | Conflict of Async<StreamToken * 'state>
 
 /// Store-specific opaque token to be used for synchronization purposes
-and [<NoComparison>] StreamToken = { value : obj; version: int64 }
+and [<NoComparison>] StreamToken = { value : obj; version : int64; streamBytes : int64 }

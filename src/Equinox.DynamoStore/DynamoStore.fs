@@ -103,6 +103,9 @@ module Unfold =
 type Batch =
     {   p : string // "{streamName}"
 
+        /// (Tip Batch only) Number of bytes held in predecessor Batches
+        b : int option
+
         /// base 'i' value for the Events held herein
         i : int64 // tipMagicI for the Tip
 
@@ -129,6 +132,7 @@ module Batch =
             p : string
             [<RangeKey>]
             i : int64 // tipMagicI for the Tip
+            b : int option // iff Tip: bytes in predecessor batches
             etag : string option
             n : int64
             // Count of items written in the most recent insert/update - used by the DDB Streams Consumer to identify the fresh events
@@ -168,7 +172,7 @@ module Batch =
             |> Seq.mapi (fun i (c, e) ->
                 let d, m = EncodedBody.ofRawAndCompressed (e.d, e.D), EncodedBody.ofRawAndCompressed (e.m, e.M)
                 { i = baseIndex + i; t = e.t; d = d; m = m; correlationId = e.x; causationId = e.y; c = c })
-        { p = x.p; i = x.i; etag = Option.toObj x.etag; n = x.n; e = Seq.toArray events; u = x.u |> Array.map ofUnfoldSchema }
+        { p = x.p; b = x.b; i = x.i; etag = Option.toObj x.etag; n = x.n; e = Seq.toArray events; u = x.u |> Array.map ofUnfoldSchema }
     let enumEvents (minIndex, maxIndex) (x : Batch) : Event seq =
         let indexMin, indexMax = defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue
         // If we're loading from a nominated position, we need to discard items in the batch before/after the start on the start page
@@ -502,16 +506,18 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
 /// Represents the State of the Stream for the purposes of deciding how to map a Sync request to DynamoDB operations
 [<NoComparison; NoEquality>]
 type Position =
-    { index : int64; etag : string; baseBytes : int; unfoldsBytes : int; events : Event array }
+    { index : int64; etag : string; calvedBytes : int; baseBytes : int; unfoldsBytes : int; events : Event array }
     override x.ToString() = sprintf "{ n=%d; etag=%s; e=%d; b=%d+%d }" x.index x.etag x.events.Length x.baseBytes x.unfoldsBytes
 module internal Position =
 
-    let fromTip (x : Batch) = { index = x.n; etag = x.etag; events = x.e; baseBytes = Batch.bytesBase x; unfoldsBytes = Batch.bytesUnfolds x }
-    let fromElements (p, n, e, u, etag) = fromTip { p = p; i = Unchecked.defaultof<_>; n = n; e = e; u = u; etag = etag }
+    // NOTE a write of Some 0 to x.b round-trips as None
+    let fromTip (x : Batch) = { index = x.n; etag = x.etag; events = x.e; calvedBytes = defaultArg x.b 0; baseBytes = Batch.bytesBase x; unfoldsBytes = Batch.bytesUnfolds x }
+    let fromElements (p, b, n, e, u, etag) = fromTip { p = p; b = Some b; i = Unchecked.defaultof<_>; n = n; e = e; u = u; etag = etag }
     let tryFromBatch (x : Batch) = if Batch.isTip x.i then fromTip x |> Some else None
     let toIndex = function Some p -> p.index | None -> 0
     let toEtag = function Some p -> p.etag | None -> null
-    let null_ i = { index = i; etag = null; baseBytes = 0; unfoldsBytes = 0; events = Array.empty }
+    let toVersionAndStreamBytes = function Some p -> p.index, p.calvedBytes + p.baseBytes | None -> 0, 0
+    let null_ i = { index = i; etag = null; calvedBytes = 0; baseBytes = 0; unfoldsBytes = 0; events = Array.empty }
     let flatten = function Some p -> p | None -> null_ 0
 
 module internal Sync =
@@ -537,7 +543,7 @@ module internal Sync =
     type internal Exp =
         | Version of int64
         | Etag of string
-    let private generateRequests (stream : string) (req, u, exp, n') etag'
+    let private generateRequests (stream : string) (req, u, exp, b', n') etag'
         : TransactWrite<Batch.Schema> list =
         let u = Batch.unfoldsToSchema u
         // TOCONSIDER figure out way to remove special casing (replaceTipEvents): Array.append to empty e/c triggers exception
@@ -553,15 +559,15 @@ module internal Sync =
                     let calfC, calfE = Batch.eventsToSchema calf
                     let tipIndex = n' - tipUpdatedEvents.LongLength
                     let calfIndex = tipIndex - calf.LongLength
-                    { p = stream; i = calfIndex; a = calfA; etag = None; u = [||]; c = calfC; e = calfE; n = tipIndex }
+                    { p = stream; i = calfIndex; a = calfA; b = None; etag = None; u = [||]; c = calfC; e = calfE; n = tipIndex }
                 true, tipA, (Batch.eventsToSchema tipUpdatedEvents), Some calf
         let genFreshTipItem () : Batch.Schema =
-            { p = stream; i = Batch.tipMagicI; a = tipA; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC }
+            { p = stream; i = Batch.tipMagicI; a = tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC }
         let updateTipIf condExpr =
             let updExpr : Quotations.Expr<Batch.Schema -> Batch.Schema> =
-                if replaceTipEvents  then <@ fun t -> { t with a = tipA; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC } @>
-                elif tipE.Length = 0 then <@ fun t -> { t with a = 0;    etag = Some etag'; u = u } @>
-                else                      <@ fun t -> { t with a = tipA; etag = Some etag'; u = u; n = n'; e = Array.append t.e tipE; c = Array.append t.c tipC } @>
+                if replaceTipEvents  then <@ fun t -> { t with a = tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC } @>
+                elif tipE.Length = 0 then <@ fun t -> { t with a = 0;    b = Some b'; etag = Some etag'; u = u } @>
+                else                      <@ fun t -> { t with a = tipA; b = Some b'; etag = Some etag'; u = u; n = n'; e = Array.append t.e tipE; c = Array.append t.c tipC } @>
             updateTip stream updExpr condExpr
         [   match maybeCalf with
             | Some calfItem ->                 putItemIfNotExists calfItem
@@ -588,9 +594,9 @@ module internal Sync =
         with DynamoDbConflict ->
             return rm.Consumed, Res.ConflictUnknown }
 
-    let private transactLogged (container, stream) (baseBytes, baseEvents, req, unfolds, exp, n') (log : ILogger)
+    let private transactLogged (container, stream) (baseBytes, baseEvents, req, unfolds, exp, b', n') (log : ILogger)
         : Async<Res> = async {
-        let! t, ({ total = ru } as rc, result) = transact (container, stream) (req, unfolds, exp, n') |> Stopwatch.Time
+        let! t, ({ total = ru } as rc, result) = transact (container, stream) (req, unfolds, exp, b', n') |> Stopwatch.Time
         let calfBytes, calfCount, tipBytes, tipEvents, appended = req |> function
             | Req.Append (_tipWasEmpty, appends) ->   0, 0, baseBytes + Event.arrayBytes appends, baseEvents + appends.Length, appends
             | Req.Calve (calf, tip, appendedCount) -> Event.arrayBytes calf, calf.Length, Event.arrayBytes tip, tip.Length,
@@ -617,7 +623,7 @@ module internal Sync =
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Result =
-        | Written of etag : string * events : Event array * unfolds : Unfold array
+        | Written of etag : string * predecessorBytes : int * events : Event array * unfolds : Unfold array
         | ConflictUnknown
 
     let private maxDynamoDbItemSize = 400 * 1024
@@ -633,7 +639,7 @@ module internal Sync =
                 c = x.EventType; d = eo.EncodeUnfoldData x.Data; m = eo.EncodeUnfoldMeta x.Meta })
         if Array.isEmpty events && Array.isEmpty unfolds then invalidOp "Must write either events or unfolds."
         let cur = Position.flatten pos
-        let req, tipEvents' =
+        let req, predecessorBytes', tipEvents' =
             let eventOverflow = maxEvents |> Option.exists (fun limit -> events.Length + cur.events.Length > limit)
             if eventOverflow || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > maxBytes then
                 let calfEvents, residualEvents = ResizeArray(cur.events.Length + events.Length), ResizeArray()
@@ -644,11 +650,11 @@ module internal Sync =
                     | _ -> calfFull <- true; residualEvents.Add e
                 let calfEvents = calfEvents.ToArray()
                 let tipEvents = residualEvents.ToArray()
-                Req.Calve (calfEvents, tipEvents, events.Length), tipEvents
-            else Req.Append (Array.isEmpty cur.events, events), Array.append cur.events events
-        match! transactLogged (container, stream) (cur.baseBytes, cur.events.Length, req, unfolds, exp pos, n') log with
+                Req.Calve (calfEvents, tipEvents, events.Length), cur.calvedBytes + Event.arrayBytes calfEvents, tipEvents
+            else Req.Append (Array.isEmpty cur.events, events), cur.calvedBytes, Array.append cur.events events
+        match! transactLogged (container, stream) (cur.baseBytes, cur.events.Length, req, unfolds, exp pos, predecessorBytes', n') log with
         | Res.ConflictUnknown -> return Result.ConflictUnknown
-        | Res.Written etag' -> return Result.Written (etag', tipEvents', unfolds) }
+        | Res.Written etag' -> return Result.Written (etag', predecessorBytes', tipEvents', unfolds) }
 
 module internal Tip =
 
@@ -1003,8 +1009,8 @@ type [<NoComparison; NoEquality>] Token = { pos : Position option }
 module Token =
 
     let create_ pos : StreamToken =
-        let v = Position.toIndex pos
-        { value = box { pos = pos }; version = v }
+        let v, b = Position.toVersionAndStreamBytes pos
+        { value = box { pos = pos }; version = v; streamBytes = b }
     let create : Position -> StreamToken = Some >> create_
     let empty = create_ None
     let (|Unpack|) (token : StreamToken) : Position option = let t = unbox<Token> token.value in t.pos
@@ -1126,8 +1132,8 @@ type internal StoreClient(container : Container, fallback : Container option, qu
     member _.Sync(log, stream, pos, exp, n' : int64, eventsEncoded, unfoldsEncoded) : Async<InternalSyncResult> = async {
         match! Sync.handle log (tip.MaxEvents, tip.MaxBytes, enc) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded) with
         | Sync.Result.ConflictUnknown -> return InternalSyncResult.ConflictUnknown
-        | Sync.Result.Written (etag', events, unfolds) ->
-            return InternalSyncResult.Written (Token.create (Position.fromElements (stream, n', events, unfolds, etag'))) }
+        | Sync.Result.Written (etag', b', events, unfolds) ->
+            return InternalSyncResult.Written (Token.create (Position.fromElements (stream, b', n', events, unfolds, etag'))) }
 
     member _.Prune(log, stream, index) =
         Prune.until log (container, stream) query.MaxItems index
@@ -1261,7 +1267,6 @@ type DynamoStoreClient
         let tableName, streamName = categoryAndStreamIdToTableAndStreamNames (categoryName, streamId)
         let fallbackTableName = primaryTableToSecondary tableName
         createContainer tableName, createFallbackContainer fallbackTableName, streamName
-
     /// Connect to an Equinox.DynamoStore in the specified Table
     /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the archive where that is provided
     static member Connect(client, tableName : string, [<O; D null>] ?archiveTableName, [<O; D null>] ?mode : ConnectMode) : Async<DynamoStoreClient> = async {

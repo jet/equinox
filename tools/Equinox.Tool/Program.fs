@@ -482,7 +482,7 @@ module Dump =
                  with e -> log.Warning(e, "UTF-8 Parse failure - use --Blobs option to inhibit"); reraise()
         let readStream (streamName : FsCodec.StreamName) = async {
             let stream = cat.Resolve(idCodec, fold, initial, isOriginAndSnapshot) streamName
-            let! _token, events = stream.Load(storeLog, allowStale = false)
+            let! token, events = stream.Load(storeLog, allowStale = false)
             let mutable prevTs = None
             for x in events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
                 let ty, render = if x.IsUnfold then "U", render formatUnfolds else "E", render formatEvents
@@ -499,7 +499,8 @@ module Dump =
                 if not doC then log.Information("{i,4}@{t:u}+{d,9} {u:l} {e:l} {data:l} {meta:l}",
                                     x.Index, x.Timestamp, interval, ty, x.EventType, render x.Data, render x.Meta)
                 else log.Information("{i,4}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
-                         x.Index, x.Timestamp, interval, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta) }
+                         x.Index, x.Timestamp, interval, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta)
+            match token.streamBytes with -1L -> () | x -> log.Information("ISyncContext.StreamEventBytes {kib:n1}KiB", float x / 1024.) }
         streams
         |> Seq.map readStream
         |> Async.Parallel
