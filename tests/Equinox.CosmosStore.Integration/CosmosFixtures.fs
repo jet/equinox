@@ -19,7 +19,7 @@ let discoverConnection () =
 let createClient (log : Serilog.ILogger) name serviceUrl =
     // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html#docker for details of how to deploy a simulator instance
     let clientConfig = AmazonDynamoDBConfig(ServiceURL = serviceUrl)
-    log.Information("DynamoDB Connecting {name} to {endpoint}", name, serviceUrl)
+    log.Information("DynamoStore {name} {endpoint}", name, serviceUrl)
     // Credentials are not validated if connecting to local instance so anything will do (this avoids it looking for profiles to be configured)
     let credentials = Amazon.Runtime.BasicAWSCredentials("A", "A")
     new AmazonDynamoDBClient(credentials, clientConfig) :> IAmazonDynamoDB

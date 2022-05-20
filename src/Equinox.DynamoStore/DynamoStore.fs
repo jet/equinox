@@ -254,8 +254,10 @@ module Log =
         /// Charges are rolled up into Query Metric (so do not double count)
         | QueryResponse of Direction * Measurement
 
-        | SyncSuccess of Measurement
-        | SyncConflict of Measurement
+        | SyncAppend of Measurement
+        | SyncCalve of Measurement
+        | SyncAppendConflict of Measurement
+        | SyncCalveConflict of Measurement
 
         /// Summarizes outcome of request to trim batches from head of a stream and events in Tip
         /// count in Measurement is number of batches (documents) deleted
@@ -285,7 +287,7 @@ module Log =
         | true, SerilogScalar (:? Metric as e) -> Some e
         | _ -> None
     [<RequireQualifiedAccess>]
-    type Operation = Tip | Tip404 | Tip304 | Query | Write | Conflict | Prune | Delete | Trim
+    type Operation = Tip | Tip404 | Tip304 | Query | Append | Calve | AppendConflict | CalveConflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
         | Metric.Tip s                        -> Op (Operation.Tip, s)
         | Metric.TipNotFound s                -> Op (Operation.Tip404, s)
@@ -294,8 +296,10 @@ module Log =
         | Metric.Query (_, _, s)              -> Op (Operation.Query, s)
         | Metric.QueryResponse (direction, s) -> QueryRes (direction, s)
 
-        | Metric.SyncSuccess s                -> Op (Operation.Write, s)
-        | Metric.SyncConflict s               -> Op (Operation.Conflict, s)
+        | Metric.SyncAppend s                 -> Op (Operation.Append, s)
+        | Metric.SyncCalve s                  -> Op (Operation.Calve, s)
+        | Metric.SyncAppendConflict s         -> Op (Operation.AppendConflict, s)
+        | Metric.SyncCalveConflict s          -> Op (Operation.CalveConflict, s)
 
         | Metric.Prune (_, s)                 -> Op (Operation.Prune, s)
         | Metric.PruneResponse s              -> PruneRes s
@@ -321,9 +325,12 @@ module Log =
                  member _.TryTable table = match tables.TryGetValue table with true, t -> Some t | false, _ -> None
             type Epoch() =
                 let epoch = System.Diagnostics.Stopwatch.StartNew()
-                member val internal Read = Counters() with get, set
-                member val internal Write = Counters() with get, set
-                member val internal Conflict = Counters() with get, set
+                member val internal Tip = Counters() with get, set
+                member val internal Query = Counters() with get, set
+                member val internal Append = Counters() with get, set
+                member val internal Calve = Counters() with get, set
+                member val internal Append409 = Counters() with get, set
+                member val internal Calve409 = Counters() with get, set
                 member val internal Prune = Counters() with get, set
                 member val internal Delete = Counters() with get, set
                 member val internal Trim = Counters() with get, set
@@ -342,11 +349,14 @@ module Log =
                         match logEvent with
                         | MetricEvent cm ->
                             match cm with
-                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304 | Operation.Query), TableMsRu m)  ->
-                                                                                epoch.Read.Ingest m
+                            | Op ((Operation.Tip | Operation.Tip404 | Operation.Tip304), TableMsRu m)  ->
+                                                                                epoch.Tip.Ingest m
+                            | Op (Operation.Query, TableMsRu m)  ->             epoch.Query.Ingest m
                             | QueryRes (_direction,          _)        ->       ()
-                            | Op (Operation.Write,            TableMsRu m)  ->  epoch.Write.Ingest m
-                            | Op (Operation.Conflict,         TableMsRu m)  ->  epoch.Conflict.Ingest m
+                            | Op (Operation.Append,           TableMsRu m)  ->  epoch.Append.Ingest m
+                            | Op (Operation.Calve,            TableMsRu m)  ->  epoch.Calve.Ingest m
+                            | Op (Operation.AppendConflict,   TableMsRu m) ->   epoch.Append409.Ingest m
+                            | Op (Operation.CalveConflict,    TableMsRu m)  ->  epoch.Calve409.Ingest m
                             | Op (Operation.Prune,            TableMsRu m)  ->  epoch.Prune.Ingest m
                             | PruneRes                        _        ->       ()
                             | Op (Operation.Delete,           TableMsRu m)  ->  epoch.Delete.Ingest m
@@ -358,19 +368,23 @@ module Log =
         let dump (log : ILogger) =
             let res = Stats.LogSink.Restart()
             let stats =
-              [ "Read", res.Read
-                "Write", res.Write
-                "Conflict", res.Conflict
-                "Prune", res.Prune
-                "Delete", res.Delete
-                "Trim", res.Trim ]
+              [ nameof res.Tip,       res.Tip
+                nameof res.Query,     res.Query
+                nameof res.Append,    res.Append
+                nameof res.Append409, res.Append409
+                nameof res.Calve,     res.Calve
+                nameof res.Calve409,  res.Calve409
+                nameof res.Prune,     res.Prune
+                nameof res.Delete,    res.Delete
+                nameof res.Trim,      res.Trim ]
             for table in stats |> Seq.collect (fun (_n, stat) -> stat.Tables) |> Seq.distinct |> Seq.toArray do
                 let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
                 let logActivity name count ru lat =
                     let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
-                    let rut = match name with "TOTAL" -> "" | "Read" | "Prune" -> totalRRu <- totalRRu + ru; "R" | _ -> totalWRu <- totalWRu + ru; "W"
-                    log.Information("{table} {name}: {count:n0} requests costing {ru:n0}{rut:l}RU (average: {avgRu:n1}); Average latency: {lat:n0}ms",
-                                    table, name, count, ru, rut, aru, ams)
+                    let rut = name |> function
+                        | "TOTAL" -> "" | nameof res.Tip | nameof res.Query | nameof res.Prune -> totalRRu <- totalRRu + ru; "R"
+                        | _ ->                                                                    totalWRu <- totalWRu + ru; "W"
+                    log.Information("{table} {name}: {count:n0}r {ru:n0}{rut:l}CU Average {avgRu:n1}CU {lat:n0}ms", table, name, count, ru, rut, aru, ams)
                 for name, stat in stats do
                     match stat.TryTable table with
                     | Some stat when stat.count <> 0L ->
@@ -382,7 +396,7 @@ module Log =
                     | _ -> ()
                 if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
                 let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
-                let logPeriodicRate name count rru wru = log.Information("rp{name} {count:n0} = ~{rru:n1}R/{wru:n1}W RU", name, count, rru, wru)
+                let logPeriodicRate name count rru wru = log.Information("{table} {rru:n1}R/{wru:n1}W CU @ {count:n0} rp{unit}", table, rru, wru, count, name)
                 for uom, f in measures do let d = f res.Elapsed in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
 module Initialization =
@@ -502,92 +516,103 @@ module internal Position =
 
 module internal Sync =
 
-    [<RequireQualifiedAccess>]
-    type internal Exp =
-        | Version of int64
-        | Etag of string
-
-    let private cce (ce : Quotations.Expr<Batch.Schema -> bool>) = template.PrecomputeConditionalExpr ce
-    let private cue (ue : Quotations.Expr<Batch.Schema -> Batch.Schema>) = template.PrecomputeUpdateExpr ue
-    let private batchDoesNotExistCondition = cce <@ fun t -> NOT_EXISTS t.i @>
-    let private putItemIfNotExists item = TransactWrite.Put (item, Some batchDoesNotExistCondition)
-    let private updateTip stream updater cond = TransactWrite.Update (Batch.tableKeyForStreamTip stream, Some (cce cond), cue updater)
-
-    let private generateRequests (stream : string) (tipEmpty, exp, n', calve : Event array, append : Event array, u, eventCount) etag'
-        : TransactWrite<Batch.Schema> list =
-        let u = Batch.unfoldsToSchema u
-        let tipEventCount = append.LongLength
-        let tipIndex = n' - tipEventCount
-        let appA = min eventCount append.Length
-        let insertCalf () =
-            let calfEventCount = calve.LongLength
-            let calfC, calfE = Batch.eventsToSchema calve
-            let calveA = eventCount - appA
-            putItemIfNotExists { p = stream; i = tipIndex - calfEventCount; n = tipIndex; a = calveA; c = calfC; e = calfE; etag = None; u = [||] }
-        let appC, appE = Batch.eventsToSchema append
-        let insertFreshTip () =
-            putItemIfNotExists { p = stream; i = Batch.tipMagicI; n = n'; a = appA; c = appC; e = appE; etag = Some etag'; u = u }
-        let updateTipIf condExpr =
-            let updExpr : Quotations.Expr<Batch.Schema -> Batch.Schema> =
-                // TOCONSIDER figure out whether there is a way to stop DDB choking on the Array.append below when its empty instead of this special casing
-                if calve.Length <> 0 || (tipEmpty && tipEventCount <> 0) then
-                     <@ fun t -> { t with a = appA; c = appC; e = appE; n = n'
-                                          etag = Some etag'; u = u } @>
-                elif tipEventCount <> 0 then
-                     <@ fun t -> { t with a = appA; c = Array.append t.c appC; e = Array.append t.e appE; n = t.n + tipEventCount
-                                          etag = Some etag'; u = u } @>
-                else <@ fun t -> { t with etag = Some etag'; u = u } @>
-            updateTip stream updExpr condExpr
-        [   if calve.Length > 0 then
-                insertCalf ()
-            match exp with
-            | Exp.Version 0L | Exp.Etag null -> insertFreshTip ()
-            | Exp.Etag etag ->                  updateTipIf <@ fun t -> t.etag = Some etag @>
-            | Exp.Version ver ->                updateTipIf <@ fun t -> t.n = ver @> ]
-
-    [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type private TransactResult =
-        | Written of etag' : string
-        | ConflictUnknown
-
     let private (|DynamoDbConflict|_|) : exn -> _ = function
         | Precondition.CheckFailed
         | TransactWriteItemsRequest.TransactionCanceledConditionalCheckFailed -> Some ()
         | _ -> None
-    let private transact (container : Container, stream : string) (tipEmpty, exp, n', calve, append, unfolds, eventCount)
-        : Async<struct (RequestConsumption * TransactResult)> = async {
+
+    let private cce : Quotations.Expr<Batch.Schema -> bool> -> ConditionExpression<Batch.Schema> = template.PrecomputeConditionalExpr
+    let private cue (ue : Quotations.Expr<Batch.Schema -> Batch.Schema>) = template.PrecomputeUpdateExpr ue
+
+    let private batchDoesNotExistCondition =    cce <@ fun t -> NOT_EXISTS t.i @>
+    let private putItemIfNotExists item =       TransactWrite.Put (item, Some batchDoesNotExistCondition)
+
+    let private updateTip stream updater cond = TransactWrite.Update (Batch.tableKeyForStreamTip stream, Some (cce cond), cue updater)
+
+    [<RequireQualifiedAccess; NoComparison; NoEquality>]
+    type Req =
+        | Append of tipWasEmpty : bool * events : Event array
+        | Calve  of calfEvents : Event array * updatedTipEvents : Event array * appendedCount : int
+    [<RequireQualifiedAccess>]
+    type internal Exp =
+        | Version of int64
+        | Etag of string
+    let private generateRequests (stream : string) (req, u, exp, n') etag'
+        : TransactWrite<Batch.Schema> list =
+        let u = Batch.unfoldsToSchema u
+        // TOCONSIDER figure out way to remove special casing (replaceTipEvents): Array.append to empty e/c triggers exception
+        let replaceTipEvents, tipA, (tipC, tipE), (maybeCalf : Batch.Schema option) =
+            match req with
+            | Req.Append (tipWasEmpty, eventsToAppendToTip) ->
+                let replaceTipEvents = tipWasEmpty && eventsToAppendToTip.Length <> 0
+                replaceTipEvents, eventsToAppendToTip.Length, Batch.eventsToSchema eventsToAppendToTip, None
+            | Req.Calve (calf, tipUpdatedEvents, freshEventsCount) ->
+                let tipA = min tipUpdatedEvents.Length freshEventsCount
+                let calf : Batch.Schema =
+                    let calfA = freshEventsCount - tipA
+                    let calfC, calfE = Batch.eventsToSchema calf
+                    let tipIndex = n' - tipUpdatedEvents.LongLength
+                    let calfIndex = tipIndex - calf.LongLength
+                    { p = stream; i = calfIndex; a = calfA; etag = None; u = [||]; c = calfC; e = calfE; n = tipIndex }
+                true, tipA, (Batch.eventsToSchema tipUpdatedEvents), Some calf
+        let genFreshTipItem () : Batch.Schema =
+            { p = stream; i = Batch.tipMagicI; a = tipA; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC }
+        let updateTipIf condExpr =
+            let updExpr : Quotations.Expr<Batch.Schema -> Batch.Schema> =
+                if replaceTipEvents  then <@ fun t -> { t with a = tipA; etag = Some etag'; u = u; n = n'; e = tipE; c = tipC } @>
+                elif tipE.Length = 0 then <@ fun t -> { t with a = 0;    etag = Some etag'; u = u } @>
+                else                      <@ fun t -> { t with a = tipA; etag = Some etag'; u = u; n = n'; e = Array.append t.e tipE; c = Array.append t.c tipC } @>
+            updateTip stream updExpr condExpr
+        [   match maybeCalf with
+            | Some calfItem ->                 putItemIfNotExists calfItem
+            | None ->                          ()
+            match exp with
+            | Exp.Version 0L| Exp.Etag null -> putItemIfNotExists (genFreshTipItem ())
+            | Exp.Etag etag ->                 updateTipIf <@ fun t -> t.etag = Some etag @>
+            | Exp.Version ver ->               updateTipIf <@ fun t -> t.n = ver @> ]
+
+    [<RequireQualifiedAccess; NoEquality; NoComparison>]
+    type private Res =
+        | Written of etag' : string
+        | ConflictUnknown
+    let private transact (container : Container, stream : string) requestArgs : Async<struct (RequestConsumption * Res)> = async {
         let etag' = let g = Guid.NewGuid() in g.ToString "N"
-        let actions = generateRequests stream (tipEmpty, exp, n', calve, append, unfolds, eventCount) etag'
+        let actions = generateRequests stream requestArgs etag'
         let rm = Metrics()
         try do! let context = container.Context(rm.Add)
                 match actions with
                 | [ TransactWrite.Put (item, Some cond) ] -> context.PutItemAsync(item, cond) |> Async.Ignore
                 | [ TransactWrite.Update (key, Some cond, updateExpr) ] -> context.UpdateItemAsync(key, updateExpr, cond) |> Async.Ignore
                 | actions -> context.TransactWriteItems actions
-            return rm.Consumed, TransactResult.Written etag'
+            return rm.Consumed, Res.Written etag'
         with DynamoDbConflict ->
-            return rm.Consumed, TransactResult.ConflictUnknown }
+            return rm.Consumed, Res.ConflictUnknown }
 
-    let private transactLogged (container, stream) (tipBaseSize, tipEvents, tipEmpty, exp : Exp, n', calve, append, unfolds, eventCount) (log : ILogger)
-        : Async<TransactResult> = async {
-        let! t, ({ total = ru } as rc, result) = transact (container, stream) (tipEmpty, exp, n', calve, append, unfolds, eventCount) |> Stopwatch.Time
-        let calveBytes, tipBytes = Event.arrayBytes calve, Event.arrayBytes append + Unfold.arrayBytes unfolds
-        let unfoldsCount = Array.length unfolds
-        let log =
-            let reqMetric = Log.metric container.TableName stream t (calveBytes + tipBytes) (eventCount + unfoldsCount) rc
-            log
-            |> match exp with
-                | Exp.Etag et ->            Log.prop "expectedEtag" et
-                | Exp.Version ev ->         Log.prop "expectedVersion" ev
-            |> match result with
-                | TransactResult.Written etag' ->
-                                            Log.prop "nextPos" n' >> Log.prop "nextEtag" etag' >> Log.event (Log.Metric.SyncSuccess reqMetric)
-                | TransactResult.ConflictUnknown ->
-                                            Log.prop "conflict" true
-                                            >> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in append -> x.c }))
-                                            >> Log.event (Log.Metric.SyncConflict reqMetric)
-        log.Information("EqxDynamo {action:l} {stream:l} {events}e {ms:f1}ms {ru}RU Tip {tipBase}+{tipBytes}b {tipEvents}e {tipUnfolds}u Calf {calveBytes}b {calveEvents}e {exp:l}",
-                        "Sync", stream, eventCount, Log.tms t, ru, tipBaseSize, tipBytes, tipEvents, unfoldsCount, calveBytes, calve.Length, exp)
+    let private transactLogged (container, stream) (baseBytes, baseEvents, req, unfolds, exp, n') (log : ILogger)
+        : Async<Res> = async {
+        let! t, ({ total = ru } as rc, result) = transact (container, stream) (req, unfolds, exp, n') |> Stopwatch.Time
+        let calfBytes, calfCount, tipBytes, tipEvents, appended = req |> function
+            | Req.Append (_tipWasEmpty, appends) ->   0, 0, baseBytes + Event.arrayBytes appends, baseEvents + appends.Length, appends
+            | Req.Calve (calf, tip, appendedCount) -> Event.arrayBytes calf, calf.Length, Event.arrayBytes tip, tip.Length,
+                                                      Seq.append calf tip |> Seq.skip (calf.Length + tip.Length - appendedCount) |> Seq.toArray
+        let exp, log = exp |> function
+            | Exp.Etag etag ->  "e="+etag,       log |> Log.prop "expectedEtag" etag
+            | Exp.Version ev -> "v="+string ev,  log |> Log.prop "expectedVersion" ev
+        let outcome, log =
+            let reqMetric = Log.metric container.TableName stream t (calfBytes + tipBytes) (appended.Length + unfolds.Length) rc
+            match result with
+            | Res.Written etag' -> "OK",         log |> Log.event ((if calfBytes = 0 then Log.Metric.SyncAppend else Log.Metric.SyncCalve) reqMetric)
+                                                     |> Log.prop "nextPos" n'
+                                                     |> Log.prop "nextEtag" etag'
+            | Res.ConflictUnknown -> "Conflict", log |> Log.event ((if calfBytes = 0 then Log.Metric.SyncAppendConflict else Log.Metric.SyncCalveConflict) reqMetric)
+                                                     |> Log.prop "conflict" true
+                                                     |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in appended -> x.c }))
+        let appendedBytes, unfoldsBytes = Event.arrayBytes appended, Unfold.arrayBytes unfolds
+        if calfBytes <> 0 then
+             log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Tip {baseE}->{tipE}e-> {baseB}->{tipB}b Unfolds {unfolds} {unfoldsBytes}b Calf {calfEvents} {calfBytes}b",
+                             "Sync", "Calve",  outcome, stream, exp, Log.tms t, ru, appended.Length, appendedBytes, baseEvents, tipEvents, baseBytes, tipBytes, unfolds.Length, unfoldsBytes, calfCount, calfBytes)
+        else log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Events {events} {tipB}b Unfolds {unfolds} {unfoldsB}b",
+                             "Sync", "Append", outcome, stream, exp, Log.tms t, ru, appended.Length, appendedBytes, tipEvents, tipBytes, unfolds.Length, unfoldsBytes)
         return result }
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -608,7 +633,7 @@ module internal Sync =
                 c = x.EventType; d = eo.EncodeUnfoldData x.Data; m = eo.EncodeUnfoldMeta x.Meta })
         if Array.isEmpty events && Array.isEmpty unfolds then invalidOp "Must write either events or unfolds."
         let cur = Position.flatten pos
-        let calfEvents, tipOrAppendEvents, tipEvents' =
+        let req, tipEvents' =
             let eventOverflow = maxEvents |> Option.exists (fun limit -> events.Length + cur.events.Length > limit)
             if eventOverflow || cur.baseBytes + Unfold.arrayBytes unfolds + Event.arrayBytes events > maxBytes then
                 let calfEvents, residualEvents = ResizeArray(cur.events.Length + events.Length), ResizeArray()
@@ -617,13 +642,13 @@ module internal Sync =
                     match calfFull, calfSize + Event.bytes e with
                     | false, calfSize' when calfSize' < maxDynamoDbItemSize -> calfSize <- calfSize'; calfEvents.Add e
                     | _ -> calfFull <- true; residualEvents.Add e
+                let calfEvents = calfEvents.ToArray()
                 let tipEvents = residualEvents.ToArray()
-                calfEvents.ToArray(), tipEvents, tipEvents
-            else Array.empty, events, Array.append cur.events events
-        let tipEmpty, eventCount = Array.isEmpty cur.events, Array.length events
-        match! transactLogged (container, stream) (cur.baseBytes, tipEvents'.Length, tipEmpty, exp pos, n', calfEvents, tipOrAppendEvents, unfolds, eventCount) log with
-        | TransactResult.ConflictUnknown -> return Result.ConflictUnknown
-        | TransactResult.Written etag' -> return Result.Written (etag', tipEvents', unfolds) }
+                Req.Calve (calfEvents, tipEvents, events.Length), tipEvents
+            else Req.Append (Array.isEmpty cur.events, events), Array.append cur.events events
+        match! transactLogged (container, stream) (cur.baseBytes, cur.events.Length, req, unfolds, exp pos, n') log with
+        | Res.ConflictUnknown -> return Result.ConflictUnknown
+        | Res.Written etag' -> return Result.Written (etag', tipEvents', unfolds) }
 
 module internal Tip =
 
@@ -643,16 +668,16 @@ module internal Tip =
         let logMetric bytes count (f : Log.Measurement -> _) = log |> Log.event (f (Log.metric container.TableName stream t bytes count rc))
         match res with
         | Res.NotModified ->
-            (logMetric 0 0 Log.Metric.TipNotModified).Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU", "Tip", stream, 304, Log.tms t, ru)
+            (logMetric 0 0 Log.Metric.TipNotModified).Information("EqxDynamo {action:l} {res} {stream:l} {ms:f1}ms {ru}RU", "Tip", 304, stream, Log.tms t, ru)
         | Res.NotFound ->
-            (logMetric 0 0 Log.Metric.TipNotFound).Information("EqxDynamo {action:l} {stream:l} {res} {ms:f1}ms {ru}RU", "Tip", stream, 404, Log.tms t, ru)
+            (logMetric 0 0 Log.Metric.TipNotFound).Information("EqxDynamo {action:l} {res} {stream:l} {ms:f1}ms {ru}RU", "Tip", 404, stream, Log.tms t, ru)
         | Res.Found tip ->
             let eventsCount, unfoldsCount, bb, ub = tip.e.Length, tip.u.Length, Batch.bytesBase tip, Batch.bytesUnfolds tip
             let log = logMetric (bb + ub) (eventsCount + unfoldsCount) Log.Metric.Tip
             let log = match maybePos with Some p -> log |> Log.prop "startPos" p |> Log.prop "startEtag" p | None -> log
             let log = log |> Log.prop "etag" tip.etag //|> Log.prop "n" tip.n
-            log.Information("EqxDynamo {action:l} {stream:l} v{n} {res} {ms:f1}ms {ru}RU {events}e {unfolds}u {baseBytes}+{unfoldsBytes}b",
-                            "Tip", stream, tip.n, 200, Log.tms t, ru, eventsCount, unfoldsCount, bb, ub)
+            log.Information("EqxDynamo {action:l} {res} {stream:l} v{n} {ms:f1}ms {ru}RU {events}e {unfolds}u {baseBytes}+{unfoldsBytes}b",
+                            "Tip", 200, stream, tip.n, Log.tms t, ru, eventsCount, unfoldsCount, bb, ub)
         return ru, res }
     let private enumEventsAndUnfolds (minIndex, maxIndex) (x : Batch) : ITimelineEvent<EncodedBody> array =
         Seq.append<ITimelineEvent<_>> (Batch.enumEvents (minIndex, maxIndex) x |> Seq.cast) (x.u |> Seq.cast)
@@ -977,7 +1002,9 @@ module internal Prune =
 type [<NoComparison; NoEquality>] Token = { pos : Position option }
 module Token =
 
-    let create_ pos : StreamToken = { value = box { pos = pos }; version = Position.toIndex pos }
+    let create_ pos : StreamToken =
+        let v = Position.toIndex pos
+        { value = box { pos = pos }; version = v }
     let create : Position -> StreamToken = Some >> create_
     let empty = create_ None
     let (|Unpack|) (token : StreamToken) : Position option = let t = unbox<Token> token.value in t.pos
@@ -1176,12 +1203,12 @@ open System
 /// Manages Creation and configuration of an IAmazonDynamoDB connection
 type DynamoStoreConnector(credentials : Amazon.Runtime.AWSCredentials, clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig) =
 
-    /// maxRetries. AWS SDK Default: 10
     /// timeout. AWS SDK Default: 100s
-    new (serviceUrl, accessKey, secretKey, retries, timeout) =
+    /// maxRetries. AWS SDK Default: 10
+    new (serviceUrl, accessKey, secretKey, timeout, retries) =
         let credentials = Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey)
         let mode, r, t = Amazon.Runtime.RequestRetryMode.Standard, retries, timeout
-        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = mode, MaxErrorRetry = r, Timeout = t)
+        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = mode, MaxErrorRetry = r, Timeout = Nullable t)
         DynamoStoreConnector(credentials, clientConfig)
 
     member _.Options = clientConfig
@@ -1210,12 +1237,14 @@ module internal ConnectMode =
 
 /// Holds all relevant state for a Store. There should be a single one of these per process.
 type DynamoStoreClient
-    (   // Facilitates custom mapping of Stream Category Name to underlying Table and Stream names
+    (   tableName,
+        // Facilitates custom mapping of Stream Category Name to underlying Table and Stream names
         categoryAndStreamIdToTableAndStreamNames : string * string -> string * string,
         createContainer : string -> Container,
         createFallbackContainer : string -> Container option,
         [<O; D null>] ?primaryTableToArchive : string -> string) =
     let primaryTableToSecondary = defaultArg primaryTableToArchive id
+    member val TableName = tableName
     new(    client : Amazon.DynamoDBv2.IAmazonDynamoDB, tableName : string,
             // Table name to use for archive store. Default: (if <c>archiveClient</c> specified) use same <c>tableName</c> but via <c>archiveClient</c>.
             [<O; D null>] ?archiveTableName,
@@ -1227,7 +1256,7 @@ type DynamoStoreClient
         let fallbackContainer =
             if Option.isNone archiveClient && Option.isNone archiveTableName then fun _ -> None
             else fun t -> Some (Container.Create(defaultArg archiveClient client, defaultArg archiveTableName t))
-        DynamoStoreClient(catAndStreamToTableStream, primaryContainer, fallbackContainer)
+        DynamoStoreClient(tableName, catAndStreamToTableStream, primaryContainer, fallbackContainer)
     member internal _.ResolveContainerFallbackAndStreamName(categoryName, streamId) : Container * Container option * string =
         let tableName, streamName = categoryAndStreamIdToTableAndStreamNames (categoryName, streamId)
         let fallbackTableName = primaryTableToSecondary tableName

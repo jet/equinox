@@ -43,11 +43,14 @@ module SerilogHelpers =
         | Metric.QueryResponse (Direction.Forward, _) -> EqxAct.ResponseForward
         | Metric.QueryResponse (Direction.Backward, _) -> EqxAct.ResponseBackward
 
+#if STORE_DYNAMO
+        | Metric.SyncAppend _ | Metric.SyncCalve _ -> EqxAct.Append
+        | Metric.SyncAppendConflict _ | Metric.SyncCalveConflict _ -> EqxAct.Conflict
+#else
         | Metric.SyncSuccess _ -> EqxAct.Append
-#if !STORE_DYNAMO
         | Metric.SyncResync _ -> EqxAct.Resync
-#endif
         | Metric.SyncConflict _ -> EqxAct.Conflict
+#endif
 
         | Metric.Prune _ -> EqxAct.Prune
         | Metric.PruneResponse _ -> EqxAct.PruneResponse
@@ -65,9 +68,12 @@ module SerilogHelpers =
         | Metric.Query (_, _, s) -> Load s
         | Metric.QueryResponse (_, s) -> Response s
 
+#if STORE_DYNAMO
+        | Metric.SyncAppend s | Metric.SyncCalve s
+        | Metric.SyncCalveConflict s | Metric.SyncAppendConflict s -> Write s
+#else
         | Metric.SyncSuccess s
         | Metric.SyncConflict s -> Write s
-#if !STORE_DYNAMO
         | Metric.SyncResync s -> Resync s
 #endif
 

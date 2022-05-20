@@ -197,7 +197,7 @@ and [<NoComparison; NoEquality>]TestArguments =
             | ReportIntervalS _ ->          "specify reporting intervals in seconds (default: 10)."
             | Es _ ->                       "Run transactions in-process against EventStore."
             | Cosmos _ ->                   "Run transactions in-process against CosmosDB."
-            | Dynamo _ ->                   "Run transactions in-process against DynamoDb."
+            | Dynamo _ ->                   "Run transactions in-process against DynamoDB."
             | Memory _ ->                   "target in-process Transient Memory Store (Default if not other target specified)."
             | MsSql _ ->                    "Run transactions in-process against Sql Server."
             | MySql _ ->                    "Run transactions in-process against MySql."
@@ -506,7 +506,7 @@ module Dump =
         |> Async.Ignore<unit[]>
         |> Async.RunSynchronously
 
-        log.Information("Total Payload {kib:n1}KiB", float payloadBytes / 1024.)
+        log.Information("Total Event Bodies Payload {kib:n1}KiB", float payloadBytes / 1024.)
         if verboseConsole then
             dumpStats (Some storeConfig) log
 

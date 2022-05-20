@@ -164,7 +164,7 @@ module Dynamo =
         let secretKey =                 args.TryGetResult SecretKey  |> defaultWithEnvVar SECRET_KEY    "SecretKey"
         let retries =                   args.GetResult(Retries, 1)
         let timeout =                   args.GetResult(RetriesTimeoutS, 5.) |> TimeSpan.FromSeconds
-        member val Connector =          DynamoStoreConnector(serviceUrl, accessKey, secretKey, retries, timeout)
+        member val Connector =          DynamoStoreConnector(serviceUrl, accessKey, secretKey, timeout, retries)
 
         member val Table =              args.TryGetResult Table      |> defaultWithEnvVar TABLE         "Table"
         member val ArchiveTable =       args.TryGetResult ArchiveTable
@@ -174,7 +174,7 @@ module Dynamo =
         member x.QueryMaxItems =        args.GetResult(QueryMaxItems, 10)
 
     let logTable (log: ILogger) endpoint role table =
-        log.Information("DynamoDB {name:l} {endpoint} Table {table}", role, endpoint, table)
+        log.Information("DynamoStore {name:l} {endpoint} Table {table}", role, endpoint, table)
     let createStoreClient (log : ILogger) (a : Info) =
         let client = a.Connector.CreateClient()
         let storeClient = DynamoStoreClient(client, a.Table, ?archiveTableName = a.ArchiveTable)
@@ -183,7 +183,7 @@ module Dynamo =
         storeClient
     let config (log : ILogger) (cache, unfolds) (a : Info) =
         let storeClient = createStoreClient log a
-        log.Information("DynamoStore Max Events in Tip: {maxTipBytes}b {maxTipEvents}e Query Limit: {queryMaxItems} items",
+        log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
                         a.TipMaxBytes, a.TipMaxEvents, a.QueryMaxItems)
         let context = DynamoStoreContext(storeClient, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems, ?tipMaxEvents = a.TipMaxEvents)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching

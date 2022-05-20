@@ -9,8 +9,10 @@ open System.Threading.Tasks
 type OAttribute = System.Runtime.InteropServices.OptionalAttribute
 type DAttribute = System.Runtime.InteropServices.DefaultParameterValueAttribute
 
-// http://www.fssnip.net/7Rc/title/AsyncAwaitTaskCorrect pending that being officially packaged somewhere or integrated into FSharp.Core
+// Direct copy of canonical implementation at http://www.fssnip.net/7Rc/title/AsyncAwaitTaskCorrect
+// pending that being officially packaged somewhere or integrated into FSharp.Core https://github.com/fsharp/fslang-suggestions/issues/840
 type Async with
+
     /// <summary>
     ///     Gets the result of given task so that in the event of exception
     ///     the actual user exception is raised as opposed to being wrapped

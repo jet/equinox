@@ -751,7 +751,7 @@ The secondary benefit is of course that you have an absolute guarantee there wil
 
 `Equinox.SqlStreamStore` implements this scheme too - it's easier to do things like e.g. replace the bodies of snapshot events with `nulls` as a maintenance task in that instance
 
-Initially, `Equinox.CosmosStore` implemented the same strategy as the `Equinox.EventStore` (it started as a cut and paste of the it). However the present implementation takes advantage of the fact that in a Document Store, you can ... update documents - thus, snapshots (termed unfolds) are saved in a custom field (it's an array) in the Tip document - every update includes an updated snapshot (which is zipped to save read and write costs) that overwrites the unfolds entirely. You're currently always guaranteed that the snapshots are in sync with the latest event by virtue of how the stored proc writes. The DynamoDb impl follows the same strategy.
+Initially, `Equinox.CosmosStore` implemented the same strategy as the `Equinox.EventStore` (it started as a cut and paste of the it). However the present implementation takes advantage of the fact that in a Document Store, you can ... update documents - thus, snapshots (termed unfolds) are saved in a custom field (it's an array) in the Tip document - every update includes an updated snapshot (which is zipped to save read and write costs) that overwrites the unfolds entirely. You're currently always guaranteed that the snapshots are in sync with the latest event by virtue of how the stored proc writes. The DynamoDB impl follows the same strategy.
 
 I expand (too much!) on some more of the considerations in https://github.com/jet/equinox/blob/master/DOCUMENTATION.md
 

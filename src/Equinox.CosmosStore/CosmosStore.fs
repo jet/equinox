@@ -326,9 +326,10 @@ module Log =
             let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
             let logActivity name count ru lat =
                 let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
-                let rut = match name with "TOTAL" -> "" | "Read" | "Prune" -> totalRRu <- totalRRu + ru; "R" | _ -> totalWRu <- totalWRu + ru; "W"
-                log.Information("{name}: {count:n0} requests costing {ru:n0}{rut:l}RU (average: {avgRu:n1}); Average latency: {lat:n0}ms",
-                    name, count, ru, rut, aru, ams)
+                let rut = name |> function
+                    | "TOTAL" -> "" | "Read" | "Prune" -> totalRRu <- totalRRu + ru; "R"
+                    | _ ->                                totalWRu <- totalWRu + ru; "W"
+                log.Information("{name}: {count:n0}r {ru:n0}{rut:l}RU Average {avgRu:n1}RU {lat:n0}ms", name, count, ru, rut, aru, ams)
             for name, stat in stats do
                 if stat.count <> 0L then
                     let ru = float stat.rux100 / 100.
@@ -340,7 +341,7 @@ module Log =
             let duration = Stats.LogSink.Restart()
             if rows > 1 then logActivity "TOTAL" totalCount (totalRRu + totalWRu) totalMs
             let measures : (string * (TimeSpan -> float)) list = [ "s", fun x -> x.TotalSeconds(*; "m", fun x -> x.TotalMinutes; "h", fun x -> x.TotalHours*) ]
-            let logPeriodicRate name count rru wru = log.Information("rp{name} {count:n0} = ~{rru:n1}R/{wru:n1}W RU", name, count, rru, wru)
+            let logPeriodicRate name count rru wru = log.Information("{rru:n1}R/{wru:n1}W CU @ {count:n0} rp{unit}", rru, wru, count, name)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64) (totalRRu/d) (totalWRu/d)
 
 [<AutoOpen>]
