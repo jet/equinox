@@ -51,6 +51,7 @@ type Decider<'event, 'state>
         { new ISyncContext<'state> with
             member _.State = state
             member _.Version = token.version
+            member _.StreamEventBytes = match token.streamBytes with -1L -> None | b -> Some b
             member _.CreateMemento() = token, state }
 
     /// 1.  Invoke the supplied <c>interpret</c> function with the present state to determine whether any write is to occur.
@@ -151,6 +152,10 @@ and ISyncContext<'state> =
     /// It's important to consider that this Version is more authoritative than counting the events seen, or adding 1 to
     ///   the `Index` of the last event passed to your `fold` function - the codec may opt to ignore events
     abstract member Version : int64
+
+    /// The Storage occupied by the Events written to the underlying stream at the present time.
+    /// Specific stores may vary whether this is available, the basis and preciseness for how it is computed.
+    abstract member StreamEventBytes : int64 option
 
     /// The present State of the stream within the context of this Flow
     abstract member State : 'state

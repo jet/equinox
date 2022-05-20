@@ -46,7 +46,8 @@ type Token = { eventCount : int }
 module private Token =
 
     let private streamTokenOfEventCount (eventCount : int) : StreamToken =
-        { value = box { eventCount = eventCount }; version = int64 eventCount }
+        // TOCONSIDER Could implement streamBytes tracking based on a supplied event size function (store is agnostic to format)
+        { value = box { eventCount = eventCount }; version = int64 eventCount; streamBytes = -1 }
     let (|Unpack|) (token : StreamToken) : int = let t = unbox<Token> token.value in t.eventCount
     /// Represent a stream known to be empty
     let ofEmpty = streamTokenOfEventCount 0

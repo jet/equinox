@@ -322,7 +322,9 @@ module Token =
                 pos = { streamVersion = streamVersion; compactionEventNumber = compactionEventNumber; batchCapacityLimit = batchCapacityLimit } }
             // In this impl, the StreamVersion matches the EventStore StreamVersion in being -1-based
             // Version however is the representation that needs to align with ISyncContext.Version
-            version = streamVersion + 1L }
+            version = streamVersion + 1L
+            // TOCONSIDER Could implement accumulating the size as it's loaded (but should stop counting when it hits the origin event)
+            streamBytes = -1 }
 
     /// No batching / compaction; we only need to retain the StreamVersion
     let ofNonCompacting streamVersion : StreamToken =

@@ -974,7 +974,10 @@ module Prune =
 type [<NoComparison>] Token = { pos : Position }
 module Token =
 
-    let create pos : StreamToken = { value = box { pos = pos }; version = pos.index }
+    // TOCONSIDER Could implement accumulating the streamBytes as it's loaded (but should stop counting when it hits the origin event)
+    //            Should probably be optional as computing the UTF8/16 size from the JsonElement is not cheap
+    //            Alternately, can mirror DynamoStore scheme where the size is maintained in the Tip, and updated as batches are calved
+    let create pos : StreamToken = { value = box { pos = pos }; version = pos.index; streamBytes = -1 }
     let (|Unpack|) (token : StreamToken) : Position = let t = unbox<Token> token.value in t.pos
     let supersedes (Unpack currentPos) (Unpack xPos) =
         let currentVersion, newVersion = currentPos.index, xPos.index
