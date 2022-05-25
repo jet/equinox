@@ -469,7 +469,7 @@ While Equinox is implemented in F#, and F# is a great fit for writing event-sour
 SqlStreamStore is provided in the samples and the `eqx` tool:
 
 - being able to supply `ms`, `my`, `pg` flag to `eqx run`, e.g. `eqx run -t cart -f 50 -d 5 -C -U ms -c "sqlserverconnectionstring" -s schema`
-- being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -CU -s "Favorites-ab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
+- being able to supply `ms`, `my`, `pg` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" ms -c "sqlserverconnectionstring" -s schema`
 - being able to supply `ms`, `my`, `pg` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- my -c "mysqlconnectionstring"`
 - being able to supply `ms`, `my`, `pg` flag to new `eqx config` command e.g. `eqx config pg -c "postgresconnectionstring" -u p "usercredentialsNotToBeLogged" -s schema`
 
@@ -490,7 +490,7 @@ eqx config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 
 # run a benchmark
 eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
-eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionstring" -p "u=un;p=password" -s "schema" # show stored JSON (Guid shown in eqx run output) 
+eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionstring" -p "u=un;p=password" -s "schema" # show stored JSON (Guid shown in eqx run output) 
 ```
 
 <a name="dynamodb"></a>
@@ -498,7 +498,7 @@ eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionst
 
 DynamoDB is supported in the samples and the `eqx` tool equivalent to the CosmosDB support as described:
 - being able to supply `dynamo` source to `eqx run` wherever `cosmos` works, e.g. `eqx run -t cart -f 50 -d 5 -CU dynamo -s http://localhost:8000 -t TableName`
-- being able to supply `dynamo` flag to `eqx dump`, e.g. `eqx dump -CU -s "Favorites-ab25cc9f24464d39939000aeb37ea11a" dynamo`
+- being able to supply `dynamo` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" dynamo`
 - being able to supply `dynamo` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- dynamo -s http://localhost:8000`
 - being able to supply `dynamo` flag to `eqx initAws` command e.g. `eqx initAws -rru 10 -wru 10 dynamo -t TableName`
 
@@ -531,7 +531,7 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
 
     # run a benchmark connecting to the webserver
     eqx run -t saveforlater -f 50 -d 5 -CU web
-    eqx dump -s "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx run output) 
+    eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" dynamo # show stored JSON (Guid shown in eqx run output) 
     ```
 
 ### BENCHMARKS

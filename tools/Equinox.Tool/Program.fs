@@ -108,7 +108,7 @@ and [<NoComparison; NoEquality>]StatsArguments =
             | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and [<NoComparison; NoEquality>]DumpArguments =
-    | [<AltCommandLine "-s">]               Stream of FsCodec.StreamName
+    | [<AltCommandLine "-s"; MainCommand>]  Stream of FsCodec.StreamName
     | [<AltCommandLine "-C"; Unique>]       Correlation
     | [<AltCommandLine "-B"; Unique>]       Blobs
     | [<AltCommandLine "-J"; Unique>]       JsonSkip
