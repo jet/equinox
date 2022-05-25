@@ -10,7 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="3.1.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="4.0.0" PrivateAssets="All" />
 
     <!-- FSharp.AWS.DynamoDB has this as a minimum requirement -->
     <PackageReference Include="FSharp.Core" Version="4.7.2" />
