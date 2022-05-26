@@ -2263,7 +2263,3 @@ rich relative to the need of consumers to date. Some things remain though:
   [#108](https://github.com/jet/equinox/issues/108)
 - low level performance improvements in loading logic (reducing allocations etc)
 - `Propulsion.CosmosStore`: provide a Serverless mode that can be used with Azure Functions to execute batch of projections based on a set of documents from the change feed
-
-## Wouldn't it be nice - `Equinox.DynamoStore`
-
-- See [#76](https://github.com/jet/equinox/issues/76)
