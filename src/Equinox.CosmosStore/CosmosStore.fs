@@ -580,9 +580,8 @@ module Initialization =
         // TL;DR no indexing of any kind; see https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet/issues/142
         cp.IndexingPolicy.Automatic <- false
         cp.IndexingPolicy.IndexingMode <- IndexingMode.None
-    let initAux (client : CosmosClient) (dName, cName) rus = async {
-        // Hardwired for now to be Container level manual provisioning; need to be very far from normal usage to want to vary that
-        let mode = Provisioning.Container (Throughput.Manual rus)
+
+    let initAux (client : CosmosClient) (dName, cName) rus mode = async {
         let! d = createOrProvisionDatabase client dName mode
         return! createOrProvisionContainer d (cName, "/id", applyAuxContainerProperties) mode } // as per Cosmos team, Partition Key must be "/id"
 
