@@ -80,7 +80,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
   - Minimize round trips (pluggable via [`ICache`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/Cache.fs#L22) :pray: [@DSilence](https://github.com/jet/equinox/pull/161)
   - Minimize latency and bandwidth / Request Charges by maintaining the folded state, without making the Domain Model folded state serializable
 - Mature and comprehensive logging (using [Serilog](https://github.com/serilog/serilog) internally), with optimal performance and pluggable integration with your apps hosting context (we ourselves typically feed log info to Splunk and the metrics embedded in the `Serilog.Events.LogEvent` Properties to Prometheus; see relevant tests for examples)
-- **`Equinox.EventStore` In-stream Rolling Snapshots**: 
+- **`Equinox.EventStore` In-stream Rolling Snapshots**:
   - No additional round trips to the store needed at either the Load or Sync points in the flow
   - Support for multiple co-existing compaction schemas for a given stream (A 'compaction' event/snapshot is an Event). This is done by the [`FsCodec.IEventCodec`](https://github.com/jet/FsCodec#IEventCodec)
     - Compaction events typically do not get deleted (consistent with how EventStoreDB works), although it is safe to do so in concept
