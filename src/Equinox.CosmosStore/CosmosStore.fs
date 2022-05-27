@@ -581,7 +581,7 @@ module Initialization =
         cp.IndexingPolicy.Automatic <- false
         cp.IndexingPolicy.IndexingMode <- IndexingMode.None
 
-    let initAux (client : CosmosClient) (dName, cName) rus mode = async {
+    let initAux (client : CosmosClient) (dName, cName) mode = async {
         let! d = createOrProvisionDatabase client dName mode
         return! createOrProvisionContainer d (cName, "/id", applyAuxContainerProperties) mode } // as per Cosmos team, Partition Key must be "/id"
 
