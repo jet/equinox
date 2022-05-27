@@ -29,6 +29,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `Equinox.Tool`/`samples/`: switched to use `Equinox.EventStoreDb` [#196](https://github.com/jet/equinox/pull/196)
 - Update all non-Client dependencies except `FSharp.Core`, `FSharp.Control.AsyncSeq` [#310](https://github.com/jet/equinox/pull/310)
 - Update all Stores to use `FsCodec` v `3.0.0`, with [`EventBody` types switching from `byte[]` to `ReadOnlyMemory<byte>`, see FsCodec#75](https://github.com/jet/FsCodec/pull/75) [#323](https://github.com/jet/equinox/pull/323)
+- `CosmosStore`: Replace the hard-coding in `Equinox.CosmosStore.Core.Initialization.initAux` with an input parameter [#328](https://github.com/jet/equinox/pull/328) 
 
 ### Removed
  
