@@ -25,10 +25,11 @@ module MemoryStore =
 let [<Literal>] appName = "equinox-tool"
 
 exception MissingArg of string
+let missingArg msg = raise (MissingArg msg)
 
 let private getEnvVarForArgumentOrThrow varName argName =
     match Environment.GetEnvironmentVariable varName with
-    | null -> raise (MissingArg(sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName))
+    | null -> missingArg (sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName)
     | x -> x
 let private defaultWithEnvVar varName argName = function
     | None -> getEnvVarForArgumentOrThrow varName argName

@@ -42,29 +42,29 @@ type Arguments =
             | Stats _ ->                    "inspect store to determine numbers of streams/documents/events (supports `cosmos` stores)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality>]InitArguments =
-    | [<AltCommandLine "-ru">]              Rus of int
-    | [<AltCommandLine "-A">]               Autoscale
-    | [<AltCommandLine "-m">]               Mode of CosmosModeType
-    | [<AltCommandLine "-P">]               SkipStoredProc
+    | [<AltCommandLine "-ru"; Unique>]      Rus of int
+    | [<AltCommandLine "-A"; Unique>]       Autoscale
+    | [<AltCommandLine "-m"; Unique>]       Mode of CosmosModeType
+    | [<AltCommandLine "-P"; Unique>]       SkipStoredProc
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Storage.Cosmos.Arguments>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | Rus _ ->                      "Specify RU/s level to provision for the Container (Default: 400 RU/s or 4000 RU/s if autoscaling)."
+            | Rus _ ->                      "Specify RU/s level to provision (Not applicable for Mode=Serverless, Default: 400 RU/s for Container/Database, Default: Max 4000 RU/s for Container/Database when Autoscale specified)."
             | Autoscale ->                  "Autoscale provisioned throughput. Use --rus to specify the maximum RU/s."
             | Mode _ ->                     "Configure RU mode to use Container-level RU, Database-level RU, or Serverless allocations (Default: Use Container-level allocation)."
             | SkipStoredProc ->             "Inhibit creation of stored procedure in specified Container."
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosInitInfo(args : ParseResults<InitArguments>) =
+    let throughput () =
+        if args.Contains Autoscale
+        then CosmosInit.Throughput.Autoscale (args.GetResult(Rus, 4000))
+        else CosmosInit.Throughput.Manual (args.GetResult(Rus, 400))
     member _.ProvisioningMode =
-        let throughput () =
-            if args.Contains Autoscale
-            then CosmosInit.Throughput.Autoscale (args.GetResult(Rus, 4000))
-            else CosmosInit.Throughput.Manual (args.GetResult(Rus, 400))
         match args.GetResult(Mode, CosmosModeType.Container) with
         | CosmosModeType.Container ->       CosmosInit.Provisioning.Container (throughput ())
         | CosmosModeType.Db ->              CosmosInit.Provisioning.Database (throughput ())
         | CosmosModeType.Serverless ->
-            if args.Contains Rus || args.Contains Autoscale then raise (Storage.MissingArg "Cannot specify RU/s or Autoscale in Serverless mode")
+            if args.Contains Rus || args.Contains Autoscale then Storage.missingArg "Cannot specify RU/s or Autoscale in Serverless mode"
             CosmosInit.Provisioning.Serverless
 and [<NoComparison; NoEquality>] TableArguments =
     | [<AltCommandLine "-D">]               OnDemand
@@ -369,8 +369,7 @@ module CosmosInit =
         | Some (InitArguments.Cosmos sargs) ->
             let skipStoredProc = iargs.Contains InitArguments.SkipStoredProc
             let client, dName, cName = connect log sargs
-            let mode = (CosmosInitInfo iargs).ProvisioningMode
-            match mode with
+            match (CosmosInitInfo iargs).ProvisioningMode with
             | CosmosInit.Provisioning.Container ru ->
                 let modeStr = "Container"
                 log.Information("Provisioning `Equinox.CosmosStore` Store at {mode:l} level for {rus:n0} RU/s", modeStr, ru)
@@ -380,7 +379,7 @@ module CosmosInit =
             | CosmosInit.Provisioning.Serverless ->
                 let modeStr = "Serverless"
                 log.Information("Provisioning `Equinox.CosmosStore` Store in {mode:l} mode with automatic RU/s as configured in account", modeStr)
-            return! CosmosInit.init log client (dName, cName) mode skipStoredProc
+            return! CosmosInit.init log client (dName, cName) (CosmosInitInfo iargs).ProvisioningMode skipStoredProc
         | _ -> failwith "please specify a `cosmos` endpoint" }
 
 module DynamoInit =
@@ -531,7 +530,7 @@ let main argv =
                 LoadTest.run log (verbose, verboseConsole, maybeSeq) reportFilename rargs
             | _ -> failwith "Please specify a valid subcommand :- init, initAws, config, dump, stats or run"
             0
-        with e -> log.Debug(e, "Fatal error; exiting"); reraise ()
+        with e when not (e :? Storage.MissingArg) -> Log.Fatal(e, "Exiting"); 2
     with :? ArguParseException as e -> eprintfn "%s" e.Message; 1
         | Storage.MissingArg msg -> eprintfn "%s" msg; 1
         | e -> eprintfn "%s" e.Message; 1
