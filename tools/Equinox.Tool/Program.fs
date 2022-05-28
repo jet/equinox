@@ -3,6 +3,7 @@
 open Argu
 open Domain.Infrastructure
 open Equinox.Tool.Infrastructure
+open FSharp.AWS.DynamoDB // Throughput
 open FSharp.Control
 open FSharp.UMX
 open Microsoft.Extensions.DependencyInjection
@@ -68,24 +69,24 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
         | CosmosModeType.Serverless ->      CosmosInit.Provisioning.Serverless
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
 and [<NoComparison; NoEquality>] TableParameters =
-    | [<AltCommandLine "-D">]               OnDemand
-    | [<AltCommandLine "-S">]               Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
-    | [<AltCommandLine "-rru">]             ReadCu of int64
-    | [<AltCommandLine "-wru">]             WriteCu of int64
-    | [<CliPrefix(CliPrefix.None)>]         Dynamo of ParseResults<Storage.Dynamo.Parameters>
+    | [<AltCommandLine "-D"; Unique>]       OnDemand
+    | [<AltCommandLine "-S"; Unique>]       Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
+    | [<AltCommandLine "-rru"; Unique>]     ReadCu of int64
+    | [<AltCommandLine "-wru"; Unique>]     WriteCu of int64
+    | [<CliPrefix(CliPrefix.None); Last>]   Dynamo of ParseResults<Storage.Dynamo.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
-            | OnDemand ->                   "Specify On-Demand Capacity Mode."
-            | Streaming _ ->                "Specify Streaming Mode. Default NEW_IMAGE"
-            | ReadCu _ ->                   "Specify Read Capacity Units to provision for the Table. (Ignored in On-Demand mode)"
-            | WriteCu _ ->                  "Specify Write Capacity Units to provision for the Table. (Ignored in On-Demand mode)"
+            | OnDemand ->                   "Specify On-Demand Capacity Mode. (Default: Provisioned mode)"
+            | ReadCu _ ->                   "Specify Read Capacity Units to provision for the Table. (Not applicable in On-Demand mode)"
+            | WriteCu _ ->                  "Specify Write Capacity Units to provision for the Table. (Not applicable in On-Demand mode)"
+            | Streaming _ ->                "Specify Streaming Mode. Default: `NEW_IMAGE`"
             | Dynamo _ ->                   "DynamoDB Connection parameters."
 and DynamoInitArguments(p : ParseResults<TableParameters>) =
-    let streaming =                         p.GetResult(Streaming, Equinox.DynamoStore.Core.Initialization.StreamingMode.Default)
-    let onDemand =                          p.Contains OnDemand
-    let readCu =                            p.GetResult ReadCu
-    let writeCu =                           p.GetResult WriteCu
-    member _.ProvisioningMode =             streaming, if onDemand then None else Some (readCu, writeCu)
+    member val StreamingMode =              p.GetResult(Streaming, Equinox.DynamoStore.Core.Initialization.StreamingMode.Default)
+    member val Throughput =                 match p.Contains OnDemand with
+                                            | false -> Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
+                                            | true when p.Contains ReadCu && p.Contains WriteCu -> Storage.missingArg "CUs are not applicable in On-Demand mode"
+                                            | true -> Throughput.OnDemand
 and [<NoComparison; NoEquality>] ConfigParameters =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Parameters>
@@ -362,7 +363,7 @@ module CosmosInit =
     let connect log (p : ParseResults<Storage.Cosmos.Parameters>) =
         Storage.Cosmos.connect log (Storage.Cosmos.Arguments p) |> fst
 
-    let containerAndOrDb log (p : ParseResults<InitParameters>) = async {
+    let containerAndOrDb log (p : ParseResults<InitParameters>) =
         let a = CosmosInitArguments p
         match p.GetSubCommand() with
         | InitParameters.Cosmos cp ->
@@ -377,28 +378,29 @@ module CosmosInit =
             | CosmosInit.Provisioning.Serverless ->
                 let modeStr = "Serverless"
                 log.Information("Provisioning `Equinox.CosmosStore` Store in {mode:l} mode with automatic RU/s as configured in account", modeStr)
-            return! CosmosInit.init log client (dName, cName) a.ProvisioningMode a.SkipStoredProc
-        | x -> Storage.missingArg $"unexpected subcommand %A{x}" }
+            CosmosInit.init log client (dName, cName) a.ProvisioningMode a.SkipStoredProc
+        | x -> Storage.missingArg $"unexpected subcommand %A{x}"
 
 module DynamoInit =
 
     open Equinox.DynamoStore
 
-    let table (log : ILogger) (p : ParseResults<TableParameters>) = async {
-        let streaming, throughput = (DynamoInitArguments p).ProvisioningMode
+    let table (log : ILogger) (p : ParseResults<TableParameters>) =
+        let a = DynamoInitArguments p
         match p.GetSubCommand() with
         | TableParameters.Dynamo sp ->
-            let a = Storage.Dynamo.Arguments sp
-            let client = a.Connector.CreateClient()
-            let tableName = a.Table
-            match throughput with
-            | Some (rcu, wcu) ->
-                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with {read}/{write}CU; streaming {streaming}", tableName, rcu, wcu, streaming)
-                do! Core.Initialization.provision client tableName (Throughput.Provisioned (ProvisionedThroughput(rcu, wcu)), streaming)
-            | None ->
-                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with On-Demand capacity management; streaming {streaming}", tableName, streaming)
-                do! Core.Initialization.provision client tableName (Throughput.OnDemand, streaming)
-        | x -> Storage.missingArg $"unexpected subcommand %A{x}" }
+            let sa = Storage.Dynamo.Arguments sp
+            let t, s = a.Throughput, a.StreamingMode
+            match t with
+            | Throughput.Provisioned t ->
+                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with {read}R/{write}WCU Provisioned capacity; streaming {streaming}",
+                                sa.Table, t.ReadCapacityUnits, t.WriteCapacityUnits, a.StreamingMode)
+            | Throughput.OnDemand ->
+                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with On-Demand capacity management; streaming {streaming}",
+                                sa.Table, a.StreamingMode)
+            let client = sa.Connector.CreateClient()
+            Core.Initialization.provision client sa.Table (t, s)
+        | x -> Storage.missingArg $"unexpected subcommand %A{x}"
 
 module SqlInit =
 
@@ -420,7 +422,7 @@ module CosmosStats =
         member container.QueryValue<'T>(sqlQuery : string) =
             let query : Microsoft.Azure.Cosmos.FeedResponse<'T> = container.GetItemQueryIterator<'T>(sqlQuery).ReadNextAsync() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
             query |> Seq.exactlyOne
-    let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) = async {
+    let run (log : ILogger, _verboseConsole, _maybeSeq) (p : ParseResults<StatsParameters>) =
         match p.GetSubCommand() with
         | StatsParameters.Cosmos sp ->
             let doS, doD, doE = p.Contains StatsParameters.Streams, p.Contains StatsParameters.Documents, p.Contains StatsParameters.Events
@@ -438,9 +440,8 @@ module CosmosStats =
                     let res = container.QueryValue<int>(sql)
                     log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.Sequential
-                |> Async.Ignore
-                |> Async.RunSynchronously
-        | x -> Storage.missingArg $"unexpected subcommand %A{x}" }
+                |> Async.Ignore<unit[]>
+        | x -> Storage.missingArg $"unexpected subcommand %A{x}"
 
 module Dump =
 
