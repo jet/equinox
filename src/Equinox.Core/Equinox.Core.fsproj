@@ -19,10 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="4.0.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="4.5.4" />
-    <PackageReference Include="System.Runtime.Caching" Version="6.0.0" />
+    <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="System.Runtime.Caching" />
   </ItemGroup>
 
 </Project>

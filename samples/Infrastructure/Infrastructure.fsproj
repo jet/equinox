@@ -22,12 +22,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Argu" Version="6.1.1" />
-    <PackageReference Include="Destructurama.FSharp" Version="1.2.0" />
-    <PackageReference Include="FSharp.Core" Version="4.7.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="6.0.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
+    <PackageReference Include="Argu" />
+    <PackageReference Include="Destructurama.FSharp" />
+    <PackageReference Include="FSharp.Core" VersionOverride="4.7.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.Seq" />
   </ItemGroup>
 
 </Project>
