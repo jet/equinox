@@ -1,6 +1,6 @@
-﻿/// Implements an in-memory store. This fulfils two goals:
-/// 1. Acts as A target for integration testing allowing end-to-end processing of a decision flow in an efficient test
-/// 2. Illustrates a minimal implementation of the Storage interface interconnects for the purpose of writing Store connectors
+﻿// Implements an in-memory store. This fulfils two goals:
+// 1. Acts as a target for integration testing allowing end-to-end processing of a decision flow in an efficient test
+// 2. Illustrates a minimal implementation of the Storage interface interconnects for the purpose of writing Store connectors
 namespace Equinox.MemoryStore
 
 open Equinox.Core
@@ -10,6 +10,15 @@ open System.Runtime.InteropServices
 type VolatileStore<'Format>() =
 
     let streams = System.Collections.Concurrent.ConcurrentDictionary<string, FsCodec.ITimelineEvent<'Format>[]>()
+
+    let seedStream _streamName struct (_expectedCount, events) = events
+    let updateValue _streamName (currentValue : FsCodec.ITimelineEvent<'Format>[]) struct (expectedCount, events) =
+        if Array.length currentValue <> expectedCount then currentValue
+        // note we don't publish here, as this function can be potentially invoked multiple times where there is a race
+        else Array.append currentValue events
+    let trySync streamName expectedCount events : bool * FsCodec.ITimelineEvent<'Format>[] =
+        let res = streams.AddOrUpdate(streamName, seedStream, updateValue, (expectedCount, events))
+        (obj.ReferenceEquals(Array.last res, Array.last events), res)
 
     // Where TrySync attempts overlap on the same stream, there's a race to raise the Committed event for each 'commit' resulting from a successful Sync
     // If we don't serialize the publishing of the events, its possible for handlers to observe the Events out of order
@@ -29,16 +38,9 @@ type VolatileStore<'Format>() =
 
     /// Attempts a synchronization operation - yields conflicting value if expectedCount does not match
     member _.TrySync(streamName, expectedCount, events) : Async<bool * FsCodec.ITimelineEvent<'Format>[]> = async {
-        let seedStream _streamName = events
-        let updateValue _streamName (currentValue : FsCodec.ITimelineEvent<'Format>[]) =
-            if Array.length currentValue <> expectedCount then currentValue
-            else Array.append currentValue events
-        match streams.AddOrUpdate(streamName, seedStream, updateValue) with
-        | res when obj.ReferenceEquals(Array.last res, Array.last events) ->
-            // we publish the event here rather than inside updateValue, once, as that can be invoked multiple times
-            do! publishCommit.Execute((FsCodec.StreamName.parse streamName, events))
-            return true, res
-        | res -> return false, res }
+        let succeeded, _ as outcome = trySync streamName expectedCount events
+        if succeeded then do! publishCommit.Execute((FsCodec.StreamName.parse streamName, events))
+        return outcome }
 
 type Token = { eventCount : int }
 
