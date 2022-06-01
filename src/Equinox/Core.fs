@@ -1,5 +1,5 @@
-﻿/// Internal data structures/impl. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implementing a Store or a decorator thereof.
-/// i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Decider.fs, not here
+﻿// Internal data structures/impl. While these are intended to be legible, understanding the abstractions involved is only necessary if you are implementing a Store or a decorator thereof.
+// i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Decider.fs, not here
 namespace Equinox.Core
 
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.

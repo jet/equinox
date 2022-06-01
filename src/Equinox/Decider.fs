@@ -14,10 +14,10 @@ type Decider<'event, 'state>
 
     do if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException("maxAttempts", maxAttempts, "should be >= 1")
     let fetch : LoadOption<'state> option -> (Serilog.ILogger -> Async<Core.StreamToken * 'state>) = function
-        | None | Some RequireLoad ->                fun log -> stream.Load(log, allowStale = false)
-        | Some AllowStale ->                        fun log -> stream.Load(log, allowStale = true)
-        | Some AssumeEmpty ->                       fun _log -> async { return stream.LoadEmpty() }
-        | Some (FromMemento (streamToken, state)) -> fun _log -> async { return (streamToken, state) }
+        | None | Some RequireLoad ->                    fun log ->                 stream.Load(log, allowStale = false)
+        | Some AllowStale ->                            fun log ->                 stream.Load(log, allowStale = true)
+        | Some AssumeEmpty ->                           fun _log -> async { return stream.LoadEmpty() }
+        | Some (FromMemento (streamToken, state)) ->    fun _log -> async { return (streamToken, state) }
     let query maybeOption project = async {
         let! tokenAndState = fetch maybeOption log
         return project tokenAndState }
