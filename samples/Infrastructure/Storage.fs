@@ -27,10 +27,11 @@ let [<Literal>] appName = "equinox-tool"
 exception MissingArg of string
 let missingArg msg = raise (MissingArg msg)
 
+let private envVarTryGet varName = Environment.GetEnvironmentVariable varName |> Option.ofObj
 let private getEnvVarForArgumentOrThrow varName argName =
-    match Environment.GetEnvironmentVariable varName with
-    | null -> missingArg (sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName)
-    | x -> x
+    match envVarTryGet varName with
+    | None -> missingArg (sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName)
+    | Some x -> x
 let private defaultWithEnvVar varName argName = function
     | None -> getEnvVarForArgumentOrThrow varName argName
     | Some x -> x
@@ -130,13 +131,15 @@ module Cosmos =
 module Dynamo =
 
     open Equinox.DynamoStore
+    let [<Literal>] REGION =            "EQUINOX_DYNAMO_REGION"
     let [<Literal>] SERVICE_URL =       "EQUINOX_DYNAMO_SERVICE_URL"
     let [<Literal>] ACCESS_KEY =        "EQUINOX_DYNAMO_ACCESS_KEY_ID"
     let [<Literal>] SECRET_KEY =        "EQUINOX_DYNAMO_SECRET_ACCESS_KEY"
     let [<Literal>] TABLE =             "EQUINOX_DYNAMO_TABLE"
     type [<NoEquality; NoComparison>] Parameters =
         | [<AltCommandLine "-V">]       VerboseStore
-        | [<AltCommandLine "-s">]       ServiceUrl of string
+        | [<AltCommandLine "-sr">]      ServiceRegion of string
+        | [<AltCommandLine "-su">]      ServiceUrl of string
         | [<AltCommandLine "-sa">]      AccessKey of string
         | [<AltCommandLine "-ss">]      SecretKey of string
         | [<AltCommandLine "-t">]       Table of string
@@ -149,10 +152,14 @@ module Dynamo =
         interface IArgParserTemplate with
             member a.Usage = a |> function
                 | VerboseStore ->       "Include low level Store logging."
-                | ServiceUrl _ ->       "specify a server endpoint for a Dynamo account. (optional if environment variable " + SERVICE_URL + " specified)"
-                | AccessKey _ ->        "specify an access key id for a Dynamo account. (optional if environment variable " + ACCESS_KEY + " specified)"
-                | SecretKey _ ->        "specify a secret access key for a Dynamo account. (optional if environment variable " + SECRET_KEY + " specified)"
-                | Table _ ->            "specify a table name for the primary store. (optional if environment variable " + TABLE + " specified)"
+                | ServiceRegion _ ->    "specify an AWS Region (System Name) to connect to using the AWS SDK configuration and well-known environment variables etc. Optional if:\n" +
+                                        "1) $" + REGION + " specified OR\n" +
+                                        "2) `ServiceUrl`/$" + SERVICE_URL + "+`AccessKey`/$" + ACCESS_KEY + "+`Secret Key`/$" + SECRET_KEY + " specified.\n" +
+                                        "See https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html for details"
+                | ServiceUrl _ ->       "specify a server endpoint for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + SERVICE_URL + " specified)"
+                | AccessKey _ ->        "specify an access key id for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + ACCESS_KEY + " specified)"
+                | SecretKey _ ->        "specify a secret access key for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + SECRET_KEY + " specified)"
+                | Table _ ->            "specify a table name for the primary store. (optional if $" + TABLE + " specified)"
                 | ArchiveTable _ ->     "specify a table name for the Archive. Default: Do not attempt to look in an Archive store as a Fallback to locate pruned events."
                 | Retries _ ->          "specify operation retries (default: 1)."
                 | RetriesTimeoutS _ ->  "specify max wait-time including retries in seconds (default: 5)"
@@ -160,13 +167,20 @@ module Dynamo =
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: limited by Max Bytes"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Arguments(p : ParseResults<Parameters>) =
-        let serviceUrl =                p.TryGetResult ServiceUrl |> defaultWithEnvVar SERVICE_URL   "ServiceUrl"
-        let accessKey =                 p.TryGetResult AccessKey  |> defaultWithEnvVar ACCESS_KEY    "AccessKey"
-        let secretKey =                 p.TryGetResult SecretKey  |> defaultWithEnvVar SECRET_KEY    "SecretKey"
+        let conn =
+                                        match p.TryGetResult ServiceRegion |> Option.orElseWith (fun () -> envVarTryGet REGION) with
+                                        | Some systemName ->
+                                            Choice1Of2 systemName
+                                        | None ->
+                                            let serviceUrl =  p.TryGetResult ServiceUrl |> defaultWithEnvVar SERVICE_URL   "ServiceUrl"
+                                            let accessKey =   p.TryGetResult AccessKey  |> defaultWithEnvVar ACCESS_KEY    "AccessKey"
+                                            let secretKey =   p.TryGetResult SecretKey  |> defaultWithEnvVar SECRET_KEY    "SecretKey"
+                                            Choice2Of2 (serviceUrl, accessKey, secretKey)
         let retries =                   p.GetResult(Retries, 1)
         let timeout =                   p.GetResult(RetriesTimeoutS, 5.) |> TimeSpan.FromSeconds
-        member val Connector =          DynamoStoreConnector(serviceUrl, accessKey, secretKey, timeout, retries)
-
+        member val Connector =          match conn with
+                                        | Choice1Of2 systemName -> DynamoStoreConnector(systemName, timeout, retries)
+                                        | Choice2Of2 (serviceUrl, accessKey, secretKey) -> DynamoStoreConnector(serviceUrl, accessKey, secretKey, timeout, retries)
         member val Table =              p.TryGetResult Table      |> defaultWithEnvVar TABLE         "Table"
         member val ArchiveTable =       p.TryGetResult ArchiveTable
 
