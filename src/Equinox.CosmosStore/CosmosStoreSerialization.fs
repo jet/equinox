@@ -7,14 +7,14 @@ module private Deflate =
 
     let compress (uncompressedBytes : byte array) =
         let output = new MemoryStream()
-        let compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
+        let compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal, leaveOpen = true)
         compressor.Write(uncompressedBytes)
         compressor.Flush() // Could `Close`, but not required
         output.ToArray()
 
     let inflate (compressedBytes : byte array) =
         let input = new MemoryStream(compressedBytes)
-        let decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress)
+        let decompressor = new System.IO.Compression.DeflateStream(input, System.IO.Compression.CompressionMode.Decompress, leaveOpen = true)
         let output = new MemoryStream()
         decompressor.CopyTo(output)
         output.ToArray()
