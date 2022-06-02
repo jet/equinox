@@ -9,8 +9,9 @@
     <Copyright>Copyright © 2016-22</Copyright>
 
     <WarningLevel>5</WarningLevel>
+    <!-- For packages we produce, we want to be explicit and conservative in what we depend on
+         Tools and Tests flip this to false in order to ensure we validate with the recent one embdedded in the SDK-->
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
-    <DisableImplicitSystemValueTupleReference>true</DisableImplicitSystemValueTupleReference>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
