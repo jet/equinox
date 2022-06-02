@@ -190,25 +190,47 @@ module EventBody =
     (* All EncodedBody can potentially hold compressed content, that we'll inflate on demand *)
 
     let private inflate (loaded : MemoryStream) : byte array =
-        let decompressor = new System.IO.Compression.DeflateStream(loaded, System.IO.Compression.CompressionMode.Decompress)
+        // NOTE DeflateStream works from the current Position of the `loaded` stream; when it comes from the AWS SDK, that's 0/the start
+        // If this path gets traversed a second time, the Position will be at the end, which yields an empty inflated result
+        // Simply resetting the Position to `0` to would ignore two facts: 1) multiple deflations is wasteful, but also 2) this could be as a result of multiple reader threads
+        // Thus, while only deflating from a defensive copy of the `loaded` stream via ToArray() would work, we fail fast, forcing outer layers to cache the results
+        if loaded.Position <> 0 then invalidOp "Cannot traverse Event Body more than once and/or from multiple threads; should be wrapped in Lazy"
+        let decompressor = new System.IO.Compression.DeflateStream(loaded, System.IO.Compression.CompressionMode.Decompress, leaveOpen = true)
         let output = new MemoryStream()
         decompressor.CopyTo(output)
         output.ToArray()
-    let decode (encoded : EncodedBody) : EventBody =
+    let private decode (encoded : EncodedBody) : EventBody =
         if encoded.isCompressed then inflate encoded.data |> ReadOnlyMemory
         elif encoded.data = null then ReadOnlyMemory.Empty
         else encoded.data.ToArray() |> ReadOnlyMemory
-    let decodeEvent = FsCodec.Core.TimelineEvent.Map decode
+    // Like TimelineEvent.Map, but wih tweaks to address the following concerns
+    // 1) ensuring we cache to save the cost of multiple decompression passes in terms of CPU time and garbage
+    // 2) ensuring there can not be concurrent invocations of the mapping function (e.g. protecting against a function that mutates its input, is not thread safe, or is not concurrency safe)
+    let private mapOnlyOnce (f : 'Format -> 'Mapped) (x : ITimelineEvent<'Format>) : ITimelineEvent<'Mapped> =
+        let data, meta = lazy f x.Data, lazy f x.Meta
+        { new ITimelineEvent<'Mapped> with
+            member _.Index = x.Index
+            member _.IsUnfold = x.IsUnfold
+            member _.Context = x.Context
+            member _.EventType = x.EventType
+            member _.Data = data.Value
+            member _.Meta = meta.Value
+            member _.EventId = x.EventId
+            member _.CorrelationId = x.CorrelationId
+            member _.CausationId = x.CausationId
+            member _.Timestamp = x.Timestamp }
+    // NOTE mapOnlyOnce is critical; decode mutates it's input and contains an internal guard that will detect and throw on the second invocation
+    let internal decodeEvent = mapOnlyOnce decode
 
     (* Compression is conditional on the input meeting a minimum size, and the result meeting a required gain *)
 
     let private compress (eventBody : ReadOnlyMemory<byte>) : MemoryStream =
         let output = new MemoryStream() // NB not `use` - Dispose would Close the stream, and AWS SDK requires it open
-        let compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal)
+        let compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal, leaveOpen = true)
         compressor.Write(eventBody.Span)
         compressor.Flush() // NB not `Close` as that would Close the `output`, and AWS SDK requires the Stream open
         output
-    let private encodeUncompressed (raw : EventBody) = { isCompressed = false; data = new MemoryStream(raw.ToArray(), writable = false) }
+    let private encodeUncompressed (raw : ReadOnlyMemory<byte>) = { isCompressed = false; data = new MemoryStream(raw.ToArray(), writable = false) }
     let internal encode (minSize, minGain) (raw : EventBody) : EncodedBody =
         if raw.IsEmpty then { isCompressed = false; data = null }
         elif raw.Length < minSize then encodeUncompressed raw
@@ -218,10 +240,10 @@ module EventBody =
 
 type EncodingOptions =
     { eventData : int; eventMeta : int; unfoldData : int; unfoldMeta : int; minGain : int }
-    member x.EncodeEventData raw = EventBody.encode (x.eventData, x.minGain) raw
-    member x.EncodeEventMeta raw = EventBody.encode (x.eventMeta, x.minGain) raw
-    member x.EncodeUnfoldData raw = EventBody.encode (x.unfoldData, x.minGain) raw
-    member x.EncodeUnfoldMeta raw = EventBody.encode (x.unfoldMeta, x.minGain) raw
+    member internal x.EncodeEventData raw = EventBody.encode (x.eventData, x.minGain) raw
+    member internal x.EncodeEventMeta raw = EventBody.encode (x.eventMeta, x.minGain) raw
+    member internal x.EncodeUnfoldData raw = EventBody.encode (x.unfoldData, x.minGain) raw
+    member internal x.EncodeUnfoldMeta raw = EventBody.encode (x.unfoldMeta, x.minGain) raw
 
 // We only capture the total RUs, without attempting to split them into read/write as the service does not actually populate the associated fields
 // See https://github.com/aws/aws-sdk-go/issues/2699#issuecomment-514378464
