@@ -98,7 +98,7 @@ module SerilogHelpers =
 
     let (|HasProp|_|) (name : string) (e : LogEvent) : LogEventPropertyValue option =
         match e.Properties.TryGetValue name with
-        | true, (SerilogScalar _ as s) -> Some s | _ -> None
+        | true, (SerilogScalar _ as s) -> Some s
         | _ -> None
     let (|SerilogString|_|) : LogEventPropertyValue -> string option = function SerilogScalar (:? string as y) -> Some y | _ -> None
     let (|SerilogBool|_|) : LogEventPropertyValue -> bool option = function SerilogScalar (:? bool as y) -> Some y | _ -> None

@@ -641,7 +641,7 @@ module internal Query =
         // earlier versions, such as 3.9.0, do not implement IDisposable; see linked issue for detail on when SDK team added it
         use _ = query // see https://github.com/jet/equinox/issues/225 - in the Cosmos V4 SDK, all this is managed IAsyncEnumerable
         loop 0
-    let private mkQuery (log : ILogger) (container : Container, stream : string) includeTip maxItems (direction : Direction, minIndex, maxIndex) : FeedIterator<Batch> =
+    let private mkQuery (log : ILogger) (container : Container, stream : string) includeTip (maxItems : int) (direction : Direction, minIndex, maxIndex) : FeedIterator<Batch> =
         let order = if direction = Direction.Forward then "ASC" else "DESC"
         let query =
             let args = [
@@ -655,9 +655,8 @@ module internal Query =
             let queryString = sprintf "SELECT c.id, c.i, c._etag, c.n, c.e FROM c %s ORDER BY c.i %s" whereClause order
             let prams = Seq.map snd args
             (QueryDefinition queryString, prams) ||> Seq.fold (fun q wp -> q |> wp)
-        log.Debug("EqxCosmos Query {query} on {stream}; minIndex={minIndex} maxIndex={maxIndex}", query.QueryText, stream, minIndex, maxIndex)
-        let qro = QueryRequestOptions(PartitionKey = Nullable (PartitionKey stream), MaxItemCount = Nullable maxItems)
-        container.GetItemQueryIterator<Batch>(query, requestOptions = qro)
+        log.Debug("EqxCosmos Query {stream} {query}; n>{minIndex} i<{maxIndex}", stream, query.QueryText, Option.toNullable minIndex, Option.toNullable maxIndex)
+        container.GetItemQueryIterator<Batch>(query, requestOptions = QueryRequestOptions(PartitionKey = PartitionKey stream, MaxItemCount = maxItems))
 
     // Unrolls the Batches in a response
     // NOTE when reading backwards, the events are emitted in reverse Index order to suit the takeWhile consumption
@@ -722,7 +721,7 @@ module internal Query =
         { found = f; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
-    let scan<'event> (log : ILogger) (container, stream) includeTip maxItems maxRequests direction
+    let scan<'event> (log : ILogger) (container, stream) includeTip (maxItems : int) maxRequests direction
         (tryDecode : ITimelineEvent<EventBody> -> 'event option, isOrigin : 'event -> bool)
         (minIndex, maxIndex)
         : Async<ScanResult<'event> option> = async {
@@ -876,11 +875,11 @@ module Prune =
 
     type BatchIndices = { id : string; i : int64; n : int64 }
 
-    let until (log : ILogger) (container : Container, stream : string) maxItems indexInclusive : Async<int * int * int64> = async {
+    let until (log : ILogger) (container : Container, stream : string) (maxItems : int) indexInclusive : Async<int * int * int64> = async {
         let log = log |> Log.prop "stream" stream
         let! ct = Async.CancellationToken
         let deleteItem id count : Async<float> = async {
-            let ro = ItemRequestOptions(EnableContentResponseOnWrite = Nullable false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
+            let ro = ItemRequestOptions(EnableContentResponseOnWrite = false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
             let! t, res = container.DeleteItemAsync(id, PartitionKey stream, ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             let rc, ms = res.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
@@ -896,8 +895,8 @@ module Prune =
             | tipRu, ReadResult.Found tip ->
 
             let tip = { tip with i = tip.i + int64 count; e = Array.skip count tip.e }
-            let ro = ItemRequestOptions(EnableContentResponseOnWrite = Nullable false, IfMatchEtag = tip._etag)
-            let! t, updateRes = container.ReplaceItemAsync(tip, tip.id, Nullable (PartitionKey stream), ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
+            let ro = ItemRequestOptions(EnableContentResponseOnWrite = false, IfMatchEtag = tip._etag)
+            let! t, updateRes = container.ReplaceItemAsync(tip, tip.id, PartitionKey stream, ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             let rc, ms = tipRu + updateRes.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
@@ -906,15 +905,15 @@ module Prune =
         }
         let log = log |> Log.prop "index" indexInclusive
         let query : FeedIterator<BatchIndices> =
-             let qro = QueryRequestOptions(PartitionKey = Nullable (PartitionKey stream), MaxItemCount = Nullable maxItems)
+             let qro = QueryRequestOptions(PartitionKey = PartitionKey stream, MaxItemCount = maxItems)
              // sort by i to guarantee we don't ever leave an observable gap in the sequence
-             container.GetItemQueryIterator<_>(QueryDefinition "SELECT c.id, c.i, c.n FROM c ORDER by c.i", requestOptions = qro)
+             container.GetItemQueryIterator<_>("SELECT c.id, c.i, c.n FROM c ORDER by c.i", requestOptions = qro)
         let mapPage i (t : StopwatchInterval) (page : FeedResponse<BatchIndices>) =
             let batches, rc, ms = Array.ofSeq page, page.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
-            let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
+            let next = Array.tryLast batches |> Option.map (fun x -> x.n)
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
-            log.Information("EqxCosmos {action:l} {batches} {ms:f1}ms n={next} {ru}RU", "PruneResponse", batches.Length, ms, next, rc)
+            log.Information("EqxCosmos {action:l} {batches} {ms:f1}ms n={next} {ru}RU", "PruneResponse", batches.Length, ms, Option.toNullable next, rc)
             batches, rc
         let! pt, outcomes =
             let isTip (x : BatchIndices) = x.id = Tip.WellKnownDocumentId
@@ -1195,13 +1194,11 @@ type CosmosClientFactory
 
     /// CosmosClientOptions for this CosmosClientFactory as configured
     member val Options =
-        let maxAttempts, maxWait, timeout = Nullable maxRetryAttemptsOnRateLimitedRequests, Nullable maxRetryWaitTimeOnRateLimitedRequests, requestTimeout
-        let co =
-            CosmosClientOptions(
-                MaxRetryAttemptsOnRateLimitedRequests = maxAttempts,
-                MaxRetryWaitTimeOnRateLimitedRequests = maxWait,
-                RequestTimeout = timeout,
-                Serializer = CosmosJsonSerializer(System.Text.Json.JsonSerializerOptions()))
+        let co = CosmosClientOptions(
+            MaxRetryAttemptsOnRateLimitedRequests = maxRetryAttemptsOnRateLimitedRequests,
+            MaxRetryWaitTimeOnRateLimitedRequests = maxRetryWaitTimeOnRateLimitedRequests,
+            RequestTimeout = requestTimeout,
+            Serializer = CosmosJsonSerializer(System.Text.Json.JsonSerializerOptions()))
         match mode with
         | None | Some ConnectionMode.Direct -> co.ConnectionMode <- ConnectionMode.Direct
         | Some ConnectionMode.Gateway | Some _ (* enum total match :( *) -> co.ConnectionMode <- ConnectionMode.Gateway // only supports Https
@@ -1209,7 +1206,7 @@ type CosmosClientFactory
         | Some _ when co.ConnectionMode = ConnectionMode.Direct -> invalidArg "gatewayModeMaxConnectionLimit" "Not admissible in Direct mode"
         | x -> if co.ConnectionMode = ConnectionMode.Gateway then co.GatewayModeMaxConnectionLimit <- defaultArg x 50
         match defaultConsistencyLevel with
-        | Some x -> co.ConsistencyLevel <- Nullable x
+        | Some x -> co.ConsistencyLevel <- x
         | None -> ()
         // https://github.com/Azure/azure-cosmos-dotnet-v3/blob/1ef6e399f114a0fd580272d4cdca86b9f8732cf3/Microsoft.Azure.Cosmos.Samples/Usage/HttpClientFactory/Program.cs#L96
         if bypassCertificateValidation = Some true && co.ConnectionMode = ConnectionMode.Gateway then

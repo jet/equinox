@@ -704,7 +704,7 @@ module internal Query =
 
     let private mkQuery (log : ILogger) (container : Container, stream : string) maxItems (direction : Direction, minIndex, maxIndex) =
         let minN, maxI = minIndex, maxIndex
-        log.Debug("EqxDynamo Query {stream}; minIndex={minIndex} maxIndex={maxIndex}", stream, minIndex, maxIndex)
+        log.Debug("EqxDynamo Query {stream}; n>{minIndex} i<{maxIndex}", stream, Option.toNullable minIndex, Option.toNullable maxIndex)
         container.QueryBatches(stream, minN, maxI, (direction = Direction.Backward), maxItems)
 
     // Unrolls the Batches in a response
@@ -721,7 +721,7 @@ module internal Query =
         let events = batches |> Seq.collect unwrapBatch |> Array.ofSeq
         let usedEventsCount, usedBytes, totalBytes = events.Length, Event.arrayBytes events, Batch.bytesTotal batches
         let baseIndex = if usedEventsCount = 0 then Nullable () else Nullable (Seq.map Batch.baseIndex batches |> Seq.min)
-        let minI, maxI = match events with [||] -> Nullable(), Nullable() | xs -> Nullable events[0].i, Nullable events[xs.Length - 1].i
+        let minI, maxI = match events with [||] -> Nullable (), Nullable () | xs -> Nullable events[0].i, Nullable events[xs.Length - 1].i
         (log|> Log.event (Log.Metric.QueryResponse (direction, Log.metric container.TableName stream t totalBytes usedEventsCount rc)))
             .Information("EqxDynamo {action:l} {page} {minIndex}-{maxIndex} {ms:f1}ms {ru}RU {batches}/{batchSize}@{index} {count}e {bytes}/{totalBytes}b {direction:l}",
                          "Page", i, minI, maxI, Log.tms t, rc.total, batches.Length, maxItems, baseIndex, usedEventsCount, usedBytes, totalBytes, direction)
@@ -940,17 +940,18 @@ module internal Prune =
             let rc = { total = tipRc.total + updRc.total }
             let reqMetric = Log.metric container.TableName stream t -1 count rc
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
-            log.Information("EqxDynamo {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, Log.tms t, rc)
+            log.Information("EqxDynamo {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, Log.tms t, rc.total)
             return rc
         }
         let log = log |> Log.prop "index" indexInclusive
         // need to sort by n to guarantee we don't ever leave an observable gap in the sequence
         let query = container.QueryIAndNOrderByNAscending(stream, maxItems)
         let mapPage (i, t : StopwatchInterval, batches : BatchIndices array, rc) =
-            let next = Array.tryLast batches |> Option.map (fun x -> x.n) |> Option.toNullable
+            let next = Array.tryLast batches |> Option.map (fun x -> x.n)
             let reqMetric = Log.metric container.TableName stream t -1 batches.Length rc
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
-            log.Information("EqxDynamo {action:l} {batches} {ms:f1}ms n={next} {ru}RU", "PruneResponse", batches.Length, Log.tms t, next, rc)
+            log.Information("EqxDynamo {action:l} {batches} {ms:f1}ms n={next} {ru}RU",
+                            "PruneResponse", batches.Length, Log.tms t, Option.toNullable next, rc.total)
             batches, rc
         let! pt, outcomes =
             let isRelevant (x : BatchIndices) = x.index <= indexInclusive || x.isTip
@@ -1211,10 +1212,10 @@ type DynamoStoreConnector(credentials : Amazon.Runtime.AWSCredentials, clientCon
 
     /// timeout. AWS SDK Default: 100s
     /// maxRetries. AWS SDK Default: 10
-    new (serviceUrl, accessKey, secretKey, timeout, retries) =
+    new (serviceUrl, accessKey, secretKey, timeout : TimeSpan, retries) =
         let credentials = Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey)
         let mode, r, t = Amazon.Runtime.RequestRetryMode.Standard, retries, timeout
-        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = mode, MaxErrorRetry = r, Timeout = Nullable t)
+        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = mode, MaxErrorRetry = r, Timeout = t)
         DynamoStoreConnector(credentials, clientConfig)
 
     member _.Options = clientConfig
