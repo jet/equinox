@@ -130,6 +130,23 @@ module Cosmos =
 
 module Dynamo =
 
+    type Equinox.DynamoStore.DynamoStoreConnector with
+
+        member x.LogConfiguration(log : ILogger) =
+            log.Information("DynamoStore {endpoint} Timeout {timeoutS}s Retries {retries}",
+                            x.Endpoint, (let t = x.Timeout in t.TotalSeconds), x.Retries)
+
+    type Equinox.DynamoStore.DynamoStoreClient with
+
+        member internal x.LogConfiguration(role, log : ILogger) =
+            log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, x.TableName, Option.toObj x.ArchiveTableName)
+
+    type Equinox.DynamoStore.DynamoStoreContext with
+
+        member internal x.LogConfiguration(log : ILogger) =
+            log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
+                            x.TipOptions.MaxBytes, Option.toNullable x.TipOptions.MaxEvents, x.QueryOptions.MaxItems)
+
     open Equinox.DynamoStore
     let [<Literal>] REGION =            "EQUINOX_DYNAMO_REGION"
     let [<Literal>] SERVICE_URL =       "EQUINOX_DYNAMO_SERVICE_URL"
@@ -188,19 +205,13 @@ module Dynamo =
         member x.TipMaxBytes =          p.GetResult(TipMaxBytes, 32 * 1024)
         member x.QueryMaxItems =        p.GetResult(QueryMaxItems, 10)
 
-    let logTable (log: ILogger) endpoint role table =
-        log.Information("DynamoStore {name:l} {endpoint} Table {table}", role, endpoint, table)
-    let createStoreClient (log : ILogger) (a : Arguments) =
+    let config (log : ILogger) (cache, unfolds) (a : Arguments) =
+        a.Connector.LogConfiguration(log)
         let client = a.Connector.CreateClient()
         let storeClient = DynamoStoreClient(client, a.Table, ?archiveTableName = a.ArchiveTable)
-        logTable log a.Connector.Endpoint "Primary" a.Table
-        match a.ArchiveTable with None -> () | Some at -> logTable log a.Connector.Endpoint "Archive" at
-        storeClient
-    let config (log : ILogger) (cache, unfolds) (a : Arguments) =
-        let storeClient = createStoreClient log a
-        log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
-                        a.TipMaxBytes, a.TipMaxEvents, a.QueryMaxItems)
+        storeClient.LogConfiguration("Main", log)
         let context = DynamoStoreContext(storeClient, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems, ?tipMaxEvents = a.TipMaxEvents)
+        context.LogConfiguration(log)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Dynamo (context, cacheStrategy, unfolds)
 

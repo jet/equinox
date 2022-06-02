@@ -1290,9 +1290,11 @@ type DynamoStoreClient
         categoryAndStreamIdToTableAndStreamNames : string * string -> string * string,
         createContainer : string -> Container,
         createFallbackContainer : string -> Container option,
+        [<O; D null>] ?archiveTableName : string,
         [<O; D null>] ?primaryTableToArchive : string -> string) =
     let primaryTableToSecondary = defaultArg primaryTableToArchive id
     member val TableName = tableName
+    member val ArchiveTableName = archiveTableName
     new(    client : Amazon.DynamoDBv2.IAmazonDynamoDB, tableName : string,
             // Table name to use for archive store. Default: (if <c>archiveClient</c> specified) use same <c>tableName</c> but via <c>archiveClient</c>.
             [<O; D null>] ?archiveTableName,
@@ -1303,8 +1305,8 @@ type DynamoStoreClient
         let primaryContainer t = Container.Create(client, t)
         let fallbackContainer =
             if Option.isNone archiveClient && Option.isNone archiveTableName then fun _ -> None
-            else fun t -> Some (Container.Create(defaultArg archiveClient client, defaultArg archiveTableName t))
-        DynamoStoreClient(tableName, catAndStreamToTableStream, primaryContainer, fallbackContainer)
+            else fun primaryContainerName -> Some (Container.Create(defaultArg archiveClient client, defaultArg archiveTableName primaryContainerName))
+        DynamoStoreClient(tableName, catAndStreamToTableStream, primaryContainer, fallbackContainer, ?archiveTableName = archiveTableName)
     member internal _.ResolveContainerFallbackAndStreamName(categoryName, streamId) : Container * Container option * string =
         let tableName, streamName = categoryAndStreamIdToTableAndStreamNames (categoryName, streamId)
         let fallbackTableName = primaryTableToSecondary tableName
