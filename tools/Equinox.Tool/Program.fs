@@ -57,16 +57,14 @@ and [<NoComparison; NoEquality>] InitParameters =
             | Cosmos _ ->                   "Cosmos Connection parameters."
 and CosmosModeType = Container | Db | Serverless
 and CosmosInitArguments(p : ParseResults<InitParameters>) =
-    let throughput () =
-        if p.Contains Autoscale
-        then CosmosInit.Throughput.Autoscale (p.GetResult(Rus, 4000))
-        else CosmosInit.Throughput.Manual (p.GetResult(Rus, 400))
+    let rusOrDefault value = p.GetResult(Rus, value)
+    let throughput auto = if auto then CosmosInit.Throughput.Autoscale (rusOrDefault 4000) else CosmosInit.Throughput.Manual (rusOrDefault 400)
     member val ProvisioningMode =
-        match p.GetResult(Mode, CosmosModeType.Container) with
-        | CosmosModeType.Container ->       CosmosInit.Provisioning.Container (throughput ())
-        | CosmosModeType.Db ->              CosmosInit.Provisioning.Database (throughput ())
-        | CosmosModeType.Serverless when p.Contains Rus || p.Contains Autoscale -> Storage.missingArg "Cannot specify RU/s or Autoscale in Serverless mode"
-        | CosmosModeType.Serverless ->      CosmosInit.Provisioning.Serverless
+        match p.GetResult(Mode, CosmosModeType.Container), p.Contains Autoscale with
+        | CosmosModeType.Container, auto -> CosmosInit.Provisioning.Container (throughput auto)
+        | CosmosModeType.Db, auto ->        CosmosInit.Provisioning.Database (throughput auto)
+        | CosmosModeType.Serverless, auto when auto || p.Contains Rus -> Storage.missingArg "Cannot specify RU/s or Autoscale in Serverless mode"
+        | CosmosModeType.Serverless, _ ->   CosmosInit.Provisioning.Serverless
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
 and [<NoComparison; NoEquality>] TableParameters =
     | [<AltCommandLine "-D"; Unique>]       OnDemand
@@ -82,11 +80,11 @@ and [<NoComparison; NoEquality>] TableParameters =
             | Streaming _ ->                "Specify Streaming Mode. Default: `NEW_IMAGE`"
             | Dynamo _ ->                   "DynamoDB Connection parameters."
 and DynamoInitArguments(p : ParseResults<TableParameters>) =
+    let onDemand =                          p.Contains OnDemand
     member val StreamingMode =              p.GetResult(Streaming, Equinox.DynamoStore.Core.Initialization.StreamingMode.Default)
-    member val Throughput =                 match p.Contains OnDemand with
-                                            | false -> Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
-                                            | true when p.Contains ReadCu && p.Contains WriteCu -> Storage.missingArg "CUs are not applicable in On-Demand mode"
-                                            | true -> Throughput.OnDemand
+    member val Throughput =                 if not onDemand then Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
+                                            elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then Storage.missingArg "CUs are not applicable in On-Demand mode"
+                                            else Throughput.OnDemand
 and [<NoComparison; NoEquality>] ConfigParameters =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Parameters>
