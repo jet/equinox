@@ -1229,23 +1229,42 @@ open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
 
-/// Manages Creation and configuration of an IAmazonDynamoDB connection
-type DynamoStoreConnector(credentials : Amazon.Runtime.AWSCredentials, clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig) =
+type [<RequireQualifiedAccess>] ConnectionKind = System of string | Service of string
 
-    /// timeout. AWS SDK Default: 100s
-    /// maxRetries. AWS SDK Default: 10
+/// Manages Creation and configuration of an IAmazonDynamoDB connection
+type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig, ?credentials : Amazon.Runtime.AWSCredentials) =
+
+    /// Connect explicitly with a triplet of serviceUrl, accessKey, secretKey. No fallback behaviors are applied.
+    /// timeout: Required; AWS SDK Default: 100s
+    /// maxRetries: Required; AWS SDK Default: 10
     new (serviceUrl, accessKey, secretKey, timeout : TimeSpan, retries) =
-        let credentials = Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey)
         let mode, r, t = Amazon.Runtime.RequestRetryMode.Standard, retries, timeout
         let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = mode, MaxErrorRetry = r, Timeout = t)
-        DynamoStoreConnector(credentials, clientConfig)
+        DynamoStoreConnector(clientConfig, Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey))
+
+    /// Connect to a nominated SystemName with endpoints and credentials gathered from well-known environment variables and/or configuration etc
+    /// systemName: Amazon SystemName, e.g. "us-west-1"
+    /// timeout: Required; AWS SDK Default: 100s
+    /// maxRetries: Required; AWS SDK Default: 10
+    new (systemName, timeout : TimeSpan, retries) =
+        let regionEndpoint = Amazon.RegionEndpoint.GetBySystemName(systemName)
+        let mode, r, t = Amazon.Runtime.RequestRetryMode.Standard, retries, timeout
+        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(RegionEndpoint = regionEndpoint, RetryMode = mode, MaxErrorRetry = r, Timeout = t)
+        DynamoStoreConnector(clientConfig)
 
     member _.Options = clientConfig
     member x.Retries = x.Options.MaxErrorRetry
     member x.Timeout = let t = x.Options.Timeout in t.Value
-    member x.Endpoint = x.Options.ServiceURL
+    member x.Endpoint =
+        match x.Options.ServiceURL with
+        | null -> ConnectionKind.System x.Options.RegionEndpoint.SystemName
+        | x -> ConnectionKind.Service x
 
-    member _.CreateClient() = new Amazon.DynamoDBv2.AmazonDynamoDBClient(credentials, clientConfig) :> Amazon.DynamoDBv2.IAmazonDynamoDB
+    member _.CreateClient() =
+        match credentials with
+        | None -> new Amazon.DynamoDBv2.AmazonDynamoDBClient(clientConfig) // this uses credentials=FallbackCredentialsFactory.GetCredentials()
+        | Some credentials -> new Amazon.DynamoDBv2.AmazonDynamoDBClient(credentials, clientConfig)
+        :> Amazon.DynamoDBv2.IAmazonDynamoDB
 
 type ProvisionedThroughput = FSharp.AWS.DynamoDB.ProvisionedThroughput
 type Throughput = FSharp.AWS.DynamoDB.Throughput
