@@ -169,7 +169,7 @@ module Dynamo =
         interface IArgParserTemplate with
             member a.Usage = a |> function
                 | VerboseStore ->       "Include low level Store logging."
-                | RegionProfile _ ->    "specify an AWS Region (System Name) to connect to using the implicit AWS SDK/tooling config and/or environment variables etc. Optional if:\n" +
+                | RegionProfile _ ->    "specify an AWS Region (aka System Name, e.g. \"us-east-1\") to connect to using the implicit AWS SDK/tooling config and/or environment variables etc. Optional if:\n" +
                                         "1) $" + REGION + " specified OR\n" +
                                         "2) Explicit `ServiceUrl`/$" + SERVICE_URL + "+`AccessKey`/$" + ACCESS_KEY + "+`Secret Key`/$" + SECRET_KEY + " specified.\n" +
                                         "See https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html for details"
