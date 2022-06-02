@@ -1229,7 +1229,7 @@ open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
 
-type [<RequireQualifiedAccess>] ConnectionKind = System of string | Service of string
+type [<RequireQualifiedAccess>] ConnectionKind = AwsEnvironment of string | ExplicitWithCredentials of string
 
 /// Manages Creation and configuration of an IAmazonDynamoDB connection
 type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig, ?credentials : Amazon.Runtime.AWSCredentials) =
@@ -1242,7 +1242,7 @@ type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig,
         let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = mode, MaxErrorRetry = r, Timeout = t)
         DynamoStoreConnector(clientConfig, Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey))
 
-    /// Connect to a nominated SystemName with endpoints and credentials gathered from well-known environment variables and/or configuration etc
+    /// Connect to a nominated SystemName with endpoints and credentials gathered implicitly from well-known environment variables and/or configuration etc
     /// systemName: Amazon SystemName, e.g. "us-west-1"
     /// timeout: Required; AWS SDK Default: 100s
     /// maxRetries: Required; AWS SDK Default: 10
@@ -1257,8 +1257,8 @@ type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig,
     member x.Timeout = let t = x.Options.Timeout in t.Value
     member x.Endpoint =
         match x.Options.ServiceURL with
-        | null -> ConnectionKind.System x.Options.RegionEndpoint.SystemName
-        | x -> ConnectionKind.Service x
+        | null -> ConnectionKind.AwsEnvironment x.Options.RegionEndpoint.SystemName
+        | x -> ConnectionKind.ExplicitWithCredentials x
 
     member _.CreateClient() =
         match credentials with

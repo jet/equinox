@@ -155,7 +155,7 @@ module Dynamo =
     let [<Literal>] TABLE =             "EQUINOX_DYNAMO_TABLE"
     type [<NoEquality; NoComparison>] Parameters =
         | [<AltCommandLine "-V">]       VerboseStore
-        | [<AltCommandLine "-sr">]      ServiceRegion of string
+        | [<AltCommandLine "-sr">]      RegionProfile of string
         | [<AltCommandLine "-su">]      ServiceUrl of string
         | [<AltCommandLine "-sa">]      AccessKey of string
         | [<AltCommandLine "-ss">]      SecretKey of string
@@ -169,9 +169,9 @@ module Dynamo =
         interface IArgParserTemplate with
             member a.Usage = a |> function
                 | VerboseStore ->       "Include low level Store logging."
-                | ServiceRegion _ ->    "specify an AWS Region (System Name) to connect to using the AWS SDK configuration and well-known environment variables etc. Optional if:\n" +
+                | RegionProfile _ ->    "specify an AWS Region (System Name) to connect to using the implicit AWS SDK/tooling config and/or environment variables etc. Optional if:\n" +
                                         "1) $" + REGION + " specified OR\n" +
-                                        "2) `ServiceUrl`/$" + SERVICE_URL + "+`AccessKey`/$" + ACCESS_KEY + "+`Secret Key`/$" + SECRET_KEY + " specified.\n" +
+                                        "2) Explicit `ServiceUrl`/$" + SERVICE_URL + "+`AccessKey`/$" + ACCESS_KEY + "+`Secret Key`/$" + SECRET_KEY + " specified.\n" +
                                         "See https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html for details"
                 | ServiceUrl _ ->       "specify a server endpoint for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + SERVICE_URL + " specified)"
                 | AccessKey _ ->        "specify an access key id for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + ACCESS_KEY + " specified)"
@@ -185,7 +185,7 @@ module Dynamo =
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Arguments(p : ParseResults<Parameters>) =
         let conn =
-                                        match p.TryGetResult ServiceRegion |> Option.orElseWith (fun () -> envVarTryGet REGION) with
+                                        match p.TryGetResult RegionProfile |> Option.orElseWith (fun () -> envVarTryGet REGION) with
                                         | Some systemName ->
                                             Choice1Of2 systemName
                                         | None ->
