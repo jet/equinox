@@ -192,8 +192,8 @@ module EventBody =
     let private inflate (loaded : MemoryStream) : byte array =
         // NOTE DeflateStream works from the current Position of the `loaded` stream; when it comes from the AWS SDK, that's 0/the start
         // If this path gets traversed a second time, the Position will be at the end, which yields an empty inflated result
-        // Simply resetting the Position to `0` to would ignore two facts: 1) multiple deflations is wasteful, but also 2) this could be as a result of multiple reader threads
-        // Thus, while only deflating from a defensive copy of the `loaded` stream via ToArray() would work, we fail fast, forcing outer layers to cache the results
+        // Simply resetting the Position to `0` would ignore: 1) multiple invocations are wasteful 2) this could be as a result of multiple reader threads
+        // Thus, while only inflating from a defensive copy of the `loaded` stream via ToArray() would work, we fail fast, forcing outer layers to cache result
         if loaded.Position <> 0 then invalidOp "Cannot traverse Event Body more than once and/or from multiple threads; should be wrapped in Lazy"
         let decompressor = new System.IO.Compression.DeflateStream(loaded, System.IO.Compression.CompressionMode.Decompress, leaveOpen = true)
         let output = new MemoryStream()
@@ -205,7 +205,8 @@ module EventBody =
         else encoded.data.ToArray() |> ReadOnlyMemory
     // Like TimelineEvent.Map, but wih tweaks to address the following concerns
     // 1) ensuring we cache to save the cost of multiple decompression passes in terms of CPU time and garbage
-    // 2) ensuring there can not be concurrent invocations of the mapping function (e.g. protecting against a function that mutates its input, is not thread safe, or is not concurrency safe)
+    // 2) ensuring there can not be concurrent invocations of the mapping function
+    //    (e.g. protecting against a function that mutates its input, is not thread safe, or is not concurrency safe)
     let private mapOnlyOnce (f : 'Format -> 'Mapped) (x : ITimelineEvent<'Format>) : ITimelineEvent<'Mapped> =
         let data, meta = lazy f x.Data, lazy f x.Meta
         { new ITimelineEvent<'Mapped> with
@@ -1229,7 +1230,7 @@ open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
 
-type [<RequireQualifiedAccess>] ConnectionKind = AwsEnvironment of string | ExplicitWithCredentials of string
+type [<RequireQualifiedAccess>] ConnectionMode = AwsEnvironment of systemName : string | ExplicitWithCredentials of serviceUrl : string
 
 /// Manages Creation and configuration of an IAmazonDynamoDB connection
 type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig, ?credentials : Amazon.Runtime.AWSCredentials) =
@@ -1238,8 +1239,8 @@ type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig,
     /// timeout: Required; AWS SDK Default: 100s
     /// maxRetries: Required; AWS SDK Default: 10
     new (serviceUrl, accessKey, secretKey, timeout : TimeSpan, retries) =
-        let mode, r, t = Amazon.Runtime.RequestRetryMode.Standard, retries, timeout
-        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = mode, MaxErrorRetry = r, Timeout = t)
+        let m = Amazon.Runtime.RequestRetryMode.Standard
+        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(ServiceURL = serviceUrl, RetryMode = m, MaxErrorRetry = retries, Timeout = timeout)
         DynamoStoreConnector(clientConfig, Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey))
 
     /// Connect to a nominated SystemName with endpoints and credentials gathered implicitly from well-known environment variables and/or configuration etc
@@ -1248,8 +1249,8 @@ type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig,
     /// maxRetries: Required; AWS SDK Default: 10
     new (systemName, timeout : TimeSpan, retries) =
         let regionEndpoint = Amazon.RegionEndpoint.GetBySystemName(systemName)
-        let mode, r, t = Amazon.Runtime.RequestRetryMode.Standard, retries, timeout
-        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(RegionEndpoint = regionEndpoint, RetryMode = mode, MaxErrorRetry = r, Timeout = t)
+        let m = Amazon.Runtime.RequestRetryMode.Standard
+        let clientConfig = Amazon.DynamoDBv2.AmazonDynamoDBConfig(RegionEndpoint = regionEndpoint, RetryMode = m, MaxErrorRetry = retries, Timeout = timeout)
         DynamoStoreConnector(clientConfig)
 
     member _.Options = clientConfig
@@ -1257,8 +1258,8 @@ type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig,
     member x.Timeout = let t = x.Options.Timeout in t.Value
     member x.Endpoint =
         match x.Options.ServiceURL with
-        | null -> ConnectionKind.AwsEnvironment x.Options.RegionEndpoint.SystemName
-        | x -> ConnectionKind.ExplicitWithCredentials x
+        | null -> ConnectionMode.AwsEnvironment x.Options.RegionEndpoint.SystemName
+        | x -> ConnectionMode.ExplicitWithCredentials x
 
     member _.CreateClient() =
         match credentials with
