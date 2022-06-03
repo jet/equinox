@@ -27,10 +27,11 @@ let [<Literal>] appName = "equinox-tool"
 exception MissingArg of string
 let missingArg msg = raise (MissingArg msg)
 
+let private envVarTryGet varName = Environment.GetEnvironmentVariable varName |> Option.ofObj
 let private getEnvVarForArgumentOrThrow varName argName =
-    match Environment.GetEnvironmentVariable varName with
-    | null -> missingArg (sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName)
-    | x -> x
+    match envVarTryGet varName with
+    | None -> missingArg (sprintf "Please provide a %s, either as an argument or via the %s environment variable" argName varName)
+    | Some x -> x
 let private defaultWithEnvVar varName argName = function
     | None -> getEnvVarForArgumentOrThrow varName argName
     | Some x -> x
@@ -129,14 +130,34 @@ module Cosmos =
 
 module Dynamo =
 
+    type Equinox.DynamoStore.DynamoStoreConnector with
+
+        member x.LogConfiguration(log : ILogger) =
+            log.Information("DynamoStore {endpoint} Timeout {timeoutS}s Retries {retries}",
+                            x.Endpoint, (let t = x.Timeout in t.TotalSeconds), x.Retries)
+
+    type Equinox.DynamoStore.DynamoStoreClient with
+
+        member internal x.LogConfiguration(role, log : ILogger) =
+            log.Information("DynamoStore {role:l} Table {table} Archive {archive}", role, x.TableName, Option.toObj x.ArchiveTableName)
+
+    type Equinox.DynamoStore.DynamoStoreContext with
+
+        member internal x.LogConfiguration(log : ILogger) =
+            log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
+                            x.TipOptions.MaxBytes, Option.toNullable x.TipOptions.MaxEvents, x.QueryOptions.MaxItems)
+
     open Equinox.DynamoStore
+    let [<Literal>] REGION =            "EQUINOX_DYNAMO_REGION"
     let [<Literal>] SERVICE_URL =       "EQUINOX_DYNAMO_SERVICE_URL"
     let [<Literal>] ACCESS_KEY =        "EQUINOX_DYNAMO_ACCESS_KEY_ID"
     let [<Literal>] SECRET_KEY =        "EQUINOX_DYNAMO_SECRET_ACCESS_KEY"
     let [<Literal>] TABLE =             "EQUINOX_DYNAMO_TABLE"
+    let [<Literal>] ARCHIVE_TABLE =     "EQUINOX_DYNAMO_TABLE_ARCHIVE"
     type [<NoEquality; NoComparison>] Parameters =
         | [<AltCommandLine "-V">]       VerboseStore
-        | [<AltCommandLine "-s">]       ServiceUrl of string
+        | [<AltCommandLine "-sr">]      RegionProfile of string
+        | [<AltCommandLine "-su">]      ServiceUrl of string
         | [<AltCommandLine "-sa">]      AccessKey of string
         | [<AltCommandLine "-ss">]      SecretKey of string
         | [<AltCommandLine "-t">]       Table of string
@@ -149,44 +170,50 @@ module Dynamo =
         interface IArgParserTemplate with
             member a.Usage = a |> function
                 | VerboseStore ->       "Include low level Store logging."
-                | ServiceUrl _ ->       "specify a server endpoint for a Dynamo account. (optional if environment variable " + SERVICE_URL + " specified)"
-                | AccessKey _ ->        "specify an access key id for a Dynamo account. (optional if environment variable " + ACCESS_KEY + " specified)"
-                | SecretKey _ ->        "specify a secret access key for a Dynamo account. (optional if environment variable " + SECRET_KEY + " specified)"
-                | Table _ ->            "specify a table name for the primary store. (optional if environment variable " + TABLE + " specified)"
-                | ArchiveTable _ ->     "specify a table name for the Archive. Default: Do not attempt to look in an Archive store as a Fallback to locate pruned events."
+                | RegionProfile _ ->    "specify an AWS Region (aka System Name, e.g. \"us-east-1\") to connect to using the implicit AWS SDK/tooling config and/or environment variables etc. Optional if:\n" +
+                                        "1) $" + REGION + " specified OR\n" +
+                                        "2) Explicit `ServiceUrl`/$" + SERVICE_URL + "+`AccessKey`/$" + ACCESS_KEY + "+`Secret Key`/$" + SECRET_KEY + " specified.\n" +
+                                        "See https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html for details"
+                | ServiceUrl _ ->       "specify a server endpoint for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + SERVICE_URL + " specified)"
+                | AccessKey _ ->        "specify an access key id for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + ACCESS_KEY + " specified)"
+                | SecretKey _ ->        "specify a secret access key for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + SECRET_KEY + " specified)"
+                | Table _ ->            "specify a table name for the primary store. (optional if $" + TABLE + " specified)"
+                | ArchiveTable _ ->     "specify a table name for the Archive; Optional if $" + ARCHIVE_TABLE + " specified.\n" +
+                                        "Default: Do not attempt to look in an Archive store as a Fallback to locate pruned events."
                 | Retries _ ->          "specify operation retries (default: 1)."
                 | RetriesTimeoutS _ ->  "specify max wait-time including retries in seconds (default: 5)"
                 | TipMaxBytes _ ->      "specify maximum number of bytes to hold in Tip before calving off to a frozen Batch. Default: 32K"
                 | TipMaxEvents _ ->     "specify maximum number of events to hold in Tip before calving off to a frozen Batch. Default: limited by Max Bytes"
                 | QueryMaxItems _ ->    "specify maximum number of batches of events to retrieve in per query response. Default: 10"
     type Arguments(p : ParseResults<Parameters>) =
-        let serviceUrl =                p.TryGetResult ServiceUrl |> defaultWithEnvVar SERVICE_URL   "ServiceUrl"
-        let accessKey =                 p.TryGetResult AccessKey  |> defaultWithEnvVar ACCESS_KEY    "AccessKey"
-        let secretKey =                 p.TryGetResult SecretKey  |> defaultWithEnvVar SECRET_KEY    "SecretKey"
+        let conn =
+                                        match p.TryGetResult RegionProfile |> Option.orElseWith (fun () -> envVarTryGet REGION) with
+                                        | Some systemName ->
+                                            Choice1Of2 systemName
+                                        | None ->
+                                            let serviceUrl =  p.TryGetResult ServiceUrl |> defaultWithEnvVar SERVICE_URL   "ServiceUrl"
+                                            let accessKey =   p.TryGetResult AccessKey  |> defaultWithEnvVar ACCESS_KEY    "AccessKey"
+                                            let secretKey =   p.TryGetResult SecretKey  |> defaultWithEnvVar SECRET_KEY    "SecretKey"
+                                            Choice2Of2 (serviceUrl, accessKey, secretKey)
         let retries =                   p.GetResult(Retries, 1)
         let timeout =                   p.GetResult(RetriesTimeoutS, 5.) |> TimeSpan.FromSeconds
-        member val Connector =          DynamoStoreConnector(serviceUrl, accessKey, secretKey, timeout, retries)
+        member val Connector =          match conn with
+                                        | Choice1Of2 systemName -> DynamoStoreConnector(systemName, timeout, retries)
+                                        | Choice2Of2 (serviceUrl, accessKey, secretKey) -> DynamoStoreConnector(serviceUrl, accessKey, secretKey, timeout, retries)
+        member val Table =              p.TryGetResult Table        |> defaultWithEnvVar TABLE "Table"
+        member val ArchiveTable =       p.TryGetResult ArchiveTable |> Option.orElseWith (fun () -> envVarTryGet ARCHIVE_TABLE)
 
-        member val Table =              p.TryGetResult Table      |> defaultWithEnvVar TABLE         "Table"
-        member val ArchiveTable =       p.TryGetResult ArchiveTable
+        member val TipMaxEvents =       p.TryGetResult TipMaxEvents
+        member val TipMaxBytes =        p.GetResult(TipMaxBytes, 32 * 1024)
+        member val QueryMaxItems =      p.GetResult(QueryMaxItems, 10)
 
-        member x.TipMaxEvents =         p.TryGetResult TipMaxEvents
-        member x.TipMaxBytes =          p.GetResult(TipMaxBytes, 32 * 1024)
-        member x.QueryMaxItems =        p.GetResult(QueryMaxItems, 10)
-
-    let logTable (log: ILogger) endpoint role table =
-        log.Information("DynamoStore {name:l} {endpoint} Table {table}", role, endpoint, table)
-    let createStoreClient (log : ILogger) (a : Arguments) =
+    let config (log : ILogger) (cache, unfolds) (a : Arguments) =
+        a.Connector.LogConfiguration(log)
         let client = a.Connector.CreateClient()
         let storeClient = DynamoStoreClient(client, a.Table, ?archiveTableName = a.ArchiveTable)
-        logTable log a.Connector.Endpoint "Primary" a.Table
-        match a.ArchiveTable with None -> () | Some at -> logTable log a.Connector.Endpoint "Archive" at
-        storeClient
-    let config (log : ILogger) (cache, unfolds) (a : Arguments) =
-        let storeClient = createStoreClient log a
-        log.Information("DynamoStore Tip thresholds: {maxTipBytes}b {maxTipEvents}e Query Paging {queryMaxItems} items",
-                        a.TipMaxBytes, a.TipMaxEvents, a.QueryMaxItems)
+        storeClient.LogConfiguration("Main", log)
         let context = DynamoStoreContext(storeClient, maxBytes = a.TipMaxBytes, queryMaxItems = a.QueryMaxItems, ?tipMaxEvents = a.TipMaxEvents)
+        context.LogConfiguration(log)
         let cacheStrategy = match cache with Some c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.) | None -> CachingStrategy.NoCaching
         StorageConfig.Dynamo (context, cacheStrategy, unfolds)
 
