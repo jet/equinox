@@ -27,10 +27,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.2.2" />
-    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.2.2" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" />
+    <PackageReference Include="FsCodec.SystemTextJson" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.Seq" />
   </ItemGroup>
 
 </Project>

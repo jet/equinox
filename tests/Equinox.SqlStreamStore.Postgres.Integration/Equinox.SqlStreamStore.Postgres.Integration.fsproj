@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <DisableImplicitFSharpCoreReference>false</DisableImplicitFSharpCoreReference>
     <DefineConstants>$(DefineConstants);STORE_POSTGRES</DefineConstants>
   </PropertyGroup>
 
@@ -19,12 +18,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FsCheck.xUnit" Version="2.16.4" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
-    <PackageReference Include="unquote" Version="6.1.0" />
-    <PackageReference Include="xunit" Version="2.4.1" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.3">
+    <PackageReference Include="FSharp.Core" VersionOverride="$(FSCorePackageVersion)" />
+    <PackageReference Include="FsCheck.xUnit" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Serilog.Sinks.Seq" />
+    <PackageReference Include="unquote" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>

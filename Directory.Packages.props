@@ -1,0 +1,51 @@
+<Project>
+    <PropertyGroup>
+        <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.1.1" />
+        <PackageVersion Include="MinVer" Version="4.0.0" />
+        
+        <!-- NOTE see also usage of FSCorePackageVersion in Tool and Tests -->
+        <PackageVersion Include="FSharp.Core" Version="4.5.4" />
+        
+        <!-- Direct deps of public packages -->
+        <PackageVersion Include="EventStore.Client.Grpc.Streams" Version="22.0.0" />
+        <PackageVersion Include="EventStore.Client" Version="22.0.0-preview" />
+        <PackageVersion Include="FsCodec" Version="3.0.0-rc.2.2" />
+        <PackageVersion Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
+        <PackageVersion Include="FSharp.AWS.DynamoDB" Version="0.11.0-beta" />
+        <PackageVersion Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
+        <PackageVersion Include="MathNet.Numerics" Version="5.0.0" />
+        <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.27.0" />
+        <PackageVersion Include="prometheus-net" Version="3.6.0" />
+        <PackageVersion Include="Serilog" Version="2.7.1" />
+        <PackageVersion Include="System.Reactive" Version="5.0.0" />
+        <PackageVersion Include="System.Runtime.Caching" Version="6.0.0" />
+        <PackageVersion Include="System.Text.Json" Version="6.0.1" />
+
+        <!-- Used by samples -->
+        <PackageVersion Include="Argu" Version="6.1.1" />
+        <PackageVersion Include="Destructurama.FSharp" Version="1.2.0" />
+        <PackageVersion Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.2.2" />
+        <PackageVersion Include="FsCodec.SystemTextJson" Version="3.0.0-rc.2.2" />
+        <PackageVersion Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
+        <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="6.0.0" />
+        <PackageVersion Include="Serilog.AspNetCore" Version="3.2.0" />
+        <PackageVersion Include="Serilog.Sinks.Console" Version="4.0.1" />
+        <PackageVersion Include="Serilog.Sinks.Seq" Version="5.1.1" />
+        <PackageVersion Include="SqlStreamStore" Version="1.2.0-beta.8" />
+        <PackageVersion Include="SqlStreamStore.MySql" Version="1.2.0-beta.8" />
+        <PackageVersion Include="SqlStreamStore.MsSql" Version="1.2.0-beta.8" />
+        <PackageVersion Include="SqlStreamStore.Postgres" Version="1.2.0-beta.8" />
+
+        <!-- Used by tests -->
+        <PackageVersion Include="FsCheck.xUnit" Version="2.16.4" />
+        <PackageVersion Include="JsonDiffPatch.Net" Version="2.3.0" />
+        <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
+        <PackageVersion Include="xunit" Version="2.4.1" />
+        <PackageVersion Include="xunit.runner.visualstudio" Version="2.4.3" />
+        <PackageVersion Include="unquote" Version="6.1.0" />
+
+    </ItemGroup>
+</Project>

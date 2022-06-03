@@ -15,14 +15,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="4.0.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="4.5.4" />
+    <PackageReference Include="FSharp.Core" />
 
-    <PackageReference Include="FsCodec" Version="3.0.0-rc.2.2" />
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.27.0" />
-    <PackageReference Include="System.Text.Json" Version="6.0.1" />
+    <PackageReference Include="FsCodec" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" />
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
 </Project>

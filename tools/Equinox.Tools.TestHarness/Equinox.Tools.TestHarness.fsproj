@@ -14,14 +14,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="4.0.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" PrivateAssets="All" />
 
     <!-- 4.7.0 has broken Async.Sequential, Async.Parallel with degree of parallelism parameter -->
-    <PackageReference Include="FSharp.Core" Version="4.7.2" />
+    <PackageReference Include="FSharp.Core" VersionOverride="4.7.2" />
 
-    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
-    <PackageReference Include="Serilog" Version="2.7.1" />
-    <PackageReference Include="System.Reactive" Version="5.0.0" />
+    <PackageReference Include="MathNet.Numerics" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="System.Reactive" />
   </ItemGroup>
 
 </Project>

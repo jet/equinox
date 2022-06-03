@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <DisableImplicitFSharpCoreReference>false</DisableImplicitFSharpCoreReference>
     <OutputType>Exe</OutputType>
 
     <PackageId>Equinox.Tool</PackageId>
@@ -31,7 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="4.0.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" PrivateAssets="All" />
+    
+    <PackageReference Include="FSharp.Core" VersionOverride="$(FSCorePackageVersion)" />
   </ItemGroup>
 
   <!-- workaround for not being able to make Domain inlined in a complete way https://github.com/nuget/home/issues/3891#issuecomment-377319939 -->
