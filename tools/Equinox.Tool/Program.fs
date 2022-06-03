@@ -382,22 +382,24 @@ module CosmosInit =
 module DynamoInit =
 
     open Equinox.DynamoStore
+    open Storage.Dynamo
 
     let table (log : ILogger) (p : ParseResults<TableParameters>) =
         let a = DynamoInitArguments p
         match p.GetSubCommand() with
         | TableParameters.Dynamo sp ->
             let sa = Storage.Dynamo.Arguments sp
-            let t, s = a.Throughput, a.StreamingMode
+            sa.Connector.LogConfiguration(log)
+            let t = a.Throughput
             match t with
             | Throughput.Provisioned t ->
-                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with {read}R/{write}WCU Provisioned capacity; streaming {streaming}",
+                log.Information("DynamoStore Provisioning Table {table} with {read}R/{write}WCU Provisioned capacity; streaming {streaming}",
                                 sa.Table, t.ReadCapacityUnits, t.WriteCapacityUnits, a.StreamingMode)
             | Throughput.OnDemand ->
-                log.Information("Provisioning `Equinox.DynamoStore` Table {table} with On-Demand capacity management; streaming {streaming}",
+                log.Information("DynamoStore Provisioning Table {table} with On-Demand capacity management; streaming {streaming}",
                                 sa.Table, a.StreamingMode)
             let client = sa.Connector.CreateClient()
-            Core.Initialization.provision client sa.Table (t, s)
+            Core.Initialization.provision client sa.Table (t, a.StreamingMode)
         | x -> Storage.missingArg $"unexpected subcommand %A{x}"
 
 module SqlInit =

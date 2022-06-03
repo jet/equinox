@@ -153,6 +153,7 @@ module Dynamo =
     let [<Literal>] ACCESS_KEY =        "EQUINOX_DYNAMO_ACCESS_KEY_ID"
     let [<Literal>] SECRET_KEY =        "EQUINOX_DYNAMO_SECRET_ACCESS_KEY"
     let [<Literal>] TABLE =             "EQUINOX_DYNAMO_TABLE"
+    let [<Literal>] ARCHIVE_TABLE =     "EQUINOX_DYNAMO_TABLE_ARCHIVE"
     type [<NoEquality; NoComparison>] Parameters =
         | [<AltCommandLine "-V">]       VerboseStore
         | [<AltCommandLine "-sr">]      RegionProfile of string
@@ -177,7 +178,8 @@ module Dynamo =
                 | AccessKey _ ->        "specify an access key id for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + ACCESS_KEY + " specified)"
                 | SecretKey _ ->        "specify a secret access key for a Dynamo account. (Not applicable if `ServiceRegion`/$" + REGION + " specified; Optional if $" + SECRET_KEY + " specified)"
                 | Table _ ->            "specify a table name for the primary store. (optional if $" + TABLE + " specified)"
-                | ArchiveTable _ ->     "specify a table name for the Archive. Default: Do not attempt to look in an Archive store as a Fallback to locate pruned events."
+                | ArchiveTable _ ->     "specify a table name for the Archive; Optional if $" + ARCHIVE_TABLE + " specified.\n" +
+                                        "Default: Do not attempt to look in an Archive store as a Fallback to locate pruned events."
                 | Retries _ ->          "specify operation retries (default: 1)."
                 | RetriesTimeoutS _ ->  "specify max wait-time including retries in seconds (default: 5)"
                 | TipMaxBytes _ ->      "specify maximum number of bytes to hold in Tip before calving off to a frozen Batch. Default: 32K"
@@ -198,12 +200,12 @@ module Dynamo =
         member val Connector =          match conn with
                                         | Choice1Of2 systemName -> DynamoStoreConnector(systemName, timeout, retries)
                                         | Choice2Of2 (serviceUrl, accessKey, secretKey) -> DynamoStoreConnector(serviceUrl, accessKey, secretKey, timeout, retries)
-        member val Table =              p.TryGetResult Table      |> defaultWithEnvVar TABLE         "Table"
-        member val ArchiveTable =       p.TryGetResult ArchiveTable
+        member val Table =              p.TryGetResult Table        |> defaultWithEnvVar TABLE "Table"
+        member val ArchiveTable =       p.TryGetResult ArchiveTable |> Option.orElseWith (fun () -> envVarTryGet ARCHIVE_TABLE)
 
-        member x.TipMaxEvents =         p.TryGetResult TipMaxEvents
-        member x.TipMaxBytes =          p.GetResult(TipMaxBytes, 32 * 1024)
-        member x.QueryMaxItems =        p.GetResult(QueryMaxItems, 10)
+        member val TipMaxEvents =       p.TryGetResult TipMaxEvents
+        member val TipMaxBytes =        p.GetResult(TipMaxBytes, 32 * 1024)
+        member val QueryMaxItems =      p.GetResult(QueryMaxItems, 10)
 
     let config (log : ILogger) (cache, unfolds) (a : Arguments) =
         a.Connector.LogConfiguration(log)

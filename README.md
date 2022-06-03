@@ -184,7 +184,7 @@ Equinox does not focus on projection logic - each store brings its own strengths
     - can render events from any of the stores via `eqx dump`.
     - incorporates a benchmark scenario runner, running load tests composed of transactions in `samples/Store` and `samples/TodoBackend` against any supported store; this allows perf tuning and measurement in terms of both latency and transaction charge aspects. (Install via: `dotnet tool install Equinox.Tool -g`)
     - can configure indices in Azure CosmosDB for an `Equinox.CosmosStore` Container via `eqx init`. See [here](https://github.com/jet/equinox#store-data-in-azure-cosmosdb).
-    - can create tables in Amazon DynamoDB for `Equinox.DynamoStore` via `eqx initAws`.
+    - can create tables in Amazon DynamoDB for `Equinox.DynamoStore` via `eqx initaws`.
     - can initialize databases for `SqlStreamStore` via `eqx config`
 
 ## Starter Project Templates and Sample Applications 
@@ -501,9 +501,10 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
 - being able to supply `dynamo` source to `eqx run` wherever `cosmos` works, e.g. `eqx run -t cart -f 50 -d 5 -CU dynamo -s http://localhost:8000 -t TableName`
 - being able to supply `dynamo` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" dynamo`
 - being able to supply `dynamo` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- dynamo -s http://localhost:8000`
-- being able to supply `dynamo` flag to `eqx initAws` command e.g. `eqx initAws -rru 10 -wru 10 dynamo -t TableName`
+- being able to supply `dynamo` flag to `eqx initaws` command e.g. `eqx initaws -rru 10 -wru 10 dynamo -t TableName`
 
-1. The tooling and samples in this repo default to using the following environment variables (see [AWS CLI UserGuide for more detailed guidance as to specific configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html))
+1. The tooling and samples in this repo default to using the following environment variables (see [AWS CLI UserGuide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html)
+   for more detailed guidance as to specific configuration)
 
     ```zsh
     $env:EQUINOX_DYNAMO_SERVICE_URL="https://dynamodb.us-west-2.amazonaws.com" # Simulator: "http://localhost:8000"
@@ -521,8 +522,8 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
     # start the simulator at http://localhost:8000 and an admin console at http://localhost:8001/
     docker compose up dynamodb-local dynamodb-admin -d
 
-    # Establish the table
-    dotnet run --project tools/Equinox.Tool -- initAws -rru 10 -wru 10 dynamo -t TableName
+    # Establish the table in us-east-1 - keys come from $EQUINOX_DYNAMO_ACCESS_KEY_ID and $EQUINOX_DYNAMO_SECRET_ACCESS_KEY
+    dotnet run --project tools/Equinox.Tool -- initaws -rru 10 -wru 10 dynamo -t TableName -su https://dynamodb.us-east-1.amazonaws.com
 
     # run a benchmark
     dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -CU dynamo
