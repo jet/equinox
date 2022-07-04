@@ -2040,8 +2040,8 @@ below the table](#access-strategy-glossary) for definition of terms)
 
 # DynamoStore
 
-Fundamentally, document stores share many common traits and applying the concepts of Mechanical Sympathy in optimizing the
-storage representation and access patterns will thus naturally yield a very similar set of access patterns that work well.
+Fundamentally, document stores share many common traits. Thus, applying the concepts of Mechanical Sympathy in optimizing the
+storage representation and access patterns will naturally yield a shared set of access patterns that work well.
 This is absolutely the case when contrasting CosmosDB and DynamoDB.
 As a result `Equinox.DynamoStore` can and does implement pretty much the same the same feature set, API patterns and [access strategies](#access-strategies) as `Equinox.CosmosStore`.
 
@@ -2093,14 +2093,13 @@ Further information:
 
 ### Event Bodies are BLOBS vs `JsonElement`s
 
-`CosmosStore` dictates (as of V4) that event bodies be supplied as `System.Text.Json.JsonElement`s (in order that events can be included in the Document/ Items as JSON directly.
+`CosmosStore` dictates (as of V4) that event bodies be supplied as `System.Text.Json.JsonElement`s (in order that events can be included in the Document/ Items as JSON directly).
 This is also to underscore the fact that the only reasonable format to use is valid JSON; binary data would need to be base64 encoded.
 
 `DynamoStore` accepts and yields event bodies as arbitrary `ReadOnlyMemory<byte>` BLOBs (the AWS SDK round-trips such blobs as a `MemoryStream` and does not impose any restrictions on the blobs in terms of required format)
 
 `CosmosStore` defaults to compressing (with `System.IO.Compression.DeflateStream`) the event bodies for Unfolds;
-`DynamoStore` provides for (and defaults to) compressing event bodies for both Events and Unfolds.
-While both compression behaviors can be disabled (particularly if your Event Encoding already compresses, or the nature of your data or format is such that attempting compression will not yield gain), it should be noted that the key reason why this facility is provided is that minimizing Request Charges is imperative when request size directly maps to financial charges, 429s, reduced throughput and a lowered scaling ceiling.
+`DynamoStore` round-trips an `Encoding` field per blob (one for the data, one for the metadata) Events and Unfolds in order to enable the `IEventCodec` to compress the blobs. In both cases, minimizing Request Charges is imperative when request size directly maps to financial charges, 429s, reduced throughput and a lowered scaling ceiling.
 
 ### Features not ported and/or not easily implementable
 
@@ -2119,9 +2118,10 @@ lightweight wrapper over the CosmosDB ChangeFeed), there are ancillary component
 ### `Propulsion.DynamoStore.Lambda`
  
 CosmosDB intrinsically maintains and surfaces the documents/Items (and physical partition metadata as that shifts over time)
-in such a manner that any number of consumers can concurrently point walk all the data across all the physical partitions
-and be guaranteed to have traversed every change (_though notably not including deletes, but we don't use deletes_) when one has reached the 
-current 'end' of each physical partition (even in the face of physical partition splits and document updates during the walk).
+in such a manner that any number of consumers can concurrently walk all the data across all the physical partitions
+and be guaranteed to have traversed every change (_though notably not including deletes; this is of course fine as our model is append-only_)
+when one has reached the current 'end' of each physical partition (even in the face of physical partition splits and
+document updates during the walk).
 
 It should be noted that these walks are not free; each reader induces RU consumption on the Container which limits the
 capacity for other reads and writes, and has a 'write amplification' effect: each write immediately triggers N reads.
