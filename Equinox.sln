@@ -101,12 +101,6 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Integra
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Prometheus", "src\Equinox.DynamoStore.Prometheus\Equinox.DynamoStore.Prometheus.fsproj", "{A9AF41B3-AB28-4296-B4A4-B90DA7821476}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec", "..\FsCodec\src\FsCodec\FsCodec.fsproj", "{05CBBD28-0224-4387-AB6C-8F0278660807}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec.SystemTextJson", "..\FsCodec\src\FsCodec.SystemTextJson\FsCodec.SystemTextJson.fsproj", "{CA0E9CF0-B442-4588-890B-15657D324845}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec.NewtonsoftJson", "..\FsCodec\src\FsCodec.NewtonsoftJson\FsCodec.NewtonsoftJson.fsproj", "{E156E59A-D57E-4838-8054-91486275D25B}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -233,18 +227,6 @@ Global
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Release|Any CPU.Build.0 = Release|Any CPU
-		{05CBBD28-0224-4387-AB6C-8F0278660807}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{05CBBD28-0224-4387-AB6C-8F0278660807}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{05CBBD28-0224-4387-AB6C-8F0278660807}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{05CBBD28-0224-4387-AB6C-8F0278660807}.Release|Any CPU.Build.0 = Release|Any CPU
-		{CA0E9CF0-B442-4588-890B-15657D324845}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{CA0E9CF0-B442-4588-890B-15657D324845}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{CA0E9CF0-B442-4588-890B-15657D324845}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{CA0E9CF0-B442-4588-890B-15657D324845}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E156E59A-D57E-4838-8054-91486275D25B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{E156E59A-D57E-4838-8054-91486275D25B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{E156E59A-D57E-4838-8054-91486275D25B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{E156E59A-D57E-4838-8054-91486275D25B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
