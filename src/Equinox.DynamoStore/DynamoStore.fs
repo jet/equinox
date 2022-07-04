@@ -9,16 +9,14 @@ open System
 open System.IO
 
 [<Struct; NoEquality; NoComparison>]
-type EncodedBody = { isCompressed : bool; data : MemoryStream }
-module private EncodedBody =
-    let ofRawAndCompressed (raw : MemoryStream option, compressed : MemoryStream option) : EncodedBody =
-        let compressed = Option.toObj compressed
-        if compressed <> null then { isCompressed = true; data = compressed }
-        else { isCompressed = false; data = Option.toObj raw }
-    let toRawAndCompressed (encoded : EncodedBody) =
-        if encoded.isCompressed then None, Option.ofObj encoded.data
-        else Option.ofObj encoded.data, None
-    let bytes (x : EncodedBody) =
+type InternalBody = { encoding : int; data : MemoryStream }
+module private InternalBody =
+    let ofStreamAndEncoding (stream : MemoryStream option, encoding : int option) : InternalBody =
+        let stream = Option.toObj stream
+        { encoding = defaultArg encoding 0; data = stream }
+    let toStreamAndEncoding (encoded : InternalBody) =
+        Option.ofObj encoded.data, match encoded.encoding with 0 -> None | x -> Some x
+    let bytes (x : InternalBody) =
         if x.data = null then 0
         else int x.data.Length
 
@@ -35,17 +33,17 @@ type Event =
         c : string
 
         /// Main event body; required
-        d : EncodedBody
+        d : InternalBody
 
         /// Optional metadata, encoded as per 'd'; can be Empty
-        m : EncodedBody
+        m : InternalBody
 
         /// CorrelationId; stored as x (signifying transactionId), or null
         correlationId : string option
 
         /// CausationId; stored as y (signifying why), or null
         causationId : string option }
-    interface ITimelineEvent<EncodedBody> with
+    interface ITimelineEvent<InternalBody> with
         member x.Index = x.i
         member x.Context = null
         member x.IsUnfold = false
@@ -58,7 +56,7 @@ type Event =
         member x.Timestamp = x.t
 module Event =
     let private len = function Some (s : string) -> s.Length | None -> 0
-    let bytes (x : Event) = x.c.Length + EncodedBody.bytes x.d + EncodedBody.bytes x.m + len x.correlationId + len x.causationId + 20 (*t*) + 20 (*overhead*)
+    let bytes (x : Event) = x.c.Length + InternalBody.bytes x.d + InternalBody.bytes x.m + len x.correlationId + len x.causationId + 20 (*t*) + 20 (*overhead*)
     let arrayBytes (xs : Event array) = Array.sumBy bytes xs
 
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
@@ -74,11 +72,11 @@ type Unfold =
         c : string // required
 
         /// Event body
-        d : EncodedBody // required
+        d : InternalBody // required
 
         /// Optional metadata, can be Empty
-        m : EncodedBody }
-    interface ITimelineEvent<EncodedBody> with
+        m : InternalBody }
+    interface ITimelineEvent<InternalBody> with
         member x.Index = x.i
         member x.Context = null
         member x.IsUnfold = true
@@ -90,7 +88,7 @@ type Unfold =
         member x.CausationId = null
         member x.Timestamp = x.t
 module Unfold =
-    let private bytes (x : Unfold) = x.c.Length + EncodedBody.bytes x.d + EncodedBody.bytes x.m + 50
+    let private bytes (x : Unfold) = x.c.Length + InternalBody.bytes x.d + InternalBody.bytes x.m + 50
     let arrayBytes (xs : Unfold array) = match xs with null -> 0 | u -> Array.sumBy bytes u
 
 /// The abstract storage format for a 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
@@ -144,33 +142,33 @@ module Batch =
             u : UnfoldSchema array }
     and [<NoEquality; NoComparison>] EventSchema =
         {   t : DateTimeOffset // NOTE there has to be a single non-`option` field per record, or a trailing insert will be stripped
-            d : MemoryStream option; D : MemoryStream option // D if compressed, d if raw // required
-            m : MemoryStream option; M : MemoryStream option // M if compressed, m if raw
+            d : MemoryStream option; D : int option     // D carries encoding, None -> 0 // required
+            m : MemoryStream option; M : int option     // M carries encoding, None -> 0
             x : string option
             y : string option }
     and [<NoEquality; NoComparison>] UnfoldSchema =
         {   i : int64
             t : DateTimeOffset
             c : string // required
-            d : MemoryStream option; D : MemoryStream option // D if compressed, d if raw // required
-            m : MemoryStream option; M : MemoryStream option } // M if compressed, m if raw
+            d : MemoryStream option; D : int option     // D carries encoding, None -> 0 // required
+            m : MemoryStream option; M : int option }   // M carries encoding, None -> 0
     let private toEventSchema (x : Event) : EventSchema =
-        let (d, D), (m, M) = EncodedBody.toRawAndCompressed x.d, EncodedBody.toRawAndCompressed x.m
+        let (d, D), (m, M) = InternalBody.toStreamAndEncoding x.d, InternalBody.toStreamAndEncoding x.m
         { t = x.t; d = d; D = D; m = m; M = M; x = x.correlationId; y = x.causationId }
     let eventsToSchema (xs : Event array) : (*case*) string array * EventSchema array =
         xs |> Array.map (fun x -> x.c), xs |> Array.map toEventSchema
     let private toUnfoldSchema (x : Unfold) : UnfoldSchema =
-        let (d, D), (m, M) = EncodedBody.toRawAndCompressed x.d, EncodedBody.toRawAndCompressed x.m
+        let (d, D), (m, M) = InternalBody.toStreamAndEncoding x.d, InternalBody.toStreamAndEncoding x.m
         { i = x.i; t = x.t; c = x.c; d = d; D = D; m = m; M = M }
     let unfoldsToSchema = Array.map toUnfoldSchema
     let private ofUnfoldSchema (x : UnfoldSchema) : Unfold =
-        { i = x.i; t = x.t; c = x.c; d = EncodedBody.ofRawAndCompressed (x.d, x.D); m = EncodedBody.ofRawAndCompressed (x.m, x.M) }
+        { i = x.i; t = x.t; c = x.c; d = InternalBody.ofStreamAndEncoding (x.d, x.D); m = InternalBody.ofStreamAndEncoding (x.m, x.M) }
     let ofSchema (x : Schema) : Batch =
         let baseIndex = int x.n - x.e.Length
         let events =
             Seq.zip x.c x.e
             |> Seq.mapi (fun i (c, e) ->
-                let d, m = EncodedBody.ofRawAndCompressed (e.d, e.D), EncodedBody.ofRawAndCompressed (e.m, e.M)
+                let d, m = InternalBody.ofStreamAndEncoding (e.d, e.D), InternalBody.ofStreamAndEncoding (e.m, e.M)
                 { i = baseIndex + i; t = e.t; d = d; m = m; correlationId = e.x; causationId = e.y; c = c })
         { p = x.p; b = x.b; i = x.i; etag = Option.toObj x.etag; n = x.n; e = Seq.toArray events; u = x.u |> Array.map ofUnfoldSchema }
     let enumEvents (minIndex, maxIndex) (x : Batch) : Event seq =
@@ -184,67 +182,15 @@ module Batch =
     let bytesBase (x : Batch) = 80 + x.p.Length + String.length x.etag + Event.arrayBytes x.e
     let bytesTotal (xs : Batch seq) = xs |> Seq.sumBy (fun x -> bytesBase x + bytesUnfolds x)
 
-type EventBody = ReadOnlyMemory<byte>
-module EventBody =
+type EncodedBody = (struct (int * ReadOnlyMemory<byte>))
+module EncodedBody =
 
-    (* All EncodedBody can potentially hold compressed content, that we'll inflate on demand *)
-
-    let private inflate (loaded : MemoryStream) : byte array =
-        // NOTE DeflateStream works from the current Position of the `loaded` stream; when it comes from the AWS SDK, that's 0/the start
-        // If this path gets traversed a second time, the Position will be at the end, which yields an empty inflated result
-        // Simply resetting the Position to `0` would ignore: 1) multiple invocations are wasteful 2) this could be as a result of multiple reader threads
-        // Thus, while only inflating from a defensive copy of the `loaded` stream via ToArray() would work, we fail fast, forcing outer layers to cache result
-        if loaded.Position <> 0 then invalidOp "Cannot traverse Event Body more than once and/or from multiple threads; should be wrapped in Lazy"
-        let decompressor = new System.IO.Compression.DeflateStream(loaded, System.IO.Compression.CompressionMode.Decompress, leaveOpen = true)
-        let output = new MemoryStream()
-        decompressor.CopyTo(output)
-        output.ToArray()
-    let private decode (encoded : EncodedBody) : EventBody =
-        if encoded.isCompressed then inflate encoded.data |> ReadOnlyMemory
-        elif encoded.data = null then ReadOnlyMemory.Empty
-        else encoded.data.ToArray() |> ReadOnlyMemory
-    // Like TimelineEvent.Map, but wih tweaks to address the following concerns
-    // 1) ensuring we cache to save the cost of multiple decompression passes in terms of CPU time and garbage
-    // 2) ensuring there can not be concurrent invocations of the mapping function
-    //    (e.g. protecting against a function that mutates its input, is not thread safe, or is not concurrency safe)
-    let private mapOnlyOnce (f : 'Format -> 'Mapped) (x : ITimelineEvent<'Format>) : ITimelineEvent<'Mapped> =
-        let data, meta = lazy f x.Data, lazy f x.Meta
-        { new ITimelineEvent<'Mapped> with
-            member _.Index = x.Index
-            member _.IsUnfold = x.IsUnfold
-            member _.Context = x.Context
-            member _.EventType = x.EventType
-            member _.Data = data.Value
-            member _.Meta = meta.Value
-            member _.EventId = x.EventId
-            member _.CorrelationId = x.CorrelationId
-            member _.CausationId = x.CausationId
-            member _.Timestamp = x.Timestamp }
-    // NOTE mapOnlyOnce is critical; decode mutates it's input and contains an internal guard that will detect and throw on the second invocation
-    let internal decodeEvent = mapOnlyOnce decode
-
-    (* Compression is conditional on the input meeting a minimum size, and the result meeting a required gain *)
-
-    let private compress (eventBody : ReadOnlyMemory<byte>) : MemoryStream =
-        let output = new MemoryStream() // NB not `use` - Dispose would Close the stream, and AWS SDK requires it open
-        let compressor = new System.IO.Compression.DeflateStream(output, System.IO.Compression.CompressionLevel.Optimal, leaveOpen = true)
-        compressor.Write(eventBody.Span)
-        compressor.Flush() // NB not `Close` as that would Close the `output`, and AWS SDK requires the Stream open
-        output
-    let private encodeUncompressed (raw : ReadOnlyMemory<byte>) = { isCompressed = false; data = new MemoryStream(raw.ToArray(), writable = false) }
-    let internal encode (minSize, minGain) (raw : EventBody) : EncodedBody =
-        if raw.IsEmpty then { isCompressed = false; data = null }
-        elif raw.Length < minSize then encodeUncompressed raw
-        else match compress raw with
-             | tmp when raw.Length > int tmp.Length + minGain -> { isCompressed = true; data = tmp }
-             | _ -> encodeUncompressed raw
-
-type EncodingOptions =
-    { eventData : int; eventMeta : int; unfoldData : int; unfoldMeta : int; minGain : int }
-    member internal x.EncodeEventData raw = EventBody.encode (x.eventData, x.minGain) raw
-    member internal x.EncodeEventMeta raw = EventBody.encode (x.eventMeta, x.minGain) raw
-    member internal x.EncodeUnfoldData raw = EventBody.encode (x.unfoldData, x.minGain) raw
-    member internal x.EncodeUnfoldMeta raw = EventBody.encode (x.unfoldMeta, x.minGain) raw
+    let private decodeBody (raw : InternalBody) : EncodedBody =
+        raw.encoding, if raw.data = null then ReadOnlyMemory.Empty else raw.data.ToArray() |> ReadOnlyMemory
+    let internal ofInternal = Core.TimelineEvent.Map decodeBody
+    let internal toInternal struct (encoding, encodedBody : ReadOnlyMemory<byte>) : InternalBody =
+        {   encoding = encoding
+            data = match encodedBody with d when d.IsEmpty -> null | d -> new MemoryStream(d.ToArray(), writable = false) }
 
 // We only capture the total RUs, without attempting to split them into read/write as the service does not actually populate the associated fields
 // See https://github.com/aws/aws-sdk-go/issues/2699#issuecomment-514378464
@@ -650,16 +596,14 @@ module internal Sync =
         | ConflictUnknown
 
     let private maxDynamoDbItemSize = 400 * 1024
-    let handle log (maxEvents, maxBytes, eo : EncodingOptions) (container, stream)
-            (pos, exp, n', events : IEventData<EventBody> array, unfolds : IEventData<EventBody> array) = async {
+    let handle log (maxEvents, maxBytes) (container, stream)
+            (pos, exp, n', events : IEventData<EncodedBody> array, unfolds : IEventData<EncodedBody> array) = async {
         let baseIndex = int n' - events.Length
         let events : Event array = events |> Array.mapi (fun i e ->
-            {   i = baseIndex + i; t = e.Timestamp
-                c = e.EventType; d = eo.EncodeEventData e.Data; m = eo.EncodeEventMeta e.Meta
+            {   i = baseIndex + i; t = e.Timestamp; c = e.EventType; d = EncodedBody.toInternal e.Data; m = EncodedBody.toInternal e.Meta
                 correlationId = Option.ofObj e.CorrelationId; causationId = Option.ofObj e.CausationId })
         let unfolds : Unfold array = unfolds |> Array.map (fun (x : IEventData<_>) ->
-            {   i = n'; t = x.Timestamp
-                c = x.EventType; d = eo.EncodeUnfoldData x.Data; m = eo.EncodeUnfoldMeta x.Meta })
+            {   i = n'; t = x.Timestamp; c = x.EventType; d = EncodedBody.toInternal x.Data; m = EncodedBody.toInternal x.Meta })
         if Array.isEmpty events && Array.isEmpty unfolds then invalidOp "Must write either events or unfolds."
         let cur = Position.flatten pos
         let req, predecessorBytes', tipEvents' =
@@ -708,13 +652,13 @@ module internal Tip =
             log.Information("EqxDynamo {action:l} {res} {stream:l} v{n} {ms:f1}ms {ru}RU {events}e {unfolds}u {baseBytes}+{unfoldsBytes}b",
                             "Tip", 200, stream, tip.n, Log.tms t, ru, eventsCount, unfoldsCount, bb, ub)
         return ru, res }
-    let private enumEventsAndUnfolds (minIndex, maxIndex) (x : Batch) : ITimelineEvent<EncodedBody> array =
+    let private enumEventsAndUnfolds (minIndex, maxIndex) (x : Batch) : ITimelineEvent<InternalBody> array =
         Seq.append<ITimelineEvent<_>> (Batch.enumEvents (minIndex, maxIndex) x |> Seq.cast) (x.u |> Seq.cast)
         // where Index is equal, unfolds get delivered after the events so the fold semantics can be 'idempotent'
         |> Seq.sortBy (fun x -> x.Index, x.IsUnfold)
         |> Array.ofSeq
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
-    let tryLoad (log : ILogger) containerStream (maybePos : Position option, maxIndex) : Async<Res<Position * int64 * ITimelineEvent<EncodedBody> array>> = async {
+    let tryLoad (log : ILogger) containerStream (maybePos : Position option, maxIndex) : Async<Res<Position * int64 * ITimelineEvent<InternalBody> array>> = async {
         let! _rc, res = loggedGet get containerStream maybePos log
         match res with
         | Res.NotModified -> return Res.NotModified
@@ -773,7 +717,7 @@ module internal Query =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type ScanResult<'event> = { found : bool; minIndex : int64; next : int64; maybeTipPos : Position option; events : 'event array }
 
-    let scanTip (tryDecode : ITimelineEvent<EventBody> -> 'event option, isOrigin : 'event -> bool) (pos : Position, i : int64, xs : ITimelineEvent<EncodedBody> array)
+    let scanTip (tryDecode : ITimelineEvent<EncodedBody> -> 'event option, isOrigin : 'event -> bool) (pos : Position, i : int64, xs : ITimelineEvent<InternalBody> array)
         : ScanResult<'event> =
         let items = ResizeArray()
         let isOrigin' e =
@@ -782,12 +726,12 @@ module internal Query =
             | Some e ->
                 items.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
                 isOrigin e
-        let f, e = xs |> Seq.map EventBody.decodeEvent |> Seq.tryFindBack isOrigin' |> Option.isSome, items.ToArray()
+        let f, e = xs |> Seq.map EncodedBody.ofInternal |> Seq.tryFindBack isOrigin' |> Option.isSome, items.ToArray()
         { found = f; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
     let scan<'event> (log : ILogger) (container, stream) maxItems maxRequests direction
-        (tryDecode : ITimelineEvent<EventBody> -> 'event option, isOrigin : 'event -> bool)
+        (tryDecode : ITimelineEvent<EncodedBody> -> 'event option, isOrigin : 'event -> bool)
         (minIndex, maxIndex)
         : Async<ScanResult<'event> option> = async {
         let mutable found = false
@@ -800,7 +744,7 @@ module internal Query =
                     if Option.isNone maybeTipPos then maybeTipPos <- maybePos
                     lastResponse <- Some events; ru <- ru + rc.total
                     responseCount <- responseCount + 1
-                    seq { for x in events -> x, x |> EventBody.decodeEvent |> tryDecode })
+                    seq { for x in events -> x, x |> EncodedBody.ofInternal |> tryDecode })
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.takeWhileInclusive (function
                     | x,Some e when isOrigin e ->
@@ -836,7 +780,7 @@ module internal Query =
         | None, _ -> return None }
 
     let walkLazy<'event> (log : ILogger) (container, stream) maxItems maxRequests
-        (tryDecode : ITimelineEvent<EventBody> -> 'event option, isOrigin : 'event -> bool)
+        (tryDecode : ITimelineEvent<EncodedBody> -> 'event option, isOrigin : 'event -> bool)
         (direction, minIndex, maxIndex)
         : AsyncSeq<'event array> = asyncSeq {
         let query = mkQuery log (container, stream) maxItems (direction, minIndex, maxIndex)
@@ -865,7 +809,7 @@ module internal Query =
 
                 let acc = ResizeArray()
                 for x in events do
-                    match x |> EventBody.decodeEvent |> tryDecode with
+                    match x |> EncodedBody.ofInternal |> tryDecode with
                     | Some e when isOrigin e ->
                         let used, residual = events |> calculateUsedVersusDroppedPayload x.i
                         log.Information("EqxDynamo Stop stream={stream} at={index} {case} used={used} residual={residual}",
@@ -1071,11 +1015,6 @@ module Internal =
     // queries to shorter pages. The effect of this is of course highly dependent on the max Item size, which is
     // dictated by the TipOptions - in the default configuration that's controlled by defaultTipMaxBytes
     let defaultMaxItems = 32
-    // TL;DR in general it's worth compressing everything to minimize RU consumption both on insert and update
-    // Every time we need to calve from the tip, the RU impact of using TransactWriteItems is significant,
-    // so preventing or delaying that is of critical significance
-    // Empirically not much JSON below 48 bytes actually compresses - while we don't assume that, it is what is guiding the derivation of the default
-    let defaultEncodingOptions : EncodingOptions = { eventData = 48; eventMeta = 48; unfoldData = 48; unfoldMeta = 48; minGain = 4 }
 
 /// Defines the policies in force regarding how to split up calls when loading Event Batches via queries
 type QueryOptions
@@ -1106,7 +1045,7 @@ type TipOptions
     /// Maximum serialized size to permit to accumulate in Tip before events get moved out to a standalone Batch. Default: 32K.
     member val MaxBytes = defaultArg maxBytes defaultTipMaxBytes
 
-type internal StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions, enc : EncodingOptions) =
+type internal StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
 
     let loadTip log stream pos = Tip.tryLoad log (container, stream) (pos, None)
 
@@ -1154,7 +1093,7 @@ type internal StoreClient(container : Container, fallback : Container option, qu
             | Tip.Res.Found (pos, i, xs) -> return! read (pos, i, xs) }
 
     member _.Sync(log, stream, pos, exp, n' : int64, eventsEncoded, unfoldsEncoded) : Async<InternalSyncResult> = async {
-        match! Sync.handle log (tip.MaxEvents, tip.MaxBytes, enc) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded) with
+        match! Sync.handle log (tip.MaxEvents, tip.MaxBytes) (container, stream) (pos, exp, n', eventsEncoded, unfoldsEncoded) with
         | Sync.Result.ConflictUnknown -> return InternalSyncResult.ConflictUnknown
         | Sync.Result.Written (etag', b', events, unfolds) ->
             return InternalSyncResult.Written (Token.create (Position.fromElements (stream, b', n', events, unfolds, etag'))) }
@@ -1162,7 +1101,7 @@ type internal StoreClient(container : Container, fallback : Container option, qu
     member _.Prune(log, stream, index) =
         Prune.until log (container, stream) query.MaxItems index
 
-type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EventBody, 'context>) =
+type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EncodedBody, 'context>) =
     member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin) : Async<StreamToken * 'state> = async {
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds)
         return token, fold initial events }
@@ -1321,7 +1260,7 @@ type DynamoStoreClient
         return DynamoStoreClient(client, tableName, ?archiveTableName = archiveTableName) }
 
 /// Defines a set of related access policies for a given Table, together with a Containers map defining mappings from (category, streamId) to (tableName, streamName)
-type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOptions, ?encodingOptions) =
+type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOptions) =
     new(    storeClient : DynamoStoreClient,
             // Maximum serialized event size to permit to accumulate in Tip before they get moved out to a standalone Batch. Default: 32K.
             [<O; D null>] ?maxBytes,
@@ -1331,20 +1270,17 @@ type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOption
             [<O; D null>] ?queryMaxItems,
             // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
             [<O; D null>] ?queryMaxRequests,
-            // Override the default encoding options for Event Bodies
-            [<O; D null>] ?encodingOptions : EncodingOptions,
             // Inhibit throwing when events are missing, but no Archive Table has been supplied as a fallback
             [<O; D null>] ?ignoreMissingEvents) =
         let tipOptions = TipOptions(?maxBytes = maxBytes, ?maxEvents = tipMaxEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests, ?ignoreMissingEvents = ignoreMissingEvents)
-        DynamoStoreContext(storeClient, tipOptions, queryOptions, ?encodingOptions = encodingOptions)
+        DynamoStoreContext(storeClient, tipOptions, queryOptions)
     member val StoreClient = storeClient
     member val QueryOptions = queryOptions
     member val TipOptions = tipOptions
-    member val EncodingOptions = defaultArg encodingOptions defaultEncodingOptions
     member internal x.ResolveContainerClientAndStreamId(categoryName, streamId) =
         let container, fallback, streamName = storeClient.ResolveContainerFallbackAndStreamName(categoryName, streamId)
-        StoreClient(container, fallback, x.QueryOptions, x.TipOptions, x.EncodingOptions), streamName
+        StoreClient(container, fallback, x.QueryOptions, x.TipOptions), streamName
 
 /// For DynamoDB, caching is critical in order to reduce RU consumption.
 /// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
@@ -1470,7 +1406,7 @@ type EventsContext internal
 
     member x.StreamId(streamName) : string = context.ResolveContainerClientAndStreamId(null, streamName) |> snd
 
-    member internal _.GetLazy(stream, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<EventBody> array> =
+    member internal _.GetLazy(stream, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<EncodedBody> array> =
         let direction = defaultArg direction Direction.Forward
         let batching = match queryMaxItems with Some qmi -> QueryOptions(qmi) | _ -> context.QueryOptions
         store.ReadLazy(log, batching, stream, direction, (Some, fun _ -> false), ?minIndex = minIndex, ?maxIndex = maxIndex)
@@ -1499,12 +1435,12 @@ type EventsContext internal
     /// Query (with MaxItems set to `queryMaxItems`) from the specified `Position`, allowing the reader to efficiently walk away from a running query
     /// ... NB as long as they Dispose!
     member x.Walk(stream, queryMaxItems, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?direction)
-        : AsyncSeq<ITimelineEvent<EventBody> array> =
+        : AsyncSeq<ITimelineEvent<EncodedBody> array> =
         x.GetLazy(stream, queryMaxItems, ?direction = direction, ?minIndex = minIndex, ?maxIndex = maxIndex)
 
     /// Reads all Events from a `Position` in a given `direction`
     member x.Read(stream, [<O; D null>] ?minIndex, [<O; D null>] ?maxIndex, [<O; D null>] ?maxCount, [<O; D null>] ?direction)
-        : Async<Position * ITimelineEvent<EventBody> array> =
+        : Async<Position * ITimelineEvent<EncodedBody> array> =
         x.GetInternal(stream, ?minIndex = minIndex, ?maxIndex = maxIndex, ?maxCount = maxCount, ?direction = direction) |> yieldPositionAndData
 #if APPEND_SUPPORT
 
@@ -1536,7 +1472,7 @@ module Events =
     let private stripPosition (f : Async<Position>) : Async<int64> = async {
         let! (PositionIndex index) = f
         return index }
-    let private dropPosition (f : Async<Position * ITimelineEvent<EventBody> array>) : Async<ITimelineEvent<EventBody> array> = async {
+    let private dropPosition (f : Async<Position * ITimelineEvent<EncodedBody> array>) : Async<ITimelineEvent<EncodedBody> array> = async {
         let! _, xs = f
         return xs }
 
@@ -1544,14 +1480,14 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let getAll (ctx : EventsContext) (streamName : string) (index : int64) (batchSize : int) : AsyncSeq<ITimelineEvent<EventBody> array> =
+    let getAll (ctx : EventsContext) (streamName : string) (index : int64) (batchSize : int) : AsyncSeq<ITimelineEvent<EncodedBody> array> =
         ctx.Walk(ctx.StreamId streamName, batchSize, minIndex = index)
 
     /// Returns an async array of events in the stream starting at the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is larger than the largest
     /// sequence number in the stream.
-    let get (ctx : EventsContext) (streamName : string) (index : int64) (maxCount : int) : Async<ITimelineEvent<EventBody> array> =
+    let get (ctx : EventsContext) (streamName : string) (index : int64) (maxCount : int) : Async<ITimelineEvent<EncodedBody> array> =
         ctx.Read(ctx.StreamId streamName, ?minIndex = (if index = 0 then None else Some index), maxCount = maxCount) |> dropPosition
 
 #if APPEND_SUPPORT
@@ -1573,14 +1509,14 @@ module Events =
     /// reading in batches of the specified size.
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getAllBackwards (ctx : EventsContext) (streamName : string) (index : int64) (batchSize : int) : AsyncSeq<ITimelineEvent<EventBody> array> =
+    let getAllBackwards (ctx : EventsContext) (streamName : string) (index : int64) (batchSize : int) : AsyncSeq<ITimelineEvent<EncodedBody> array> =
         ctx.Walk(ctx.StreamId streamName, batchSize, maxIndex = index, direction = Direction.Backward)
 
     /// Returns an async array of events in the stream backwards starting from the specified sequence number,
     /// number of events to read is specified by batchSize
     /// Returns an empty sequence if the stream is empty or if the sequence number is smaller than the smallest
     /// sequence number in the stream.
-    let getBackwards (ctx : EventsContext) (streamName : string) (index : int64) (maxCount : int) : Async<ITimelineEvent<EventBody> array> =
+    let getBackwards (ctx : EventsContext) (streamName : string) (index : int64) (maxCount : int) : Async<ITimelineEvent<EncodedBody> array> =
         ctx.Read(ctx.StreamId streamName, ?maxIndex = (match index with int64.MaxValue -> None | i -> Some (i + 1L)), maxCount = maxCount, direction = Direction.Backward) |> dropPosition
 
   /// Obtains the `index` from the current write Position

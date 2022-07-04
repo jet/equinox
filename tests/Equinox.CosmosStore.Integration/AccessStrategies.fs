@@ -41,7 +41,7 @@ module SequenceCheck =
             | Add of {| value : int |}
             interface TypeShape.UnionContract.IUnionContract
 #if STORE_DYNAMO
-        let codec = FsCodec.SystemTextJson.Codec.Create<Event>()
+        let codec = FsCodec.SystemTextJson.Codec.Create<Event>() |> FsCodec.DeflateHelpers.EncodeWithTryDeflate
 #else
         let codec = FsCodec.SystemTextJson.CodecJsonElement.Create<Event>()
 #endif
