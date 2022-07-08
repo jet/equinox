@@ -384,7 +384,7 @@ module DynamoInit =
     open Equinox.DynamoStore
     open Storage.Dynamo
 
-    let table (log : ILogger) (p : ParseResults<TableParameters>) =
+    let table (log : ILogger) (p : ParseResults<TableParameters>) = async {
         let a = DynamoInitArguments p
         match p.GetSubCommand() with
         | TableParameters.Dynamo sp ->
@@ -399,8 +399,10 @@ module DynamoInit =
                 log.Information("DynamoStore Provisioning Table {table} with On-Demand capacity management; streaming {streaming}",
                                 sa.Table, a.StreamingMode)
             let client = sa.Connector.CreateClient()
-            Core.Initialization.provision client sa.Table (t, a.StreamingMode)
-        | x -> Storage.missingArg $"unexpected subcommand %A{x}"
+            let! t = Core.Initialization.provision client sa.Table (t, a.StreamingMode)
+            let validStreamsArn = match t.StreamSpecification with ss when ss <> null && ss.StreamEnabled -> t.LatestStreamArn | _ -> null
+            log.Information("DynamoStore DynamoDB Streams ARN {streamArn}", validStreamsArn)
+        | x -> return Storage.missingArg $"unexpected subcommand %A{x}" }
 
 module SqlInit =
 

@@ -387,20 +387,29 @@ module Initialization =
     [<RequireQualifiedAccess>]
     type StreamingMode = Off | Default | NewAndOld
     let toStreaming = function
-        | StreamingMode.Off -> Streaming.Disabled
-        | StreamingMode.Default -> Streaming.Enabled StreamViewType.NEW_IMAGE
-        | StreamingMode.NewAndOld -> Streaming.Enabled StreamViewType.NEW_AND_OLD_IMAGES
+        | StreamingMode.Off -> None // TODO flip back to Streaming.Disabled and remove option with 0.11.1
+        | StreamingMode.Default -> Some (Streaming.Enabled StreamViewType.NEW_IMAGE)
+        | StreamingMode.NewAndOld -> Some (Streaming.Enabled StreamViewType.NEW_AND_OLD_IMAGES)
 
     /// Create the specified <c>tableName</c> if it does not exist. Will throw if it exists but the schema mismatches.
     let createIfNotExists (client : IAmazonDynamoDB) tableName (throughput, streamingMode) : Async<unit> =
         let context = TableContext<Batch.Schema>(client, tableName)
-        context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
+        context.VerifyOrCreateTableAsync(throughput, ?streaming = toStreaming streamingMode) // TODO Async.Ignore with 0.11.1
+
+    // TODO remove with 0.11.1
+    let describe (client : IAmazonDynamoDB, tableName : string) : Async<Amazon.DynamoDBv2.Model.TableDescription> = async {
+        let! ct = Async.CancellationToken
+        let! td = client.DescribeTableAsync(tableName, ct) |> Async.AwaitTaskCorrect
+        return td.Table }
 
     /// Provision (or re-provision) the specified table with the specified <c>Throughput</c>. Will throw if schema mismatches.
     let provision (client : IAmazonDynamoDB) tableName (throughput, streamingMode) = async {
         let context = TableContext<Batch.Schema>(client, tableName)
-        do! context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
-        do! context.UpdateTableIfRequiredAsync(throughput, toStreaming streamingMode) }
+        // TODO pass result to UpdateTableIfRequiredAsync with 0.11.1
+        do! context.VerifyOrCreateTableAsync(throughput, ?streaming = toStreaming streamingMode)
+        do! context.UpdateTableIfRequiredAsync(throughput, ?streaming = toStreaming streamingMode)
+        // TODO change prev line to return!
+        return! describe (client, tableName) }
 
 type private Metrics() =
     let mutable t = 0.
@@ -584,7 +593,7 @@ module internal Sync =
                                                      |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in appended -> x.c }))
         let appendedBytes, unfoldsBytes = Event.arrayBytes appended, Unfold.arrayBytes unfolds
         if calfBytes <> 0 then
-             log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Tip {baseE}->{tipE}e-> {baseB}->{tipB}b Unfolds {unfolds} {unfoldsBytes}b Calf {calfEvents} {calfBytes}b",
+             log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Tip {baseE}->{tipE}e {baseB}->{tipB}b Unfolds {unfolds} {unfoldsBytes}b Calf {calfEvents} {calfBytes}b",
                              "Sync", "Calve",  outcome, stream, exp, Log.tms t, ru, appended.Length, appendedBytes, baseEvents, tipEvents, baseBytes, tipBytes, unfolds.Length, unfoldsBytes, calfCount, calfBytes)
         else log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Events {events} {tipB}b Unfolds {unfolds} {unfoldsB}b",
                              "Sync", "Append", outcome, stream, exp, Log.tms t, ru, appended.Length, appendedBytes, tipEvents, tipBytes, unfolds.Length, unfoldsBytes)
