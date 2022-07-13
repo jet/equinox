@@ -2040,34 +2040,36 @@ below the table](#access-strategy-glossary) for definition of terms)
 
 # DynamoStore
 
-Fundamentally, document stores share many common traits. Thus, applying the concepts of Mechanical Sympathy in optimizing the
-storage representation and access patterns will naturally yield a shared set of access patterns that work well.
-This is absolutely the case when contrasting CosmosDB and DynamoDB.
+Document stores share many common traits. Thus, applying [Mechanical Sympathy](https://www.infoq.com/presentations/mechanical-sympathy/)
+in optimizing the storage representation and access patterns will naturally yield an overlapping set of access patterns that work well.
+This commonality definitely applies when contrasting CosmosDB and DynamoDB.
 As a result `Equinox.DynamoStore` can and does implement pretty much the same the same feature set, API patterns and [access strategies](#access-strategies) as `Equinox.CosmosStore`.
 
-The implementation uses [the excellent `FSharp.AWS.DynamoDB` library](https://github.com/fsprojects/FSharp.AWS.DynamoDB) (:pray: [@eiriktsarpalis](https://github.com/eiriktsarpalis) [@samritchie](https://github.com/samritchie),
-which wraps the standard AWS `AWSSDK.DynamoDBv2` SDK Package), and leans on [significant preparatory research carried out under the fsharp.org mentorship program](https://github.com/pierregoudjo/dynamodb_conditional_writes) :pray: [@pierregoudjo](https://github.com/pierregoudjo).
+The implementation uses [the excellent `FSharp.AWS.DynamoDB` library](https://github.com/fsprojects/FSharp.AWS.DynamoDB) :pray: [@eiriktsarpalis](https://github.com/eiriktsarpalis) [@samritchie](https://github.com/samritchie),
+which wraps the standard AWS `AWSSDK.DynamoDBv2` SDK Package. It also leans on [significant preparatory research carried out under the fsharp.org mentorship program](https://github.com/pierregoudjo/dynamodb_conditional_writes) :pray: [@pierregoudjo](https://github.com/pierregoudjo).
 
 ## Contrasted with `CosmosStore` 
 
-The following focuses on explaining the differences in terms of low level technical detail that does not affect the usage experience.
+The following focuses on explaining the differences in terms of low level technical detail; the actual usage experience is identical.
 
-The vast majority of the API design and implementation concerns detailed regarding `CosmosStore` apply [scroll up](#CosmosStore) :point_up:
+The vast majority of the API design and implementation concerns detailed regarding `CosmosStore` apply ([scroll up](#CosmosStore) :point_up:)
 
 ### Request Charge Structures
 
 In broad terms, the charging structure and rate limiting scheme in DynamoDB has only minor differences that manifest in
-terms of the calls that Equinox needs to perform. The single most important thing you can know about `TransactWriteItems`
-is that it costs *twice* the (Read and) Write Capacity Units of an equivalent single-item `PutItem` `UpdateItem` therefore its use needs to be considered carefully.
+terms of the call patterns that Equinox uses. The most relevant variance in the charge structure is that `TransactWriteItems`
+costs *twice* the (Read and) Write Capacity Units of an equivalent single-item `PutItem` / `UpdateItem` calls;
+therefore its use needs to be considered carefully.
 
 * Good article with specifics on the charging structures: [How to Calculate a DynamoDB Item’s Size and Consumed Capacity](https://zaccharles.medium.com/calculating-a-dynamodb-items-size-and-consumed-capacity-d1728942eb7c)
 
 ### Sync logic in a Stored Procedure vs TransactWriteItem/PutItem/UpdateItem API calls 
 
-Instead of using a Stored Procedure as `CosmosStore` does, the implementation involves conditional `PutItem` and [`UpdateItem`](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html)
-requests to accumulate events in the Tip (where there is space available).
-(The _Append_ operation adds events and/or updates the _unfolds_ in the Tip)
-  
+The _Append_ operation adds events and/or updates the _unfolds_ in the Tip. Instead of using a Stored Procedure as `CosmosStore`
+does, the implementation involves conditional [`PutItem`](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html) and
+[`UpdateItem`](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html) requests to accumulate
+events in the Tip (where there is space available).
+
 At the point where the Tip exceeds any of the configured and/or implicit limits, a [`TransactWriteItems`](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html)
 request is used (see [implementation in `FSharp.AWS.DynamoDB`](https://github.com/fsprojects/FSharp.AWS.DynamoDB/pull/48)),
 to _Calve_ a Batch of items from the Tip. The calving is triggered by any of:
@@ -2077,60 +2079,70 @@ to _Calve_ a Batch of items from the Tip. The calving is triggered by any of:
 - DynamoDB Item Size Limit (hard limit of 400KiB)
 
 Further information:
-- [DynamoDB Transactions: Use Cases and Examples](https://www.alexdebrie.com/posts/dynamodb-transactions/) by Alex DeBrie provides a good overview of the `TransactWriteItems` facility (TL;DR, it's far more general than the stream level atomic transactions afforded by CosmosDB's Stored Procedures)
+- [DynamoDB Transactions: Use Cases and Examples](https://www.alexdebrie.com/posts/dynamodb-transactions/) by Alex DeBrie
+  provides a thorough review of the `TransactWriteItems` facility (TL;DR: it's far more general than the stream level atomic
+  transactions afforded by CosmosDB's Stored Procedures)
 
 ### Differences in read and resync paths
 
-- DynamoDB does not support an etag-checked Read API, which means a cache hit is not as efficient in RC terms as it is on CosmosDB (and the data travels and is deserialized unnecessarily)
+- DynamoDB does not support an etag-checked Read API, which means a cache hit is not as efficient in RC terms as it is on
+  CosmosDB (and the data travels and is deserialized unnecessarily).
 - Concurrency conflicts necessitate an additional roundtrip to resync [as the DynamoDB Service does not yield the item in the event of a `ConditionalCheckFailedException`](https://stackoverflow.com/questions/71622525)
-- `DynamoStore`'s [`Position` structure that's, embedded in the `StreamToken`](https://github.com/jet/equinox/blob/54b373b98ee9370daee6b2a54ba91fca087d09b0/src/Equinox.DynamoStore/DynamoStore.fs#L508)
-  held by Equinox while a `Transact` call is in flight includes the (compressed) events in the Tip, in order to enable correct
-  size calculations required to guarantee a Calve request will happen if the `400KiB` size limit is due to be breached.
+- `DynamoStore`'s [`Position` structure](https://github.com/jet/equinox/blob/54b373b98ee9370daee6b2a54ba91fca087d09b0/src/Equinox.DynamoStore/DynamoStore.fs#L508)
+  (in the `StreamToken` held by Equinox while a `Transact` call is in flight) includes the (compressed) events in the Tip,
+  holds byte counts for use in the size calculations required to guarantee a Calve request will happen if the `400KiB` size limit
+  (or, more realistically, lower limits dictated by the increasing charges based on Item size) is due to be breached.
   The [`CosmosStore` equivalent](https://github.com/jet/equinox/blob/54b373b98ee9370daee6b2a54ba91fca087d09b0/src/Equinox.CosmosStore/CosmosStore.fs#L128)
-  only consists of the `_etag` and the event count (the stored procedure uses `JSON.stringify` to compute an indicative size,
+  consists of only the `_etag` and the event count (the stored procedure uses `JSON.stringify` to compute an indicative size,
   but the [2 MB UTF-8 JSON](https://docs.microsoft.com/en-us/azure/cosmos-db/concepts-limits#per-item-limits) size limit is
   ample given the fact that RU costs get prohibitive long before you hit such a limit).
 
 ### Event Bodies are BLOBS vs `JsonElement`s
 
-`CosmosStore` dictates (as of V4) that event bodies be supplied as `System.Text.Json.JsonElement`s (in order that events can be included in the Document/ Items as JSON directly).
-This is also to underscore the fact that the only reasonable format to use is valid JSON; binary data would need to be base64 encoded.
+`CosmosStore` dictates (as of V4) that event bodies be supplied as `System.Text.Json.JsonElement`s in order that events
+can be included in the Document/ Items as JSON directly. This is also to underscore the fact that the only reasonable format
+to use is valid JSON; binary data would need to be base64 encoded.
 
-`DynamoStore` accepts and yields event bodies as arbitrary `ReadOnlyMemory<byte>` BLOBs (the AWS SDK round-trips such blobs as a `MemoryStream` and does not impose any restrictions on the blobs in terms of required format)
+`DynamoStore` accepts and yields event bodies as arbitrary `ReadOnlyMemory<byte>` BLOBs (the AWS SDK round-trips such blobs
+as a `MemoryStream` and does not impose any restrictions on the blobs in terms of required format)
 
 `CosmosStore` defaults to compressing (with `System.IO.Compression.DeflateStream`) the event bodies for Unfolds;
-`DynamoStore` round-trips an `Encoding` field per blob (one for the data, one for the metadata) Events and Unfolds in order to enable the `IEventCodec` to compress the blobs. In both cases, minimizing Request Charges is imperative when request size directly maps to financial charges, 429s, reduced throughput and a lowered scaling ceiling.
+`DynamoStore` round-trips an `Encoding` field per blob (one for the data, one for the metadata) Events and Unfolds in order
+to enable the `IEventCodec` to decompress the blobs as required. In both cases, minimizing Request Charges is imperative:
+request size directly maps to financial charges, 429s, reduced throughput and a lowered scaling ceiling.
 
 ### Features not ported and/or not easily implementable
 
-- `Equinox.Cosmos.Core.Events.appendAtEnd`/`NonIdempotentAppend` has not been ported (there's no obvious clean and efficient way to do a conditional insert/update/split as the CosmosDB stored proc can, and this is a low usage feature)
+- `Equinox.Cosmos.Core.Events.appendAtEnd`/`NonIdempotentAppend` has not been ported (there's no obvious clean and efficient
+  way to do a conditional insert/update/split as the CosmosDB stored proc can, and this is a low usage feature)
 
 ## Support for Reactions / Change Feed equivalent features
 
-Azure CosmosDB's ChangeFeed mechanism and API intrinsically supports replays of all the documents/Items in a Store
-(with ordering guarantees at stream level, _but not across streams_) by running a querying loop per consumer.
+Azure CosmosDB's ChangeFeed mechanism naturally supports replays of all the documents/Items in a Store (with ordering
+guarantees at stream level, _but not across streams_). The API implementation spins up a querying loop per consumer, which
+can efficiently do a '`SELECT *` query based on its intrinsic ordering to cover both bulk reading and tailing requirements.
 
 On the other hand, the [DynamoDB Streams facility retains 24h of individual insert/update/delete records with concurrent readers capped at ~2](https://stackoverflow.com/questions/38571922/difference-between-kinesis-stream-and-dynamodb-streams/38593989). 
 
-In order to be able to deliver equivalent facilities to what `Propulsion.CosmosStore` delivers (which is really a very
-lightweight wrapper over the CosmosDB ChangeFeed), there are ancillary components that collectively provide equivalent functionality.
+In order to be able to provide facilities equivalent to those of `Propulsion.CosmosStore`'s `CosmosStoreReader` (a lightweight
+wrapper over the CosmosDB ChangeFeed API) provides, there are ancillary components that collectively provide equivalent functionality.
 
 ### `Propulsion.DynamoStore.Lambda`
  
 CosmosDB intrinsically maintains and surfaces the documents/Items (and physical partition metadata as that shifts over time)
 in such a manner that any number of consumers can concurrently walk all the data across all the physical partitions
 and be guaranteed to have traversed every change (_though notably not including deletes; this is of course fine as our model is append-only_)
-when one has reached the current 'end' of each physical partition (even in the face of physical partition splits and
+when one has reached the current 'end' of each physical partition (even in the face of physical partition splits and/or
 document updates during the walk).
 
-It should be noted that these walks are not free; each reader induces RU consumption on the Container which limits the
-capacity for other reads and writes, and has a 'write amplification' effect: each write immediately triggers N reads.
+It should be noted that these walks are not free; each reader induces RU consumption on the Container that impacts the
+capacity available for other reads and writes. There is also an amplification effect: each write immediately triggers N reads of the same size.
 
-DynamoDB does not afford one a mechanism for an online traversal that's guaranteed to see all Items (you can do an export
-to an S3 bucket that is guaranteed to include all items, but there is no incremental way to merge only fresh data from
-that into an index or feed).
+DynamoDB does not provide an equivalent mechanism for an online traversal that's guaranteed to see all Items. (You can do an export
+to an S3 bucket that is guaranteed to include all items at a point in time, but you'd then need to supplement that with
+subsequent changes via DynamoDB Streams).
 
-The mechanism employed is thus to provision DynamoDB Streams for the Table containing the events, and have that be fed to
+The mechanism employed is to provision DynamoDB Streams for the Table holding the events, which is fed to
 an AWS Lambda via a [DynamoDB Streams Trigger](https://stackoverflow.com/questions/51956472/aws-lambda-processing-stream-from-dynamodb)
 that is configured to [reliably ingest](https://stackoverflow.com/questions/51956472/aws-lambda-processing-stream-from-dynamodb)
 the writes [in the order of their occurence at the stream level](https://stackoverflow.com/questions/41527444/dynamodb-streams-with-lambda-how-to-process-the-records-in-order-by-logical-gr/42187242#42187242)
@@ -2139,51 +2151,39 @@ via an Indexer.
 Relevant background articles from Amazon:
 - High level architecture with diagrams: [How to perform ordered data replication between applications by using Amazon DynamoDB Streams](https://aws.amazon.com/de/blogs/database/how-to-perform-ordered-data-replication-between-applications-by-using-amazon-dynamodb-streams)
 - Tutorial with `aws` CLI invocations and JavaScript, covering the key AWS artifacts involved: [Tutorial: Process New Items with DynamoDB Streams and Lambda](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.Lambda.Tutorial.html)
-- Scannable slide deck with some excellent diagrams not found elsewhere: [Slide deck: Real-time Data Processing with Amazon DynamoDB Streams and AWS Lambda](https://www.slideshare.net/AmazonWebServices/realtime-data-processing-with-amazon-dynamodb-streams-and-aws-lambda-7302015),
+- Scannable slide deck with some excellent diagrams not found elsewhere: [Slide deck: Real-time Data Processing with Amazon DynamoDB Streams and AWS Lambda](https://www.slideshare.net/AmazonWebServices/realtime-data-processing-with-amazon-dynamodb-streams-and-aws-lambda-7302015)
 (yes, despite dating back to 2015)
 
 ### `DynamoStoreIndexer`
 
 [The `DynamoStoreIndexer`](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/DynamoStoreIndexer.fs)
-represents each batch (1-10000 DDB Streams Records fed to the Lambda) as an [`Ingested` event](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/AppendsEpoch.fs#L18)
+represents each batch (1-10,000 DDB Streams Records fed to the Lambda) as an [`Ingested` event](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/AppendsEpoch.fs#L18)
 in [a sequence](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/ExactlyOnceIngester.fs) of
-`$AppendsEpoch-<trancheId>-<epoch>` Streams in near real time after they are Appended.
+`$AppendsEpoch-<trancheId>-<epoch>` streams in near real time after they are Appended.
+
+#### `AppendsEpoch`
+
+Each `Span` in an `Ingested` event within an `AppendsEpoch` stream consists of:
+- the Stream Name
+- Index/offset within that stream
+- the Event Types
+
+NOTE: [as illustrated in the slide deck](https://www.slideshare.net/AmazonWebServices/realtime-data-processing-with-amazon-dynamodb-streams-and-aws-lambda-7302015/22),
+as DynamoDB varies the number of Shards, the number of concurrent instances of the Lambda can also rise.
+In the present implementation, multiple Lambda instances will be competing to write to the Tip of a single chain of epochs.  
+
+_Its conceivable that one might internally partition the overall Index (based on the StreamName), but the current
+implementation does not address this, hence the value of the `FeedTrancheId` is [always `0`](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/Types.fs#L20-L22)_
 
 #### `AppendsIndex`
 
 [`$AppendsIndex-0` maintains](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/AppendsIndex.fs#L15)
-the epoch number where the Indexer will be appending
-
-#### `AppendsEpoch`
-
-- Each `Span` in an `Ingested` event consists of:
-  - the Stream Name
-  - Index/offset within that stream
-  - the Event Types
-  
-_Its conceivable that one might internally partition the overall Index (based on the StreamName), but the current
-implementation does not address this, hence the value of the `FeedTrancheId` is [always `0`](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/Types.fs#L20-L22)_
-
-NOTE also that [as illustrated in the slide deck](https://www.slideshare.net/AmazonWebServices/realtime-data-processing-with-amazon-dynamodb-streams-and-aws-lambda-7302015/22),
-as DynamoDB varies the number of Shards, the number of concurrent instances of the Lambda can also rise.
-In the present implementation, each Lambda instance will be competing to write to the Tip of a single chain of epochs. (If you )  
+the epoch number where the Indexer will be appending.
 
 ### `DynamoStoreSource`
 
-`Propulsion.DynamoStore.DynamoStoreSource` fulfils the role that `CosmosStoreSource` covers when using `Propulsion.CosmosStore`;
+`Propulsion.DynamoStore.DynamoStoreSource` fulfils the role that `CosmosStoreSource` fulfils when using `Propulsion.CosmosStore`:
 catching up on any events a consumer group has not yet seen (in a batched fashion), and thereafter tailing the index to at sub-second intervals.
-
-### `ReaderCheckpoint`
-
-[`$ReaderCheckpoint`](https://github.com/jet/propulsion/blob/master/src/Propulsion.CosmosStore/ReaderCheckpoint.fs#L15)
-maintains the current Position (as an `int64` that [encodes the Epoch index and the offset](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/DynamoStoreSource.fs#L13)
-within that Epoch. Each consumer group has a single position.
-
-The state lives in its own stream in the Index Table, named `$ReaderCheckpoint-dynamoStore_0_ConsumerGroupName`, where:
-
-- `dynamoStore` is the [well-known](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/Types.fs#L45) `Feed.SourceId`, another example is `eventStoreDb`
-- `0` is the [well-known `Feed.TrancheId](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/Types.fs#L20-L22)
-- `ConsumerGroupName` is the application-supplied consumer group (equivalent to the `ProcessorName` in CosmosDB ChangeFeedProcessor parlance or consumer group name in Kafka terms)
 
 ### `DynamoStoreSource` Reader logic 
 
@@ -2191,25 +2191,37 @@ The [reader logic in `DynamoStoreSource`](https://github.com/jet/propulsion/blob
 walks the chain of Index Epoch Streams in sequence.
 
 There is a configurable [`LoadMode`](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/DynamoStoreSource.fs#L145) which offers:
-- `All` - the [`Propulsion` `StreamsProjector`'s Scheduler/Dispatch loop](https://github.com/jet/propulsion/blob/master/DOCUMENTATION.md#context-diagram)
+- `All`: the [`Propulsion` `StreamsProjector`'s Scheduler/Dispatch loop](https://github.com/jet/propulsion/blob/master/DOCUMENTATION.md#context-diagram)
   is passed the `Stream Name`, `Event Type` and `Index` of every event
-- `Filtered` - As per `All`, but you can filter which Streams are to be passed into the Scheduler, reducing resource consumption
+- `Filtered`: As per `All`, but you can filter which Streams are to be passed into the Scheduler, reducing resource consumption
 
   NOTE _both `All` and `Filtered` perform identical I/O - [they trigger a single DynamoDB Query reading Items beyond the 
   current Read Position in a given `$AppendsEpoch` stream](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/AppendsEpoch.fs#L150),
-  but they do not touch the Table that stores the events themselves the events themselves_
+  but they do not need to read the Table that stores the events themselves_
 
-- `Hydrated` - as per `Filtered`, but the Reader loads the full [`ITimelineEvent` information](https://github.com/jet/FsCodec/blob/master/src/FsCodec/FsCodec.fs#L4), adding: the event body `Data`, `Meta` and `Timestamp`
+- `Hydrated`: as per `Filtered`, but the Reader loads the full [`ITimelineEvent` information](https://github.com/jet/FsCodec/blob/master/src/FsCodec/FsCodec.fs#L4), adding: the event body `Data`, `Meta` and `Timestamp`
 
-NOTE _this obviously induces latency in the reading process (which may be OK as that runs concurrently with processing
-of batches that have already been hydrated), and consumes Read Request Capacity on your DynamoDB Table_.
+  NOTE _this obviously induces latency in the reading process (which may be OK as that runs concurrently with processing
+  of batches that have already been hydrated), and consumes Read Request Capacity on your DynamoDB Table_.
 
-As the Propulsion Projector completes the processing of each batch of items submitted to it, checkpointing (asynchronously)
-moves the Position in the `$ReaderCheckpoint` forward.
+As the Propulsion Projector completes the processing of the full set of items in a batch of items submitted to it,
+checkpointing (asynchronously) moves the Position in the `$ReaderCheckpoint` forward.
+
+### `ReaderCheckpoint`
+
+[`$ReaderCheckpoint`](https://github.com/jet/propulsion/blob/master/src/Propulsion.CosmosStore/ReaderCheckpoint.fs#L15)
+maintains the current Position (as an `int64` that [encodes the Epoch index and the offset](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/DynamoStoreSource.fs#L13)
+within that Epoch). Each consumer group has a single position.
+
+The state lives in its own stream in the Index Table, named `$ReaderCheckpoint-dynamoStore_0_<consumerGroup>`, where:
+
+- `dynamoStore` is the [well-known](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/Types.fs#L45) `Feed.SourceId`, another example is `eventStoreDb`
+- `0` is the [well-known `Feed.TrancheId`](https://github.com/jet/propulsion/blob/master/src/Propulsion.DynamoStore/Types.fs#L20-L22)
+- `consumerGroup` is the application-supplied consumer group (equivalent to the `ProcessorName` in CosmosDB ChangeFeedProcessor parlance or consumer group name in Kafka terms)
 
 ### Separated Index Table
 
-By convention, the `$AppendsIndex-0`, `$AppendsEpoch-0_<epochId>` and `$ReaderCheckpoint-dynamoStore_0_<consumerGroup>`
+By convention, the `$AppendsIndex-0`, `$AppendsEpoch-0_<epoch>` and `$ReaderCheckpoint-dynamoStore_0_<consumerGroup>`
 streams are maintained in a separated `<tableName>-index` Table in DynamoDB. The reasons for this separation include:
 
 - being able to independently scale (and ring-fence) the activity in order to vary the ingestion and consumption capacity
@@ -2219,12 +2231,13 @@ streams are maintained in a separated `<tableName>-index` Table in DynamoDB. The
 ## `DynamoStoreIndexer`+`Source` vs CosmosDB ChangeFeed + `CosmosStoreSource` 
 
 Taking an example case where you have a single Container in CosmosDB / Table in DynamoDB, and 5 [reactor applications](https://github.com/jet/propulsion/blob/master/DOCUMENTATION.md#context-diagram)
-that consume events as they are written, we can summarize the differences by looking at the moving parts in involved.
+that consume events as they are written, we can illustrate the differences by looking at the moving parts in involved.
 
 With CosmosDB's ChangeFeed and `Propulsion.CosmosStoreSource`:
-- an `-aux` Container that maintains 5 sets of checkpoints and leases (a document per physical partition within the container)
+- an `-aux` Container that maintains 5 sets of checkpoints and leases (a document per physical partition within the container).
 - a polling loop that reads every document from the (single) Events Container (there is an individual loop per physical partition).
-  NOTE the leasing mechanism an the fact that processing is split by physical partition also means one can distribute processing activity across multiple readers
+  NOTE the leasing mechanism and the fact that processing is split by physical partition also means one can distribute
+  processing activity across multiple processing nodes.
 - because the CosmosDB ChangeFeed read APIs don't provide for filtering etc, every document that's updated triggers 5
   sets of reads of the entire document (even if you only appended one event or only updated an unfold).
   This implies you need to be particularly careful about limiting how many readers you have and/or how large documents/Items in the store get.
@@ -2234,22 +2247,22 @@ With CosmosDB's ChangeFeed and `Propulsion.CosmosStoreSource`:
 - There is no buffering of events involved at any level; it's all query loops driven by consumers.
 - Architecture Astronauts frequently jump to an incorrect conclusion, [that the single correct use of the ChangeFeed is thus to push events to Kafka](https://medium.com/eventuous/the-right-way-b1a82c787f7b).
 
-With DynamoDB Streams, `Propulsion.DynamoStore.Lambda` and `Propulsion.DynamoStore.DynamoStoreSource`:
-- The DynamoDB Table that stores the events must have DynamoDB Streams configured (with `Original` images)
+With [DynamoDB Streams](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html), `Propulsion.DynamoStore.Lambda` and `Propulsion.DynamoStore.DynamoStoreSource`:
+- The DynamoDB Table that stores the events must have DynamoDB Streams configured (in either `NEW_IMAGE` or `NEW_AND_OLD_IMAGES` mode).
 - The DynamoDB Index Table does not require DynamoDB Streams configured (if you wanted to use it to drive replication,
-  you'd simply use `DynamoStoreSource` to talk and/or tail the epochs directly)
+  you'd simply use `DynamoStoreSource` to tail the epochs directly).
 - The Lambda package must be provisioned, with permissions to write to the Index Table (and alerting so you will know if
   it's `IteratorAge` metric exceeds your latency requirements and/or is approaching the 24h limit after which the
-  guaranteed delivery of notifications would be lost)
+  guaranteed delivery of notifications would be lost).
 - The Lambda must coupled to the Events Table by establishing a DynamoDB Streams Trigger
-- The indexing activity runs in Lambda. Aside from throughput being limited by the read and write capacity of Index Table,
+- The indexing activity runs in AWS Lambda. Aside from throughput being limited by the read and write capacity of the Index Table,
   it's self managing. The running costs are pretty trivial.
 - Each of the 5 reactor applications read from the Index table. Because the format is pretty compact, tens or hundreds
   of competing readers are conceivable as long as you configure the table to provide the relevant read capacity units
-  (AutoScale mode may make sense)
+  (AutoScale mode may make sense).
 - You will ideally want to have your reactions be predicated on just Stream Names and Event Types. Failing that, the use
   of `Hydrated` mode will induce load on the Events Table in proportion to the number of reactor applications that require
-  that (although a low number of readers doing that is unlikely to problematic).
+  that (although a low number of readers doing that is unlikely to be problematic).
 
 ## `Propulsion.DynamoStore` side notes / FAQs
 
@@ -2258,10 +2271,11 @@ With DynamoDB Streams, `Propulsion.DynamoStore.Lambda` and `Propulsion.DynamoSto
 As described in [AWS Lambda Supports Parallelization Factor for Kinesis and DynamoDB Event Sources](https://aws.amazon.com/about-aws/whats-new/2019/11/aws-lambda-supports-parallelization-factor-for-kinesis-and-dynamodb-event-sources)
 and [New AWS Lambda scaling controls for Kinesis and DynamoDB event sources](https://aws.amazon.com/blogs/compute/new-aws-lambda-scaling-controls-for-kinesis-and-dynamodb-event-sources/),
 there is a powerful feature that enables one to configure a Lambda per stream to process reactions in parallel. This
-works up to a point and clearly has way less moving parts so should be seriously considered. The key weaknesses of the
+works up to a point and clearly has fewer moving parts. It should thus be seriously considered. The key weaknesses of the
 approach relative to a more [idiomatic event sourcing approach](https://medium.com/eventuous/the-right-way-b1a82c787f7b)
-is the lack of ability to replay, and the fact that the DynamoDB Streams facility realistically limits you to 1/2 such
-Lambdas.  
+are:
+- the lack of ability to replay
+- the fact that the DynamoDB Streams facility realistically limits you to 1/2 such Lambdas.  
 
 <a name="hot-cold"></a>
 # Stream Management Policies
