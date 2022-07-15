@@ -501,7 +501,7 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
 - being able to supply `dynamo` source to `eqx run` wherever `cosmos` works, e.g. `eqx run -t cart -f 50 -d 5 -CU dynamo -s http://localhost:8000 -t TableName`
 - being able to supply `dynamo` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" dynamo`
 - being able to supply `dynamo` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- dynamo -s http://localhost:8000`
-- being able to supply `dynamo` flag to `eqx initaws` command e.g. `eqx initaws -rru 10 -wru 10 dynamo -t TableName`
+- being able to supply `dynamo` flag to `eqx initaws` command e.g. `eqx initaws -r 10 -w 10 dynamo -t TableName`
 
 1. The tooling and samples in this repo default to using the following environment variables (see [AWS CLI UserGuide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html)
    for more detailed guidance as to specific configuration)
@@ -523,7 +523,7 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
     docker compose up dynamodb-local dynamodb-admin -d
 
     # Establish the table in us-east-1 - keys come from $EQUINOX_DYNAMO_ACCESS_KEY_ID and $EQUINOX_DYNAMO_SECRET_ACCESS_KEY
-    dotnet run --project tools/Equinox.Tool -- initaws -rru 10 -wru 10 dynamo -t TableName -su https://dynamodb.us-east-1.amazonaws.com
+    dotnet run --project tools/Equinox.Tool -- initaws -r 10 -w 10 dynamo -t TableName -su https://dynamodb.us-east-1.amazonaws.com
 
     # run a benchmark
     dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -CU dynamo

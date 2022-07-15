@@ -68,9 +68,9 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
 and [<NoComparison; NoEquality>] TableParameters =
     | [<AltCommandLine "-D"; Unique>]       OnDemand
-    | [<AltCommandLine "-S"; Unique>]       Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
-    | [<AltCommandLine "-rru"; Unique>]     ReadCu of int64
-    | [<AltCommandLine "-wru"; Unique>]     WriteCu of int64
+    | [<AltCommandLine "-s"; Unique>]       Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
+    | [<AltCommandLine "-r"; Unique>]       ReadCu of int64
+    | [<AltCommandLine "-w"; Unique>]       WriteCu of int64
     | [<CliPrefix(CliPrefix.None); Last>]   Dynamo of ParseResults<Storage.Dynamo.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
