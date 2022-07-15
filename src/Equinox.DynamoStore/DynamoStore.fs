@@ -377,7 +377,7 @@ module Initialization =
     open Amazon.DynamoDBv2
     let private prepare (client : IAmazonDynamoDB) tableName maybeThroughput : Async<unit> =
         let context = TableContext<Batch.Schema>(client, tableName)
-        match maybeThroughput with Some throughput -> context.VerifyOrCreateTableAsync(throughput) | None -> context.VerifyTableAsync()
+        match maybeThroughput with Some throughput -> context.VerifyOrCreateTableAsync(throughput) |> Async.Ignore | None -> context.VerifyTableAsync()
 
     /// Verify the specified <c>tableName</c> is present and adheres to the correct schema.
     let verify (client : IAmazonDynamoDB) tableName : Async<unit> =
@@ -387,29 +387,20 @@ module Initialization =
     [<RequireQualifiedAccess>]
     type StreamingMode = Off | Default | NewAndOld
     let toStreaming = function
-        | StreamingMode.Off -> None // TODO flip back to Streaming.Disabled and remove option with 0.11.1
-        | StreamingMode.Default -> Some (Streaming.Enabled StreamViewType.NEW_IMAGE)
-        | StreamingMode.NewAndOld -> Some (Streaming.Enabled StreamViewType.NEW_AND_OLD_IMAGES)
+        | StreamingMode.Off -> Streaming.Disabled
+        | StreamingMode.Default -> Streaming.Enabled StreamViewType.NEW_IMAGE
+        | StreamingMode.NewAndOld -> Streaming.Enabled StreamViewType.NEW_AND_OLD_IMAGES
 
     /// Create the specified <c>tableName</c> if it does not exist. Will throw if it exists but the schema mismatches.
     let createIfNotExists (client : IAmazonDynamoDB) tableName (throughput, streamingMode) : Async<unit> =
         let context = TableContext<Batch.Schema>(client, tableName)
-        context.VerifyOrCreateTableAsync(throughput, ?streaming = toStreaming streamingMode) // TODO Async.Ignore with 0.11.1
-
-    // TODO remove with 0.11.1
-    let describe (client : IAmazonDynamoDB, tableName : string) : Async<Amazon.DynamoDBv2.Model.TableDescription> = async {
-        let! ct = Async.CancellationToken
-        let! td = client.DescribeTableAsync(tableName, ct) |> Async.AwaitTaskCorrect
-        return td.Table }
+        context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode) |> Async.Ignore
 
     /// Provision (or re-provision) the specified table with the specified <c>Throughput</c>. Will throw if schema mismatches.
     let provision (client : IAmazonDynamoDB) tableName (throughput, streamingMode) = async {
         let context = TableContext<Batch.Schema>(client, tableName)
-        // TODO pass result to UpdateTableIfRequiredAsync with 0.11.1
-        do! context.VerifyOrCreateTableAsync(throughput, ?streaming = toStreaming streamingMode)
-        do! context.UpdateTableIfRequiredAsync(throughput, ?streaming = toStreaming streamingMode)
-        // TODO change prev line to return!
-        return! describe (client, tableName) }
+        let! desc = context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
+        return! context.UpdateTableIfRequiredAsync(throughput, toStreaming streamingMode, currentTableDescription = desc) }
 
 type private Metrics() =
     let mutable t = 0.
