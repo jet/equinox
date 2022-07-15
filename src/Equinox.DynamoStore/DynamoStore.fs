@@ -377,7 +377,7 @@ module Initialization =
     open Amazon.DynamoDBv2
     let private prepare (client : IAmazonDynamoDB) tableName maybeThroughput : Async<unit> =
         let context = TableContext<Batch.Schema>(client, tableName)
-        match maybeThroughput with Some throughput -> context.VerifyOrCreateTableAsync(throughput) | None -> context.VerifyTableAsync()
+        match maybeThroughput with Some throughput -> context.VerifyOrCreateTableAsync(throughput) |> Async.Ignore | None -> context.VerifyTableAsync()
 
     /// Verify the specified <c>tableName</c> is present and adheres to the correct schema.
     let verify (client : IAmazonDynamoDB) tableName : Async<unit> =
@@ -394,13 +394,13 @@ module Initialization =
     /// Create the specified <c>tableName</c> if it does not exist. Will throw if it exists but the schema mismatches.
     let createIfNotExists (client : IAmazonDynamoDB) tableName (throughput, streamingMode) : Async<unit> =
         let context = TableContext<Batch.Schema>(client, tableName)
-        context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
+        context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode) |> Async.Ignore
 
     /// Provision (or re-provision) the specified table with the specified <c>Throughput</c>. Will throw if schema mismatches.
     let provision (client : IAmazonDynamoDB) tableName (throughput, streamingMode) = async {
         let context = TableContext<Batch.Schema>(client, tableName)
-        do! context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
-        do! context.UpdateTableIfRequiredAsync(throughput, toStreaming streamingMode) }
+        let! desc = context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
+        return! context.UpdateTableIfRequiredAsync(throughput, toStreaming streamingMode, currentTableDescription = desc) }
 
 type private Metrics() =
     let mutable t = 0.
@@ -584,7 +584,7 @@ module internal Sync =
                                                      |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in appended -> x.c }))
         let appendedBytes, unfoldsBytes = Event.arrayBytes appended, Unfold.arrayBytes unfolds
         if calfBytes <> 0 then
-             log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Tip {baseE}->{tipE}e-> {baseB}->{tipB}b Unfolds {unfolds} {unfoldsBytes}b Calf {calfEvents} {calfBytes}b",
+             log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Tip {baseE}->{tipE}e {baseB}->{tipB}b Unfolds {unfolds} {unfoldsBytes}b Calf {calfEvents} {calfBytes}b",
                              "Sync", "Calve",  outcome, stream, exp, Log.tms t, ru, appended.Length, appendedBytes, baseEvents, tipEvents, baseBytes, tipBytes, unfolds.Length, unfoldsBytes, calfCount, calfBytes)
         else log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Events {events} {tipB}b Unfolds {unfolds} {unfoldsB}b",
                              "Sync", "Append", outcome, stream, exp, Log.tms t, ru, appended.Length, appendedBytes, tipEvents, tipBytes, unfolds.Length, unfoldsBytes)
