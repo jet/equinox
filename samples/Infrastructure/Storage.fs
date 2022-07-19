@@ -133,7 +133,7 @@ module Dynamo =
     type Equinox.DynamoStore.DynamoStoreConnector with
 
         member x.LogConfiguration(log : ILogger) =
-            log.Information("DynamoStore {endpoint:l} Timeout {timeoutS}s Retries {retries}",
+            log.Information("DynamoStore {endpoint} Timeout {timeoutS}s Retries {retries}",
                             x.Endpoint, (let t = x.Timeout in t.TotalSeconds), x.Retries)
 
     type Equinox.DynamoStore.DynamoStoreClient with

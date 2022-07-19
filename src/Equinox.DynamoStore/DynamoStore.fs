@@ -1,6 +1,5 @@
 namespace Equinox.DynamoStore.Core
 
-open Amazon.DynamoDBv2.Model
 open Equinox.Core
 open FsCodec
 open FSharp.AWS.DynamoDB
@@ -404,12 +403,12 @@ module Initialization =
         return! context.UpdateTableIfRequiredAsync(throughput, toStreaming streamingMode, currentTableDescription = desc) }
 
     /// Yields result of <c>DescribeTable</c>; Will throw if table does not exist, or creation is in progress
-    let describe (client : IAmazonDynamoDB) tableName : Async<TableDescription> =
+    let describe (client : IAmazonDynamoDB) tableName : Async<Model.TableDescription> =
         let context = TableContext<Batch.Schema>(client, tableName)
         context.UpdateTableIfRequiredAsync()
 
     /// Yields the <c>StreamsARN</c> if (but only if) it streaming is presently active
-    let tryGetActiveStreamsArn (x : TableDescription) =
+    let tryGetActiveStreamsArn (x : Model.TableDescription) =
         match x.StreamSpecification with
         | ss when ss <> null && ss.StreamEnabled -> x.LatestStreamArn
         | _ -> null

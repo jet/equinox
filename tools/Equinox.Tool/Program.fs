@@ -1,6 +1,5 @@
 ﻿module Equinox.Tool.Program
 
-open Amazon.DynamoDBv2
 open Argu
 open Domain.Infrastructure
 open Equinox.Tool.Infrastructure
@@ -456,11 +455,10 @@ module CosmosStats =
             | null, p, sarn when p <> null ->
                 log.Information("DynamoStore Table {table} Provisioned with {read}R/{write}WCU Provisioned capacity; Streams ARN {streaming}",
                                 sa.Table, p.ReadCapacityUnits, p.WriteCapacityUnits, sarn)
-            | bms, _, sarn when bms.BillingMode = BillingMode.PAY_PER_REQUEST ->
-                log.Information("DynamoStore Table {table} Provisioned with On-Demand capacity management; Streams ARN {streaming}",
-                                sa.Table, sarn)
-            | _, _, sarn -> log.Information("DynamoStore Table {table} Provisioning Unknown; Streams ARN {streaming}",
-                                sa.Table, sarn) }
+            | bms, _, sarn when bms.BillingMode = Amazon.DynamoDBv2.BillingMode.PAY_PER_REQUEST ->
+                log.Information("DynamoStore Table {table} Provisioned with On-Demand capacity management; Streams ARN {streaming}", sa.Table, sarn)
+            | _, _, sarn ->
+                log.Information("DynamoStore Table {table} Provisioning Unknown; Streams ARN {streaming}", sa.Table, sarn) }
         | x -> Storage.missingArg $"unexpected subcommand %A{x}"
 
 module Dump =
