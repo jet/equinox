@@ -385,10 +385,10 @@ module Initialization =
         context.VerifyTableAsync()
 
     [<RequireQualifiedAccess>]
-    type StreamingMode = Off | Default | NewAndOld
+    type StreamingMode = Off | New | NewAndOld
     let toStreaming = function
         | StreamingMode.Off -> Streaming.Disabled
-        | StreamingMode.Default -> Streaming.Enabled StreamViewType.NEW_IMAGE
+        | StreamingMode.New -> Streaming.Enabled StreamViewType.NEW_IMAGE
         | StreamingMode.NewAndOld -> Streaming.Enabled StreamViewType.NEW_AND_OLD_IMAGES
 
     /// Create the specified <c>tableName</c> if it does not exist. Will throw if it exists but the schema mismatches.
@@ -401,6 +401,17 @@ module Initialization =
         let context = TableContext<Batch.Schema>(client, tableName)
         let! desc = context.VerifyOrCreateTableAsync(throughput, toStreaming streamingMode)
         return! context.UpdateTableIfRequiredAsync(throughput, toStreaming streamingMode, currentTableDescription = desc) }
+
+    /// Yields result of <c>DescribeTable</c>; Will throw if table does not exist, or creation is in progress
+    let describe (client : IAmazonDynamoDB) tableName : Async<Model.TableDescription> =
+        let context = TableContext<Batch.Schema>(client, tableName)
+        context.UpdateTableIfRequiredAsync()
+
+    /// Yields the <c>StreamsARN</c> if (but only if) it streaming is presently active
+    let tryGetActiveStreamsArn (x : Model.TableDescription) =
+        match x.StreamSpecification with
+        | ss when ss <> null && ss.StreamEnabled -> x.LatestStreamArn
+        | _ -> null
 
 type private Metrics() =
     let mutable t = 0.
@@ -1169,7 +1180,7 @@ open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
 
-type [<RequireQualifiedAccess>] ConnectionMode = AwsEnvironment of systemName : string | ExplicitWithCredentials of serviceUrl : string
+type [<RequireQualifiedAccess>] ConnectionMode = AwsEnvironment of systemName : string | AwsKeyCredentials of serviceUrl : string
 
 /// Manages Creation and configuration of an IAmazonDynamoDB connection
 type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig, ?credentials : Amazon.Runtime.AWSCredentials) =
@@ -1198,7 +1209,7 @@ type DynamoStoreConnector(clientConfig : Amazon.DynamoDBv2.AmazonDynamoDBConfig,
     member x.Endpoint =
         match x.Options.ServiceURL with
         | null -> ConnectionMode.AwsEnvironment x.Options.RegionEndpoint.SystemName
-        | x -> ConnectionMode.ExplicitWithCredentials x
+        | x -> ConnectionMode.AwsKeyCredentials x
 
     member _.CreateClient() =
         match credentials with
@@ -1221,7 +1232,7 @@ module internal ConnectMode =
     let apply client tableName = function
         | SkipVerify -> async { () }
         | Verify -> Initialization.verify client tableName
-        | CreateIfNotExists throughput -> Initialization.createIfNotExists client tableName (throughput, Initialization.StreamingMode.Default)
+        | CreateIfNotExists throughput -> Initialization.createIfNotExists client tableName (throughput, Initialization.StreamingMode.New)
 
 /// Holds all relevant state for a Store. There should be a single one of these per process.
 type DynamoStoreClient

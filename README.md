@@ -525,6 +525,9 @@ DynamoDB is supported in the samples and the `eqx` tool equivalent to the Cosmos
     # Establish the table in us-east-1 - keys come from $EQUINOX_DYNAMO_ACCESS_KEY_ID and $EQUINOX_DYNAMO_SECRET_ACCESS_KEY
     dotnet run --project tools/Equinox.Tool -- initaws -r 10 -w 10 dynamo -t TableName -su https://dynamodb.us-east-1.amazonaws.com
 
+    # Check the status and get the streams ARN - keys come from AWS SDK config for us-east-1 region
+    dotnet run --project tools/Equinox.Tool -- stats dynamo -t TableName -sr us-east-1
+   
     # run a benchmark
     dotnet run -c Release --project tools/Equinox.Tool -- run -t saveforlater -f 50 -d 5 -CU dynamo
 

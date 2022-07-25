@@ -40,7 +40,7 @@ type Arguments =
             | Init _ ->                     "Initialize Store/Container (supports `cosmos` stores; also handles RU/s provisioning adjustment)."
             | InitAws _ ->                  "Initialize DynamoDB Table (supports `dynamo` stores; also handles RU/s provisioning adjustment)."
             | Config _ ->                   "Initialize Database Schema (supports `mssql`/`mysql`/`postgres` SqlStreamStore stores)."
-            | Stats _ ->                    "inspect store to determine numbers of streams/documents/events (supports `cosmos` stores)."
+            | Stats _ ->                    "inspect store to determine numbers of streams/documents/events and/or config (supports `cosmos` and `dynamo` stores)."
             | Dump _ ->                     "Load and show events in a specified stream (supports all stores)."
 and [<NoComparison; NoEquality>] InitParameters =
     | [<AltCommandLine "-ru"; Unique>]      Rus of int
@@ -81,7 +81,7 @@ and [<NoComparison; NoEquality>] TableParameters =
             | Dynamo _ ->                   "DynamoDB Connection parameters."
 and DynamoInitArguments(p : ParseResults<TableParameters>) =
     let onDemand =                          p.Contains OnDemand
-    member val StreamingMode =              p.GetResult(Streaming, Equinox.DynamoStore.Core.Initialization.StreamingMode.Default)
+    member val StreamingMode =              p.GetResult(Streaming, Equinox.DynamoStore.Core.Initialization.StreamingMode.New)
     member val Throughput =                 if not onDemand then Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
                                             elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then Storage.missingArg "CUs are not applicable in On-Demand mode"
                                             else Throughput.OnDemand
@@ -100,6 +100,7 @@ and [<NoComparison; NoEquality>] StatsParameters =
     | [<AltCommandLine "-D"; Unique>]       Documents
     | [<AltCommandLine "-P"; Unique>]       Parallel
     | [<CliPrefix(CliPrefix.None)>]         Cosmos of ParseResults<Storage.Cosmos.Parameters>
+    | [<CliPrefix(CliPrefix.None)>]         Dynamo of ParseResults<Storage.Dynamo.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Events _ ->                   "Count the number of Events in the store."
@@ -107,6 +108,7 @@ and [<NoComparison; NoEquality>] StatsParameters =
             | Documents _ ->                "Count the number of Documents in the store."
             | Parallel _ ->                 "Run in Parallel (CAREFUL! can overwhelm RU allocations)."
             | Cosmos _ ->                   "Cosmos Connection parameters."
+            | Dynamo _ ->                   "Dynamo Connection parameters."
 and [<NoComparison; NoEquality>] DumpParameters =
     | [<AltCommandLine "-s"; MainCommand>]  Stream of FsCodec.StreamName
     | [<AltCommandLine "-C"; Unique>]       Correlation
@@ -400,8 +402,7 @@ module DynamoInit =
                                 sa.Table, a.StreamingMode)
             let client = sa.Connector.CreateClient()
             let! t = Core.Initialization.provision client sa.Table (t, a.StreamingMode)
-            let validStreamsArn = match t.StreamSpecification with ss when ss <> null && ss.StreamEnabled -> t.LatestStreamArn | _ -> null
-            log.Information("DynamoStore DynamoDB Streams ARN {streamArn}", validStreamsArn)
+            log.Information("DynamoStore DynamoDB Streams ARN {streamArn}", Core.Initialization.tryGetActiveStreamsArn t)
         | x -> return Storage.missingArg $"unexpected subcommand %A{x}" }
 
 module SqlInit =
@@ -419,6 +420,8 @@ module SqlInit =
             Storage.Sql.Pg.connect log (a.ConnectionString, a.Credentials, a.Schema, true) |> Async.Ignore
 
 module CosmosStats =
+
+    open Storage.Dynamo
 
     type Microsoft.Azure.Cosmos.Container with // NB DO NOT CONSIDER PROMULGATING THIS HACK
         member container.QueryValue<'T>(sqlQuery : string) =
@@ -443,6 +446,19 @@ module CosmosStats =
                     log.Information("{stat}: {result:N0}", name, res)})
                 |> if inParallel then Async.Parallel else Async.Sequential
                 |> Async.Ignore<unit[]>
+        | StatsParameters.Dynamo sp -> async {
+            let sa = Storage.Dynamo.Arguments sp
+            sa.Connector.LogConfiguration(log)
+            let client = sa.Connector.CreateClient()
+            let! t = Equinox.DynamoStore.Core.Initialization.describe client sa.Table
+            match t.BillingModeSummary, t.ProvisionedThroughput, Equinox.DynamoStore.Core.Initialization.tryGetActiveStreamsArn t with
+            | null, p, sarn when p <> null ->
+                log.Information("DynamoStore Table {table} Provisioned with {read}R/{write}WCU Provisioned capacity; Streams ARN {streaming}",
+                                sa.Table, p.ReadCapacityUnits, p.WriteCapacityUnits, sarn)
+            | bms, _, sarn when bms.BillingMode = Amazon.DynamoDBv2.BillingMode.PAY_PER_REQUEST ->
+                log.Information("DynamoStore Table {table} Provisioned with On-Demand capacity management; Streams ARN {streaming}", sa.Table, sarn)
+            | _, _, sarn ->
+                log.Information("DynamoStore Table {table} Provisioning Unknown; Streams ARN {streaming}", sa.Table, sarn) }
         | x -> Storage.missingArg $"unexpected subcommand %A{x}"
 
 module Dump =
