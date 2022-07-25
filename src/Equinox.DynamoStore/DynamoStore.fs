@@ -568,7 +568,7 @@ module internal Sync =
         let! t, ({ total = ru } as rc, result) = transact (container, stream) (req, unfolds, exp, b', n') |> Stopwatch.Time
         let calfBytes, calfCount, tipBytes, tipEvents, appended = req |> function
             | Req.Append (_tipWasEmpty, appends) ->   0, 0, baseBytes + Event.arrayBytes appends, baseEvents + appends.Length, appends
-            | Req.Calve (calf, tip, appendedCount) -> Event.arrayBytes calf, calf.Length, Event.arrayBytes tip, tip.Length,
+            | Req.Calve (calf, tip, appendedCount) -> Event.arrayBytes calf, calf.Length, baseBytes + Event.arrayBytes tip, tip.Length,
                                                       Seq.append calf tip |> Seq.skip (calf.Length + tip.Length - appendedCount) |> Seq.toArray
         let exp, log = exp |> function
             | Exp.Etag etag ->  "e="+etag,       log |> Log.prop "expectedEtag" etag
