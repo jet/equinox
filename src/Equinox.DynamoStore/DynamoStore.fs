@@ -350,7 +350,7 @@ module Log =
                 nameof res.Prune,     res.Prune
                 nameof res.Delete,    res.Delete
                 nameof res.Trim,      res.Trim ]
-            for table in stats |> Seq.collect (fun (_n, stat) -> stat.Tables) |> Seq.distinct |> Seq.toArray do
+            for table in stats |> Seq.collect (fun (_n, stat) -> stat.Tables) |> Seq.distinct |> Seq.sort do
                 let mutable rows, totalCount, totalRRu, totalWRu, totalMs = 0, 0L, 0., 0., 0L
                 let logActivity name count ru lat =
                     let aru, ams = (if count = 0L then Double.NaN else ru/float count), (if count = 0L then Double.NaN else float lat/float count)
