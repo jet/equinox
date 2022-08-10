@@ -1,5 +1,5 @@
 ﻿[<AutoOpen>]
-module private Equinox.Tools.TestHarness.Prelude
+module internal Equinox.Tools.TestHarness.Prelude
 
 open System
 open System.Diagnostics
@@ -31,9 +31,9 @@ type Async with
             task.ContinueWith(fun (t : System.Threading.Tasks.Task<'T>) ->
                 if t.IsFaulted then
                     let e = t.Exception
-                    if e.InnerExceptions.Count = 1 then ec e.InnerExceptions.[0]
+                    if e.InnerExceptions.Count = 1 then ec e.InnerExceptions[0]
                     else ec e
-                elif t.IsCanceled then ec(new System.Threading.Tasks.TaskCanceledException())
+                elif t.IsCanceled then ec(System.Threading.Tasks.TaskCanceledException())
                 else sc t.Result)
             |> ignore)
     [<DebuggerStepThrough>]
@@ -42,7 +42,7 @@ type Async with
             task.ContinueWith(fun (task : System.Threading.Tasks.Task) ->
                 if task.IsFaulted then
                     let e = task.Exception
-                    if e.InnerExceptions.Count = 1 then ec e.InnerExceptions.[0]
+                    if e.InnerExceptions.Count = 1 then ec e.InnerExceptions[0]
                     else ec e
                 elif task.IsCanceled then
                     ec(System.Threading.Tasks.TaskCanceledException())

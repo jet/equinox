@@ -16,7 +16,6 @@ type LoadTestOutcomeType =
     | Timeout
     | InvalidHttpResponse of status:HttpStatusCode
     | OtherError of errorType:string
-with
     member o.Id =
         match o with
         | Completed -> "success"
@@ -44,7 +43,6 @@ type TestRunInfo =
         endTime     : DateTimeOffset
         error       : exn option
     }
-with
     member r.Latency = r.endTime - r.startTime
     member r.IsSuccess = Option.isNone r.error
     member r.IsFailure = Option.isSome r.error
@@ -75,7 +73,6 @@ type LoadTestEvent =
     | SingleTestRun of info:TestRunInfo
     | LoadTestCompleting of reason:string option
     | LoadTestCompleted
-with
     static member IsErrorEvent (e : LoadTestEvent) =
         match e with
         | SessionCreationFailed _ -> true
