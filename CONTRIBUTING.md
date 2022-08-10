@@ -1,6 +1,6 @@
 ## CONTRIBUTING
 
-Where it makes sense, raise GitHub issues for any questions so others can benefit from the discussion, or follow the links to [the DDD-CQRS-ES #equinox Slack channel](https://ddd-cqrs-es.slack.com/messages/CF5J67H6Z) above for quick discussions.
+Where it makes sense, raise GitHub issues for any questions so others can benefit from the discussion, or follow the links to [the DDD-CQRS-ES #equinox Discord channel](https://discord.com/channels/514783899440775168/1002635005429825657) above for quick discussions.
 
 This is an Open Source project for many reasons; some central goals:
 
