@@ -101,14 +101,6 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Integra
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Prometheus", "src\Equinox.DynamoStore.Prometheus\Equinox.DynamoStore.Prometheus.fsproj", "{A9AF41B3-AB28-4296-B4A4-B90DA7821476}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec", "..\FsCodec\src\FsCodec\FsCodec.fsproj", "{F36E7938-EA60-4B57-AF15-2A67994A4C54}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec.SystemTextJson", "..\FsCodec\src\FsCodec.SystemTextJson\FsCodec.SystemTextJson.fsproj", "{AC221574-BCE8-40BB-A556-3C65DB883F39}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec.NewtonsoftJson", "..\FsCodec\src\FsCodec.NewtonsoftJson\FsCodec.NewtonsoftJson.fsproj", "{1C994EA1-B81B-40AB-9CAC-969AC07903B5}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsCodec.Box", "..\FsCodec\src\FsCodec.Box\FsCodec.Box.fsproj", "{EC86BF4B-3BA3-4D99-8DEB-DD09D7561C24}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -235,22 +227,6 @@ Global
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F36E7938-EA60-4B57-AF15-2A67994A4C54}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F36E7938-EA60-4B57-AF15-2A67994A4C54}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F36E7938-EA60-4B57-AF15-2A67994A4C54}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F36E7938-EA60-4B57-AF15-2A67994A4C54}.Release|Any CPU.Build.0 = Release|Any CPU
-		{AC221574-BCE8-40BB-A556-3C65DB883F39}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{AC221574-BCE8-40BB-A556-3C65DB883F39}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{AC221574-BCE8-40BB-A556-3C65DB883F39}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{AC221574-BCE8-40BB-A556-3C65DB883F39}.Release|Any CPU.Build.0 = Release|Any CPU
-		{1C994EA1-B81B-40AB-9CAC-969AC07903B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1C994EA1-B81B-40AB-9CAC-969AC07903B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1C994EA1-B81B-40AB-9CAC-969AC07903B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1C994EA1-B81B-40AB-9CAC-969AC07903B5}.Release|Any CPU.Build.0 = Release|Any CPU
-		{EC86BF4B-3BA3-4D99-8DEB-DD09D7561C24}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{EC86BF4B-3BA3-4D99-8DEB-DD09D7561C24}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{EC86BF4B-3BA3-4D99-8DEB-DD09D7561C24}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{EC86BF4B-3BA3-4D99-8DEB-DD09D7561C24}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

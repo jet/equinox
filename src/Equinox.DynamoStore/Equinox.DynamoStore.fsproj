@@ -15,8 +15,7 @@
     <!-- FSharp.AWS.DynamoDB has 4.7.2 as a minimum requirement, but we need tasks -->
     <PackageReference Include="FSharp.Core" Version="6.0.0" />
 
-    <!--    <PackageReference Include="FsCodec" Version="3.0.0-rc.4" />-->
-    <ProjectReference Include="..\..\..\fscodec\src\FsCodec\FsCodec.fsproj" />
+        <PackageReference Include="FsCodec" Version="3.0.0-rc.5" />
     <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.11.1-beta" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="2.0.23" />
   </ItemGroup>

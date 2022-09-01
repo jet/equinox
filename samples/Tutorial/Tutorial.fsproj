@@ -27,10 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
-<!--    <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.4" />-->
-<!--    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.4" />-->
-    <ProjectReference Include="..\..\..\FsCodec\src\FsCodec.SystemTextJson\FsCodec.SystemTextJson.fsproj" />
-    <ProjectReference Include="..\..\..\FsCodec\src\FsCodec.NewtonsoftJson\FsCodec.NewtonsoftJson.fsproj" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.5" />
+    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.5" />
     <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
     <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
   </ItemGroup>
