@@ -372,7 +372,7 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State)
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create resolve = Service(streamName >> resolve (Serilog.Log.ForContext<Service>()) ())
+let create resolve = Service(streamName >> resolve)
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one
@@ -539,10 +539,8 @@ brevity, that implements all the relevant functions above:
 ```fsharp
 (* Event stream naming + schemas *)
 
-let [<Literal>] Category =
-    "Favorites"
-let streamName (id : ClientId) =
-    FsCodec.StreamName.create Category (ClientId.toString id)
+let [<Literal>] Category = "Favorites"
+let streamName (id : ClientId) = struct (Category, ClientId.toString id)
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -589,7 +587,7 @@ let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
  * The Service defines operations in business terms, neutral to any concrete
  * store selection or implementation supplied only a `resolve` function that can
  * be used to map from ids (as supplied to the `streamName` function) to an
- * Equinox Stream typically the service should be a stateless Singleton
+ * Equinox Decider; Typically the service should be a stateless Singleton
  *)
 
 type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
@@ -611,10 +609,8 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
     member _.List clientId : Async<Events.Favorited []> =
         read clientId
 
-let create resolveStream : Service =
-    let resolve id =
-        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream (streamName id), maxAttempts = 3)
-    Service(resolve)
+let create resolve : Service =
+    Service(streamName >> resolve)
 ```
 
 <a name="api"></a>
@@ -693,7 +689,7 @@ Equinox’s Command Handling consists of < 200 lines including interfaces and
 comments in https://github.com/jet/equinox/tree/master/src/Equinox - the
 elements you'll touch in a normal application are:
 
-- [`module Flow`](https://github.com/jet/equinox/blob/master/src/Equinox/Core.fs#L34) -
+- [`module Impl`](https://github.com/jet/equinox/blob/master/src/Equinox/Core.fs#L34) -
   internal implementation of Optimistic Concurrency Control / retry loop used
   by `Decider`. It's recommended to at least scan this file as it defines the
   Transaction semantics that are central to Equinox and the overall `Decider` concept.
@@ -842,11 +838,7 @@ type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.St
         let decider = resolve clientId
         decider.Query id
 
-let create resolve =
-    let resolve clientId =
-        let streamName = streamName clientId
-        Equinox.Decider(log, resolve streamName, maxAttempts = 3)
-    Service(resolve)
+let create resolve = Service(streamName >> resolve)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
@@ -917,9 +909,8 @@ result in you ending up with a model that's potentially both:
 
 - the `resolve` parameter affords one a sufficient
   [_seam_](http://www.informit.com/articles/article.aspx?p=359417) that
-  facilitates testing independently with a mocked or stubbed `IStream` (without
-  adding any references), or a `MemoryStore` (which does necessitate a
-  reference to a separate Assembly for clarity) as desired. 
+  facilitates testing independently with `MemoryStore` (which does necessitate a
+  reference to a separate Assembly] as desired. 
 
 ### Todo[Backend] walkthrough
 
