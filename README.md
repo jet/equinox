@@ -133,7 +133,7 @@ The components within this repository are delivered as multi-targeted Nuget pack
 
 ## Core library
 
-- `Equinox` [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/): Store-agnostic decision flow runner that manages the optimistic concurrency protocol and application-level API surface. ([depends](https://www.fuget.org/packages/Equinox) only on `FSharp.Core`, v `6.0.0`
+- `Equinox` [![NuGet](https://img.shields.io/nuget/v/Equinox.svg)](https://www.nuget.org/packages/Equinox/): Store-agnostic decision flow runner that manages the optimistic concurrency protocol and application-level API surface. ([depends](https://www.fuget.org/packages/Equinox) only on `FSharp.Core` v `6.0.0`
 
 ## Serialization support
 

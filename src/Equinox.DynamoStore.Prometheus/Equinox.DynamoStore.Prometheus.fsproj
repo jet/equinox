@@ -15,7 +15,7 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.0.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="4.7.2" />
+    <PackageReference Include="FSharp.Core" Version="6.0.0" />
 
     <PackageReference Include="prometheus-net" Version="3.6.0" />
   </ItemGroup>
