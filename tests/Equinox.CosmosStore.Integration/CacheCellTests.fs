@@ -24,7 +24,12 @@ let ``AsyncCacheCell correctness`` () = async {
     let mutable state = 0
     let mutable expectedValue = 1
     let cell = AsyncCacheCell((fun _ct -> task { return Interlocked.Increment &state }), fun value -> value <> expectedValue)
+
     false =! cell.IsValid()
+
+    let! r = cell.Await(CancellationToken.None) |> Async.AwaitTask
+    true =! cell.IsValid()
+    1 =! r
 
     let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.Await(CancellationToken.None) |> Async.AwaitTask) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 1) @>
@@ -57,7 +62,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
     // If the runner is throwing, we want to be sure it doesn't place us in a failed state forever, per the semantics of Lazy<T>
     // However, we _do_ want to be sure that the function only runs once
     if initiallyThrowing then
-        let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.Await(CancellationToken.None) |> Async.AwaitTask |> Async.Catch) |> Async.Parallel
+        let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.Await(CancellationToken.None) |> Async.AwaitTaskCorrect |> Async.Catch) |> Async.Parallel
         test <@ accessResult |> Array.forall (function Choice2Of2 (:? InvalidOperationException) -> true | _ -> false) @>
         throwing <- false
         false =! cell.IsValid()
@@ -68,7 +73,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
 
     expectedValue <- expectedValue + 1
 
-    let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.Await(CancellationToken.None) |> Async.AwaitTask) |> Async.Parallel
+    let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.Await(CancellationToken.None) |> Async.AwaitTaskCorrect) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 2) @>
     true =! cell.IsValid()
 
@@ -78,7 +83,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
     // but make the computation ultimately fail
     throwing <- true
     // All share the failure
-    let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.Await(CancellationToken.None) |> Async.AwaitTask |> Async.Catch) |> Async.Parallel
+    let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.Await(CancellationToken.None) |> Async.AwaitTaskCorrect |> Async.Catch) |> Async.Parallel
     test <@ accessResult |> Array.forall (function Choice2Of2 (:? InvalidOperationException) -> true | _ -> false) @>
     // Restore normality
     throwing <- false
