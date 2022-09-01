@@ -8,16 +8,12 @@ type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
 
     let workflow = lazy workflow ()
 
-    /// Await the outcome of the computation.
-    /// NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this
-    member _.Await() = workflow.Value
-
     /// Synchronously check whether the value has been computed (and/or remains valid)
     member _.IsValid(isExpired) =
         if not workflow.IsValueCreated then false else
 
         let t = workflow.Value
-        if not t.IsCompleted || t.IsFaulted then false else
+        if t.Status <> TaskStatus.RanToCompletion then false else
 
         match isExpired with
         | ValueSome f -> not (f t.Result)
@@ -35,43 +31,31 @@ type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
             | ValueSome isExpired when isExpired res -> return ValueNone
             | _ -> return ValueSome res }
 
+    /// Await the outcome of the computation.
+    /// NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this
+    member _.Await() = workflow.Value
+
 /// Generic async lazy caching implementation that admits expiration/recomputation/retry on exception semantics.
 /// If `workflow` fails, all readers entering while the load/refresh is in progress will share the failure
 /// The first caller through the gate triggers a recomputation attempt if the previous attempt ended in failure
 type AsyncCacheCell<'T>(workflow : CancellationToken -> Task<'T>, ?isExpired : 'T -> bool) =
 
     let isExpired = match isExpired with Some x -> ValueSome x | None -> ValueNone
-
-    let mutable cell = Unchecked.defaultof<AsyncLazy<'T>>
-    let cellIsUninitialized () = obj.ReferenceEquals(null, cell)
-    let createFresh ct =
-        // Prepare to do the work, with cancellation under out control
-        let attemptLoad () = workflow ct
-        // we want the actual workflow (if it is ultimately to run) to be on the thread pool
-        let dispatch () = Task.Run<'T>(attemptLoad)
-        AsyncLazy dispatch
-    let mutable initialized = 0
-    let ensureInitialized ct =
-        if Interlocked.Exchange(&initialized, 1) = 1 then
-            // Concurrent calls will need to wait for the first one to initialize
-            while cellIsUninitialized () do Thread.SpinWait 20
-            Volatile.Read &cell
-        else // First ever caller generates the first task
-            let fresh = createFresh ct
-            Volatile.Write(&cell, fresh)
-            fresh
+    let mutable cell = AsyncLazy(fun () -> Task.FromException<'T>(System.InvalidOperationException "AsyncCacheCell Not Yet initialized"))
 
     /// Synchronously check the value remains valid (to short-circuit an Await step where value not required)
-    member _.IsValid() = not (cellIsUninitialized ()) && cell.IsValid(isExpired)
+    member _.IsValid() = cell.IsValid(isExpired)
 
     /// Gets or asynchronously recomputes a cached value depending on expiry and availability
     member _.Await(ct) = task {
-        let current = ensureInitialized ct
-
+        // Each concurrent execution takes a copy of the cell, and attempts to reuse the value; later used to ensure only one triggers the workflow
+        let current = cell
         match! current.TryAwaitValid(isExpired) with
         | ValueSome res -> return res // ... if it's already / still valid, we're done
         | ValueNone ->
+            // Prepare to do the work, with cancellation under our control (it won't start until the first Await on the LazyTask triggers it though)
+            let execute () = workflow ct
             // avoid unnecessary recomputation in cases where competing threads detect expiry;
             // the first write attempt wins, and everybody else reads off that value
-            let _ = Interlocked.CompareExchange(&cell, createFresh ct, current)
+            let _ = Interlocked.CompareExchange(&cell, AsyncLazy execute, current)
             return! cell.Await() }
