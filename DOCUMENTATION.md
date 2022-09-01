@@ -308,7 +308,7 @@ module Aggregate
 (* StreamName section *)
 
 let [<Literal>] Category = "category"
-let streamName id = FsCodec.StreamName.create Category (Id.toString id)
+let streamName id = struct (Category, Id.toString id)
 
 (* Optionally, Helpers/Types *)
 
@@ -372,11 +372,7 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State)
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create resolveStream =
-    let resolve id =
-        let stream = resolveStream (streamName id)
-        Equinox.Decider(Serilog.Log.ForContext<Service>(), stream, maxAttempts = 3)
-    Service(resolve)
+let create resolve = Service(streamName >> resolve (Serilog.Log.ForContext<Service>()) ())
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one

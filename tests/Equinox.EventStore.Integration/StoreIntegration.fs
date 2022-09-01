@@ -84,27 +84,36 @@ module Cart =
     let codec = Cart.Events.codec
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
-        let cat = Category(context, Cart.Events.codec, fold, initial)
-        Cart.create log cat.Resolve
+        Category(context, Cart.Events.codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
     let createServiceWithCompaction log context =
-        let cat = Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
-        Cart.create log cat.Resolve
+        Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
     let createServiceWithCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Cart.create log (Category(context, codec, fold, initial, sliding20m).Resolve)
+        Category(context, codec, fold, initial, sliding20m)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
+
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Cart.create log (Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot).Resolve)
+        Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
     let codec = ContactPreferences.Events.codec
     let createServiceWithoutOptimization log connection =
         let context = createContext connection defaultBatchSize
-        ContactPreferences.create log (Category(context, codec, fold, initial).Resolve)
+        Category(context, codec, fold, initial)
+        |> Equinox.Decider.resolve log
+        |> ContactPreferences.create
+
     let createService log connection =
-        let cat = Category(createContext connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
-        ContactPreferences.create log cat.Resolve
+        Category(createContext connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
+        |> Equinox.Decider.resolve log
+        |> ContactPreferences.create
 
 type Tests(testOutputHelper) =
 

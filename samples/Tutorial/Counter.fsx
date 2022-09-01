@@ -30,7 +30,7 @@ type Event =
     | Cleared of Cleared
     interface TypeShape.UnionContract.IUnionContract
 (* Kind of DDD aggregate ID *)
-let streamName (id : string) = FsCodec.StreamName.create "Counter" id
+let streamName (id : string) = struct ("Counter", id)
 
 type State = State of int
 let initial : State = State 0
@@ -83,18 +83,18 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
-let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
-    log.Information("Committed to {stream}, events: {@events}", stream, seq { for x in events -> x.EventType })
+let logEvents c s (events : FsCodec.ITimelineEvent<_>[]) =
+    log.Information("Committed to {categoryName}-{aggregateId}, events: {@events}", c, s, seq { for x in events -> x.EventType })
 
 (* We can integration test using an in-memory store
    See other examples such as Cosmos.fsx to see how we integrate with CosmosDB and/or other concrete stores *)
 
 let store = Equinox.MemoryStore.VolatileStore()
-let _ = store.Committed.Subscribe(fun (s, xs) -> logEvents s xs)
+let _ = store.Committed.Subscribe(fun (c, s, xs) -> logEvents c s xs)
 let codec = FsCodec.Box.Codec.Create()
 let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-let resolve instanceId = Equinox.Decider(log, streamName instanceId |> cat.Resolve, maxAttempts = 3)
-let service = Service(resolve)
+let resolve = cat.Resolve log () 
+let service = Service(streamName >> resolve)
 
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously

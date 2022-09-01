@@ -13,7 +13,6 @@ open System
 [<AutoOpen>]
 module WiringHelpers =
 
-    let createDecider log stream = Equinox.Decider(log, stream, maxAttempts = 3)
     let private createCategoryUncached codec initial fold accessStrategy context =
         let noCachingCacheStrategy = CachingStrategy.NoCaching
         StoreCategory(context, codec, fold, initial, noCachingCacheStrategy, accessStrategy)
@@ -33,7 +32,7 @@ module WiringHelpers =
 /// This is especially relevant when events are spread between a Tip page and preceding pages as the Tip reading logic is special cased compared to querying
 module SequenceCheck =
 
-    let streamName (id : Guid) = FsCodec.StreamName.create "_SequenceCheck" (id.ToString "N")
+    let streamName (id : Guid) = struct ("_SequenceCheck", id.ToString "N")
 
     module Events =
 
@@ -69,18 +68,15 @@ module SequenceCheck =
             let decider = resolve instance
             decider.Transact(decide (value, count), id)
 
-    let private create log resolveStream =
-        let resolve = streamName >> resolveStream >> createDecider log
-        Service(resolve)
+    let private create resolve =
+        Service(streamName >> resolve)
 
     module Config =
 
         let createUncached log context =
-            let cat = createCategoryUnoptimizedUncached Events.codec Fold.initial Fold.fold context
-            create log cat.Resolve
+            createCategoryUnoptimizedUncached Events.codec Fold.initial Fold.fold context |> Equinox.Decider.resolve log |> create
         let create log (context, cache) =
-            let cat = createCategoryUnoptimized Events.codec Fold.initial Fold.fold (context, cache)
-            create log cat.Resolve
+            createCategoryUnoptimized Events.codec Fold.initial Fold.fold (context, cache) |> Equinox.Decider.resolve log |> create
 
 module Props =
 

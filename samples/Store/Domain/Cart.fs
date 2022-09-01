@@ -1,6 +1,6 @@
 ﻿module Domain.Cart
 
-let streamName (id: CartId) = FsCodec.StreamName.create "Cart" (CartId.toString id)
+let streamName (id: CartId) = struct ("Cart", CartId.toString id)
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<RequireQualifiedAccess>]
@@ -164,8 +164,5 @@ type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.St
         let decider = resolve cartId
         decider.Query(id, Equinox.LoadOption.AllowStale)
 
-let create log resolveStream =
-    let resolve id =
-        let stream = resolveStream (streamName id)
-        Equinox.Decider(log, stream, maxAttempts = 3)
-    Service(resolve)
+let create resolve =
+    Service(streamName >> resolve)

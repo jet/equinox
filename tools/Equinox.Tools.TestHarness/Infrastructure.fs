@@ -55,6 +55,7 @@ type Async with
         let! result = Async.Choice [|Async.map Some a ; Async.map Some b |]
         return Option.get result
     }
+    static member startAsTask ct computation = Async.StartAsTask(computation, cancellationToken = ct)
 
 type StringBuilder with
     member sb.Appendf fmt = Printf.ksprintf (ignore << sb.Append) fmt

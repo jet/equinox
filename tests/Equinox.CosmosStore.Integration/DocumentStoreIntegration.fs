@@ -13,6 +13,7 @@ open Equinox.CosmosStore
 open Equinox.CosmosStore.Integration.CosmosFixtures
 #endif
 
+
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
@@ -22,24 +23,29 @@ module Cart =
     let codec = Cart.Events.codecJe
 #endif
     let createServiceWithoutOptimization log context =
-        let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized).Resolve
-        Cart.create log resolve
+        StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Unoptimized)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds log context =
         let unfArgs = Cart.Fold.isOrigin, fun _ -> Seq.empty
-        let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs).Resolve
-        Cart.create log resolve
+        StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
     let createServiceWithSnapshotStrategy log context =
-        let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot).Resolve
-        Cart.create log resolve
+        StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.Snapshot snapshot)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
     let createServiceWithSnapshotStrategyAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        let resolve = StoreCategory(context, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot).Resolve
-        Cart.create log resolve
+        StoreCategory(context, codec, fold, initial, sliding20m, AccessStrategy.Snapshot snapshot)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
     let createServiceWithRollingState log context =
         let access = AccessStrategy.RollingState Cart.Fold.snapshot
-        let resolve = StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, access).Resolve
-        Cart.create log resolve
+        StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, access)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
@@ -49,8 +55,9 @@ module ContactPreferences =
     let codec = ContactPreferences.Events.codecJe
 #endif
     let private createServiceWithLatestKnownEvent context log cachingStrategy =
-        let resolveStream = StoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent).Resolve
-        ContactPreferences.create log resolveStream
+        StoreCategory(context, codec, fold, initial, cachingStrategy, AccessStrategy.LatestKnownEvent)
+        |> Equinox.Decider.resolve log
+        |> ContactPreferences.create
     let createServiceWithoutCaching log context =
         createServiceWithLatestKnownEvent context log CachingStrategy.NoCaching
     let createServiceWithCaching log context cache =
@@ -236,7 +243,7 @@ type Tests(testOutputHelper) =
         // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
         // If we run on an independent context, we won't see (and hence prune) the full set of events
         let ctx = Core.EventsContext(context, log)
-        let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.toString
+        let streamName = ContactPreferences.streamName id |> FsCodec.StreamName.createRaw
 
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 14L
@@ -404,7 +411,7 @@ type Tests(testOutputHelper) =
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
         let ctx = Core.EventsContext(context, log)
-        let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
+        let streamName = Cart.streamName cartId |> FsCodec.StreamName.createRaw
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 11L
         test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
@@ -465,7 +472,7 @@ type Tests(testOutputHelper) =
         (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
         let ctx = Core.EventsContext(context, log)
-        let streamName = Cart.streamName cartId |> FsCodec.StreamName.toString
+        let streamName = Cart.streamName cartId |> FsCodec.StreamName.createRaw
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 12L
         test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>

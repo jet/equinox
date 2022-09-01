@@ -3,7 +3,7 @@
 open System
 open System.Collections.Generic
 
-let streamName (id: ClientId) = FsCodec.StreamName.create "SavedForLater" (ClientId.toString id)
+let streamName (id: ClientId) = struct ("SavedForLater", ClientId.toString id)
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -142,6 +142,5 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         let! state = read clientId
         return! execute targetId (Merge state) }
 
-let create maxSavedItems log resolveStream =
-    let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts = 3)
-    Service(resolve, maxSavedItems)
+let create maxSavedItems resolve =
+    Service(streamName >> resolve, maxSavedItems)

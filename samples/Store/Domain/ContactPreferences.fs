@@ -1,7 +1,7 @@
 ﻿module Domain.ContactPreferences
 
 type Id = Id of email: string
-let streamName (Id email) = FsCodec.StreamName.create "ContactPreferences" email // TODO hash >> base64
+let streamName (Id email) = struct ("ContactPreferences", email) // TODO hash >> base64
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -56,6 +56,5 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State>
         let decider = resolve email
         decider.Query(id, Equinox.AllowStale)
 
-let create log resolveStream =
-    let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts  = 3)
-    Service(resolve)
+let create resolve =
+    Service(streamName >> resolve)

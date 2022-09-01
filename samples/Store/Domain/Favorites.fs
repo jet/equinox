@@ -1,6 +1,6 @@
 ﻿module Domain.Favorites
 
-let streamName (id: ClientId) = FsCodec.StreamName.create "Favorites" (ClientId.toString id)
+let streamName (id: ClientId) = struct ("Favorites", ClientId.toString id)
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -77,6 +77,5 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         let decider = resolve clientId
         decider.TransactEx((fun c -> (), decideUnfavorite sku c.State), fun () c -> c.Version)
 
-let create log resolveStream =
-    let resolve id = Equinox.Decider(log, resolveStream (streamName id), maxAttempts  = 3)
-    Service(resolve)
+let create resolve =
+    Service(streamName >> resolve)

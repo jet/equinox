@@ -29,7 +29,7 @@ open System
    This tutorial stresses different aspects *)
 
 let Category = "Todos"
-let streamName (id : string) = FsCodec.StreamName.create Category id
+let streamName (id : string) = struct (Category, id)
 
 type Todo =             { id: int; order: int; title: string; completed: bool }
 type DeletedInfo =      { id: int }
@@ -137,9 +137,9 @@ module TodosCategory =
 
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
     let category = CosmosStoreCategory(Store.context, codec, fold, initial, Store.cacheStrategy, access=access)
-    let resolve id = Equinox.Decider(log, category.Resolve(streamName id), maxAttempts = 3)
+    let resolve = category.Resolve log ()
 
-let service = Service(TodosCategory.resolve)
+let service = Service(streamName >> TodosCategory.resolve)
 
 let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }

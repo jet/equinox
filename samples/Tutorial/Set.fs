@@ -1,7 +1,7 @@
 module Set
 
 let [<Literal>] Category = "Set"
-let streamName id = FsCodec.StreamName.create Category (SetId.toString id)
+let streamName id = struct (Category, SetId.toString id)
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -46,10 +46,8 @@ type Service internal (decider : Equinox.Decider<Events.Event, Fold.State>) =
     member _.Read() : Async<Set<string>> =
         decider.Query id
 
-let create resolveStream setId =
-    let streamName = streamName setId
-    let decider = Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream streamName, maxAttempts = 3)
-    Service(decider)
+let create resolve setId =
+    Service(streamName setId |> resolve)
 
 module Cosmos =
 
@@ -57,11 +55,11 @@ module Cosmos =
     let create (context, cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let accessStrategy = AccessStrategy.RollingState Fold.snapshot
-        let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create category.Resolve
+        CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        |> Equinox.Decider.resolve Serilog.Log.Logger |> create
 
 module MemoryStore =
 
     let create store =
-        let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Events.codec, Fold.fold, Fold.initial)
-        create cat.Resolve
+        Equinox.MemoryStore.MemoryStoreCategory(store, Events.codec, Fold.fold, Fold.initial)
+        |> Equinox.Decider.resolve Serilog.Log.Logger |> create

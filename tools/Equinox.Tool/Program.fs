@@ -469,11 +469,11 @@ module Dump =
         let storeLog, storeConfig = a.ConfigureStore(log, createStoreLog)
         let doU, doE = not (p.Contains EventsOnly), not (p.Contains UnfoldsOnly)
         let doC, doJ, doS, doT = p.Contains Correlation, not (p.Contains JsonSkip), not (p.Contains Blobs), not (p.Contains TimeRegular)
-        let cat = Services.StreamResolver(storeConfig)
+        let store = Services.Store(storeConfig)
 
         let initial = List.empty
         let fold state events = (events, state) ||> Seq.foldBack (fun e l -> e :: l)
-        let tryDecode (x : FsCodec.ITimelineEvent<ReadOnlyMemory<byte>>) = Some x
+        let tryDecode (x : FsCodec.ITimelineEvent<ReadOnlyMemory<byte>>) = ValueSome x
         let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold), fun _state -> failwith "no snapshot required"
         let formatUnfolds, formatEvents =
@@ -494,8 +494,9 @@ module Dump =
                      else $"(%d{s.Length} chars)"
                  with e -> log.Warning(e, "UTF-8 Parse failure - use --Blobs option to inhibit"); reraise()
         let readStream (streamName : FsCodec.StreamName) = async {
-            let stream = cat.Resolve(idCodec, fold, initial, isOriginAndSnapshot) streamName
-            let! token, events = stream.Load(storeLog, allowStale = false)
+            let resolve = store.Category(idCodec, fold, initial, isOriginAndSnapshot) |> Equinox.Decider.resolve storeLog
+            let decider = resolve (FsCodec.StreamName.splitCategoryAndId streamName)
+            let! streamBytes, events = decider.QueryEx(fun c -> c.StreamEventBytes, c.State)
             let mutable prevTs = None
             for x in events |> Seq.filter (fun e -> (e.IsUnfold && doU) || (not e.IsUnfold && doE)) do
                 let ty, render = if x.IsUnfold then "U", render formatUnfolds else "E", render formatEvents
@@ -513,7 +514,7 @@ module Dump =
                                     x.Index, x.Timestamp, interval, ty, x.EventType, render x.Data, render x.Meta)
                 else log.Information("{i,4}@{t:u}+{d,9} Corr {corr} Cause {cause} {u:l} {e:l} {data:l} {meta:l}",
                          x.Index, x.Timestamp, interval, x.CorrelationId, x.CausationId, ty, x.EventType, render x.Data, render x.Meta)
-            match token.streamBytes with -1L -> () | x -> log.Information("ISyncContext.StreamEventBytes {kib:n1}KiB", float x / 1024.) }
+            match streamBytes with ValueNone -> () | ValueSome x -> log.Information("ISyncContext.StreamEventBytes {kib:n1}KiB", float x / 1024.) }
 
         resetStats ()
 

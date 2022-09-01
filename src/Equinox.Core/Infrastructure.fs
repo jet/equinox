@@ -50,3 +50,24 @@ type Async with
                 else
                     sc ())
             |> ignore)
+
+module Async =
+
+    let startAsTask ct computation = Async.StartAsTask(computation, cancellationToken = ct)
+
+module ValueTuple =
+
+    let inline fst struct (f, _s) = f
+    let inline snd struct (_f, s) = s
+
+module ValueOption =
+
+    let inline toOption x = match x with ValueSome x -> Some x | ValueNone -> None
+
+module Seq =
+
+    let inline chooseV f = Seq.choose (f >> ValueOption.toOption)
+
+module Array =
+
+    let inline chooseV f = Array.choose (f >> ValueOption.toOption)

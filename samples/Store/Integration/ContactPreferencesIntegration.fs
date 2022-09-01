@@ -9,22 +9,23 @@ let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initia
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    ContactPreferences.create log (MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve)
+    MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve log
+    |> ContactPreferences.create
 
 let codec = ContactPreferences.Events.codec
 let codecJe = ContactPreferences.Events.codecJe
-let resolveStreamGesWithOptimizedStorageSemantics context =
-    EventStoreDb.EventStoreCategory(context 1, codec, fold, initial, access = EventStoreDb.AccessStrategy.LatestKnownEvent).Resolve
-let resolveStreamGesWithoutAccessStrategy context =
-    EventStoreDb.EventStoreCategory(context defaultBatchSize, codec, fold, initial).Resolve
+let categoryGesWithOptimizedStorageSemantics context =
+    EventStoreDb.EventStoreCategory(context 1, codec, fold, initial, access = EventStoreDb.AccessStrategy.LatestKnownEvent)
+let categoryGesWithoutAccessStrategy context =
+    EventStoreDb.EventStoreCategory(context defaultBatchSize, codec, fold, initial)
 
-let resolveStreamCosmosWithLatestKnownEventSemantics context =
-    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.LatestKnownEvent).Resolve
-let resolveStreamCosmosUnoptimized context =
-    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve
-let resolveStreamCosmosRollingUnfolds context =
+let categoryCosmosWithLatestKnownEventSemantics context =
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.LatestKnownEvent)
+let categoryCosmosUnoptimized context =
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized)
+let categoryCosmosRollingUnfolds context =
     let access = CosmosStore.AccessStrategy.Custom(ContactPreferences.Fold.isOrigin, ContactPreferences.Fold.transmute)
-    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, access).Resolve
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
 
 type Tests(testOutputHelper) =
     let testOutput = TestOutput testOutputHelper
@@ -43,41 +44,41 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeEs connect choose resolveStream = async {
+    let arrangeEs connect choose createCategory = async {
         let client = connect log
         let context = choose client
-        return ContactPreferences.create log (resolveStream context) }
+        return ContactPreferences.create (createCategory context |> Decider.resolve log) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with normal semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeEs connectToLocalEventStoreNode createContext resolveStreamGesWithoutAccessStrategy
+        let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesWithoutAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeEs connectToLocalEventStoreNode createContext resolveStreamGesWithOptimizedStorageSemantics
+        let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesWithOptimizedStorageSemantics
         do! act service args
     }
 
-    let arrangeCosmos connect resolveStream queryMaxItems =
+    let arrangeCosmos connect createCategory queryMaxItems =
         let context: CosmosStore.CosmosStoreContext = connect log queryMaxItems
-        ContactPreferences.create log (resolveStream context)
+        ContactPreferences.create (createCategory context |> Decider.resolve log)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with Unoptimized semantics`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosUnoptimized defaultQueryMaxItems
+        let service = arrangeCosmos createPrimaryContext categoryCosmosUnoptimized defaultQueryMaxItems
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with LatestKnownEvent semantics`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosWithLatestKnownEventSemantics 1
+        let service = arrangeCosmos createPrimaryContext categoryCosmosWithLatestKnownEventSemantics 1
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with RollingUnfold semantics`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos createPrimaryContext resolveStreamCosmosRollingUnfolds defaultQueryMaxItems
+        let service = arrangeCosmos createPrimaryContext categoryCosmosRollingUnfolds defaultQueryMaxItems
         do! act service args
     }

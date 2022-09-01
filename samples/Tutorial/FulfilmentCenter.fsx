@@ -50,7 +50,7 @@ module Types =
 
 module FulfilmentCenter =
 
-    let streamName id = FsCodec.StreamName.create "FulfilmentCenter" id
+    let streamName id = struct ("FulfilmentCenter", id)
 
     module Events =
 
@@ -143,8 +143,8 @@ module Store =
 open FulfilmentCenter
 
 let category = CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
-let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
-let service = Service(resolve)
+let resolve = category.Resolve Log.log ()
+let service = Service(streamName >> resolve)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously
@@ -155,7 +155,7 @@ Log.dumpMetrics ()
 /// Manages ingestion of summary events tagged with the version emitted from FulfilmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
-    let streamName id = FsCodec.StreamName.create "FulfilmentCenterSummary" id
+    let streamName id = struct ("FulfilmentCenterSummary", id)
 
     module Events =
         type UpdatedData = { version : int64; state : Summary }

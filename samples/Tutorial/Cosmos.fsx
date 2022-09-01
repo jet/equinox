@@ -43,7 +43,7 @@ module Log =
 module Favorites =
 
     let Category = "Favorites"
-    let streamName clientId = FsCodec.StreamName.create Category clientId
+    let streamName clientId = struct (Category, clientId)
 
     module Events =
 
@@ -83,9 +83,7 @@ module Favorites =
             let decider = resolve clientId
             decider.Query id
 
-    let create resolveStream =
-        let resolve clientId = Equinox.Decider(Log.log, resolveStream (streamName clientId), maxAttempts = 3)
-        Service(resolve)
+    let create resolve = Service(streamName >> resolve)
 
     module Cosmos =
 
@@ -94,7 +92,7 @@ module Favorites =
         let create (context, cache) =
             let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
             let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-            create category.Resolve
+            create <| category.Resolve Log.log ()
 
 let [<Literal>] appName = "equinox-tutorial"
 

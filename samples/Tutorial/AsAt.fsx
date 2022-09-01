@@ -45,7 +45,7 @@
 #endif
 open System
 
-let streamName clientId = FsCodec.StreamName.create "Account" clientId
+let streamName clientId = struct ("Account", clientId)
 
 module Events =
 
@@ -160,7 +160,7 @@ module EventStore =
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
     let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-    let resolve id = Equinox.Decider(Log.log, cat.Resolve(streamName id), maxAttempts = 3)
+    let resolve = streamName >> cat.Resolve Log.log ()
 
 module Cosmos =
 

@@ -5,7 +5,7 @@ module Sequence
 open System
 
 let [<Literal>] Category = "Sequence"
-let streamName id = FsCodec.StreamName.create Category (SequenceId.toString id)
+let streamName id = struct (Category, SequenceId.toString id)
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -36,19 +36,15 @@ type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fol
         let decider = resolve series
         decider.Transact(decideReserve (defaultArg count 1))
 
-let create resolveStream =
-    let resolve sequenceId =
-        let streamName = streamName sequenceId
-        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream streamName, maxAttempts = 3)
-    Service(resolve)
+let create resolve = Service(streamName >> resolve)
 
 module Cosmos =
 
     open Equinox.CosmosStore
-    let private create (context,cache,accessStrategy) =
+    let private create (context, cache, accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
         let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create category.Resolve
+        category |> Equinox.Decider.resolve (Serilog.Log.ForContext<Service>()) |> create
 
     module LatestKnownEvent =
 
