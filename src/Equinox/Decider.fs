@@ -1,40 +1,6 @@
 ﻿namespace Equinox
 
-open System.Threading
 open System.Threading.Tasks
-
-module Decider =
-
-    let query struct (stream, fetch, projection) = async {
-        let! ct = Async.CancellationToken
-        let! tokenAndState = Async.AwaitTask(fetch stream ct)
-        return projection tokenAndState }
-
-    let private run ct struct (stream : Core.IStream<'e, 's>,
-                               decide : struct (_ * _) -> CancellationToken -> Task<struct ('r * 'e list)>,
-                               validateResync,
-                               mapResult : 'r -> struct (Core.StreamToken * 's) -> 'v) originTokenAndState : Task<'v>=
-        let rec loop attempt tokenAndState : Task<'v> = task {
-            let! result, events = decide tokenAndState ct
-            if List.isEmpty events then
-                return mapResult result tokenAndState
-            else
-                match! stream.TrySync(attempt, tokenAndState, events, ct) with
-                | Core.SyncResult.Written tas' ->
-                    return mapResult result tas'
-                | Core.SyncResult.Conflict resync ->
-                    validateResync attempt
-                    let! tas = resync ct
-                    return! loop (attempt + 1) tas }
-        loop 1 originTokenAndState
-
-    let private transactTask struct (stream, fetch : _ -> CancellationToken -> Task<_>, decide, reload, mapResult : 'r -> struct (Core.StreamToken * 's)-> 'v) ct : Task<'v> = task {
-        let! originTokenAndState = fetch stream ct
-        return! run ct (stream, decide, reload, mapResult) originTokenAndState }
-
-    let transact (stream, fetch, decide, reload, mapResult) = async {
-        let! ct = Async.CancellationToken
-        return! Async.AwaitTask(transactTask (stream, fetch, decide, reload, mapResult) ct) }
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
@@ -47,7 +13,7 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.Transact(interpret : 'state -> 'event list, ?load, ?attempts) : Async<unit> =
         let inline decide struct (_t : Core.StreamToken, state) _ct = Task.FromResult struct ((), interpret state)
         let inline mapRes () struct (_t : Core.StreamToken, _s : 'state) = ()
-        Decider.transact(stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact(stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// 1. Invoke the supplied <c>interpret</c> function with the present state
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -56,7 +22,7 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.Transact(interpret : 'state -> 'event list, render : 'state -> 'view, ?load, ?attempts) : Async<'view> =
         let inline decide struct (_token, state) _ct = Task.FromResult struct ((), interpret state)
         let inline mapRes () struct (_token, state) = render state
-        Decider.transact(stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact(stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// 1. Invoke the supplied <c>decide</c> function with the present state, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -65,7 +31,7 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.Transact(decide : 'state -> 'result * 'event list, ?load, ?attempts) : Async<'result> =
         let inline decide struct (_token, state) _ct = let r, e = decide state in Task.FromResult struct (r, e)
         let inline mapRes r _ = r
-        Decider.transact(stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact(stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// 1. Invoke the supplied <c>decide</c> function with the present state, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -74,7 +40,7 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.Transact(decide : 'state -> 'result * 'event list, mapResult : 'result -> 'state -> 'view, ?load, ?attempts) : Async<'view> =
         let inline decide struct (_token, state) _ct = let r, e = decide state in Task.FromResult struct (r, e)
         let inline mapRes r struct (_, s) = mapResult r s
-        Decider.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// 1. Invoke the supplied <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -83,7 +49,7 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.TransactEx(decide : ISyncContext<'state> -> 'result * 'event list, ?load, ?attempts) : Async<'result> =
         let inline decide (Context c) _ct = let r, e = decide c in Task.FromResult struct (r, e)
         let inline mapRes r _ = r
-        Decider.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// 1. Invoke the supplied <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -92,15 +58,15 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.TransactEx(decide : ISyncContext<'state> -> 'result * 'event list, mapResult : 'result -> ISyncContext<'state> -> 'view, ?load, ?attempts) : Async<'view> =
         let inline decide (Context c) _ct = let r, e = decide c in Task.FromResult struct (r, e)
         let rec inline mapRes r (Context c) = mapResult r c
-        Decider.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// Project from the folded <c>'state</c>, but without executing a decision flow as <c>Transact</c> does
     member _.Query(render : 'state -> 'view, ?load) : Async<'view> =
-        Decider.query struct (stream, LoadPolicy.Fetch load, fun struct (_token, state) -> render state)
+        Core.Impl.query struct (stream, LoadPolicy.Fetch load, fun struct (_token, state) -> render state)
 
     /// Project from the stream's complete context, but without executing a decision flow as <c>TransactEx<c> does
     member _.QueryEx(render : ISyncContext<'state> -> 'view, ?load) : Async<'view> =
-        Decider.query struct (stream, LoadPolicy.Fetch load, fun (Context c) -> render c)
+        Core.Impl.query struct (stream, LoadPolicy.Fetch load, fun (Context c) -> render c)
 
     /// 1. Invoke the supplied <c>Async</c> <c>interpret</c> function with the present state
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -109,7 +75,7 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.TransactAsync(interpret : 'state -> Async<'event list>, render : 'state -> 'view, ?load, ?attempts) : Async<'view> =
         let inline decide struct (_token, state) _ct = task { let! es = interpret state in return struct ((), es) }
         let rec inline mapRes () struct (_token, state) = render state
-        Decider.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the present state, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -118,7 +84,7 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.TransactAsync(decide : 'state -> Async<'result * 'event list>, ?load, ?attempts) : Async<'result> =
         let inline decide struct (_token, state) _ct = task { let! r, e = decide state in return struct (r, e) }
         let rec inline mapRes r _ = r
-        Decider.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -127,7 +93,7 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.TransactExAsync(decide : ISyncContext<'state> -> Async<'result * 'event list>, ?load, ?attempts) : Async<'result> =
         let inline decide (Context c) _ct = task { let! r, e = decide c in return struct (r, e) }
         let rec inline mapRes r _ = r
-        Decider.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
 
     /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -136,7 +102,9 @@ type Decider<'event, 'state>(stream : Core.IStream<'event, 'state>) =
     member _.TransactExAsync(decide : ISyncContext<'state> -> Async<'result * 'event list>, mapResult : 'result -> ISyncContext<'state> -> 'view, ?load, ?attempts) : Async<'view> =
         let inline decide (Context c) _ct = task { let! r, e = decide c in return struct (r, e) }
         let rec inline mapRes r (Context c) = mapResult r c
-        Decider.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+        Core.Impl.transact (stream, LoadPolicy.Fetch load, decide, AttemptsPolicy.Validate attempts, mapRes)
+
+(* Options to tune loading policy - default is RequireLoad*)
 
 /// Store-agnostic Loading Options
 and [<NoComparison; NoEquality>] LoadOption<'state> =
@@ -150,20 +118,23 @@ and [<NoComparison; NoEquality>] LoadOption<'state> =
     | AssumeEmpty
     /// <summary>Instead of loading from database, seed the loading process with the supplied memento, obtained via <c>ISyncContext.CreateMemento()</c></summary>
     | FromMemento of memento : struct (Core.StreamToken * 'state)
-and LoadPolicy() =
-    static member Fetch<'state, 'event>(x : LoadOption<'state> option) : Core.IStream<'event, 'state> -> CancellationToken -> Task<struct (Core.StreamToken * 'state)> =
+and internal LoadPolicy() =
+    static member Fetch<'state, 'event>(x : LoadOption<'state> option)
+        : Core.IStream<'event, 'state> -> System.Threading.CancellationToken -> Task<struct (Core.StreamToken * 'state)> =
         match x with
         | None | Some RequireLoad ->                 fun stream ct ->   stream.Load(allowStale = false, ct = ct)
         | Some AllowStale ->                         fun stream ct ->   stream.Load(allowStale = true, ct = ct)
         | Some AssumeEmpty ->                        fun stream _ct ->  Task.FromResult(stream.LoadEmpty())
         | Some (FromMemento (streamToken, state)) -> fun _stream _ct -> Task.FromResult(streamToken, state)
 
+(* Retry / Attempts policy used to define policy for resyncing state when there's an Append conflict (default 3 retries) *)
+
 and [<NoComparison; NoEquality; RequireQualifiedAccess>] Attempts =
     | Max of count : int
 
-and AttemptsPolicy() =
+and internal AttemptsPolicy() =
 
-    static member Validate(opt) =
+    static member Validate(opt : Attempts option) =
         let maxAttempts = match opt with Some (Attempts.Max n) -> n | None -> 3
         if maxAttempts < 1 then raise <| System.ArgumentOutOfRangeException(nameof opt, maxAttempts, "should be >= 1")
         fun attempt -> if attempt = maxAttempts then raise (MaxResyncsExhaustedException attempt)
@@ -171,6 +142,8 @@ and AttemptsPolicy() =
 /// Exception yielded by Decider.Transact after `count` attempts have yielded conflicts at the point of syncing with the Store
 and MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Concurrency violation; aborting after %i attempts." count)
+
+(* Extended context interface exposed by TransactEx / QueryEx *)
 
 /// Exposed by TransactEx / QueryEx, providing access to extended state information for cases where that's required
 and ISyncContext<'state> =
@@ -191,7 +164,7 @@ and ISyncContext<'state> =
     /// Represents a Checkpoint position on a Stream's timeline; Can be used to manage continuations via LoadOption.FromMemento
     abstract member CreateMemento : unit -> struct (Core.StreamToken * 'state)
 
-and SyncContext<'state> =
+and internal SyncContext<'state> =
 
     static member Map(struct (token : Core.StreamToken, state : 'state)) =
         { new ISyncContext<'state> with

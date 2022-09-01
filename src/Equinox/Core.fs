@@ -29,3 +29,38 @@ and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
 
 /// Store-specific opaque token to be used for synchronization purposes
 and [<Struct; NoEquality; NoComparison>] StreamToken = { value : obj; version : int64; streamBytes : int64 }
+
+module internal Impl =
+
+    let query struct (stream, fetch, projection) = async {
+        let! ct = Async.CancellationToken
+        let! tokenAndState = Async.AwaitTaskCorrect(fetch stream ct)
+        return projection tokenAndState }
+
+    let private run (stream : IStream<'e, 's>)
+                    (decide : struct (_ * _) -> CancellationToken -> Task<struct ('r * 'e list)>)
+                    (validateResync : int -> unit)
+                    (mapResult : 'r -> struct (StreamToken * 's) -> 'v)
+                    originTokenAndState ct : Task<'v>=
+        let rec loop attempt tokenAndState : Task<'v> = task {
+            let! result, events = decide tokenAndState ct
+            if List.isEmpty events then
+                return mapResult result tokenAndState
+            else
+                match! stream.TrySync(attempt, tokenAndState, events, ct) with
+                | SyncResult.Written tas' ->
+                    return mapResult result tas'
+                | SyncResult.Conflict resync ->
+                    validateResync attempt
+                    let! tokenAndState = resync ct
+                    return! loop (attempt + 1) tokenAndState }
+        loop 1 originTokenAndState
+
+    let private transactTask stream (fetch : IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>)
+                             decide reload mapResult ct : Task<'v> = task {
+        let! originTokenAndState = fetch stream ct
+        return! run stream decide reload mapResult originTokenAndState ct }
+
+    let transact (stream, fetch, decide, reload, mapResult) = async {
+        let! ct = Async.CancellationToken
+        return! Async.AwaitTaskCorrect(transactTask stream fetch decide reload mapResult ct) }
