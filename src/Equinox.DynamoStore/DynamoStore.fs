@@ -997,7 +997,7 @@ module Token =
     let create : Position -> StreamToken = Some >> create_
     let empty = create_ None
     let (|Unpack|) (token : StreamToken) : Position option = let t = unbox<Token> token.value in t.pos
-    let supersedes (Unpack currentPos) (Unpack xPos) =
+    let supersedes struct (Unpack currentPos, Unpack xPos) =
         match currentPos, xPos with
         | Some currentPos, Some xPos ->
             let currentVersion, newVersion = currentPos.index, xPos.index
@@ -1143,17 +1143,17 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
 module internal Caching =
 
     let applyCacheUpdatesWithSlidingExpiration (cache : ICache, prefix : string) (slidingExpiration : TimeSpan) =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
         fun streamName value ->
-            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+            cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
 
     let applyCacheUpdatesWithFixedTimeSpan (cache : ICache, prefix : string) (period : TimeSpan) =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
         fun streamName value ->
             let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
             let options = CacheItemOptions.AbsoluteExpiration expirationPoint
-            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+            cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
 
     type CachingCategory<'event, 'state, 'context>
         (   category : Category<'event, 'state, 'context>,

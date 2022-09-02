@@ -28,9 +28,9 @@ let applyCacheUpdatesWithSlidingExpiration
         (category : ICategory<'event, 'state, 'context>)
         supersedes
         : ICategory<'event, 'state, 'context> =
-    let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState, supersedes)
+    let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = new CacheEntry<'state>(initialToken, initialState)
     let options = CacheItemOptions.RelativeExpiration slidingExpiration
-    let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+    let addOrUpdateSlidingExpirationCacheEntry streamName value = cache.UpdateIfNewer(prefix + streamName, options, supersedes, mkCacheEntry value)
     Decorator<'event, 'state, 'context>(category, addOrUpdateSlidingExpirationCacheEntry) :> _
 
 let applyCacheUpdatesWithFixedTimeSpan
@@ -40,9 +40,9 @@ let applyCacheUpdatesWithFixedTimeSpan
         (category : ICategory<'event, 'state, 'context>)
         supersedes
         : ICategory<'event, 'state, 'context> =
-    let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, supersedes)
+    let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
     let addOrUpdateFixedLifetimeCacheEntry streamName value =
         let expirationPoint = let creationDate = System.DateTimeOffset.UtcNow in creationDate.Add lifetime
         let options = CacheItemOptions.AbsoluteExpiration expirationPoint
-        cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+        cache.UpdateIfNewer(prefix + streamName, options, supersedes, mkCacheEntry value)
     Decorator<'event, 'state, 'context>(category, addOrUpdateFixedLifetimeCacheEntry) :> _

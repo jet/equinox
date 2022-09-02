@@ -293,7 +293,7 @@ module Token =
     let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion' : StreamToken =
         ofCompactionEventNumber (Some (token.streamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
 
-    let supersedes (Unpack current) (Unpack x) =
+    let supersedes struct (Unpack current, Unpack x) =
         let currentVersion, newVersion = current.streamVersion, x.streamVersion
         newVersion > currentVersion
 
@@ -450,7 +450,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
                 | ValueSome (token, state) -> return! category.LoadFromToken(fold, state, streamName, token, log) }
 
-        member _.TrySync(log, _categoryName, _aggregateId, streamName, context, _maybeInit, streamToken, initialState, events, ct) = task {
+        member _.TrySync(log, _categoryName, _streamId, streamName, context, _maybeInit, streamToken, initialState, events, _ct) = task {
             match! category.TrySync(log, fold, streamName, streamToken, initialState, events, context) with
             | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }

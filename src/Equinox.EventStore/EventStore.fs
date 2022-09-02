@@ -359,7 +359,7 @@ module Token =
     let ofPreviousStreamVersionAndCompactionEventDataIndex (Unpack token) compactionEventDataIndex eventsLength batchSize streamVersion' : StreamToken =
         ofCompactionEventNumber (Some (token.streamVersion + 1L + int64 compactionEventDataIndex)) eventsLength batchSize streamVersion'
 
-    let supersedes (Unpack current) (Unpack x) =
+    let supersedes struct (Unpack current, Unpack x) =
         let currentVersion, newVersion = current.streamVersion, x.streamVersion
         newVersion > currentVersion
 

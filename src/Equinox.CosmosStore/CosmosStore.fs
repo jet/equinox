@@ -979,7 +979,7 @@ module Token =
     //            Alternately, can mirror DynamoStore scheme where the size is maintained in the Tip, and updated as batches are calved
     let create pos : StreamToken = { value = box { pos = pos }; version = pos.index; streamBytes = -1 }
     let (|Unpack|) (token : StreamToken) : Position = let t = unbox<Token> token.value in t.pos
-    let supersedes (Unpack currentPos) (Unpack xPos) =
+    let supersedes struct (Unpack currentPos, Unpack xPos) =
         let currentVersion, newVersion = currentPos.index, xPos.index
         let currentETag, newETag = currentPos.etag, xPos.etag
         newVersion > currentVersion || currentETag <> newETag
@@ -1114,17 +1114,17 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
 module internal Caching =
 
     let applyCacheUpdatesWithSlidingExpiration (cache : ICache, prefix : string) (slidingExpiration : TimeSpan) =
-        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
         fun streamName value ->
-            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+            cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
 
     let applyCacheUpdatesWithFixedTimeSpan (cache : ICache, prefix : string) (period : TimeSpan) =
-        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState, Token.supersedes)
+        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
         fun streamName value ->
             let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
             let options = CacheItemOptions.AbsoluteExpiration expirationPoint
-            cache.UpdateIfNewer(prefix + streamName, options, mkCacheEntry value)
+            cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
 
     type CachingCategory<'event, 'state, 'context>
         (   category : Category<'event, 'state, 'context>,
