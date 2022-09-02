@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <DisableImplicitFSharpCoreReference>false</DisableImplicitFSharpCoreReference>
     <OutputType>Exe</OutputType>
 
     <PackageId>Equinox.Tool</PackageId>
@@ -32,6 +31,9 @@
 
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.0.0" PrivateAssets="All" />
+
+    <PackageReference Include="FSharp.Core" Version="6.0.0" />
+
     <!-- Required or there'll be an exception at runtime re missing support DLLs when using RBAC -->
     <PackageReference Include="AWSSDK.SecurityToken" Version="3.7.1.177" />
   </ItemGroup>
