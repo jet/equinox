@@ -209,6 +209,13 @@ module Log =
         | Delete of Measurement
         /// Trimmed the Tip
         | Trim of Measurement
+    let [<return: Struct>] (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric voption =
+        let mutable p = Unchecked.defaultof<_>
+        logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
+        match p with Log.ScalarValue (:? Metric as e) -> ValueSome e | _ -> ValueNone
+
+    /// Attach a property to the captured event record to hold the metric information
+    let internal event (value : Metric) = Internal.Log.withScalarProperty PropertyTag value
     let internal prop name value (log : ILogger) = log.ForContext(name, value)
     let internal propData name (events : #IEventData<EventBody> seq) (log : ILogger) =
         let render (body : EventBody) = body.GetRawText()
@@ -227,22 +234,10 @@ module Log =
                 let log = if count = 1 then log else log |> prop contextLabel count
                 f log
             retryPolicy.Execute withLoggingContextWrapping
-    /// Include a LogEvent property bearing metrics
-    // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
-    let internal event (value : Metric) (log : ILogger) =
-        let enrich (e : Serilog.Events.LogEvent) =
-            e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty(PropertyTag, Serilog.Events.ScalarValue(value)))
-        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt,_) = enrich evt })
+
     let internal (|BlobLen|) (x : EventBody) = if x.ValueKind = JsonValueKind.Null then 0 else x.GetRawText().Length
     let internal eventLen (x: #IEventData<_>) = let BlobLen bytes, BlobLen metaBytes = x.Data, x.Meta in bytes + metaBytes + 80
     let internal batchLen = Seq.sumBy eventLen
-    let internal (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
-        | :? Serilog.Events.ScalarValue as x -> Some x.Value
-        | _ -> None
-    let (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric option =
-        match logEvent.Properties.TryGetValue(PropertyTag) with
-        | true, SerilogScalar (:? Metric as e) -> Some e
-        | _ -> None
     [<RequireQualifiedAccess>]
     type Operation = Tip | Tip404 | Tip304 | Query | Write | Resync | Conflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function

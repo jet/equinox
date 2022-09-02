@@ -29,6 +29,13 @@ module Log =
         | WriteConflict of Measurement
         | Slice of Direction * Measurement
         | Batch of Direction * slices : int * Measurement
+    let [<return: Struct>] (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric voption =
+        let mutable p = Unchecked.defaultof<_>
+        logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
+        match p with Log.ScalarValue (:? Metric as e) -> ValueSome e | _ -> ValueNone
+
+    /// Attach a property to the captured event record to hold the metric information
+    let internal event (value : Metric) = Internal.Log.withScalarProperty PropertyTag value
     let prop name value (log : ILogger) = log.ForContext(name, value)
     let propEvents name (kvps : System.Collections.Generic.KeyValuePair<string, string> seq) (log : ILogger) =
         let items = seq { for kv in kvps do yield sprintf "{\"%s\": %s}" kv.Key kv.Value }
@@ -43,12 +50,6 @@ module Log =
                 let data = x.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
                 yield System.Collections.Generic.KeyValuePair<_, _>(x.Type, data) })
 
-    open Serilog.Events
-    /// Attach a property to the log context to hold the metrics
-    // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
-    let event (value : Metric) (log : ILogger) =
-        let enrich (e : LogEvent) = e.AddPropertyIfAbsent(LogEventProperty(PropertyTag, ScalarValue(value)))
-        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log : Async<'t> =
         match retryPolicy with
         | None -> f log
@@ -73,13 +74,6 @@ module Log =
                 | WriteConflict (Stats s) -> Resync s
                 // slices are rolled up into batches so be sure not to double-count
                 | Batch (_, _, Stats s) -> Rollup s
-            let (|SerilogScalar|_|) : LogEventPropertyValue -> obj option = function
-                | :? ScalarValue as x -> Some x.Value
-                | _ -> None
-            let (|EsMetric|_|) (logEvent : LogEvent) : Metric option =
-                match logEvent.Properties.TryGetValue(PropertyTag) with
-                | true, SerilogScalar (:? Metric as e) -> Some e
-                | _ -> None
             type Counter =
                 { mutable count : int64; mutable ms : int64 }
                 static member Create() = { count = 0L; ms = 0L }
@@ -100,10 +94,10 @@ module Log =
                     span
                 interface Serilog.Core.ILogEventSink with
                     member _.Emit logEvent = logEvent |> function
-                        | EsMetric (Read stats) -> LogSink.Read.Ingest stats
-                        | EsMetric (Write stats) -> LogSink.Write.Ingest stats
-                        | EsMetric (Resync stats) -> LogSink.Resync.Ingest stats
-                        | EsMetric (Rollup _) -> ()
+                        | MetricEvent (Read stats) -> LogSink.Read.Ingest stats
+                        | MetricEvent (Write stats) -> LogSink.Write.Ingest stats
+                        | MetricEvent (Resync stats) -> LogSink.Resync.Ingest stats
+                        | MetricEvent (Rollup _) -> ()
                         | _ -> ()
 
         /// Relies on feeding of metrics from Log through to Stats.LogSink

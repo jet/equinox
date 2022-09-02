@@ -247,22 +247,14 @@ module Log =
         | Delete of Measurement
         /// Trimmed the Tip
         | Trim of Measurement
-    let tms (t : StopwatchInterval) = let e = t.Elapsed in e.TotalMilliseconds
-    let internal prop name value (log : ILogger) = log.ForContext(name, value)
+    let [<return: Struct>] (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric voption =
+        let mutable p = Unchecked.defaultof<_>
+        logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
+        match p with Log.ScalarValue (:? Metric as e) -> ValueSome e | _ -> ValueNone
 
-    /// Include a LogEvent property bearing metrics
-    // Sidestep Log.ForContext converting to a string; see https://github.com/serilog/serilog/issues/1124
-    let internal event (value : Metric) (log : ILogger) =
-        let enrich (e : Serilog.Events.LogEvent) =
-            e.AddPropertyIfAbsent(Serilog.Events.LogEventProperty(PropertyTag, Serilog.Events.ScalarValue(value)))
-        log.ForContext({ new Serilog.Core.ILogEventEnricher with member _.Enrich(evt, _) = enrich evt })
-    let internal (|SerilogScalar|_|) : Serilog.Events.LogEventPropertyValue -> obj option = function
-        | :? Serilog.Events.ScalarValue as x -> Some x.Value
-        | _ -> None
-    let (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric option =
-        match logEvent.Properties.TryGetValue(PropertyTag) with
-        | true, SerilogScalar (:? Metric as e) -> Some e
-        | _ -> None
+    /// Attach a property to the captured event record to hold the metric information
+    let internal event (value : Metric) = Internal.Log.withScalarProperty PropertyTag value
+    let internal prop name value (log : ILogger) = log.ForContext(name, value)
     [<RequireQualifiedAccess>]
     type Operation = Tip | Tip404 | Tip304 | Query | Append | Calve | AppendConflict | CalveConflict | Prune | Delete | Trim
     let (|Op|QueryRes|PruneRes|) = function
@@ -282,6 +274,8 @@ module Log =
         | Metric.PruneResponse s              -> PruneRes s
         | Metric.Delete s                     -> Op (Operation.Delete, s)
         | Metric.Trim s                       -> Op (Operation.Trim, s)
+
+    let tms (t : StopwatchInterval) = let e = t.Elapsed in e.TotalMilliseconds
 
     module InternalMetrics =
 
