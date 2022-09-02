@@ -5,12 +5,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Infrastructure.fs" />
-    <Compile Include="Types.fs" />
     <Compile Include="Category.fs" />
+    <Compile Include="Cache.fs" />
+    <Compile Include="Infrastructure.fs" />
+    <Compile Include="StopwatchInterval.fs" />
     <Compile Include="Retry.fs" />
     <Compile Include="AsyncCacheCell.fs" />
-    <Compile Include="Cache.fs" />
     <Compile Include="AsyncBatchingGate.fs" />
   </ItemGroup>
 

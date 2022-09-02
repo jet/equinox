@@ -275,8 +275,6 @@ module Log =
         | Metric.Delete s                     -> Op (Operation.Delete, s)
         | Metric.Trim s                       -> Op (Operation.Trim, s)
 
-    let tms (t : StopwatchInterval) = let e = t.Elapsed in e.TotalMilliseconds
-
     module InternalMetrics =
 
         module Stats =
@@ -307,7 +305,8 @@ module Log =
                 member val internal Trim = Counters() with get, set
                 member _.Stop() = epoch.Stop()
                 member _.Elapsed = epoch.Elapsed
-            let inline private (|TableMsRu|) ({ table = t; interval = i; ru = ru } : Measurement) = t, int64 (tms i), ru
+            let inline private (|TableMsRu|) ({ table = t; interval = i; ru = ru } : Measurement) =
+                t, int64 i.ElapsedMilliseconds, ru
             type LogSink() =
                 static let mutable epoch = Epoch()
                 static member Restart() =
@@ -594,9 +593,9 @@ module internal Sync =
         let appendedBytes, unfoldsBytes = Event.arrayBytes appended, Unfold.arrayBytes unfolds
         if calfBytes <> 0 then
              log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Tip {baseE}->{tipE}e {baseB}->{tipB}b Unfolds {unfolds} {unfoldsBytes}b Calf {calfEvents} {calfBytes}b",
-                             "Sync", "Calve",  outcome, stream, exp, Log.tms t, ru, appended.Length, appendedBytes, baseEvents, tipEvents, baseBytes, tipBytes, unfolds.Length, unfoldsBytes, calfCount, calfBytes)
+                             "Sync", "Calve",  outcome, stream, exp, t.ElapsedMilliseconds, ru, appended.Length, appendedBytes, baseEvents, tipEvents, baseBytes, tipBytes, unfolds.Length, unfoldsBytes, calfCount, calfBytes)
         else log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Events {events} {tipB}b Unfolds {unfolds} {unfoldsB}b",
-                             "Sync", "Append", outcome, stream, exp, Log.tms t, ru, appended.Length, appendedBytes, tipEvents, tipBytes, unfolds.Length, unfoldsBytes)
+                             "Sync", "Append", outcome, stream, exp, t.ElapsedMilliseconds, ru, appended.Length, appendedBytes, tipEvents, tipBytes, unfolds.Length, unfoldsBytes)
         return result }
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -650,16 +649,18 @@ module internal Tip =
         let logMetric bytes count (f : Log.Measurement -> _) = log |> Log.event (f (Log.metric container.TableName stream t bytes count rc))
         match res with
         | Res.NotModified ->
-            (logMetric 0 0 Log.Metric.TipNotModified).Information("EqxDynamo {action:l} {res} {stream:l} {ms:f1}ms {ru}RU", "Tip", 304, stream, Log.tms t, ru)
+            (logMetric 0 0 Log.Metric.TipNotModified).Information("EqxDynamo {action:l} {res} {stream:l} {ms:f1}ms {ru}RU",
+                                                                  "Tip", 304, stream, t.ElapsedMilliseconds, ru)
         | Res.NotFound ->
-            (logMetric 0 0 Log.Metric.TipNotFound).Information("EqxDynamo {action:l} {res} {stream:l} {ms:f1}ms {ru}RU", "Tip", 404, stream, Log.tms t, ru)
+            (logMetric 0 0 Log.Metric.TipNotFound).Information("EqxDynamo {action:l} {res} {stream:l} {ms:f1}ms {ru}RU",
+                                                               "Tip", 404, stream, t.ElapsedMilliseconds, ru)
         | Res.Found tip ->
             let eventsCount, unfoldsCount, bb, ub = tip.e.Length, tip.u.Length, Batch.bytesBase tip, Batch.bytesUnfolds tip
             let log = logMetric (bb + ub) (eventsCount + unfoldsCount) Log.Metric.Tip
             let log = match maybePos with Some p -> log |> Log.prop "startPos" p |> Log.prop "startEtag" p | None -> log
             let log = log |> Log.prop "etag" tip.etag //|> Log.prop "n" tip.n
             log.Information("EqxDynamo {action:l} {res} {stream:l} v{n} {ms:f1}ms {ru}RU {events}e {unfolds}u {baseBytes}+{unfoldsBytes}b",
-                            "Tip", 200, stream, tip.n, Log.tms t, ru, eventsCount, unfoldsCount, bb, ub)
+                            "Tip", 200, stream, tip.n, t.ElapsedMilliseconds, ru, eventsCount, unfoldsCount, bb, ub)
         return ru, res }
     let private enumEventsAndUnfolds (minIndex, maxIndex) (x : Batch) : ITimelineEvent<InternalBody> array =
         Seq.append<ITimelineEvent<_>> (Batch.enumEvents (minIndex, maxIndex) x |> Seq.cast) (x.u |> Seq.cast)
@@ -700,7 +701,7 @@ module internal Query =
         let minI, maxI = match events with [||] -> Nullable (), Nullable () | xs -> Nullable events[0].i, Nullable events[xs.Length - 1].i
         (log|> Log.event (Log.Metric.QueryResponse (direction, Log.metric container.TableName stream t totalBytes usedEventsCount rc)))
             .Information("EqxDynamo {action:l} {page} {minIndex}-{maxIndex} {ms:f1}ms {ru}RU {batches}/{batchSize}@{index} {count}e {bytes}/{totalBytes}b {direction:l}",
-                         "Page", i, minI, maxI, Log.tms t, rc.total, batches.Length, maxItems, baseIndex, usedEventsCount, usedBytes, totalBytes, direction)
+                         "Page", i, minI, maxI, t.ElapsedMilliseconds, rc.total, batches.Length, maxItems, baseIndex, usedEventsCount, usedBytes, totalBytes, direction)
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, rc
 
@@ -711,7 +712,7 @@ module internal Query =
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
         (log|> Log.event evt).Information(
             "EqxDynamo {action:l} {stream:l} v{n} {ms:f1}ms {ru}RU {count}e/{responses} {bytes}b >{minN} <{maxI}",
-            action, stream, n, Log.tms interval, rc.total, count, responsesCount, bytes, Option.toNullable minIndex, Option.toNullable maxIndex)
+            action, stream, n, interval.ElapsedMilliseconds, rc.total, count, responsesCount, bytes, Option.toNullable minIndex, Option.toNullable maxIndex)
 
     let private calculateUsedVersusDroppedPayload stopIndex (xs : Event array) : int * int =
         let mutable used, dropped = 0, 0
@@ -898,7 +899,7 @@ module internal Prune =
             let! t, rc = container.DeleteItem(stream, i) |> Stopwatch.Time
             let reqMetric = Log.metric container.TableName stream t -1 count rc
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
-            log.Information("EqxDynamo {action:l} {i} {ms:f1}ms {ru}RU", "Delete", i, Log.tms t, rc)
+            log.Information("EqxDynamo {action:l} {i} {ms:f1}ms {ru}RU", "Delete", i, t.ElapsedMilliseconds, rc)
             return rc
         }
         let trimTip expectedN count = async {
@@ -916,7 +917,7 @@ module internal Prune =
             let rc = { total = tipRc.total + updRc.total }
             let reqMetric = Log.metric container.TableName stream t -1 count rc
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
-            log.Information("EqxDynamo {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, Log.tms t, rc.total)
+            log.Information("EqxDynamo {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, t.ElapsedMilliseconds, rc.total)
             return rc
         }
         let log = log |> Log.prop "index" indexInclusive
@@ -927,7 +928,7 @@ module internal Prune =
             let reqMetric = Log.metric container.TableName stream t -1 batches.Length rc
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
             log.Information("EqxDynamo {action:l} {batches} {ms:f1}ms n={next} {ru}RU",
-                            "PruneResponse", batches.Length, Log.tms t, Option.toNullable next, rc.total)
+                            "PruneResponse", batches.Length, t.ElapsedMilliseconds, Option.toNullable next, rc.total)
             batches, rc
         let! pt, outcomes =
             let isRelevant (x : BatchIndices) = x.index <= indexInclusive || x.isTip
@@ -978,7 +979,7 @@ module internal Prune =
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxDynamo {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
-                        "Prune", eventsDeleted, batches, lwm, Log.tms pt, queryCharges, delCharges, trimCharges)
+                        "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm
     }
 

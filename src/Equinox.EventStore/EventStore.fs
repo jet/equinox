@@ -64,7 +64,7 @@ module Log =
     module InternalMetrics =
 
         module Stats =
-            let inline (|Stats|) ({ interval = i } : Measurement) = let e = i.Elapsed in int64 e.TotalMilliseconds
+            let inline (|Stats|) ({ interval = i } : Measurement) = int64 i.ElapsedMilliseconds
 
             let (|Read|Write|Resync|Rollup|) = function
                 | Slice (_, Stats s) -> Read s

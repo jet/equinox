@@ -1,4 +1,23 @@
-﻿// Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
+﻿namespace Equinox.Core
+
+open Serilog
+open System.Threading
+open System.Threading.Tasks
+
+/// Store-agnostic interface representing interactions an Application can have with a set of streams with a common event type
+type ICategory<'event, 'state, 'context> =
+    /// Obtain the state from the target stream
+    abstract Load : log: ILogger * categoryName: string * streamId: string * streamName: string * allowStale: bool * ct: CancellationToken -> Task<struct (StreamToken * 'state)>
+
+    /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
+    /// - Written: signifies synchronization has succeeded, implying the included StreamState should now be assumed to be the state of the stream
+    /// - Conflict: signifies the sync failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
+    /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
+    ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
+    abstract TrySync : log: ILogger * categoryName: string * streamId: string * streamName: string * 'context * maybeInit: (CancellationToken -> Task<unit>) voption
+                       * StreamToken * 'state * events: 'event list * CancellationToken -> Task<SyncResult<'state>>
+
+// Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
 namespace Equinox
 
 open System.Threading

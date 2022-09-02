@@ -48,7 +48,7 @@ module EquinoxCosmosInterop =
             | Log.Metric.Delete m -> "CosmosDelete", m, None, m.ru
             | Log.Metric.Trim m -> "CosmosTrim", m, None, m.ru
         {   action = action; stream = metric.stream; bytes = metric.bytes; count = metric.count; responses = batches
-            interval = StopwatchInterval(metric.interval.StartTicks,metric.interval.EndTicks); ru = ru }
+            interval = metric.interval; ru = ru }
 
 type SerilogMetricsExtractor(emit : string -> unit) =
     let renderSummary = TestOutputRenderer.render "{Message} {Properties}"

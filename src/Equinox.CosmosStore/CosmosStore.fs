@@ -271,7 +271,7 @@ module Log =
                      Interlocked.Add(&x.rux100, int64 (ru*100.)) |> ignore
                      Interlocked.Add(&x.ms, ms) |> ignore
             let inline private (|RcMs|) ({ interval = i; ru = ru } : Measurement) =
-                ru, let e = i.Elapsed in int64 e.TotalMilliseconds
+                ru, int64 i.ElapsedMilliseconds
             type LogSink() =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
                 static member val internal Read = Counter.Create() with get, set
@@ -498,7 +498,7 @@ module internal Sync =
                     if verbose then Log.propData "conflicts" xs else id
                     >> Log.prop "nextExpectedVersion" pos' >> propConflict >> Log.event (Log.Metric.SyncResync (mkMetric ru))
         log.Information("EqxCosmos {action:l} {stream} {count}+{ucount} {ms:f1}ms {ru}RU {bytes:n0}b {exp}",
-            "Sync", stream, count, req.u.Length, (let e = t.Elapsed in e.TotalMilliseconds), ru, bytes, exp)
+            "Sync", stream, count, req.u.Length, t.ElapsedMilliseconds, ru, bytes, exp)
         return result }
 
     let batch (log : ILogger) (retryPolicy, maxEventsInTip, maxStringifyLen) containerStream expBatch : Async<Result> =
@@ -566,7 +566,7 @@ module Initialization =
         let! t, ru = createStoredProcIfNotExists container (SyncStoredProc.name, SyncStoredProc.body) |> Stopwatch.Time
         match log with
         | None -> ()
-        | Some log -> log.Information("Created stored procedure {procName} in {ms:f1}ms {ru}RU", SyncStoredProc.name, (let e = t.Elapsed in e.TotalMilliseconds), ru) }
+        | Some log -> log.Information("Created stored procedure {procName} in {ms:f1}ms {ru}RU", SyncStoredProc.name, t.ElapsedMilliseconds, ru) }
     let init log (client : CosmosClient) (dName, cName) mode skipStoredProc = async {
         let! d = createOrProvisionDatabase client dName mode
         let! c = createOrProvisionContainer d (cName, sprintf "/%s" Batch.PartitionKeyField, applyBatchAndTipContainerProperties) mode // as per Cosmos team, Partition Key must be "/id"
@@ -602,9 +602,9 @@ module internal Tip =
         let log bytes count (f : Log.Measurement -> _) = log |> Log.event (f { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = bytes; count = count; ru = ru })
         match res with
         | ReadResult.NotModified ->
-            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 304, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotModified).Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 304, t.ElapsedMilliseconds, ru)
         | ReadResult.NotFound ->
-            (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 404, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            (log 0 0 Log.Metric.TipNotFound).Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 404, t.ElapsedMilliseconds, ru)
         | ReadResult.Found tip ->
             let log =
                 let count, bytes = tip.u.Length, if verbose then Enum.Unfolds tip.u |> Log.batchLen else 0
@@ -612,7 +612,7 @@ module internal Tip =
             let log = if verbose then log |> Log.propDataUnfolds tip.u else log
             let log = match maybePos with Some p -> log |> Log.propStartPos p |> Log.propStartEtag p | None -> log
             let log = log |> Log.prop "_etag" tip._etag |> Log.prop "n" tip.n
-            log.Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 200, (let e = t.Elapsed in e.TotalMilliseconds), ru)
+            log.Information("EqxCosmos {action:l} {stream} {res} {ms:f1}ms {ru}RU", "Tip", stream, 200, t.ElapsedMilliseconds, ru)
         return ru, res }
     type [<RequireQualifiedAccess; NoComparison; NoEquality>] Result = NotModified | NotFound | Found of Position * i : int64 * ITimelineEvent<EventBody>[]
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
@@ -679,7 +679,7 @@ module internal Query =
             |> match minIndex with None -> id | Some i -> Log.prop "minIndex" i
             |> match maxIndex with None -> id | Some i -> Log.prop "maxIndex" i)
             .Information("EqxCosmos {action:l} {count}/{batches} {direction} {ms:f1}ms i={index} {ru}RU",
-                "Response", count, batches.Length, direction, (let e = t.Elapsed in e.TotalMilliseconds), index, ru)
+                "Response", count, batches.Length, direction, t.ElapsedMilliseconds, index, ru)
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, ru
 
@@ -691,7 +691,7 @@ module internal Query =
         let action = match direction with Direction.Forward -> "QueryF" | Direction.Backward -> "QueryB"
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "EqxCosmos {action:l} {stream} v{n} {count}/{responses} {ms:f1}ms {ru}RU",
-            action, streamName, n, count, responsesCount, (let e = interval.Elapsed in e.TotalMilliseconds), ru)
+            action, streamName, n, count, responsesCount, interval.ElapsedMilliseconds, ru)
 
     let private calculateUsedVersusDroppedPayload stopIndex (xs : ITimelineEvent<EventBody>[]) : int * int =
         let mutable used, dropped = 0, 0
@@ -878,7 +878,7 @@ module Prune =
         let deleteItem id count : Async<float> = async {
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = false) // https://devblogs.microsoft.com/cosmosdb/enable-content-response-on-write/
             let! t, res = container.DeleteItemAsync(id, PartitionKey stream, ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
-            let rc, ms = res.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
+            let rc, ms = res.RequestCharge, t.ElapsedMilliseconds
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {id} {ms:f1}ms {ru}RU", "Delete", id, ms, rc)
@@ -894,7 +894,7 @@ module Prune =
             let tip = { tip with i = tip.i + int64 count; e = Array.skip count tip.e }
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = false, IfMatchEtag = tip._etag)
             let! t, updateRes = container.ReplaceItemAsync(tip, tip.id, PartitionKey stream, ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
-            let rc, ms = tipRu + updateRes.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
+            let rc, ms = tipRu + updateRes.RequestCharge, t.ElapsedMilliseconds
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, ms, rc)
@@ -906,7 +906,7 @@ module Prune =
              // sort by i to guarantee we don't ever leave an observable gap in the sequence
              container.GetItemQueryIterator<_>("SELECT c.id, c.i, c.n FROM c ORDER by c.i", requestOptions = qro)
         let mapPage i (t : StopwatchInterval) (page : FeedResponse<BatchIndices>) =
-            let batches, rc, ms = Array.ofSeq page, page.RequestCharge, (let e = t.Elapsed in e.TotalMilliseconds)
+            let batches, rc, ms = Array.ofSeq page, page.RequestCharge, t.ElapsedMilliseconds
             let next = Array.tryLast batches |> Option.map (fun x -> x.n)
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = batches.Length; ru = rc }
             let log = let evt = Log.Metric.PruneResponse reqMetric in log |> Log.prop "batchIndex" i |> Log.event evt
@@ -962,7 +962,7 @@ module Prune =
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
-                "Prune", eventsDeleted, batches, lwm, (let e = pt.Elapsed in e.TotalMilliseconds), queryCharges, delCharges, trimCharges)
+                "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
         return eventsDeleted, eventsDeferred, lwm
     }
 
