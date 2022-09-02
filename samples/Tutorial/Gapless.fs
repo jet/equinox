@@ -5,7 +5,7 @@ module Gapless
 open System
 
 let [<Literal>] Category = "Gapless"
-let streamName id = FsCodec.StreamName.create Category (SequenceId.toString id)
+let streamName id = struct (Category, SequenceId.toString id)
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -80,10 +80,7 @@ module Cosmos =
     let private create (context, cache, accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
         let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        let resolve sequenceId =
-            let streamName = streamName sequenceId
-            Equinox.Decider(Serilog.Log.Logger, category.Resolve streamName, maxAttempts = 3)
-        Service(resolve)
+        Service(streamName >> Equinox.Decider.resolve Serilog.Log.Logger category)
 
     module Snapshot =
 

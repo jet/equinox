@@ -142,7 +142,7 @@ module private LocalLoadTestImpl =
                 return! allocatorLoop (n + 1L)
         }
 
-        let _ = Async.StartAsTask(allocatorLoop 1L, cancellationToken = cts.Token)
+        let _ = allocatorLoop 1L |> Async.startAsTask cts.Token
 
         member _.LeaseCount = int leaseCount.Value
         member _.AllocationCount = sessions.Count
@@ -271,8 +271,7 @@ module private LocalLoadTestImpl =
             let slot = batchCount.Increment()
             let batchCount = calculateNextBatchSize (abs slot) targetTestsPerSecond
             for i = 1 to batchCount do
-                Async.StartAsTask(singleRunner, cancellationToken = innerCts.Token)
-                |> ignore
+                singleRunner |> Async.startAsTask innerCts.Token |> ignore
 
         do eventSink LoadTestStarted
         let d = runOnInterval batchIntervalMilliseconds runSingleBatch

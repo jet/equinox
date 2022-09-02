@@ -28,13 +28,13 @@ type Base64ZipUtf8Tests() =
 
     [<Fact>]
     let ``serializes, achieving expected compression`` () =
-        let encoded = eventCodec.Encode(None,A { embed = String('x',5000) })
+        let encoded = eventCodec.Encode((), A { embed = String('x',5000) })
         let res = ser encoded.EventType (Core.JsonElement.deflate encoded.Data)
         test <@ res.Contains("\"d\":\"") && res.Length < 138 @>
 
     [<Property>]
     let roundtrips compress value =
-        let encoded = eventCodec.Encode(None, value)
+        let encoded = eventCodec.Encode((), value)
         let maybeDeflate = if compress then Core.JsonElement.deflate else id
         let actualData = maybeDeflate encoded.Data
         let ser = ser encoded.EventType actualData
@@ -42,7 +42,7 @@ type Base64ZipUtf8Tests() =
                 else ser.Contains("\"d\":{") @>
         let des = System.Text.Json.JsonSerializer.Deserialize<Core.Unfold>(ser)
         let d = FsCodec.Core.TimelineEvent.Create(-1L, des.c, des.d)
-        let decoded = eventCodec.TryDecode d |> Option.get
+        let decoded = eventCodec.TryDecode d |> ValueOption.get
         test <@ value = decoded @>
 
     [<Theory; InlineData false; InlineData true>]

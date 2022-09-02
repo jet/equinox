@@ -2,27 +2,65 @@
 // i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Decider.fs, not here
 namespace Equinox.Core
 
+open System.Threading
+open System.Threading.Tasks
+
 /// Store-agnostic interface representing interactions a Flow can have with the state of a given event stream. Not intended for direct use by consumer code.
 type IStream<'event, 'state> =
 
     /// Generate a stream token that represents a stream one believes to be empty to use as a Null Object when optimizing out the initial load roundtrip
-    abstract LoadEmpty : unit -> StreamToken * 'state
+    abstract LoadEmpty : unit -> struct (StreamToken * 'state)
 
     /// Obtain the state from the target stream
-    abstract Load : log: Serilog.ILogger * allowStale : bool -> Async<StreamToken * 'state>
+    abstract Load : allowStale : bool * ct : CancellationToken -> Task<struct (StreamToken * 'state)>
 
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
     /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
-    abstract TrySync : log: Serilog.ILogger * token: StreamToken * originState: 'state * events: 'event list -> Async<SyncResult<'state>>
+    abstract TrySync : attempt : int * originTokenAndState : struct (StreamToken * 'state) * events : 'event list * CancellationToken -> Task<SyncResult<'state>>
 
 /// Internal type used to represent the outcome of a TrySync operation
 and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
     /// The write succeeded (the supplied token and state can be used to efficiently continue the processing if, and only if, desired)
-    | Written of StreamToken * 'state
+    | Written of w : struct (StreamToken * 'state)
     /// The set of changes supplied to TrySync conflict with the present state of the underlying stream based on the configured policy for that store
     /// The inner is Async as some stores (and/or states) are such that determining the conflicting state (if, and only if, required) needs an extra trip to obtain
-    | Conflict of Async<StreamToken * 'state>
+    | Conflict of (CancellationToken -> Task<struct (StreamToken * 'state)>)
 
 /// Store-specific opaque token to be used for synchronization purposes
-and [<NoComparison>] StreamToken = { value : obj; version : int64; streamBytes : int64 }
+and [<Struct; NoEquality; NoComparison>] StreamToken = { value : obj; version : int64; streamBytes : int64 }
+
+module internal Impl =
+
+    let query struct (stream, fetch, projection) = async {
+        let! ct = Async.CancellationToken
+        let! tokenAndState = Async.AwaitTaskCorrect(fetch stream ct)
+        return projection tokenAndState }
+
+    let private run (stream : IStream<'e, 's>)
+                    (decide : struct (_ * _) -> CancellationToken -> Task<struct ('r * 'e list)>)
+                    (validateResync : int -> unit)
+                    (mapResult : 'r -> struct (StreamToken * 's) -> 'v)
+                    originTokenAndState ct : Task<'v>=
+        let rec loop attempt tokenAndState : Task<'v> = task {
+            let! result, events = decide tokenAndState ct
+            if List.isEmpty events then
+                return mapResult result tokenAndState
+            else
+                match! stream.TrySync(attempt, tokenAndState, events, ct) with
+                | SyncResult.Written tokenAndState' ->
+                    return mapResult result tokenAndState'
+                | SyncResult.Conflict resync ->
+                    validateResync attempt
+                    let! tokenAndState = resync ct
+                    return! loop (attempt + 1) tokenAndState }
+        loop 1 originTokenAndState
+
+    let private transactTask stream (fetch : IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>)
+                             decide reload mapResult ct : Task<'v> = task {
+        let! originTokenAndState = fetch stream ct
+        return! run stream decide reload mapResult originTokenAndState ct }
+
+    let transact (stream, fetch, decide, reload, mapResult) = async {
+        let! ct = Async.CancellationToken
+        return! Async.AwaitTaskCorrect(transactTask stream fetch decide reload mapResult ct) }

@@ -109,7 +109,7 @@ type Tests(testOutputHelper) =
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let client = connectToLocalEventStoreNode log
         let context = createContext client batchSize
-        let service = Cart.create log (CartIntegration.resolveGesStreamWithRollingSnapshots context)
+        let service = Cart.create (CartIntegration.categoryGesStreamWithRollingSnapshots context |> Equinox.Decider.resolve log)
         let itemCount = batchSize / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount ctx cartId skuId "ReadStreamAsyncB-Duration"
@@ -121,7 +121,7 @@ type Tests(testOutputHelper) =
         let buffer = ConcurrentQueue<string>()
         let log = createLoggerWithMetricsExtraction buffer.Enqueue
         let context = createPrimaryContext log queryMaxItems
-        let service = Cart.create log (CartIntegration.resolveCosmosStreamWithSnapshotStrategy context)
+        let service = Cart.create (CartIntegration.categoryCosmosStreamWithSnapshotStrategy context |> Equinox.Decider.resolve log)
         let itemCount = queryMaxItems / 2 + 1
         let cartId = % Guid.NewGuid()
         do! act buffer service itemCount ctx cartId skuId "EqxCosmos Tip " // one is a 404, one is a 200

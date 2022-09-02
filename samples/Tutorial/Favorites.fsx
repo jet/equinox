@@ -93,7 +93,7 @@ let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
 // related streams are termed a Category; Each client will have it's own Stream.
 let Category = "Favorites"
-let clientAFavoritesStreamName = FsCodec.StreamName.create Category "ClientA"
+let clientAFavoritesStreamName = struct (Category, "ClientA")
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
@@ -116,10 +116,10 @@ let codec =
 // Each store has a <Store>Category that is used to resolve IStream instances binding to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
 let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-let stream streamName = Equinox.Decider(log, cat.Resolve streamName, maxAttempts = 2)
+let decider = Equinox.Decider.resolve log cat
 
 // We hand the streamId to the resolver
-let clientAStream = stream clientAFavoritesStreamName
+let clientAStream = decider clientAFavoritesStreamName
 // ... and pass the stream to the Handler
 let handler = Handler(clientAStream)
 
@@ -158,9 +158,8 @@ type Service(deciderFor : string -> Handler) =
 
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
 let streamFor (clientId: string) =
-    let streamName = FsCodec.StreamName.create "Favorites" clientId
-    let stream = cat.Resolve streamName
-    let decider = Equinox.Decider(log, stream, maxAttempts = 3)
+    let streamIds = struct ("Favorites", clientId)
+    let decider = Equinox.Decider.resolve log cat streamIds
     Handler(decider)
 
 let service = Service(streamFor)

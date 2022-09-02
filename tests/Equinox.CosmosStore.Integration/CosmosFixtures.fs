@@ -58,7 +58,7 @@ type DocStoreCollection() =
     interface Xunit.ICollectionFixture<DynamoTablesFixture>
 
 type StoreContext = DynamoStoreContext
-type StoreCategory<'E, 'S> = DynamoStoreCategory<'E, 'S, obj>
+type StoreCategory<'E, 'S> = DynamoStoreCategory<'E, 'S, unit>
 #else
 [<AutoOpen>]
 module Equinox.CosmosStore.Integration.CosmosFixtures
@@ -105,7 +105,7 @@ type DocStoreCollection() =
     do ()
 
 type StoreContext = CosmosStoreContext
-type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, obj>
+type StoreCategory<'E, 'S> = CosmosStoreCategory<'E, 'S, unit>
 #endif
 
 let createPrimaryContextIgnoreMissing client queryMaxItems tipMaxEvents ignoreMissing =

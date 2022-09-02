@@ -15,7 +15,7 @@ module CompanyId =
     let toString (value : CompanyId) : string = %value
 
 let [<Literal>] Category = "Upload"
-let streamName (companyId, purchaseOrderId) = FsCodec.StreamName.compose Category [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId]
+let streamName (companyId, purchaseOrderId) = struct (Category, FsCodec.StreamName.createStreamId [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId])
 
 type UploadId = string<uploadId>
 and [<Measure>] uploadId
@@ -52,22 +52,18 @@ type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<
         let decider = resolve (companyId, purchaseOrderId)
         decider.Transact(decide value)
 
-let create resolveStream =
-    let resolve ids =
-        let streamName = streamName ids
-        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream streamName, maxAttempts = 3)
-    Service(resolve)
+let create resolve = Service(streamName >> resolve)
 
 module Cosmos =
 
     open Equinox.CosmosStore
     let create (context,cache) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let category = CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
-        create category.Resolve
+        CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, AccessStrategy.LatestKnownEvent)
+        |> Equinox.Decider.resolve Serilog.Log.Logger |> create
 
 module EventStore =
     open Equinox.EventStoreDb
     let create context =
-        let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent)
-        create cat.Resolve
+        EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, access=AccessStrategy.LatestKnownEvent)
+        |> Equinox.Decider.resolve Serilog.Log.Logger |> create

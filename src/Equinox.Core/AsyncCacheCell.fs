@@ -1,51 +1,61 @@
 namespace Equinox.Core
 
-/// Asynchronous Lazy<'T> used to gate a workflow to ensure at most once execution of a computation.
-type AsyncLazy<'T>(workflow : Async<'T>) =
-    let task = lazy (Async.StartAsTask workflow)
+open System.Threading
+open System.Threading.Tasks
 
-    /// Await the outcome of the computation.
-    /// NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this
-    member _.AwaitValue() = Async.AwaitTaskCorrect task.Value
+/// Asynchronous Lazy<'T> used to gate a workflow to ensure at most once execution of a computation.
+type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
+
+    /// NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this by rolling over to a new instance
+    let workflow = lazy workflow ()
 
     /// Synchronously check whether the value has been computed (and/or remains valid)
-    member this.IsValid(?isExpired) =
-        if not task.IsValueCreated then false else
+    member _.IsValid(isExpired) =
+        if not workflow.IsValueCreated then false else
 
-        let value = task.Value
-        if not value.IsCompleted || value.IsFaulted then false else
+        let t = workflow.Value
+        if t.Status <> TaskStatus.RanToCompletion then false else
 
         match isExpired with
-        | Some f -> not (f value.Result)
+        | ValueSome isExpired -> not (isExpired t.Result)
         | _ -> true
 
     /// Used to rule out values where the computation yielded an exception or the result has now expired
-    member this.TryAwaitValid(?isExpired) : Async<'T option> = async {
-        // Determines if the last attempt completed, but failed; For TMI see https://stackoverflow.com/a/33946166/11635
-        if task.Value.IsFaulted then return None else
+    member _.TryAwaitValid(isExpired) : Task<'T voption> =
+        let t = workflow.Value
 
-        let! result = this.AwaitValue()
-        match isExpired with
-        | Some f when f result -> return None
-        | _ -> return Some result
-    }
+        // Determines if the last attempt completed, but failed; For TMI see https://stackoverflow.com/a/33946166/11635
+        if t.IsFaulted then Task.FromResult ValueNone
+        else task {
+            let! (res : 'T) = t
+            match isExpired with
+            | ValueSome isExpired when isExpired res -> return ValueNone
+            | _ -> return ValueSome res }
+
+    /// Await the outcome of the computation.
+    member _.Await() = workflow.Value
 
 /// Generic async lazy caching implementation that admits expiration/recomputation/retry on exception semantics.
 /// If `workflow` fails, all readers entering while the load/refresh is in progress will share the failure
 /// The first caller through the gate triggers a recomputation attempt if the previous attempt ended in failure
-type AsyncCacheCell<'T>(workflow : Async<'T>, ?isExpired : 'T -> bool) =
-    let mutable cell = AsyncLazy workflow
+type AsyncCacheCell<'T>(workflow : CancellationToken -> Task<'T>, ?isExpired : 'T -> bool) =
 
-    /// Synchronously check the value remains valid (to short-circuit an Async AwaitValue step where value not required)
-    member _.IsValid() = cell.IsValid(?isExpired=isExpired)
+    let isExpired = match isExpired with Some x -> ValueSome x | None -> ValueNone
+    // we can't pre-initialize as we need the invocation to be tied to a CancellationToken
+    let mutable cell = AsyncLazy(fun () -> Task.FromException<'T>(System.InvalidOperationException "AsyncCacheCell Not Yet initialized"))
+
+    /// Synchronously check the value remains valid (to short-circuit an Await step where value not required)
+    member _.IsValid() = cell.IsValid(isExpired)
+
     /// Gets or asynchronously recomputes a cached value depending on expiry and availability
-    member _.AwaitValue() = async {
+    member _.Await(ct) = task {
+        // Each concurrent execution takes a copy of the cell, and attempts to reuse the value; later used to ensure only one triggers the workflow
         let current = cell
-        match! current.TryAwaitValid(?isExpired=isExpired) with
-        | Some res -> return res
-        | None ->
-            // avoid unnecessary recomputation in cases where competing threads detect expiry;
-            // the first write attempt wins, and everybody else reads off that value
-            let _ = System.Threading.Interlocked.CompareExchange(&cell, AsyncLazy workflow, current)
-            return! cell.AwaitValue()
-    }
+        match! current.TryAwaitValid(isExpired) with
+        | ValueSome res -> return res // ... if it's already / still valid, we're done
+        | ValueNone ->
+            // Prepare a new instance, with cancellation under our control (it won't start until the first Await on the LazyTask triggers it though)
+            let newInstance = AsyncLazy(fun () -> workflow ct)
+            // If there are concurrent executions, the first through the gate wins; everybody else awaits the instance the winner wrote
+            let _ = Interlocked.CompareExchange(&cell, newInstance, current)
+            return! cell.Await() }

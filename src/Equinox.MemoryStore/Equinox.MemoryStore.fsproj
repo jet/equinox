@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="MemoryStore.fs" />
   </ItemGroup>
 
@@ -13,11 +14,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="4.0.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="4.5.4" />
+    <PackageReference Include="FSharp.Core" Version="6.0.0" />
 
-    <PackageReference Include="FsCodec" Version="3.0.0-rc.4" />
+    <PackageReference Include="FsCodec" Version="3.0.0-rc.6" />
   </ItemGroup>
 
 </Project>

@@ -3,7 +3,7 @@ module Domain.InventoryItem
 
 open System
 
-let streamName (id : InventoryItemId) = FsCodec.StreamName.create "InventoryItem" (InventoryItemId.toString id)
+let streamName (id : InventoryItemId) = struct ("InventoryItem", InventoryItemId.toString id)
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -66,7 +66,5 @@ type Service internal (resolve : InventoryItemId -> Equinox.Decider<Events.Event
         let decider = resolve itemId
         decider.Query id
 
-let create resolveStream =
-    let resolve id =
-        Equinox.Decider(Serilog.Log.ForContext<Service>(), resolveStream (streamName id), maxAttempts = 3)
-    Service(resolve)
+let create resolve =
+    Service(streamName >> resolve)

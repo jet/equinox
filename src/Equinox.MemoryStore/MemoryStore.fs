@@ -4,7 +4,7 @@
 namespace Equinox.MemoryStore
 
 open Equinox.Core
-open System.Runtime.InteropServices
+open System.Threading.Tasks
 
 /// Maintains a dictionary of ITimelineEvent<'Format>[] per stream-name, allowing one to vary the encoding used to match that of a given concrete store, or optimize test run performance
 type VolatileStore<'Format>() =
@@ -13,71 +13,73 @@ type VolatileStore<'Format>() =
 
     let seedStream _streamName struct (_expectedCount, events) = events
     let updateValue _streamName (currentValue : FsCodec.ITimelineEvent<'Format>[]) struct (expectedCount, events) =
-        if Array.length currentValue <> expectedCount then currentValue
+        if currentValue.Length <> expectedCount then currentValue
         // note we don't publish here, as this function can be potentially invoked multiple times where there is a race
         else Array.append currentValue events
-    let trySync streamName expectedCount events : bool * FsCodec.ITimelineEvent<'Format>[] =
+    let trySync streamName expectedCount events : struct (bool * FsCodec.ITimelineEvent<'Format>[]) =
         let res = streams.AddOrUpdate(streamName, seedStream, updateValue, (expectedCount, events))
         (obj.ReferenceEquals(Array.last res, Array.last events), res)
 
-    // Where TrySync attempts overlap on the same stream, there's a race to raise the Committed event for each 'commit' resulting from a successful Sync
-    // If we don't serialize the publishing of the events, its possible for handlers to observe the Events out of order
     let committed = Event<_>()
-    // Here we neuter that effect - the BatchingGate can end up with commits submitted out of order, but we serialize the raising of the events per stream
-    let publishBatches (commits : (FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[])[]) = async {
-        for streamName, events in commits |> Seq.groupBy fst do
-            committed.Trigger(streamName, events |> Seq.collect snd |> Seq.sortBy (fun x -> x.Index) |> Seq.toArray) }
-    let publishCommit = AsyncBatchingGate(publishBatches, System.TimeSpan.FromMilliseconds 2.)
+    /// Notifies re batches of events being committed to a given Stream.
+    /// Commits are guaranteed to be notified in correct order, with max one notification in flight per stream
+    /// NOTE current impl locks on a global basis rather than at stream level
+    [<CLIEvent>] member _.Committed : IEvent<struct (string * string * FsCodec.ITimelineEvent<'Format>[])> = committed.Publish
 
-    /// Notifies of a batch of events being committed to a given Stream. Guarantees no out of order and/or overlapping raising of the event<br/>
-    /// NOTE in some cases, two or more overlapping commits can be coalesced into a single <c>Committed</c> event
-    [<CLIEvent>] member _.Committed : IEvent<FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[]> = committed.Publish
-
-    /// Loads state from a given stream
-    member _.TryLoad streamName = match streams.TryGetValue streamName with false, _ -> None | true, packed -> Some packed
+    /// Loads events from a given stream, null if none yet written
+    member _.Load(streamName) =
+        let mutable events = Unchecked.defaultof<_>
+        streams.TryGetValue(streamName, &events) |> ignore
+        events
 
     /// Attempts a synchronization operation - yields conflicting value if expectedCount does not match
-    member _.TrySync(streamName, expectedCount, events) : Async<bool * FsCodec.ITimelineEvent<'Format>[]> = async {
-        let succeeded, _ as outcome = trySync streamName expectedCount events
-        if succeeded then do! publishCommit.Execute((FsCodec.StreamName.parse streamName, events))
-        return outcome }
+    member this.TrySync(streamName, categoryName, streamId, expectedCount, events) : struct (bool * FsCodec.ITimelineEvent<'Format>[]) =
+        // Where attempts overlap on the same stream, there's a race to raise the Committed event for each 'commit'
+        // If we don't serialize the publishing of the events, its possible for handlers to observe the Events out of order
+        // NOTE while a Channels based impl might offer better throughput at load, in practical terms serializing all Committed event notifications
+        //      works very well as long as the handlers don't do a lot of processing, instead offloading to a private work queue
+        lock streams <| fun () ->
+            let struct (succeeded, _) as outcome = trySync streamName expectedCount events
+            if succeeded then committed.Trigger(categoryName, streamId, events)
+            outcome
 
-type Token = { eventCount : int }
+type Token = int
 
 /// Internal implementation detail of MemoryStore
 module private Token =
 
     let private streamTokenOfEventCount (eventCount : int) : StreamToken =
         // TOCONSIDER Could implement streamBytes tracking based on a supplied event size function (store is agnostic to format)
-        { value = box { eventCount = eventCount }; version = int64 eventCount; streamBytes = -1 }
-    let (|Unpack|) (token : StreamToken) : int = let t = unbox<Token> token.value in t.eventCount
+        { value = box eventCount; version = int64 eventCount; streamBytes = -1 }
+    let (|Unpack|) (token : StreamToken) : int = unbox<Token> token.value
     /// Represent a stream known to be empty
     let ofEmpty = streamTokenOfEventCount 0
     let ofValue (value : 'event array) = streamTokenOfEventCount value.Length
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
 type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
-    interface ICategory<'event, 'state, string, 'context> with
-        member _.Load(_log, streamName, _opt) = async {
-            match store.TryLoad streamName with
-            | None -> return Token.ofEmpty, initial
-            | Some value -> return Token.ofValue value, fold initial (value |> Seq.choose codec.TryDecode) }
-        member _.TrySync(_log, streamName, Token.Unpack eventCount, state, events : 'event list, context : 'context option) = async {
+    interface ICategory<'event, 'state, 'context> with
+        member _.Load(_log, _categoryName, _streamId, streamName, _allowStale, _ct) =
+            match store.Load(streamName) with
+            | null -> struct (Token.ofEmpty, initial) |> Task.FromResult
+            | xs -> struct (Token.ofValue xs, fold initial (Seq.chooseV codec.TryDecode xs)) |> Task.FromResult
+        member _.TrySync(_log, categoryName, streamId, streamName, context, _init, Token.Unpack eventCount, state, events, _ct) =
             let inline map i (e : FsCodec.IEventData<'Format>) =
                 FsCodec.Core.TimelineEvent.Create(int64 i, e.EventType, e.Data, e.Meta, e.EventId, e.CorrelationId, e.CausationId, e.Timestamp)
-            let encoded = events |> Seq.mapi (fun i e -> map (eventCount + i) (codec.Encode(context, e))) |> Array.ofSeq
-            match! store.TrySync(streamName, eventCount, encoded) with
+            let encoded = Array.ofSeq events |> Array.mapi (fun i e -> map (eventCount + i) (codec.Encode(context, e)))
+            match store.TrySync(streamName, categoryName, streamId, eventCount, encoded) with
             | true, streamEvents' ->
-                return SyncResult.Written (Token.ofValue streamEvents', fold state events)
+                SyncResult.Written (Token.ofValue streamEvents', fold state events) |> Task.FromResult
             | false, conflictingEvents ->
-                let resync = async {
+                let resync _ct =
                     let token' = Token.ofValue conflictingEvents
-                    return token', fold state (conflictingEvents |> Seq.skip eventCount |> Seq.choose codec.TryDecode) }
-                return SyncResult.Conflict resync }
+                    struct (token', fold state (conflictingEvents |> Seq.skip eventCount |> Seq.chooseV codec.TryDecode)) |> Task.FromResult
+                SyncResult.Conflict resync |> Task.FromResult
 
-type MemoryStoreCategory<'event, 'state, 'Format, 'context>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
-    let category = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
-    let resolve streamName = category :> ICategory<_, _, _, _>, FsCodec.StreamName.toString streamName, (None : (unit -> Async<unit>) option)
-    let empty = Token.ofEmpty, initial
-    let storeCategory = StoreCategory<'event, 'state, FsCodec.StreamName, 'context>(resolve, empty)
-    member _.Resolve(streamName : FsCodec.StreamName, [<Optional; DefaultParameterValue null>] ?context : 'context) = storeCategory.Resolve(streamName, ?context = context)
+type MemoryStoreCategory<'event, 'state, 'Format, 'context>(resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
+    new (store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
+        let impl = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
+        let resolveInner streamIds = struct (impl :> ICategory<_, _, _>, FsCodec.StreamName.Internal.ofCategoryAndStreamId streamIds, ValueNone)
+        let empty = struct (Token.ofEmpty, initial)
+        MemoryStoreCategory(resolveInner, empty)

@@ -7,6 +7,7 @@ open FSharp.Control
 open Serilog
 open System
 open System.IO
+open System.Threading.Tasks
 
 [<Struct; NoEquality; NoComparison>]
 type InternalBody = { encoding : int; data : MemoryStream }
@@ -45,8 +46,9 @@ type Event =
         causationId : string option }
     interface ITimelineEvent<InternalBody> with
         member x.Index = x.i
-        member x.Context = null
         member x.IsUnfold = false
+        member x.Context = null
+        member x.Size = Event.Bytes x
         member x.EventType = x.c
         member x.Data = x.d
         member x.Meta = x.m
@@ -54,10 +56,11 @@ type Event =
         member x.CorrelationId = Option.toObj x.correlationId
         member x.CausationId = Option.toObj x.causationId
         member x.Timestamp = x.t
+    static member Bytes(x : Event) =
+        let inline len x = match x with Some (s : string) -> s.Length | None -> 0
+        x.c.Length + InternalBody.bytes x.d + InternalBody.bytes x.m + len x.correlationId + len x.causationId + 20 (*t*) + 20 (*overhead*)
 module Event =
-    let private len = function Some (s : string) -> s.Length | None -> 0
-    let bytes (x : Event) = x.c.Length + InternalBody.bytes x.d + InternalBody.bytes x.m + len x.correlationId + len x.causationId + 20 (*t*) + 20 (*overhead*)
-    let arrayBytes (xs : Event array) = Array.sumBy bytes xs
+    let arrayBytes (xs : Event array) = Array.sumBy Event.Bytes xs
 
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoEquality; NoComparison>]
@@ -78,8 +81,9 @@ type Unfold =
         m : InternalBody }
     interface ITimelineEvent<InternalBody> with
         member x.Index = x.i
-        member x.Context = null
         member x.IsUnfold = true
+        member x.Context = null
+        member x.Size = Unfold.Bytes x
         member x.EventType = x.c
         member x.Data = x.d
         member x.Meta = x.m
@@ -87,16 +91,16 @@ type Unfold =
         member x.CorrelationId = null
         member x.CausationId = null
         member x.Timestamp = x.t
+    static member Bytes(x : Unfold) = x.c.Length + InternalBody.bytes x.d + InternalBody.bytes x.m + 50
 module Unfold =
-    let private bytes (x : Unfold) = x.c.Length + InternalBody.bytes x.d + InternalBody.bytes x.m + 50
-    let arrayBytes (xs : Unfold array) = match xs with null -> 0 | u -> Array.sumBy bytes u
+    let arrayBytes (xs : Unfold array) = match xs with null -> 0 | u -> Array.sumBy Unfold.Bytes u
 
-/// The abstract storage format for a 'normal' (frozen, not Tip) Batch of Events (without any Unfolds)
-/// NOTE See BatchSchema for what actually gets stored
+/// The abstract storage format for a Batch of Events represented in a DynamoDB Item
+/// NOTE See Batch.Schema buddy type for what actually gets stored
 /// NOTE names are intended to generally align with CosmosStore naming. Key Diffs:
-/// - no mandatory `id` and/or requirement for it to be a `string` -> replaced with `i` as an int64 (also Tip magic value is tipMagicI: int.MaxValue, not "-1")
+/// - no mandatory `id` and/or requirement for it to be a `string` -> replaced with `i` as an int64
+///   (also Tip magic value is tipMagicI: Int32.MaxValue, not "-1")
 /// - etag is managed explicitly (on Cosmos DB, its managed by the service and named "_etag")
-/// NOTE see the BatchSchema buddy type for what the store internally has
 [<NoEquality; NoComparison>]
 type Batch =
     {   p : string // "{streamName}"
@@ -113,7 +117,7 @@ type Batch =
         /// `i` value for successor batch (to facilitate identifying which Batch a given startPos is within)
         n : int64
 
-        /// The Domain Events (as opposed to Unfolded Events, see Tip) at this offset in the stream
+        /// The Domain Events (as opposed to Unfolded Events in `u`) for this page of the stream
         e : Event array
 
         /// Compaction/Snapshot/Projection quasi-events
@@ -623,7 +627,7 @@ module internal Sync =
                 let calfEvents, residualEvents = ResizeArray(cur.events.Length + events.Length), ResizeArray()
                 let mutable calfFull, calfSize = false, 1024
                 for e in Seq.append cur.events events do
-                    match calfFull, calfSize + Event.bytes e with
+                    match calfFull, calfSize + Event.Bytes e with
                     | false, calfSize' when calfSize' < maxDynamoDbItemSize -> calfSize <- calfSize'; calfEvents.Add e
                     | _ -> calfFull <- true; residualEvents.Add e
                 let calfEvents = calfEvents.ToArray()
@@ -719,7 +723,7 @@ module internal Query =
         let mutable used, dropped = 0, 0
         let mutable found = false
         for x in xs do
-            let bytes = Event.bytes x
+            let bytes = Event.Bytes x
             if found then dropped <- dropped + bytes
             else used <- used + bytes
             if x.i = stopIndex then found <- true
@@ -728,13 +732,13 @@ module internal Query =
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
     type ScanResult<'event> = { found : bool; minIndex : int64; next : int64; maybeTipPos : Position option; events : 'event array }
 
-    let scanTip (tryDecode : ITimelineEvent<EncodedBody> -> 'event option, isOrigin : 'event -> bool) (pos : Position, i : int64, xs : ITimelineEvent<InternalBody> array)
+    let scanTip (tryDecode : ITimelineEvent<EncodedBody> -> 'event voption, isOrigin : 'event -> bool) (pos : Position, i : int64, xs : ITimelineEvent<InternalBody> array)
         : ScanResult<'event> =
         let items = ResizeArray()
         let isOrigin' e =
             match tryDecode e with
-            | None -> false
-            | Some e ->
+            | ValueNone -> false
+            | ValueSome e ->
                 items.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
                 isOrigin e
         let f, e = xs |> Seq.map EncodedBody.ofInternal |> Seq.tryFindBack isOrigin' |> Option.isSome, items.ToArray()
@@ -742,7 +746,7 @@ module internal Query =
 
     // Yields events in ascending Index order
     let scan<'event> (log : ILogger) (container, stream) maxItems maxRequests direction
-        (tryDecode : ITimelineEvent<EncodedBody> -> 'event option, isOrigin : 'event -> bool)
+        (tryDecode : ITimelineEvent<EncodedBody> -> 'event voption, isOrigin : 'event -> bool)
         (minIndex, maxIndex)
         : Async<ScanResult<'event> option> = async {
         let mutable found = false
@@ -755,10 +759,10 @@ module internal Query =
                     if Option.isNone maybeTipPos then maybeTipPos <- maybePos
                     lastResponse <- Some events; ru <- ru + rc.total
                     responseCount <- responseCount + 1
-                    seq { for x in events -> x, x |> EncodedBody.ofInternal |> tryDecode })
+                    seq { for x in events -> struct (x, x |> EncodedBody.ofInternal |> tryDecode) })
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.takeWhileInclusive (function
-                    | x,Some e when isOrigin e ->
+                    | struct (x, ValueSome e) when isOrigin e ->
                         found <- true
                         match lastResponse with
                         | None -> log.Information("EqxDynamo Stop stream={stream} at={index} {case}", stream, x.i, x.c)
@@ -776,8 +780,8 @@ module internal Query =
             mkQuery readLog (container, stream) maxItems (direction, minIndex, maxIndex)
             |> AsyncSeq.map (mapPage direction (container, stream) (minIndex, maxIndex, maxItems) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
-        let raws = Array.map fst events
-        let decoded = if direction = Direction.Forward then Array.choose snd events else Seq.choose snd events |> Seq.rev |> Array.ofSeq
+        let raws = Array.map ValueTuple.fst events
+        let decoded = if direction = Direction.Forward then Array.chooseV ValueTuple.snd events else Seq.chooseV ValueTuple.snd events |> Seq.rev |> Array.ofSeq
         let minMax = (None, raws) ||> Array.fold (fun acc x -> let i = int64 x.i in Some (match acc with None -> i, i | Some (n, x) -> min n i, max x i))
         let version =
             match maybeTipPos, minMax with
@@ -1113,12 +1117,12 @@ type internal StoreClient(container : Container, fallback : Container option, qu
         Prune.until log (container, stream) query.MaxItems index
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EncodedBody, 'context>) =
-    member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin) : Async<StreamToken * 'state> = async {
+    member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin) : Task<struct (StreamToken * 'state)> = task {
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds)
-        return token, fold initial events }
-    member _.Reload(log, stream, (Token.Unpack pos as streamToken), state, fold, isOrigin, ?preloaded) : Async<StreamToken * 'state> = async {
-        match! store.Reload(log, (stream, pos), (codec.TryDecode, isOrigin), ?preview = preloaded) with
-        | LoadFromTokenResult.Unchanged -> return streamToken, state
+        return struct (token, fold initial events) }
+    member _.Reload(log, stream, (Token.Unpack pos as streamToken), state, fold, isOrigin, ct, ?preloaded) : Task<struct (StreamToken * 'state)> = task {
+        match! store.Reload(log, (stream, pos), (codec.TryDecode, isOrigin), ?preview = preloaded)  |> Async.startAsTask ct with
+        | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     member cat.Sync(log, stream, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context): Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofList events)
@@ -1133,7 +1137,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
                 Position.toEtag >> Sync.Exp.Etag, events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
         let baseVer = Position.toIndex pos + int64 (List.length events)
         match! store.Sync(log, stream, pos, exp, baseVer, eventsEncoded, Seq.toArray unfoldsEncoded) with
-        | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (cat.Reload(log, stream, streamToken, state, fold, isOrigin))
+        | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (fun ct -> cat.Reload(log, stream, streamToken, state, fold, isOrigin, ct))
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 module internal Caching =
@@ -1154,22 +1158,22 @@ module internal Caching =
     type CachingCategory<'event, 'state, 'context>
         (   category : Category<'event, 'state, 'context>,
             fold : 'state -> 'event seq -> 'state, initial : 'state, isOrigin : 'event -> bool,
-            tryReadCache, updateCache,
+            tryReadCache, updateCache : string -> _ -> Task<unit>,
             checkUnfolds, mapUnfolds : Choice<unit, 'event list -> 'state -> 'event seq, 'event list -> 'state -> 'event list * 'event list>) =
-        let cache streamName inner = async {
-            let! tokenAndState = inner
-            do! updateCache streamName tokenAndState
-            return tokenAndState }
-        interface ICategory<'event, 'state, string, 'context> with
-            member _.Load(log, streamName, allowStale) : Async<StreamToken * 'state> = async {
-                match! tryReadCache streamName with
-                | None -> return! category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin) |> cache streamName
-                | Some tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
-                | Some (token, state) -> return! category.Reload(log, streamName, token, state, fold, isOrigin) |> cache streamName }
-            member _.TrySync(log : ILogger, streamName, streamToken, state, events : 'event list, context) : Async<SyncResult<'state>> = async {
-                match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context) with
+        let cache streamName (inner : unit -> Task<_>) = task {
+            let! struct (token, state) = inner ()
+            do! updateCache streamName (token, state)
+            return struct (token, state) }
+        interface ICategory<'event, 'state, 'context> with
+            member _.Load(log, _categoryName, _streamId, streamName, allowStale, ct) : Task<struct (StreamToken * 'state)> = task {
+                match! tryReadCache streamName : Task<voption<_>> with
+                | ValueNone -> return! (fun () -> category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin)) |> cache streamName
+                | ValueSome struct (token, state) when allowStale -> return struct (token, state) // read already updated TTL, no need to write
+                | ValueSome struct (token, state) -> return! (fun () -> category.Reload(log, streamName, token, state, fold, isOrigin, ct)) |> cache streamName }
+            member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, _maybeInit, streamToken, state, events, ct) : Task<SyncResult<'state>> = task {
+                match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context) |> Async.startAsTask ct with
                 | SyncResult.Conflict resync ->
-                    return SyncResult.Conflict (cache streamName resync)
+                    return SyncResult.Conflict (fun ct -> (fun () -> resync ct) |> cache streamName)
                 | SyncResult.Written (token', state') ->
                     do! updateCache streamName (token', state')
                     return SyncResult.Written (token', state') }
@@ -1179,6 +1183,7 @@ namespace Equinox.DynamoStore
 open Equinox.Core
 open Equinox.DynamoStore.Core
 open System
+open System.Threading.Tasks
 
 type [<RequireQualifiedAccess>] ConnectionMode = AwsEnvironment of systemName : string | AwsKeyCredentials of serviceUrl : string
 
@@ -1251,7 +1256,9 @@ type DynamoStoreClient
             [<O; D null>] ?archiveTableName,
             // Client to use for archive store. Default: (if <c>archiveTableName</c> specified) use same <c>archiveTableName</c> but via <c>client</c>.
             [<O; D null>] ?archiveClient : Amazon.DynamoDBv2.IAmazonDynamoDB) =
-        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else sprintf "%s-%s" categoryName streamId
+        let genStreamName (categoryName, streamId) =
+            if categoryName = null then streamId else
+            FsCodec.StreamName.Internal.ofCategoryAndStreamId (categoryName, streamId)
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
         let primaryContainer t = Container.Create(client, t)
         let fallbackContainer =
@@ -1291,7 +1298,7 @@ type DynamoStoreContext(storeClient : DynamoStoreClient, tipOptions, queryOption
     member val TipOptions = tipOptions
     member internal x.ResolveContainerClientAndStreamId(categoryName, streamId) =
         let container, fallback, streamName = storeClient.ResolveContainerFallbackAndStreamName(categoryName, streamId)
-        StoreClient(container, fallback, x.QueryOptions, x.TipOptions), streamName
+        struct (StoreClient(container, fallback, x.QueryOptions, x.TipOptions), streamName)
 
 /// For DynamoDB, caching is critical in order to reduce RU consumption.
 /// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
@@ -1349,38 +1356,39 @@ type AccessStrategy<'event, 'state> =
     /// </remarks>
     | Custom of isOrigin : ('event -> bool) * transmute : ('event list -> 'state -> 'event list*'event list)
 
-type DynamoStoreCategory<'event, 'state, 'context>(context : DynamoStoreContext, codec, fold, initial, caching, access) =
-    let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, string, 'context>>()
-    let resolveCategory (categoryName, container) =
-        let createCategory _name : ICategory<_, _, string, 'context> =
-            let tryReadCache, updateCache =
-                match caching with
-                | CachingStrategy.NoCaching -> (fun _ -> async { return None }), fun _ _ -> async { () }
-                | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration (cache, null) window
-                | CachingStrategy.FixedTimeSpan (cache, period) -> cache.TryGet, Caching.applyCacheUpdatesWithFixedTimeSpan (cache, null) period
-            let isOrigin, checkUnfolds, mapUnfolds =
-                match access with
-                | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
-                | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
-                | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Seq.singleton)
-                | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
-                | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> [], [toSnapshot state])
-                | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-            let cosmosCat = Category<'event, 'state, 'context>(container, codec)
-            Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, mapUnfolds) :> _
-        categories.GetOrAdd(categoryName, createCategory)
-    let resolve (FsCodec.StreamName.CategoryAndId (categoryName, streamId)) =
-        let container, streamName = context.ResolveContainerClientAndStreamId(categoryName, streamId)
-        resolveCategory (categoryName, container), streamName, None
-    let empty = Token.empty, initial
-    let storeCategory = StoreCategory(resolve, empty)
-    member _.Resolve(streamName, ?context) = storeCategory.Resolve(streamName, ?context = context)
+type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
+    inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
+    new (context : DynamoStoreContext, codec, fold, initial, caching, access) =
+        let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
+        let resolveCategory (categoryName, container) =
+            let createCategory _name : ICategory<_, _, 'context> =
+                let tryReadCache, updateCache =
+                    match caching with
+                    | CachingStrategy.NoCaching -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
+                    | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration (cache, null) window
+                    | CachingStrategy.FixedTimeSpan (cache, period) -> cache.TryGet, Caching.applyCacheUpdatesWithFixedTimeSpan (cache, null) period
+                let isOrigin, checkUnfolds, mapUnfolds =
+                    match access with
+                    | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
+                    | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
+                    | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Seq.singleton)
+                    | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
+                    | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> [], [toSnapshot state])
+                    | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
+                let cosmosCat = Category<'event, 'state, 'context>(container, codec)
+                Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, mapUnfolds) :> _
+            categories.GetOrAdd(categoryName, createCategory)
+        let resolveInner struct (categoryName, streamId) =
+            let struct (container, streamName) = context.ResolveContainerClientAndStreamId(categoryName, streamId)
+            struct (resolveCategory (categoryName, container), streamName, ValueNone)
+        let empty = struct (Token.empty, initial)
+        DynamoStoreCategory(resolveInner, empty)
 
 module Exceptions =
 
-    let (|ProvisionedThroughputExceeded|_|) : exn -> unit option = function
-        | :? Amazon.DynamoDBv2.Model.ProvisionedThroughputExceededException -> Some ()
-        | _ -> None
+    let [<return: Struct>] (|ProvisionedThroughputExceeded|_|) : exn -> unit voption = function
+        | :? Amazon.DynamoDBv2.Model.ProvisionedThroughputExceededException -> ValueSome ()
+        | _ -> ValueNone
 
 namespace Equinox.DynamoStore.Core
 
@@ -1412,10 +1420,10 @@ type EventsContext internal
         return Position.flatten pos', data }
 
     new (context : Equinox.DynamoStore.DynamoStoreContext, log) =
-        let storeClient, _streamId = context.ResolveContainerClientAndStreamId(null, null)
+        let storeClient = context.ResolveContainerClientAndStreamId(null, null) |> ValueTuple.fst
         EventsContext(context, storeClient, log)
 
-    member x.StreamId(streamName) : string = context.ResolveContainerClientAndStreamId(null, streamName) |> snd
+    member x.StreamId(streamName) : string = context.ResolveContainerClientAndStreamId(null, streamName) |> ValueTuple.snd
 
     member internal _.GetLazy(stream, ?queryMaxItems, ?direction, ?minIndex, ?maxIndex) : AsyncSeq<ITimelineEvent<EncodedBody> array> =
         let direction = defaultArg direction Direction.Forward
@@ -1433,7 +1441,7 @@ type EventsContext internal
                 match maxCount with
                 | Some limit -> maxCountPredicate limit
                 | None -> fun _ -> false
-            let! token, events = store.Read(log, stream, direction, (Some, isOrigin), ?minIndex = minIndex, ?maxIndex = maxIndex)
+            let! token, events = store.Read(log, stream, direction, (ValueSome, isOrigin), ?minIndex = minIndex, ?maxIndex = maxIndex)
             if direction = Direction.Backward then System.Array.Reverse events
             return token, events }
 

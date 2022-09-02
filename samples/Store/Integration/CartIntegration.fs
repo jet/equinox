@@ -11,20 +11,22 @@ let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
 
 let createMemoryStore () = MemoryStore.VolatileStore<ReadOnlyMemory<byte>>()
 let createServiceMemory log store =
-    Cart.create log (MemoryStore.MemoryStoreCategory(store, Cart.Events.codec, fold, initial).Resolve)
+    MemoryStore.MemoryStoreCategory(store, Cart.Events.codec, fold, initial)
+    |> Decider.resolve Serilog.Log.Logger |> Cart.create
+
 
 let codec = Cart.Events.codec
 let codecJe = Cart.Events.codecJe
 
-let resolveGesStreamWithRollingSnapshots context =
-    EventStoreDb.EventStoreCategory(context, codec, fold, initial, access = EventStoreDb.AccessStrategy.RollingSnapshots snapshot).Resolve
-let resolveGesStreamWithoutCustomAccessStrategy context =
-    EventStoreDb.EventStoreCategory(context, codec, fold, initial).Resolve
+let categoryGesStreamWithRollingSnapshots context =
+    EventStoreDb.EventStoreCategory(context, codec, fold, initial, access = EventStoreDb.AccessStrategy.RollingSnapshots snapshot)
+let categoryGesStreamWithoutCustomAccessStrategy context =
+    EventStoreDb.EventStoreCategory(context, codec, fold, initial)
 
-let resolveCosmosStreamWithSnapshotStrategy context =
-    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot).Resolve
-let resolveCosmosStreamWithoutCustomAccessStrategy context =
-    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized).Resolve
+let categoryCosmosStreamWithSnapshotStrategy context =
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
+let categoryCosmosStreamWithoutCustomAccessStrategy context =
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Unoptimized)
 
 let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId (service: Cart.Service) count =
     service.ExecuteManyAsync(cartId, false, seq {
@@ -51,35 +53,35 @@ type Tests(testOutputHelper) =
         do! act service args
     }
 
-    let arrangeEs connect choose resolveStream = async {
+    let arrangeEs connect choose createCategory = async {
         let client = connect log
         let context = choose client defaultBatchSize
-        return Cart.create log (resolveStream context) }
+        return Cart.create (createCategory context |> Decider.resolve log) }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events without compaction semantics`` args = Async.RunSynchronously <| async {
-        let! service = arrangeEs connectToLocalEventStoreNode createContext resolveGesStreamWithoutCustomAccessStrategy
+        let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against EventStore, correctly folding the events with RollingSnapshots`` args = Async.RunSynchronously <| async {
-        let! service = arrangeEs connectToLocalEventStoreNode createContext resolveGesStreamWithRollingSnapshots
+        let! service = arrangeEs connectToLocalEventStoreNode createContext categoryGesStreamWithRollingSnapshots
         do! act service args
     }
 
-    let arrangeCosmos connect resolveStream =
+    let arrangeCosmos connect createCategory =
         let context : CosmosStore.CosmosStoreContext = connect log defaultQueryMaxItems
-        Cart.create log (resolveStream context)
+        Cart.create (createCategory context |> Decider.resolve log)
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events without custom access strategy`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos createPrimaryContext resolveCosmosStreamWithoutCustomAccessStrategy
+        let service = arrangeCosmos createPrimaryContext categoryCosmosStreamWithoutCustomAccessStrategy
         do! act service args
     }
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against Cosmos, correctly folding the events with With Snapshotting`` args = Async.RunSynchronously <| async {
-        let service = arrangeCosmos createPrimaryContext resolveCosmosStreamWithSnapshotStrategy
+        let service = arrangeCosmos createPrimaryContext categoryCosmosStreamWithSnapshotStrategy
         do! act service args
     }

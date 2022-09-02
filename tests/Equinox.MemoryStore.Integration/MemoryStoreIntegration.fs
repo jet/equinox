@@ -12,9 +12,10 @@ type AutoDataAttribute() =
     inherit FsCheck.Xunit.PropertyAttribute(Arbitrary = [|typeof<FsCheckGenerators>|], MaxTest = 1, QuietOnSuccess = true)
 
 let createMemoryStore () = VolatileStore<_>()
+
 let createServiceMemory log store =
     let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Cart.Fold.fold, Cart.Fold.initial)
-    Cart.create log cat.Resolve
+    cat |> Equinox.Decider.resolve log |> Cart.create
 
 type Tests(testOutputHelper) =
     let log = TestOutput(testOutputHelper).CreateLogger()
@@ -53,9 +54,9 @@ type Tests(testOutputHelper) =
         verifyFoldedStateReflectsCommand actual
     }
 
-let createFavoritesServiceMemory log store =
+let createFavoritesServiceMemory store log : Favorites.Service =
     let cat = MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), Favorites.Fold.fold, Favorites.Fold.initial)
-    Favorites.create log cat.Resolve
+    cat |> Equinox.Decider.resolve log |> Favorites.create
 
 type ChangeFeed(testOutputHelper) =
     let log = TestOutput(testOutputHelper).CreateLogger()
@@ -68,8 +69,8 @@ type ChangeFeed(testOutputHelper) =
             let xs = events.ToArray()
             events.Clear()
             List.ofArray xs
-        use _ = store.Committed.Subscribe(fun (s, xs) -> events.Add((s, List.ofArray xs)))
-        let service = createFavoritesServiceMemory log store
+        use _ = store.Committed.Subscribe(fun struct (c, s, xs) -> events.Add((struct (c, s), List.ofArray xs)))
+        let service = createFavoritesServiceMemory store log
         let expectedStream = Favorites.streamName clientId
 
         do! service.Favorite(clientId, [sku])
@@ -95,7 +96,7 @@ type Versions(testOutputHelper) =
     [<AutoData>]
     let ``Post-Version is computed correctly`` (clientId, sku) = Async.RunSynchronously <| async {
         let store = createMemoryStore ()
-        let service = createFavoritesServiceMemory log store
+        let service = createFavoritesServiceMemory store log
 
         do! service.Favorite(clientId, [sku])
         let! postVersion = service.UnfavoriteWithPostVersion(clientId, sku)
