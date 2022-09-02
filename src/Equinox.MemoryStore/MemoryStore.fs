@@ -80,6 +80,6 @@ type MemoryStoreCategory<'event, 'state, 'Format, 'context>(resolveInner, empty)
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
     new (store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
         let impl = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
-        let resolveInner streamIds = struct (impl :> ICategory<_, _, _>, FsCodec.StreamName.createRaw streamIds, ValueNone)
+        let resolveInner streamIds = struct (impl :> ICategory<_, _, _>, FsCodec.StreamName.Internal.ofCategoryAndStreamId streamIds, ValueNone)
         let empty = struct (Token.ofEmpty, initial)
         MemoryStoreCategory(resolveInner, empty)

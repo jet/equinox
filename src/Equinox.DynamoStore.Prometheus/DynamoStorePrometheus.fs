@@ -92,7 +92,7 @@ type LogSink(customTags: seq<string * string>) =
         payloadCounters (facet, op, outcome) (table, cat, float count, if bytes = -1 then None else Some (float bytes))
 
     let (|CatSRu|) ({ interval = i; ru = ru } : Measurement as m) =
-        let struct (cat, _id) = FsCodec.StreamName.splitCategoryAndId (FSharp.UMX.UMX.tag m.stream)
+        let struct (cat, _id) = FsCodec.StreamName.splitCategoryAndStreamId (FSharp.UMX.UMX.tag m.stream)
         struct (m.table, cat, i.Elapsed, ru)
     let observeRes (_rut, facet, _op as stat) (CatSRu (table, cat, s, ru)) =
         roundtripHistogram stat (table, cat, s, ru)

@@ -15,7 +15,7 @@ module CompanyId =
     let toString (value : CompanyId) : string = %value
 
 let [<Literal>] Category = "Upload"
-let streamName (companyId, purchaseOrderId) = struct (Category, FsCodec.StreamName.createAggregateId [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId])
+let streamName (companyId, purchaseOrderId) = struct (Category, FsCodec.StreamName.createStreamId [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId])
 
 type UploadId = string<uploadId>
 and [<Measure>] uploadId

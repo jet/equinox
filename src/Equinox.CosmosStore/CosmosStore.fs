@@ -272,9 +272,9 @@ module Log =
                  { mutable rux100 : int64; mutable count : int64; mutable ms : int64 }
                  static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
                  member x.Ingest(ru, ms) =
-                     System.Threading.Interlocked.Increment(&x.count) |> ignore
-                     System.Threading.Interlocked.Add(&x.rux100, int64 (ru*100.)) |> ignore
-                     System.Threading.Interlocked.Add(&x.ms, ms) |> ignore
+                     Interlocked.Increment(&x.count) |> ignore
+                     Interlocked.Add(&x.rux100, int64 (ru*100.)) |> ignore
+                     Interlocked.Add(&x.ms, ms) |> ignore
             let inline private (|RcMs|) ({ interval = i; ru = ru } : Measurement) =
                 ru, let e = i.Elapsed in int64 e.TotalMilliseconds
             type LogSink() =
@@ -1162,7 +1162,6 @@ namespace Equinox.CosmosStore
 
 open Equinox.Core
 open Equinox.CosmosStore.Core
-open FsCodec
 open Microsoft.Azure.Cosmos
 open System
 open System.Threading.Tasks
@@ -1301,7 +1300,9 @@ type CosmosStoreClient
         [<O; D null>] ?archiveDatabaseId,
         // Container Name to use for locating missing events. Default: use <c>containerId</c>
         [<O; D null>] ?archiveContainerId) =
-        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else StreamName.createRaw (categoryName, streamId)
+        let genStreamName (categoryName, streamId) =
+            if categoryName = null then streamId
+            else FsCodec.StreamName.Internal.ofCategoryAndStreamId (categoryName, streamId)
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
         let fallbackContainer =

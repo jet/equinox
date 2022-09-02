@@ -527,7 +527,7 @@ type SqlStreamStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
                 Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder Token.supersedes
             | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
                 Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder Token.supersedes
-        let resolveInner streamIds = struct (category, FsCodec.StreamName.createRaw streamIds, ValueNone)
+        let resolveInner streamIds = struct (category, FsCodec.StreamName.Internal.ofCategoryAndStreamId streamIds, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         SqlStreamStoreCategory(resolveInner, empty)
 
