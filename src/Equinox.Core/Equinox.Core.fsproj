@@ -21,7 +21,10 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="6.0.0" />
+    <PackageReference Include="FSharp.Core" Version="6.0.0">
+      <!-- Workaround for malformed FSharp.Core packages https://github.com/dotnet/fsharp/issues/12706 via https://github.com/fsprojects/Paket/issues/4149-->
+      <ExcludeAssets>contentFiles</ExcludeAssets>
+    </PackageReference>
 
     <PackageReference Include="Serilog" Version="2.7.1" />
     <PackageReference Include="System.Runtime.Caching" Version="6.0.0" />
