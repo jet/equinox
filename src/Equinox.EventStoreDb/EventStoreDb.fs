@@ -194,12 +194,12 @@ module private Read =
             "Esdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
     let loadBackwardsUntilOrigin (log : ILogger) (conn : EventStoreClient) batchSize streamName (tryDecode, isOrigin)
-        : Async<int64 * (ResolvedEvent * 'event voption)[]> = async {
+        : Async<int64 * struct (ResolvedEvent * 'event voption)[]> = async {
         let! ct = Async.CancellationToken
         let res = conn.ReadStreamAsync(Direction.Backwards, streamName, StreamPosition.End, int64 batchSize, resolveLinkTos = false, cancellationToken = ct)
         try let! events =
                 AsyncSeq.ofAsyncEnum res
-                |> AsyncSeq.map (fun x -> x, tryDecode x)
+                |> AsyncSeq.map (fun x -> struct (x, tryDecode x))
                 |> AsyncSeq.takeWhileInclusive (function
                     | x, ValueSome e when isOrigin e ->
                         log.Information("EsdbStop stream={stream} at={eventNumber}", streamName, let en = x.Event.EventNumber in en.ToInt64())
@@ -212,10 +212,10 @@ module private Read =
         with :? AggregateException as e when (e.InnerExceptions.Count = 1 && e.InnerExceptions[0] :? StreamNotFoundException) ->
             return -1L, [||] }
     let loadBackwards (log : ILogger) (conn : EventStoreClient) batchSize streamName (tryDecode, isOrigin)
-        : Async<int64 * (ResolvedEvent * 'event voption)[]> = async {
+        : Async<int64 * struct (ResolvedEvent * 'event voption)[]> = async {
         let! t, (version, events) = loadBackwardsUntilOrigin log conn batchSize streamName (tryDecode, isOrigin) |> Stopwatch.Time
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        log |> logBatchRead Direction.Backward streamName t (Array.map fst events) (Some batchSize) version
+        log |> logBatchRead Direction.Backward streamName t (Array.map ValueTuple.fst events) (Some batchSize) version
         return version, events }
 
     let loadForward (conn : EventStoreClient) streamName startPosition
@@ -328,8 +328,8 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
     member _.LoadBackwardsStoppingAtCompactionEvent(streamName, log, limit, (tryDecode, isOrigin)) : Async<struct (StreamToken * 'event [])> = async {
         let! version, events = Read.loadBackwards log conn.ReadConnection (defaultArg limit Int32.MaxValue) streamName (tryDecode, isOrigin)
         match Array.tryHead events |> Option.filter (function _, ValueSome e -> isOrigin e | _ -> false) with
-        | None -> return Token.ofUncompactedVersion batching.BatchSize version, Array.chooseV snd events
-        | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.chooseV snd events }
+        | None -> return Token.ofUncompactedVersion batching.BatchSize version, Array.chooseV ValueTuple.snd events
+        | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.chooseV ValueTuple.snd events }
 
     member _.LoadFromToken(useWriteConn, streamName, log, (Token.Unpack token as streamToken), tryDecode, isCompactionEventType)
         : Async<struct (StreamToken * 'event[])> = async {
@@ -441,7 +441,7 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     let batched log streamName = category.Load(fold, initial, streamName, log)
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _cat, _agg, streamName, allowStale, _ct) = task {
+        member _.Load(log, _categoryName, _streamId, streamName, allowStale, _ct) = task {
             match readCache with
             | None -> return! batched log streamName
             | Some (cache : ICache, prefix : string) ->
@@ -450,9 +450,9 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
                 | ValueSome (token, state) -> return! category.LoadFromToken(fold, state, streamName, token, log) }
 
-        member _.TrySync(log, categoryName, aggregateId, streamName, context, maybeInit, streamToken, initialState, events, ct) = task {
+        member _.TrySync(log, _categoryName, _aggregateId, streamName, context, _maybeInit, streamToken, initialState, events, ct) = task {
             match! category.TrySync(log, fold, streamName, streamToken, initialState, events, context) with
-            | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
+            | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 
 /// For EventStoreDB, caching is less critical than it is for e.g. CosmosDB

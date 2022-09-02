@@ -92,7 +92,7 @@ module Favorites =
         let create (context, cache) =
             let cacheStrategy = CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
             let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-            create <| category.Resolve Log.log ()
+            create <| Equinox.Decider.resolve Log.log cat
 
 let [<Literal>] appName = "equinox-tutorial"
 

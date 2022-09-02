@@ -1,6 +1,5 @@
 namespace Equinox.CosmosStore.Core
 
-open System.Threading
 open Equinox.Core
 open FsCodec
 open FSharp.Control
@@ -8,6 +7,7 @@ open Microsoft.Azure.Cosmos
 open Serilog
 open System
 open System.Text.Json
+open System.Threading
 open System.Threading.Tasks
 
 type EventBody = JsonElement

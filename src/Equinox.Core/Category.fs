@@ -10,23 +10,22 @@ type Category<'event, 'state, 'context>(
         resolveInner : struct (string * string) -> struct (Core.ICategory<'event, 'state, 'context> * string * (CancellationToken -> Task<unit>) voption),
         empty : struct (Core.StreamToken * 'state)) =
 
-    member _.Stream(log : Serilog.ILogger, context : 'context, categoryName, aggregateId) =
+    member _.Stream(log : Serilog.ILogger, context : 'context, categoryName, streamId) =
+        let struct (inner, streamName, init) = resolveInner (categoryName, streamId)
         { new Core.IStream<'event, 'state> with
             member _.LoadEmpty() =
                 empty
             member x.Load(allowStale, ct) =
-                let struct (inner, streamName, _init) = resolveInner (categoryName, aggregateId)
-                inner.Load(log, categoryName, aggregateId, streamName, allowStale, ct)
+                inner.Load(log, categoryName, streamId, streamName, allowStale, ct)
             member _.TrySync(attempt, (token, originState), events, ct) =
-                let struct (inner, streamName, init) = resolveInner (categoryName, aggregateId)
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
-                inner.TrySync(log, categoryName, aggregateId, streamName, context, init, token, originState, events, ct) }
+                inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) }
 
 module Stream =
 
     let resolveWithContext (ctx : 'context) log (cat : Category<'event, 'state, 'context>) : struct (string * string) -> Core.IStream<'event, 'state> =
-         fun struct (categoryName, aggregateId) ->
-             cat.Stream(log, ctx, categoryName, aggregateId)
+         fun struct (categoryName, streamId) ->
+             cat.Stream(log, ctx, categoryName, streamId)
 
     let resolve log (cat : Category<'event, 'state, unit>)  =
         resolveWithContext () log cat

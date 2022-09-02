@@ -66,5 +66,5 @@ type Service internal (resolve : InventoryItemId -> Equinox.Decider<Events.Event
         let decider = resolve itemId
         decider.Query id
 
-let create resolveStream =
-    Service(streamName >> resolveStream >> Equinox.Decider)
+let create resolve =
+    Service(streamName >> resolve)

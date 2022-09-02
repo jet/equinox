@@ -84,7 +84,7 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 let logEvents c s (events : FsCodec.ITimelineEvent<_>[]) =
-    log.Information("Committed to {categoryName}-{aggregateId}, events: {@events}", c, s, seq { for x in events -> x.EventType })
+    log.Information("Committed to {categoryName}-{streamId}, events: {@events}", c, s, seq { for x in events -> x.EventType })
 
 (* We can integration test using an in-memory store
    See other examples such as Cosmos.fsx to see how we integrate with CosmosDB and/or other concrete stores *)
@@ -93,7 +93,7 @@ let store = Equinox.MemoryStore.VolatileStore()
 let _ = store.Committed.Subscribe(fun (c, s, xs) -> logEvents c s xs)
 let codec = FsCodec.Box.Codec.Create()
 let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-let resolve = cat.Resolve log () 
+let resolve = cat |> Equinox.Decider.resolve log 
 let service = Service(streamName >> resolve)
 
 let clientId = "ClientA"

@@ -274,7 +274,7 @@ Stored Procedure         | JavaScript code stored in a Container that (repeatedl
 
 Term                      | Description
 --------------------------|------------
-Category                  | Group of Streams bearing a common prefix `{Category}-{StreamId}`
+Category                  | Group of Streams bearing a common prefix `{category}-{streamId}`
 Event                     | json or blob payload, together with an Event Type name representing an Event
 EventStore                | [Open source](https://eventstore.org) Event Sourcing-optimized data store server and programming model with powerful integrated projection facilities
 Rolling Snapshot          | Event written to an EventStore stream in order to ensure minimal store roundtrips when there is a Cache miss
@@ -587,7 +587,7 @@ let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
  * The Service defines operations in business terms, neutral to any concrete
  * store selection or implementation supplied only a `resolve` function that can
  * be used to map from ids (as supplied to the `streamName` function) to an
- * Equinox Decider; Typically the service should be a stateless Singleton
+ * Equinox.Decider; Typically the service should be a stateless Singleton
  *)
 
 type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
@@ -689,13 +689,13 @@ Equinox’s Command Handling consists of < 200 lines including interfaces and
 comments in https://github.com/jet/equinox/tree/master/src/Equinox - the
 elements you'll touch in a normal application are:
 
-- [`module Impl`](https://github.com/jet/equinox/blob/master/src/Equinox/Core.fs#L34) -
+- [`module Impl`](https://github.com/jet/equinox/blob/master/src/Equinox/Core.fs#L33) -
   internal implementation of Optimistic Concurrency Control / retry loop used
   by `Decider`. It's recommended to at least scan this file as it defines the
   Transaction semantics that are central to Equinox and the overall `Decider` concept.
-- [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L11) -
+- [`type Decider`](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L7) -
   surface API one uses to `Transact` or `Query` against a specific stream's state
-- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L59) -
+- [`type LoadOption` Discriminated Union](https://github.com/jet/equinox/blob/master/src/Equinox/Decider.fs#L110) -
   used to specify optimization overrides to be applied when a `Decider`'s `Query` or `Transact` operations establishes the state of the stream
 
 Its recommended to read the examples in conjunction with perusing the code in

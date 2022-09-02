@@ -46,8 +46,8 @@ type Cache(name, sizeMb : int) =
         member _.UpdateIfNewer(key, options, entry) =
             let policy = toPolicy options
             match cache.AddOrGetExisting(key, box entry, policy) with
-            | null -> Task.FromResult ()
-            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry; Task.FromResult ()
+            | null -> Task.FromResult()
+            | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer entry; Task.FromResult()
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
 
         member _.TryGet key =

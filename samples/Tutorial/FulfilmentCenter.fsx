@@ -143,7 +143,7 @@ module Store =
 open FulfilmentCenter
 
 let category = CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
-let resolve = category.Resolve Log.log ()
+let resolve = Equinox.Decider.resolve Log.log category
 let service = Service(streamName >> resolve)
 
 let fc = "fc0"

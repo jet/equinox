@@ -6,6 +6,7 @@ open System.Threading.Tasks
 /// Asynchronous Lazy<'T> used to gate a workflow to ensure at most once execution of a computation.
 type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
 
+    /// NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this by rolling over to a new instance
     let workflow = lazy workflow ()
 
     /// Synchronously check whether the value has been computed (and/or remains valid)
@@ -16,7 +17,7 @@ type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
         if t.Status <> TaskStatus.RanToCompletion then false else
 
         match isExpired with
-        | ValueSome f -> not (f t.Result)
+        | ValueSome isExpired -> not (isExpired t.Result)
         | _ -> true
 
     /// Used to rule out values where the computation yielded an exception or the result has now expired
@@ -32,7 +33,6 @@ type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
             | _ -> return ValueSome res }
 
     /// Await the outcome of the computation.
-    /// NOTE due to `Lazy<T>` semantics, failed attempts will cache any exception; AsyncCacheCell compensates for this
     member _.Await() = workflow.Value
 
 /// Generic async lazy caching implementation that admits expiration/recomputation/retry on exception semantics.
@@ -41,6 +41,7 @@ type AsyncLazy<'T>(workflow : unit -> Task<'T>) =
 type AsyncCacheCell<'T>(workflow : CancellationToken -> Task<'T>, ?isExpired : 'T -> bool) =
 
     let isExpired = match isExpired with Some x -> ValueSome x | None -> ValueNone
+    // we can't pre-initialize as we need the invocation to be tied to a CancellationToken
     let mutable cell = AsyncLazy(fun () -> Task.FromException<'T>(System.InvalidOperationException "AsyncCacheCell Not Yet initialized"))
 
     /// Synchronously check the value remains valid (to short-circuit an Await step where value not required)
@@ -53,9 +54,8 @@ type AsyncCacheCell<'T>(workflow : CancellationToken -> Task<'T>, ?isExpired : '
         match! current.TryAwaitValid(isExpired) with
         | ValueSome res -> return res // ... if it's already / still valid, we're done
         | ValueNone ->
-            // Prepare to do the work, with cancellation under our control (it won't start until the first Await on the LazyTask triggers it though)
-            let execute () = workflow ct
-            // avoid unnecessary recomputation in cases where competing threads detect expiry;
-            // the first write attempt wins, and everybody else reads off that value
-            let _ = Interlocked.CompareExchange(&cell, AsyncLazy execute, current)
+            // Prepare a new instance, with cancellation under our control (it won't start until the first Await on the LazyTask triggers it though)
+            let newInstance = AsyncLazy(fun () -> workflow ct)
+            // If there are concurrent executions, the first through the gate wins; everybody else awaits the instance the winner wrote
+            let _ = Interlocked.CompareExchange(&cell, newInstance, current)
             return! cell.Await() }

@@ -137,7 +137,7 @@ module TodosCategory =
 
     let access = AccessStrategy.Snapshot (isOrigin,snapshot)
     let category = CosmosStoreCategory(Store.context, codec, fold, initial, Store.cacheStrategy, access=access)
-    let resolve = category.Resolve log ()
+    let resolve = Equinox.Decider.resolve log category
 
 let service = Service(streamName >> TodosCategory.resolve)
 

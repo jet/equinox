@@ -13,7 +13,6 @@ open Equinox.CosmosStore
 open Equinox.CosmosStore.Integration.CosmosFixtures
 #endif
 
-
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot

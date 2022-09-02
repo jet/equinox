@@ -52,8 +52,7 @@ type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<
         let decider = resolve (companyId, purchaseOrderId)
         decider.Transact(decide value)
 
-let create resolve =
-    Service(streamName >> resolve)
+let create resolve = Service(streamName >> resolve)
 
 module Cosmos =
 

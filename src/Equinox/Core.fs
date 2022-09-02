@@ -48,8 +48,8 @@ module internal Impl =
                 return mapResult result tokenAndState
             else
                 match! stream.TrySync(attempt, tokenAndState, events, ct) with
-                | SyncResult.Written tas' ->
-                    return mapResult result tas'
+                | SyncResult.Written tokenAndState' ->
+                    return mapResult result tokenAndState'
                 | SyncResult.Conflict resync ->
                     validateResync attempt
                     let! tokenAndState = resync ct

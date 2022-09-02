@@ -80,5 +80,4 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         let! state' = handle clientId (Command.Update item)
         return List.find (fun x -> x.id = item.id) state' }
 
-let create resolve =
-    Service(streamName >> resolve)
+let create resolve = Service(streamName >> resolve)

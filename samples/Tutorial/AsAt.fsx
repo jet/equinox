@@ -160,7 +160,7 @@ module EventStore =
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
     let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-    let resolve = streamName >> cat.Resolve Log.log ()
+    let resolve = streamName >> Equinox.Decider.resolve log
 
 module Cosmos =
 

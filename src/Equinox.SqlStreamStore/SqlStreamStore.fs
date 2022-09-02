@@ -241,9 +241,9 @@ module private Read =
         let acc (tu, tr) (ResolvedEventLen bytes as y) = if y.Position < firstUsedEventNumber then tu, tr + bytes else tu + bytes, tr
         Array.fold acc (0, 0)
     let loadBackwardsUntilCompactionOrStart (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName (tryDecode, isOrigin)
-        : Async<int64 * (ResolvedEvent * 'event voption)[]> = async {
+        : Async<int64 * struct (ResolvedEvent * 'event voption)[]> = async {
         let mergeFromCompactionPointOrStartFromBackwardsStream (log : ILogger) (batchesBackward : AsyncSeq<int64 option * ResolvedEvent[]>)
-            : Async<int64 * (ResolvedEvent*'event voption)[]> = async {
+            : Async<int64 * struct (ResolvedEvent*'event voption)[]> = async {
             let versionFromStream, lastBatch = ref None, ref None
             let! tempBackward =
                 batchesBackward
@@ -251,7 +251,7 @@ module private Read =
                     match batch with
                     | None, events -> lastBatch.Value <- Some events; events
                     | Some _ as reportedVersion, events -> versionFromStream.Value <- reportedVersion; lastBatch.Value <- Some events; events
-                    |> Array.map (fun e -> e, tryDecode e))
+                    |> Array.map (fun e -> struct (e, tryDecode e)))
                 |> AsyncSeq.concatSeq
                 |> AsyncSeq.takeWhileInclusive (function
                     | x, ValueSome e when isOrigin e ->
@@ -274,7 +274,7 @@ module private Read =
         let readlog = log |> Log.prop "direction" direction
         let batchesBackward : AsyncSeq<int64 option * ResolvedEvent[]> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads startPosition
         let! t, (version, events) = mergeFromCompactionPointOrStartFromBackwardsStream log batchesBackward |> Stopwatch.Time
-        log |> logBatchRead direction streamName t (Array.map fst events) batchSize version
+        log |> logBatchRead direction streamName t (Array.map ValueTuple.fst events) batchSize version
         return version, events }
 
 module UnionEncoderAdapters =
@@ -367,8 +367,8 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batching : Bat
         let! version, events =
             Read.loadBackwardsUntilCompactionOrStart log connection.ReadRetryPolicy connection.ReadConnection batching.BatchSize batching.MaxBatches streamName (tryDecode, isOrigin)
         match Array.tryHead events |> Option.filter (function _, ValueSome e -> isOrigin e | _ -> false) with
-        | None -> return Token.ofUncompactedVersion batching.BatchSize version, Array.chooseV snd events
-        | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.chooseV snd events }
+        | None -> return Token.ofUncompactedVersion batching.BatchSize version, Array.chooseV ValueTuple.snd events
+        | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.chooseV ValueTuple.snd events }
     member _.LoadFromToken useWriteConn streamName log (Token.Unpack token as streamToken) (tryDecode, isCompactionEventType)
         : Async<StreamToken * 'event[]> = async {
         let streamPosition = token.streamVersion + 1L
@@ -466,7 +466,7 @@ type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext,
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     let batched log streamName ct = category.Load fold initial streamName log |> Async.startAsTask ct
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _cat, _agg, streamName, allowStale, ct) = task {
+        member _.Load(log, _categoryName, _streamId, streamName, allowStale, ct) = task {
             match readCache with
             | None -> return! batched log streamName ct
             | Some (cache : ICache, prefix : string) ->
@@ -474,9 +474,9 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
                 | ValueNone -> return! batched log streamName ct
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
                 | ValueSome (token, state) -> return! category.LoadFromToken fold state streamName token log }
-        member _.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) = task {
+        member _.TrySync(log, _categoryName, _streamId, streamName, context, _init, token, originState, events, _ct) = task {
             match! category.TrySync(log, fold, streamName, token, originState, events, context) with
-            | SyncResult.Conflict resync ->         return SyncResult.Conflict resync
+            | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 
 /// For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
