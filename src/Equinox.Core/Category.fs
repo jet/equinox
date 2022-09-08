@@ -4,7 +4,7 @@ open Serilog
 open System.Threading
 open System.Threading.Tasks
 
-/// Store-agnostic interface representing interactions an Application can have with a set of streams with a common event type
+/// Store-agnostic interface representing interactions an Application can have with a set of streams with a given pair of Event and State types
 type ICategory<'event, 'state, 'context> =
     /// Obtain the state from the target stream
     abstract Load : log: ILogger * categoryName: string * streamId: string * streamName: string * allowStale: bool * ct: CancellationToken -> Task<struct (StreamToken * 'state)>
@@ -23,7 +23,7 @@ namespace Equinox
 open System.Threading
 open System.Threading.Tasks
 
-/// Store-agnostic interface representing interactions a Decider can have with the state of a given event stream.
+/// Store-agnostic baseline functionality for a Category of 'event representations that fold to a given 'state
 [<NoComparison; NoEquality>]
 type Category<'event, 'state, 'context>(
         resolveInner : struct (string * string) -> struct (Core.ICategory<'event, 'state, 'context> * string * (CancellationToken -> Task<unit>) voption),

@@ -179,6 +179,7 @@ module Log =
     type Measurement =
        {   database : string; container : string; stream : string
            interval : StopwatchInterval; bytes : int; count : int; ru : float }
+       member x.Category = StreamName.category (FSharp.UMX.UMX.tag x.stream)
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type Metric =
         /// Individual read request for the Tip

@@ -17,8 +17,8 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="6.0.0" />
 
-    <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.6" />
-    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.6" />
+    <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.7.1" />
+    <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.7.1" />
 
     <ProjectReference Include="..\..\..\src\Equinox\Equinox.fsproj" />
   </ItemGroup>

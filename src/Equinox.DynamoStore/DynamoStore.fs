@@ -213,6 +213,7 @@ module Log =
     type Measurement =
        {   table : string; stream : string
            interval : StopwatchInterval; bytes : int; count : int; ru : float }
+       member x.Category = StreamName.category (FSharp.UMX.UMX.tag x.stream)
     let inline metric table stream t bytes count rc : Measurement =
         { table = table; stream = stream; interval = t; bytes = bytes; count = count; ru = rc.total }
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -729,14 +730,14 @@ module internal Query =
 
     let scanTip (tryDecode : ITimelineEvent<EncodedBody> -> 'event voption, isOrigin : 'event -> bool) (pos : Position, i : int64, xs : ITimelineEvent<InternalBody> array)
         : ScanResult<'event> =
-        let items = ResizeArray()
+        let items = ResizeArray(xs.Length)
         let isOrigin' e =
-            match tryDecode e with
+            match EncodedBody.ofInternal e |> tryDecode with
             | ValueNone -> false
             | ValueSome e ->
                 items.Insert(0, e) // WalkResult always renders events ordered correctly - here we're aiming to align with Enum.EventsAndUnfolds
                 isOrigin e
-        let f, e = xs |> Seq.map EncodedBody.ofInternal |> Seq.tryFindBack isOrigin' |> Option.isSome, items.ToArray()
+        let f, e = xs |> Seq.tryFindBack isOrigin' |> Option.isSome, items.ToArray()
         { found = f; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
