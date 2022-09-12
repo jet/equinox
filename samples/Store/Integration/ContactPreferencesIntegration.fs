@@ -9,7 +9,8 @@ let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initia
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial).Resolve log
+    MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial)
+    |> Decider.resolve log
     |> ContactPreferences.create
 
 let codec = ContactPreferences.Events.codec

@@ -34,17 +34,23 @@ type ServiceBuilder(storageConfig, handlerLog) =
      member _.CreateFavoritesService() =
         let fold, initial = Favorites.Fold.fold, Favorites.Fold.initial
         let snapshot = Favorites.Fold.isOrigin, Favorites.Fold.snapshot
-        Favorites.create <| store.Category(Favorites.Events.codec, fold, initial, snapshot).Resolve handlerLog
+        store.Category(Favorites.Events.codec, fold, initial, snapshot)
+        |> Decider.resolve handlerLog
+        |> Favorites.create
 
      member _.CreateSaveForLaterService() =
         let fold, initial = SavedForLater.Fold.fold, SavedForLater.Fold.initial
         let snapshot = SavedForLater.Fold.isOrigin, SavedForLater.Fold.compact
-        SavedForLater.create 50 <| store.Category(SavedForLater.Events.codec, fold, initial, snapshot).Resolve handlerLog
+        store.Category(SavedForLater.Events.codec, fold, initial, snapshot)
+        |> Decider.resolve handlerLog
+        |> SavedForLater.create 50
 
      member _.CreateTodosService() =
         let fold, initial = TodoBackend.Fold.fold, TodoBackend.Fold.initial
         let snapshot = TodoBackend.Fold.isOrigin, TodoBackend.Fold.snapshot
-        TodoBackend.create <| store.Category(TodoBackend.Events.codec, fold, initial, snapshot).Resolve handlerLog
+        store.Category(TodoBackend.Events.codec, fold, initial, snapshot)
+        |> Decider.resolve handlerLog
+        |> TodoBackend.create
 
 let register (services : IServiceCollection, storageConfig, handlerLog) =
     let regF (factory : IServiceProvider -> 'T) = services.AddSingleton<'T>(fun (sp: IServiceProvider) -> factory sp) |> ignore

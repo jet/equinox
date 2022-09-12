@@ -565,8 +565,8 @@ type ConnectionStrategy =
 
 type EventStoreConnector
     (   reqTimeout : TimeSpan, reqRetries : int,
-        ?readRetryPolicy, ?writeRetryPolicy, ?tags,
-        ?customize : EventStoreClientSettings -> unit) =
+        [<O; D null>] ?readRetryPolicy, [<O; D null>] ?writeRetryPolicy, [<O; D null>] ?tags,
+        [<O; D null>] ?customize : EventStoreClientSettings -> unit) =
 (* TODO port
     let connSettings node =
       ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
