@@ -27,7 +27,7 @@ module Cart =
         |> Cart.create
     /// Trigger looking in Tip (we want those calls to occur, but without leaning on snapshots, which would reduce the paths covered)
     let createServiceWithEmptyUnfolds log context =
-        let unfArgs = Cart.Fold.isOrigin, fun _ -> Seq.empty
+        let unfArgs = Cart.Fold.isOrigin, fun _ -> Array.empty
         StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, AccessStrategy.MultiSnapshot unfArgs)
         |> Equinox.Decider.resolve log
         |> Cart.create

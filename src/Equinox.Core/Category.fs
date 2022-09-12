@@ -15,7 +15,7 @@ type ICategory<'event, 'state, 'context> =
     /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
     abstract TrySync : log: ILogger * categoryName: string * streamId: string * streamName: string * 'context * maybeInit: (CancellationToken -> Task<unit>) voption
-                       * StreamToken * 'state * events: 'event list * CancellationToken -> Task<SyncResult<'state>>
+                       * StreamToken * 'state * events: 'event array * CancellationToken -> Task<SyncResult<'state>>
 
 // Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
 namespace Equinox

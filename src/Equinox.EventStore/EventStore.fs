@@ -407,7 +407,7 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
                 match isCompactionEventType with
                 | None -> Token.ofNonCompacting version'
                 | Some isCompactionEvent ->
-                    match events |> Array.ofList |> Array.tryFindIndexBack isCompactionEvent with
+                    match events |> Array.tryFindIndexBack isCompactionEvent with
                     | None -> Token.ofPreviousTokenAndEventsLength streamToken encodedEvents.Length batching.BatchSize version'
                     | Some compactionEventIndex ->
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
@@ -473,20 +473,20 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
 
     member _.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
-            streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event list, ctx : 'context) : Async<SyncResult<'state>> = async {
+            streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event array, ctx : 'context) : Async<SyncResult<'state>> = async {
         let encode e = codec.Encode(ctx, e)
         let events =
             match access with
             | None | Some AccessStrategy.LatestKnownEvent -> events
             | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
-                let cc = CompactionContext(List.length events, token.batchCapacityLimit.Value)
-                if cc.IsCompactionDue then events @ [fold state events |> compact] else events
-        let encodedEvents : EventData[] = events |> Seq.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
+                let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
+                if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
+        let encodedEvents : EventData[] = events |> Array.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent)
         match! context.TrySync log streamName streamToken (events, encodedEvents) compactionPredicate with
         | GatewaySyncResult.ConflictUnknown _ ->
             return SyncResult.Conflict  (fun ct -> load fold state (context.LoadFromToken true streamName log streamToken (tryDecode, compactionPredicate)) |> Async.startAsTask ct)
         | GatewaySyncResult.Written token' ->
-            return SyncResult.Written   (token', fold state (Seq.ofList events)) }
+            return SyncResult.Written   (token', fold state (Seq.ofArray events)) }
 
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     let batched log streamName = category.Load fold initial streamName log

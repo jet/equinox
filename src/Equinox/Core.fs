@@ -18,7 +18,7 @@ type IStream<'event, 'state> =
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
     /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
-    abstract TrySync : attempt : int * originTokenAndState : struct (StreamToken * 'state) * events : 'event list * CancellationToken -> Task<SyncResult<'state>>
+    abstract TrySync : attempt : int * originTokenAndState : struct (StreamToken * 'state) * events : 'event array * CancellationToken -> Task<SyncResult<'state>>
 
 /// Internal type used to represent the outcome of a TrySync operation
 and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
@@ -40,8 +40,8 @@ type internal Impl() =
             originTokenAndState ct : Task<'v>=
         let rec loop attempt tokenAndState : Task<'v> = task {
             let! result, events = decide.Invoke(tokenAndState, ct)
-            match List.ofSeq events with
-            | [] -> return mapResult.Invoke(result, tokenAndState)
+            match Array.ofSeq events with
+            | [||] -> return mapResult.Invoke(result, tokenAndState)
             | events ->
                 match! stream.TrySync(attempt, tokenAndState, events, ct) with
                 | SyncResult.Written tokenAndState' ->

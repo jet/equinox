@@ -27,7 +27,7 @@ module Fold =
     let isOrigin _ = true
     /// When using AccessStrategy.Custom, we use the (single) event become an unfold, but the logic remains identical
     let transmute events _state =
-        [],events
+        [||],events
 
 type Command =
     | Update of Events.Value
