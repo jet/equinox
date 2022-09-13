@@ -79,8 +79,8 @@ module Cosmos =
     open Equinox.CosmosStore
     let private create (context, cache, accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
-        let category = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        Service(streamName >> Equinox.Decider.resolve Serilog.Log.Logger category)
+        let cat = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+        Service(streamName >> Equinox.Decider.resolve Serilog.Log.Logger cat)
 
     module Snapshot =
 

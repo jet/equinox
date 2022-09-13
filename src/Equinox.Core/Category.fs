@@ -15,7 +15,7 @@ type ICategory<'event, 'state, 'context> =
     /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
     abstract TrySync : log: ILogger * categoryName: string * streamId: string * streamName: string * 'context * maybeInit: (CancellationToken -> Task<unit>) voption
-                       * StreamToken * 'state * events: 'event list * CancellationToken -> Task<SyncResult<'state>>
+                       * StreamToken * 'state * events: 'event array * CancellationToken -> Task<SyncResult<'state>>
 
 // Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
 namespace Equinox
@@ -53,6 +53,12 @@ module Stream =
 
 module Decider =
 
+    let resolveCoreWithContext context log (cat : Category<'event, 'state, 'context>) : struct (string * string) -> DeciderCore<'event, 'state> =
+         Stream.resolveWithContext context log cat >> DeciderCore
+
+    let resolveCore log (cat : Category<'event, 'state, unit>) =
+         resolveCoreWithContext () log cat
+
     let resolveWithContext context log (cat : Category<'event, 'state, 'context>) : struct (string * string) -> Decider<'event, 'state> =
          Stream.resolveWithContext context log cat >> Decider
 
@@ -63,9 +69,9 @@ module Decider =
 type DeciderExtensions =
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, 'context>, context : 'context, log) : struct (string * string) -> Decider<'event, 'state> =
-         Decider.resolveWithContext context log cat
+    static member Resolve(cat : Category<'event, 'state, 'context>, context : 'context, log) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
+         Decider.resolveCoreWithContext context log cat
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, unit>, log) : struct (string * string) -> Decider<'event, 'state> =
-         Decider.resolveWithContext () log cat
+    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
+         Decider.resolveCoreWithContext () log cat

@@ -1121,18 +1121,18 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     member cat.Sync(log, stream, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context): Async<SyncResult<'state>> = async {
-        let state' = fold state (Seq.ofList events)
+        let state' = fold state (Seq.ofArray events)
         let exp, events, eventsEncoded, unfoldsEncoded =
             let encode e = codec.Encode(context, e)
             let expVer = Position.toIndex >> Sync.Exp.Version
             match mapUnfolds with
-            | Choice1Of3 () ->     expVer, events, Seq.map encode events |> Array.ofSeq, Seq.empty
-            | Choice2Of3 unfold -> expVer, events, Seq.map encode events |> Array.ofSeq, Seq.map encode (unfold events state')
+            | Choice1Of3 () ->     expVer, events, Array.map encode events, Array.empty
+            | Choice2Of3 unfold -> expVer, events, Array.map encode events, Array.map encode (unfold events state')
             | Choice3Of3 transmute ->
                 let events', unfolds = transmute events state'
-                Position.toEtag >> Sync.Exp.Etag, events', Seq.map encode events' |> Array.ofSeq, Seq.map encode unfolds
-        let baseVer = Position.toIndex pos + int64 (List.length events)
-        match! store.Sync(log, stream, pos, exp, baseVer, eventsEncoded, Seq.toArray unfoldsEncoded) with
+                Position.toEtag >> Sync.Exp.Etag, events', Array.map encode events', Array.map encode unfolds
+        let baseVer = Position.toIndex pos + int64 (Array.length events)
+        match! store.Sync(log, stream, pos, exp, baseVer, eventsEncoded, unfoldsEncoded) with
         | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (fun ct -> cat.Reload(log, stream, streamToken, state, fold, isOrigin, ct))
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
@@ -1155,7 +1155,7 @@ module internal Caching =
         (   category : Category<'event, 'state, 'context>,
             fold : 'state -> 'event seq -> 'state, initial : 'state, isOrigin : 'event -> bool,
             tryReadCache, updateCache : string -> _ -> Task<unit>,
-            checkUnfolds, mapUnfolds : Choice<unit, 'event list -> 'state -> 'event seq, 'event list -> 'state -> 'event list * 'event list>) =
+            checkUnfolds, mapUnfolds : Choice<unit, 'event array -> 'state -> 'event array, 'event array -> 'state -> 'event array * 'event array>) =
         let cache streamName (inner : unit -> Task<_>) = task {
             let! struct (token, state) = inner ()
             do! updateCache streamName (token, state)
@@ -1341,7 +1341,7 @@ type AccessStrategy<'event, 'state> =
     /// Allow any events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
     /// When writing, uses `toSnapshots` to 'unfold' the <c>'state</c>, representing it as one or more Event records to be stored in
     /// the Tip with efficient read cost.
-    | MultiSnapshot of isOrigin : ('event -> bool) * toSnapshots : ('state -> 'event seq)
+    | MultiSnapshot of isOrigin : ('event -> bool) * toSnapshots : ('state -> 'event array)
     /// Instead of actually storing the events representing the decisions, only ever update a snapshot stored in the Tip document
     /// <remarks>In this mode, Optimistic Concurrency Control is necessarily based on the etag</remarks>
     | RollingState of toSnapshot : ('state -> 'event)
@@ -1350,7 +1350,7 @@ type AccessStrategy<'event, 'state> =
     /// In this mode, Optimistic Concurrency Control is based on the etag (rather than the normal Expected Version strategy)
     /// in order that conflicting updates to the state not involving the writing of an event can trigger retries.
     /// </remarks>
-    | Custom of isOrigin : ('event -> bool) * transmute : ('event list -> 'state -> 'event list*'event list)
+    | Custom of isOrigin : ('event -> bool) * transmute : ('event array -> 'state -> 'event array * 'event array)
 
 type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
@@ -1366,10 +1366,10 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
                 let isOrigin, checkUnfolds, mapUnfolds =
                     match access with
                     | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
-                    | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> Seq.last events |> Seq.singleton)
-                    | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Seq.singleton)
-                    | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
-                    | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> [], [toSnapshot state])
+                    | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> events |> Array.last |> Array.singleton)
+                    | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Array.singleton<'event>)
+                    | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ (state : 'state) -> unfold state)
+                    | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
                     | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
                 let cosmosCat = Category<'event, 'state, 'context>(container, codec)
                 Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, mapUnfolds) :> _

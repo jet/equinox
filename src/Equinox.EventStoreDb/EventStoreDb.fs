@@ -221,15 +221,17 @@ module private Read =
         log |> logBatchRead direction streamName t events None version
         return version, events }
 
-module UnionEncoderAdapters =
-    let encodedEventOfResolvedEvent (x : ResolvedEvent) : FsCodec.ITimelineEvent<EventBody> =
-        let e = x.Event
+module ClientCodec =
+
+    let timelineEvent (x : EventRecord) : FsCodec.ITimelineEvent<EventBody> =
         // TOCONSIDER wire e.Metadata["$correlationId"] and ["$causationId"] into correlationId and causationId
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        let n, eu, ts = e.EventNumber, e.EventId, DateTimeOffset e.Created
-        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), e.EventType, e.Data, e.Metadata, eu.ToGuid(), correlationId = null, causationId = null, timestamp = ts)
+        let n, eu, ts = x.EventNumber, x.EventId, DateTimeOffset x.Created
+        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), x.EventType, x.Data, x.Metadata, eu.ToGuid(), correlationId = null, causationId = null, timestamp = ts)
+    let isSystemEvent (x : EventRecord) = x.EventStreamId.StartsWith '$'
+    let isJson (x : EventRecord) = x.ContentType = "application/json"
 
-    let eventDataOfEncodedEvent (x : FsCodec.IEventData<EventBody>) =
+    let eventData (x : FsCodec.IEventData<EventBody>) =
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
         EventData(Uuid.FromGuid x.EventId, x.EventType, contentType = "application/json", data = x.Data, metadata = x.Meta)
@@ -289,49 +291,53 @@ type EventStoreConnection(readConnection, [<O; D(null)>] ?writeConnection, [<O; 
     member _.WriteConnection = defaultArg writeConnection readConnection
     member _.WriteRetryPolicy = writeRetryPolicy
 
-type BatchingPolicy(getMaxBatchSize : unit -> int) =
-    new (maxBatchSize) = BatchingPolicy(fun () -> maxBatchSize)
-    // TOCONSIDER remove if Client does not start to expose it
-    member _.BatchSize = getMaxBatchSize()
+type BatchOptions(getBatchSize : Func<int>) =
+    new (batchSize) = BatchOptions(fun () -> batchSize)
+    member _.BatchSize = getBatchSize.Invoke()
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown of StreamToken
 
-type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
+type EventStoreContext(connection : EventStoreConnection, batchOptions : BatchOptions) =
     let isResolvedEventEventType (tryDecode, predicate) (x : ResolvedEvent) = predicate (tryDecode x.Event.Data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
+    new (   connection : EventStoreConnection,
+            // Max number of Events to retrieve in a single batch. Also affects frequency of RollingSnapshots. Default: 500.
+            [<O; D null>] ?batchSize) =
+        EventStoreContext(connection, BatchOptions(batchSize = defaultArg batchSize 500))
+    member val BatchOptions = batchOptions
 
-    member _.TokenEmpty = Token.ofUncompactedVersion batching.BatchSize -1L
-    member _.LoadBatched(streamName, log, tryDecode, isCompactionEventType) : Async<struct (StreamToken * 'event[])> = async {
-        let! version, events = Read.loadForwards log conn.ReadConnection streamName StreamPosition.Start
+    member internal _.TokenEmpty = Token.ofUncompactedVersion batchOptions.BatchSize -1L
+    member internal _.LoadBatched(streamName, log, tryDecode, isCompactionEventType) : Async<struct (StreamToken * 'event[])> = async {
+        let! version, events = Read.loadForwards log connection.ReadConnection streamName StreamPosition.Start
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, Array.chooseV tryDecode events
         | Some isCompactionEvent ->
             match events |> Array.tryFindBack isCompactionEvent with
-            | None -> return Token.ofUncompactedVersion batching.BatchSize version, Array.chooseV tryDecode events
-            | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.chooseV tryDecode events }
+            | None -> return Token.ofUncompactedVersion batchOptions.BatchSize version, Array.chooseV tryDecode events
+            | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV tryDecode events }
 
-    member _.LoadBackwardsStoppingAtCompactionEvent(streamName, log, limit, (tryDecode, isOrigin)) : Async<struct (StreamToken * 'event [])> = async {
-        let! version, events = Read.loadBackwards log conn.ReadConnection (defaultArg limit Int32.MaxValue) streamName (tryDecode, isOrigin)
+    member internal _.LoadBackwardsStoppingAtCompactionEvent(streamName, log, limit, (tryDecode, isOrigin)) : Async<struct (StreamToken * 'event [])> = async {
+        let! version, events = Read.loadBackwards log connection.ReadConnection (defaultArg limit Int32.MaxValue) streamName (tryDecode, isOrigin)
         match Array.tryHead events |> Option.filter (function _, ValueSome e -> isOrigin e | _ -> false) with
-        | None -> return Token.ofUncompactedVersion batching.BatchSize version, Array.chooseV ValueTuple.snd events
-        | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.chooseV ValueTuple.snd events }
+        | None -> return Token.ofUncompactedVersion batchOptions.BatchSize version, Array.chooseV ValueTuple.snd events
+        | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV ValueTuple.snd events }
 
-    member _.LoadFromToken(useWriteConn, streamName, log, (Token.Unpack token as streamToken), tryDecode, isCompactionEventType)
+    member internal _.LoadFromToken(useWriteConn, streamName, log, (Token.Unpack token as streamToken), tryDecode, isCompactionEventType)
         : Async<struct (StreamToken * 'event[])> = async {
         let streamPosition = StreamPosition.FromInt64(token.streamVersion + 1L)
-        let connToUse = if useWriteConn then conn.WriteConnection else conn.ReadConnection
+        let connToUse = if useWriteConn then connection.WriteConnection else connection.ReadConnection
         let! version, events = Read.loadForwards log connToUse streamName streamPosition
         match isCompactionEventType with
         | None -> return Token.ofNonCompacting version, Array.chooseV tryDecode events
         | Some isCompactionEvent ->
             match events |> Array.tryFindBack (fun re -> match tryDecode re with ValueSome e -> isCompactionEvent e | _ -> false) with
-            | None -> return Token.ofPreviousTokenAndEventsLength streamToken events.Length batching.BatchSize version, Array.chooseV tryDecode events
-            | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batching.BatchSize version, Array.chooseV tryDecode events }
+            | None -> return Token.ofPreviousTokenAndEventsLength streamToken events.Length batchOptions.BatchSize version, Array.chooseV tryDecode events
+            | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV tryDecode events }
 
-    member _.TrySync(log, streamName, (Token.Unpack token as streamToken), events, encodedEvents : EventData array, isCompactionEventType): Async<GatewaySyncResult> = async {
+    member internal _.TrySync(log, streamName, (Token.Unpack token as streamToken), events, encodedEvents : EventData array, isCompactionEventType): Async<GatewaySyncResult> = async {
         let streamVersion = token.streamVersion
-        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
+        let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents
         match wr with
         | EsSyncResult.Conflict actualVersion ->
             return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting actualVersion)
@@ -341,15 +347,15 @@ type EventStoreContext(conn : EventStoreConnection, batching : BatchingPolicy) =
                 match isCompactionEventType with
                 | None -> Token.ofNonCompacting version'
                 | Some isCompactionEvent ->
-                    match events |> Array.ofList |> Array.tryFindIndexBack isCompactionEvent with
-                    | None -> Token.ofPreviousTokenAndEventsLength streamToken encodedEvents.Length batching.BatchSize version'
+                    match events |> Array.tryFindIndexBack isCompactionEvent with
+                    | None -> Token.ofPreviousTokenAndEventsLength streamToken encodedEvents.Length batchOptions.BatchSize version'
                     | Some compactionEventIndex ->
-                        Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batching.BatchSize version'
+                        Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batchOptions.BatchSize version'
             return GatewaySyncResult.Written token }
 
     member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<EventBody>[]) : Async<GatewaySyncResult> = async {
-        let encodedEvents : EventData[] = events |> Array.map UnionEncoderAdapters.eventDataOfEncodedEvent
-        let! wr = Write.writeEvents log conn.WriteRetryPolicy conn.WriteConnection streamName streamVersion encodedEvents
+        let encodedEvents : EventData[] = events |> Array.map ClientCodec.eventData
+        let! wr = Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents
         match wr with
         | EsSyncResult.Conflict actualVersion ->
             return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting actualVersion)
@@ -375,7 +381,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state, 'context>(context : EventStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access : AccessStrategy<'event, 'state>) =
-    let tryDecode (e : ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
+    let tryDecode (e : ResolvedEvent) = e.Event |> ClientCodec.timelineEvent |> codec.TryDecode
 
     let compactionPredicate =
         match access with
@@ -408,21 +414,21 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
 
     member _.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
-            streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event list, ctx : 'context) : Async<SyncResult<'state>> = async {
+            streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event array, ctx : 'context) : Async<SyncResult<'state>> = async {
         let encode e = codec.Encode(ctx, e)
         let events =
             match access with
             | None | Some AccessStrategy.LatestKnownEvent -> events
             | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
-                let cc = CompactionContext(List.length events, token.batchCapacityLimit.Value)
-                if cc.IsCompactionDue then events @ [fold state events |> compact] else events
+                let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
+                if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
 
-        let encodedEvents : EventData[] = events |> Seq.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent) |> Array.ofSeq
+        let encodedEvents : EventData[] = events |> Array.map (encode >> ClientCodec.eventData)
         match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate) with
         | GatewaySyncResult.ConflictUnknown _ ->
             return SyncResult.Conflict  (fun ct -> load fold state (context.LoadFromToken(true, streamName, log, streamToken, tryDecode, compactionPredicate)) |> Async.startAsTask ct)
         | GatewaySyncResult.Written token' ->
-            return SyncResult.Written   (token', fold state (Seq.ofList events)) }
+            return SyncResult.Written   (token', fold state (Seq.ofArray events)) }
 
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     let batched log streamName = category.Load(fold, initial, streamName, log)
@@ -493,67 +499,10 @@ type EventStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
         let empty = struct (context.TokenEmpty, initial)
         EventStoreCategory(resolveInner, empty)
 
-(* TODO
-type private SerilogAdapter(log : ILogger) =
-    interface EventStore.ClientAPI.ILogger with
-        member _.Debug(format : string, args : obj []) =           log.Debug(format, args)
-        member _.Debug(ex : exn, format : string, args : obj []) = log.Debug(ex, format, args)
-        member _.Info(format : string, args : obj []) =            log.Information(format, args)
-        member _.Info(ex : exn, format : string, args : obj []) =  log.Information(ex, format, args)
-        member _.Error(format : string, args : obj []) =           log.Error(format, args)
-        member _.Error(ex : exn, format : string, args : obj []) = log.Error(ex, format, args)
-
-[<RequireQualifiedAccess; NoComparison; NoEquality>]
-type Logger =
-    | SerilogVerbose of ILogger
-    | SerilogNormal of ILogger
-    | CustomVerbose of EventStore.ClientAPI.ILogger
-    | CustomNormal of EventStore.ClientAPI.ILogger
-    member log.Configure(b : ConnectionSettingsBuilder) =
-        match log with
-        | SerilogVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(SerilogAdapter(logger))
-        | SerilogNormal logger -> b.UseCustomLogger(SerilogAdapter(logger))
-        | CustomVerbose logger -> b.EnableVerboseLogging().UseCustomLogger(logger)
-        | CustomNormal logger -> b.UseCustomLogger(logger)
-*)
-
 [<RequireQualifiedAccess; NoComparison>]
 type Discovery =
     // Allow Uri-based connection definition (esdb://, etc)
     | ConnectionString of string
-(* TODO
-    /// Supply a set of pre-resolved EndPoints instead of letting Gossip resolution derive from the DNS outcome
-    | GossipSeeded of seedManagerEndpoints : System.Net.IPEndPoint []
-    // Standard Gossip-based discovery based on Dns query and standard manager port
-    | GossipDns of clusterDns : string
-    // Standard Gossip-based discovery based on Dns query (with manager port overriding default 2113)
-    | GossipDnsCustomPort of clusterDns : string * managerPortOverride : int
-
-module private Discovery =
-    let buildDns np (f : DnsClusterSettingsBuilder -> DnsClusterSettingsBuilder) =
-        ClusterSettings.Create().DiscoverClusterViaDns().KeepDiscovering()
-        |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferSlaveNode() | _ -> s
-        |> f |> fun s -> s.Build()
-
-    let buildSeeded np (f : GossipSeedClusterSettingsBuilder -> GossipSeedClusterSettingsBuilder) =
-        ClusterSettings.Create().DiscoverClusterViaGossipSeeds().KeepDiscovering()
-        |> fun s -> match np with NodePreference.Random -> s.PreferRandomNode() | NodePreference.PreferSlave -> s.PreferSlaveNode() | _ -> s
-        |> f |> fun s -> s.Build()
-
-    let configureDns clusterDns maybeManagerPort (x : DnsClusterSettingsBuilder) =
-        x.SetClusterDns(clusterDns)
-        |> fun s -> match maybeManagerPort with Some port -> s.SetClusterGossipPort(port) | None -> s
-
-    let inline configureSeeded (seedEndpoints : System.Net.IPEndPoint []) (x : GossipSeedClusterSettingsBuilder) =
-        x.SetGossipSeedEndPoints(seedEndpoints)
-
-    // converts a Discovery mode to a ClusterSettings or a Uri as appropriate
-    let (|DiscoverViaUri|DiscoverViaGossip|) : Discovery * NodePreference -> Choice<Uri,ClusterSettings> = function
-        | (Discovery.Uri uri), _ ->                         DiscoverViaUri    uri
-        | (Discovery.GossipSeeded seedEndpoints), np ->     DiscoverViaGossip (buildSeeded np   (configureSeeded seedEndpoints))
-        | (Discovery.GossipDns clusterDns), np ->           DiscoverViaGossip (buildDns np      (configureDns clusterDns None))
-        | (Discovery.GossipDnsCustomPort (dns, port)), np ->DiscoverViaGossip (buildDns np      (configureDns dns (Some port)))
-*)
 
 // see https://github.com/EventStore/EventStore/issues/1652
 [<RequireQualifiedAccess; NoComparison>]
@@ -565,42 +514,15 @@ type ConnectionStrategy =
 
 type EventStoreConnector
     (   reqTimeout : TimeSpan, reqRetries : int,
-        ?readRetryPolicy, ?writeRetryPolicy, ?tags,
-        ?customize : EventStoreClientSettings -> unit) =
-(* TODO port
-    let connSettings node =
-      ConnectionSettings.Create().SetDefaultUserCredentials(SystemData.UserCredentials(username, password))
-        .KeepReconnecting() // ES default: .LimitReconnectionsTo(10)
-        .SetQueueTimeoutTo(reqTimeout) // ES default: Zero/unlimited
-        .FailOnNoServerResponse() // ES default: DoNotFailOnNoServerResponse() => wait forever; retry and/or log
-        .SetOperationTimeoutTo(reqTimeout) // ES default: 7s
-        .LimitRetriesForOperationTo(reqRetries) // ES default: 10
-        |> fun s ->
-            match node with
-            | NodePreference.Master         -> s.PerformOnMasterOnly()                  // explicitly use ES default of requiring master, use default Node preference of Master
-            | NodePreference.PreferMaster   -> s.PerformOnAnyNode()                     // override default [implied] PerformOnMasterOnly(), use default Node preference of Master
-            // NB .PreferSlaveNode/.PreferRandomNode setting is ignored if using EventStoreConneciton.Create(ConnectionSettings, ClusterSettings) overload but
-            // this code is necessary for cases where people are using the discover :// and related URI schemes
-            | NodePreference.PreferSlave    -> s.PerformOnAnyNode().PreferSlaveNode()   // override default PerformOnMasterOnly(), override Master Node preference
-            | NodePreference.Random         -> s.PerformOnAnyNode().PreferRandomNode()  // override default PerformOnMasterOnly(), override Master Node preference
-        |> fun s -> match concurrentOperationsLimit with Some col -> s.LimitConcurrentOperationsTo(col) | None -> s // ES default: 5000
-        |> fun s -> match heartbeatTimeout with Some v -> s.SetHeartbeatTimeout v | None -> s // default: 1500 ms
-        |> fun s -> match gossipTimeout with Some v -> s.SetGossipTimeout v | None -> s // default: 1000 ms
-        |> fun s -> match clientConnectionTimeout with Some v -> s.WithConnectionTimeoutOf v | None -> s // default: 1000 ms
-        |> fun s -> match log with Some log -> log.Configure s | None -> s
-        |> fun s -> s.Build()
-*)
+        [<O; D null>] ?readRetryPolicy, [<O; D null>] ?writeRetryPolicy, [<O; D null>] ?tags,
+        [<O; D null>] ?customize : EventStoreClientSettings -> unit) =
+
     member _.Connect
         (   // Name should be sufficient to uniquely identify this connection within a single app instance's logs
             name, discovery : Discovery, ?clusterNodePreference) : EventStoreClient =
         let settings =
             match discovery with
             | Discovery.ConnectionString s -> EventStoreClientSettings.Create(s)
-(* TODO
-            | Discovery.DiscoverViaGossip clusterSettings ->
-                // NB This overload's implementation ignores the calls to ConnectionSettingsBuilder.PreferSlaveNode/.PreferRandomNode and
-                // requires equivalent ones on the GossipSeedClusterSettingsBuilder or ClusterSettingsBuilder
-                EventStoreConnection.Create(connSettings clusterNodePreference, clusterSettings, sanitizedName) *)
         if name = null then nullArg "name"
         let name = String.concat ";" <| seq {
             name

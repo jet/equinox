@@ -56,10 +56,10 @@ type Startup() =
 
         let verbose = p.Contains Verbose
         let maybeSeq = if p.Contains LocalSeq then Some "http://localhost:5341" else None
-        let createStoreLog verboseStore =
+        let createStoreLog storeVerbose =
             let c = LoggerConfiguration().Destructure.FSharpTypes()
-            let c = if verboseStore then c.MinimumLevel.Debug() else c
-            let c = c.WriteTo.Console((if verboseStore && verbose then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
+            let c = if storeVerbose then c.MinimumLevel.Debug() else c
+            let c = c.WriteTo.Console((if storeVerbose && verbose then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
             let c = match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)
             c.CreateLogger() :> ILogger
 
@@ -71,17 +71,17 @@ type Startup() =
             let cache = if options |> List.exists (function Cached -> true | _ -> false) then Equinox.Cache(Storage.appName, sizeMb = 50) |> Some else None
             match p.GetSubCommand() with
             | Cosmos sp ->
-                let storeLog = createStoreLog <| sp.Contains Storage.Cosmos.Parameters.VerboseStore
+                let storeLog = createStoreLog <| sp.Contains Storage.Cosmos.Parameters.StoreVerbose
                 log.Information("CosmosDB Storage options: {options:l}", options)
                 Storage.Cosmos.config log (cache, unfolds) (Storage.Cosmos.Arguments sp), storeLog
             | Dynamo sp ->
-                let storeLog = createStoreLog <| sp.Contains Storage.Dynamo.Parameters.VerboseStore
+                let storeLog = createStoreLog <| sp.Contains Storage.Dynamo.Parameters.StoreVerbose
                 log.Information("DynamoDB Storage options: {options:l}", options)
                 Storage.Dynamo.config log (cache, unfolds) (Storage.Dynamo.Arguments sp), storeLog
             | Es sp ->
-                let storeLog = createStoreLog <| sp.Contains Storage.EventStore.Parameters.VerboseStore
+                let storeLog = createStoreLog <| sp.Contains Storage.EventStore.Parameters.StoreVerbose
                 log.Information("EventStoreDB Storage options: {options:l}", options)
-                Storage.EventStore.config (log,storeLog) (cache, unfolds) sp, storeLog
+                Storage.EventStore.config log (cache, unfolds) sp, storeLog
             | MsSql sp ->
                 log.Information("SqlStreamStore MsSql Storage options: {options:l}", options)
                 Storage.Sql.Ms.config log (cache, unfolds) sp, log

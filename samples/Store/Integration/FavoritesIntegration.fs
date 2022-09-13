@@ -10,31 +10,36 @@ let snapshot = Favorites.Fold.isOrigin, Favorites.Fold.snapshot
 
 let createMemoryStore () = MemoryStore.VolatileStore<_>()
 let createServiceMemory log store =
-    let cat = MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial)
-    Favorites.create <| cat.Resolve log
+    MemoryStore.MemoryStoreCategory(store, FsCodec.Box.Codec.Create(), fold, initial)
+    |> Decider.resolve log
+    |> Favorites.create
 
 let codec = Favorites.Events.codec
 let codecJe = Favorites.Events.codecJe
 let createServiceGes log context =
-    let cat = EventStoreDb.EventStoreCategory(context, codec, fold, initial, access = EventStoreDb.AccessStrategy.RollingSnapshots snapshot)
-    Favorites.create <| cat.Resolve log
+    EventStoreDb.EventStoreCategory(context, codec, fold, initial, access = EventStoreDb.AccessStrategy.RollingSnapshots snapshot)
+    |> Decider.resolve log
+    |> Favorites.create
 
 let createServiceCosmosSnapshotsUncached log context =
-    let cat = CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
-    Favorites.create <| cat.Resolve log
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, CosmosStore.AccessStrategy.Snapshot snapshot)
+    |> Decider.resolve log
+    |> Favorites.create
 
 let createServiceCosmosRollingStateUncached log context =
     let access = CosmosStore.AccessStrategy.RollingState Favorites.Fold.snapshot
-    let cat = CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
-    Favorites.create <| cat.Resolve log
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, CosmosStore.CachingStrategy.NoCaching, access)
+    |> Decider.resolve log
+    |> Favorites.create
 
 let createServiceCosmosUnoptimizedButCached log context =
     let access = CosmosStore.AccessStrategy.Unoptimized
     let caching =
         let cache = Cache ("name", 10)
         CosmosStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-    let cat = CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, caching, access)
-    Favorites.create <| cat.Resolve log
+    CosmosStore.CosmosStoreCategory(context, codecJe, fold, initial, caching, access)
+    |> Decider.resolve log
+    |> Favorites.create
 
 type Command =
     | Favorite      of date : System.DateTimeOffset * skuIds : SkuId list

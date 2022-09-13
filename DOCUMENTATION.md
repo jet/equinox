@@ -372,7 +372,7 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State)
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create resolve = Service(streamName >> resolve)
+let create category = Service(streamName >> Equinox.Decider.resolve Serilog.Log.Logger category)
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one
@@ -405,7 +405,7 @@ module EventStore =
             Equinox.EventStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
         let cat =
             Equinox.EventStore.EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create cat.Resolve
+        create cat
 
 module Cosmos =
     let accessStrategy =
@@ -413,9 +413,9 @@ module Cosmos =
     let create (context, cache) =
         let cacheStrategy =
             Equinox.CosmosStore.CachingStrategy.SlidingWindow (cache, System.TimeSpan.FromMinutes 20.)
-        let category =
+        let cat =
             Equinox.CosmosStore.CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        create category.Resolve
+        create cat
 ```
 
 ### `MemoryStore` Storage Binding Module
@@ -428,7 +428,7 @@ can use the `MemoryStore` in the context of your tests:
 module MemoryStore =
     let create (store : Equinox.MemoryStore.VolatileStore) =
         let cat = Equinox.MemoryStore.MemoryStoreCategory(store, Events.codec, Fold.fold, Fold.initial)
-        create cat.Resolve
+        create cat
 ```
 
 Typically that binding module can live with your test helpers rather than

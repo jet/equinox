@@ -2,6 +2,7 @@
 // i.e., if you're seeking to understand the main usage flows of the Equinox library, that's in Decider.fs, not here
 namespace Equinox.Core
 
+open System
 open System.Threading
 open System.Threading.Tasks
 
@@ -17,7 +18,7 @@ type IStream<'event, 'state> =
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value
     /// SyncResult.Conflict: implies the `events` were not synced; if desired the consumer can use the included resync workflow in order to retry
-    abstract TrySync : attempt : int * originTokenAndState : struct (StreamToken * 'state) * events : 'event list * CancellationToken -> Task<SyncResult<'state>>
+    abstract TrySync : attempt : int * originTokenAndState : struct (StreamToken * 'state) * events : 'event array * CancellationToken -> Task<SyncResult<'state>>
 
 /// Internal type used to represent the outcome of a TrySync operation
 and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
@@ -30,37 +31,33 @@ and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
 /// Store-specific opaque token to be used for synchronization purposes
 and [<Struct; NoEquality; NoComparison>] StreamToken = { value : obj; version : int64; streamBytes : int64 }
 
-module internal Impl =
+type internal Impl() =
 
-    let query struct (stream, fetch, projection) = async {
-        let! ct = Async.CancellationToken
-        let! tokenAndState = Async.AwaitTaskCorrect(fetch stream ct)
-        return projection tokenAndState }
-
-    let private run (stream : IStream<'e, 's>)
-                    (decide : struct (_ * _) -> CancellationToken -> Task<struct ('r * 'e list)>)
-                    (validateResync : int -> unit)
-                    (mapResult : 'r -> struct (StreamToken * 's) -> 'v)
-                    originTokenAndState ct : Task<'v>=
+    static let run (stream : IStream<'e, 's>)
+            (decide : Func<struct (_ * _), CancellationToken, Task<struct ('r * 'e seq)>>)
+            (validateResync : int -> unit)
+            (mapResult : Func<'r, struct (StreamToken * 's), 'v>)
+            originTokenAndState ct : Task<'v>=
         let rec loop attempt tokenAndState : Task<'v> = task {
-            let! result, events = decide tokenAndState ct
-            if List.isEmpty events then
-                return mapResult result tokenAndState
-            else
+            let! result, events = decide.Invoke(tokenAndState, ct)
+            match Array.ofSeq events with
+            | [||] -> return mapResult.Invoke(result, tokenAndState)
+            | events ->
                 match! stream.TrySync(attempt, tokenAndState, events, ct) with
                 | SyncResult.Written tokenAndState' ->
-                    return mapResult result tokenAndState'
+                    return mapResult.Invoke(result, tokenAndState')
                 | SyncResult.Conflict resync ->
                     validateResync attempt
                     let! tokenAndState = resync ct
                     return! loop (attempt + 1) tokenAndState }
         loop 1 originTokenAndState
 
-    let private transactTask stream (fetch : IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>)
-                             decide reload mapResult ct : Task<'v> = task {
+    static member QueryAsync(stream, fetch : IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>,
+                             projection : Func<struct (StreamToken * 's), 'v>, ct) : Task<'v> = task {
+        let! tokenAndState = fetch stream ct
+        return projection.Invoke tokenAndState }
+
+    static member TransactAsync(stream, fetch : IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>,
+                                decide, reload, mapResult, ct) : Task<'v> = task {
         let! originTokenAndState = fetch stream ct
         return! run stream decide reload mapResult originTokenAndState ct }
-
-    let transact (stream, fetch, decide, reload, mapResult) = async {
-        let! ct = Async.CancellationToken
-        return! Async.AwaitTaskCorrect(transactTask stream fetch decide reload mapResult ct) }

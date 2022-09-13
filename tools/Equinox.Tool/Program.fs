@@ -147,14 +147,14 @@ and DumpArguments(p: ParseResults<DumpParameters>) =
         let storeConfig = None, true
         match p.GetSubCommand() with
         | DumpParameters.Cosmos p ->
-            let storeLog = createStoreLog <| p.Contains Storage.Cosmos.Parameters.VerboseStore
+            let storeLog = createStoreLog <| p.Contains Storage.Cosmos.Parameters.StoreVerbose
             storeLog, Storage.Cosmos.config log storeConfig (Storage.Cosmos.Arguments p)
         | DumpParameters.Dynamo p ->
-            let storeLog = createStoreLog <| p.Contains Storage.Dynamo.Parameters.VerboseStore
+            let storeLog = createStoreLog <| p.Contains Storage.Dynamo.Parameters.StoreVerbose
             storeLog, Storage.Dynamo.config log storeConfig (Storage.Dynamo.Arguments p)
         | DumpParameters.Es p ->
-            let storeLog = createStoreLog <| p.Contains Storage.EventStore.Parameters.VerboseStore
-            storeLog, Storage.EventStore.config (log, storeLog) storeConfig p
+            let storeLog = createStoreLog <| p.Contains Storage.EventStore.Parameters.StoreVerbose
+            storeLog, Storage.EventStore.config log storeConfig p
         | DumpParameters.MsSql p ->
             let storeLog = createStoreLog false
             storeLog, Storage.Sql.Ms.config log storeConfig p
@@ -221,15 +221,15 @@ and TestArguments(p : ParseResults<TestParameters>) =
     member x.ConfigureStore(log : ILogger, createStoreLog) =
         let cache = if x.Cache then Equinox.Cache(appName, sizeMb = 50) |> Some else None
         match p.GetSubCommand() with
-        | Cosmos p ->   let storeLog = createStoreLog <| p.Contains Storage.Cosmos.Parameters.VerboseStore
+        | Cosmos p ->   let storeLog = createStoreLog <| p.Contains Storage.Cosmos.Parameters.StoreVerbose
                         log.Information("Running transactions in-process against CosmosDB with storage options: {options:l}", x.Options)
                         storeLog, Storage.Cosmos.config log (cache, x.Unfolds) (Storage.Cosmos.Arguments p)
-        | Dynamo p ->   let storeLog = createStoreLog <| p.Contains Storage.Dynamo.Parameters.VerboseStore
+        | Dynamo p ->   let storeLog = createStoreLog <| p.Contains Storage.Dynamo.Parameters.StoreVerbose
                         log.Information("Running transactions in-process against DynamoDB with storage options: {options:l}", x.Options)
                         storeLog, Storage.Dynamo.config log (cache, x.Unfolds) (Storage.Dynamo.Arguments p)
-        | Es p ->       let storeLog = createStoreLog <| p.Contains Storage.EventStore.Parameters.VerboseStore
+        | Es p ->       let storeLog = createStoreLog <| p.Contains Storage.EventStore.Parameters.StoreVerbose
                         log.Information("Running transactions in-process against EventStore with storage options: {options:l}", x.Options)
-                        storeLog, Storage.EventStore.config (log, storeLog) (cache, x.Unfolds) p
+                        storeLog, Storage.EventStore.config log (cache, x.Unfolds) p
         | MsSql p ->    let storeLog = createStoreLog false
                         log.Information("Running transactions in-process against MsSql with storage options: {options:l}", x.Options)
                         storeLog, Storage.Sql.Ms.config log (cache, x.Unfolds) p
@@ -306,7 +306,7 @@ module LoadTest =
         execute
     let private createResultLog fileName = LoggerConfiguration().WriteTo.File(fileName).CreateLogger()
     let run (log : ILogger) (verbose, verboseConsole, maybeSeq) reportFilename (p : ParseResults<TestParameters>) =
-        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
+        let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
         let a = TestArguments p
         let storeLog, storeConfig, httpClient: ILogger * Storage.StorageConfig option * HttpClient option =
             match p.TryGetSubCommand() with
@@ -465,7 +465,7 @@ module Dump =
 
     let run (log : ILogger, verboseConsole, maybeSeq) (p : ParseResults<DumpParameters>) =
         let a = DumpArguments p
-        let createStoreLog verboseStore = createStoreLog verboseStore verboseConsole maybeSeq
+        let createStoreLog storeVerbose = createStoreLog storeVerbose verboseConsole maybeSeq
         let storeLog, storeConfig = a.ConfigureStore(log, createStoreLog)
         let doU, doE = not (p.Contains EventsOnly), not (p.Contains UnfoldsOnly)
         let doC, doJ, doS, doT = p.Contains Correlation, not (p.Contains JsonSkip), not (p.Contains Blobs), not (p.Contains TimeRegular)

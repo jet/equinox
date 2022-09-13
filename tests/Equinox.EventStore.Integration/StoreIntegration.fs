@@ -77,7 +77,7 @@ type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'co
 #endif
 #endif
 
-let createContext connection batchSize = Context(connection, BatchingPolicy(maxBatchSize = batchSize))
+let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial

@@ -154,13 +154,13 @@ module EventStore =
     let connector = EventStoreConnector(reqTimeout = TimeSpan.FromSeconds 5., reqRetries = 3)
     let esc = connector.Connect(AppName, Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false")
     let connection = EventStoreConnection(esc)
-    let context = EventStoreContext(connection, BatchingPolicy(maxBatchSize=snapshotWindow))
+    let context = EventStoreContext(connection, batchSize = snapshotWindow)
     // cache so normal read pattern is to read from whatever we've built in memory
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     // rig snapshots to be injected as events into the stream every `snapshotWindow` events
     let accessStrategy = AccessStrategy.RollingSnapshots (Fold.isValid,Fold.snapshot)
     let cat = EventStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-    let resolve = streamName >> Equinox.Decider.resolve log
+    let resolve = Equinox.Decider.resolve Log.log cat
 
 module Cosmos =
 
@@ -173,11 +173,11 @@ module Cosmos =
     let context = CosmosStoreContext(storeClient, tipMaxEvents = 10)
     let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
     let accessStrategy = AccessStrategy.Snapshot (Fold.isValid,Fold.snapshot)
-    let category = CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-    let resolve id = Equinox.Decider(Log.log, category.Resolve(streamName id), maxAttempts = 3)
+    let cat = CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
+    let resolve = Equinox.Decider.resolve Log.log cat
 
-let service = Service(EventStore.resolve)
-//let service= Service(Cosmos.resolve)
+let service = Service(streamName >> EventStore.resolve)
+//let service= Service(streamName >> Cosmos.resolve)
 
 let client = "ClientA"
 service.Add(client, 1) |> Async.RunSynchronously
