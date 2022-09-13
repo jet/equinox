@@ -57,7 +57,7 @@ type Startup() =
         let verbose = p.Contains Verbose
         let maybeSeq = if p.Contains LocalSeq then Some "http://localhost:5341" else None
         let createStoreLog storeVerbose =
-            let c = LoggerConfiguration().Destructure.FSharpTypes()
+            let c = LoggerConfiguration()
             let c = if storeVerbose then c.MinimumLevel.Debug() else c
             let c = c.WriteTo.Console((if storeVerbose && verbose then LogEventLevel.Debug else LogEventLevel.Warning), theme = Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code)
             let c = match maybeSeq with None -> c | Some endpoint -> c.WriteTo.Seq(endpoint)

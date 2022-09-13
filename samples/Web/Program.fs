@@ -29,7 +29,6 @@ let main argv =
             LoggerConfiguration()
                 .MinimumLevel.Debug()
                 .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
-                .Enrich.FromLogContext()
                 .WriteTo.Console()
                 // TOCONSIDER log and reset every minute or something ?
                 |> writeToStatsSinks

@@ -630,7 +630,6 @@ module internal Query =
 
     let feedIteratorMapTi (map : int -> StopwatchInterval -> FeedResponse<'t> -> 'u) (query : FeedIterator<'t>) : AsyncSeq<'u> =
         let rec loop i : AsyncSeq<'u> = asyncSeq {
-            if not query.HasMoreResults then return None else
             let! ct = Async.CancellationToken
             let! t, (res : FeedResponse<'t>) = query.ReadNextAsync(ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
             yield map i t res
@@ -638,7 +637,7 @@ module internal Query =
                 yield! loop (i + 1) }
         // earlier versions, such as 3.9.0, do not implement IDisposable; see linked issue for detail on when SDK team added it
         use _ = query // see https://github.com/jet/equinox/issues/225 - in the Cosmos V4 SDK, all this is managed IAsyncEnumerable
-        loop 0
+        if query.HasMoreResults then loop 0 else AsyncSeq.empty
     let private mkQuery (log : ILogger) (container : Container, stream : string) includeTip (maxItems : int) (direction : Direction, minIndex, maxIndex) : FeedIterator<Batch> =
         let order = if direction = Direction.Forward then "ASC" else "DESC"
         let query =

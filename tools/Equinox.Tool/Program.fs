@@ -258,7 +258,7 @@ let writeToStatsSinks (c : LoggerConfiguration) =
      .WriteTo.Sink(Equinox.SqlStreamStore.Log.InternalMetrics.Stats.LogSink())
 
 let createStoreLog verbose verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration().Destructure.FSharpTypes()
+    let c = LoggerConfiguration()
     let c = if verbose then c.MinimumLevel.Debug() else c
     let c = writeToStatsSinks c
     let level =
@@ -349,7 +349,7 @@ module LoadTest =
         storeConfig |> Option.iter (dumpStats log)
 
 let createDomainLog verbose verboseConsole maybeSeqEndpoint =
-    let c = LoggerConfiguration().Destructure.FSharpTypes().Enrich.FromLogContext()
+    let c = LoggerConfiguration()
     let c = if verbose then c.MinimumLevel.Debug() else c
     let c = writeToStatsSinks c
     let c = let outputTemplate = "{Timestamp:T} {Level:u1} {Message:l} {Properties}{NewLine}{Exception}"

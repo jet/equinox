@@ -47,7 +47,7 @@ module Log =
     let propResolvedEvents name (events : ResolvedEvent[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
-                let data = x.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
+                let data = x.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
                 yield System.Collections.Generic.KeyValuePair<_, _>(x.Type, data) })
 
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> Async<'t>) log : Async<'t> =
@@ -345,7 +345,7 @@ type GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
 type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batchOptions : BatchOptions) =
     let isResolvedEventEventType (tryDecode, predicate) (e : StreamMessage) =
-        let data = e.GetJsonData() |> Async.AwaitTask |> Async.RunSynchronously
+        let data = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
         predicate (tryDecode data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     new (   connection : SqlStreamStoreConnection,

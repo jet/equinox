@@ -29,8 +29,8 @@
   <ItemGroup>
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.7.1" />
     <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.7.1" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.1" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="4.1.0" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="5.2.0" />
   </ItemGroup>
 
 </Project>
