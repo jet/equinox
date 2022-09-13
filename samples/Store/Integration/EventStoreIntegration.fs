@@ -10,4 +10,4 @@ let connectToLocalEventStoreNode (_log : Serilog.ILogger) =
     // Connect to the locally running EventStore Node using Gossip-driven discovery
     c.Establish("Equinox-sample", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
 let defaultBatchSize = 500
-let createContext connection batchSize = EventStoreContext(connection, BatchingPolicy(maxBatchSize = batchSize))
+let createContext connection batchSize = EventStoreContext(connection, batchSize = batchSize)
