@@ -2441,16 +2441,7 @@ raise Issues first though ;) ).
 - Extend samples and templates; see
   [#57](https://github.com/jet/equinox/issues/57)
 
-## Wouldn't it be nice - `Equinox`
-
-- Performance tuning for non-store-specific logic; no perf tuning has been done
-  to date (though some of the Store/Domain implementations do show
-  perf-optimized fold implementation techniques). While in general the work is
-  I/O bound, there are definitely opportunities to use `System.IO.Pipelines`
-  etc, and the `MemoryStore` and `eqxtestbed` gives a good host drive this
-  improvement.
-
-## Wouldn't it be nice - `Equinox.EventStore`
+## Wouldn't it be nice - `Equinox.EventStoreDb`
 
 EventStore, and it's Store adapter is the most proven and is pretty feature
 rich relative to the need of consumers to date. Some things remain though:
@@ -2465,14 +2456,12 @@ rich relative to the need of consumers to date. Some things remain though:
 - provide for snapshots to be stored out of the stream, and loaded in a
   customizable manner in a manner analogous to
   [the proposed comparable `Equinox.CosmosStore` facility](https://github.com/jet/equinox/issues/61)
-- Provide a facility in FsCodec.ICodec to walk the Event DU to generate a list of event types; use that to generate the server-side event loading filter e.g. when a Decider used a highly selective subset of the known Event Types
+- Provide a facility in `FsCodec.IEventCodec` to walk the Event DU to generate a list of event types; use that to generate the server-side event loading filter e.g. when a Decider used a highly selective subset of the known Event Types
 - (If Server started to support it), provide a hint when loading as to the `isOrigin` Event Type so backward load can stop when it meets an Embedded Snapshot or Reset (e.g. `CartCleared`) event
-- `Propulsion.EventStore`: Provide an option to opt out of retrieving event bodies
 
 ## Wouldn't it be nice - `Equinox.SqlStreamStore`
 
 - Provide support for an `isOrigin` overload that works on the event type string; implement a two phase load algorithm that loads the events first, and then the bodies only from the origin point forward
-- `Propulsion.SqlStreamStore`: Provide an option to opt out of retrieving event bodies
 
 ## Wouldn't it be nice - `Equinox.CosmosStore`
 
