@@ -68,7 +68,7 @@ and CosmosInitArguments(p : ParseResults<InitParameters>) =
     member val SkipStoredProc =             p.Contains InitParameters.SkipStoredProc
 and [<NoComparison; NoEquality>] TableParameters =
     | [<AltCommandLine "-D"; Unique>]       OnDemand
-    | [<AltCommandLine "-s"; Unique>]       Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
+    | [<AltCommandLine "-s"; Mandatory>]    Streaming of Equinox.DynamoStore.Core.Initialization.StreamingMode
     | [<AltCommandLine "-r"; Unique>]       ReadCu of int64
     | [<AltCommandLine "-w"; Unique>]       WriteCu of int64
     | [<CliPrefix(CliPrefix.None); Last>]   Dynamo of ParseResults<Storage.Dynamo.Parameters>
@@ -77,11 +77,11 @@ and [<NoComparison; NoEquality>] TableParameters =
             | OnDemand ->                   "Specify On-Demand Capacity Mode. (Default: Provisioned mode)"
             | ReadCu _ ->                   "Specify Read Capacity Units to provision for the Table. (Not applicable in On-Demand mode)"
             | WriteCu _ ->                  "Specify Write Capacity Units to provision for the Table. (Not applicable in On-Demand mode)"
-            | Streaming _ ->                "Specify Streaming Mode. Default: `NEW_IMAGE`"
+            | Streaming _ ->                "Specify Streaming Mode: New=NEW_IMAGE, NewAndOld=NEW_AND_OLD_IMAGES, Off=Disabled."
             | Dynamo _ ->                   "DynamoDB Connection parameters."
 and DynamoInitArguments(p : ParseResults<TableParameters>) =
     let onDemand =                          p.Contains OnDemand
-    member val StreamingMode =              p.GetResult(Streaming, Equinox.DynamoStore.Core.Initialization.StreamingMode.New)
+    member val StreamingMode =              p.GetResult Streaming
     member val Throughput =                 if not onDemand then Throughput.Provisioned (ProvisionedThroughput(p.GetResult ReadCu, p.GetResult WriteCu))
                                             elif onDemand && (p.Contains ReadCu || p.Contains WriteCu) then Storage.missingArg "CUs are not applicable in On-Demand mode"
                                             else Throughput.OnDemand
