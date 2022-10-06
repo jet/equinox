@@ -593,10 +593,10 @@ module internal Sync =
                                                      |> Log.prop "eventTypes" (Seq.truncate 5 (seq { for x in appended -> x.c }))
         let appendedBytes, unfoldsBytes = Event.arrayBytes appended, Unfold.arrayBytes unfolds
         if calfBytes <> 0 then
-             log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Tip {baseE}->{tipE}e {baseB}->{tipB}b Unfolds {unfolds} {unfoldsBytes}b Calf {calfEvents} {calfBytes}b",
-                             "Sync", "Calve",  outcome, stream, exp, t.ElapsedMilliseconds, ru, appended.Length, appendedBytes, baseEvents, tipEvents, baseBytes, tipBytes, unfolds.Length, unfoldsBytes, calfCount, calfBytes)
-        else log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {exp:l} {ms:f1}ms {ru}RU {appendedE}e {appendedB}b Events {events} {tipB}b Unfolds {unfolds} {unfoldsB}b",
-                             "Sync", "Append", outcome, stream, exp, t.ElapsedMilliseconds, ru, appended.Length, appendedBytes, tipEvents, tipBytes, unfolds.Length, unfoldsBytes)
+             log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {ms:f1}ms {ru}RU {exp:l} {appendedE}e {appendedB}b Tip {baseE}->{tipE}e {baseB}->{tipB}b Unfolds {unfolds} {unfoldsBytes}b Calf {calfEvents} {calfBytes}b",
+                             "Sync", "Calve",  outcome, stream, t.ElapsedMilliseconds, ru, exp, appended.Length, appendedBytes, baseEvents, tipEvents, baseBytes, tipBytes, unfolds.Length, unfoldsBytes, calfCount, calfBytes)
+        else log.Information("EqxDynamo {action:l}{act:l} {outcome:l} {stream:l} {ms:f1}ms {ru}RU {exp:l} {appendedE}e {appendedB}b Events {events} {tipB}b Unfolds {unfolds} {unfoldsB}b",
+                             "Sync", "Append", outcome, stream, t.ElapsedMilliseconds, ru, exp, appended.Length, appendedBytes, tipEvents, tipBytes, unfolds.Length, unfoldsBytes)
         return result }
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -659,9 +659,8 @@ module internal Tip =
             let eventsCount, unfoldsCount, bb, ub = tip.e.Length, tip.u.Length, Batch.bytesBase tip, Batch.bytesUnfolds tip
             let log = logMetric (bb + ub) (eventsCount + unfoldsCount) Log.Metric.Tip
             let log = match maybePos with Some p -> log |> Log.prop "startPos" p |> Log.prop "startEtag" p | None -> log
-            let log = log |> Log.prop "etag" tip.etag //|> Log.prop "n" tip.n
-            log.Information("EqxDynamo {action:l} {res} {stream:l} v{n} {ms:f1}ms {ru}RU {events}e {unfolds}u {baseBytes}+{unfoldsBytes}b",
-                            "Tip", 200, stream, tip.n, t.ElapsedMilliseconds, ru, eventsCount, unfoldsCount, bb, ub)
+            log.Information("EqxDynamo {action:l} {res} {stream:l} v{n} {ms:f1}ms {ru}RU {etag} {events}e {unfolds}u {baseBytes}+{unfoldsBytes}b",
+                            "Tip", 200, stream, tip.n, t.ElapsedMilliseconds, ru, tip.etag, eventsCount, unfoldsCount, bb, ub)
         return ru, res }
     let private enumEventsAndUnfolds (minIndex, maxIndex) (x : Batch) : ITimelineEvent<InternalBody> array =
         Seq.append<ITimelineEvent<_>> (Batch.enumEvents (minIndex, maxIndex) x |> Seq.cast) (x.u |> Seq.cast)
@@ -760,12 +759,13 @@ module internal Query =
                 |> AsyncSeq.takeWhileInclusive (function
                     | struct (x, ValueSome e) when isOrigin e ->
                         found <- true
+                        let logLevel = if x.i = 0 then Events.LogEventLevel.Debug else Events.LogEventLevel.Information
                         match lastResponse with
-                        | None -> log.Information("EqxDynamo Stop stream={stream} at={index} {case}", stream, x.i, x.c)
+                        | None -> log.ForContext("stream", stream).Write(logLevel, "EqxDynamo Stop @{index} {case}", x.i, x.c)
                         | Some batch ->
                             let used, residual = batch |> calculateUsedVersusDroppedPayload x.i
-                            log.Information("EqxDynamo Stop stream={stream} at={index} {case} used={used} residual={residual}",
-                                            stream, x.i, x.c, used, residual)
+                            log.ForContext("stream", stream)
+                               .Write(logLevel, "EqxDynamo Stop @{index} {case} used {used}b residual {residual}b", x.i, x.c, used, residual)
                         false
                     | _ -> true)
                 |> AsyncSeq.toArrayAsync
