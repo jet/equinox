@@ -29,7 +29,7 @@ module Events =
         /// Addition of a collection of skus to the list
         | Added of Added
         interface TypeShape.UnionContract.IUnionContract
-    let codec = EventCodec.create<Event>()
+    let codec = EventCodec.gen<Event>
 
 module Fold =
     open Events

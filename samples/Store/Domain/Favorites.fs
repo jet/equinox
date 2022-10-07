@@ -14,8 +14,8 @@ module Events =
         | Favorited                             of Favorited
         | Unfavorited                           of Unfavorited
         interface TypeShape.UnionContract.IUnionContract
-    let codec = EventCodec.create<Event>()
-    let codecJe = EventCodec.createJson<Event>()
+    let codec = EventCodec.gen<Event>
+    let codecJe = EventCodec.genJsonElement<Event>
 
 module Fold =
 
