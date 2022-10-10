@@ -18,7 +18,8 @@ database stores <<Internal>> [
     **Consistent Event Store**
     ____
     EventStore / SqlStreamStore
-    CosmosDB / MemoryStore
+    MemoryStore
+    CosmosDB / DynamoDB 
     (snapshots / unfolds)
 ]
 

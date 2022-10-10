@@ -24,7 +24,7 @@ Worked examples and a slightly different take on DDD (the appendix on
 Functional Event sourcing is not far from what we have around these parts;
 which is [not surprising given there's input from Jérémie Chassaing](https://github.com/thinkbeforecoding/FsUno.Prod))
 
-_Functional Event Sourcing Decider_, [Jérémie Chassaing](https://twitter.com/thinkb4coding), 2021.
+[_Functional Event Sourcing Decider_](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider), [Jérémie Chassaing](https://twitter.com/thinkb4coding), 2021.
 Precursor to an excellent book covering this space more broadly. There's teasers with extensive code walk-through and discussion in [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ)
 
 - **Your link here** - Please add materials that helped you on your journey so
@@ -270,11 +270,19 @@ Request Units            | Pre-provisioned Virtual units representing used to go
 Request Charge           | Number of Request Units charged for a specific action, apportioned against the RU cacity of the relevant Range for that second
 Stored Procedure         | JavaScript code stored in a Container that (repeatedly) maps an input request to a set of actions to be transacted as a group within CosmosDB. Incurs equivalent Request Charges for work performed; can chain to a continuation internally after a read or write. Limited to 5 seconds of processing time per action.
 
+## DynamoDB
+
+Term                     | Description
+-------------------------|------------
+Table                    | Defined storage in DynamoDB, defining a schema and (optionally), a Streams configuration. (There's no notion of a Database)
+Streams                  | Buffer used to record information about all changes with a 24h retention window
+Transactions             | Feature allowing up to 100 atomic updates across multiple tables and logical partitions. Doubles the RU cost of a write 
+
 ## EventStore
 
 Term                      | Description
 --------------------------|------------
-Category                  | Group of Streams bearing a common prefix `{category}-{streamId}`
+Category                  | Group of Streams bearing a common prefix `{category}-{streamId}` (events are indexed into `$ec-{Category}` by system projections)
 Event                     | json or blob payload, together with an Event Type name representing an Event
 EventStore                | [Open source](https://eventstore.org) Event Sourcing-optimized data store server and programming model with powerful integrated projection facilities
 Rolling Snapshot          | Event written to an EventStore stream in order to ensure minimal store roundtrips when there is a Cache miss
