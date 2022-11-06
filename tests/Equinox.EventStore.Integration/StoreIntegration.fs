@@ -18,7 +18,7 @@ let connectToLocalStore (_ : ILogger) =
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
+#endif
 #if STORE_MSSQL
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MsSql
@@ -36,7 +36,7 @@ docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
+#endif
 #if STORE_MYSQL
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MySql
@@ -46,8 +46,8 @@ let connectToLocalStore (_ : ILogger) =
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
-#if !STORE_EVENTSTORE_LEGACY
+#endif
+#if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
 
 /// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
@@ -55,19 +55,8 @@ let connectToLocalStore (_log : ILogger) = async {
     let c = EventStoreConnector(reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, (*, log=Logger.SerilogVerbose log,*) tags=["I",Guid.NewGuid() |> string])
     let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
-#else
-#if STORE_MESSAGEDB
-open Equinox.MessageDb
-let connectToLocalStore (_log: ILogger) = async {
-  let connectionString = "Host=localhost; Username=message_store; Password=message_store; Database=message_store"
-  let conn = Npgsql.NpgsqlConnection(connectionString)
-  do! conn.OpenAsync() |> Async.AwaitTaskCorrect
-  return conn
-}
-
-type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>
-#else // STORE_EVENTSTORE_LEGACY
+#endif
+#if STORE_EVENTSTORE_LEGACY
 open Equinox.EventStore
 
 // NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
@@ -83,11 +72,9 @@ let connectToLocalStore log =
     ).Establish("Equinox-integration", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
 #endif
 #endif
-#endif
+#if STORE_EVENTSTORE_LEGACY || STORE_EVENTSTOREDB
 type Context = EventStoreContext
 type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
-#endif
-#endif
 #endif
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
@@ -97,7 +84,7 @@ module Cart =
     let codec = Cart.Events.codec
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
-        Category(context, Cart.Events.codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
+        Category(context, codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
     let createServiceWithCompaction log context =
         Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
