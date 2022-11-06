@@ -77,17 +77,17 @@ EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.Core", "src\Equinox.Core\Equinox.Core.fsproj", "{3021659A-5CA4-4E06-AF00-2457ED3F105B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "diagrams", "diagrams", "{596FFDD5-8B3C-4D5E-865A-962AFBB210FF}"
-ProjectSection(SolutionItems) = preProject
-	diagrams\MemoryStore.puml = diagrams\MemoryStore.puml
-	diagrams\context.puml = diagrams\context.puml
-	diagrams\container.puml = diagrams\container.puml
-	diagrams\MemoryStoreContainer.puml = diagrams\MemoryStoreContainer.puml
-	diagrams\EventStoreCode.puml = diagrams\EventStoreCode.puml
-	diagrams\EventStore.puml = diagrams\EventStore.puml
-	diagrams\CosmosContainer.puml = diagrams\CosmosContainer.puml
-	diagrams\CosmosComponent.puml = diagrams\CosmosComponent.puml
-	diagrams\CosmosCode.puml = diagrams\CosmosCode.puml
-EndProjectSection
+	ProjectSection(SolutionItems) = preProject
+		diagrams\MemoryStore.puml = diagrams\MemoryStore.puml
+		diagrams\context.puml = diagrams\context.puml
+		diagrams\container.puml = diagrams\container.puml
+		diagrams\MemoryStoreContainer.puml = diagrams\MemoryStoreContainer.puml
+		diagrams\EventStoreCode.puml = diagrams\EventStoreCode.puml
+		diagrams\EventStore.puml = diagrams\EventStore.puml
+		diagrams\CosmosContainer.puml = diagrams\CosmosContainer.puml
+		diagrams\CosmosComponent.puml = diagrams\CosmosComponent.puml
+		diagrams\CosmosCode.puml = diagrams\CosmosCode.puml
+	EndProjectSection
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.CosmosStore.Prometheus", "src\Equinox.CosmosStore.Prometheus\Equinox.CosmosStore.Prometheus.fsproj", "{3107BBC1-2BCB-4750-AED0-42B1F4CD1909}"
 EndProject
@@ -100,6 +100,10 @@ EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Integration", "tests\Equinox.DynamoStore.Integration\Equinox.DynamoStore.Integration.fsproj", "{2C8FCD63-4A3C-4EA6-88E0-E0F287B0F47A}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.DynamoStore.Prometheus", "src\Equinox.DynamoStore.Prometheus\Equinox.DynamoStore.Prometheus.fsproj", "{A9AF41B3-AB28-4296-B4A4-B90DA7821476}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.MessageDb", "src\Equinox.MessageDb\Equinox.MessageDb.fsproj", "{C58EF49C-9961-403B-8F0E-5E95315642C2}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.MessageDb.Integration", "tests\Equinox.MessageDb.Integration\Equinox.MessageDb.Integration.fsproj", "{60348FC6-1403-491D-9547-35F594D92320}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -227,6 +231,14 @@ Global
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A9AF41B3-AB28-4296-B4A4-B90DA7821476}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C58EF49C-9961-403B-8F0E-5E95315642C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C58EF49C-9961-403B-8F0E-5E95315642C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C58EF49C-9961-403B-8F0E-5E95315642C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C58EF49C-9961-403B-8F0E-5E95315642C2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{60348FC6-1403-491D-9547-35F594D92320}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{60348FC6-1403-491D-9547-35F594D92320}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{60348FC6-1403-491D-9547-35F594D92320}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{60348FC6-1403-491D-9547-35F594D92320}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

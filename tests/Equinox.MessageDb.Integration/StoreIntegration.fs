@@ -1,4 +1,5 @@
-﻿module Equinox.Store.Integration.StoreIntegration
+module Equinox.MessageDb.Integration.StoreIntegration
+
 
 open Domain
 open FSharp.UMX
@@ -6,125 +7,38 @@ open Serilog
 open Swensen.Unquote
 open System.Threading
 open System
+open Equinox.MessageDb
+open Npgsql
 
 let defaultBatchSize = 500
 
-#if STORE_POSTGRES
-open Equinox.SqlStreamStore
-open Equinox.SqlStreamStore.Postgres
-
-let connectToLocalStore (_ : ILogger) =
-    Connector("Host=localhost;User Id=postgres;password=password;database=EQUINOX_TEST_DB",autoCreate=true).Establish()
-
-type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
-#if STORE_MSSQL
-open Equinox.SqlStreamStore
-open Equinox.SqlStreamStore.MsSql
-
-let connectToLocalStore (_ : ILogger) =
-    Connector(sprintf "Server=localhost,1433;User=sa;Password=mssql1Ipw;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
-
-(* WORKAROUND FOR https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719
-AFTER `docker compose up`, run:
-
-docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
-    -S localhost -U sa -P mssql1Ipw \
-    -Q "CREATE database EQUINOX_TEST_DB"
-*)
-
-type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
-#if STORE_MYSQL
-open Equinox.SqlStreamStore
-open Equinox.SqlStreamStore.MySql
-
-let connectToLocalStore (_ : ILogger) =
-    Connector(sprintf "Server=localhost;User=root;Database=EQUINOX_TEST_DB",autoCreate=true).Establish()
-
-type Context = SqlStreamStoreContext
-type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
-#if !STORE_EVENTSTORE_LEGACY
-open Equinox.EventStoreDb
-
-/// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
-let connectToLocalStore (_log : ILogger) = async {
-    let c = EventStoreConnector(reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, (*, log=Logger.SerilogVerbose log,*) tags=["I",Guid.NewGuid() |> string])
-    let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
-    return conn }
-#else
-#if STORE_MESSAGEDB
-open Equinox.MessageDb
-let connectToLocalStore (_log: ILogger) = async {
+let connectToLocalStore (_log: ILogger) = task {
   let connectionString = "Host=localhost; Username=message_store; Password=message_store; Database=message_store"
-  let conn = Npgsql.NpgsqlConnection(connectionString)
-  do! conn.OpenAsync() |> Async.AwaitTaskCorrect
+  let conn = new NpgsqlConnection(connectionString)
+  do! conn.OpenAsync()
   return conn
 }
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>
-#else // STORE_EVENTSTORE_LEGACY
-open Equinox.EventStore
-
-// NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
-let connectToLocalStore log =
-    // NOTE: disable cert validation for this test suite. ABSOLUTELY DO NOT DO THIS FOR ANY CODE THAT WILL EVER HIT A STAGING OR PROD SERVER
-    EventStoreConnector("admin", "changeit", custom = (fun c -> c.DisableServerCertificateValidation()),
-    reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, log=Logger.SerilogVerbose log, tags=["I",Guid.NewGuid() |> string]
-#if EVENTSTORE_NO_CLUSTER
-    // Connect directly to the locally running EventStore Node without using Gossip-driven discovery
-    ).Establish("Equinox-integration", Discovery.Uri(Uri "tcp://localhost:1113"), ConnectionStrategy.ClusterSingle NodePreference.Master)
-#else
-    // Connect directly to the locally running EventStore Node using Gossip-driven discovery
-    ).Establish("Equinox-integration", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
-#endif
-#endif
-#endif
-type Context = EventStoreContext
-type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
-#endif
-#endif
-#endif
-
-let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let codec = Cart.Events.codec
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
-        Category(context, Cart.Events.codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
-    let createServiceWithCompaction log context =
-        Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
-        |> Equinox.Decider.resolve log
-        |> Cart.create
-    let createServiceWithCaching log context cache =
-        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, codec, fold, initial, sliding20m)
-        |> Equinox.Decider.resolve log
-        |> Cart.create
-
-    let createServiceWithCompactionAndCaching log context cache =
-        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
-        |> Equinox.Decider.resolve log
-        |> Cart.create
+        Category(context, Cart.Events.codecJe, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
-    let codec = ContactPreferences.Events.codec
+    let codec = ContactPreferences.Events.codecJe
     let createServiceWithoutOptimization log connection =
-        let context = createContext connection defaultBatchSize
-        Category(context, codec, fold, initial)
+        Category(connection, codec, fold, initial)
         |> Equinox.Decider.resolve log
         |> ContactPreferences.create
 
     let createService log connection =
-        Category(createContext connection 1, codec, fold, initial, access = AccessStrategy.LatestKnownEvent)
+        Category(connection, codec, fold, initial)
         |> Equinox.Decider.resolve log
         |> ContactPreferences.create
 
@@ -156,21 +70,17 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
-        let! connection = connectToLocalStore log
+        use! connection = connectToLocalStore log |> Async.AwaitTask
+        let connection = MessageDbStore(connection)
 
-        let batchSize = 3
-        let context = createContext connection batchSize
-        let service = Cart.createServiceWithoutOptimization log context
+        let service = Cart.createServiceWithoutOptimization log connection
 
         // The command processing should trigger only a single read and a single write call
         let addRemoveCount = 6
         let cartId = % Guid.NewGuid()
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne ctx cartId skuId service addRemoveCount
-        test <@ batchForwardAndAppend = capture.ExternalCalls @>
 
-        // Restart the counting
-        capture.Clear()
 
         // Validate basic operation; Key side effect: Log entries will be emitted to `capture`
         let! state = service.Read cartId
@@ -186,7 +96,8 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = Async.RunSynchronously <| async {
         let log1, capture1 = output.CreateLoggerWithCapture()
 
-        let! connection = connectToLocalStore log1
+        use! connection = connectToLocalStore log1 |> Async.AwaitTask
+        let connection = MessageDbStore(connection)
         // Ensure batching is included at some point in the proceedings
         let batchSize = 3
 
@@ -435,3 +346,5 @@ type Tests(testOutputHelper) =
         let suboptimalExtraSlice : EsAct list = sliceForward
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }
+
+
