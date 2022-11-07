@@ -1,7 +1,6 @@
 namespace Equinox.MessageDb
 
 open System
-open System.Data
 open System.Text.Json
 open System.Threading.Tasks
 open FsCodec
@@ -11,10 +10,11 @@ open NpgsqlTypes
 
 exception WrongExpectedVersion
 
-type MessageDbClient(source: NpgsqlDataSource) =
+type MessageDbClient(source: unit -> Task<NpgsqlConnection>) =
     member __.ReadStream(streamName: string, fromPosition: int64, batchSize: int64, ct) =
         task {
-            use cmd = source.CreateCommand()
+            use! conn = source()
+            use cmd = conn.CreateCommand()
 
             cmd.CommandText <-
                 "select
@@ -84,43 +84,28 @@ type MessageDbClient(source: NpgsqlDataSource) =
         version
         (message: IEventData<JsonElement>)
         =
-        cmd.CommandText <- "select 1 from write_message(@Id, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)"
+        cmd.CommandText <- "select 1 from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)"
 
-        cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Text, message.EventId.ToString())
-        |> ignore
-
-        cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName)
-        |> ignore
-
-        cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, message.EventType)
-        |> ignore
-
-        cmd.Parameters.AddWithValue("Data", NpgsqlDbType.Jsonb, message.Data.GetRawText())
-        |> ignore
-
-        cmd.Parameters.AddWithValue(
-            "Meta",
-            NpgsqlDbType.Jsonb,
-            match message.Meta.ValueKind with
-            | JsonValueKind.Null
-            | JsonValueKind.Undefined -> "null"
-            | _ -> message.Meta.GetRawText()
-        )
-        |> ignore
-
-        cmd.Parameters.AddWithValue("ExpectedVersion", NpgsqlDbType.Bigint, version)
-        |> ignore
+        cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, message.EventId) |> ignore
+        cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
+        cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, message.EventType) |> ignore
+        let data, meta = message.Data, message.Meta
+        cmd.Parameters.AddWithValue("Data", NpgsqlDbType.Jsonb, data.GetRawText()) |> ignore
+        let meta =
+            match meta.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> "null"
+            | _ -> meta.GetRawText()
+        cmd.Parameters.AddWithValue("Meta", NpgsqlDbType.Jsonb, meta) |> ignore
+        cmd.Parameters.AddWithValue("ExpectedVersion", NpgsqlDbType.Bigint, version) |> ignore
 
         cmd
 
     member __.WriteMessages(streamName, events, version: int64, ct) =
         task {
             try
-                use! conn = source.OpenConnectionAsync()
+                use! conn = source ()
                 use transaction = conn.BeginTransaction()
-
-                use batch =
-                    new NpgsqlBatch(conn, transaction)
+                use batch = new NpgsqlBatch(conn, transaction)
 
                 let mutable expectedVersion = version
 
