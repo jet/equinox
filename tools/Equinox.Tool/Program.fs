@@ -288,7 +288,7 @@ let dumpStats log = function
     | Storage.StorageConfig.Dynamo _ -> Equinox.DynamoStore.Core.Log.InternalMetrics.dump log
     | Storage.StorageConfig.Es _ ->     Equinox.EventStoreDb.Log.InternalMetrics.dump log
     | Storage.StorageConfig.Sql _ ->    Equinox.SqlStreamStore.Log.InternalMetrics.dump log
-    | Storage.StorageConfig.MsgDb _ ->  Equinox.MessageDb.Log.InternalMetrics.dump log
+    | Storage.StorageConfig.Msg _ ->  Equinox.MessageDb.Log.InternalMetrics.dump log
     | Storage.StorageConfig.Memory _ -> ()
 
 module LoadTest =

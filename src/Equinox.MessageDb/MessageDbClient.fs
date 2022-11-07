@@ -2,18 +2,20 @@ namespace Equinox.MessageDb
 
 open System
 open System.Text.Json
+open System.Threading
 open System.Threading.Tasks
 open FsCodec
 open FsCodec.Core
 open Npgsql
 open NpgsqlTypes
 
-exception WrongExpectedVersion
+[<RequireQualifiedAccess; NoEquality; NoComparison>]
+type MdbSyncResult = Written of int64 | ConflictUnknown
 
-type MessageDbClient(source: unit -> Task<NpgsqlConnection>) =
-    member __.ReadStream(streamName: string, fromPosition: int64, batchSize: int64, ct) =
+type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
+    member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, ct) =
         task {
-            use! conn = source()
+            use! conn = source ct
             use cmd = conn.CreateCommand()
 
             cmd.CommandText <-
@@ -78,12 +80,8 @@ type MessageDbClient(source: unit -> Task<NpgsqlConnection>) =
             return events.ToArray()
         }
 
-    member private _.PrepareWriteCommand
-        (cmd: NpgsqlBatchCommand)
-        (streamName: string)
-        version
-        (message: IEventData<JsonElement>)
-        =
+    member private _.PrepareWriteCommand(streamName : string, version, message : IEventData<JsonElement>) =
+        let cmd = NpgsqlBatchCommand()
         cmd.CommandText <- "select 1 from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)"
 
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, message.EventId) |> ignore
@@ -100,27 +98,23 @@ type MessageDbClient(source: unit -> Task<NpgsqlConnection>) =
 
         cmd
 
-    member __.WriteMessages(streamName, events, version: int64, ct) =
+    member __.WriteMessages(streamName, events : _ array, version : int64, ct) =
         task {
             try
-                use! conn = source ()
+                use! conn = source ct
                 use transaction = conn.BeginTransaction()
                 use batch = new NpgsqlBatch(conn, transaction)
 
                 let mutable expectedVersion = version
 
                 for event in events do
-                    batch.BatchCommands.Add(
-                        __.PrepareWriteCommand (NpgsqlBatchCommand()) streamName expectedVersion event
-                    )
+                    batch.BatchCommands.Add(__.PrepareWriteCommand(streamName, expectedVersion, event))
 
                     expectedVersion <- expectedVersion + 1L
 
                 do! batch.ExecuteNonQueryAsync(ct) :> Task
                 do! transaction.CommitAsync(ct)
-            with :? PostgresException as ex ->
-                if ex.Message.Contains("Wrong expected version") then
-                    raise WrongExpectedVersion
-                else
-                    raise ex
+                return MdbSyncResult.Written(version + int64 events.Length)
+            with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
+                return MdbSyncResult.ConflictUnknown
         }
