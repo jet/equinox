@@ -166,7 +166,6 @@ module private Write =
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
 module private Read =
-    open FSharp.Control
     let private readSliceAsync (conn : IEventStoreConnection) (streamName : string) (batchSize : int64) (startPos : int64) ct
         : Task<_> = task {
         let! page = conn.ReadStream(streamName, startPos, batchSize, ct)
@@ -179,13 +178,14 @@ module private Read =
         }
     let (|ResolvedEventLen|) (x : ResolvedEvent) =
         match x.Data, x.Meta with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
-    let private loggedReadSlice conn streamName direction batchSize startPos (log : ILogger) : Async<_> = async {
-        let! t, slice = readSliceAsync conn streamName direction batchSize startPos |> Async.AwaitTaskCorrect |> Stopwatch.Time
+    let private loggedReadSlice conn streamName batchSize startPos (log : ILogger) : Async<_> = async {
+        let! ct = Async.CancellationToken
+        let! t, slice = readSliceAsync conn streamName batchSize startPos ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let bytes, count = slice.Messages |> Array.sumBy (|ResolvedEventLen|), slice.Messages.Length
         let reqMetric : Log.Measurement ={ stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice (reqMetric)
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propResolvedEvents "Json" slice.Messages
-        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("SqlEs{action:l} count={count} version={version}",
+        (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("MsgdbEs{action:l} count={count} version={version}",
             "Read", count, slice.LastVersion)
         return slice }
     let private readBatches (log : ILogger) (readSlice : int64 -> ILogger -> Async<StreamEventsSlice>)
@@ -216,7 +216,7 @@ module private Read =
         let action = "Load"
         let evt = Log.Metric.Batch (batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            "SqlEs{action:l} stream={stream} count={count}/{batches} version={version}",
+            "MsgDbEs{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
     let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
         : Async<int64 * ResolvedEvent[]> = async {
@@ -229,8 +229,7 @@ module private Read =
                 |> AsyncSeq.toArrayAsync
             let version = versionFromStream
             return version, events }
-        let! ct = Async.CancellationToken
-        let call pos = loggedReadSlice conn streamName batchSize pos ct
+        let call pos = loggedReadSlice conn streamName batchSize pos
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let batches : AsyncSeq<int64 * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
