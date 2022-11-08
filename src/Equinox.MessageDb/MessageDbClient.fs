@@ -91,7 +91,7 @@ type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
 
         // Npgsql does not support ReadOnlyMemory<byte>
         // as a json property. It must be a byte[]
-        let meta = if meta.Length = 0 then jsonNull else meta.ToArray()
+        let meta = match message.Meta with m when m.IsEmpty -> jsonNull | m -> m.ToArray()
         let data = data.ToArray()
 
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, message.EventId) |> ignore
