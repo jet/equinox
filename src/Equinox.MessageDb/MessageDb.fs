@@ -21,11 +21,11 @@ module Log =
     type Measurement = { stream : string; interval : StopwatchInterval; bytes : int; count : int }
     [<NoEquality; NoComparison>]
     type Metric =
+        | Slice of Measurement
+        | Last of Measurement
+        | Batch of slices : int * Measurement
         | WriteSuccess of Measurement
         | WriteConflict of Measurement
-        | Slice of Measurement
-        | Batch of slices : int * Measurement
-        | Last of Measurement
     let [<return: Struct>] (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric voption =
         let mutable p = Unchecked.defaultof<_>
         logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
@@ -67,10 +67,10 @@ module Log =
             let (|Read|Write|Resync|Rollup|) = function
                 | Slice (Stats s) -> Read s
                 | Last (Stats s) -> Read s
-                | WriteSuccess (Stats s) -> Write s
-                | WriteConflict (Stats s) -> Resync s
                 // slices are rolled up into batches so be sure not to double-count
                 | Batch (_, Stats s) -> Rollup s
+                | WriteSuccess (Stats s) -> Write s
+                | WriteConflict (Stats s) -> Resync s
             type Counter =
                 { mutable count : int64; mutable ms : int64 }
                 static member Create() = { count = 0L; ms = 0L }
