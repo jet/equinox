@@ -214,8 +214,8 @@ module private Read =
     let logLastEventRead streamName t event version (log: ILogger) =
         let bytes =
             match event with
-            | ValueSome(ResolvedEventLen(len))-> len
-            | _ -> 0
+            | ValueSome (ResolvedEventLen len) -> len
+            | ValueNone -> 0
         let count = 1
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = 1
@@ -365,7 +365,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 
 
-/// For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
+/// For MessageDb, caching is less critical than it is for e.g. CosmosDB
 /// As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type CachingStrategy =
@@ -385,8 +385,6 @@ type CachingStrategy =
 type MessageDbCategory<'event, 'state, 'context>(resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
     new (   context : MessageDbContext, codec : FsCodec.IEventCodec<_, _, 'context>, fold, initial,
-            // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
-            // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
             [<O; D(null)>]?caching,
             [<O; D(null)>]?access) =
         let inner = Category<'event, 'state, 'context>(context, codec, ?access = access)
