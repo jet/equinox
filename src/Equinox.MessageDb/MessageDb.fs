@@ -286,21 +286,21 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
     member val BatchOptions = batchOptions
 
     member _.TokenEmpty = Token.create -1L
-    member _.LoadBatched streamName log tryDecode : Async<StreamToken * 'event array> = async {
+    member _.LoadBatched(streamName, log, tryDecode) : Async<StreamToken * 'event array> = async {
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.ReadConnection batchOptions.BatchSize batchOptions.MaxBatches streamName 0L
         return Token.create version, Array.chooseV tryDecode events }
-    member _.LoadLast streamName log tryDecode : Async<StreamToken * 'event array> = async {
+    member _.LoadLast(streamName, log, tryDecode) : Async<StreamToken * 'event array> = async {
         let! version, event = Read.loadLastEvent log connection.ReadRetryPolicy connection.ReadConnection streamName
         return Token.create version, event |> ValueOption.bind tryDecode |> ValueOption.toArray
     }
-    member _.LoadFromToken useWriteConn streamName log token tryDecode
+    member _.LoadFromToken(useWriteConn, streamName, log, token, tryDecode)
         : Async<StreamToken * 'event array> = async {
         let streamPosition = token.version + 1L
         let connToUse = if useWriteConn then connection.WriteConnection else connection.ReadConnection
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connToUse batchOptions.BatchSize batchOptions.MaxBatches streamName streamPosition
         return Token.create (max token.version version), Array.chooseV tryDecode events
       }
-    member _.TrySync log streamName (token) (events, encodedEvents : IEventData<Format> array) : Async<GatewaySyncResult> = async {
+    member _.TrySync(log, streamName, token, (events, encodedEvents : IEventData<Format> array)) : Async<GatewaySyncResult> = async {
         match! Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName token.version encodedEvents with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
@@ -325,8 +325,8 @@ type AccessStrategy =
 type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access) =
     let tryDecode = codec.TryDecode
     let loadAlgorithm load streamName initial log =
-        let batched = load initial (context.LoadBatched streamName log tryDecode)
-        let last = load initial (context.LoadLast streamName log tryDecode)
+        let batched = load initial (context.LoadBatched(streamName, log, tryDecode))
+        let last = load initial (context.LoadLast(streamName, log, tryDecode))
         match access with
         | None -> batched
         | Some AccessStrategy.LatestKnownEvent -> last
@@ -336,15 +336,15 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
     member _.Load(fold : 'state -> 'event seq -> 'state) (initial : 'state) (streamName : string) (log : ILogger) : Async<struct (StreamToken * 'state)> =
         loadAlgorithm (load fold) streamName initial log
     member _.LoadFromToken (fold : 'state -> 'event seq -> 'state) (state : 'state) (streamName : string) token (log : ILogger) : Async<struct (StreamToken * 'state)> =
-        (load fold) state (context.LoadFromToken false streamName log token tryDecode)
+        (load fold) state (context.LoadFromToken(false, streamName, log, token, tryDecode))
     member _.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
             streamName, token, state : 'state, events : 'event array, ctx : 'context) : Async<SyncResult<'state>> = async {
         let encode e = codec.Encode(ctx, e)
         let encodedEvents : IEventData<Format> array = events |> Array.map encode
-        match! context.TrySync log streamName token (events, encodedEvents) with
+        match! context.TrySync(log, streamName, token, (events, encodedEvents)) with
         | GatewaySyncResult.ConflictUnknown ->
-            return SyncResult.Conflict  (fun ct -> load fold state (context.LoadFromToken true streamName log token tryDecode) |> Async.startAsTask ct)
+            return SyncResult.Conflict  (fun ct -> load fold state (context.LoadFromToken(true, streamName, log, token, tryDecode)) |> Async.startAsTask ct)
         | GatewaySyncResult.Written token' ->
             return SyncResult.Written   (token', fold state (Seq.ofArray events)) }
 
