@@ -186,7 +186,7 @@ and [<NoComparison; NoEquality>] TestParameters =
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">]    MsSql     of ParseResults<Storage.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">]    MySql     of ParseResults<Storage.Sql.My.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">]    Postgres  of ParseResults<Storage.Sql.Pg.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "msgdb">] MessageDb of ParseResults<Storage.Sql.MsgDb.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "msgdb">] MessageDb of ParseResults<Storage.MessageDb.Parameters>
     | [<CliPrefix(CliPrefix.None); Last>]                      Web      of ParseResults<WebParameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
