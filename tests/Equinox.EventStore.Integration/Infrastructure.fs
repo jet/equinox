@@ -46,6 +46,10 @@ module SerilogHelpers =
 #if STORE_MESSAGEDB // MessageDB has no backwards reading
         | Log.Slice _ -> EsAct.SliceForward
         | Log.Batch _ -> EsAct.BatchForward
+        // we pretend that reading the last event
+        // is a batched backwards read to comply with
+        // the test harnesses expectations
+        | Log.Last _ -> EsAct.BatchBackward
 #else
         | Log.Batch (Direction.Forward,_,_) -> EsAct.BatchForward
         | Log.Batch (Direction.Backward,_,_) -> EsAct.BatchBackward

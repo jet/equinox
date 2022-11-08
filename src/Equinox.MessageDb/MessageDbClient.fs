@@ -1,6 +1,7 @@
 namespace Equinox.MessageDb
 
 open System
+open System.Data.Common
 open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
@@ -13,72 +14,88 @@ open NpgsqlTypes
 type MdbSyncResult = Written of int64 | ConflictUnknown
 
 type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
-    member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, ct) =
-        task {
-            use! conn = source ct
-            use cmd = conn.CreateCommand()
+    let readRow (reader: DbDataReader) =
+        let meta =
+            if reader.IsDBNull(3) then
+                "null"
+            else
+                reader.GetString(3)
 
-            cmd.CommandText <-
-                "select
-                   position, type, data, metadata, id::uuid,
-                   (metadata::jsonb->>'$correlationId')::text,
-                   (metadata::jsonb->>'$causationId')::text,
-                   time
-                 from get_stream_messages(@StreamName, @FromPosition, @BatchSize)"
+        let time =
+            DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)
 
-            cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName)
-            |> ignore
+        let timestamp = DateTimeOffset(time)
 
-            cmd.Parameters.AddWithValue("FromPosition", NpgsqlDbType.Bigint, fromPosition)
-            |> ignore
+        TimelineEvent.Create(
+            index = reader.GetInt64(0),
+            eventType = reader.GetString(1),
+            data = JsonSerializer.Deserialize<JsonElement>(reader.GetString(2)),
+            meta = JsonSerializer.Deserialize<JsonElement>(meta),
+            eventId = reader.GetGuid(4),
+            ?correlationId =
+                (if reader.IsDBNull(5) then
+                     None
+                 else
+                     Some(reader.GetString(5))),
+            ?causationId =
+                (if reader.IsDBNull(6) then
+                     None
+                 else
+                     Some(reader.GetString(6))),
+            timestamp = timestamp
+        )
+    member _.ReadLastEvent(streamName : string, ct) = task {
+        use! conn = source ct
+        use cmd = conn.CreateCommand()
+        cmd.CommandText <-
+            "select
+               position, type, data, metadata, id::uuid,
+               (metadata::jsonb->>'$correlationId')::text,
+               (metadata::jsonb->>'$causationId')::text,
+               time
+             from get_last_stream_message(@StreamName);"
+        cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
+        use reader = cmd.ExecuteReader()
 
-            cmd.Parameters.AddWithValue("BatchSize", NpgsqlDbType.Bigint, batchSize)
-            |> ignore
+        let! hasRow = reader.ReadAsync(ct)
+        if hasRow then
+            return ValueSome(readRow reader)
+        else
+            return ValueNone
+    }
+    member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, ct) = task {
+        use! conn = source ct
+        use cmd = conn.CreateCommand()
 
-            use reader = cmd.ExecuteReader()
+        cmd.CommandText <-
+            "select
+               position, type, data, metadata, id::uuid,
+               (metadata::jsonb->>'$correlationId')::text,
+               (metadata::jsonb->>'$causationId')::text,
+               time
+             from get_stream_messages(@StreamName, @FromPosition, @BatchSize)"
 
-            let! hasNext = reader.ReadAsync(ct)
-            let events = ResizeArray()
-            let mutable hasNext = hasNext
+        cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName)
+        |> ignore
 
-            while hasNext do
-                let meta =
-                    if reader.IsDBNull(3) then
-                        "null"
-                    else
-                        reader.GetString(3)
+        cmd.Parameters.AddWithValue("FromPosition", NpgsqlDbType.Bigint, fromPosition)
+        |> ignore
 
-                let time =
-                    DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)
+        cmd.Parameters.AddWithValue("BatchSize", NpgsqlDbType.Bigint, batchSize)
+        |> ignore
 
-                let timestamp = DateTimeOffset(time)
+        use reader = cmd.ExecuteReader()
 
-                let timelineEvent =
-                    TimelineEvent.Create(
-                        index = reader.GetInt64(0),
-                        eventType = reader.GetString(1),
-                        data = JsonSerializer.Deserialize<JsonElement>(reader.GetString(2)),
-                        meta = JsonSerializer.Deserialize<JsonElement>(meta),
-                        eventId = reader.GetGuid(4),
-                        ?correlationId =
-                            (if reader.IsDBNull(5) then
-                                 None
-                             else
-                                 Some(reader.GetString(5))),
-                        ?causationId =
-                            (if reader.IsDBNull(6) then
-                                 None
-                             else
-                                 Some(reader.GetString(6))),
-                        timestamp = timestamp
-                    )
+        let! hasNext = reader.ReadAsync(ct)
+        let events = ResizeArray()
+        let mutable hasNext = hasNext
 
-                events.Add(timelineEvent)
-                let! next = reader.ReadAsync(ct)
-                hasNext <- next
+        while hasNext do
+            events.Add(readRow reader)
+            let! next = reader.ReadAsync(ct)
+            hasNext <- next
 
-            return events.ToArray()
-        }
+        return events.ToArray() }
 
     member private _.PrepareWriteCommand(streamName : string, version, message : IEventData<JsonElement>) =
         let cmd = NpgsqlBatchCommand()
@@ -98,23 +115,17 @@ type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
 
         cmd
 
-    member __.WriteMessages(streamName, events : _ array, version : int64, ct) =
-        task {
-            try
-                use! conn = source ct
-                use transaction = conn.BeginTransaction()
-                use batch = new NpgsqlBatch(conn, transaction)
+    member __.WriteMessages(streamName, events : _ array, version : int64, ct) = task {
+        try
+            use! conn = source ct
+            use transaction = conn.BeginTransaction()
+            use batch = new NpgsqlBatch(conn, transaction)
 
-                let mutable expectedVersion = version
+            let prep i event = batch.BatchCommands.Add(__.PrepareWriteCommand(streamName, version + int64 i, event))
+            events |> Array.iteri prep
 
-                for event in events do
-                    batch.BatchCommands.Add(__.PrepareWriteCommand(streamName, expectedVersion, event))
-
-                    expectedVersion <- expectedVersion + 1L
-
-                do! batch.ExecuteNonQueryAsync(ct) :> Task
-                do! transaction.CommitAsync(ct)
-                return MdbSyncResult.Written(version + int64 events.Length)
-            with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
-                return MdbSyncResult.ConflictUnknown
-        }
+            do! batch.ExecuteNonQueryAsync(ct) :> Task
+            do! transaction.CommitAsync(ct)
+            return MdbSyncResult.Written(version + int64 events.Length)
+        with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
+            return MdbSyncResult.ConflictUnknown }

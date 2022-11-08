@@ -26,6 +26,7 @@ module Log =
         | WriteConflict of Measurement
         | Slice of Measurement
         | Batch of slices : int * Measurement
+        | Last of Measurement
     let [<return: Struct>] (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric voption =
         let mutable p = Unchecked.defaultof<_>
         logEvent.Properties.TryGetValue(PropertyTag, &p) |> ignore
@@ -68,6 +69,7 @@ module Log =
 
             let (|Read|Write|Resync|Rollup|) = function
                 | Slice (Stats s) -> Read s
+                | Last (Stats s) -> Read s
                 | WriteSuccess (Stats s) -> Write s
                 | WriteConflict (Stats s) -> Resync s
                 // slices are rolled up into batches so be sure not to double-count
@@ -168,7 +170,7 @@ module private Read =
             match Seq.tryLast page with
             | Some ev -> ev.Index
             | None -> -1L
-        return {Messages = page; IsEnd = isLast; LastVersion = lastVersion }
+        return { Messages = page; IsEnd = isLast; LastVersion = lastVersion }
         }
     let (|ResolvedEventLen|) (x : ITimelineEvent<JsonElement>) =
         match x.Data, x.Meta with Log.BlobLen bytes, Log.BlobLen metaBytes -> bytes + metaBytes
@@ -212,6 +214,31 @@ module private Read =
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Msgdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
+    let logLastEventRead streamName t event version (log: ILogger) =
+        let bytes =
+            match event with
+            | ValueSome(ResolvedEventLen(len))-> len
+            | _ -> 0
+        let count = 1
+        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
+        let batches = 1
+        let action = "LoadL"
+        let evt = Log.Metric.Last reqMetric
+        (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
+            "Msgdb{action:l} stream={stream} count={count}/{batches} version={version}",
+            action, streamName, count, batches, version)
+
+    let loadLastEvent (log : ILogger) retryPolicy (conn : MessageDbClient) streamName
+        : Async<int64 * ITimelineEvent<JsonElement> voption> = async {
+        let! ct = Async.CancellationToken
+        let! t, lastEvent = conn.ReadLastEvent(streamName, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
+        let version =
+            match lastEvent with
+            | ValueSome event -> event.Index
+            | ValueNone ->       -1L
+        log |> logLastEventRead streamName t lastEvent version
+        return version, lastEvent
+        }
     let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition
         : Async<int64 * ITimelineEvent<JsonElement> array> = async {
         let mergeBatches (batches : AsyncSeq<int64 * ITimelineEvent<JsonElement> array>) = async {
@@ -265,6 +292,11 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
     member _.LoadBatched streamName log tryDecode : Async<StreamToken * 'event array> = async {
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.ReadConnection batchOptions.BatchSize batchOptions.MaxBatches streamName 0L
         return Token.create version, Array.chooseV tryDecode events }
+    member _.LoadLast streamName log tryDecode : Async<StreamToken * 'event array> = async {
+        let! version, event = Read.loadLastEvent log connection.ReadRetryPolicy connection.ReadConnection streamName
+        let toArray = function | ValueSome e -> [| e |] | ValueNone -> [||]
+        return Token.create version, event |> ValueOption.bind tryDecode |> toArray
+    }
     member _.LoadFromToken useWriteConn streamName log token tryDecode
         : Async<StreamToken * 'event array> = async {
         let streamPosition = token.version + 1L
@@ -288,10 +320,20 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
             let token = Token.create version'
             return GatewaySyncResult.Written token }
 
-type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : FsCodec.IEventCodec<_, _, 'context>) =
+[<NoComparison; NoEquality; RequireQualifiedAccess>]
+type AccessStrategy =
+    /// Load only the single most recent event defined in <c>'event</c> and trust that doing a <c>fold</c> from any such event
+    /// will yield a correct and complete state
+    /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
+    | LatestKnownEvent
+type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access) =
     let tryDecode = codec.TryDecode
     let loadAlgorithm load streamName initial log =
-        load initial (context.LoadBatched streamName log tryDecode)
+        let batched = load initial (context.LoadBatched streamName log tryDecode)
+        let last = load initial (context.LoadLast streamName log tryDecode)
+        match access with
+        | None -> batched
+        | Some AccessStrategy.LatestKnownEvent -> last
     let load (fold : 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
         return struct (token, fold initial events) }
@@ -349,8 +391,9 @@ type MessageDbCategory<'event, 'state, 'context>(resolveInner, empty) =
     new (   context : MessageDbContext, codec : FsCodec.IEventCodec<_, _, 'context>, fold, initial,
             // Caching can be overkill for EventStore esp considering the degree to which its intrinsic caching is a first class feature
             // e.g., A key benefit is that reads of streams more than a few pages long get completed in constant time after the initial load
-            [<O; D(null)>]?caching) =
-        let inner = Category<'event, 'state, 'context>(context, codec)
+            [<O; D(null)>]?caching,
+            [<O; D(null)>]?access) =
+        let inner = Category<'event, 'state, 'context>(context, codec, ?access = access)
         let readCacheOption =
             match caching with
             | None -> None

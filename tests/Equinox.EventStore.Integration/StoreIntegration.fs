@@ -47,6 +47,16 @@ let connectToLocalStore (_ : ILogger) =
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
 #endif
+#if STORE_MESSAGEDB
+open Equinox.MessageDb
+let connectToLocalStore log = async {
+  let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5433; Maximum Pool Size=10"
+  let connector = MessageDbConnector(connectionString, connectionString)
+  return connector.Establish()
+}
+type Context = MessageDbContext
+type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>
+#endif
 #if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
 
@@ -81,29 +91,42 @@ let createContext connection batchSize = Context(connection, batchSize = batchSi
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
+    #if STORE_MESSAGEDB
+    let codec = Cart.Events.codecJe
+    #else
     let codec = Cart.Events.codec
+    #endif
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
         Category(context, codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
+
+    #if !STORE_MESSAGEDB
     let createServiceWithCompaction log context =
         Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
+    #endif
     let createServiceWithCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
+    #if !STORE_MESSAGEDB
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
+    #endif
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
+    #if STORE_MESSAGEDB
+    let codec = ContactPreferences.Events.codecJe
+    #else
     let codec = ContactPreferences.Events.codec
+    #endif
     let createServiceWithoutOptimization log connection =
         let context = createContext connection defaultBatchSize
         Category(context, codec, fold, initial)
@@ -245,7 +268,7 @@ type Tests(testOutputHelper) =
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
-#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
+#if STORE_EVENTSTOREDB || STORE_MESSAGEDB // gRPC does not expose slice metrics
     let sliceBackward = []
 #else
     let sliceBackward = [EsAct.SliceBackward]
@@ -253,6 +276,7 @@ type Tests(testOutputHelper) =
     let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
 
+#if !STORE_MESSAGEDB
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
@@ -293,6 +317,7 @@ type Tests(testOutputHelper) =
         let! _ = service.Read cartId
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
     }
+#endif
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
@@ -378,6 +403,7 @@ type Tests(testOutputHelper) =
         test <@ [EsAct.AppendConflict; yield! sliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
     }
 
+#if !STORE_MESSAGEDB
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can combine compaction with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
@@ -422,3 +448,4 @@ type Tests(testOutputHelper) =
         let suboptimalExtraSlice : EsAct list = sliceForward
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }
+#endif
