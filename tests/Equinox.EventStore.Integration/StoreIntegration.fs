@@ -91,11 +91,7 @@ let createContext connection batchSize = Context(connection, batchSize = batchSi
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
-    #if STORE_MESSAGEDB
-    let codec = Cart.Events.codecJe
-    #else
     let codec = Cart.Events.codec
-    #endif
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
         Category(context, codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
@@ -122,11 +118,7 @@ module Cart =
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
-    #if STORE_MESSAGEDB
-    let codec = ContactPreferences.Events.codecJe
-    #else
     let codec = ContactPreferences.Events.codec
-    #endif
     let createServiceWithoutOptimization log connection =
         let context = createContext connection defaultBatchSize
         Category(context, codec, fold, initial)
