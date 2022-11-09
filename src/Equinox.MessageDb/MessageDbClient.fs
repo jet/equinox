@@ -33,7 +33,9 @@ type MessageDbClient(createConnection: CancellationToken -> Task<NpgsqlConnectio
             ?correlationId = readNullableString 5,
             ?causationId = readNullableString 6,
             timestamp = timestamp)
+
     let jsonNull = JsonSerializer.SerializeToUtf8Bytes(null)
+
     member _.ReadLastEvent(streamName : string, ct) = task {
         use! conn = createConnection ct
         use cmd = conn.CreateCommand()
@@ -45,14 +47,12 @@ type MessageDbClient(createConnection: CancellationToken -> Task<NpgsqlConnectio
                time
              from get_last_stream_message(@StreamName);"
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
-        use reader = cmd.ExecuteReader()
-
-        let! hasRow = reader.ReadAsync(ct)
-        if hasRow then
-            return ValueSome(readRow reader)
+        use! reader = cmd.ExecuteReaderAsync(ct)
+        if reader.Read() then
+            return ValueSome (readRow reader)
         else
-            return ValueNone
-    }
+            return ValueNone }
+
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, ct) = task {
         use! conn = createConnection ct
         use cmd = conn.CreateCommand()
@@ -69,16 +69,15 @@ type MessageDbClient(createConnection: CancellationToken -> Task<NpgsqlConnectio
         cmd.Parameters.AddWithValue("FromPosition", NpgsqlDbType.Bigint, fromPosition) |> ignore
         cmd.Parameters.AddWithValue("BatchSize", NpgsqlDbType.Bigint, batchSize) |> ignore
 
-        use reader = cmd.ExecuteReader()
+        use! reader = cmd.ExecuteReaderAsync(ct)
 
         let events = ResizeArray()
-
-        let! hasNext = reader.ReadAsync(ct)
-        let mutable hasNext = hasNext
-        while hasNext do
+        let! hasRow = reader.ReadAsync(ct)
+        let mutable hasRow = hasRow
+        while hasRow do
             events.Add(readRow reader)
-            let! next = reader.ReadAsync(ct)
-            hasNext <- next
+            let! nextHasRow = reader.ReadAsync(ct)
+            hasRow <- nextHasRow
 
         return events.ToArray() }
 
