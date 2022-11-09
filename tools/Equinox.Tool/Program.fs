@@ -243,7 +243,7 @@ and TestArguments(p : ParseResults<TestParameters>) =
                         storeLog, Storage.Sql.Pg.config log (cache, x.Unfolds) p
         | MessageDb p -> let storeLog = createStoreLog false
                          log.Information("Running transactions in-process against MessageDb with storage options: {options:l}", x.Options)
-                         storeLog, Storage.Sql.MsgDb.config log cache p
+                         storeLog, Storage.MessageDb.config log cache p
         | Memory _ ->   log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", x.Options)
                         createStoreLog false, Storage.MemoryStore.config ()
         | x ->          Storage.missingArg $"unexpected subcommand %A{x}"
