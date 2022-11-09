@@ -1,6 +1,7 @@
 ﻿namespace Equinox.MessageDb
 
 open Equinox.Core
+open Equinox.MessageDb.Core
 open FSharp.Control
 open FsCodec
 open Npgsql
@@ -324,17 +325,15 @@ type AccessStrategy =
     | LatestKnownEvent
 type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access) =
     let tryDecode = codec.TryDecode
-    let loadAlgorithm load streamName initial log =
-        let batched = load initial (context.LoadBatched(streamName, log, tryDecode))
-        let last = load initial (context.LoadLast(streamName, log, tryDecode))
+    let loadAlgorithm load streamName log =
         match access with
-        | None -> batched
-        | Some AccessStrategy.LatestKnownEvent -> last
+        | None -> load (context.LoadBatched(streamName, log, tryDecode))
+        | Some AccessStrategy.LatestKnownEvent -> load (context.LoadLast(streamName, log, tryDecode))
     let load (fold : 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
         return struct (token, fold initial events) }
     member _.Load(fold : 'state -> 'event seq -> 'state) (initial : 'state) (streamName : string) (log : ILogger) : Async<struct (StreamToken * 'state)> =
-        loadAlgorithm (load fold) streamName initial log
+        loadAlgorithm (load fold initial) streamName log
     member _.LoadFromToken (fold : 'state -> 'event seq -> 'state) (state : 'state) (streamName : string) token (log : ILogger) : Async<struct (StreamToken * 'state)> =
         (load fold) state (context.LoadFromToken(false, streamName, log, token, tryDecode))
     member _.TrySync<'context>

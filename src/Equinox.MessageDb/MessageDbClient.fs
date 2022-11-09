@@ -1,25 +1,23 @@
-namespace Equinox.MessageDb
+namespace Equinox.MessageDb.Core
 
+open FsCodec
+open FsCodec.Core
+open Npgsql
+open NpgsqlTypes
 open System
 open System.Data.Common
 open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
-open FsCodec
-open FsCodec.Core
-open Npgsql
-open NpgsqlTypes
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
 
-type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
+type MessageDbClient(createConnection: CancellationToken -> Task<NpgsqlConnection>) =
     let readonly (bytes: byte array) = ReadOnlyMemory.op_Implicit(bytes)
     let readRow (reader: DbDataReader) =
         let readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
-        let correlationId = readNullableString 5
-        let causationId = readNullableString 6
         let time = DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)
         let data = reader.GetFieldValue<byte array>(2) |> readonly
         let meta = reader.GetFieldValue<byte array>(3) |> readonly
@@ -32,12 +30,12 @@ type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
             data = data,
             meta = meta,
             eventId = reader.GetGuid(4),
-            ?correlationId = correlationId,
-            ?causationId = causationId,
+            ?correlationId = readNullableString 5,
+            ?causationId = readNullableString 6,
             timestamp = timestamp)
     let jsonNull = JsonSerializer.SerializeToUtf8Bytes(null)
     member _.ReadLastEvent(streamName : string, ct) = task {
-        use! conn = source ct
+        use! conn = createConnection ct
         use cmd = conn.CreateCommand()
         cmd.CommandText <-
             "select
@@ -56,7 +54,7 @@ type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
             return ValueNone
     }
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, ct) = task {
-        use! conn = source ct
+        use! conn = createConnection ct
         use cmd = conn.CreateCommand()
 
         cmd.CommandText <-
@@ -73,10 +71,10 @@ type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
 
         use reader = cmd.ExecuteReader()
 
-        let! hasNext = reader.ReadAsync(ct)
         let events = ResizeArray()
-        let mutable hasNext = hasNext
 
+        let! hasNext = reader.ReadAsync(ct)
+        let mutable hasNext = hasNext
         while hasNext do
             events.Add(readRow reader)
             let! next = reader.ReadAsync(ct)
@@ -87,12 +85,11 @@ type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
     member private _.PrepareWriteCommand(streamName : string, version, message : IEventData<Format>) =
         let cmd = NpgsqlBatchCommand()
         cmd.CommandText <- "select 1 from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)"
-        let meta, data = message.Meta, message.Data
 
         // Npgsql does not support ReadOnlyMemory<byte>
         // as a json property. It must be a byte[]
         let meta = match message.Meta with m when m.IsEmpty -> jsonNull | m -> m.ToArray()
-        let data = data.ToArray()
+        let data = message.Data.ToArray()
 
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, message.EventId) |> ignore
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
@@ -104,8 +101,7 @@ type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
         cmd
 
     member client.WriteMessages(streamName, events : _ array, version : int64, ct) = task {
-        try
-            use! conn = source ct
+        try use! conn = createConnection ct
             use transaction = conn.BeginTransaction()
             use batch = new NpgsqlBatch(conn, transaction)
 
@@ -116,6 +112,6 @@ type MessageDbClient(source: CancellationToken -> Task<NpgsqlConnection>) =
 
             do! batch.ExecuteNonQueryAsync(ct) :> Task
             do! transaction.CommitAsync(ct)
-            return MdbSyncResult.Written(version + int64 events.Length)
+            return MdbSyncResult.Written (version + int64 events.Length)
         with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
             return MdbSyncResult.ConflictUnknown }
