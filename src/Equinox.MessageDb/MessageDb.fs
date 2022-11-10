@@ -218,7 +218,7 @@ module private Read =
 
     let logLastEventRead streamName t events version (log: ILogger) =
         let bytes = resolvedEventBytes events
-        let count = 1
+        let count = events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
