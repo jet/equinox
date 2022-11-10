@@ -263,10 +263,10 @@ module private Token =
         x.version > current.version
 
 type MessageDbConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    member _.ReadConnection = readConnection
-    member _.ReadRetryPolicy = readRetryPolicy
-    member _.WriteConnection = defaultArg writeConnection readConnection
-    member _.WriteRetryPolicy = writeRetryPolicy
+    member val ReadConnection = readConnection
+    member val ReadRetryPolicy = readRetryPolicy
+    member val WriteConnection = defaultArg writeConnection readConnection
+    member val WriteRetryPolicy = writeRetryPolicy
 
 type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
     new (batchSize) = BatchOptions(fun () -> batchSize)
