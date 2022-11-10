@@ -503,7 +503,7 @@ MessageDb support is provided in the samples and the `eqx` tool:
 - being able to supply `mdb` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" mdb -c "pgconnectionstring"`
 - being able to supply `mdb` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- mdb -c "pgconnectionstring"`
 
-Equinox does not provide utilities for configuring or installing message-db. MessageDB provides installation instructions [here](http://docs.eventide-project.org/user-guide/message-db/install.html).
+Equinox does not provide utilities for configuring or installing message-db. See [MessageDB's installation documentation](http://docs.eventide-project.org/user-guide/message-db/install.html).
 
 <a name="dynamodb"></a>
 ### Use [Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html)
