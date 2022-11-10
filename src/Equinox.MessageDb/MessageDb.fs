@@ -164,10 +164,7 @@ module private Write =
 
 module private Read =
     let private toSlice (events : ITimelineEvent<Format> array) isLast =
-        let lastVersion =
-            match Array.tryLast events with
-            | Some ev -> ev.Index
-            | None -> -1L
+        let lastVersion = match Array.tryLast events with Some ev -> ev.Index | None -> -1L
         { Messages = events; IsEnd = isLast; LastVersion = lastVersion }
 
     let private readSliceAsync (conn : MessageDbClient) (streamName : string) (batchSize : int64) (startPos : int64) ct
