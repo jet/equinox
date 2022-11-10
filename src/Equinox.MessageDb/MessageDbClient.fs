@@ -52,7 +52,7 @@ type MessageDbClient internal (createConnection: CancellationToken -> Task<Npgsq
         if hasRow then
             return [| readRow reader |]
         else
-            return [||] }
+            return Array.empty }
 
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, ct) = task {
         use! conn = createConnection ct
