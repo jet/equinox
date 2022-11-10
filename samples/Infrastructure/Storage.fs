@@ -350,7 +350,6 @@ module MessageDb =
     open Equinox.MessageDb
     type [<NoEquality; NoComparison>] Parameters =
     | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
-    | [<AltCommandLine "-A">]       AutoCreate
     | [<AltCommandLine "-b">]       BatchSize of int
         interface IArgParserTemplate with
             member a.Usage = a |> function
