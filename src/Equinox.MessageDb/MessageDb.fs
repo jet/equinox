@@ -125,18 +125,16 @@ module Log =
             let logPeriodicRate name count = log.Information("rp{name} {count:n0}", name, count)
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
-
 module private Write =
     let private writeEventsAsync (log : ILogger) (conn : MessageDbClient) (streamName : string) (version : int64) (events : IEventData<EventBody> array)
         : Async<MdbSyncResult> = async {
             let! wr = conn.WriteMessages(streamName, events, version, Async.DefaultCancellationToken) |> Async.AwaitTaskCorrect
-            return
-              match wr with
-              | MdbSyncResult.ConflictUnknown ->
-                  log.Information("MdbTrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
-                                  [| for x in events -> x.EventType |], version)
-                  wr
-              | _ -> wr }
+            match wr with
+            | MdbSyncResult.ConflictUnknown ->
+                log.Information("MdbTrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
+                                [| for x in events -> x.EventType |], version)
+                return wr
+            | _ -> return wr }
 
     let inline len (bytes: EventBody) = bytes.Length
     let eventDataBytes events =
@@ -151,11 +149,11 @@ module private Write =
         let! t, result = writeEventsAsync writeLog conn streamName version events |> Stopwatch.Time
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
-            match result, reqMetric with
-            | MdbSyncResult.ConflictUnknown, m ->
-                log, Log.WriteConflict m
-            | MdbSyncResult.Written x, m ->
-                log |> Log.prop "currentPosition" x, Log.WriteSuccess m
+            match result with
+            | MdbSyncResult.ConflictUnknown ->
+                log, Log.WriteConflict reqMetric
+            | MdbSyncResult.Written x ->
+                log |> Log.prop "currentPosition" x, Log.WriteSuccess reqMetric
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
             "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
@@ -202,14 +200,9 @@ module private Read =
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
             let! slice = readSlice pos batchLog
-
-            match slice.Messages with
-            | [||] -> yield -1L, Array.empty
-            | _ ->
-                let version = slice.LastVersion
-                yield version, slice.Messages
-                if not slice.IsEnd then
-                    yield! loop (batchCount + 1) (version + 1L) }
+            yield slice.LastVersion, slice.Messages
+            if not slice.IsEnd then
+                yield! loop (batchCount + 1) (slice.LastVersion + 1L) }
         loop 0 startPosition
 
     let resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
@@ -228,10 +221,9 @@ module private Read =
         let count = 1
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
-        let batches = 1
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
-            "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
-            "ReadL", streamName, count, batches, version)
+            "Mdb{action:l} stream={stream} count={count} version={version}",
+            "ReadL", streamName, count, version)
 
     let loadLastEvent (log : ILogger) retryPolicy (conn : MessageDbClient) streamName
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
