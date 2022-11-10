@@ -317,22 +317,22 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
 type AccessStrategy =
     /// Load only the single most recent event defined in in a stream and trust that it'll be decoded and
     /// doing a <c>fold</c> from any such event will yield a correct and complete state
-    /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</state> or <c>'event</c>s.
+    /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</c> or <c>'event</c>s.
     | LatestKnownEvent
 type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : IEventCodec<_, _, 'context>, ?access) =
     let tryDecode = codec.TryDecode
-    let loadAlgorithm load streamName log =
+    let loadAlgorithm streamName log =
         match access with
-        | None -> load (context.LoadBatched(streamName, log, tryDecode))
-        | Some AccessStrategy.LatestKnownEvent -> load (context.LoadLast(streamName, log, tryDecode))
+        | None -> context.LoadBatched(streamName, log, tryDecode)
+        | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, log, tryDecode)
     let load (fold : 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
         return struct (token, fold initial events) }
     member _.Load(fold : 'state -> 'event seq -> 'state) (initial : 'state) (streamName : string) (log : ILogger) : Async<struct (StreamToken * 'state)> =
-        loadAlgorithm (load fold initial) streamName log
+        (load fold initial) (loadAlgorithm streamName log)
 
     member _.LoadFromToken (fold : 'state -> 'event seq -> 'state) (state : 'state) (streamName : string) token (log : ILogger) : Async<struct (StreamToken * 'state)> =
-        (load fold) state (context.LoadFromToken(false, streamName, log, token, tryDecode))
+        (load fold state) (context.LoadFromToken(false, streamName, log, token, tryDecode))
 
     member _.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
