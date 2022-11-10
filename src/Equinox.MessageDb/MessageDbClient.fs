@@ -48,10 +48,11 @@ type MessageDbClient(createConnection: CancellationToken -> Task<NpgsqlConnectio
              from get_last_stream_message(@StreamName);"
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
         use! reader = cmd.ExecuteReaderAsync(ct)
-        if reader.Read() then
-            return ValueSome (readRow reader)
+        let! hasRow = reader.ReadAsync(ct)
+        if hasRow then
+            return [| readRow reader |]
         else
-            return ValueNone }
+            return [||] }
 
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, ct) = task {
         use! conn = createConnection ct

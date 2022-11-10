@@ -12,7 +12,7 @@ type StorageConfig =
     | Dynamo of Equinox.DynamoStore.DynamoStoreContext * Equinox.DynamoStore.CachingStrategy * unfolds: bool
     | Es     of Equinox.EventStoreDb.EventStoreContext * Equinox.EventStoreDb.CachingStrategy option * unfolds: bool
     | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
-    | Msg    of Equinox.MessageDb.MessageDbContext * Equinox.MessageDb.CachingStrategy option
+    | Mdb    of Equinox.MessageDb.MessageDbContext * Equinox.MessageDb.CachingStrategy option
 
 module MemoryStore =
     type [<NoEquality; NoComparison>] Parameters =
@@ -365,6 +365,6 @@ module MessageDb =
         MessageDbConnector(connectionString).Establish()
     let config (log : ILogger) cache (p : ParseResults<Parameters>) =
         let a = Arguments(p)
-        let connection = connect log a.ConnectionString |> Async.AwaitTask |> Async.RunSynchronously
+        let connection = connect log a.ConnectionString
         let cache = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow(c, TimeSpan.FromMinutes 20.))
-        StorageConfig.Msg(MessageDbContext(connection, batchSize = a.BatchSize), cache)
+        StorageConfig.Mdb(MessageDbContext(connection, batchSize = a.BatchSize), cache)

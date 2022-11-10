@@ -494,6 +494,17 @@ eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=pas
 eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionstring" -p "u=un;p=password" -s "schema" # show stored JSON (Guid shown in eqx run output) 
 ```
 
+<a name="message-db"></a>
+### Use [MessageDB](http://docs.eventide-project.org/user-guide/message-db/)
+
+MessageDb support is provided in the samples and the `eqx` tool:
+
+- being able to supply `mdb` flag to `eqx run`, e.g. `eqx run -f 50 -d 5 -C -U mdb -c "pgconnectionstring"`
+- being able to supply `mdb` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" mdb -c "pgconnectionstring"`
+- being able to supply `mdb` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- mdb -c "pgconnectionstring"`
+
+Equinox does not provide utilities for configuring or installing message-db. MessageDB provides installation instructions [here](http://docs.eventide-project.org/user-guide/message-db/install.html).
+
 <a name="dynamodb"></a>
 ### Use [Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html)
 

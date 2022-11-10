@@ -260,7 +260,7 @@ type Tests(testOutputHelper) =
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
-#if STORE_EVENTSTOREDB || STORE_MESSAGEDB // gRPC does not expose slice metrics
+#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
     let sliceBackward = []
 #else
     let sliceBackward = [EsAct.SliceBackward]
