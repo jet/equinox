@@ -260,6 +260,10 @@ type Tests(testOutputHelper) =
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
+#if STORE_MESSAGEDB // MessageDB doesn't report Batches for "Read Last Event" scenarios
+    let singleBatchBackwards = [EsAct.ReadLast]
+    let batchBackwardsAndAppend = [EsAct.ReadLast; EsAct.Append]
+#else
 #if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
     let sliceBackward = []
 #else
@@ -267,6 +271,7 @@ type Tests(testOutputHelper) =
 #endif
     let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
+#endif
 
 #if !STORE_MESSAGEDB
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]

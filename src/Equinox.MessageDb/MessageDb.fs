@@ -14,10 +14,6 @@ type EventBody = ReadOnlyMemory<byte>
 [<NoComparison;NoEquality>]
 type StreamEventsSlice = { Messages: ITimelineEvent<EventBody> array; IsEnd: bool; LastVersion: int64 }
 
-[<RequireQualifiedAccess>]
-type Direction = Forward | Backward with
-    override this.ToString() = match this with Forward -> "Forward" | Backward -> "Backward"
-
 module Log =
 
     /// <summary>Name of Property used for <c>Metric</c> in <c>LogEvent</c>s.</summary>
@@ -27,8 +23,9 @@ module Log =
     type Measurement = { stream : string; interval : StopwatchInterval; bytes : int; count : int }
     [<NoEquality; NoComparison>]
     type Metric =
-        | Slice of Direction * Measurement
-        | Batch of Direction * slices : int * Measurement
+        | Slice of Measurement
+        | Batch of slices : int * Measurement
+        | ReadLast of Measurement
         | WriteSuccess of Measurement
         | WriteConflict of Measurement
     let [<return: Struct>] (|MetricEvent|_|) (logEvent : Serilog.Events.LogEvent) : Metric voption =
@@ -67,10 +64,11 @@ module Log =
         module Stats =
             let inline (|Stats|) ({ interval = i } : Measurement) = int64 i.ElapsedMilliseconds
 
-            let (|Read|Write|Resync|Rollup|) = function
-                | Slice (_ , Stats s) -> Read s
+            let (|Read|ReadL|Write|Resync|Rollup|) = function
+                | Slice (Stats s) -> Read s
                 // slices are rolled up into batches so be sure not to double-count
-                | Batch (_, _, Stats s) -> Rollup s
+                | Batch (_, Stats s) -> Rollup s
+                | ReadLast (Stats s) -> ReadL s
                 | WriteSuccess (Stats s) -> Write s
                 | WriteConflict (Stats s) -> Resync s
             type Counter =
@@ -82,10 +80,12 @@ module Log =
             type LogSink() =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
                 static member val Read = Counter.Create() with get, set
+                static member val ReadL = Counter.Create() with get, set
                 static member val Write = Counter.Create() with get, set
                 static member val Resync = Counter.Create() with get, set
                 static member Restart() =
                     LogSink.Read <- Counter.Create()
+                    LogSink.ReadL <- Counter.Create()
                     LogSink.Write <- Counter.Create()
                     LogSink.Resync <- Counter.Create()
                     let span = epoch.Elapsed
@@ -94,6 +94,7 @@ module Log =
                 interface Serilog.Core.ILogEventSink with
                     member _.Emit logEvent = logEvent |> function
                         | MetricEvent (Read stats) -> LogSink.Read.Ingest stats
+                        | MetricEvent (ReadL stats) -> LogSink.ReadL.Ingest stats
                         | MetricEvent (Write stats) -> LogSink.Write.Ingest stats
                         | MetricEvent (Resync stats) -> LogSink.Resync.Ingest stats
                         | MetricEvent (Rollup _) -> ()
@@ -104,6 +105,7 @@ module Log =
         let dump (log : ILogger) =
             let stats =
               [ "Read", Stats.LogSink.Read
+                "ReadL", Stats.LogSink.ReadL
                 "Write", Stats.LogSink.Write
                 "Resync", Stats.LogSink.Resync ]
             let logActivity name count lat =
@@ -183,8 +185,8 @@ module private Read =
         let! ct = Async.CancellationToken
         let! t, slice = readSliceAsync conn streamName batchSize startPos ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let bytes, count = slice.Messages |> Array.sumBy resolvedEventLen, slice.Messages.Length
-        let reqMetric : Log.Measurement ={ stream = streamName; interval = t; bytes = bytes; count = count}
-        let evt = Log.Slice (Direction.Forward, reqMetric)
+        let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
+        let evt = Log.Slice reqMetric
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propResolvedEvents "Json" slice.Messages
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Mdb{action:l} count={count} version={version}",
             "Read", count, slice.LastVersion)
@@ -216,7 +218,7 @@ module private Read =
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1)/ (int batchSize) + 1
         let action = "Load"
-        let evt = Log.Metric.Batch (Direction.Forward, batches, reqMetric)
+        let evt = Log.Metric.Batch (batches, reqMetric)
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
@@ -225,15 +227,11 @@ module private Read =
         let bytes = resolvedEventBytes events
         let count = 1
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
-        let sliceEvt = Log.Metric.Slice (Direction.Backward, reqMetric)
-        let loadEvt = Log.Metric.Batch (Direction.Backward, 1, reqMetric)
+        let evt = Log.Metric.ReadLast reqMetric
         let batches = 1
-        (log |> Log.prop "bytes" bytes |> Log.event sliceEvt).Information(
+        (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
-            "Read", streamName, count, batches, version)
-        (log |> Log.prop "bytes" bytes |> Log.event loadEvt).Information(
-            "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
-            "Load", streamName, count, batches, version)
+            "ReadL", streamName, count, batches, version)
 
     let loadLastEvent (log : ILogger) retryPolicy (conn : MessageDbClient) streamName
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
