@@ -260,7 +260,7 @@ module private Token =
           version = streamVersion
           streamBytes = -1 }
     let supersedes struct (current, x) =
-            x.version > current.version
+        x.version > current.version
 
 type MessageDbConnection(readConnection, [<O; D(null)>]?writeConnection, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member _.ReadConnection = readConnection
