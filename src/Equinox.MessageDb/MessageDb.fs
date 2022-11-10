@@ -306,8 +306,7 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
             return GatewaySyncResult.Written token }
 
     member _.Sync(log, streamName, streamVersion, events : IEventData<EventBody> array) : Async<GatewaySyncResult> = async {
-        let encodedEvents : IEventData<EventBody> array = events
-        match! Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents with
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion events with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->
