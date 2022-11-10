@@ -14,7 +14,7 @@ open System.Threading.Tasks
 type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
 
-type MessageDbClient(createConnection: CancellationToken -> Task<NpgsqlConnection>) =
+type MessageDbClient internal (createConnection: CancellationToken -> Task<NpgsqlConnection>) =
     let readonly (bytes: byte array) = ReadOnlyMemory.op_Implicit(bytes)
     let readRow (reader: DbDataReader) =
         let readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
