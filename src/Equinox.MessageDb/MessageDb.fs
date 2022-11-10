@@ -2,8 +2,8 @@
 
 open Equinox.Core
 open Equinox.MessageDb.Core
-open FSharp.Control
 open FsCodec
+open FSharp.Control
 open Npgsql
 open Serilog
 open System
@@ -418,16 +418,14 @@ type MessageDbCategory<'event, 'state, 'context>(resolveInner, empty) =
 type MessageDbConnector(
     connectionString : string, ?readOnlyConnectionString : string,
     [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+        let readOnlyConnectionString = defaultArg readOnlyConnectionString connectionString
         member _.Connect() =
             let connectToDb connectionString ct = task {
                 let conn = new NpgsqlConnection(connectionString)
                 do! conn.OpenAsync(ct)
                 return conn }
             let writeConnection = connectToDb connectionString
-            let readConnection =
-                match readOnlyConnectionString with
-                | Some connectionString -> connectToDb connectionString
-                | None -> writeConnection
+            let readConnection = connectToDb readOnlyConnectionString
             MessageDbClient(writeConnection), MessageDbClient(readConnection)
 
         member x.Establish() : MessageDbConnection =

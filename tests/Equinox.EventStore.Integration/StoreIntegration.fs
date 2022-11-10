@@ -49,9 +49,9 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 #endif
 #if STORE_MESSAGEDB
 open Equinox.MessageDb
-let connectToLocalStore log = async {
+let connectToLocalStore _ = async {
   let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5433; Maximum Pool Size=10"
-  let connector = MessageDbConnector(connectionString, connectionString)
+  let connector = MessageDbConnector(connectionString)
   return connector.Establish()
 }
 type Context = MessageDbContext

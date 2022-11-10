@@ -14,14 +14,14 @@ type Arguments =
     | [<AltCommandLine "-S">]                                   LocalSeq
     | [<AltCommandLine "-C">]                                   Cached
     | [<AltCommandLine "-U">]                                   Unfolds
-    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Parameters>
     | [<CliPrefix(CliPrefix.None); Last>]                       Cosmos   of ParseResults<Storage.Cosmos.Parameters>
     | [<CliPrefix(CliPrefix.None); Last>]                       Dynamo   of ParseResults<Storage.Dynamo.Parameters>
     | [<CliPrefix(CliPrefix.None); Last>]                       Es       of ParseResults<Storage.EventStore.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Mdb      of ParseResults<Storage.MessageDb.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">]  MsSql    of ParseResults<Storage.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">]  MySql    of ParseResults<Storage.Sql.My.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">]  Postgres of ParseResults<Storage.Sql.Pg.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                       Mdb      of ParseResults<Storage.MessageDb.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                       Memory   of ParseResults<Storage.MemoryStore.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Verbose ->                    "Include low level Domain and Store logging in screen output."
@@ -31,11 +31,11 @@ type Arguments =
             | Cosmos _ ->                   "specify storage in CosmosDB (--help for options)."
             | Dynamo _ ->                   "specify storage in DynamoDB (--help for options)."
             | Es _ ->                       "specify storage in EventStore (--help for options)."
-            | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
+            | Mdb _ ->                      "specify storage in MessageDB (--help for options)."
             | MsSql _ ->                    "specify storage in Sql Server (--help for options)."
             | MySql _ ->                    "specify storage in MySql (--help for options)."
             | Postgres _ ->                 "specify storage in Postgres (--help for options)."
-            | Mdb _ ->                      "specify storage in MessageDB (--help for options)."
+            | Memory _ ->                   "specify In-Memory Volatile Store (Default store)."
 module Arguments =
     let parse argv =
         let programName = System.Reflection.Assembly.GetEntryAssembly().GetName().Name
@@ -84,6 +84,9 @@ type Startup() =
                 let storeLog = createStoreLog <| sp.Contains Storage.EventStore.Parameters.StoreVerbose
                 log.Information("EventStoreDB Storage options: {options:l}", options)
                 Storage.EventStore.config log (cache, unfolds) sp, storeLog
+            | Mdb sp ->
+                log.Information("MessageDB Storage options: {options:l}", options)
+                Storage.MessageDb.config log cache sp, log
             | MsSql sp ->
                 log.Information("SqlStreamStore MsSql Storage options: {options:l}", options)
                 Storage.Sql.Ms.config log (cache, unfolds) sp, log
@@ -96,9 +99,6 @@ type Startup() =
             | Memory _ ->
                 log.Fatal("Web App is using Volatile Store; Storage options: {options:l}", options)
                 Storage.MemoryStore.config (), log
-            | Mdb sp ->
-                log.Information("MessageDB Storage options: {options:l}", options)
-                Storage.MessageDb.config log cache sp, log
             | x -> Storage.missingArg (sprintf "unexpected subcommand %A" x)
         Services.register(services, storeConfig, storeLog)
 

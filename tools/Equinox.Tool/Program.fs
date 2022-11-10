@@ -122,10 +122,10 @@ and [<NoComparison; NoEquality>] DumpParameters =
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Parameters>
     | [<CliPrefix(CliPrefix.None)>]                            Dynamo   of ParseResults<Storage.Dynamo.Parameters>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Mdb      of ParseResults<Storage.MessageDb.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                      Mdb      of ParseResults<Storage.MessageDb.Parameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Stream _ ->                   "Specify stream(s) to dump."

@@ -11,8 +11,8 @@ type StorageConfig =
     | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool
     | Dynamo of Equinox.DynamoStore.DynamoStoreContext * Equinox.DynamoStore.CachingStrategy * unfolds: bool
     | Es     of Equinox.EventStoreDb.EventStoreContext * Equinox.EventStoreDb.CachingStrategy option * unfolds: bool
-    | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
     | Mdb    of Equinox.MessageDb.MessageDbContext * Equinox.MessageDb.CachingStrategy option
+    | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
     type [<NoEquality; NoComparison>] Parameters =
@@ -354,7 +354,6 @@ module MessageDb =
         interface IArgParserTemplate with
             member a.Usage = a |> function
                 | ConnectionString _ -> "Database connection string"
-                | AutoCreate _ ->       "AutoCreate schema"
                 | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
     type Arguments(p : ParseResults<Parameters>) =
          member _.ConnectionString = p.GetResult ConnectionString
