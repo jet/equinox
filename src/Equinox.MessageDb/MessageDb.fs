@@ -361,7 +361,6 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
             | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 
-
 /// For MessageDb, caching is less critical than it is for e.g. CosmosDB
 /// As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
