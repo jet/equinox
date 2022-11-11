@@ -70,9 +70,9 @@ module Decider =
 type DeciderExtensions =
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(log, cat : Category<'event, 'state, 'context>, context) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
          Decider.resolveCoreWithContext context log cat
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(log, cat : Category<'event, 'state, unit>) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
+    static member Resolve(cat: Category<'event, 'state, unit>, log) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
          Decider.resolveCoreWithContext log cat ()
