@@ -14,6 +14,10 @@ open System.Threading.Tasks
 type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
 
+module private Json =
+  let jsonNull = JsonSerializer.SerializeToUtf8Bytes(null)
+  let toArray (m: Format) = match m.IsEmpty with true -> jsonNull | false -> m.ToArray()
+
 type MessageDbClient internal (createConnection: CancellationToken -> Task<NpgsqlConnection>) =
     let readonly (bytes: byte array) = ReadOnlyMemory.op_Implicit(bytes)
     let readRow (reader: DbDataReader) =
@@ -29,8 +33,6 @@ type MessageDbClient internal (createConnection: CancellationToken -> Task<Npgsq
             ?correlationId = readNullableString 5,
             ?causationId = readNullableString 6,
             timestamp = timestamp)
-
-    let jsonNull = JsonSerializer.SerializeToUtf8Bytes(null)
 
     member _.ReadLastEvent(streamName : string, ct) = task {
         use! conn = createConnection ct
@@ -82,16 +84,11 @@ type MessageDbClient internal (createConnection: CancellationToken -> Task<Npgsq
         let cmd = NpgsqlBatchCommand()
         cmd.CommandText <- "select 1 from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)"
 
-        // Npgsql does not support ReadOnlyMemory<byte>
-        // as a json property. It must be a byte[]
-        let meta = match message.Meta with m when m.IsEmpty -> jsonNull | m -> m.ToArray()
-        let data = message.Data.ToArray()
-
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, message.EventId) |> ignore
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
         cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, message.EventType) |> ignore
-        cmd.Parameters.AddWithValue("Data", NpgsqlDbType.Jsonb, data) |> ignore
-        cmd.Parameters.AddWithValue("Meta", NpgsqlDbType.Jsonb, meta) |> ignore
+        cmd.Parameters.AddWithValue("Data", NpgsqlDbType.Jsonb, Json.toArray message.Data) |> ignore
+        cmd.Parameters.AddWithValue("Meta", NpgsqlDbType.Jsonb, Json.toArray message.Meta) |> ignore
         cmd.Parameters.AddWithValue("ExpectedVersion", NpgsqlDbType.Bigint, version) |> ignore
 
         cmd
