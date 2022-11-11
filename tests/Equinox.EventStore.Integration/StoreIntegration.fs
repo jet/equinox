@@ -57,6 +57,19 @@ let connectToLocalStore _ = async {
 }
 type Context = MessageDbContext
 type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>
+open OpenTelemetry
+open OpenTelemetry.Resources
+open OpenTelemetry.Trace
+let testsource = new ActivitySource("TestSource")
+let tracerProvider () = Sdk.CreateTracerProviderBuilder()
+                             .AddSource("Equinox.MessageDb")
+                             // .AddSource("Npgsql")
+                             .AddSource("TestSource")
+                             .SetResourceBuilder(
+                                ResourceBuilder.CreateDefault().AddService(serviceName = "tests"))
+                             .AddConsoleExporter()
+                             .AddOtlpExporter(fun opt -> opt.Endpoint <- Uri("http://localhost:4317"))
+                             .Build()
 #endif
 #if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
@@ -87,20 +100,6 @@ let connectToLocalStore log =
 type Context = EventStoreContext
 type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
 #endif
-
-open OpenTelemetry
-open OpenTelemetry.Resources
-open OpenTelemetry.Trace
-let testsource = new ActivitySource("TestSource")
-let tracerProvider () = Sdk.CreateTracerProviderBuilder()
-                             .AddSource("Equinox.MessageDb")
-                             // .AddSource("Npgsql")
-                             .AddSource("TestSource")
-                             .SetResourceBuilder(
-                                ResourceBuilder.CreateDefault().AddService(serviceName = "tests"))
-                             .AddConsoleExporter()
-                             .AddOtlpExporter(fun opt -> opt.Endpoint <- Uri("http://localhost:4317"))
-                             .Build()
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
@@ -217,10 +216,10 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = Async.RunSynchronously <| async {
-        use _ = tracerProvider()
-        use _ = testsource.StartActivity("Test")
         let log1, capture1 = output.CreateLoggerWithCapture()
         #if STORE_MESSAGEDB
+        use _ = tracerProvider()
+        use _ = testsource.StartActivity("Test")
         use capture1 = new ActivityTest()
         #endif
 
@@ -359,10 +358,10 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
-        use _ = tracerProvider()
-        use _ = testsource.StartActivity("Test")
         let log, capture = output.CreateLoggerWithCapture()
         #if STORE_MESSAGEDB
+        use _ = tracerProvider()
+        use _ = testsource.StartActivity("Test")
         use capture = new ActivityTest()
         #endif
         let! client = connectToLocalStore log
@@ -385,10 +384,10 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
-        use _ = tracerProvider()
-        use _ = testsource.StartActivity("Test")
         let log, capture = output.CreateLoggerWithCapture()
         #if STORE_MESSAGEDB
+        use _ = tracerProvider()
+        use _ = testsource.StartActivity("Test")
         use capture = new ActivityTest()
         #endif
         let! client = connectToLocalStore log
