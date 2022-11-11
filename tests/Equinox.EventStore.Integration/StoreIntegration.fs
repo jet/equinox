@@ -459,7 +459,7 @@ type Tests(testOutputHelper) =
     }
 #endif
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Version is 1-based`` () = Async.RunSynchronously <| async {
+    let ``Version is 0-based`` () = Async.RunSynchronously <| async {
         let log, _ = output.CreateLoggerWithCapture()
         let! connection = connectToLocalStore log
 
