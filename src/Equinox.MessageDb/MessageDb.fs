@@ -408,7 +408,7 @@ type MessageDbCategory<'event, 'state, 'context>(resolveInner, empty) =
 type MessageDbConnector(
     connectionString : string, [<O; D(null)>]?readConnectionString : string,
     [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-        let readOnlyConnectionString = defaultArg readConnectionString connectionString
+        let readConnectionString = defaultArg readConnectionString connectionString
         let connectToDb connectionString ct = task {
             let conn = new NpgsqlConnection(connectionString)
             do! conn.OpenAsync(ct)
@@ -416,6 +416,6 @@ type MessageDbConnector(
 
         member x.Establish() : MessageDbConnection =
             let writeConnection = MessageDbClient(connectToDb connectionString)
-            let readConnection = MessageDbClient(connectToDb readOnlyConnectionString)
+            let readConnection = MessageDbClient(connectToDb readConnectionString)
             MessageDbConnection(readConnection, writeConnection, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
 
