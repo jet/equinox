@@ -405,7 +405,10 @@ type MessageDbCategory<'event, 'state, 'context>(resolveInner, empty) =
 
 
 type MessageDbConnector(
-    connectionString : string, [<O; D(null)>]?readConnectionString : string,
+    connectionString : string,
+    // Can be used to divert reads to a replica
+    // Conflicts detected on write trigger a resync, reading via the `connectionString` to maximize the freshness of the data for the retry
+    [<O; D(null)>]?readConnectionString : string,
     [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
         let readConnectionString = defaultArg readConnectionString connectionString
         member x.Establish() : MessageDbConnection =
