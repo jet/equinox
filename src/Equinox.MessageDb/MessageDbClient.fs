@@ -64,9 +64,14 @@ type MessageDbReader internal (connectionString: string, leaderConnectionString:
             ?causationId = readNullableString 6,
             timestamp = timestamp)
 
-    member _.ReadLastEvent(streamName : string, requiresLeader, ct) = task {
-        use conn = new NpgsqlConnection(if requiresLeader then leaderConnectionString else connectionString)
+    let connect requiresLeader ct = task {
+        let conn = new NpgsqlConnection(if requiresLeader then leaderConnectionString else connectionString)
         do! conn.OpenAsync(ct)
+        return conn
+    }
+
+    member _.ReadLastEvent(streamName : string, requiresLeader, ct) = task {
+        use! conn = connect requiresLeader ct
         use cmd = conn.CreateCommand()
         cmd.CommandText <-
             "select
@@ -84,7 +89,7 @@ type MessageDbReader internal (connectionString: string, leaderConnectionString:
             return Array.empty }
 
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, requiresLeader, ct) = task {
-        use conn = new NpgsqlConnection(if requiresLeader then leaderConnectionString else connectionString)
+        use! conn = connect requiresLeader ct
         do! conn.OpenAsync(ct)
         use cmd = conn.CreateCommand()
 
