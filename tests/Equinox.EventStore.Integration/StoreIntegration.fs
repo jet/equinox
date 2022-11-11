@@ -468,6 +468,9 @@ type Tests(testOutputHelper) =
         let id = $"{Guid.NewGuid():N}"
         let decider = SimplestThing.resolve log context struct("SimplestThing", id)
 
-        let! result = decider.TransactEx(fun state -> state.Version, [SimplestThing.StuffHappened])
-        test <@ result = 0L @>
+        let! before, after = decider.TransactEx(
+            (fun state -> state.Version, [SimplestThing.StuffHappened]),
+            mapResult = (fun s result -> s, result.Version))
+        test <@ before = 0L @>
+        test <@ after = 1L @>
     }
