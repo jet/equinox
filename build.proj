@@ -20,6 +20,7 @@
     <Exec Command="dotnet pack src/Equinox.DynamoStore.Prometheus $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.EventStoreDb $(Cfg) $(PackOptions)" />
+    <Exec Command="dotnet pack src/Equinox.MessageDb $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.MemoryStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.SqlStreamStore $(Cfg) $(PackOptions)" />
     <Exec Command="dotnet pack src/Equinox.SqlStreamStore.MsSql $(Cfg) $(PackOptions)" />

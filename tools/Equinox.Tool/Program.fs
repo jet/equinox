@@ -122,6 +122,7 @@ and [<NoComparison; NoEquality>] DumpParameters =
     | [<CliPrefix(CliPrefix.None)>]                            Cosmos   of ParseResults<Storage.Cosmos.Parameters>
     | [<CliPrefix(CliPrefix.None)>]                            Dynamo   of ParseResults<Storage.Dynamo.Parameters>
     | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Mdb      of ParseResults<Storage.MessageDb.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Parameters>
     | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Parameters>
@@ -142,6 +143,7 @@ and [<NoComparison; NoEquality>] DumpParameters =
             | MsSql _ ->                    "Parameters for Sql Server."
             | MySql _ ->                    "Parameters for MySql."
             | Postgres _ ->                 "Parameters for Postgres."
+            | Mdb _ ->                      "Parameters for MessageDB."
 and DumpArguments(p: ParseResults<DumpParameters>) =
     member _.ConfigureStore(log : ILogger, createStoreLog) =
         let storeConfig = None, true
@@ -164,6 +166,9 @@ and DumpArguments(p: ParseResults<DumpParameters>) =
         | DumpParameters.Postgres p ->
             let storeLog = createStoreLog false
             storeLog, Storage.Sql.Pg.config log storeConfig p
+        | DumpParameters.Mdb p ->
+            let storeLog = createStoreLog false
+            storeLog, Storage.MessageDb.config log None p
         | x -> Storage.missingArg $"unexpected subcommand %A{x}"
 and [<NoComparison>] WebParameters =
     | [<AltCommandLine "-u">]               Endpoint of string
@@ -179,14 +184,15 @@ and [<NoComparison; NoEquality>] TestParameters =
     | [<AltCommandLine "-d">]               DurationM of float
     | [<AltCommandLine "-e">]               ErrorCutoff of int64
     | [<AltCommandLine "-i">]               ReportIntervalS of int
-    | [<CliPrefix(CliPrefix.None); Last>]                      Cosmos   of ParseResults<Storage.Cosmos.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                      Dynamo   of ParseResults<Storage.Dynamo.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                      Es       of ParseResults<Storage.EventStore.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                      Memory   of ParseResults<Storage.MemoryStore.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql    of ParseResults<Storage.Sql.Ms.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql    of ParseResults<Storage.Sql.My.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres of ParseResults<Storage.Sql.Pg.Parameters>
-    | [<CliPrefix(CliPrefix.None); Last>]                      Web      of ParseResults<WebParameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Cosmos    of ParseResults<Storage.Cosmos.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Dynamo    of ParseResults<Storage.Dynamo.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Es        of ParseResults<Storage.EventStore.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Memory    of ParseResults<Storage.MemoryStore.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "ms">] MsSql     of ParseResults<Storage.Sql.Ms.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "my">] MySql     of ParseResults<Storage.Sql.My.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last; AltCommandLine "pg">] Postgres  of ParseResults<Storage.Sql.Pg.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Mdb       of ParseResults<Storage.MessageDb.Parameters>
+    | [<CliPrefix(CliPrefix.None); Last>]                      Web       of ParseResults<WebParameters>
     interface IArgParserTemplate with
         member a.Usage = a |> function
             | Name _ ->                     "specify which test to run. (default: Favorite)."
@@ -204,6 +210,7 @@ and [<NoComparison; NoEquality>] TestParameters =
             | MsSql _ ->                    "Run transactions in-process against Sql Server."
             | MySql _ ->                    "Run transactions in-process against MySql."
             | Postgres _ ->                 "Run transactions in-process against Postgres."
+            | Mdb _ ->                      "Run transactions in-process against MessageDB."
             | Web _ ->                      "Run transactions against a Web endpoint."
 and Test = Favorite | SaveForLater | Todo
 and TestArguments(p : ParseResults<TestParameters>) =
@@ -239,6 +246,9 @@ and TestArguments(p : ParseResults<TestParameters>) =
         | Postgres p -> let storeLog = createStoreLog false
                         log.Information("Running transactions in-process against Postgres with storage options: {options:l}", x.Options)
                         storeLog, Storage.Sql.Pg.config log (cache, x.Unfolds) p
+        | Mdb p ->      let storeLog = createStoreLog false
+                        log.Information("Running transactions in-process against MessageDb with storage options: {options:l}", x.Options)
+                        storeLog, Storage.MessageDb.config log cache p
         | Memory _ ->   log.Warning("Running transactions in-process against Volatile Store with storage options: {options:l}", x.Options)
                         createStoreLog false, Storage.MemoryStore.config ()
         | x ->          Storage.missingArg $"unexpected subcommand %A{x}"
@@ -283,6 +293,7 @@ let dumpStats log = function
     | Storage.StorageConfig.Dynamo _ -> Equinox.DynamoStore.Core.Log.InternalMetrics.dump log
     | Storage.StorageConfig.Es _ ->     Equinox.EventStoreDb.Log.InternalMetrics.dump log
     | Storage.StorageConfig.Sql _ ->    Equinox.SqlStreamStore.Log.InternalMetrics.dump log
+    | Storage.StorageConfig.Mdb _ ->    Equinox.MessageDb.Log.InternalMetrics.dump log
     | Storage.StorageConfig.Memory _ -> ()
 
 module LoadTest =

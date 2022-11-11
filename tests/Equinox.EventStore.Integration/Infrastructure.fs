@@ -14,12 +14,15 @@ type FsCheckGenerators =
 
 #if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL
 open Equinox.SqlStreamStore
-#else
-#if !STORE_EVENTSTORE_LEGACY
-open Equinox.EventStoreDb
-#else
-open Equinox.EventStore
 #endif
+#if STORE_MESSAGEDB
+open Equinox.MessageDb
+#endif
+#if STORE_EVENTSTOREDB
+open Equinox.EventStoreDb
+#endif
+#if STORE_EVENTSTORE_LEGACY
+open Equinox.EventStore
 #endif
 
 [<AutoOpen>]
@@ -30,17 +33,23 @@ module SerilogHelpers =
         | :? ScalarValue as x -> Some x.Value
         | _ -> None
     [<RequireQualifiedAccess>]
-    type EsAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward
+    type EsAct = Append | AppendConflict | SliceForward | SliceBackward | BatchForward | BatchBackward | ReadLast
     let (|EsAction|) (evt : Log.Metric) =
         match evt with
         | Log.WriteSuccess _ -> EsAct.Append
         | Log.WriteConflict _ -> EsAct.AppendConflict
-#if !STORE_EVENTSTOREDB // For gRPC, no slice information is available
+#if !STORE_EVENTSTOREDB && !STORE_MESSAGEDB // For gRPC, no slice information is available
         | Log.Slice (Direction.Forward,_) -> EsAct.SliceForward
         | Log.Slice (Direction.Backward,_) -> EsAct.SliceBackward
 #endif
+#if STORE_MESSAGEDB
+        | Log.Slice _ -> EsAct.SliceForward
+        | Log.Batch _ -> EsAct.BatchForward
+        | Log.ReadLast _ -> EsAct.ReadLast
+#else
         | Log.Batch (Direction.Forward,_,_) -> EsAct.BatchForward
         | Log.Batch (Direction.Backward,_,_) -> EsAct.BatchBackward
+#endif
     let (|EsEvent|_|) (logEvent : LogEvent) : Log.Metric option =
         logEvent.Properties.Values |> Seq.tryPick (function
             | SerilogScalar (:? Log.Metric as e) -> Some e

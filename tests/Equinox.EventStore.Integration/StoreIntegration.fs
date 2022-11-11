@@ -18,7 +18,7 @@ let connectToLocalStore (_ : ILogger) =
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
+#endif
 #if STORE_MSSQL
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MsSql
@@ -36,7 +36,7 @@ docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
+#endif
 #if STORE_MYSQL
 open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.MySql
@@ -46,8 +46,18 @@ let connectToLocalStore (_ : ILogger) =
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
-#else
-#if !STORE_EVENTSTORE_LEGACY
+#endif
+#if STORE_MESSAGEDB
+open Equinox.MessageDb
+let connectToLocalStore _ = async {
+  let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5433; Maximum Pool Size=10"
+  let connector = MessageDbConnector(connectionString)
+  return connector.Establish()
+}
+type Context = MessageDbContext
+type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>
+#endif
+#if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
 
 /// Connect directly to a locally running EventStoreDB Node using gRPC, without using Gossip-driven discovery
@@ -55,7 +65,8 @@ let connectToLocalStore (_log : ILogger) = async {
     let c = EventStoreConnector(reqTimeout=TimeSpan.FromSeconds 3., reqRetries=3, (*, log=Logger.SerilogVerbose log,*) tags=["I",Guid.NewGuid() |> string])
     let conn = c.Establish("Equinox-integration", Discovery.ConnectionString "esdb://localhost:2111,localhost:2112,localhost:2113?tls=true&tlsVerifyCert=false", ConnectionStrategy.ClusterSingle EventStore.Client.NodePreference.Leader)
     return conn }
-#else // STORE_EVENTSTORE_LEGACY
+#endif
+#if STORE_EVENTSTORE_LEGACY
 open Equinox.EventStore
 
 // NOTE: use `docker compose up` to establish the standard 3 node config at ports 1113/2113
@@ -71,10 +82,9 @@ let connectToLocalStore log =
     ).Establish("Equinox-integration", Discovery.GossipDns "localhost", ConnectionStrategy.ClusterTwinPreferSlaveReads)
 #endif
 #endif
+#if STORE_EVENTSTORE_LEGACY || STORE_EVENTSTOREDB
 type Context = EventStoreContext
 type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
-#endif
-#endif
 #endif
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
@@ -84,22 +94,27 @@ module Cart =
     let codec = Cart.Events.codec
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
-        Category(context, Cart.Events.codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
+        Category(context, codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
+
+    #if !STORE_MESSAGEDB
     let createServiceWithCompaction log context =
         Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
+    #endif
     let createServiceWithCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
+    #if !STORE_MESSAGEDB
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
+    #endif
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
@@ -245,6 +260,10 @@ type Tests(testOutputHelper) =
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
+#if STORE_MESSAGEDB // MessageDB doesn't report Batches for "Read Last Event" scenarios
+    let singleBatchBackwards = [EsAct.ReadLast]
+    let batchBackwardsAndAppend = [EsAct.ReadLast; EsAct.Append]
+#else
 #if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
     let sliceBackward = []
 #else
@@ -252,7 +271,9 @@ type Tests(testOutputHelper) =
 #endif
     let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
+#endif
 
+#if !STORE_MESSAGEDB
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
@@ -293,6 +314,7 @@ type Tests(testOutputHelper) =
         let! _ = service.Read cartId
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
     }
+#endif
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
@@ -378,6 +400,7 @@ type Tests(testOutputHelper) =
         test <@ [EsAct.AppendConflict; yield! sliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
     }
 
+#if !STORE_MESSAGEDB
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can combine compaction with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
@@ -422,3 +445,4 @@ type Tests(testOutputHelper) =
         let suboptimalExtraSlice : EsAct list = sliceForward
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }
+#endif

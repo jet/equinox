@@ -11,6 +11,7 @@ type StorageConfig =
     | Cosmos of Equinox.CosmosStore.CosmosStoreContext * Equinox.CosmosStore.CachingStrategy * unfolds: bool
     | Dynamo of Equinox.DynamoStore.DynamoStoreContext * Equinox.DynamoStore.CachingStrategy * unfolds: bool
     | Es     of Equinox.EventStoreDb.EventStoreContext * Equinox.EventStoreDb.CachingStrategy option * unfolds: bool
+    | Mdb    of Equinox.MessageDb.MessageDbContext * Equinox.MessageDb.CachingStrategy option
     | Sql    of Equinox.SqlStreamStore.SqlStreamStoreContext * Equinox.SqlStreamStore.CachingStrategy option * unfolds: bool
 
 module MemoryStore =
@@ -345,3 +346,23 @@ module Sql =
             let a = Arguments(p)
             let connection = connect log (a.ConnectionString, a.Schema, a.Credentials, a.AutoCreate) |> Async.RunSynchronously
             StorageConfig.Sql(SqlStreamStoreContext(connection, batchSize = a.BatchSize), cacheStrategy cache, unfolds)
+module MessageDb =
+    open Equinox.MessageDb
+    type [<NoEquality; NoComparison>] Parameters =
+    | [<AltCommandLine "-c"; Mandatory>] ConnectionString of string
+    | [<AltCommandLine "-b">]       BatchSize of int
+        interface IArgParserTemplate with
+            member a.Usage = a |> function
+                | ConnectionString _ -> "Database connection string"
+                | BatchSize _ ->        "Maximum number of Events to request per batch. Default 500."
+    type Arguments(p : ParseResults<Parameters>) =
+         member _.ConnectionString = p.GetResult ConnectionString
+         member _.BatchSize =        p.GetResult(BatchSize, 500)
+    let connect (log : ILogger) (connectionString: string) =
+        log.Information("MessageDB Connection {connectionString}", connectionString)
+        MessageDbConnector(connectionString).Establish()
+    let config (log : ILogger) cache (p : ParseResults<Parameters>) =
+        let a = Arguments(p)
+        let connection = connect log a.ConnectionString
+        let cache = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow(c, TimeSpan.FromMinutes 20.))
+        StorageConfig.Mdb(MessageDbContext(connection, batchSize = a.BatchSize), cache)

@@ -63,6 +63,7 @@ module ValueTuple =
 module ValueOption =
 
     let inline toOption x = match x with ValueSome x -> Some x | ValueNone -> None
+    let inline toArray x = match x with ValueSome e -> [| e |] | ValueNone -> [||]
 
 module Seq =
 

@@ -167,6 +167,10 @@ services:
       AWS_SECRET_ACCESS_KEY: local
     depends_on:
       - dynamodb-local
+  equinox-messagedb:
+    image: ethangarofolo/message-db
+    ports:
+      - "5433:5432"
 
 networks:
   clusternetwork:

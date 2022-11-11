@@ -10,6 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Equinox.MessageDb\Equinox.MessageDb.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MsSql\Equinox.SqlStreamStore.MsSql.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.MySql\Equinox.SqlStreamStore.MySql.fsproj" />
     <ProjectReference Include="..\..\src\Equinox.SqlStreamStore.Postgres\Equinox.SqlStreamStore.Postgres.fsproj" />

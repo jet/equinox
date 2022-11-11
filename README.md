@@ -158,6 +158,7 @@ The components within this repository are delivered as multi-targeted Nuget pack
 - `Equinox.DynamoStore.Prometheus` [![DynamoStore.Prometheus NuGet](https://img.shields.io/nuget/v/Equinox.DynamoStore.Prometheus.svg)](https://www.nuget.org/packages/Equinox.DynamoStore.Prometheus/): Integration package providing a `Serilog.Core.ILogEventSink` that extracts detailed metrics information attached to the `LogEvent`s and feeds them to the `prometheus-net`'s `Prometheus.Metrics` static instance. ([depends](https://www.fuget.org/packages/Equinox.CosmosStore.Prometheus) on `Equinox.DynamoStore`, `prometheus-net >= 3.6.0`)
 - `Equinox.EventStore` [![EventStore NuGet](https://img.shields.io/nuget/v/Equinox.EventStore.svg)](https://www.nuget.org/packages/Equinox.EventStore/): [EventStoreDB](https://eventstore.org/) Adapter designed to meet Jet's production monitoring requirements. ([depends](https://www.fuget.org/packages/Equinox.EventStore) on `Equinox.Core`, `EventStore.Client >= 22.0.0-preview`, `FSharp.Control.AsyncSeq >= 2.0.23`), EventStore Server version `21.10` or later)
 - `Equinox.EventStoreDb` [![EventStoreDb NuGet](https://img.shields.io/nuget/v/Equinox.EventStoreDb.svg)](https://www.nuget.org/packages/Equinox.EventStoreDb/): Production-strength [EventStoreDB](https://eventstore.org/) Adapter. ([depends](https://www.fuget.org/packages/Equinox.EventStoreDb) on `Equinox.Core`, `EventStore.Client.Grpc.Streams` >= `22.0.0`, `FSharp.Control.AsyncSeq` v `2.0.23`, EventStore Server version `21.10` or later)
+- `Equinox.MessageDb` [![MessageDb NuGet](https://img.shields.io/nuget/v/Equinox.MessageDb.svg)](https://www.nuget.org/packages/Equinox.MessageDb/): [MessageDb](http://docs.eventide-project.org/user-guide/message-db/) Adapter. ([depends](https://www.fuget.org/packages/Equinox.MessageDb) on `Equinox.Core`, `Npgsql` >= `6.0.0`, `FSharp.Control.AsyncSeq` v `3.2.1`)
 - `Equinox.SqlStreamStore` [![SqlStreamStore NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore/): [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore) Adapter derived from `Equinox.EventStore` - provides core facilities (but does not connect to a specific database; see sibling `SqlStreamStore`.* packages). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore) on `Equinox.Core`, `FsCodec`, `SqlStreamStore >= 1.2.0-beta.8`, `FSharp.Control.AsyncSeq`)
 - `Equinox.SqlStreamStore.MsSql` [![MsSql NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.MsSql.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore.MsSql/): [SqlStreamStore.MsSql](https://sqlstreamstore.readthedocs.io/en/latest/sqlserver) Sql Server `Connector` implementation for `Equinox.SqlStreamStore` package). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore.MsSql) on `Equinox.SqlStreamStore`, `SqlStreamStore.MsSql >= 1.2.0-beta.8`)
 - `Equinox.SqlStreamStore.MySql` [![MySql NuGet](https://img.shields.io/nuget/v/Equinox.SqlStreamStore.MySql.svg)](https://www.nuget.org/packages/Equinox.SqlStreamStore.MySql/): `SqlStreamStore.MySql` MySQL `Connector` implementation for `Equinox.SqlStreamStore` package). ([depends](https://www.fuget.org/packages/Equinox.SqlStreamStore.MySql) on `Equinox.SqlStreamStore`, `SqlStreamStore.MySql >= 1.2.0-beta.8`)
@@ -493,6 +494,17 @@ eqx config pg -c "connectionstring" -p "u=un;p=password" -s "schema"
 eqx run -t saveforlater -f 50 -d 5 -C -U pg -c "connectionstring" -p "u=un;p=password" -s "schema" 
 eqx dump "SavedForLater-ab25cc9f24464d39939000aeb37ea11a" pg -c "connectionstring" -p "u=un;p=password" -s "schema" # show stored JSON (Guid shown in eqx run output) 
 ```
+
+<a name="message-db"></a>
+### Use [MessageDB](http://docs.eventide-project.org/user-guide/message-db/)
+
+MessageDb support is provided in the samples and the `eqx` tool:
+
+- being able to supply `mdb` flag to `eqx run`, e.g. `eqx run -f 50 -d 5 -C -U mdb -c "pgconnectionstring"`
+- being able to supply `mdb` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" mdb -c "pgconnectionstring"`
+- being able to supply `mdb` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- mdb -c "pgconnectionstring"`
+
+Equinox does not provide utilities for configuring or installing message-db. See [MessageDB's installation documentation](http://docs.eventide-project.org/user-guide/message-db/install.html).
 
 <a name="dynamodb"></a>
 ### Use [Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html)

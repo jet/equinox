@@ -27,6 +27,8 @@ type Store(store) =
         | Storage.StorageConfig.Sql (context, caching, unfolds) ->
             let accessStrategy = if unfolds then Equinox.SqlStreamStore.AccessStrategy.RollingSnapshots snapshot |> Some else None
             Equinox.SqlStreamStore.SqlStreamStoreCategory<'event,'state,_>(context, codec, fold, initial, ?caching = caching, ?access = accessStrategy)
+        | Storage.StorageConfig.Mdb (context, caching) ->
+            Equinox.MessageDb.MessageDbCategory<'event,'state,_>(context, codec, fold, initial, ?caching = caching)
 
 type ServiceBuilder(storageConfig, handlerLog) =
      let store = Store storageConfig
