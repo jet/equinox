@@ -11,8 +11,8 @@ type internal Decorator<'event, 'state, 'context>(
         return tokenAndState }
 
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, categoryName, streamId, streamName, allowStale, ct) =
-            inner.Load(log, categoryName, streamId, streamName, allowStale, ct) |> cache streamName
+        member _.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) =
+            inner.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) |> cache streamName
 
         member _.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) = task {
             match! inner.TrySync((log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct)) with

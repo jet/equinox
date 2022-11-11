@@ -7,7 +7,7 @@ open System.Threading.Tasks
 /// Store-agnostic interface representing interactions an Application can have with a set of streams with a given pair of Event and State types
 type ICategory<'event, 'state, 'context> =
     /// Obtain the state from the target stream
-    abstract Load : log: ILogger * categoryName: string * streamId: string * streamName: string * allowStale: bool
+    abstract Load : log: ILogger * categoryName: string * streamId: string * streamName: string * allowStale: bool * requireLeader: bool
                     * ct: CancellationToken -> Task<struct (StreamToken * 'state)>
 
     /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
@@ -37,8 +37,8 @@ type Category<'event, 'state, 'context>(
         { new Core.IStream<'event, 'state> with
             member _.LoadEmpty() =
                 empty
-            member x.Load(allowStale, ct) =
-                inner.Load(log, categoryName, streamId, streamName, allowStale, ct)
+            member x.Load(allowStale, requireLeader, ct) =
+                inner.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct)
             member _.TrySync(attempt, (token, originState), events, ct) =
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
                 inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) }

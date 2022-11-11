@@ -429,11 +429,11 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
         let createContext collector = TableContext<Batch.Schema>(client, tableName, metricsCollector = collector)
         Container(tableName, createContext)
 
-    member x.TryGetTip(stream : string) : Async<Batch option * RequestConsumption> = async {
+    member x.TryGetTip(stream : string, consistentRead) : Async<Batch option * RequestConsumption> = async {
         let rm = Metrics()
         let context = createContext rm.Add
         let pk = Batch.tableKeyForStreamTip stream
-        let! item = context.TryGetItemAsync(pk)
+        let! item = context.TryGetItemAsync(pk, consistentRead)
         return item |> Option.map Batch.ofSchema, rm.Consumed }
     member x.TryUpdateTip(stream : string, updateExpr : Quotations.Expr<Batch.Schema -> Batch.Schema>, ?precondition) : Async<Batch * RequestConsumption> = async {
         let rm = Metrics()
@@ -441,7 +441,7 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
         let pk = Batch.tableKeyForStreamTip stream
         let! item = context.UpdateItemAsync(pk, updateExpr, ?precondition = precondition)
         return item |> Batch.ofSchema, rm.Consumed }
-    member _.QueryBatches(stream, minN, maxI, backwards, batchSize) : AsyncSeq<int * StopwatchInterval * Batch array * RequestConsumption> =
+    member _.QueryBatches(stream, consistentRead, minN, maxI, backwards, batchSize) : AsyncSeq<int * StopwatchInterval * Batch array * RequestConsumption> =
         let compile = (createContext ignore).Template.PrecomputeConditionalExpr
         let kc = match maxI with
                  | Some maxI -> compile <@ fun (b : Batch.Schema) -> b.p = stream && b.i < maxI @>
@@ -454,7 +454,7 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
             let rm = Metrics()
             let context = createContext rm.Add
             let! t, res = context.QueryPaginatedAsync(kc, ?filterCondition = fc, limit = batchSize, ?exclusiveStartKey = le,
-                                                      scanIndexForward = not backwards) |> Stopwatch.Time
+                                                      scanIndexForward = not backwards, consistentRead = consistentRead) |> Stopwatch.Time
             yield i, t, Array.map Batch.ofSchema res.Records, rm.Consumed
             match res.LastEvaluatedKey with
             | None -> ()
@@ -639,14 +639,14 @@ module internal Tip =
         | Found of 'T
         | NotFound
         | NotModified
-    let private get (container : Container, stream : string) (maybePos : Position option) = async {
-        match! container.TryGetTip(stream) with
+    let private get (container : Container, stream : string) consistentRead (maybePos : Position option) = async {
+        match! container.TryGetTip(stream, consistentRead) with
         | Some { etag = fe }, rc when fe = Position.toEtag maybePos -> return rc, Res.NotModified
         | Some t, rc -> return rc, Res.Found t
         | None, rc -> return rc, Res.NotFound }
-    let private loggedGet (get : Container * string -> Position option -> Async<_>) (container, stream) (maybePos : Position option) (log : ILogger) = async {
+    let private loggedGet (get : Container * string -> bool  -> Position option -> Async<_>) (container, stream) consistentRead (maybePos : Position option) (log : ILogger) = async {
         let log = log |> Log.prop "stream" stream
-        let! t, ({ total = ru } as rc, res : Res<_>) = get (container, stream) maybePos |> Stopwatch.Time
+        let! t, ({ total = ru } as rc, res : Res<_>) = get (container, stream) consistentRead maybePos |> Stopwatch.Time
         let logMetric bytes count (f : Log.Measurement -> _) = log |> Log.event (f (Log.metric container.TableName stream t bytes count rc))
         match res with
         | Res.NotModified ->
@@ -668,8 +668,8 @@ module internal Tip =
         |> Seq.sortBy (fun x -> x.Index, x.IsUnfold)
         |> Array.ofSeq
     /// `pos` being Some implies that the caller holds a cached value and hence is ready to deal with Result.NotModified
-    let tryLoad (log : ILogger) containerStream (maybePos : Position option, maxIndex) : Async<Res<Position * int64 * ITimelineEvent<InternalBody> array>> = async {
-        let! _rc, res = loggedGet get containerStream maybePos log
+    let tryLoad (log : ILogger) containerStream consistentRead (maybePos : Position option, maxIndex) : Async<Res<Position * int64 * ITimelineEvent<InternalBody> array>> = async {
+        let! _rc, res = loggedGet get containerStream consistentRead maybePos log
         match res with
         | Res.NotModified -> return Res.NotModified
         | Res.NotFound -> return Res.NotFound
@@ -679,10 +679,10 @@ module internal Tip =
 
 module internal Query =
 
-    let private mkQuery (log : ILogger) (container : Container, stream : string) maxItems (direction : Direction, minIndex, maxIndex) =
+    let private mkQuery (log : ILogger) (container : Container, stream : string) consistentRead maxItems (direction : Direction, minIndex, maxIndex) =
         let minN, maxI = minIndex, maxIndex
         log.Debug("EqxDynamo Query {stream}; n>{minIndex} i<{maxIndex}", stream, Option.toNullable minIndex, Option.toNullable maxIndex)
-        container.QueryBatches(stream, minN, maxI, (direction = Direction.Backward), maxItems)
+        container.QueryBatches(stream, consistentRead, minN, maxI, (direction = Direction.Backward), maxItems)
 
     // Unrolls the Batches in a response
     // NOTE when reading backwards, the events are emitted in reverse Index order to suit the takeWhile consumption
@@ -740,7 +740,7 @@ module internal Query =
         { found = f; maybeTipPos = Some pos; minIndex = i; next = pos.index + 1L; events = e }
 
     // Yields events in ascending Index order
-    let scan<'event> (log : ILogger) (container, stream) maxItems maxRequests direction
+    let scan<'event> (log : ILogger) (container, stream) consistentRead maxItems maxRequests direction
         (tryDecode : ITimelineEvent<EncodedBody> -> 'event voption, isOrigin : 'event -> bool)
         (minIndex, maxIndex)
         : Async<ScanResult<'event> option> = async {
@@ -773,7 +773,7 @@ module internal Query =
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
         let batches : AsyncSeq<Event array * Position option * RequestConsumption> =
-            mkQuery readLog (container, stream) maxItems (direction, minIndex, maxIndex)
+            mkQuery readLog (container, stream) consistentRead maxItems (direction, minIndex, maxIndex)
             |> AsyncSeq.map (mapPage direction (container, stream) (minIndex, maxIndex, maxItems) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws = Array.map ValueTuple.fst events
@@ -794,7 +794,7 @@ module internal Query =
         (tryDecode : ITimelineEvent<EncodedBody> -> 'event option, isOrigin : 'event -> bool)
         (direction, minIndex, maxIndex)
         : AsyncSeq<'event array> = asyncSeq {
-        let query = mkQuery log (container, stream) maxItems (direction, minIndex, maxIndex)
+        let query = mkQuery log (container, stream) (*consistentRead*)false maxItems (direction, minIndex, maxIndex)
 
         let readPage = mapPage direction (container, stream) (minIndex, maxIndex, maxItems) maxRequests
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
@@ -904,7 +904,7 @@ module internal Prune =
             return rc
         }
         let trimTip expectedN count = async {
-            match! container.TryGetTip(stream) with
+            match! container.TryGetTip(stream, consistentRead = false) with
             | None, _rc -> return failwith "unexpected NotFound"
             | Some tip, _rc when tip.n <> expectedN -> return failwithf "Concurrent write detected; Expected n=%d actual=%d" expectedN tip.n
             | Some tip, tipRc ->
@@ -1058,16 +1058,16 @@ type TipOptions
 
 type internal StoreClient(container : Container, fallback : Container option, query : QueryOptions, tip : TipOptions) =
 
-    let loadTip log stream pos = Tip.tryLoad log (container, stream) (pos, None)
+    let loadTip log stream consistentRead pos = Tip.tryLoad log (container, stream) consistentRead (pos, None)
 
     // Always yields events forward, regardless of direction
-    member _.Read(log, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip) : Async<StreamToken * 'event array> = async {
+    member _.Read(log, stream, consistentRead, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex, ?tip) : Async<StreamToken * 'event array> = async {
         let tip = tip |> Option.map (Query.scanTip (tryDecode, isOrigin))
         let maxIndex = match maxIndex with
                        | Some _ as mi -> mi
                        | None when Option.isSome tip -> Some Batch.tipMagicI
                        | None -> None
-        let walk log container = Query.scan log (container, stream) query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
+        let walk log container = Query.scan log (container, stream) consistentRead query.MaxItems query.MaxRequests direction (tryDecode, isOrigin)
         let walkFallback =
             match fallback with
             | None -> Choice1Of2 query.IgnoreMissingEvents
@@ -1079,26 +1079,26 @@ type internal StoreClient(container : Container, fallback : Container option, qu
     member _.ReadLazy(log, batching : QueryOptions, stream, direction, (tryDecode, isOrigin), ?minIndex, ?maxIndex) : AsyncSeq<'event array> =
         Query.walkLazy log (container, stream) batching.MaxItems batching.MaxRequests (tryDecode, isOrigin) (direction, minIndex, maxIndex)
 
-    member store.Load(log, (stream, maybePos), (tryDecode, isOrigin), checkUnfolds : bool) : Async<StreamToken * 'event array> =
-        if not checkUnfolds then store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin))
+    member store.Load(log, (stream, maybePos), consistentRead, (tryDecode, isOrigin), checkUnfolds : bool) : Async<StreamToken * 'event array> =
+        if not checkUnfolds then store.Read(log, stream, consistentRead, Direction.Backward, (tryDecode, isOrigin))
         else async {
-            match! loadTip log stream maybePos with
+            match! loadTip log stream consistentRead maybePos with
             | Tip.Res.NotFound -> return Token.empty, Array.empty
             | Tip.Res.NotModified -> return invalidOp "Not applicable"
-            | Tip.Res.Found (pos, i, xs) -> return! store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), tip = (pos, i, xs)) }
+            | Tip.Res.Found (pos, i, xs) -> return! store.Read(log, stream, consistentRead, Direction.Backward, (tryDecode, isOrigin), tip = (pos, i, xs)) }
     member _.GetPosition(log, stream, ?pos) : Async<StreamToken> = async {
-        match! loadTip log stream pos with
+        match! loadTip log stream (*consistentRead*)false pos with
         | Tip.Res.NotFound -> return Token.empty
         | Tip.Res.NotModified -> return Token.create pos.Value
         | Tip.Res.Found (pos, _i, _unfoldsAndEvents) -> return Token.create pos }
-    member store.Reload(log, (stream, maybePos : Position option), (tryDecode, isOrigin), ?preview): Async<LoadFromTokenResult<'event>> =
+    member store.Reload(log, (stream, maybePos : Position option), consistentRead, (tryDecode, isOrigin), ?preview): Async<LoadFromTokenResult<'event>> =
         let read tipContent = async {
-            let! res = store.Read(log, stream, Direction.Backward, (tryDecode, isOrigin), minIndex = Position.toIndex maybePos, tip = tipContent)
+            let! res = store.Read(log, stream, consistentRead, Direction.Backward, (tryDecode, isOrigin), minIndex = Position.toIndex maybePos, tip = tipContent)
             return LoadFromTokenResult.Found res }
         match preview with
         | Some (pos, i, xs) -> read (pos, i, xs)
         | None -> async {
-            match! loadTip log stream maybePos with
+            match! loadTip log stream consistentRead maybePos with
             | Tip.Res.NotFound -> return LoadFromTokenResult.Found (Token.empty, Array.empty)
             | Tip.Res.NotModified -> return LoadFromTokenResult.Unchanged
             | Tip.Res.Found (pos, i, xs) -> return! read (pos, i, xs) }
@@ -1113,11 +1113,11 @@ type internal StoreClient(container : Container, fallback : Container option, qu
         Prune.until log (container, stream) query.MaxItems index
 
 type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EncodedBody, 'context>) =
-    member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin) : Task<struct (StreamToken * 'state)> = task {
-        let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds)
+    member _.Load(log, stream, requireLeader, initial, checkUnfolds, fold, isOrigin) : Task<struct (StreamToken * 'state)> = task {
+        let! token, events = store.Load(log, (stream, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds)
         return struct (token, fold initial events) }
-    member _.Reload(log, stream, (Token.Unpack pos as streamToken), state, fold, isOrigin, ct, ?preloaded) : Task<struct (StreamToken * 'state)> = task {
-        match! store.Reload(log, (stream, pos), (codec.TryDecode, isOrigin), ?preview = preloaded)  |> Async.startAsTask ct with
+    member _.Reload(log, stream, requireLeader, (Token.Unpack pos as streamToken), state, fold, isOrigin, ct, ?preloaded) : Task<struct (StreamToken * 'state)> = task {
+        match! store.Reload(log, (stream, pos), requireLeader, (codec.TryDecode, isOrigin), ?preview = preloaded)  |> Async.startAsTask ct with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     member cat.Sync(log, stream, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context): Async<SyncResult<'state>> = async {
@@ -1133,7 +1133,7 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
                 Position.toEtag >> Sync.Exp.Etag, events', Array.map encode events', Array.map encode unfolds
         let baseVer = Position.toIndex pos + int64 (Array.length events)
         match! store.Sync(log, stream, pos, exp, baseVer, eventsEncoded, unfoldsEncoded) with
-        | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (fun ct -> cat.Reload(log, stream, streamToken, state, fold, isOrigin, ct))
+        | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (fun ct -> cat.Reload(log, stream, true, streamToken, state, fold, isOrigin, ct))
         | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 module internal Caching =
@@ -1161,11 +1161,11 @@ module internal Caching =
             do! updateCache streamName (token, state)
             return struct (token, state) }
         interface ICategory<'event, 'state, 'context> with
-            member _.Load(log, _categoryName, _streamId, streamName, allowStale, ct) : Task<struct (StreamToken * 'state)> = task {
+            member _.Load(log, _categoryName, _streamId, streamName, allowStale, requireLeader, ct) : Task<struct (StreamToken * 'state)> = task {
                 match! tryReadCache streamName : Task<voption<_>> with
-                | ValueNone -> return! (fun () -> category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin)) |> cache streamName
+                | ValueNone -> return! (fun () -> category.Load(log, streamName, requireLeader, initial, checkUnfolds, fold, isOrigin)) |> cache streamName
                 | ValueSome struct (token, state) when allowStale -> return struct (token, state) // read already updated TTL, no need to write
-                | ValueSome struct (token, state) -> return! (fun () -> category.Reload(log, streamName, token, state, fold, isOrigin, ct)) |> cache streamName }
+                | ValueSome struct (token, state) -> return! (fun () -> category.Reload(log, streamName, requireLeader, token, state, fold, isOrigin, ct)) |> cache streamName }
             member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, _maybeInit, streamToken, state, events, ct) : Task<SyncResult<'state>> = task {
                 match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context) |> Async.startAsTask ct with
                 | SyncResult.Conflict resync ->
@@ -1437,7 +1437,7 @@ type EventsContext internal
                 match maxCount with
                 | Some limit -> maxCountPredicate limit
                 | None -> fun _ -> false
-            let! token, events = store.Read(log, stream, direction, (ValueSome, isOrigin), ?minIndex = minIndex, ?maxIndex = maxIndex)
+            let! token, events = store.Read(log, stream, (*consistentRead*)false, direction, (ValueSome, isOrigin), ?minIndex = minIndex, ?maxIndex = maxIndex)
             if direction = Direction.Backward then System.Array.Reverse events
             return token, events }
 
