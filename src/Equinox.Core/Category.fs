@@ -74,5 +74,5 @@ type DeciderExtensions =
          Decider.resolveCoreWithContext context log cat
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat: Category<'event, 'state, unit>, log) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
+    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
          Decider.resolveCoreWithContext log cat ()
