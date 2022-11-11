@@ -284,11 +284,11 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
     member val BatchOptions = batchOptions
 
     member _.TokenEmpty = Token.create -1L
-    member _.LoadBatched(streamName, log, tryDecode) : Async<StreamToken * 'event array> = async {
-        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName 0L false
+    member _.LoadBatched(streamName, requireLeader, log, tryDecode) : Async<StreamToken * 'event array> = async {
+        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName 0L requireLeader
         return Token.create version, Array.chooseV tryDecode events }
-    member _.LoadLast(streamName, log, tryDecode) : Async<StreamToken * 'event array> = async {
-        let! version, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader false streamName
+    member _.LoadLast(streamName, requireLeader, log, tryDecode) : Async<StreamToken * 'event array> = async {
+        let! version, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader streamName
         return Token.create version, Array.chooseV tryDecode events }
     member _.Reload(streamName, requireLeader, log, token, tryDecode)
         : Async<StreamToken * 'event array> = async {
@@ -313,17 +313,17 @@ type AccessStrategy =
 
 type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : IEventCodec<_, _, 'context>, ?access) =
 
-    let loadAlgorithm streamName log =
+    let loadAlgorithm streamName requireLeader log =
         match access with
-        | None -> context.LoadBatched(streamName, log, codec.TryDecode)
-        | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, log, codec.TryDecode)
+        | None -> context.LoadBatched(streamName, requireLeader, log, codec.TryDecode)
+        | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, requireLeader, log, codec.TryDecode)
 
     let load (fold : 'state -> 'event seq -> 'state) initial f : Async<struct (StreamToken * 'state)> = async {
         let! token, events = f
         return struct (token, fold initial events) }
 
-    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, streamName : string, log : ILogger) =
-        load fold initial (loadAlgorithm streamName log)
+    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, streamName : string, requireLeader, log : ILogger) =
+        load fold initial (loadAlgorithm streamName requireLeader log)
     member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName : string, requireLeader, token, log : ILogger) =
         load fold state (context.Reload(streamName, requireLeader, log, token, codec.TryDecode))
 
@@ -334,21 +334,21 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
         let encodedEvents : IEventData<EventBody> array = events |> Array.map encode
         match! context.TrySync(log, streamName, token, encodedEvents) with
         | GatewaySyncResult.ConflictUnknown ->
-            return SyncResult.Conflict  (Async.startAsTask >> fun ct -> x.Reload(fold, state, streamName, (*requireLeader*)true, token, log) |>  ct)
+            return SyncResult.Conflict  (fun ct -> x.Reload(fold, state, streamName, (*requireLeader*)true, token, log) |> Async.startAsTask ct)
         | GatewaySyncResult.Written token' ->
             return SyncResult.Written   (token', fold state (Seq.ofArray events)) }
 
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
-    let batched log streamName ct = category.Load(fold, initial, streamName, log) |> Async.startAsTask ct
+    let batched log streamName requireLeader ct = category.Load(fold, initial, streamName, requireLeader, log) |> Async.startAsTask ct
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, streamName, allowStale, ct) = task {
+        member _.Load(log, _categoryName, _streamId, streamName, allowStale, requireLeader, ct) = task {
             match readCache with
-            | None -> return! batched log streamName ct
+            | None -> return! batched log streamName requireLeader ct
             | Some (cache : ICache, prefix : string) ->
                 match! cache.TryGet(prefix + streamName) with
-                | ValueNone -> return! batched log streamName ct
+                | ValueNone -> return! batched log streamName requireLeader ct
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
-                | ValueSome (token, state) -> return! category.Reload(fold, state, streamName, false, token, log) }
+                | ValueSome (token, state) -> return! category.Reload(fold, state, streamName, requireLeader, token, log) }
         member _.TrySync(log, _categoryName, _streamId, streamName, context, _init, token, originState, events, _ct) = task {
             match! category.TrySync(log, fold, streamName, token, originState, events, context) with
             | SyncResult.Conflict resync ->          return SyncResult.Conflict resync

@@ -1133,7 +1133,7 @@ module internal Caching =
             do! updateCache streamName (token, state)
             return struct (token, state) }
         interface ICategory<'event, 'state, 'context> with
-            member _.Load(log, _categoryName, _streamId, streamName, allowStale, ct) : Task<struct (StreamToken * 'state)> = task {
+            member _.Load(log, _categoryName, _streamId, streamName, allowStale, _requireLeader, ct) : Task<struct (StreamToken * 'state)> = task {
                 match! tryReadCache streamName : Task<struct (_*_) voption> with
                 | ValueNone -> return! (fun () -> category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin, ct)) |> cache streamName
                 | ValueSome struct (token, state) when allowStale -> return struct (token, state) // read already updated TTL, no need to write

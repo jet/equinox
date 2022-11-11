@@ -13,7 +13,7 @@ type IStream<'event, 'state> =
     abstract LoadEmpty : unit -> struct (StreamToken * 'state)
 
     /// Obtain the state from the target stream
-    abstract Load : allowStale : bool * ct : CancellationToken -> Task<struct (StreamToken * 'state)>
+    abstract Load : allowStale : bool * requireLeader : bool * ct : CancellationToken -> Task<struct (StreamToken * 'state)>
 
     /// Given the supplied `token` [and related `originState`], attempt to move to state `state'` by appending the supplied `events` to the underlying stream
     /// SyncResult.Written: implies the state is now the value represented by the Result's value

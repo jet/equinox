@@ -228,6 +228,8 @@ and DeciderCore<'event, 'state>(stream : IStream<'event, 'state>) =
 and [<NoComparison; NoEquality>] LoadOption<'state> =
     /// Default policy; Obtain latest state from store based on consistency level configured
     | RequireLoad
+    /// Request that data be read with a quorum read / from a Leader connection
+    | RequireLeader
     /// If the Cache holds any state, use that without checking the backing store for updates, implying:
     /// - maximizing how much we lean on Optimistic Concurrency Control when doing a `Transact` (you're still guaranteed a consistent outcome)
     /// - enabling stale reads [in the face of multiple writers (either in this process or in other processes)] when doing a `Query`
@@ -240,8 +242,9 @@ and internal LoadPolicy() =
     static member Fetch<'state, 'event>(x : LoadOption<'state> option)
         : IStream<'event, 'state> -> CancellationToken -> Task<struct (StreamToken * 'state)> =
         match x with
-        | None | Some RequireLoad ->                 fun stream ct ->   stream.Load(allowStale = false, ct = ct)
-        | Some AllowStale ->                         fun stream ct ->   stream.Load(allowStale = true, ct = ct)
+        | None | Some RequireLoad ->                 fun stream ct ->   stream.Load(allowStale = false, requireLeader = false, ct = ct)
+        | Some RequireLeader ->                      fun stream ct ->   stream.Load(allowStale = false, requireLeader = true,  ct = ct)
+        | Some AllowStale ->                         fun stream ct ->   stream.Load(allowStale = true,  requireLeader = false, ct = ct)
         | Some AssumeEmpty ->                        fun stream _ct ->  Task.FromResult(stream.LoadEmpty())
         | Some (FromMemento (streamToken, state)) -> fun _stream _ct -> Task.FromResult(streamToken, state)
 
