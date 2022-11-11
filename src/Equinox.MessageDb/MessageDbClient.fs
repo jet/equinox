@@ -7,7 +7,6 @@ open NpgsqlTypes
 open System
 open System.Data.Common
 open System.Text.Json
-open System.Threading
 open System.Threading.Tasks
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
@@ -18,7 +17,38 @@ module private Json =
   let jsonNull = JsonSerializer.SerializeToUtf8Bytes(null)
   let toArray (m: Format) = match m.IsEmpty with true -> jsonNull | false -> m.ToArray()
 
-type MessageDbClient internal (createConnection: CancellationToken -> Task<NpgsqlConnection>) =
+type MessageDbWriter(connectionString: string) =
+    member private _.PrepareWriteCommand(streamName : string, version, message : IEventData<Format>) =
+            let cmd = NpgsqlBatchCommand()
+            cmd.CommandText <- "select 1 from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)"
+
+            cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, message.EventId) |> ignore
+            cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
+            cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, message.EventType) |> ignore
+            cmd.Parameters.AddWithValue("Data", NpgsqlDbType.Jsonb, Json.toArray message.Data) |> ignore
+            cmd.Parameters.AddWithValue("Meta", NpgsqlDbType.Jsonb, Json.toArray message.Meta) |> ignore
+            cmd.Parameters.AddWithValue("ExpectedVersion", NpgsqlDbType.Bigint, version) |> ignore
+
+            cmd
+
+        member client.WriteMessages(streamName, events : _ array, version : int64, ct) = task {
+            try use conn = new NpgsqlConnection(connectionString)
+                do! conn.OpenAsync(ct)
+                use transaction = conn.BeginTransaction()
+                use batch = new NpgsqlBatch(conn, transaction)
+
+                let addCommand i event =
+                    client.PrepareWriteCommand(streamName, version + int64 i, event)
+                    |> batch.BatchCommands.Add
+                events |> Array.iteri addCommand
+
+                do! batch.ExecuteNonQueryAsync(ct) :> Task
+                do! transaction.CommitAsync(ct)
+                return MdbSyncResult.Written (version + int64 events.Length)
+            with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
+                return MdbSyncResult.ConflictUnknown }
+
+type MessageDbReader internal (connectionString: string, writerConnectionString: string) =
     let readonly (bytes: byte array) = ReadOnlyMemory.op_Implicit(bytes)
     let readRow (reader: DbDataReader) =
         let readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
@@ -34,8 +64,9 @@ type MessageDbClient internal (createConnection: CancellationToken -> Task<Npgsq
             ?causationId = readNullableString 6,
             timestamp = timestamp)
 
-    member _.ReadLastEvent(streamName : string, ct) = task {
-        use! conn = createConnection ct
+    member _.ReadLastEvent(streamName : string, requiresLeader, ct) = task {
+        use conn = new NpgsqlConnection(if requiresLeader then writerConnectionString else connectionString)
+        do! conn.OpenAsync(ct)
         use cmd = conn.CreateCommand()
         cmd.CommandText <-
             "select
@@ -52,8 +83,9 @@ type MessageDbClient internal (createConnection: CancellationToken -> Task<Npgsq
         else
             return Array.empty }
 
-    member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, ct) = task {
-        use! conn = createConnection ct
+    member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, requiresLeader, ct) = task {
+        use conn = new NpgsqlConnection(if requiresLeader then writerConnectionString else connectionString)
+        do! conn.OpenAsync(ct)
         use cmd = conn.CreateCommand()
 
         cmd.CommandText <-
@@ -80,31 +112,3 @@ type MessageDbClient internal (createConnection: CancellationToken -> Task<Npgsq
 
         return events.ToArray() }
 
-    member private _.PrepareWriteCommand(streamName : string, version, message : IEventData<Format>) =
-        let cmd = NpgsqlBatchCommand()
-        cmd.CommandText <- "select 1 from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)"
-
-        cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, message.EventId) |> ignore
-        cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
-        cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, message.EventType) |> ignore
-        cmd.Parameters.AddWithValue("Data", NpgsqlDbType.Jsonb, Json.toArray message.Data) |> ignore
-        cmd.Parameters.AddWithValue("Meta", NpgsqlDbType.Jsonb, Json.toArray message.Meta) |> ignore
-        cmd.Parameters.AddWithValue("ExpectedVersion", NpgsqlDbType.Bigint, version) |> ignore
-
-        cmd
-
-    member client.WriteMessages(streamName, events : _ array, version : int64, ct) = task {
-        try use! conn = createConnection ct
-            use transaction = conn.BeginTransaction()
-            use batch = new NpgsqlBatch(conn, transaction)
-
-            let addCommand i event =
-                client.PrepareWriteCommand(streamName, version + int64 i, event)
-                |> batch.BatchCommands.Add
-            events |> Array.iteri addCommand
-
-            do! batch.ExecuteNonQueryAsync(ct) :> Task
-            do! transaction.CommitAsync(ct)
-            return MdbSyncResult.Written (version + int64 events.Length)
-        with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
-            return MdbSyncResult.ConflictUnknown }
