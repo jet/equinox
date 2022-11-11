@@ -255,10 +255,14 @@ module private Read =
         return version, events }
 
 module private Token =
+    // NOTE MessageDB's streamVersion is -1 based, similar to ESDB and SSS
     let create streamVersion : StreamToken =
         { value = box streamVersion
-          version = streamVersion
+          // The `Version` exposed on the `ISyncContext` is 0-based
+          version = streamVersion + 1L
           streamBytes = -1 }
+    let inline streamVersion (token: StreamToken) = unbox<int64> token.value
+
     let supersedes struct (current, x) =
         x.version > current.version
 
@@ -292,12 +296,14 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
         return Token.create version, Array.chooseV tryDecode events }
     member _.Reload(streamName, requireLeader, log, token, tryDecode)
         : Async<StreamToken * 'event array> = async {
-        let streamPosition = token.version + 1L
-        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName streamPosition requireLeader
-        return Token.create (max token.version version), Array.chooseV tryDecode events }
+        let streamVersion = Token.streamVersion token
+        let startPos = streamVersion + 1L // Reading a stream uses {inclusive} positions, but the streamVersion is `-1`-based
+        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName startPos requireLeader
+        return Token.create (max streamVersion version), Array.chooseV tryDecode events }
 
     member _.TrySync(log, streamName, token, encodedEvents : IEventData<EventBody> array): Async<GatewaySyncResult> = async {
-        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName token.version encodedEvents with
+        let streamVersion = Token.streamVersion token
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName streamVersion encodedEvents with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->

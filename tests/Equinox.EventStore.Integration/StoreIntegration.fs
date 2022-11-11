@@ -89,12 +89,24 @@ type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'co
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
+module SimplestThing =
+    type Event =
+        | StuffHappened
+        interface TypeShape.UnionContract.IUnionContract
+    let codec = EventCodec.gen<Event>
+
+    let evolve (state: Event) (event: Event) = event
+    let fold = Seq.fold evolve
+    let initial = StuffHappened
+    let resolve log context = Category(context, codec, fold, initial) |> Equinox.Decider.resolve log
+
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let codec = Cart.Events.codec
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
+    let createCategory log context = Category(context, codec, fold, initial) |> Equinox.Decider.resolve log
     let createServiceWithoutOptimization log context =
-        Category(context, codec, fold, initial) |> Equinox.Decider.resolve log |> Cart.create
+        createCategory log context |> Cart.create
 
     #if !STORE_MESSAGEDB
     let createServiceWithCompaction log context =
@@ -446,3 +458,18 @@ type Tests(testOutputHelper) =
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }
 #endif
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Version is 0-based`` () = Async.RunSynchronously <| async {
+        let log, _ = output.CreateLoggerWithCapture()
+        let! connection = connectToLocalStore log
+
+        let batchSize = 3
+        let context = createContext connection batchSize
+        let id = $"{Guid.NewGuid():N}"
+        let decider = SimplestThing.resolve log context struct("SimplestThing", id)
+
+        let! before, after = decider.TransactEx(
+            (fun state -> state.Version, [SimplestThing.StuffHappened]),
+            mapResult = (fun result ctx-> result, ctx.Version))
+        test <@ [before; after] = [0L; 1L] @>
+    }
