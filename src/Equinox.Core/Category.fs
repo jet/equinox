@@ -45,34 +45,34 @@ type Category<'event, 'state, 'context>(
 
 module Stream =
 
-    let resolveWithContext (ctx : 'context) log (cat : Category<'event, 'state, 'context>) : struct (string * string) -> Core.IStream<'event, 'state> =
+    let resolveWithContext log (cat : Category<'event, 'state, 'context>) (ctx : 'context) : struct (string * string) -> Core.IStream<'event, 'state> =
          fun struct (categoryName, streamId) ->
              cat.Stream(log, ctx, categoryName, streamId)
 
     let resolve log (cat : Category<'event, 'state, unit>)  =
-        resolveWithContext () log cat
+        resolveWithContext log cat ()
 
 module Decider =
 
-    let resolveCoreWithContext context log (cat : Category<'event, 'state, 'context>) : struct (string * string) -> DeciderCore<'event, 'state> =
-         Stream.resolveWithContext context log cat >> DeciderCore
+    let resolveCoreWithContext log (cat : Category<'event, 'state, 'context>) context  : struct (string * string) -> DeciderCore<'event, 'state> =
+         Stream.resolveWithContext log cat context >> DeciderCore
 
     let resolveCore log (cat : Category<'event, 'state, unit>) =
-         resolveCoreWithContext () log cat
+         resolveCoreWithContext log cat ()
 
-    let resolveWithContext context log (cat : Category<'event, 'state, 'context>) : struct (string * string) -> Decider<'event, 'state> =
-         Stream.resolveWithContext context log cat >> Decider
+    let resolveWithContext log (cat : Category<'event, 'state, 'context>) context : struct (string * string) -> Decider<'event, 'state> =
+         Stream.resolveWithContext log cat context >> Decider
 
     let resolve log (cat : Category<'event, 'state, unit>) =
-         resolveWithContext () log cat
+         resolveWithContext log cat ()
 
 [<System.Runtime.CompilerServices.Extension>]
 type DeciderExtensions =
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, 'context>, context : 'context, log) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
+    static member Resolve(log, cat : Category<'event, 'state, 'context>, context) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
          Decider.resolveCoreWithContext context log cat
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
-         Decider.resolveCoreWithContext () log cat
+    static member Resolve(log, cat : Category<'event, 'state, unit>) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
+         Decider.resolveCoreWithContext log cat ()
