@@ -23,7 +23,7 @@ type IStream<'event, 'state> =
 /// Internal type used to represent the outcome of a TrySync operation
 and [<NoEquality; NoComparison; RequireQualifiedAccess>] SyncResult<'state> =
     /// The write succeeded (the supplied token and state can be used to efficiently continue the processing if, and only if, desired)
-    | Written of w : struct (StreamToken * 'state)
+    | Written of struct (StreamToken * 'state)
     /// The set of changes supplied to TrySync conflict with the present state of the underlying stream based on the configured policy for that store
     /// The inner is Async as some stores (and/or states) are such that determining the conflicting state (if, and only if, required) needs an extra trip to obtain
     | Conflict of (CancellationToken -> Task<struct (StreamToken * 'state)>)
@@ -37,7 +37,7 @@ type internal Impl() =
             (decide : Func<struct (_ * _), CancellationToken, Task<struct ('r * 'e seq)>>)
             (validateResync : int -> unit)
             (mapResult : Func<'r, struct (StreamToken * 's), 'v>)
-            originTokenAndState ct : Task<'v>=
+            originTokenAndState ct : Task<'v> =
         let rec loop attempt tokenAndState : Task<'v> = task {
             let! result, events = decide.Invoke(tokenAndState, ct)
             match Array.ofSeq events with
@@ -52,12 +52,13 @@ type internal Impl() =
                     return! loop (attempt + 1) tokenAndState }
         loop 1 originTokenAndState
 
+    static member TransactAsync(stream, fetch : IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>,
+                                decide, reload, mapResult, ct) : Task<'v> = task {
+        let! originTokenAndState = fetch stream ct
+        return! run stream decide reload mapResult originTokenAndState ct }
+
     static member QueryAsync(stream, fetch : IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>,
                              projection : Func<struct (StreamToken * 's), 'v>, ct) : Task<'v> = task {
         let! tokenAndState = fetch stream ct
         return projection.Invoke tokenAndState }
 
-    static member TransactAsync(stream, fetch : IStream<'e, 's> -> CancellationToken -> Task<struct (StreamToken * 's)>,
-                                decide, reload, mapResult, ct) : Task<'v> = task {
-        let! originTokenAndState = fetch stream ct
-        return! run stream decide reload mapResult originTokenAndState ct }
