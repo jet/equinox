@@ -1,5 +1,6 @@
 ﻿module Equinox.Store.Integration.StoreIntegration
 
+open System.Diagnostics
 open Domain
 open FSharp.UMX
 open Serilog
@@ -87,6 +88,20 @@ type Context = EventStoreContext
 type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'context>
 #endif
 
+open OpenTelemetry
+open OpenTelemetry.Resources
+open OpenTelemetry.Trace
+let testsource = new ActivitySource("TestSource")
+let tracerProvider () = Sdk.CreateTracerProviderBuilder()
+                             .AddSource("Equinox.MessageDb")
+                             // .AddSource("Npgsql")
+                             .AddSource("TestSource")
+                             .SetResourceBuilder(
+                                ResourceBuilder.CreateDefault().AddService(serviceName = "tests"))
+                             .AddConsoleExporter()
+                             .AddOtlpExporter(fun opt -> opt.Endpoint <- Uri("http://localhost:4317"))
+                             .Build()
+
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
 module SimplestThing =
@@ -143,7 +158,6 @@ module ContactPreferences =
         |> ContactPreferences.create
 
 type Tests(testOutputHelper) =
-
     let output = TestContext(testOutputHelper)
 
     let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
@@ -170,6 +184,11 @@ type Tests(testOutputHelper) =
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
+        #if STORE_MESSAGEDB
+        use _ = tracerProvider()
+        use _ = testsource.StartActivity("Test")
+        use capture = new ActivityTest()
+        #endif
         let! connection = connectToLocalStore log
 
         let batchSize = 3
@@ -198,7 +217,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = Async.RunSynchronously <| async {
+        use _ = tracerProvider()
+        use _ = testsource.StartActivity("Test")
         let log1, capture1 = output.CreateLoggerWithCapture()
+        #if STORE_MESSAGEDB
+        use capture1 = new ActivityTest()
+        #endif
 
         let! connection = connectToLocalStore log1
         // Ensure batching is included at some point in the proceedings
@@ -268,8 +292,13 @@ type Tests(testOutputHelper) =
                 && has sku11 11 && has sku12 12
                 && has sku21 21 && has sku22 22 @>
        // Intended conflicts pertained
+        #if STORE_MESSAGEDB
+        let hadConflict ev = ev = EsAct.AppendConflict
+        test <@ capture1.ExternalCalls |> List.countBy hadConflict |> List.length = 2 @>
+        #else
         let hadConflict= function EsEvent (EsAction EsAct.AppendConflict) -> Some () | _ -> None
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
+        #endif
     }
 
 #if STORE_MESSAGEDB // MessageDB doesn't report Batches for "Read Last Event" scenarios
@@ -330,7 +359,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
+        use _ = tracerProvider()
+        use _ = testsource.StartActivity("Test")
         let log, capture = output.CreateLoggerWithCapture()
+        #if STORE_MESSAGEDB
+        use capture = new ActivityTest()
+        #endif
         let! client = connectToLocalStore log
         let service = ContactPreferences.createService log client
 
@@ -351,7 +385,12 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        use _ = tracerProvider()
+        use _ = testsource.StartActivity("Test")
         let log, capture = output.CreateLoggerWithCapture()
+        #if STORE_MESSAGEDB
+        use capture = new ActivityTest()
+        #endif
         let! client = connectToLocalStore log
         let batchSize = 10
         let cache = Equinox.Cache("cart", sizeMb = 50)
