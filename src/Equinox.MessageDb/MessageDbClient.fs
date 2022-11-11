@@ -18,17 +18,13 @@ type MessageDbClient internal (createConnection: CancellationToken -> Task<Npgsq
     let readonly (bytes: byte array) = ReadOnlyMemory.op_Implicit(bytes)
     let readRow (reader: DbDataReader) =
         let readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
-        let time = DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)
-        let data = reader.GetFieldValue<byte array>(2) |> readonly
-        let meta = reader.GetFieldValue<byte array>(3) |> readonly
-
-        let timestamp = DateTimeOffset(time)
+        let timestamp = DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc))
 
         TimelineEvent.Create(
             index = reader.GetInt64(0),
             eventType = reader.GetString(1),
-            data = data,
-            meta = meta,
+            data = (reader.GetFieldValue<byte array>(2) |> readonly),
+            meta = (reader.GetFieldValue<byte array>(3) |> readonly),
             eventId = reader.GetGuid(4),
             ?correlationId = readNullableString 5,
             ?causationId = readNullableString 6,
