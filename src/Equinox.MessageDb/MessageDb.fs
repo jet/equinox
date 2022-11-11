@@ -257,8 +257,10 @@ module private Read =
 module private Token =
     let create streamVersion : StreamToken =
         { value = box streamVersion
-          version = streamVersion
+          version = streamVersion + 1L
           streamBytes = -1 }
+    let inline version (token: StreamToken) = unbox<int64> token.value
+
     let supersedes struct (current, x) =
         x.version > current.version
 
@@ -292,12 +294,14 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
         return Token.create version, Array.chooseV tryDecode events }
     member _.Reload(streamName, requireLeader, log, token, tryDecode)
         : Async<StreamToken * 'event array> = async {
-        let streamPosition = token.version + 1L
+        let tokenVersion = Token.version token
+        let streamPosition = tokenVersion + 1L
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName streamPosition requireLeader
-        return Token.create (max token.version version), Array.chooseV tryDecode events }
+        return Token.create (max tokenVersion version), Array.chooseV tryDecode events }
 
     member _.TrySync(log, streamName, token, encodedEvents : IEventData<EventBody> array): Async<GatewaySyncResult> = async {
-        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName token.version encodedEvents with
+        let version = Token.version token
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName version encodedEvents with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->
