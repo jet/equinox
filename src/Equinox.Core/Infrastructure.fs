@@ -20,15 +20,20 @@ type Async with
     /// </summary>
     /// <param name="task">Task to be awaited.</param>
     [<DebuggerStepThrough>]
-    static member AwaitTaskCorrect(task : Task<'T>) : Async<'T> =
+    static member AwaitTaskCorrect(task: Task<'T>) : Async<'T> =
         Async.FromContinuations(fun (sc, ec, _cc) ->
-            task.ContinueWith(fun (t : Task<'T>) ->
+            task.ContinueWith(fun (t: Task<'T>) ->
                 if t.IsFaulted then
                     let e = t.Exception
-                    if e.InnerExceptions.Count = 1 then ec e.InnerExceptions[0]
-                    else ec e
-                elif t.IsCanceled then ec (TaskCanceledException())
-                else sc t.Result)
+
+                    if e.InnerExceptions.Count = 1 then
+                        ec e.InnerExceptions[0]
+                    else
+                        ec e
+                elif t.IsCanceled then
+                    ec (TaskCanceledException())
+                else
+                    sc t.Result)
             |> ignore)
 
     /// <summary>
@@ -38,13 +43,16 @@ type Async with
     /// </summary>
     /// <param name="task">Task to be awaited.</param>
     [<DebuggerStepThrough>]
-    static member AwaitTaskCorrect(task : Task) : Async<unit> =
+    static member AwaitTaskCorrect(task: Task) : Async<unit> =
         Async.FromContinuations(fun (sc, ec, _cc) ->
-            task.ContinueWith(fun (task : Task) ->
+            task.ContinueWith(fun (task: Task) ->
                 if task.IsFaulted then
                     let e = task.Exception
-                    if e.InnerExceptions.Count = 1 then ec e.InnerExceptions[0]
-                    else ec e
+
+                    if e.InnerExceptions.Count = 1 then
+                        ec e.InnerExceptions[0]
+                    else
+                        ec e
                 elif task.IsCanceled then
                     ec (TaskCanceledException())
                 else
@@ -53,7 +61,8 @@ type Async with
 
 module Async =
 
-    let startAsTask ct computation = Async.StartAsTask(computation, cancellationToken = ct)
+    let startAsTask ct computation =
+        Async.StartAsTask(computation, cancellationToken = ct)
 
 module ValueTuple =
 
@@ -62,8 +71,15 @@ module ValueTuple =
 
 module ValueOption =
 
-    let inline toOption x = match x with ValueSome x -> Some x | ValueNone -> None
-    let inline toArray x = match x with ValueSome e -> [| e |] | ValueNone -> [||]
+    let inline toOption x =
+        match x with
+        | ValueSome x -> Some x
+        | ValueNone -> None
+
+    let inline toArray x =
+        match x with
+        | ValueSome e -> [| e |]
+        | ValueNone -> [||]
 
 module Seq =
 
@@ -71,4 +87,5 @@ module Seq =
 
 module Array =
 
-    let inline chooseV f = Array.choose (f >> ValueOption.toOption)
+    let inline chooseV f =
+        Array.choose (f >> ValueOption.toOption)
