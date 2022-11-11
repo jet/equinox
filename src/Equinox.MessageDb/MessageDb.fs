@@ -179,9 +179,9 @@ module private Read =
 
     let inline len (bytes: EventBody) = bytes.Length
     let resolvedEventLen (x : ITimelineEvent<EventBody>) = len x.Data + len x.Meta
-    let private loggedReadSlice conn streamName batchSize startPos requiresLeader (log : ILogger) : Async<_> = async {
+    let private loggedReadSlice reader streamName batchSize startPos requiresLeader (log : ILogger) : Async<_> = async {
         let! ct = Async.CancellationToken
-        let! t, slice = readSliceAsync conn streamName batchSize startPos requiresLeader ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
+        let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let bytes, count = slice.Messages |> Array.sumBy resolvedEventLen, slice.Messages.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice reqMetric
@@ -235,7 +235,7 @@ module private Read =
         log |> logLastEventRead streamName t page.Messages page.LastVersion
         return page.LastVersion, page.Messages }
 
-    let loadForwardsFrom (log : ILogger) retryPolicy conn batchSize maxPermittedBatchReads streamName startPosition requiresLeader
+    let loadForwardsFrom (log : ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
         let mergeBatches (batches : AsyncSeq<int64 * ITimelineEvent<EventBody> array>) = async {
             let mutable versionFromStream = -1L
@@ -246,7 +246,7 @@ module private Read =
                 |> AsyncSeq.toArrayAsync
             let version = versionFromStream
             return version, events }
-        let call pos = loggedReadSlice conn streamName batchSize pos requiresLeader
+        let call pos = loggedReadSlice reader streamName batchSize pos requiresLeader
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let batches : AsyncSeq<int64 * ITimelineEvent<EventBody> array> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
