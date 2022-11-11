@@ -453,8 +453,8 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
             // TOCONSIDER could avoid projecting `p`
             let rm = Metrics()
             let context = createContext rm.Add
-            let! t, res = context.QueryPaginatedAsync(kc, ?filterCondition = fc, limit = batchSize, ?exclusiveStartKey = le, scanIndexForward = not backwards)
-                          |> Stopwatch.Time
+            let! t, res = context.QueryPaginatedAsync(kc, ?filterCondition = fc, limit = batchSize, ?exclusiveStartKey = le,
+                                                      scanIndexForward = not backwards) |> Stopwatch.Time
             yield i, t, Array.map Batch.ofSchema res.Records, rm.Consumed
             match res.LastEvaluatedKey with
             | None -> ()
@@ -759,13 +759,13 @@ module internal Query =
                 |> AsyncSeq.takeWhileInclusive (function
                     | struct (x, ValueSome e) when isOrigin e ->
                         found <- true
+                        let log = log |> Log.prop "stream" stream
                         let logLevel = if x.i = 0 then Events.LogEventLevel.Debug else Events.LogEventLevel.Information
                         match lastResponse with
-                        | None -> log.ForContext("stream", stream).Write(logLevel, "EqxDynamo Stop @{index} {case}", x.i, x.c)
+                        | None -> log.Write(logLevel, "EqxDynamo Stop @{index} {case}", x.i, x.c)
                         | Some batch ->
                             let used, residual = batch |> calculateUsedVersusDroppedPayload x.i
-                            log.ForContext("stream", stream)
-                               .Write(logLevel, "EqxDynamo Stop @{index} {case} used {used}b residual {residual}b", x.i, x.c, used, residual)
+                            log.Write(logLevel, "EqxDynamo Stop @{index} {case} used {used}b residual {residual}b", x.i, x.c, used, residual)
                         false
                     | _ -> true)
                 |> AsyncSeq.toArrayAsync

@@ -7,7 +7,8 @@ open System.Threading.Tasks
 /// Store-agnostic interface representing interactions an Application can have with a set of streams with a given pair of Event and State types
 type ICategory<'event, 'state, 'context> =
     /// Obtain the state from the target stream
-    abstract Load : log: ILogger * categoryName: string * streamId: string * streamName: string * allowStale: bool * ct: CancellationToken -> Task<struct (StreamToken * 'state)>
+    abstract Load : log: ILogger * categoryName: string * streamId: string * streamName: string * allowStale: bool
+                    * ct: CancellationToken -> Task<struct (StreamToken * 'state)>
 
     /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
     /// - Written: signifies synchronization has succeeded, implying the included StreamState should now be assumed to be the state of the stream

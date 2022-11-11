@@ -290,22 +290,14 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
     member _.LoadLast(streamName, log, tryDecode) : Async<StreamToken * 'event array> = async {
         let! version, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader false streamName
         return Token.create version, Array.chooseV tryDecode events }
-    member _.LoadFromToken(useWriteConn, streamName, log, token, tryDecode)
+    member _.Reload(streamName, requireLeader, log, token, tryDecode)
         : Async<StreamToken * 'event array> = async {
         let streamPosition = token.version + 1L
-        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName streamPosition useWriteConn
+        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName streamPosition requireLeader
         return Token.create (max token.version version), Array.chooseV tryDecode events }
 
     member _.TrySync(log, streamName, token, encodedEvents : IEventData<EventBody> array): Async<GatewaySyncResult> = async {
         match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName token.version encodedEvents with
-        | MdbSyncResult.ConflictUnknown ->
-            return GatewaySyncResult.ConflictUnknown
-        | MdbSyncResult.Written version' ->
-            let token = Token.create version'
-            return GatewaySyncResult.Written token }
-
-    member _.Sync(log, streamName, streamVersion, events : IEventData<EventBody> array) : Async<GatewaySyncResult> = async {
-        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName streamVersion events with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->
@@ -318,34 +310,36 @@ type AccessStrategy =
     /// doing a <c>fold</c> from any such event will yield a correct and complete state
     /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</c> or <c>'event</c>s.
     | LatestKnownEvent
+
 type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : IEventCodec<_, _, 'context>, ?access) =
-    let tryDecode = codec.TryDecode
+
     let loadAlgorithm streamName log =
         match access with
-        | None -> context.LoadBatched(streamName, log, tryDecode)
-        | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, log, tryDecode)
-    let load (fold : 'state -> 'event seq -> 'state) initial f = async {
+        | None -> context.LoadBatched(streamName, log, codec.TryDecode)
+        | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, log, codec.TryDecode)
+
+    let load (fold : 'state -> 'event seq -> 'state) initial f : Async<struct (StreamToken * 'state)> = async {
         let! token, events = f
         return struct (token, fold initial events) }
-    member _.Load(fold : 'state -> 'event seq -> 'state) (initial : 'state) (streamName : string) (log : ILogger) : Async<struct (StreamToken * 'state)> =
-        (load fold initial) (loadAlgorithm streamName log)
 
-    member _.LoadFromToken (fold : 'state -> 'event seq -> 'state) (state : 'state) (streamName : string) token (log : ILogger) : Async<struct (StreamToken * 'state)> =
-        (load fold state) (context.LoadFromToken(false, streamName, log, token, tryDecode))
+    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, streamName : string, log : ILogger) =
+        load fold initial (loadAlgorithm streamName log)
+    member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName : string, requireLeader, token, log : ILogger) =
+        load fold state (context.Reload(streamName, requireLeader, log, token, codec.TryDecode))
 
-    member _.TrySync<'context>
+    member x.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
             streamName, token, state : 'state, events : 'event array, ctx : 'context) : Async<SyncResult<'state>> = async {
         let encode e = codec.Encode(ctx, e)
         let encodedEvents : IEventData<EventBody> array = events |> Array.map encode
         match! context.TrySync(log, streamName, token, encodedEvents) with
         | GatewaySyncResult.ConflictUnknown ->
-            return SyncResult.Conflict  (fun ct -> load fold state (context.LoadFromToken(true, streamName, log, token, tryDecode)) |> Async.startAsTask ct)
+            return SyncResult.Conflict  (Async.startAsTask >> fun ct -> x.Reload(fold, state, streamName, (*requireLeader*)true, token, log) |>  ct)
         | GatewaySyncResult.Written token' ->
             return SyncResult.Written   (token', fold state (Seq.ofArray events)) }
 
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
-    let batched log streamName ct = category.Load fold initial streamName log |> Async.startAsTask ct
+    let batched log streamName ct = category.Load(fold, initial, streamName, log) |> Async.startAsTask ct
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, _categoryName, _streamId, streamName, allowStale, ct) = task {
             match readCache with
@@ -354,7 +348,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
                 match! cache.TryGet(prefix + streamName) with
                 | ValueNone -> return! batched log streamName ct
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
-                | ValueSome (token, state) -> return! category.LoadFromToken fold state streamName token log }
+                | ValueSome (token, state) -> return! category.Reload(fold, state, streamName, false, token, log) }
         member _.TrySync(log, _categoryName, _streamId, streamName, context, _init, token, originState, events, _ct) = task {
             match! category.TrySync(log, fold, streamName, token, originState, events, context) with
             | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
@@ -403,16 +397,14 @@ type MessageDbCategory<'event, 'state, 'context>(resolveInner, empty) =
         let empty = struct (context.TokenEmpty, initial)
         MessageDbCategory(resolveInner, empty)
 
-
-type MessageDbConnector(
-    connectionString : string,
-    // Can be used to divert reads to a replica
-    // Conflicts detected on write trigger a resync, reading via the `connectionString` to maximize the freshness of the data for the retry
-    [<O; D(null)>]?readConnectionString : string,
-    [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-        let readConnectionString = defaultArg readConnectionString connectionString
-        member x.Establish() : MessageDbConnection =
-            let writer = MessageDbWriter(connectionString)
-            let reader = MessageDbReader(readConnectionString, connectionString)
-            MessageDbConnection(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
-
+type MessageDbConnector
+    (   connectionString : string,
+        // Can be used to divert reads to a replica
+        // Conflicts detected on write trigger a resync, reading via the `connectionString` to maximize the freshness of the data for the retry
+        [<O; D(null)>]?readConnectionString : string,
+        [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+    let readConnectionString = defaultArg readConnectionString connectionString
+    member _.Establish() : MessageDbConnection =
+        let writer = MessageDbWriter(connectionString)
+        let reader = MessageDbReader(readConnectionString, connectionString)
+        MessageDbConnection(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
