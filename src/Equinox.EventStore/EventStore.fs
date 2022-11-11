@@ -382,14 +382,12 @@ type EventStoreContext(connection : EventStoreConnection, batchOptions : BatchOp
             match events |> Array.tryFindBack isCompactionEvent with
             | None -> return Token.ofUncompactedVersion batchOptions.BatchSize version, Array.chooseV tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV tryDecode events }
-
     member _.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode, isOrigin) : Async<StreamToken * 'event []> = async {
         let! version, events =
             Read.loadBackwardsUntilCompactionOrStart log connection.ReadRetryPolicy connection.ReadConnection batchOptions.BatchSize batchOptions.MaxBatches streamName (tryDecode, isOrigin)
         match Array.tryHead events |> Option.filter (function _, ValueSome e -> isOrigin e | _ -> false) with
         | None -> return Token.ofUncompactedVersion batchOptions.BatchSize version, Array.chooseV ValueTuple.snd events
         | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV ValueTuple.snd events }
-
     member _.Reload useWriteConn streamName log (Token.Unpack token as streamToken) (tryDecode, isCompactionEventType)
         : Async<StreamToken * 'event[]> = async {
         let streamPosition = token.streamVersion + 1L
@@ -435,6 +433,7 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state, 'context>(context : EventStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access : AccessStrategy<'event, 'state>) =
+
     let tryDecode (e : ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
 
     let compactionPredicate =
@@ -442,12 +441,10 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
         | None -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
-
     let isOrigin =
         match access with
         | None | Some AccessStrategy.LatestKnownEvent -> fun _ -> true
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> isValid
-
     let loadAlgorithm streamName log =
         let batched = context.LoadBatched streamName log (tryDecode, None)
         let compacted = context.LoadBackwardsStoppingAtCompactionEvent streamName log (tryDecode, isOrigin)
@@ -455,7 +452,6 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
         | None -> batched
         | Some AccessStrategy.LatestKnownEvent
         | Some (AccessStrategy.RollingSnapshots _) -> compacted
-
     let load (fold : 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
         return struct (token, fold initial events) }

@@ -344,19 +344,21 @@ type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
 type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batchOptions : BatchOptions) =
+
     let isResolvedEventEventType (tryDecode, predicate) (e : StreamMessage) =
         let data = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
         predicate (tryDecode data)
     let tryIsResolvedEventEventType predicateOption = predicateOption |> Option.map isResolvedEventEventType
     let conn requireLeader = if requireLeader then connection.WriteConnection else connection.ReadConnection
+
     new (   connection : SqlStreamStoreConnection,
             // Max number of Events to retrieve in a single batch. Also affects frequency of RollingSnapshots. Default: 500.
             [<O; D null>] ?batchSize) =
         SqlStreamStoreContext(connection, BatchOptions(batchSize = defaultArg batchSize 500))
     member val BatchOptions = batchOptions
 
-    member _.TokenEmpty = Token.ofUncompactedVersion batchOptions.BatchSize -1L
-    member _.LoadBatched(streamName, log, tryDecode, isCompactionEventType) : Async<StreamToken * 'event[]> = async {
+    member internal _.TokenEmpty = Token.ofUncompactedVersion batchOptions.BatchSize -1L
+    member internal _.LoadBatched(streamName, log, tryDecode, isCompactionEventType) : Async<StreamToken * 'event[]> = async {
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.ReadConnection batchOptions.BatchSize batchOptions.MaxBatches streamName 0L
         match tryIsResolvedEventEventType isCompactionEventType with
         | None -> return Token.ofNonCompacting version, Array.chooseV tryDecode events
@@ -364,13 +366,13 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batchOptions :
             match events |> Array.tryFindBack isCompactionEvent with
             | None -> return Token.ofUncompactedVersion batchOptions.BatchSize version, Array.chooseV tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV tryDecode events }
-    member _.LoadBackwardsStoppingAtCompactionEvent(streamName, log, tryDecode, isOrigin) : Async<StreamToken * 'event []> = async {
+    member internal _.LoadBackwardsStoppingAtCompactionEvent(streamName, log, tryDecode, isOrigin) : Async<StreamToken * 'event []> = async {
         let! version, events =
             Read.loadBackwardsUntilCompactionOrStart log connection.ReadRetryPolicy connection.ReadConnection batchOptions.BatchSize batchOptions.MaxBatches streamName (tryDecode, isOrigin)
         match Array.tryHead events |> Option.filter (function _, ValueSome e -> isOrigin e | _ -> false) with
         | None -> return Token.ofUncompactedVersion batchOptions.BatchSize version, Array.chooseV ValueTuple.snd events
         | Some (resolvedEvent, _) -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV ValueTuple.snd events }
-    member _.Reload(streamName, requireLeader, log, (Token.Unpack token as streamToken), tryDecode, isCompactionEventType)
+    member internal _.Reload(streamName, requireLeader, log, (Token.Unpack token as streamToken), tryDecode, isCompactionEventType)
         : Async<StreamToken * 'event[]> = async {
         let streamPosition = token.streamVersion + 1L
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy (conn requireLeader) batchOptions.BatchSize batchOptions.MaxBatches streamName streamPosition
@@ -380,7 +382,7 @@ type SqlStreamStoreContext(connection : SqlStreamStoreConnection, batchOptions :
             match events |> Array.tryFindBack (fun re -> match tryDecode re with ValueSome e -> isCompactionEvent e | _ -> false) with
             | None -> return Token.ofPreviousTokenAndEventsLength streamToken events.Length batchOptions.BatchSize version, Array.chooseV tryDecode events
             | Some resolvedEvent -> return Token.ofCompactionResolvedEventAndVersion resolvedEvent batchOptions.BatchSize version, Array.chooseV tryDecode events }
-    member _.TrySync(log, streamName, (Token.Unpack pos as streamToken), events, encodedEvents : EventData array, isCompactionEventType) : Async<GatewaySyncResult> = async {
+    member internal _.TrySync(log, streamName, (Token.Unpack pos as streamToken), events, encodedEvents : EventData array, isCompactionEventType) : Async<GatewaySyncResult> = async {
         match! Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName pos.streamVersion encodedEvents with
         | EsSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
@@ -413,7 +415,9 @@ type private CompactionContext(eventsLen : int, capacityBeforeCompaction : int) 
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
 type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext, codec : FsCodec.IEventCodec<_, _, 'context>, ?access : AccessStrategy<'event, 'state>) =
+
     let tryDecode (e : ResolvedEvent) = e |> UnionEncoderAdapters.encodedEventOfResolvedEvent |> codec.TryDecode
+
     let compactionPredicate =
         match access with
         | None -> None
@@ -431,10 +435,12 @@ type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext,
     let load (fold : 'state -> 'event seq -> 'state) initial f = async {
         let! token, events = f
         return struct (token, fold initial events) }
+
     member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, streamName : string, log : ILogger) : Async<struct (StreamToken * 'state)> =
         load fold initial (loadAlgorithm streamName log)
     member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName : string, requireLeader, token, log : ILogger) : Async<struct (StreamToken * 'state)> =
         load fold state (context.Reload(streamName, false, log, token, tryDecode, compactionPredicate))
+
     member _.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
             streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event array, ctx : 'context) : Async<SyncResult<'state>> = async {

@@ -377,19 +377,16 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
         | None -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
-
     let isOrigin =
         match access with
         | None | Some AccessStrategy.LatestKnownEvent -> fun _ -> true
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> isValid
-
     let loadAlgorithm streamName log =
         let compacted limit = context.LoadBackwardsStoppingAtCompactionEvent(streamName, log, limit, tryDecode, isOrigin)
         match access with
         | None -> context.LoadBatched(streamName, log, tryDecode, None)
         | Some AccessStrategy.LatestKnownEvent -> compacted (Some 1)
         | Some (AccessStrategy.RollingSnapshots _) -> compacted None
-
     let load (fold : 'state -> 'event seq -> 'state) initial f : Async<struct (StreamToken * 'state)> = async {
         let! struct (token, events) = f
         return struct (token, fold initial events) }
@@ -409,7 +406,6 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
             | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
                 let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
                 if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
-
         let encodedEvents : EventData[] = events |> Array.map (encode >> ClientCodec.eventData)
         match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate) with
         | GatewaySyncResult.ConflictUnknown _ ->
