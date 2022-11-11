@@ -48,7 +48,7 @@ type MessageDbWriter(connectionString: string) =
             with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
                 return MdbSyncResult.ConflictUnknown }
 
-type MessageDbReader internal (connectionString: string, writerConnectionString: string) =
+type MessageDbReader internal (connectionString: string, leaderConnectionString: string) =
     let readonly (bytes: byte array) = ReadOnlyMemory.op_Implicit(bytes)
     let readRow (reader: DbDataReader) =
         let readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
@@ -65,7 +65,7 @@ type MessageDbReader internal (connectionString: string, writerConnectionString:
             timestamp = timestamp)
 
     member _.ReadLastEvent(streamName : string, requiresLeader, ct) = task {
-        use conn = new NpgsqlConnection(if requiresLeader then writerConnectionString else connectionString)
+        use conn = new NpgsqlConnection(if requiresLeader then leaderConnectionString else connectionString)
         do! conn.OpenAsync(ct)
         use cmd = conn.CreateCommand()
         cmd.CommandText <-
@@ -84,7 +84,7 @@ type MessageDbReader internal (connectionString: string, writerConnectionString:
             return Array.empty }
 
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, requiresLeader, ct) = task {
-        use conn = new NpgsqlConnection(if requiresLeader then writerConnectionString else connectionString)
+        use conn = new NpgsqlConnection(if requiresLeader then leaderConnectionString else connectionString)
         do! conn.OpenAsync(ct)
         use cmd = conn.CreateCommand()
 
