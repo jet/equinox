@@ -470,7 +470,6 @@ type Tests(testOutputHelper) =
 
         let! before, after = decider.TransactEx(
             (fun state -> state.Version, [SimplestThing.StuffHappened]),
-            mapResult = (fun s result -> s, result.Version))
-        test <@ before = 0L @>
-        test <@ after = 1L @>
+            mapResult = (fun result ctx-> result, ctx.Version))
+        test <@ [before; after] = [0L; 1L] @>
     }
