@@ -90,7 +90,6 @@ type MessageDbReader internal (connectionString: string, leaderConnectionString:
 
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, requiresLeader, ct) = task {
         use! conn = connect requiresLeader ct
-        do! conn.OpenAsync(ct)
         use cmd = conn.CreateCommand()
 
         cmd.CommandText <-
