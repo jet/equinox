@@ -60,15 +60,10 @@ module ValueTuple =
     let inline fst struct (f, _s) = f
     let inline snd struct (_f, s) = s
 
-module ValueOption =
-
-    let inline toOption x = match x with ValueSome x -> Some x | ValueNone -> None
-    let inline toArray x = match x with ValueSome e -> [| e |] | ValueNone -> [||]
-
 module Seq =
 
-    let inline chooseV f = Seq.choose (f >> ValueOption.toOption)
+    let inline chooseV f xs = seq { for x in xs do match f x with ValueSome v -> yield v | ValueNone -> () }
 
 module Array =
 
-    let inline chooseV f arr = [| for item in arr do match f item with ValueSome v -> yield v | ValueNone -> () |]
+    let inline chooseV f xs = [| for item in xs do match f item with ValueSome v -> yield v | ValueNone -> () |]
