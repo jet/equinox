@@ -71,4 +71,4 @@ module Seq =
 
 module Array =
 
-    let inline chooseV f = Array.choose (f >> ValueOption.toOption)
+    let inline chooseV f arr = [| for item in arr do match f item with ValueSome v -> yield v | ValueNone -> () |]
