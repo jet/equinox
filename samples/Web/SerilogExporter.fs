@@ -17,7 +17,7 @@ type SerilogExporter() =
           let mutable logger = log
           for tag in span.TagObjects do
               logger <- logger.ForContext(tag.Key, tag.Value)
-          logger.Information("{Module}:{Operation}", span.Source.Name, span.DisplayName)
+          logger.Information("{Module}:{Operation} {Duration}ms", span.Source.Name, span.DisplayName, span.Duration.TotalMilliseconds)
       ExportResult.Success
 
 
