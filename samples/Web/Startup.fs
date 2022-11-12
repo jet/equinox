@@ -7,6 +7,9 @@ open Microsoft.Extensions.Hosting
 open Samples.Infrastructure
 open Serilog
 open Serilog.Events
+open OpenTelemetry
+open OpenTelemetry.Resources
+open OpenTelemetry.Trace
 
 [<NoEquality; NoComparison>]
 type Arguments =
@@ -47,7 +50,13 @@ type App = class end
 type Startup() =
     // This method gets called by the runtime. Use this method to add services to the container.
     static member ConfigureServices(services: IServiceCollection, p : ParseResults<Arguments>) : unit =
+
+
         services
+            .AddOpenTelemetryTracing(fun builder ->
+                builder.AddSource("Equinox.MessageDb").AddAspNetCoreInstrumentation()
+                       .AddExporter<SerilogExporter>(ExportProcessorType.Simple)
+                       .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("Equinox.Web")) |> ignore)
             .AddMvc()
             .AddJsonOptions(fun o ->
                 FsCodec.SystemTextJson.Options.Default.Converters

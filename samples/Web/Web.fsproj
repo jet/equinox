@@ -8,11 +8,15 @@
     <Compile Include="Controllers\TodosController.fs" />
     <Compile Include="Controllers\SavesController.fs" />
     <Compile Include="Controllers\FavoritesController.fs" />
+    <Compile Include="SerilogExporter.fs" />
     <Compile Include="Startup.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="OpenTelemetry" Version="1.4.0-beta.3" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.0.0-rc9.9" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.0.0-rc9.9" />
     <PackageReference Include="Serilog.AspNetCore" Version="3.2.0" />
   </ItemGroup>
 

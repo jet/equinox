@@ -3,7 +3,6 @@
 open System.Diagnostics
 open Domain
 open FSharp.UMX
-open Serilog
 open Swensen.Unquote
 open System.Threading
 open System
@@ -57,19 +56,8 @@ let connectToLocalStore _ = async {
 }
 type Context = MessageDbContext
 type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>
-open OpenTelemetry
-open OpenTelemetry.Resources
-open OpenTelemetry.Trace
+open Serilog.Sinks
 let testsource = new ActivitySource("TestSource")
-let tracerProvider () = Sdk.CreateTracerProviderBuilder()
-                             .AddSource("Equinox.MessageDb")
-                             // .AddSource("Npgsql")
-                             .AddSource("TestSource")
-                             .SetResourceBuilder(
-                                ResourceBuilder.CreateDefault().AddService(serviceName = "tests"))
-                             .AddConsoleExporter()
-                             .AddOtlpExporter(fun opt -> opt.Endpoint <- Uri("http://localhost:4317"))
-                             .Build()
 #endif
 #if STORE_EVENTSTOREDB
 open Equinox.EventStoreDb
@@ -184,7 +172,6 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
         #if STORE_MESSAGEDB
-        use _ = tracerProvider()
         use _ = testsource.StartActivity("Test")
         use capture = new ActivityTest()
         #endif
@@ -218,7 +205,6 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = Async.RunSynchronously <| async {
         let log1, capture1 = output.CreateLoggerWithCapture()
         #if STORE_MESSAGEDB
-        use _ = tracerProvider()
         use _ = testsource.StartActivity("Test")
         use capture1 = new ActivityTest()
         #endif
@@ -360,7 +346,6 @@ type Tests(testOutputHelper) =
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
         #if STORE_MESSAGEDB
-        use _ = tracerProvider()
         use _ = testsource.StartActivity("Test")
         use capture = new ActivityTest()
         #endif
@@ -386,7 +371,6 @@ type Tests(testOutputHelper) =
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
         #if STORE_MESSAGEDB
-        use _ = tracerProvider()
         use _ = testsource.StartActivity("Test")
         use capture = new ActivityTest()
         #endif
