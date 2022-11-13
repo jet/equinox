@@ -1,15 +1,11 @@
 ﻿namespace Equinox.MessageDb
 
-open System.Collections.Generic
-open System.Diagnostics
 open Equinox.Core
 open Equinox.MessageDb.Core
-open FsCodec
 open FSharp.Control
-open Npgsql
-open Serilog
+open FsCodec
 open System
-open System.Threading.Tasks
+open System.Diagnostics
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -46,10 +42,10 @@ module private Write =
             let bytes, count = eventDataBytes events, events.Length
             span.AddTag("eqx.bytes", bytes)
                 .AddTag("eqx.count", count)
-                .AddTag("eqx.attempt", attempt)
                 .AddTag("eqx.stream_name", streamName)
                 .AddTag("eqx.expected_version", version)
                 .AddTag("eqx.event_types", [| for ev in events -> ev.EventType |]) |> ignore
+            if attempt <> 1 then span.AddTag("eqx.attempt", attempt) |> ignore
             match result with
             | MdbSyncResult.ConflictUnknown ->
                 span.SetStatus(ActivityStatusCode.Error, "WriteConflict") |> ignore
@@ -88,13 +84,13 @@ module private Read =
             span
                 .AddTag("eqx.stream_name", streamName)
                 .AddTag("eqx.batch_size", batchSize)
-                .AddTag("eqx.start_post", startPos)
-                .AddTag("eqx.requires_leader", requiresLeader)
-                .AddTag("eqx.attempt", attempt)
+                .AddTag("eqx.start_pos", startPos)
                 .AddTag("eqx.version", slice.LastVersion)
                 .AddTag("eqx.bytes", bytes)
-                .AddTag("eqx.count", count)
-            |> ignore
+                .AddTag("eqx.count", count) |> ignore
+            if requiresLeader then span.AddTag("eqx.requires_leader", requiresLeader) |> ignore
+            if attempt <> 1 then span.AddTag("eqx.attempt", attempt) |> ignore
+
         return slice }
 
     let private readBatches (readSlice : int64 -> Async<StreamEventsSlice>)
@@ -125,9 +121,12 @@ module private Read =
             let! slice = readLastEventAsync reader streamName requiresLeader
             if span <> null then
                 let bytes, count = resolvedEventBytes slice.Messages, slice.Messages.Length
-                span.AddTag("eqx.bytes", bytes).AddTag("eqx.count", count).AddTag("eqx.stream_name", streamName).AddTag("eqx.requires_leader", requiresLeader)
-                    .AddTag("eqx.version", slice.LastVersion).AddTag("eqx.attempt", attempt)
-                |> ignore
+                span.AddTag("eqx.bytes", bytes)
+                    .AddTag("eqx.count", count)
+                    .AddTag("eqx.stream_name", streamName)
+                    .AddTag("eqx.version", slice.LastVersion) |> ignore
+                if requiresLeader then span.AddTag("eqx.requires_leader", requiresLeader) |> ignore
+                if attempt <> 1 then span.AddTag("eqx.attempt", attempt) |> ignore
             return slice }
 
         let! page = match retryPolicy with None -> read 1 | Some f -> f read
