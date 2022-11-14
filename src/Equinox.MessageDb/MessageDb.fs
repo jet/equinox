@@ -3,16 +3,10 @@
 open Equinox.Core
 open Equinox.MessageDb.Core
 open FsCodec
-open FSharp.Control
-open Npgsql
 open Serilog
 open System
-open System.Threading.Tasks
 
 type EventBody = ReadOnlyMemory<byte>
-
-[<NoComparison;NoEquality>]
-type StreamEventsSlice = { Messages: ITimelineEvent<EventBody> array; IsEnd: bool; LastVersion: int64 }
 
 module Log =
 
@@ -126,63 +120,64 @@ module Log =
             for uom, f in measures do let d = f duration in if d <> 0. then logPeriodicRate uom (float totalCount/d |> int64)
 
 module private Write =
-    let private writeEventsAsync (log : ILogger) (writer: MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array)
-        : Async<MdbSyncResult> = async {
-            let! wr = writer.WriteMessages(streamName, events, version, Async.DefaultCancellationToken) |> Async.AwaitTaskCorrect
-            match wr with
-            | MdbSyncResult.ConflictUnknown ->
-                log.Information("MdbTrySync WrongExpectedVersionException writing {EventTypes}, expected {ExpectedVersion}",
-                                [| for x in events -> x.EventType |], version)
-                return wr
-            | _ -> return wr }
+
+    let private writeEventsAsync (writer: MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array)
+        : Async<MdbSyncResult> =
+        writer.WriteMessages(streamName, events, version, Async.DefaultCancellationToken) |> Async.AwaitTaskCorrect
 
     let inline len (bytes: EventBody) = bytes.Length
-    let eventDataBytes events =
-        let eventDataLen (x : IEventData<EventBody>) = len x.Data + len x.Meta
-        events |> Array.sumBy eventDataLen
+    let private eventDataLen (x : IEventData<EventBody>) = len x.Data + len x.Meta
+    let private eventDataBytes events = events |> Array.sumBy eventDataLen
     let private writeEventsLogged (writer: MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array) (log : ILogger)
         : Async<MdbSyncResult> = async {
         let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
-        let writeLog = log |> Log.prop "stream" streamName |> Log.prop "expectedVersion" version |> Log.prop "count" count
-        let! t, result = writeEventsAsync writeLog writer streamName version events |> Stopwatch.Time
+        let! t, result = writeEventsAsync writer streamName version events |> Stopwatch.Time
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result with
             | MdbSyncResult.ConflictUnknown ->
+                let writeLog = log |> Log.prop "stream" streamName |> Log.prop "count" count
+                writeLog.Information("MdbTrySync WrongExpectedVersionException writing {eventTypes}, expected {expectedVersion}", [| for x in events -> x.EventType |], version)
                 log, Log.WriteConflict reqMetric
             | MdbSyncResult.Written x ->
                 log |> Log.prop "currentPosition" x, Log.WriteSuccess reqMetric
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
-            "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
+                                                 "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
     let writeEvents (log : ILogger) retryPolicy (writer : MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array)
         : Async<MdbSyncResult> =
         let call = writeEventsLogged writer streamName version events
         Log.withLoggedRetries retryPolicy "writeAttempt" call log
 
-module private Read =
-    let private toSlice (events : ITimelineEvent<EventBody> array) isLast =
+module Read =
+
+    [<NoComparison;NoEquality>]
+    type StreamEventsSlice = { Messages : ITimelineEvent<EventBody> array; IsEnd : bool; LastVersion : int64 }
+
+    open FSharp.Control
+
+    let private toSlice (events : ITimelineEvent<EventBody> array) isLast : StreamEventsSlice=
         let lastVersion = match Array.tryLast events with Some ev -> ev.Index | None -> -1L
         { Messages = events; IsEnd = isLast; LastVersion = lastVersion }
 
-    let private readSliceAsync (reader : MessageDbReader) (streamName : string) (batchSize : int64) (startPos : int64) (requiresLeader : bool) ct
-        : Task<_> = task {
+    let private readSliceAsync (reader : MessageDbReader) (streamName : string) (batchSize : int64) (startPos : int64) (requiresLeader : bool) ct = task {
         let! page = reader.ReadStream(streamName, startPos, batchSize, requiresLeader, ct)
         let isLast = int64 page.Length < batchSize
         return toSlice page isLast }
 
-    let private readLastEventAsync (reader : MessageDbReader) (streamName : string) (requiresLeader : bool) ct : Task<_> = task {
+    let private readLastEventAsync (reader : MessageDbReader) (streamName : string) (requiresLeader : bool) ct = task {
         let! events = reader.ReadLastEvent(streamName, requiresLeader, ct)
         return toSlice events false }
 
-    let inline len (bytes: EventBody) = bytes.Length
-    let resolvedEventLen (x : ITimelineEvent<EventBody>) = len x.Data + len x.Meta
+    let inline len (bytes : EventBody) = bytes.Length
+    let private resolvedEventLen (x : ITimelineEvent<EventBody>) = len x.Data + len x.Meta
+    let private resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
     let private loggedReadSlice reader streamName batchSize startPos requiresLeader (log : ILogger) : Async<_> = async {
         let! ct = Async.CancellationToken
         let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
-        let bytes, count = slice.Messages |> Array.sumBy resolvedEventLen, slice.Messages.Length
+        let bytes, count = slice.Messages |> resolvedEventBytes, slice.Messages.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice reqMetric
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propResolvedEvents "Json" slice.Messages
@@ -205,8 +200,7 @@ module private Read =
                 yield! loop (batchCount + 1) (slice.LastVersion + 1L) }
         loop 0 startPosition
 
-    let resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
-    let logBatchRead streamName t events (batchSize: int64) version (log : ILogger) =
+    let private logBatchRead streamName t events (batchSize: int64) version (log : ILogger) =
         let bytes, count = resolvedEventBytes events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1)/ (int batchSize) + 1
@@ -216,7 +210,7 @@ module private Read =
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
 
-    let logLastEventRead streamName t events version (log: ILogger) =
+    let private logLastEventRead streamName t events version (log: ILogger) =
         let bytes = resolvedEventBytes events
         let count = events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
@@ -225,7 +219,7 @@ module private Read =
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
 
-    let loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName
+    let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
         let! ct = Async.CancellationToken
         let read _ = readLastEventAsync reader streamName requiresLeader ct |> Async.AwaitTaskCorrect
@@ -235,7 +229,7 @@ module private Read =
         log |> logLastEventRead streamName t page.Messages page.LastVersion
         return page.LastVersion, page.Messages }
 
-    let loadForwardsFrom (log : ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader
+    let internal loadForwardsFrom (log : ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
         let mergeBatches (batches : AsyncSeq<int64 * ITimelineEvent<EventBody> array>) = async {
             let mutable versionFromStream = -1L
@@ -261,7 +255,7 @@ module private Token =
           // The `Version` exposed on the `ISyncContext` is 0-based
           version = streamVersion + 1L
           streamBytes = -1 }
-    let inline streamVersion (token: StreamToken) = unbox<int64> token.value
+    let inline streamVersion (token : StreamToken) = unbox<int64> token.value
 
     let supersedes struct (current, x) =
         x.version > current.version
@@ -275,7 +269,7 @@ type MessageDbConnection(reader, writer, [<O; D(null)>]?readRetryPolicy, [<O; D(
 type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
     new (batchSize) = BatchOptions(fun () -> batchSize)
     member _.BatchSize = getBatchSize.Invoke()
-    member _.MaxBatches = batchCountLimit
+    member val MaxBatches = batchCountLimit
 
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type GatewaySyncResult = Written of StreamToken | ConflictUnknown
@@ -409,8 +403,10 @@ type MessageDbConnector
         // Conflicts detected on write trigger a resync, reading via the `connectionString` to maximize the freshness of the data for the retry
         [<O; D(null)>]?readConnectionString : string,
         [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+
     let readConnectionString = defaultArg readConnectionString connectionString
+
     member _.Establish() : MessageDbConnection =
-        let writer = MessageDbWriter(connectionString)
         let reader = MessageDbReader(readConnectionString, connectionString)
+        let writer = MessageDbWriter(connectionString)
         MessageDbConnection(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
