@@ -54,7 +54,7 @@ module Log =
         | None -> f log
         | Some retryPolicy ->
             let withLoggingContextWrapping count =
-                let log = if count = 1 then log else Tracing.addTag("eqx.attempt", count); log |> prop contextLabel count
+                let log = if count = 1 then log else Tracing.addTag("eqx.attempts", count); log |> prop contextLabel count
                 f log
             retryPolicy withLoggingContextWrapping
 
@@ -233,23 +233,28 @@ module Read =
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
 
-    let private logLastEventRead streamName t events version (log: ILogger) =
+    let private logLastEventRead (span: Activity) streamName t events (version: int64) (log: ILogger) =
         let bytes = resolvedEventBytes events
         let count = events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
+        if span <> null then span.AddTag("eqx.bytes", bytes).AddTag("eqx.count", count).AddTag("eqx.version", version) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
 
     let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
+        use span = Tracing.source.StartActivity("ReadLast")
+        if span <> null then
+            span.AddTag("eqx.stream_name", streamName) |> ignore
+            if requiresLeader then span.AddTag("eqx.requires_leader", true) |> ignore
         let! ct = Async.CancellationToken
         let read _ = readLastEventAsync reader streamName requiresLeader ct |> Async.AwaitTaskCorrect
 
         let! t, page = Log.withLoggedRetries retryPolicy "readAttempt" read log |> Stopwatch.Time
 
-        log |> logLastEventRead streamName t page.Messages page.LastVersion
+        log |> logLastEventRead span streamName t page.Messages page.LastVersion
         return page.LastVersion, page.Messages }
 
     let internal loadForwardsFrom (log : ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader
