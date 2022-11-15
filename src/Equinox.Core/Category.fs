@@ -43,36 +43,32 @@ type Category<'event, 'state, 'context>(
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
                 inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) }
 
-module Stream =
+type private Stream =
 
-    let resolveWithContext log (cat : Category<'event, 'state, 'context>) (ctx : 'context) : struct (string * string) -> Core.IStream<'event, 'state> =
-         fun struct (categoryName, streamId) ->
-             cat.Stream(log, ctx, categoryName, streamId)
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context, sid : StreamId) =
+        let resolveWithContext log (cat : Category<'event, 'state, 'context>) (ctx : 'context) : struct (string * string) -> Core.IStream<'event, 'state> =
+             fun struct (categoryName, streamId) ->
+                 cat.Stream(log, ctx, categoryName, streamId)
+        resolveWithContext log cat context (sid.categoryName, sid.streamId)
 
-    let resolve log (cat : Category<'event, 'state, unit>)  =
-        resolveWithContext log cat ()
+    static member Resolve(cat : Category<'event, 'state, unit>, log, sid : StreamId) =
+        Stream.Resolve(cat, log, (), sid)
 
 module Decider =
 
-    let resolveCoreWithContext log (cat : Category<'event, 'state, 'context>) context  : struct (string * string) -> DeciderCore<'event, 'state> =
-         Stream.resolveWithContext log cat context >> DeciderCore
-
-    let resolveCore log (cat : Category<'event, 'state, unit>) =
-         resolveCoreWithContext log cat ()
-
-    let resolveWithContext log (cat : Category<'event, 'state, 'context>) context : struct (string * string) -> Decider<'event, 'state> =
-         Stream.resolveWithContext log cat context >> Decider
-
     let resolve log (cat : Category<'event, 'state, unit>) =
-         resolveWithContext log cat ()
+        fun sid -> Stream.Resolve(cat, log, sid) |> Decider
+
+    let resolveWithContext(cat : Category<'event, 'state, 'context>, log) =
+        fun context sid -> Stream.Resolve(cat, log, context, sid) |> Decider
 
 [<System.Runtime.CompilerServices.Extension>]
-type DeciderExtensions =
+type DeciderCore =
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
-         Decider.resolveCoreWithContext context log cat
+    static member Resolve(cat : Category<'event, 'state, unit>, log) =
+        System.Func<_, _>(fun sid -> Stream.Resolve(cat, log, sid) |> DeciderCore)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<struct (string * string), DeciderCore<'event, 'state>> =
-         Decider.resolveCoreWithContext log cat ()
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context, sid : StreamId) =
+        System.Func<_, _>(fun sid -> Stream.Resolve(cat, log, context, sid) |> DeciderCore)

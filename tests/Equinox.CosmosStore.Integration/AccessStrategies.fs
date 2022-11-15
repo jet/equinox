@@ -32,7 +32,7 @@ module WiringHelpers =
 /// This is especially relevant when events are spread between a Tip page and preceding pages as the Tip reading logic is special cased compared to querying
 module SequenceCheck =
 
-    let streamName (id : Guid) = struct ("_SequenceCheck", id.ToString "N")
+    let streamId = Equinox.StreamId.map "_SequenceCheck" (fun (g : Guid) -> g.ToString "N")
 
     module Events =
 
@@ -69,7 +69,7 @@ module SequenceCheck =
             decider.Transact(decide (value, count), id)
 
     let private create resolve =
-        Service(streamName >> resolve)
+        Service(streamId >> resolve)
 
     module Config =
 

@@ -3,7 +3,7 @@
 open System
 open System.Collections.Generic
 
-let streamName (id: ClientId) = struct ("SavedForLater", ClientId.toString id)
+let streamId = Equinox.StreamId.map "SavedForLater" ClientId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -143,4 +143,4 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         return! execute targetId (Merge state) }
 
 let create maxSavedItems resolve =
-    Service(streamName >> resolve, maxSavedItems)
+    Service(streamId >> resolve, maxSavedItems)

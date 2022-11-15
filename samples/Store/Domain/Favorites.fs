@@ -1,6 +1,6 @@
 ﻿module Domain.Favorites
 
-let streamName (id: ClientId) = struct ("Favorites", ClientId.toString id)
+let streamId = Equinox.StreamId.map "Favorites" ClientId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -78,4 +78,4 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         decider.TransactEx((fun c -> (), decideUnfavorite sku c.State), fun () c -> c.Version)
 
 let create resolve =
-    Service(streamName >> resolve)
+    Service(streamId >> resolve)

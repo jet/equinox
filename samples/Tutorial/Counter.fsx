@@ -30,7 +30,8 @@ type Event =
     | Cleared of Cleared
     interface TypeShape.UnionContract.IUnionContract
 (* Kind of DDD aggregate ID *)
-let streamName (id : string) = struct ("Counter", id)
+let streamName (id : string) = let streamId id = Equinox.StreamId.map Category SequenceId.toString
+
 
 type State = State of int
 let initial : State = State 0

@@ -12,8 +12,8 @@ let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
 let createMemoryStore () = MemoryStore.VolatileStore<ReadOnlyMemory<byte>>()
 let createServiceMemory log store =
     MemoryStore.MemoryStoreCategory(store, Cart.Events.codec, fold, initial)
-    |> Decider.resolve Serilog.Log.Logger |> Cart.create
-
+    |> Decider.resolve log
+    |> Cart.create
 
 let codec = Cart.Events.codec
 let codecJe = Cart.Events.codecJe

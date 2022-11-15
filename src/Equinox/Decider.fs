@@ -290,3 +290,36 @@ and internal SyncContext<'state> =
             member _.Version = token.version
             member _.StreamEventBytes = match token.streamBytes with -1L -> ValueNone | b -> ValueSome b
             member _.CreateMemento() = token, state }
+
+[<Struct>]
+type StreamId =
+    { categoryName : string; streamId : string }
+    override x.ToString() = String.Concat(x.categoryName, '-', x.streamId)
+
+module StreamId =
+
+    module Internal =
+        /// Throws if a candidate category includes a '-', is null, or is empty
+        let inline validateCategory (rawCategory : string) =
+            if rawCategory |> String.IsNullOrEmpty then invalidArg "rawCategory" "may not be null or empty"
+            if rawCategory.IndexOf '-' <> -1 then invalidArg "rawCategory" "may not contain embedded '-' symbols"
+
+        /// Throws if a candidate id element includes a '_', is null, or is empty
+        let inline validateElement (rawElement : string) =
+            if rawElement |> String.IsNullOrEmpty then invalidArg "rawElement" "may not contain null or empty components"
+            if rawElement.IndexOf '_' <> -1 then invalidArg "rawElement" "may not contain embedded '_' symbols"
+
+        /// Low level helper used to gate ingestion from a canonical form
+        /// Does NOT validate the StreamId portion wrt numbers of embedded `_` or `-` chars
+        let create category sid =
+            validateCategory category
+            { categoryName = category; streamId = sid }
+        let toString (x : StreamId) = string x
+
+    let private mapElement f id = let t = f id in Internal.validateElement t; t
+    let map category f id = Internal.create category (mapElement f id)
+    let private mapElements (elements : string seq) : string =
+        for x in elements do Internal.validateElement x
+        String.Join("_", elements)
+    let map2 category f f2 (id1, id2) = Internal.create category (mapElements (seq { yield f id1; yield f2 id2 }))
+    let map3 category f f2 f3 (id1, id2, id3) = Internal.create category (mapElements (seq { yield f id1; yield f2 id2; yield f3 id3 }))
