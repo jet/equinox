@@ -7,9 +7,7 @@ open System.Threading.Tasks
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 /// NOTE: For C#, direct usage of DeciderCore is recommended
-type Decider<'event, 'state>(stream : IStream<'event, 'state>) =
-
-    let inner = DeciderCore(stream)
+type Decider<'event, 'state>(inner : DeciderCore<'event, 'state>) =
 
     /// 1.  Invoke the supplied <c>interpret</c> function with the present state to determine whether any write is to occur.
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -322,5 +320,5 @@ module StreamId =
     let private mapElements (elements : string seq) : string =
         for x in elements do Internal.validateElement x
         String.Join("_", elements)
-    let map2 category f f2 (id1, id2) = Internal.create category (mapElements (seq { yield f id1; yield f2 id2 }))
-    let map3 category f f2 f3 (id1, id2, id3) = Internal.create category (mapElements (seq { yield f id1; yield f2 id2; yield f3 id3 }))
+    let map2 category f f2 struct (id1, id2) = Internal.create category (mapElements (seq { yield f id1; yield f2 id2 }))
+    let map3 category f f2 f3 struct (id1, id2, id3) = Internal.create category (mapElements (seq { yield f id1; yield f2 id2; yield f3 id3 }))

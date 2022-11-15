@@ -45,30 +45,20 @@ type Category<'event, 'state, 'context>(
 
 type private Stream =
 
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context, sid : StreamId) =
-        let resolveWithContext log (cat : Category<'event, 'state, 'context>) (ctx : 'context) : struct (string * string) -> Core.IStream<'event, 'state> =
-             fun struct (categoryName, streamId) ->
-                 cat.Stream(log, ctx, categoryName, streamId)
-        resolveWithContext log cat context (sid.categoryName, sid.streamId)
-
-    static member Resolve(cat : Category<'event, 'state, unit>, log, sid : StreamId) =
-        Stream.Resolve(cat, log, (), sid)
-
-module Decider =
-
-    let resolve log (cat : Category<'event, 'state, unit>) =
-        fun sid -> Stream.Resolve(cat, log, sid) |> Decider
-
-    let resolveWithContext(cat : Category<'event, 'state, 'context>, log) =
-        fun context sid -> Stream.Resolve(cat, log, context, sid) |> Decider
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<StreamId, Core.IStream<'event, 'state>> =
+        System.Func<_, _>(fun sid -> cat.Stream(log, context, sid.categoryName, sid.streamId))
 
 [<System.Runtime.CompilerServices.Extension>]
 type DeciderCore =
-
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, unit>, log) =
-        System.Func<_, _>(fun sid -> Stream.Resolve(cat, log, sid) |> DeciderCore)
-
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<StreamId, DeciderCore<'event, 'state>> =
+         Stream.Resolve(cat, log, context).Invoke >> DeciderCore
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context, sid : StreamId) =
-        System.Func<_, _>(fun sid -> Stream.Resolve(cat, log, context, sid) |> DeciderCore)
+    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<StreamId, DeciderCore<'event, 'state>> =
+        DeciderCore.Resolve(cat, log, ())
+
+module Decider =
+    let resolveWithContext log (cat : Category<'event, 'state, 'context>) context =
+        DeciderCore.Resolve(cat, log, context).Invoke >> Decider
+    let resolve log (cat : Category<'event, 'state, unit>) sid =
+        resolveWithContext log cat () sid

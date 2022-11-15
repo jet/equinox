@@ -46,7 +46,7 @@ let decide (value : UploadId) (state : Fold.State) : Choice<UploadId,UploadId> *
     | None -> Choice1Of2 value, [Events.IdAssigned { value = value}]
     | Some value -> Choice2Of2 value, []
 
-type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve : struct (CompanyId * PurchaseOrderId) -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Sync(companyId, purchaseOrderId, value) : Async<Choice<UploadId,UploadId>> =
         let decider = resolve (companyId, purchaseOrderId)
