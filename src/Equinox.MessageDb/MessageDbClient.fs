@@ -14,8 +14,17 @@ type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
 
 module private Json =
-  let private jsonNull = JsonSerializer.SerializeToUtf8Bytes(null)
-  let toArray (m: Format) = if m.IsEmpty then jsonNull else m.ToArray()
+  let private jsonNull = ReadOnlyMemory(JsonSerializer.SerializeToUtf8Bytes(null))
+
+  let parseRow idx (reader: DbDataReader) =
+      if reader.IsDBNull(idx) then jsonNull
+      else reader.GetString(idx) |> Text.Encoding.UTF8.GetBytes |> ReadOnlyMemory
+
+  let addParameter (name: string) (value: Format) (p: NpgsqlParameterCollection) =
+      if value.Length = 0 then
+        p.AddWithValue(name, NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
+      else
+        p.AddWithValue(name, NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
 
 module private Npgsql =
     let connect connectionString ct = task {
@@ -31,8 +40,8 @@ type MessageDbWriter(connectionString : string) =
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, e.EventId) |> ignore
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
         cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, e.EventType) |> ignore
-        cmd.Parameters.AddWithValue("Data", NpgsqlDbType.Jsonb, Json.toArray e.Data) |> ignore
-        cmd.Parameters.AddWithValue("Meta", NpgsqlDbType.Jsonb, Json.toArray e.Meta) |> ignore
+        cmd.Parameters |> Json.addParameter "Data" e.Data
+        cmd.Parameters |> Json.addParameter "Meta" e.Meta
         cmd.Parameters.AddWithValue("ExpectedVersion", NpgsqlDbType.Bigint, expectedVersion) |> ignore
 
         cmd
@@ -58,11 +67,14 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
     let parseRow (reader : DbDataReader) : ITimelineEvent<Format> =
         let inline readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
 
+        let meta = Json.parseRow 3 reader
+        let m = JsonSerializer.Deserialize<JsonElement>(meta.Span)
+
         TimelineEvent.Create(
             index = reader.GetInt64(0),
             eventType = reader.GetString(1),
-            data = ReadOnlyMemory(reader.GetFieldValue<byte array>(2)),
-            meta = ReadOnlyMemory(reader.GetFieldValue<byte array>(3)),
+            data = (reader |> Json.parseRow 2),
+            meta = (reader |> Json.parseRow 3),
             eventId = reader.GetGuid(4),
             ?correlationId = readNullableString 5,
             ?causationId = readNullableString 6,
