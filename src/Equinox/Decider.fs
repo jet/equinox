@@ -294,7 +294,8 @@ and internal SyncContext<'state> =
 [<Struct>]
 type StreamId =
     { categoryName : string; streamId : string }
-    override x.ToString() = String.Concat(x.categoryName, '-', x.streamId)
+    static member Render(categoryName, streamId) = String.Concat(categoryName, '-', streamId)
+    override x.ToString() = StreamId.Render(x.categoryName, x.streamId)
 
 module StreamId =
 
