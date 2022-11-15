@@ -832,7 +832,7 @@ context
 
 ```fsharp
 let [<Literal>] Category = Favorites
-let streamName (clientId : String) = FsCodec.StreamName.create Category clientId
+let streamId = Equinox.StreamId.create Category id
 
 type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -844,7 +844,7 @@ type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.St
         let decider = resolve clientId
         decider.Query id
 
-let create resolve = Service(streamName >> resolve)
+let create resolve = Service(streamId >> resolve)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
