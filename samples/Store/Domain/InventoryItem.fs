@@ -3,7 +3,7 @@ module Domain.InventoryItem
 
 open System
 
-let streamName (id : InventoryItemId) = struct ("InventoryItem", InventoryItemId.toString id)
+let target = Equinox.Target.gen "InventoryItem" InventoryItemId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -67,4 +67,4 @@ type Service internal (resolve : InventoryItemId -> Equinox.Decider<Events.Event
         decider.Query id
 
 let create resolve =
-    Service(streamName >> resolve)
+    Service(target >> resolve)

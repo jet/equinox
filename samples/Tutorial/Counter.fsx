@@ -30,8 +30,7 @@ type Event =
     | Cleared of Cleared
     interface TypeShape.UnionContract.IUnionContract
 (* Kind of DDD aggregate ID *)
-let streamName (id : string) = let streamId id = Equinox.StreamId.map Category SequenceId.toString
-
+let target id = Equinox.Target.gen Category SequenceId.toString
 
 type State = State of int
 let initial : State = State 0
@@ -91,11 +90,12 @@ let logEvents c s (events : FsCodec.ITimelineEvent<_>[]) =
    See other examples such as Cosmos.fsx to see how we integrate with CosmosDB and/or other concrete stores *)
 
 let store = Equinox.MemoryStore.VolatileStore()
-let _ = store.Committed.Subscribe(fun (c, s, xs) -> logEvents c s xs)
+let _ = store.Committed.Subscribe(fun struct (c, s, xs) -> logEvents c s xs)
 let codec = FsCodec.Box.Codec.Create()
-let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-let resolve = cat |> Equinox.Decider.resolve log 
-let service = Service(streamName >> resolve)
+let resolve =
+    Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
+    |> Equinox.Decider.resolve log 
+let service = Service(target >> resolve)
 
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously

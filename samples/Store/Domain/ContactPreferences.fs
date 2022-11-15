@@ -1,7 +1,7 @@
 ﻿module Domain.ContactPreferences
 
 type Id = Id of email: string
-let streamId (Id email) = Equinox.StreamId.map "ContactPreferences" id email // TODO hash >> base64
+let target (Id email) = Equinox.Target.gen "ContactPreferences" id email // TODO hash >> base64
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -57,4 +57,4 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State>
         decider.Query(id, Equinox.AllowStale)
 
 let create resolve =
-    Service(streamId >> resolve)
+    Service(target >> resolve)

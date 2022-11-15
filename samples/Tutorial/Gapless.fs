@@ -5,7 +5,7 @@ module Gapless
 open System
 
 let [<Literal>] Category = "Gapless"
-let streamId id = Equinox.StreamId.map Category SequenceId.toString id
+let target = Equinox.Target.gen Category SequenceId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -80,7 +80,7 @@ module Cosmos =
     let private create (context, cache, accessStrategy) =
         let cacheStrategy = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.) // OR CachingStrategy.NoCaching
         let cat = CosmosStoreCategory(context, Events.codec, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
-        Service(streamId >> Equinox.Decider.resolve Serilog.Log.Logger cat)
+        Service(target >> Equinox.Decider.resolve Serilog.Log.Logger cat)
 
     module Snapshot =
 

@@ -316,7 +316,7 @@ module Aggregate
 (* StreamName section *)
 
 let [<Literal>] Category = "category"
-let streamName id = struct (Category, Id.toString id)
+let target = Equinox.Target.gen Category Id.toString
 
 (* Optionally, Helpers/Types *)
 
@@ -380,7 +380,7 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State)
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create category = Service(streamName >> Equinox.Decider.resolve Serilog.Log.Logger category)
+let create category = Service(target >> Equinox.Decider.resolve Serilog.Log.Logger category)
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one
@@ -546,7 +546,7 @@ brevity, that implements all the relevant functions above:
 (* Event stream naming + schemas *)
 
 let [<Literal>] Category = "Favorites"
-let streamName (id : ClientId) = struct (Category, ClientId.toString id)
+let target = Equinox.Target.gen Category ClientId.toString
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -592,7 +592,7 @@ let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
 (*
  * The Service defines operations in business terms, neutral to any concrete
  * store selection or implementation supplied only a `resolve` function that can
- * be used to map from ids (as supplied to the `streamName` function) to an
+ * be used to map from ids (as supplied to the `target` function) to an
  * Equinox.Decider; Typically the service should be a stateless Singleton
  *)
 
@@ -616,7 +616,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         read clientId
 
 let create resolve : Service =
-    Service(streamName >> resolve)
+    Service(target >> resolve)
 ```
 
 <a name="api"></a>
@@ -832,7 +832,7 @@ context
 
 ```fsharp
 let [<Literal>] Category = Favorites
-let streamId = Equinox.StreamId.create Category id
+let target = Equinox.Target.gen Category id
 
 type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
 
@@ -844,7 +844,7 @@ type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.St
         let decider = resolve clientId
         decider.Query id
 
-let create resolve = Service(streamId >> resolve)
+let create resolve = Service(target >> resolve)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
@@ -1079,7 +1079,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
        and/or simplifications when compared to aspects that might present in a
        more complete implementation.
 
-- the `streamName` helper (and optional [`Match` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
+- the `target` helper (and optional [`Match` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
   provide succinct ways to map an incoming `clientId` (which is not a `string`
   in the real implementation but instead an id using
   [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive

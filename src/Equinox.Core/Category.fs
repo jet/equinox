@@ -45,20 +45,20 @@ type Category<'event, 'state, 'context>(
 
 type private Stream =
 
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<StreamId, Core.IStream<'event, 'state>> =
-        System.Func<_, _>(fun sid -> cat.Stream(log, context, sid.categoryName, sid.streamId))
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<Target, Core.IStream<'event, 'state>> =
+        System.Func<_, _>(fun target -> cat.Stream(log, context, target.categoryName, target.streamId))
 
 [<System.Runtime.CompilerServices.Extension>]
 type DeciderCore =
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<StreamId, DeciderCore<'event, 'state>> =
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<Target, DeciderCore<'event, 'state>> =
          Stream.Resolve(cat, log, context).Invoke >> DeciderCore
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<StreamId, DeciderCore<'event, 'state>> =
+    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<Target, DeciderCore<'event, 'state>> =
         DeciderCore.Resolve(cat, log, ())
 
 module Decider =
     let resolveWithContext log (cat : Category<'event, 'state, 'context>) context =
         DeciderCore.Resolve(cat, log, context).Invoke >> Decider
-    let resolve log (cat : Category<'event, 'state, unit>) sid =
-        resolveWithContext log cat () sid
+    let resolve log (cat : Category<'event, 'state, unit>) =
+        resolveWithContext log cat ()

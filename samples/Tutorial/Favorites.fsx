@@ -158,8 +158,8 @@ type Service(deciderFor : string -> Handler) =
 
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
 let streamFor (clientId: string) =
-    let streamIds = struct ("Favorites", clientId)
-    let decider = Equinox.Decider.resolve log cat streamIds
+    let target = Equinox.Target.gen "Favorites" id clientId
+    let decider = Equinox.Decider.resolve log cat target
     Handler(decider)
 
 let service = Service(streamFor)

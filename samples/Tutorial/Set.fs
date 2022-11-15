@@ -1,7 +1,7 @@
 module Set
 
 let [<Literal>] Category = "Set"
-let streamId id = Equinox.StreamId.map Category SetId.toString id
+let target = Equinox.Target.gen Category SetId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -47,7 +47,7 @@ type Service internal (decider : Equinox.Decider<Events.Event, Fold.State>) =
         decider.Query id
 
 let create resolve setId =
-    Service(streamId setId |> resolve)
+    Service(target setId |> resolve)
 
 module Cosmos =
 

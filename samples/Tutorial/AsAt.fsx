@@ -45,7 +45,7 @@
 #endif
 open System
 
-let streamName clientId = struct ("Account", clientId)
+let target = Equinox.Target.gen "Account" id
 
 module Events =
 
@@ -176,8 +176,8 @@ module Cosmos =
     let cat = CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve = Equinox.Decider.resolve Log.log cat
 
-let service = Service(streamName >> EventStore.resolve)
-//let service= Service(streamName >> Cosmos.resolve)
+let service = Service(target >> EventStore.resolve)
+//let service= Service(target >> Cosmos.resolve)
 
 let client = "ClientA"
 service.Add(client, 1) |> Async.RunSynchronously

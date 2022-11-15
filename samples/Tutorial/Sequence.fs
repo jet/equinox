@@ -5,7 +5,7 @@ module Sequence
 open System
 
 let [<Literal>] Category = "Sequence"
-let streamId = Equinox.StreamId.map Category SequenceId.toString
+let target = Equinox.Target.gen Category SequenceId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -36,7 +36,7 @@ type Service internal (resolve : SequenceId -> Equinox.Decider<Events.Event, Fol
         let decider = resolve series
         decider.Transact(decideReserve (defaultArg count 1))
 
-let create resolve = Service(streamId >> resolve)
+let create resolve = Service(target >> resolve)
 
 module Cosmos =
 
