@@ -1,11 +1,11 @@
 ﻿namespace Equinox.MessageDb
 
-open System.Diagnostics
 open Equinox.Core
 open Equinox.MessageDb.Core
 open FsCodec
 open Serilog
 open System
+open System.Diagnostics
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -49,8 +49,7 @@ module Log =
         | Some retryPolicy ->
             let withLoggingContextWrapping count =
                 let log = if count = 1 then log else log |> prop contextLabel count
-                let act = Activity.Current
-                if act <> null then act.AddTag("eqx.attempts", count) |> ignore
+                Tracing.addRetryAttempt count Activity.Current
                 f log
             retryPolicy withLoggingContextWrapping
 
@@ -186,7 +185,7 @@ module Read =
     let private loggedReadSlice reader streamName batchSize batchIndex startPos requiresLeader (log : ILogger) : Async<_> = async {
         use act = source.StartActivity("ReadSlice", ActivityKind.Client)
         if act <> null then
-            act.AddStreamName(streamName).AddBatchInformation(batchSize, batchIndex)
+            act.AddStreamName(streamName).AddBatch(batchSize, batchIndex)
                 .AddStartPosition(startPos).AddLeader(requiresLeader) |> ignore
         let! ct = Async.CancellationToken
         let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
@@ -214,22 +213,23 @@ module Read =
                 yield! loop (batchCount + 1) (slice.LastVersion + 1L) }
         loop 0 startPosition
 
-    let private logBatchRead streamName t events (batchSize: int64) version (log : ILogger) =
+    let private logBatchRead (act: Activity) streamName t events (batchSize: int64) version (log : ILogger) =
         let bytes, count = resolvedEventBytes events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1)/ (int batchSize) + 1
         let action = "Load"
         let evt = Log.Metric.Batch (batches, reqMetric)
+        if act <> null then act.AddMetric(count, bytes).AddBatches(batches, count).AddVersion(version) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
 
-    let private logLastEventRead (span: Activity) streamName t events (version: int64) (log: ILogger) =
+    let private logLastEventRead (act: Activity) streamName t events (version: int64) (log: ILogger) =
         let bytes = resolvedEventBytes events
         let count = events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
-        if span <> null then span.AddMetric(count, bytes).AddVersion(version) |> ignore
+        if act <> null then act.AddMetric(count, bytes).AddVersion(version) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
@@ -257,14 +257,14 @@ module Read =
                 |> AsyncSeq.toArrayAsync
             let version = versionFromStream
             return version, events }
+        use act = source.StartActivity("ReadStream", ActivityKind.Client)
+        if act <> null then act.AddStreamName(streamName).AddBatchSize(batchSize).AddStartPosition(startPosition) |> ignore
         let call pos batchIndex = loggedReadSlice reader streamName batchSize batchIndex pos requiresLeader
         let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let batches : AsyncSeq<int64 * ITimelineEvent<EventBody> array> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
-        use act = source.StartActivity("ReadStream", ActivityKind.Client)
-        if act <> null then act.AddStreamName(streamName).AddBatchSize(batchSize).AddStartPosition(startPosition) |> ignore
         let! t, (version, events) = mergeBatches batches |> Stopwatch.Time
-        log |> logBatchRead streamName t events batchSize version
+        log |> logBatchRead act streamName t events batchSize version
         return version, events }
 
 module private Token =

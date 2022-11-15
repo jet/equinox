@@ -6,6 +6,8 @@ open System.Diagnostics
 
 let source = new ActivitySource("Equinox.MessageDb")
 
+let addRetryAttempt (attempt: int) (act: Activity) = if act <> null then act.AddTag("eqx.op_attempt", attempt) |> ignore
+
 [<System.Runtime.CompilerServices.Extension>]
 type ActivityExtensions =
 
@@ -25,7 +27,10 @@ type ActivityExtensions =
     static member AddBatchSize(act: Activity, size: int64) = act.AddTag("eqx.batch_size", size)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddBatchInformation(act: Activity, size: int64, index: int) = act.AddBatchSize(size).AddTag("eqx.batch_index", index)
+    static member AddBatch(act: Activity, size: int64, index: int) = act.AddBatchSize(size).AddTag("eqx.batch_index", index)
+
+    [<System.Runtime.CompilerServices.Extension>]
+    static member AddBatches(act: Activity, batches: int, count: int) = act.AddTag("eqx.batches", batches).AddTag("eqx.event_count", count)
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddStartPosition(act: Activity, pos: int64) = act.AddTag("eqx.start_position", pos)
