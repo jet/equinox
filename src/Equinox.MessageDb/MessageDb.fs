@@ -183,7 +183,7 @@ module Read =
     let inline len (bytes : EventBody) = bytes.Length
     let private resolvedEventLen (x : ITimelineEvent<EventBody>) = len x.Data + len x.Meta
     let private resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
-    let private loggedReadSlice reader (streamName: string) (batchSize: int64) (batchIndex: int) (startPos: int64) (requiresLeader: bool) (log : ILogger) : Async<_> = async {
+    let private loggedReadSlice reader streamName batchSize batchIndex startPos requiresLeader (log : ILogger) : Async<_> = async {
         use act = source.StartActivity("ReadSlice", ActivityKind.Client)
         if act <> null then
             act.AddStreamName(streamName).AddBatchInformation(batchSize, batchIndex)
