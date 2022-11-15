@@ -9,12 +9,6 @@ open System
 
 type EventBody = ReadOnlyMemory<byte>
 
-module Tracing =
-    let source = new ActivitySource("Equinox.MessageDb")
-    let addTag (k, v: 'a) =
-        let act = Activity.Current
-        if act <> null then act.AddTag(k,v) |> ignore
-
 module Log =
 
     /// <summary>Name of Property used for <c>Metric</c> in <c>LogEvent</c>s.</summary>
@@ -54,8 +48,9 @@ module Log =
         | None -> f log
         | Some retryPolicy ->
             let withLoggingContextWrapping count =
-                Tracing.addTag("eqx.attempts", count)
                 let log = if count = 1 then log else log |> prop contextLabel count
+                let act = Activity.Current
+                if act <> null then act.AddTag("eqx.attempts", count) |> ignore
                 f log
             retryPolicy withLoggingContextWrapping
 
@@ -161,7 +156,7 @@ module private Write =
         return result }
     let writeEvents (log : ILogger) retryPolicy (writer : MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array)
         : Async<MdbSyncResult> = async {
-        use act = Tracing.source.StartActivity("AppendEvents", ActivityKind.Client)
+        use act = source.StartActivity("AppendEvents", ActivityKind.Client)
         let call = writeEventsLogged writer streamName version events act
         return! Log.withLoggedRetries retryPolicy "writeAttempt" call log }
 
@@ -189,7 +184,7 @@ module Read =
     let private resolvedEventLen (x : ITimelineEvent<EventBody>) = len x.Data + len x.Meta
     let private resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
     let private loggedReadSlice reader (streamName: string) (batchSize: int64) (batchIndex: int) (startPos: int64) (requiresLeader: bool) (log : ILogger) : Async<_> = async {
-        use act = Tracing.source.StartActivity("ReadSlice", ActivityKind.Client)
+        use act = source.StartActivity("ReadSlice", ActivityKind.Client)
         if act <> null then
             act.AddStreamName(streamName).AddBatchInformation(batchSize, batchIndex)
                 .AddStartPosition(startPos).AddLeader(requiresLeader) |> ignore
@@ -241,7 +236,7 @@ module Read =
 
     let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
-        use act = Tracing.source.StartActivity("LoadLast", ActivityKind.Client)
+        use act = source.StartActivity("LoadLast", ActivityKind.Client)
         if act <> null then act.AddStreamName(streamName).AddLeader(requiresLeader) |> ignore
         let! ct = Async.CancellationToken
         let read _ = readLastEventAsync reader streamName requiresLeader ct |> Async.AwaitTaskCorrect
@@ -266,7 +261,7 @@ module Read =
         let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let batches : AsyncSeq<int64 * ITimelineEvent<EventBody> array> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
-        use act = Tracing.source.StartActivity("ReadStream", ActivityKind.Client)
+        use act = source.StartActivity("ReadStream", ActivityKind.Client)
         if act <> null then act.AddStreamName(streamName).AddBatchSize(batchSize).AddStartPosition(startPosition) |> ignore
         let! t, (version, events) = mergeBatches batches |> Stopwatch.Time
         log |> logBatchRead streamName t events batchSize version

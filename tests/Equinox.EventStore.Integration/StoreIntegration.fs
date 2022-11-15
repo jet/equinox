@@ -94,7 +94,9 @@ type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'co
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
 
+#if NET
 let source = new ActivitySource("StoreIntegration")
+#endif
 
 module SimplestThing =
     type Event =
@@ -186,7 +188,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = Async.RunSynchronously <| async {
+        #if NET
         use _ = source.StartActivity("Can roundtrip against Store, correctly batching the reads [without any optimizations]")
+        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! connection = connectToLocalStore log
 
@@ -216,7 +220,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = Async.RunSynchronously <| async {
+        #if NET
         use _ = source.StartActivity("Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]")
+        #endif
         let log1, capture1 = output.CreateLoggerWithCapture()
 
         let! connection = connectToLocalStore log1
@@ -307,6 +313,9 @@ type Tests(testOutputHelper) =
 #if !STORE_MESSAGEDB
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        #if NET
+        use _ = source.StartActivity("Can roundtrip against Store, correctly compacting to avoid redundant reads")
+        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
@@ -349,7 +358,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
+        #if NET
         use _ = source.StartActivity("Can correctly read and update against Store, with LatestKnownEvent Access Strategy")
+        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let service = ContactPreferences.createService log client
@@ -371,7 +382,9 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        #if NET
         use _ = source.StartActivity("Can roundtrip against Store, correctly caching to avoid redundant reads")
+        #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
@@ -481,7 +494,9 @@ type Tests(testOutputHelper) =
 #endif
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Version is 0-based`` () = Async.RunSynchronously <| async {
+        #if NET
         use _ = source.StartActivity("Version is 0-based")
+        #endif
         let log, _ = output.CreateLoggerWithCapture()
         let! connection = connectToLocalStore log
 
