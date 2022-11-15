@@ -16,15 +16,13 @@ type private Format = ReadOnlyMemory<byte>
 module private Json =
   let private jsonNull = ReadOnlyMemory(JsonSerializer.SerializeToUtf8Bytes(null))
 
-  let parseRow idx (reader: DbDataReader) =
+  let fromReader idx (reader: DbDataReader) =
       if reader.IsDBNull(idx) then jsonNull
       else reader.GetString(idx) |> Text.Encoding.UTF8.GetBytes |> ReadOnlyMemory
 
   let addParameter (name: string) (value: Format) (p: NpgsqlParameterCollection) =
-      if value.Length = 0 then
-        p.AddWithValue(name, NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
-      else
-        p.AddWithValue(name, NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
+      if value.Length = 0 then p.AddWithValue(name, NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
+      else p.AddWithValue(name, NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
 
 module private Npgsql =
     let connect connectionString ct = task {
@@ -67,14 +65,11 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
     let parseRow (reader : DbDataReader) : ITimelineEvent<Format> =
         let inline readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
 
-        let meta = Json.parseRow 3 reader
-        let m = JsonSerializer.Deserialize<JsonElement>(meta.Span)
-
         TimelineEvent.Create(
             index = reader.GetInt64(0),
             eventType = reader.GetString(1),
-            data = (reader |> Json.parseRow 2),
-            meta = (reader |> Json.parseRow 3),
+            data = (reader |> Json.fromReader 2),
+            meta = (reader |> Json.fromReader 3),
             eventId = reader.GetGuid(4),
             ?correlationId = readNullableString 5,
             ?causationId = readNullableString 6,
@@ -110,5 +105,6 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
         use! reader = cmd.ExecuteReaderAsync(ct)
 
         let events = ResizeArray()
-        while reader.Read() do events.Add(parseRow reader)
+        while reader.Read() do
+            events.Add(parseRow reader)
         return events.ToArray() }
