@@ -1,10 +1,10 @@
 ﻿module Equinox.Store.Integration.StoreIntegration
 
-open System.Diagnostics
 open Domain
 open FSharp.UMX
 open Serilog
 open Swensen.Unquote
+open System.Diagnostics
 open System.Threading
 open System
 

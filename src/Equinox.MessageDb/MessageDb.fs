@@ -49,7 +49,7 @@ module Log =
         | Some retryPolicy ->
             let withLoggingContextWrapping count =
                 let log = if count = 1 then log else log |> prop contextLabel count
-                Tracing.addRetryAttempt count Activity.Current
+                Tracing.addOpAttempt count Activity.Current
                 f log
             retryPolicy withLoggingContextWrapping
 
@@ -155,7 +155,7 @@ module private Write =
         return result }
     let writeEvents (log : ILogger) retryPolicy (writer : MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array)
         : Async<MdbSyncResult> = async {
-        use act = source.StartActivity("AppendEvents", ActivityKind.Client)
+        use act = source.StartActivity("Append", ActivityKind.Client)
         let call = writeEventsLogged writer streamName version events act
         return! Log.withLoggedRetries retryPolicy "writeAttempt" call log }
 
@@ -184,15 +184,13 @@ module Read =
     let private resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
     let private loggedReadSlice reader streamName batchSize batchIndex startPos requiresLeader (log : ILogger) : Async<_> = async {
         use act = source.StartActivity("ReadSlice", ActivityKind.Client)
-        if act <> null then
-            act.AddStreamName(streamName).AddBatch(batchSize, batchIndex)
-                .AddStartPosition(startPos).AddLeader(requiresLeader) |> ignore
+        if act <> null then act.AddStreamName(streamName).AddBatch(batchSize, batchIndex).AddStartPosition(startPos).AddLeader(requiresLeader) |> ignore
         let! ct = Async.CancellationToken
         let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let bytes, count = slice.Messages |> resolvedEventBytes, slice.Messages.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice reqMetric
-        if act <> null then act.AddMetric(count, bytes).AddVersion(slice.LastVersion) |> ignore
+        if act <> null then act.AddMetric(count, bytes).AddLastVersion(slice.LastVersion) |> ignore
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propResolvedEvents "Json" slice.Messages
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Mdb{action:l} count={count} version={version}",
             "Read", count, slice.LastVersion)
@@ -219,7 +217,7 @@ module Read =
         let batches = (events.Length - 1)/ (int batchSize) + 1
         let action = "Load"
         let evt = Log.Metric.Batch (batches, reqMetric)
-        if act <> null then act.AddMetric(count, bytes).AddBatches(batches, count).AddVersion(version) |> ignore
+        if act <> null then act.AddMetric(count, bytes).AddBatches(batches, count).AddLastVersion(version) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
@@ -229,14 +227,14 @@ module Read =
         let count = events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
-        if act <> null then act.AddMetric(count, bytes).AddVersion(version) |> ignore
+        if act <> null then act.AddMetric(count, bytes).AddLastVersion(version) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
 
     let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
-        use act = source.StartActivity("LoadLast", ActivityKind.Client)
+        use act = source.StartActivity("ReadLast", ActivityKind.Client)
         if act <> null then act.AddStreamName(streamName).AddLeader(requiresLeader) |> ignore
         let! ct = Async.CancellationToken
         let read _ = readLastEventAsync reader streamName requiresLeader ct |> Async.AwaitTaskCorrect

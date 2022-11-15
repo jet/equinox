@@ -6,7 +6,7 @@ open System.Diagnostics
 
 let source = new ActivitySource("Equinox.MessageDb")
 
-let addRetryAttempt (attempt: int) (act: Activity) = if act <> null then act.AddTag("eqx.op_attempt", attempt) |> ignore
+let addOpAttempt (attempt: int) (act: Activity) = if act <> null then act.AddTag("eqx.op_attempt", attempt) |> ignore
 
 [<System.Runtime.CompilerServices.Extension>]
 type ActivityExtensions =
@@ -18,7 +18,7 @@ type ActivityExtensions =
     static member AddExpectedVersion(act: Activity, version: int64) = act.AddTag("eqx.expected_version", version)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddVersion(act: Activity, version: int64) = act.AddTag("eqx.last_version", version)
+    static member AddLastVersion(act: Activity, version: int64) = act.AddTag("eqx.last_version", version)
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddMetric(act: Activity, count: int, bytes: int) = act.AddTag("eqx.count", count).AddTag("eqx.bytes", bytes)
