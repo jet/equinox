@@ -80,8 +80,7 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
         use! reader = cmd.ExecuteReaderAsync(ct)
 
-        let! hasRow = reader.ReadAsync(ct)
-        if hasRow then return [| parseRow reader |]
+        if reader.Read() then return [| parseRow reader |]
         else return Array.empty }
 
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, requiresLeader, ct) = task {
@@ -99,10 +98,5 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
         use! reader = cmd.ExecuteReaderAsync(ct)
 
         let events = ResizeArray()
-        let! hasRow = reader.ReadAsync(ct)
-        let mutable hasRow = hasRow
-        while hasRow do
-            events.Add(parseRow reader)
-            let! nextHasRow = reader.ReadAsync(ct)
-            hasRow <- nextHasRow
+        while reader.Read() do events.Add(parseRow reader)
         return events.ToArray() }
