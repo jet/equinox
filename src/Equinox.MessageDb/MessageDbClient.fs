@@ -14,8 +14,15 @@ type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
 
 module private Json =
-  let private jsonNull = JsonSerializer.SerializeToUtf8Bytes(null)
-  let toArray (m: Format) = if m.IsEmpty then jsonNull else m.ToArray()
+  let private jsonNull = ReadOnlyMemory(JsonSerializer.SerializeToUtf8Bytes(null))
+
+  let fromReader idx (reader: DbDataReader) =
+      if reader.IsDBNull(idx) then jsonNull
+      else reader.GetString(idx) |> Text.Encoding.UTF8.GetBytes |> ReadOnlyMemory
+
+  let addParameter (name: string) (value: Format) (p: NpgsqlParameterCollection) =
+      if value.Length = 0 then p.AddWithValue(name, NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
+      else p.AddWithValue(name, NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
 
 module private Npgsql =
     let connect connectionString ct = task {
@@ -31,8 +38,8 @@ type MessageDbWriter(connectionString : string) =
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, e.EventId) |> ignore
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
         cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, e.EventType) |> ignore
-        cmd.Parameters.AddWithValue("Data", NpgsqlDbType.Jsonb, Json.toArray e.Data) |> ignore
-        cmd.Parameters.AddWithValue("Meta", NpgsqlDbType.Jsonb, Json.toArray e.Meta) |> ignore
+        cmd.Parameters |> Json.addParameter "Data" e.Data
+        cmd.Parameters |> Json.addParameter "Meta" e.Meta
         cmd.Parameters.AddWithValue("ExpectedVersion", NpgsqlDbType.Bigint, expectedVersion) |> ignore
 
         cmd
@@ -61,8 +68,8 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
         TimelineEvent.Create(
             index = reader.GetInt64(0),
             eventType = reader.GetString(1),
-            data = ReadOnlyMemory(reader.GetFieldValue<byte array>(2)),
-            meta = ReadOnlyMemory(reader.GetFieldValue<byte array>(3)),
+            data = (reader |> Json.fromReader 2),
+            meta = (reader |> Json.fromReader 3),
             eventId = reader.GetGuid(4),
             ?correlationId = readNullableString 5,
             ?causationId = readNullableString 6,
@@ -80,8 +87,7 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
         use! reader = cmd.ExecuteReaderAsync(ct)
 
-        let! hasRow = reader.ReadAsync(ct)
-        if hasRow then return [| parseRow reader |]
+        if reader.Read() then return [| parseRow reader |]
         else return Array.empty }
 
     member _.ReadStream(streamName : string, fromPosition : int64, batchSize : int64, requiresLeader, ct) = task {
@@ -98,11 +104,4 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
         cmd.Parameters.AddWithValue("BatchSize", NpgsqlDbType.Bigint, batchSize) |> ignore
         use! reader = cmd.ExecuteReaderAsync(ct)
 
-        let events = ResizeArray()
-        let! hasRow = reader.ReadAsync(ct)
-        let mutable hasRow = hasRow
-        while hasRow do
-            events.Add(parseRow reader)
-            let! nextHasRow = reader.ReadAsync(ct)
-            hasRow <- nextHasRow
-        return events.ToArray() }
+        return [| while reader.Read() do yield parseRow reader |] }
