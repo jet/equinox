@@ -104,7 +104,4 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
         cmd.Parameters.AddWithValue("BatchSize", NpgsqlDbType.Bigint, batchSize) |> ignore
         use! reader = cmd.ExecuteReaderAsync(ct)
 
-        let events = ResizeArray()
-        while reader.Read() do
-            events.Add(parseRow reader)
-        return events.ToArray() }
+        return [| while reader.Read() do parseRow reader |] }
