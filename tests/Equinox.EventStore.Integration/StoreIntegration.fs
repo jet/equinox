@@ -1,5 +1,6 @@
 ﻿module Equinox.Store.Integration.StoreIntegration
 
+open System.Diagnostics
 open Domain
 open FSharp.UMX
 open Serilog
@@ -49,6 +50,10 @@ type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state,
 #endif
 #if STORE_MESSAGEDB
 open Equinox.MessageDb
+open OpenTelemetry
+open OpenTelemetry.Trace
+open OpenTelemetry.Resources
+
 let connectToLocalStore _ = async {
   let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5433; Maximum Pool Size=10"
   let connector = MessageDbConnector(connectionString)
@@ -88,6 +93,8 @@ type Category<'event, 'state, 'context> = EventStoreCategory<'event, 'state, 'co
 #endif
 
 let createContext connection batchSize = Context(connection, batchSize = batchSize)
+
+let source = new ActivitySource("StoreIntegration")
 
 module SimplestThing =
     type Event =
@@ -143,6 +150,16 @@ module ContactPreferences =
         |> ContactPreferences.create
 
 type Tests(testOutputHelper) =
+    #if STORE_MESSAGEDB
+    let sdk =
+        Sdk.CreateTracerProviderBuilder()
+           .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName = "mdbi"))
+           .AddSource("Equinox.MessageDb")
+           .AddSource("StoreIntegration")
+           .AddSource("Npqsl")
+           .AddOtlpExporter(fun opts -> opts.Endpoint <- Uri("http://localhost:4317"))
+           .Build()
+    #endif
 
     let output = TestContext(testOutputHelper)
 
@@ -169,6 +186,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly batching the reads [without any optimizations]`` (ctx, skuId) = Async.RunSynchronously <| async {
+        use _ = source.StartActivity("Can roundtrip against Store, correctly batching the reads [without any optimizations]")
         let log, capture = output.CreateLoggerWithCapture()
         let! connection = connectToLocalStore log
 
@@ -198,6 +216,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]`` (ctx, initialState) = Async.RunSynchronously <| async {
+        use _ = source.StartActivity("Can roundtrip against Store, managing sync conflicts by retrying [without any optimizations]")
         let log1, capture1 = output.CreateLoggerWithCapture()
 
         let! connection = connectToLocalStore log1
@@ -330,6 +349,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
+        use _ = source.StartActivity("Can correctly read and update against Store, with LatestKnownEvent Access Strategy")
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let service = ContactPreferences.createService log client
@@ -351,6 +371,7 @@ type Tests(testOutputHelper) =
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly caching to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        use _ = source.StartActivity("Can roundtrip against Store, correctly caching to avoid redundant reads")
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
@@ -460,6 +481,7 @@ type Tests(testOutputHelper) =
 #endif
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Version is 0-based`` () = Async.RunSynchronously <| async {
+        use _ = source.StartActivity("Version is 0-based")
         let log, _ = output.CreateLoggerWithCapture()
         let! connection = connectToLocalStore log
 
@@ -473,3 +495,8 @@ type Tests(testOutputHelper) =
             mapResult = (fun result ctx-> result, ctx.Version))
         test <@ [before; after] = [0L; 1L] @>
     }
+
+#if STORE_MESSAGEDB
+    interface IDisposable with
+      member _.Dispose() = sdk.Shutdown() |> ignore
+#endif

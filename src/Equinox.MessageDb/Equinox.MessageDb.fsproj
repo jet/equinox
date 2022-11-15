@@ -15,12 +15,13 @@
         <Compile Include="..\Equinox.Core\Internal.fs">
             <Link>Internal.fs</Link>
         </Compile>
-        <Compile Include="MessageDbClient.fs"/>
-        <Compile Include="MessageDb.fs"/>
+        <Compile Include="Tracing.fs" />
+        <Compile Include="MessageDbClient.fs" />
+        <Compile Include="MessageDb.fs" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Equinox.Core\Equinox.Core.fsproj"/>
+        <ProjectReference Include="..\Equinox.Core\Equinox.Core.fsproj" />
     </ItemGroup>
 
     <ItemGroup>
@@ -28,9 +29,9 @@
 
         <PackageReference Include="FSharp.Core" Version="6.0.0" />
 
-        <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1"/>
-        <PackageReference Include="FsCodec" Version="3.0.0-rc.7.1"/>
-        <PackageReference Include="Npgsql" Version="6.0.7"/>
+        <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
+        <PackageReference Include="FsCodec" Version="3.0.0-rc.7.1" />
+        <PackageReference Include="Npgsql" Version="6.0.7" />
     </ItemGroup>
 
 </Project>
