@@ -5,6 +5,7 @@ open Equinox.MessageDb.Core
 open FsCodec
 open Serilog
 open System
+open System.Diagnostics
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -48,6 +49,7 @@ module Log =
         | Some retryPolicy ->
             let withLoggingContextWrapping count =
                 let log = if count = 1 then log else log |> prop contextLabel count
+                Tracing.addOpAttempt count Activity.Current
                 f log
             retryPolicy withLoggingContextWrapping
 
@@ -128,28 +130,34 @@ module private Write =
     let inline len (bytes: EventBody) = bytes.Length
     let private eventDataLen (x : IEventData<EventBody>) = len x.Data + len x.Meta
     let private eventDataBytes events = events |> Array.sumBy eventDataLen
-    let private writeEventsLogged (writer: MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array) (log : ILogger)
+    let private writeEventsLogged (writer: MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array) (act: Activity) (log : ILogger)
         : Async<MdbSyncResult> = async {
-        let log = if (not << log.IsEnabled) Events.LogEventLevel.Debug then log else log |> Log.propEventData "Json" events
+        let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
+        if act <> null then act.AddStreamName(streamName).AddExpectedVersion(version).AddMetric(count, bytes) |> ignore
         let! t, result = writeEventsAsync writer streamName version events |> Stopwatch.Time
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result with
             | MdbSyncResult.ConflictUnknown ->
+                let eventTypes = [| for x in events -> x.EventType |]
+                if act <> null then act.RecordConflict().AddTag("eqx.event_types", eventTypes) |> ignore
                 let writeLog = log |> Log.prop "stream" streamName |> Log.prop "count" count
-                writeLog.Information("MdbTrySync WrongExpectedVersionException writing {eventTypes}, expected {expectedVersion}", [| for x in events -> x.EventType |], version)
+                writeLog.Information("MdbTrySync WrongExpectedVersionException writing {eventTypes}, expected {expectedVersion}", eventTypes, version)
                 log, Log.WriteConflict reqMetric
             | MdbSyncResult.Written x ->
+                if act <> null then
+                    act.SetStatus(ActivityStatusCode.Ok).AddTag("eqx.new_version", x) |> ignore
                 log |> Log.prop "currentPosition" x, Log.WriteSuccess reqMetric
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
-                                                 "Write", events.Length, match evt with Log.WriteConflict _ -> true | _ -> false)
+                                                 "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
     let writeEvents (log : ILogger) retryPolicy (writer : MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array)
-        : Async<MdbSyncResult> =
-        let call = writeEventsLogged writer streamName version events
-        Log.withLoggedRetries retryPolicy "writeAttempt" call log
+        : Async<MdbSyncResult> = async {
+        use act = source.StartActivity("Append", ActivityKind.Client)
+        let call = writeEventsLogged writer streamName version events act
+        return! Log.withLoggedRetries retryPolicy "writeAttempt" call log }
 
 module Read =
 
@@ -174,18 +182,21 @@ module Read =
     let inline len (bytes : EventBody) = bytes.Length
     let private resolvedEventLen (x : ITimelineEvent<EventBody>) = len x.Data + len x.Meta
     let private resolvedEventBytes events = events |> Array.sumBy resolvedEventLen
-    let private loggedReadSlice reader streamName batchSize startPos requiresLeader (log : ILogger) : Async<_> = async {
+    let private loggedReadSlice reader streamName batchSize batchIndex startPos requiresLeader (log : ILogger) : Async<_> = async {
+        use act = source.StartActivity("ReadSlice", ActivityKind.Client)
+        if act <> null then act.AddStreamName(streamName).AddBatch(batchSize, batchIndex).AddStartPosition(startPos).AddLeader(requiresLeader) |> ignore
         let! ct = Async.CancellationToken
         let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let bytes, count = slice.Messages |> resolvedEventBytes, slice.Messages.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice reqMetric
+        if act <> null then act.AddMetric(count, bytes).AddLastVersion(slice.LastVersion) |> ignore
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propResolvedEvents "Json" slice.Messages
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Mdb{action:l} count={count} version={version}",
             "Read", count, slice.LastVersion)
         return slice }
 
-    let private readBatches (log : ILogger) (readSlice : int64 -> ILogger -> Async<StreamEventsSlice>)
+    let private readBatches (log : ILogger) (readSlice : int64 -> int -> ILogger -> Async<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int64)
         : AsyncSeq<int64 * ITimelineEvent<EventBody> array> =
         let rec loop batchCount pos : AsyncSeq<int64 * ITimelineEvent<EventBody> array> = asyncSeq {
@@ -194,39 +205,43 @@ module Read =
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! slice = readSlice pos batchLog
+            let! slice = readSlice pos batchCount batchLog
             yield slice.LastVersion, slice.Messages
             if not slice.IsEnd then
                 yield! loop (batchCount + 1) (slice.LastVersion + 1L) }
         loop 0 startPosition
 
-    let private logBatchRead streamName t events (batchSize: int64) version (log : ILogger) =
+    let private logBatchRead (act: Activity) streamName t events (batchSize: int64) version (log : ILogger) =
         let bytes, count = resolvedEventBytes events, events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let batches = (events.Length - 1)/ (int batchSize) + 1
         let action = "Load"
         let evt = Log.Metric.Batch (batches, reqMetric)
+        if act <> null then act.AddMetric(count, bytes).AddBatches(batches, count).AddLastVersion(version) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count}/{batches} version={version}",
             action, streamName, count, batches, version)
 
-    let private logLastEventRead streamName t events version (log: ILogger) =
+    let private logLastEventRead (act: Activity) streamName t events (version: int64) (log: ILogger) =
         let bytes = resolvedEventBytes events
         let count = events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
+        if act <> null then act.AddMetric(count, bytes).AddLastVersion(version) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
 
     let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
+        use act = source.StartActivity("ReadLast", ActivityKind.Client)
+        if act <> null then act.AddStreamName(streamName).AddLeader(requiresLeader) |> ignore
         let! ct = Async.CancellationToken
         let read _ = readLastEventAsync reader streamName requiresLeader ct |> Async.AwaitTaskCorrect
 
         let! t, page = Log.withLoggedRetries retryPolicy "readAttempt" read log |> Stopwatch.Time
 
-        log |> logLastEventRead streamName t page.Messages page.LastVersion
+        log |> logLastEventRead act streamName t page.Messages page.LastVersion
         return page.LastVersion, page.Messages }
 
     let internal loadForwardsFrom (log : ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader
@@ -240,12 +255,14 @@ module Read =
                 |> AsyncSeq.toArrayAsync
             let version = versionFromStream
             return version, events }
-        let call pos = loggedReadSlice reader streamName batchSize pos requiresLeader
-        let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
+        use act = source.StartActivity("ReadStream", ActivityKind.Client)
+        if act <> null then act.AddStreamName(streamName).AddBatchSize(batchSize).AddStartPosition(startPosition) |> ignore
+        let call pos batchIndex = loggedReadSlice reader streamName batchSize batchIndex pos requiresLeader
+        let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let batches : AsyncSeq<int64 * ITimelineEvent<EventBody> array> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
         let! t, (version, events) = mergeBatches batches |> Stopwatch.Time
-        log |> logBatchRead streamName t events batchSize version
+        log |> logBatchRead act streamName t events batchSize version
         return version, events }
 
 module private Token =
