@@ -131,7 +131,7 @@ module private Write =
     let inline len (bytes: EventBody) = bytes.Length
     let private eventDataLen (x : IEventData<EventBody>) = len x.Data + len x.Meta
     let private eventDataBytes events = events |> Array.sumBy eventDataLen
-    let private writeEventsLogged (writer: MessageDbWriter) streamName (version : int64) (events : IEventData<EventBody> array) (act: Activity) (log : ILogger)
+    let private writeEventsLogged writer streamName version events (act : Activity) (log : ILogger)
         : Async<MdbSyncResult> = async {
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
@@ -154,12 +154,12 @@ module private Write =
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
                                                  "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
-    let writeEvents (log : ILogger) retryPolicy (writer : MessageDbWriter) stream (version : int64) (events : IEventData<EventBody> array)
+    let writeEvents log retryPolicy writer streamName version events
         : Async<MdbSyncResult> = async {
         let parent = Activity.Current
         use act = source.StartActivity("WriteEvents", ActivityKind.Client)
         if act <> null then act.AddStreamFromParent(parent) |> ignore
-        let call = writeEventsLogged writer stream version events act
+        let call = writeEventsLogged writer streamName version events act
         return! Log.withLoggedRetries retryPolicy "writeAttempt" call log }
 
 module Read =
@@ -263,7 +263,6 @@ module Read =
                 |> AsyncSeq.toArrayAsync
             let version = versionFromStream
             return version, events }
-        // we're in the context of a Load span
         let act = Activity.Current
         if act <> null then act.AddBatchSize(batchSize).AddStartPosition(startPosition).AddLoadMethod("BatchForward") |> ignore
         let call pos batchIndex = loggedReadSlice reader streamName batchSize batchIndex pos requiresLeader
@@ -378,7 +377,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
                 | ValueNone -> return! batched log streamName requireLeader ct
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
                 | ValueSome (token, state) -> return! category.Reload(fold, state, streamName, requireLeader, token, log) }
-        member _.TrySync(log, categoryName, streamId, streamName, context, _init, token, originState, events, _ct) = task {
+        member _.TrySync(log, _categoryName, _streamId, streamName, context, _init, token, originState, events, _ct) = task {
             match! category.TrySync(log, fold, streamName, token, originState, events, context) with
             | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
