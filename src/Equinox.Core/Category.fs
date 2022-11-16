@@ -56,7 +56,7 @@ type DeciderCore =
         DeciderCore.Resolve(cat, log, ())
 
 module Decider =
-    let resolveWithContext log (cat : Category<'event, 'state, 'context>) context categoryName streamId =
+    let resolveWithContext log (cat : Category<'event, 'state, 'context>) categoryName context streamId =
         DeciderCore.Resolve(cat, log, context).Invoke(categoryName, streamId) |> Decider
     let resolve log (cat : Category<'event, 'state, unit>) categoryName streamId =
-        resolveWithContext log cat () categoryName streamId
+        resolveWithContext log cat categoryName () streamId
