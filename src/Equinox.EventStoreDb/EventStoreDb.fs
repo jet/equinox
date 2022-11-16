@@ -351,6 +351,16 @@ type EventStoreContext(connection : EventStoreConnection, batchOptions : BatchOp
                     | Some compactionEventIndex ->
                         Token.ofPreviousStreamVersionAndCompactionEventDataIndex streamToken compactionEventIndex encodedEvents.Length batchOptions.BatchSize version'
             return GatewaySyncResult.Written token }
+    // Used by Propulsion.EventStoreDb.EventStoreSink
+    member _.Sync(log, streamName, streamVersion, events : FsCodec.IEventData<EventBody>[]) : Async<GatewaySyncResult> = async {
+        let encodedEvents : EventData[] = events |> Array.map ClientCodec.eventData
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.WriteConnection streamName streamVersion encodedEvents with
+        | EsSyncResult.Conflict actualVersion ->
+            return GatewaySyncResult.ConflictUnknown (Token.ofNonCompacting actualVersion)
+        | EsSyncResult.Written wr ->
+            let version' = wr.NextExpectedVersion
+            let token = Token.ofNonCompacting version'
+            return GatewaySyncResult.Written token }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
