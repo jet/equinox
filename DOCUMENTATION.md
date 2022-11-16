@@ -316,7 +316,7 @@ module Aggregate
 (* StreamName section *)
 
 let [<Literal>] Category = "category"
-let streamName id = struct (Category, Id.toString id)
+let streamId = Equinox.StreamId.gen Id.toString
 
 (* Optionally, Helpers/Types *)
 
@@ -380,7 +380,7 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State)
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create category = Service(streamName >> Equinox.Decider.resolve Serilog.Log.Logger category)
+let create category = Service(streamId >> Equinox.Decider.resolve Serilog.Log.Logger category)
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one
@@ -451,9 +451,9 @@ events on a given category of stream:
 - `Category`: the common part of the [Stream Name](https://github.com/fscodec#streamname),
   i.e., the `"Favorites"` part of the `"Favorites-clientId"`
 
-- `streamName`: function responsible for mapping from the input elements that define the Aggregate's identity
-  to a `struct` tuple of a) the `Category` b) the `streamId` portion that's used by the Store's `Category` to obtain
-  the `Decider`. In general, the inputs should be [strongly typed ids](https://github.com/jet/FsCodec#strongly-typed-stream-ids-using-fsharpumx))
+- `streamId`: function responsible for mapping from the input elements that define the Aggregate's identity
+  to the `streamId` portion of the `{categoryName}-{streamId}` StreamName that's used within the concrete store.
+  In general, the inputs should be [strongly typed ids](https://github.com/jet/FsCodec#strongly-typed-stream-ids-using-fsharpumx)
 
 - `'event`: a discriminated union representing all the possible Events from
   which a state can be `evolve`d (see `e`vents and `u`nfolds in the
@@ -546,7 +546,7 @@ brevity, that implements all the relevant functions above:
 (* Event stream naming + schemas *)
 
 let [<Literal>] Category = "Favorites"
-let streamName (id : ClientId) = struct (Category, ClientId.toString id)
+let streamId = Equinox.StreamId.gen ClientId.toString
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -592,7 +592,7 @@ let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
 (*
  * The Service defines operations in business terms, neutral to any concrete
  * store selection or implementation supplied only a `resolve` function that can
- * be used to map from ids (as supplied to the `streamName` function) to an
+ * be used to map from ids (as supplied to the `streamId` function) to an
  * Equinox.Decider; Typically the service should be a stateless Singleton
  *)
 
@@ -616,7 +616,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         read clientId
 
 let create resolve : Service =
-    Service(streamName >> resolve)
+    Service(streamId >> resolve Category)
 ```
 
 <a name="api"></a>
@@ -831,10 +831,10 @@ context
 #### `Decider` usage
 
 ```fsharp
-let [<Literal>] Category = Favorites
-let streamName (clientId : String) = FsCodec.StreamName.create Category clientId
+let [<Literal>] Category = "Favorites"
+let streamId = Equinox.StreamId.gen ClientId.toString
 
-type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let decider = resolve clientId
@@ -844,7 +844,7 @@ type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.St
         let decider = resolve clientId
         decider.Query id
 
-let create resolve = Service(streamName >> resolve)
+let create resolve = Service(streamId >> resolve Category)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent
@@ -1079,7 +1079,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
        and/or simplifications when compared to aspects that might present in a
        more complete implementation.
 
-- the `streamName` helper (and optional [`Match` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
+- the `streamId` helper (and optional [`Match` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
   provide succinct ways to map an incoming `clientId` (which is not a `string`
   in the real implementation but instead an id using
   [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive

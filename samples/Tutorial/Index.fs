@@ -1,7 +1,7 @@
 module Index
 
 let [<Literal>] Category = "Index"
-let streamName indexId = struct (Category, IndexId.toString indexId)
+let streamId = Equinox.StreamId.gen IndexId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -46,7 +46,7 @@ type Service<'t> internal (decider : Equinox.Decider<Events.Event<'t>, Fold.Stat
         decider.Query id
 
 let create<'t> resolve indexId =
-    Service(streamName indexId |> resolve)
+    Service(streamId indexId |> resolve Category)
 
 module Cosmos =
 

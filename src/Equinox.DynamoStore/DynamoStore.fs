@@ -1252,9 +1252,7 @@ type DynamoStoreClient
             [<O; D null>] ?archiveTableName,
             // Client to use for archive store. Default: (if <c>archiveTableName</c> specified) use same <c>archiveTableName</c> but via <c>client</c>.
             [<O; D null>] ?archiveClient : Amazon.DynamoDBv2.IAmazonDynamoDB) =
-        let genStreamName (categoryName, streamId) =
-            if categoryName = null then streamId else
-            FsCodec.StreamName.Internal.ofCategoryAndStreamId (categoryName, streamId)
+        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else StreamName.render categoryName streamId
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
         let primaryContainer t = Container.Create(client, t)
         let fallbackContainer =

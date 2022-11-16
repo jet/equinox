@@ -15,7 +15,7 @@ module CompanyId =
     let toString (value : CompanyId) : string = %value
 
 let [<Literal>] Category = "Upload"
-let streamName (companyId, purchaseOrderId) = struct (Category, FsCodec.StreamName.createStreamId [PurchaseOrderId.toString purchaseOrderId; CompanyId.toString companyId])
+let streamId = Equinox.StreamId.gen2 CompanyId.toString PurchaseOrderId.toString
 
 type UploadId = string<uploadId>
 and [<Measure>] uploadId
@@ -46,13 +46,13 @@ let decide (value : UploadId) (state : Fold.State) : Choice<UploadId,UploadId> *
     | None -> Choice1Of2 value, [Events.IdAssigned { value = value}]
     | Some value -> Choice2Of2 value, []
 
-type Service internal (resolve : CompanyId * PurchaseOrderId -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve : struct (CompanyId * PurchaseOrderId) -> Equinox.Decider<Events.Event, Fold.State>) =
 
     member _.Sync(companyId, purchaseOrderId, value) : Async<Choice<UploadId,UploadId>> =
         let decider = resolve (companyId, purchaseOrderId)
         decider.Transact(decide value)
 
-let create resolve = Service(streamName >> resolve)
+let create resolve = Service(streamId >> resolve Category)
 
 module Cosmos =
 

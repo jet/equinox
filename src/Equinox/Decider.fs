@@ -7,9 +7,7 @@ open System.Threading.Tasks
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 /// NOTE: For C#, direct usage of DeciderCore is recommended
-type Decider<'event, 'state>(stream : IStream<'event, 'state>) =
-
-    let inner = DeciderCore(stream)
+type Decider<'event, 'state>(inner : DeciderCore<'event, 'state>) =
 
     /// 1.  Invoke the supplied <c>interpret</c> function with the present state to determine whether any write is to occur.
     /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
@@ -290,3 +288,22 @@ and internal SyncContext<'state> =
             member _.Version = token.version
             member _.StreamEventBytes = match token.streamBytes with -1L -> ValueNone | b -> ValueSome b
             member _.CreateMemento() = token, state }
+
+open FSharp.UMX
+type StreamId = string<streamId>
+and [<Measure>] streamId
+module StreamId =
+    /// Throws if a candidate id element includes a '_', is null, or is empty
+    let inline validateElement (rawElement : string) =
+        if rawElement |> String.IsNullOrEmpty then invalidArg "rawElement" "may not contain null or empty components"
+        if rawElement.IndexOf '_' <> -1 then invalidArg "rawElement" "may not contain embedded '_' symbols"
+    let gen (f : 'a -> string) (id : 'a) : StreamId =
+        let element = f id
+        validateElement element
+        UMX.tag element
+    let private streamIdOfElements (elements : string seq) : StreamId =
+        elements |> Seq.iter validateElement
+        String.Join("_", elements) |> UMX.tag
+    let toString : StreamId -> string = UMX.untag
+    let gen2 f f2 struct (id1, id2) = seq { yield f id1; yield f2 id2 } |> streamIdOfElements
+    let gen3 f f2 f3 struct (id1, id2, id3) = seq { yield f id1; yield f2 id2; yield f3 id3 } |> streamIdOfElements

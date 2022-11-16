@@ -17,6 +17,7 @@
       <!-- Workaround for malformed FSharp.Core packages https://github.com/dotnet/fsharp/issues/12706 via https://github.com/fsprojects/Paket/issues/4149-->
       <ExcludeAssets>contentFiles</ExcludeAssets>
     </PackageReference>
+    
+    <PackageReference Include="FSharp.UMX" Version="1.1.0"/>
   </ItemGroup>
-
 </Project>

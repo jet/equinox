@@ -43,7 +43,7 @@ module Log =
 module Favorites =
 
     let Category = "Favorites"
-    let streamName clientId = struct (Category, clientId)
+    let streamId = Equinox.StreamId.gen id
 
     module Events =
 
@@ -83,7 +83,7 @@ module Favorites =
             let decider = resolve clientId
             decider.Query id
 
-    let create resolve = Service(streamName >> resolve)
+    let create resolve = Service(streamId >> resolve Category)
 
     module Cosmos =
 

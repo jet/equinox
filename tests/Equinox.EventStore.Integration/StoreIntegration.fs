@@ -107,15 +107,19 @@ module SimplestThing =
     let evolve (state: Event) (event: Event) = event
     let fold = Seq.fold evolve
     let initial = StuffHappened
-    let resolve log context = Category(context, codec, fold, initial) |> Equinox.Decider.resolve log
+    let resolve log context =
+        Category(context, codec, fold, initial)
+        |> Equinox.Decider.resolve log
+    let [<Literal>] Category = "SimplestThing"
 
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let codec = Cart.Events.codec
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
-    let createCategory log context = Category(context, codec, fold, initial) |> Equinox.Decider.resolve log
     let createServiceWithoutOptimization log context =
-        createCategory log context |> Cart.create
+        Category(context, codec, fold, initial)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
 
     #if !STORE_MESSAGEDB
     let createServiceWithCompaction log context =
@@ -502,8 +506,9 @@ type Tests(testOutputHelper) =
 
         let batchSize = 3
         let context = createContext connection batchSize
-        let id = $"{Guid.NewGuid():N}"
-        let decider = SimplestThing.resolve log context struct("SimplestThing", id)
+        let id = Guid.NewGuid()
+        let toStreamId (x : Guid) = x.ToString "N"
+        let decider = SimplestThing.resolve log context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
 
         let! before, after = decider.TransactEx(
             (fun state -> state.Version, [SimplestThing.StuffHappened]),

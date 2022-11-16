@@ -1296,9 +1296,7 @@ type CosmosStoreClient
         [<O; D null>] ?archiveDatabaseId,
         // Container Name to use for locating missing events. Default: use <c>containerId</c>
         [<O; D null>] ?archiveContainerId) =
-        let genStreamName (categoryName, streamId) =
-            if categoryName = null then streamId
-            else FsCodec.StreamName.Internal.ofCategoryAndStreamId (categoryName, streamId)
+        let genStreamName (categoryName, streamId) = if categoryName = null then streamId else StreamName.render categoryName streamId
         let catAndStreamToDatabaseContainerStream (categoryName, streamId) = databaseId, containerId, genStreamName (categoryName, streamId)
         let primaryContainer (d, c) = (client : CosmosClient).GetDatabase(d).GetContainer(c)
         let fallbackContainer =

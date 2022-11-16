@@ -1,7 +1,10 @@
 ﻿module Domain.ContactPreferences
 
-type Id = Id of email: string
-let streamName (Id email) = struct ("ContactPreferences", email) // TODO hash >> base64
+type ClientId = ClientId of email: string
+module ClientId = let toString (ClientId email) = email
+
+let [<Literal>] Category = "ContactPreferences"
+let streamId = Equinox.StreamId.gen ClientId.toString // TODO hash >> base64
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 module Events =
@@ -38,11 +41,11 @@ let interpret command (state : Fold.State) =
         if state = preferences then [] else
         [ Events.Updated value ]
 
-type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     let update email value : Async<unit> =
         let decider = resolve email
-        let command = let (Id email) = email in Update { email = email; preferences = value }
+        let command = let (ClientId email) = email in Update { email = email; preferences = value }
         decider.Transact(interpret command)
 
     member _.Update(email, value) =
@@ -57,4 +60,4 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State>
         decider.Query(id, Equinox.AllowStale)
 
 let create resolve =
-    Service(streamName >> resolve)
+    Service(streamId >> resolve Category)

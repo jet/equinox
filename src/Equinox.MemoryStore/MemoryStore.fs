@@ -57,7 +57,7 @@ module private Token =
     let ofValue (value : 'event array) = streamTokenOfEventCount value.Length
 
 /// Represents the state of a set of streams in a style consistent withe the concrete Store types - no constraints on memory consumption (but also no persistence!).
-type Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
+type private Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
     interface ICategory<'event, 'state, 'context> with
         member _.Load(_log, _categoryName, _streamId, streamName, _allowStale, _requireLeader, _ct) =
             match store.Load(streamName) with
@@ -80,6 +80,6 @@ type MemoryStoreCategory<'event, 'state, 'Format, 'context>(resolveInner, empty)
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
     new (store : VolatileStore<'Format>, codec : FsCodec.IEventCodec<'event, 'Format, 'context>, fold, initial) =
         let impl = Category<'event, 'state, 'context, 'Format>(store, codec, fold, initial)
-        let resolveInner streamIds = struct (impl :> ICategory<_, _, _>, FsCodec.StreamName.Internal.ofCategoryAndStreamId streamIds, ValueNone)
+        let resolveInner struct (cat, sid) = struct (impl :> ICategory<_, _, _>, StreamName.render cat sid, ValueNone)
         let empty = struct (Token.ofEmpty, initial)
         MemoryStoreCategory(resolveInner, empty)
