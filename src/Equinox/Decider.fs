@@ -307,4 +307,3 @@ module StreamId =
     let toString : StreamId -> string = UMX.untag
     let gen2 f f2 struct (id1, id2) = seq { yield f id1; yield f2 id2 } |> streamIdOfElements
     let gen3 f f2 f3 struct (id1, id2, id3) = seq { yield f id1; yield f2 id2; yield f3 id3 } |> streamIdOfElements
-    let withContext target resolve context ids = target ids |> resolve context
