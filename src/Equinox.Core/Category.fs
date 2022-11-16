@@ -46,7 +46,7 @@ type Category<'event, 'state, 'context>(
 type private Stream =
 
     static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<Target, Core.IStream<'event, 'state>> =
-        System.Func<_, _>(fun target -> cat.Stream(log, context, target.categoryName, target.streamId))
+        System.Func<_, _>(fun target -> cat.Stream(log, context, target.category, target.streamId))
 
 [<System.Runtime.CompilerServices.Extension>]
 type DeciderCore =

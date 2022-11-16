@@ -291,9 +291,9 @@ and internal SyncContext<'state> =
 
 [<Struct>]
 type Target =
-    { categoryName : string; streamId : string }
+    { category : string; streamId : string }
     static member Render(categoryName, streamId) = String.Concat(categoryName, '-', streamId)
-    override x.ToString() = Target.Render(x.categoryName, x.streamId)
+    override x.ToString() = Target.Render(x.category, x.streamId)
 
 module Target =
     module Internal =
@@ -307,15 +307,15 @@ module Target =
             if rawElement.IndexOf '_' <> -1 then invalidArg "rawElement" "may not contain embedded '_' symbols"
         /// Low level helper used to gate ingestion from a canonical form
         /// Does NOT validate the {streamId} portion wrt numbers of embedded `_` or `-` chars
-        let create categoryName streamId =
-            validateCategory categoryName
-            { categoryName = categoryName; streamId = streamId }
+        let create category streamId =
+            validateCategory category
+            { category = category; streamId = streamId }
         let toString (x : Target) = string x
 
     let private streamIdOfElement f id = let t = f id in Internal.validateElement t; t
-    let gen categoryName f id = Internal.create categoryName (streamIdOfElement f id)
+    let gen category f id = Internal.create category (streamIdOfElement f id)
     let private streamIdOfElements (elements : string seq) : string =
         for x in elements do Internal.validateElement x
         String.Join("_", elements)
-    let gen2 categoryName f f2 struct (id1, id2) = Internal.create categoryName (streamIdOfElements (seq { yield f id1; yield f2 id2 }))
-    let gen3 categoryName f f2 f3 struct (id1, id2, id3) = Internal.create categoryName (streamIdOfElements (seq { yield f id1; yield f2 id2; yield f3 id3 }))
+    let gen2 category f f2 struct (id1, id2) = Internal.create category (streamIdOfElements (seq { yield f id1; yield f2 id2 }))
+    let gen3 category f f2 f3 struct (id1, id2, id3) = Internal.create category (streamIdOfElements (seq { yield f id1; yield f2 id2; yield f3 id3 }))
