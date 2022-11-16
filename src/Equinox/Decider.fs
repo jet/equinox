@@ -312,10 +312,14 @@ module Target =
             { category = category; streamId = streamId }
         let toString (x : Target) = string x
 
-    let private streamIdOfElement f id = let t = f id in Internal.validateElement t; t
-    let gen category f id = Internal.create category (streamIdOfElement f id)
+    let private genStreamId f id =
+        let element = f id
+        Internal.validateElement element
+        element
+    let gen category f id = Internal.create category (genStreamId f id)
     let private streamIdOfElements (elements : string seq) : string =
         for x in elements do Internal.validateElement x
         String.Join("_", elements)
     let gen2 category f f2 struct (id1, id2) = Internal.create category (streamIdOfElements (seq { yield f id1; yield f2 id2 }))
     let gen3 category f f2 f3 struct (id1, id2, id3) = Internal.create category (streamIdOfElements (seq { yield f id1; yield f2 id2; yield f3 id3 }))
+    let withContext target resolve context ids = target ids |> resolve context
