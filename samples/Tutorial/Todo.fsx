@@ -29,7 +29,7 @@ open System
    This tutorial stresses different aspects *)
 
 let Category = "Todos"
-let target = Equinox.Target.gen Category id
+let streamId = Equinox.StreamId.gen id
 
 type Todo =             { id: int; order: int; title: string; completed: bool }
 type DeletedInfo =      { id: int }
@@ -139,7 +139,7 @@ module TodosCategory =
     let resolve = CosmosStoreCategory(Store.context, codec, fold, initial, Store.cacheStrategy, access=access)
                   |> Equinox.Decider.resolve log
 
-let service = Service(target >> TodosCategory.resolve)
+let service = Service(streamId >> TodosCategory.resolve Category)
 
 let client = "ClientJ"
 let item = { id = 0; order = 0; title = "Feed cat"; completed = false }

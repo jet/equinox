@@ -50,7 +50,8 @@ module Types =
 
 module FulfilmentCenter =
 
-    let target = Equinox.Target.gen "FulfilmentCenter"
+    let [<Literal>] Category = "FulfilmentCenter"
+    let streamId = Equinox.StreamId.gen id
 
     module Events =
 
@@ -157,7 +158,8 @@ Log.dumpMetrics ()
 /// Manages ingestion of summary events tagged with the version emitted from FulfilmentCenter.Service.QueryWithVersion
 module FulfilmentCenterSummary =
 
-    let target = Equinox.Target.gen "FulfilmentCenterSummary" id
+    let [<Literal>] Category = "FulfilmentCenter"
+    let streamId = Equinox.StreamId.gen id
 
     module Events =
         type UpdatedData = { version : int64; state : Summary }

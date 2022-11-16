@@ -177,8 +177,8 @@ module Cosmos =
     let cat = CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve = Equinox.Decider.resolve Log.log cat
 
-let service = Service(target >> EventStore.resolve)
-//let service= Service(target >> Cosmos.resolve)
+let service = Service(streamId >> EventStore.resolve)
+//let service= Service(streamId >> Cosmos.resolve)
 
 let client = "ClientA"
 service.Add(client, 1) |> Async.RunSynchronously

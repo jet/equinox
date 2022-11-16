@@ -43,7 +43,7 @@ module Log =
 module Favorites =
 
     let Category = "Favorites"
-    let target = Equinox.Target.gen Category id
+    let streamId = Equinox.StreamId.gen id
 
     module Events =
 

@@ -380,7 +380,7 @@ type Service internal (resolve : Id -> Equinox.Decider<Events.Event, Fold.State)
         let decider = resolve id
         decider.Transact(decideX inputs)
 
-let create category = Service(target >> Equinox.Decider.resolve Serilog.Log.Logger category)
+let create category = Service(streamId >> Equinox.Decider.resolve Serilog.Log.Logger category)
 ```
 
 - `Service`'s constructor is `internal`; `create` is the main way in which one
@@ -592,7 +592,7 @@ let toSnapshot state = [Event.Snapshotted (Array.ofList state)]
 (*
  * The Service defines operations in business terms, neutral to any concrete
  * store selection or implementation supplied only a `resolve` function that can
- * be used to map from ids (as supplied to the `target` function) to an
+ * be used to map from ids (as supplied to the `streamId` function) to an
  * Equinox.Decider; Typically the service should be a stateless Singleton
  *)
 
@@ -1079,7 +1079,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
        and/or simplifications when compared to aspects that might present in a
        more complete implementation.
 
-- the `target` helper (and optional [`Match` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
+- the `streamId` helper (and optional [`Match` Active Patterns](https://github.com/jet/fscodec#adding-matchers-to-the-event-contract))
   provide succinct ways to map an incoming `clientId` (which is not a `string`
   in the real implementation but instead an id using
   [`FSharp.UMX`](https://github.com/fsprojects/FSharp.UMX) in an unobtrusive
