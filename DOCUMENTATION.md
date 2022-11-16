@@ -451,9 +451,9 @@ events on a given category of stream:
 - `Category`: the common part of the [Stream Name](https://github.com/fscodec#streamname),
   i.e., the `"Favorites"` part of the `"Favorites-clientId"`
 
-- `streamName`: function responsible for mapping from the input elements that define the Aggregate's identity
-  to a `struct` tuple of a) the `Category` b) the `streamId` portion that's used by the Store's `Category` to obtain
-  the `Decider`. In general, the inputs should be [strongly typed ids](https://github.com/jet/FsCodec#strongly-typed-stream-ids-using-fsharpumx))
+- `streamId`: function responsible for mapping from the input elements that define the Aggregate's identity
+  to the `streamId` portion of the `{categoryName}-{streamId}` StreamName that's used within the concrete store.
+  In general, the inputs should be [strongly typed ids](https://github.com/jet/FsCodec#strongly-typed-stream-ids-using-fsharpumx)
 
 - `'event`: a discriminated union representing all the possible Events from
   which a state can be `evolve`d (see `e`vents and `u`nfolds in the
