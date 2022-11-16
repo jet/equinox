@@ -258,6 +258,9 @@ type Tests(testOutputHelper) =
         let w3, s3 = eventWaitSet ()
         let w4, s4 = eventWaitSet ()
         let t1 = async {
+            #if NET
+            use _ = source.StartActivity("Trx1")
+            #endif
             // Wait for other to have state, signal we have it, await conflict and handle
             let prepare = async {
                 do! w0
@@ -273,6 +276,9 @@ type Tests(testOutputHelper) =
         let context = createContext connection batchSize
         let service2 = Cart.createServiceWithoutOptimization log2 context
         let t2 = async {
+            #if NET
+            use _ = source.StartActivity("Trx2")
+            #endif
             // Signal we have state, wait for other to do same, engineer conflict
             let prepare = async {
                 do! s0
