@@ -160,6 +160,7 @@ type Tests(testOutputHelper) =
     let sdk =
         Sdk.CreateTracerProviderBuilder()
            .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName = "mdbi"))
+           .AddSource("Equinox")
            .AddSource("Equinox.MessageDb")
            .AddSource("StoreIntegration")
            .AddSource("Npqsl")
