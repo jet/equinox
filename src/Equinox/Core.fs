@@ -61,4 +61,3 @@ type internal Impl() =
                              projection : Func<struct (StreamToken * 's), 'v>, ct) : Task<'v> = task {
         let! tokenAndState = fetch stream ct
         return projection.Invoke tokenAndState }
-

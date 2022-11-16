@@ -9,7 +9,7 @@ type FsCheckGenerators =
     static member ContactPreferencesId =
         Arb.generate<Guid>
         |> Gen.map (fun x -> sprintf "%s@test.com" (x.ToString("N")))
-        |> Gen.map ContactPreferences.Id
+        |> Gen.map ContactPreferences.ClientId
         |> Arb.fromGen
 
 #if STORE_POSTGRES || STORE_MSSQL || STORE_MYSQL

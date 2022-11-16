@@ -83,7 +83,7 @@ module Favorites =
             let decider = resolve clientId
             decider.Query id
 
-    let create resolve = Service(target >> resolve)
+    let create resolve = Service(streamId >> resolve Category)
 
     module Cosmos =
 

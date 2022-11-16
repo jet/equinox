@@ -32,7 +32,8 @@ module WiringHelpers =
 /// This is especially relevant when events are spread between a Tip page and preceding pages as the Tip reading logic is special cased compared to querying
 module SequenceCheck =
 
-    let target = Equinox.Target.gen "_SequenceCheck" (fun (g : Guid) -> g.ToString "N")
+    let [<Literal>] Category = "_SequenceCheck"
+    let streamId = Equinox.StreamId.gen (fun (g : Guid) -> g.ToString "N")
 
     module Events =
 
@@ -69,7 +70,7 @@ module SequenceCheck =
             decider.Transact(decide (value, count), id)
 
     let private create resolve =
-        Service(target >> resolve)
+        Service(streamId >> resolve Category)
 
     module Config =
 

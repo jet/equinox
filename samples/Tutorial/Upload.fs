@@ -15,7 +15,7 @@ module CompanyId =
     let toString (value : CompanyId) : string = %value
 
 let [<Literal>] Category = "Upload"
-let target = Equinox.Target.gen2 Category CompanyId.toString PurchaseOrderId.toString
+let streamId = Equinox.StreamId.gen2 CompanyId.toString PurchaseOrderId.toString
 
 type UploadId = string<uploadId>
 and [<Measure>] uploadId
@@ -52,7 +52,7 @@ type Service internal (resolve : struct (CompanyId * PurchaseOrderId) -> Equinox
         let decider = resolve (companyId, purchaseOrderId)
         decider.Transact(decide value)
 
-let create resolve = Service(target >> resolve)
+let create resolve = Service(streamId >> resolve Category)
 
 module Cosmos =
 

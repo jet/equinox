@@ -26,10 +26,9 @@ open System.Threading.Tasks
 
 /// Store-agnostic baseline functionality for a Category of 'event representations that fold to a given 'state
 [<NoComparison; NoEquality>]
-type Category<'event, 'state, 'context>(
-        resolveInner : struct (string * string) -> struct (Core.ICategory<'event, 'state, 'context> * string * (CancellationToken -> Task<unit>) voption),
+type Category<'event, 'state, 'context>
+    (   resolveInner : struct (string * string) -> struct (Core.ICategory<'event, 'state, 'context> * string * (CancellationToken -> Task<unit>) voption),
         empty : struct (Core.StreamToken * 'state)) =
-
     /// Provides access to the low level store operations used for Loading and/or Syncing updates via the Decider
     /// (Normal usage is via the adjacent `module Decider` / `DeciderExtensions.Resolve` helpers)
     member _.Stream(log : Serilog.ILogger, context : 'context, categoryName, streamId) =
@@ -44,21 +43,20 @@ type Category<'event, 'state, 'context>(
                 inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) }
 
 type private Stream =
-
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<Target, Core.IStream<'event, 'state>> =
-        System.Func<_, _>(fun target -> cat.Stream(log, context, target.category, target.streamId))
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<string, StreamId, Core.IStream<'event, 'state>> =
+        System.Func<string, StreamId, _>(fun categoryName streamId -> cat.Stream(log, context, categoryName, StreamId.toString streamId))
 
 [<System.Runtime.CompilerServices.Extension>]
 type DeciderCore =
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<Target, DeciderCore<'event, 'state>> =
-         Stream.Resolve(cat, log, context).Invoke >> DeciderCore
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<string, StreamId, DeciderCore<'event, 'state>> =
+         System.Func<_, _, _>(fun c s -> Stream.Resolve(cat, log, context).Invoke(c,s) |> DeciderCore)
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<Target, DeciderCore<'event, 'state>> =
+    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<string, StreamId, DeciderCore<'event, 'state>> =
         DeciderCore.Resolve(cat, log, ())
 
 module Decider =
-    let resolveWithContext log (cat : Category<'event, 'state, 'context>) context =
-        DeciderCore.Resolve(cat, log, context).Invoke >> Decider
-    let resolve log (cat : Category<'event, 'state, unit>) =
-        resolveWithContext log cat ()
+    let resolveWithContext log (cat : Category<'event, 'state, 'context>) context categoryName streamId =
+        DeciderCore.Resolve(cat, log, context).Invoke(categoryName, streamId) |> Decider
+    let resolve log (cat : Category<'event, 'state, unit>) categoryName streamId =
+        resolveWithContext log cat () categoryName streamId

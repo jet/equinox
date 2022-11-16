@@ -289,37 +289,22 @@ and internal SyncContext<'state> =
             member _.StreamEventBytes = match token.streamBytes with -1L -> ValueNone | b -> ValueSome b
             member _.CreateMemento() = token, state }
 
-[<Struct>]
-type Target =
-    { category : string; streamId : string }
-    static member Render(categoryName, streamId) = String.Concat(categoryName, '-', streamId)
-    override x.ToString() = Target.Render(x.category, x.streamId)
-
-module Target =
-    module Internal =
-        /// Throws if a candidate category includes a '-', is null, or is empty
-        let inline validateCategory (rawCategory : string) =
-            if rawCategory |> String.IsNullOrEmpty then invalidArg "rawCategory" "may not be null or empty"
-            if rawCategory.IndexOf '-' <> -1 then invalidArg "rawCategory" "may not contain embedded '-' symbols"
-        /// Throws if a candidate id element includes a '_', is null, or is empty
-        let inline validateElement (rawElement : string) =
-            if rawElement |> String.IsNullOrEmpty then invalidArg "rawElement" "may not contain null or empty components"
-            if rawElement.IndexOf '_' <> -1 then invalidArg "rawElement" "may not contain embedded '_' symbols"
-        /// Low level helper used to gate ingestion from a canonical form
-        /// Does NOT validate the {streamId} portion wrt numbers of embedded `_` or `-` chars
-        let create category streamId =
-            validateCategory category
-            { category = category; streamId = streamId }
-        let toString (x : Target) = string x
-
-    let private genStreamId f id =
+open FSharp.UMX
+type StreamId = string<streamId>
+and [<Measure>] streamId
+module StreamId =
+    /// Throws if a candidate id element includes a '_', is null, or is empty
+    let inline validateElement (rawElement : string) =
+        if rawElement |> String.IsNullOrEmpty then invalidArg "rawElement" "may not contain null or empty components"
+        if rawElement.IndexOf '_' <> -1 then invalidArg "rawElement" "may not contain embedded '_' symbols"
+    let gen (f : 'a -> string) (id : 'a) : StreamId =
         let element = f id
-        Internal.validateElement element
-        element
-    let gen category f id = Internal.create category (genStreamId f id)
-    let private streamIdOfElements (elements : string seq) : string =
-        for x in elements do Internal.validateElement x
-        String.Join("_", elements)
-    let gen2 category f f2 struct (id1, id2) = Internal.create category (streamIdOfElements (seq { yield f id1; yield f2 id2 }))
-    let gen3 category f f2 f3 struct (id1, id2, id3) = Internal.create category (streamIdOfElements (seq { yield f id1; yield f2 id2; yield f3 id3 }))
+        validateElement element
+        UMX.tag element
+    let private streamIdOfElements (elements : string seq) : StreamId =
+        elements |> Seq.iter validateElement
+        String.Join("_", elements) |> UMX.tag
+    let toString : StreamId -> string = UMX.untag
+    let gen2 f f2 struct (id1, id2) = seq { yield f id1; yield f2 id2 } |> streamIdOfElements
+    let gen3 f f2 f3 struct (id1, id2, id3) = seq { yield f id1; yield f2 id2; yield f3 id3 } |> streamIdOfElements
     let withContext target resolve context ids = target ids |> resolve context

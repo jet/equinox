@@ -17,6 +17,7 @@
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
     <PackageReference Include="FSharp.Core" Version="6.0.0" />
+    <PackageReference Include="FsCodec" Version="3.0.0-rc.7.1" />
   </ItemGroup>
 
 </Project>

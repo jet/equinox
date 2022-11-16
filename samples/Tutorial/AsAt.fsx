@@ -45,7 +45,8 @@
 #endif
 open System
 
-let target = Equinox.Target.gen "Account" id
+let [<Literal>] Category = "Account"
+let streamId = Equinox.StreamId.gen id
 
 module Events =
 

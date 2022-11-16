@@ -101,7 +101,7 @@ let store = Equinox.MemoryStore.VolatileStore()
 // For demo purposes we emit those to the log (which emits to the console)
 let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
     log.Information("Committed to {stream}, events: {@events}", stream, seq { for x in events -> x.EventType })
-let _ = store.Committed.Subscribe(fun (s, xs) -> logEvents s xs)
+let _ = store.Committed.Subscribe(fun struct (c, s, xs) -> logEvents c s xs)
 
 let codec =
     // For this example, we hand-code; normally one uses one of the FsCodec auto codecs, which codegen something similar
@@ -158,8 +158,9 @@ type Service(deciderFor : string -> Handler) =
 
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
 let streamFor (clientId: string) =
-    let target = Equinox.Target.gen "Favorites" id clientId
-    let decider = Equinox.Decider.resolve log cat target
+    let [<Literal>] Category = "Favorites"
+    let streamId = Equinox.StreamId.gen id
+    let decider = Equinox.Decider.resolve log cat Category streamId 
     Handler(decider)
 
 let service = Service(streamFor)

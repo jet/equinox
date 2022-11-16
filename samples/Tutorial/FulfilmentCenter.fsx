@@ -146,7 +146,7 @@ let service =
     let resolve =
         CosmosStoreCategory(Store.context, Events.codec, Fold.fold, Fold.initial, Store.cacheStrategy, AccessStrategy.Unoptimized)
         |> Equinox.Decider.resolve Log.log
-    Service(target >> resolve)
+    Service(streamId >> resolve Category)
 
 let fc = "fc0"
 service.UpdateName(fc, { code="FC000"; name="Head" }) |> Async.RunSynchronously

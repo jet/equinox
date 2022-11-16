@@ -13,6 +13,8 @@ open Equinox.CosmosStore
 open Equinox.CosmosStore.Integration.CosmosFixtures
 #endif
 
+module StreamName = let render categoryName streamId = String.Concat(categoryName, '-', streamId)
+
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
@@ -224,7 +226,7 @@ type Tests(testOutputHelper) =
         // We need to be sure every Update changes something as we rely on an expected number of events in the end
         let value = if value <> ContactPreferences.Fold.initial then value else { value with manyPromotions = true }
 
-        let id = ContactPreferences.Id (let g = Guid.NewGuid() in g.ToString "N")
+        let id = ContactPreferences.ClientId (let g = Guid.NewGuid() in g.ToString "N")
         // Ensure there will be something to be changed by the Update below
         for i in 0..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
@@ -242,7 +244,7 @@ type Tests(testOutputHelper) =
         // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
         // If we run on an independent context, we won't see (and hence prune) the full set of events
         let ctx = Core.EventsContext(context, log)
-        let streamName = ContactPreferences.target id |> Equinox.Target.Internal.toString
+        let streamName = ContactPreferences.streamId id |> Equinox.StreamId.toString
 
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 14L
@@ -283,7 +285,7 @@ type Tests(testOutputHelper) =
         let cache = Equinox.Cache("contacts", sizeMb = 50)
         let service = ContactPreferences.createServiceWithCaching log context cache
 
-        let id = ContactPreferences.Id (let g = Guid.NewGuid() in g.ToString "N")
+        let id = ContactPreferences.ClientId (let g = Guid.NewGuid() in g.ToString "N")
         // Ensure there will be something to be changed by the Update below
         for i in 1..13 do
             do! service.Update(id, if i % 2 = 0 then value else { value with quickSurveys = not value.quickSurveys })
@@ -410,7 +412,7 @@ type Tests(testOutputHelper) =
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
         let ctx = Core.EventsContext(context, log)
-        let streamName = Cart.target cartId |> Equinox.Target.Internal.toString
+        let streamName = Cart.streamId cartId |> StreamName.render Cart.Category
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 11L
         test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
@@ -471,7 +473,7 @@ type Tests(testOutputHelper) =
         (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
         let ctx = Core.EventsContext(context, log)
-        let streamName = Cart.target cartId |> Equinox.Target.Internal.toString
+        let streamName = Cart.streamId cartId |> StreamName.render Cart.Category
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 12L
         test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>

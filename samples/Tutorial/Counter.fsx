@@ -29,8 +29,13 @@ type Event =
     | Decremented
     | Cleared of Cleared
     interface TypeShape.UnionContract.IUnionContract
-(* Kind of DDD aggregate ID *)
-let target id = Equinox.Target.gen Category SequenceId.toString
+
+// Events for a given DDD aggregate are considered to be in the same 'Category' for indexing purposes
+// When reacting to events (using Propulsion), the Category will be a key thing to filter events based on
+let [<Literal>] Category = "Counter"
+// Maps from an app-level counter name (perhaps a strongly typed id), to a well-formed StreamId that can be stored in the Event Store
+// For this sample, we let callers just pass a string, and we trust it's suitable for use as a StreamId directly
+let streamId = Equinox.StreamId.gen id
 
 type State = State of int
 let initial : State = State 0
@@ -95,7 +100,7 @@ let codec = FsCodec.Box.Codec.Create()
 let resolve =
     Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
     |> Equinox.Decider.resolve log 
-let service = Service(target >> resolve)
+let service = Service(streamId >> resolve Category)
 
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously

@@ -316,7 +316,7 @@ module Aggregate
 (* StreamName section *)
 
 let [<Literal>] Category = "category"
-let target = Equinox.Target.gen Category Id.toString
+let streamId = Equinox.StreamId.gen Id.toString
 
 (* Optionally, Helpers/Types *)
 
@@ -546,7 +546,7 @@ brevity, that implements all the relevant functions above:
 (* Event stream naming + schemas *)
 
 let [<Literal>] Category = "Favorites"
-let target = Equinox.Target.gen Category ClientId.toString
+let streamId = Equinox.StreamId.gen ClientId.toString
 
 type Item = { id: int; name: string; added: DateTimeOffset }
 type Event =
@@ -616,7 +616,7 @@ type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.
         read clientId
 
 let create resolve : Service =
-    Service(target >> resolve)
+    Service(streamId >> resolve Category)
 ```
 
 <a name="api"></a>
@@ -831,10 +831,10 @@ context
 #### `Decider` usage
 
 ```fsharp
-let [<Literal>] Category = Favorites
-let target = Equinox.Target.gen Category id
+let [<Literal>] Category = "Favorites"
+let streamId = Equinox.StreamId.gen ClientId.toString
 
-type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.State>) =
+type Service internal (resolve : ClientId -> Equinox.Decider<Events.Event, Fold.State>) =
 
     let execute clientId command : Async<unit> =
         let decider = resolve clientId
@@ -844,7 +844,7 @@ type Service internal (resolve : string -> Equinox.Decider<Events.Event, Fold.St
         let decider = resolve clientId
         decider.Query id
 
-let create resolve = Service(target >> resolve)
+let create resolve = Service(streamId >> resolve Category)
 ```
 
 `Read` above will do a roundtrip to the Store in order to fetch the most recent

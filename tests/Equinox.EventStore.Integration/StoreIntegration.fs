@@ -508,7 +508,7 @@ type Tests(testOutputHelper) =
         let context = createContext connection batchSize
         let id = Guid.NewGuid()
         let toStreamId (x : Guid) = x.ToString "N"
-        let decider = SimplestThing.resolve log context (Equinox.Target.gen SimplestThing.Category toStreamId id)
+        let decider = SimplestThing.resolve log context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
 
         let! before, after = decider.TransactEx(
             (fun state -> state.Version, [SimplestThing.StuffHappened]),

@@ -67,3 +67,13 @@ module Seq =
 module Array =
 
     let inline chooseV f xs = [| for item in xs do match f item with ValueSome v -> yield v | ValueNone -> () |]
+
+module StreamName =
+
+    /// Throws if a candidate category includes a '-', is null, or is empty
+    let inline validateCategoryName (rawCategory : string) =
+        if rawCategory |> System.String.IsNullOrEmpty then invalidArg "rawCategory" "may not be null or empty"
+        if rawCategory.IndexOf '-' <> -1 then invalidArg "rawCategory" "may not contain embedded '-' symbols"
+    let render categoryName streamId =
+        validateCategoryName categoryName
+        System.String.Concat(categoryName, '-', streamId)

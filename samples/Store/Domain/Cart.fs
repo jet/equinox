@@ -1,6 +1,7 @@
 ﻿module Domain.Cart
 
-let target = Equinox.Target.gen "Cart" CartId.toString
+let [<Literal>] Category = "Cart"
+let streamId = Equinox.StreamId.gen CartId.toString
 
 // NOTE - these types and the union case names reflect the actual storage formats and hence need to be versioned with care
 [<RequireQualifiedAccess>]
@@ -165,4 +166,4 @@ type Service internal (resolve : CartId -> Equinox.Decider<Events.Event, Fold.St
         decider.Query(id, Equinox.LoadOption.AllowStale)
 
 let create resolve =
-    Service(target >> resolve)
+    Service(streamId >> resolve Category)
