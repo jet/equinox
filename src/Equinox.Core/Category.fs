@@ -21,10 +21,10 @@ type ICategory<'event, 'state, 'context> =
 // Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
 namespace Equinox
 
+open Equinox.Core.Tracing
 open System.Diagnostics
 open System.Threading
 open System.Threading.Tasks
-open Equinox.Core.Tracing
 
 /// Store-agnostic baseline functionality for a Category of 'event representations that fold to a given 'state
 [<NoComparison; NoEquality>]

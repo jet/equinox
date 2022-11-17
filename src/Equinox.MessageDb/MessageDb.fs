@@ -136,7 +136,7 @@ module private Write =
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propEventData "Json" events
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
-        if act <> null then act.AddExpectedVersion(version).AddMetric(count, bytes) |> ignore
+        if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
         let! t, result = writeEventsAsync writer streamName version events |> Stopwatch.Time
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
@@ -194,8 +194,8 @@ module Read =
         let bytes, count = slice.Messages |> resolvedEventBytes, slice.Messages.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice reqMetric
-        if act <> null then act.AddMetric(count, bytes).AddLastVersion(slice.LastVersion) |> ignore
-        if parentAct <> null then parentAct.AddMetric(count, bytes) |> ignore
+        if act <> null then act.IncMetric(count, bytes).AddLastVersion(slice.LastVersion) |> ignore
+        if parentAct <> null then parentAct.IncMetric(count, bytes) |> ignore
         let log = if not (log.IsEnabled Events.LogEventLevel.Debug) then log else log |> Log.propResolvedEvents "Json" slice.Messages
         (log |> Log.prop "startPos" startPos |> Log.prop "bytes" bytes |> Log.event evt).Information("Mdb{action:l} count={count} version={version}",
             "Read", count, slice.LastVersion)
@@ -232,8 +232,8 @@ module Read =
         let count = events.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Metric.ReadLast reqMetric
-        if act <> null then act.AddMetric(count, bytes).AddLastVersion(version) |> ignore
-        if parent <> null then parent.AddMetric(count, bytes) |> ignore
+        if act <> null then act.IncMetric(count, bytes).AddLastVersion(version) |> ignore
+        if parent <> null then parent.IncMetric(count, bytes) |> ignore
         (log |> Log.prop "bytes" bytes |> Log.event evt).Information(
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)

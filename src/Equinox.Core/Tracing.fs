@@ -14,7 +14,7 @@ type ActivityExtensions =
     static member AddLeader(act: Activity, requiresLeader) = if requiresLeader then act.AddTag("eqx.requires_leader", true) else act
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddMetric(act: Activity, count: int, bytes: int) =
+    static member IncMetric(act: Activity, count: int, bytes: int) =
         let currentCount = act.GetTagItem("eqx.count") |> ValueOption.ofObj |> ValueOption.map unbox<int> |> ValueOption.defaultValue 0
         let currentBytes = act.GetTagItem("eqx.bytes") |> ValueOption.ofObj |> ValueOption.map unbox<int> |> ValueOption.defaultValue 0
         let count = count + currentCount
@@ -22,7 +22,7 @@ type ActivityExtensions =
         act.SetTag("eqx.count", count).SetTag("eqx.bytes", bytes)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddStale(act: Activity, allowStale: bool) = act.AddTag("eqx.allow_stale", allowStale)
+    static member AddStale(act: Activity, allowStale) = if allowStale then act.AddTag("eqx.allow_stale", true) else act
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddStream(act: Activity, category: string, streamId: string, streamName: string) =
