@@ -8,10 +8,13 @@ let source = new ActivitySource("Equinox")
 type ActivityExtensions =
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddAttempt(act: Activity, attempt: int) = act.AddTag("eqx.op_attempt", attempt)
+    static member AddTransactAttempt(act: Activity, attempt: int) = act.AddTag("eqx.transact_attempt", attempt)
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddLeader(act: Activity, requiresLeader) = if requiresLeader then act.AddTag("eqx.requires_leader", true) else act
+
+    [<System.Runtime.CompilerServices.Extension>]
+    static member AddOpAttempt(act: Activity, attempt: int) = act.AddTag("eqx.op_attempt", attempt)
 
     [<System.Runtime.CompilerServices.Extension>]
     static member IncMetric(act: Activity, count: int, bytes: int) =

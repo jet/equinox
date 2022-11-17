@@ -7,8 +7,6 @@ open Equinox.Core.Tracing
 
 let source = new ActivitySource("Equinox.MessageDb")
 
-let addOpAttempt (attempt: int) (act: Activity) = if act <> null then act.AddTag("eqx.op_attempt", attempt) |> ignore
-
 [<System.Runtime.CompilerServices.Extension>]
 type ActivityExtensions =
     [<System.Runtime.CompilerServices.Extension>]

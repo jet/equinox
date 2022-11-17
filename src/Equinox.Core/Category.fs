@@ -44,7 +44,7 @@ type Category<'event, 'state, 'context>
                 return! inner.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) }
             member _.TrySync(attempt, (token, originState), events, ct) = task {
                 use act = source.StartActivity("TrySync", ActivityKind.Client)
-                if act <> null then act.AddStream(categoryName, streamId, streamName).AddAttempt(attempt) |> ignore
+                if act <> null then act.AddStream(categoryName, streamId, streamName).AddTransactAttempt(attempt) |> ignore
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
                 return! inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) } }
 
