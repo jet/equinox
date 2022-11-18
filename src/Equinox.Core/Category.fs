@@ -21,6 +21,8 @@ type ICategory<'event, 'state, 'context> =
 // Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
 namespace Equinox
 
+open Equinox.Core.Tracing
+open System.Diagnostics
 open System.Threading
 open System.Threading.Tasks
 
@@ -36,11 +38,15 @@ type Category<'event, 'state, 'context>
         { new Core.IStream<'event, 'state> with
             member _.LoadEmpty() =
                 empty
-            member x.Load(allowStale, requireLeader, ct) =
-                inner.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct)
-            member _.TrySync(attempt, (token, originState), events, ct) =
+            member x.Load(allowStale, requireLeader, ct) = task {
+                use act = source.StartActivity("Load", ActivityKind.Client)
+                if act <> null then act.AddStream(categoryName, streamId, streamName).AddLeader(requireLeader).AddStale(allowStale) |> ignore
+                return! inner.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) }
+            member _.TrySync(attempt, (token, originState), events, ct) = task {
+                use act = source.StartActivity("TrySync", ActivityKind.Client)
+                if act <> null then act.AddStream(categoryName, streamId, streamName).AddSyncAttempt(attempt) |> ignore
                 let log = if attempt = 1 then log else log.ForContext("attempts", attempt)
-                inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) }
+                return! inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) } }
 
 type private Stream =
     static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<string, StreamId, Core.IStream<'event, 'state>> =

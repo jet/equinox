@@ -137,7 +137,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 
 # Components
 
-The components within this repository are delivered as multi-targeted Nuget packages supporting `netstandard2.1` (F# 4.5+) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
+The components within this repository are delivered as multi-targeted Nuget packages supporting `net6.0` (F# >= 6) profiles; each of the constituent elements is designed to be easily swappable as dictated by the task at hand. Each of the components can be inlined or customized easily:-
 
 ## Core library
 

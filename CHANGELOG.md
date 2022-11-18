@@ -45,7 +45,7 @@ The `Unreleased` section name is replaced by the expected version of next releas
 
 ### Removed
  
-- Remove explicit `net461` handling; minimum target now `netstandard 2.1` / `net6.0` / `FSharp.Core` v `4.5.4` [#310](https://github.com/jet/equinox/pull/310) [#323](https://github.com/jet/equinox/pull/323)
+- Remove explicit `net461` handling; minimum target now `net6.0` / `FSharp.Core` v `6.0.0` [#310](https://github.com/jet/equinox/pull/310) [#323](https://github.com/jet/equinox/pull/323) [#354](https://github.com/jet/equinox/pull/354)
 
 ### Fixed
 
