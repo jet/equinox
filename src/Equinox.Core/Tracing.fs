@@ -8,16 +8,20 @@ let source = new ActivitySource("Equinox")
 type ActivityExtensions =
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddLeader(act: Activity, requiresLeader) = if requiresLeader then act.AddTag("eqx.requires_leader", true) else act
+    static member AddLeader(act: Activity, requiresLeader) =
+        if requiresLeader then act.AddTag("eqx.requires_leader", true) else act
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddRetryAttempt(act: Activity, attempt: int) = if attempt > 1 then act.AddTag("eqx.retry_count", attempt - 1) else act
+    static member AddRetryAttempt(act: Activity, attempt: int) =
+        if attempt > 1 then act.AddTag("eqx.retry_count", attempt - 1) else act
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddSyncAttempt(act: Activity, attempt: int) = if attempt > 1 then act.AddTag("eqx.resync_count", attempt - 1) else act
+    static member AddSyncAttempt(act: Activity, attempt: int) =
+        if attempt > 1 then act.AddTag("eqx.resync_count", attempt - 1) else act
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddStale(act: Activity, allowStale) = if allowStale then act.AddTag("eqx.allow_stale", true) else act
+    static member AddStale(act: Activity, allowStale) =
+        if allowStale then act.AddTag("eqx.allow_stale", true) else act
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddStream(act: Activity, category: string, streamId: string, streamName: string) =

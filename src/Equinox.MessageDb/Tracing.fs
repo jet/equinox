@@ -1,14 +1,14 @@
 [<AutoOpen>]
 module internal Equinox.MessageDb.Tracing
 
-
-open System.Diagnostics
 open Equinox.Core.Tracing
+open System.Diagnostics
 
 let source = new ActivitySource("Equinox.MessageDb")
 
 [<System.Runtime.CompilerServices.Extension>]
 type ActivityExtensions =
+
     [<System.Runtime.CompilerServices.Extension>]
     static member AddStreamFromParent(act: Activity, parent: Activity) =
         if parent <> null then
@@ -19,35 +19,41 @@ type ActivityExtensions =
         act
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddExpectedVersion(act: Activity, version: int64) = act.AddTag("eqx.expected_version", version)
+    static member AddExpectedVersion(act: Activity, version: int64) =
+        act.AddTag("eqx.expected_version", version)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddLastVersion(act: Activity, version: int64) = act.AddTag("eqx.last_version", version)
+    static member AddLastVersion(act: Activity, version: int64) =
+        act.AddTag("eqx.last_version", version)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddBatchSize(act: Activity, size: int64) = act.AddTag("eqx.batch_size", size)
+    static member AddBatchSize(act: Activity, size: int64) =
+        act.AddTag("eqx.batch_size", size)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddBatch(act: Activity, size: int64, index: int) = act.AddBatchSize(size).AddTag("eqx.batch_index", index)
+    static member AddBatch(act: Activity, size: int64, index: int) =
+        act.AddBatchSize(size).AddTag("eqx.batch_index", index)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddBatches(act: Activity, batches: int) = act.AddTag("eqx.batches", batches)
+    static member AddBatches(act: Activity, batches: int) =
+        act.AddTag("eqx.batches", batches)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddStartPosition(act: Activity, pos: int64) = act.AddTag("eqx.start_position", pos)
+    static member AddStartPosition(act: Activity, pos: int64) =
+        act.AddTag("eqx.start_position", pos)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddStale(act: Activity, allowStale: bool) = act.AddTag("eqx.allow_stale", allowStale)
+    static member AddStale(act: Activity, allowStale: bool) =
+        act.AddTag("eqx.allow_stale", allowStale)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddCacheHit(act: Activity, hit: bool) = act.AddTag("eqx.cache_hit", hit)
+    static member AddCacheHit(act: Activity, hit: bool) =
+        act.AddTag("eqx.cache_hit", hit)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddLoadMethod(act: Activity, method: string) = act.AddTag("eqx.load_method", method)
+    static member AddLoadMethod(act: Activity, method: string) =
+        act.AddTag("eqx.load_method", method)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member RecordConflict(act: Activity) = act.AddTag("eqx.conflict", true).SetStatus(ActivityStatusCode.Error, "WrongExpectedVersion")
-
-
-
-
+    static member RecordConflict(act: Activity) =
+        act.AddTag("eqx.conflict", true).SetStatus(ActivityStatusCode.Error, "WrongExpectedVersion")

@@ -488,7 +488,7 @@ type EventStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
                 Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder Token.supersedes
             | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
                 Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder Token.supersedes
-        let resolveInner struct (cat, sid) = struct (category, StreamName.render cat sid, ValueNone)
+        let resolveInner categoryName streamId = struct (category, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         EventStoreCategory(resolveInner, empty)
 

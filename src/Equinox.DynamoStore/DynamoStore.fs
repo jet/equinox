@@ -1372,7 +1372,7 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
                 let cosmosCat = Category<'event, 'state, 'context>(container, codec)
                 Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, mapUnfolds) :> _
             categories.GetOrAdd(categoryName, createCategory)
-        let resolveInner struct (categoryName, streamId) =
+        let resolveInner categoryName streamId =
             let struct (container, streamName) = context.ResolveContainerClientAndStreamId(categoryName, streamId)
             struct (resolveCategory (categoryName, container), streamName, ValueNone)
         let empty = struct (Token.empty, initial)

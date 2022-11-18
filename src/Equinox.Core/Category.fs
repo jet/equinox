@@ -7,7 +7,8 @@ open System.Threading.Tasks
 /// Store-agnostic interface representing interactions an Application can have with a set of streams with a given pair of Event and State types
 type ICategory<'event, 'state, 'context> =
     /// Obtain the state from the target stream
-    abstract Load : log: ILogger * categoryName: string * streamId: string * streamName: string * allowStale: bool * requireLeader: bool
+    abstract Load : log: ILogger * categoryName: string * streamId: string * streamName: string
+                    * allowStale: bool * requireLeader: bool
                     * ct: CancellationToken -> Task<struct (StreamToken * 'state)>
 
     /// Given the supplied `token`, attempt to sync to the proposed updated `state'` by appending the supplied `events` to the underlying stream, yielding:
@@ -15,8 +16,10 @@ type ICategory<'event, 'state, 'context> =
     /// - Conflict: signifies the sync failed, and the proposed decision hence needs to be reconsidered in light of the supplied conflicting Stream State
     /// NB the central precondition upon which the sync is predicated is that the stream has not diverged from the `originState` represented by `token`
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
-    abstract TrySync : log: ILogger * categoryName: string * streamId: string * streamName: string * 'context * maybeInit: (CancellationToken -> Task<unit>) voption
-                       * StreamToken * 'state * events: 'event array * CancellationToken -> Task<SyncResult<'state>>
+    abstract TrySync : log: ILogger * categoryName: string * streamId: string * streamName: string * 'context
+                       * maybeInit: (CancellationToken -> Task<unit>) voption
+                       * originToken: StreamToken * originState: 'state * events: 'event array
+                       * CancellationToken -> Task<SyncResult<'state>>
 
 // Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
 namespace Equinox
@@ -29,12 +32,12 @@ open System.Threading.Tasks
 /// Store-agnostic baseline functionality for a Category of 'event representations that fold to a given 'state
 [<NoComparison; NoEquality>]
 type Category<'event, 'state, 'context>
-    (   resolveInner : struct (string * string) -> struct (Core.ICategory<'event, 'state, 'context> * string * (CancellationToken -> Task<unit>) voption),
+    (   resolveInner : string -> string-> struct (Core.ICategory<'event, 'state, 'context> * string * (CancellationToken -> Task<unit>) voption),
         empty : struct (Core.StreamToken * 'state)) =
     /// Provides access to the low level store operations used for Loading and/or Syncing updates via the Decider
     /// (Normal usage is via the adjacent `module Decider` / `DeciderExtensions.Resolve` helpers)
     member _.Stream(log : Serilog.ILogger, context : 'context, categoryName, streamId) =
-        let struct (inner, streamName, init) = resolveInner (categoryName, streamId)
+        let struct (inner, streamName, init) = resolveInner categoryName streamId
         { new Core.IStream<'event, 'state> with
             member _.LoadEmpty() =
                 empty

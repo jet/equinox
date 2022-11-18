@@ -1441,7 +1441,7 @@ type CosmosStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
                 let cosmosCat = Category<'event, 'state, 'context>(container, codec)
                 Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, compressUnfolds, mapUnfolds) :> _
             categories.GetOrAdd(categoryName, createCategory)
-        let resolveInner struct (categoryName, streamId) =
+        let resolveInner categoryName streamId =
             let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)
             struct (resolveCategory (categoryName, container), streamName, maybeContainerInitializationGate)
         let empty = struct (Token.create Position.fromKnownEmpty, initial)

@@ -99,9 +99,9 @@ let clientAFavoritesStreamId = Equinox.StreamId.gen id "ClientA"
 let store = Equinox.MemoryStore.VolatileStore()
 // MemoryStore (as with most Event Stores) provides a way to observe events that have been persisted to a stream
 // For demo purposes we emit those to the log (which emits to the console)
-let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
-    log.Information("Committed to {stream}, events: {@events}", stream, seq { for x in events -> x.EventType })
-let _ = store.Committed.Subscribe(fun struct (_c, sid, xs) -> logEvents sid xs)
+let logEvents categoryName streamId (events : FsCodec.ITimelineEvent<_>[]) =
+    log.Information("Committed to {categoryName}-{stream}, events: {@events}", categoryName, streamId, seq { for x in events -> x.EventType })
+let _ = store.Committed.Subscribe(fun struct (cn, sid, xs) -> logEvents cn sid xs)
 
 let codec =
     // For this example, we hand-code; normally one uses one of the FsCodec auto codecs, which codegen something similar
