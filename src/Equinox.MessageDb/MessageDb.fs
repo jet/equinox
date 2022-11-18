@@ -50,7 +50,7 @@ module Log =
         | Some retryPolicy ->
             let withLoggingContextWrapping count =
                 let log = if count = 1 then log else log |> prop contextLabel count
-                let act = Activity.Current in if act <> null then act.AddOpAttempt(count) |> ignore
+                let act = Activity.Current in if act <> null then act.AddRetryAttempt(count) |> ignore
                 f log
             retryPolicy withLoggingContextWrapping
 
