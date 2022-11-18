@@ -62,15 +62,15 @@ module Events =
     type Event = int64 * Contract
 
     // our upconversion function doesn't actually fit the term - it just tuples the underlying event
-    let up (evt : FsCodec.ITimelineEvent<_>,e) : Event =
-        evt.Index,e
+    let up struct (evt : FsCodec.ITimelineEvent<_>, e) : Event =
+        evt.Index, e
     // as per the `up`, the downConverter needs to drop the index (which is only there for symmetry), add null metadata
-    let down (_index,e) : Contract * _ option * DateTimeOffset option =
-        e,None,None
+    let down (_index, e) : struct (Contract * _ voption * DateTimeOffset voption) =
+        e, ValueNone, ValueNone
 
     // unlike most normal codecs, we have a mapping to supply as we want the Index to be added to each event so we can track it in the State as we fold
-    let codecJe = FsCodec.SystemTextJson.CodecJsonElement.Create(up,down)
-    let codec = FsCodec.SystemTextJson.Codec.Create(up,down)
+    let codecJe = FsCodec.SystemTextJson.CodecJsonElement.Create(up, down)
+    let codec = FsCodec.SystemTextJson.Codec.Create(up, down)
 
 module Fold =
 
@@ -177,7 +177,7 @@ module Cosmos =
     let cat = CosmosStoreCategory(context, Events.codecJe, Fold.fold, Fold.initial, cacheStrategy, accessStrategy)
     let resolve = Equinox.Decider.resolve Log.log cat
 
-let service = Service(streamId >> EventStore.resolve)
+let service = Service(streamId >> EventStore.resolve Category)
 //let service= Service(streamId >> Cosmos.resolve)
 
 let client = "ClientA"

@@ -93,7 +93,7 @@ let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
 
 // related streams are termed a Category; Each client will have it's own Stream.
 let Category = "Favorites"
-let clientAFavoritesStreamName = struct (Category, "ClientA")
+let clientAFavoritesStreamId = Equinox.StreamId.gen id "ClientA"
 
 // For test purposes, we use the in-memory store
 let store = Equinox.MemoryStore.VolatileStore()
@@ -101,25 +101,25 @@ let store = Equinox.MemoryStore.VolatileStore()
 // For demo purposes we emit those to the log (which emits to the console)
 let logEvents stream (events : FsCodec.ITimelineEvent<_>[]) =
     log.Information("Committed to {stream}, events: {@events}", stream, seq { for x in events -> x.EventType })
-let _ = store.Committed.Subscribe(fun struct (c, s, xs) -> logEvents c s xs)
+let _ = store.Committed.Subscribe(fun struct (_c, sid, xs) -> logEvents sid xs)
 
 let codec =
     // For this example, we hand-code; normally one uses one of the FsCodec auto codecs, which codegen something similar
     let encode = function
-        | Added x -> "Add",box x
+        | Added x -> struct ("Add",box x)
         | Removed x -> "Remove",box x
-    let tryDecode : string*obj -> Event option = function
-        | "Add", (:? string as x) -> Added x |> Some
-        | "Remove", (:? string as x) -> Removed x |> Some
-        | _ -> None
+    let tryDecode : struct (string * obj) -> Event voption = function
+        | "Add", (:? string as x) -> Added x |> ValueSome
+        | "Remove", (:? string as x) -> Removed x |> ValueSome
+        | _ -> ValueNone
     FsCodec.Codec.Create(encode, tryDecode)
 // Each store has a <Store>Category that is used to resolve IStream instances binding to a specific stream in a specific store
 // ... because the nature of the contract with the handler is such that the store hands over State, we also pass the `initial` and `fold` as we used above
 let cat = Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-let decider = Equinox.Decider.resolve log cat
+let resolve = Equinox.Decider.resolve log cat
 
 // We hand the streamId to the resolver
-let clientAStream = decider clientAFavoritesStreamName
+let clientAStream = resolve Category clientAFavoritesStreamId
 // ... and pass the stream to the Handler
 let handler = Handler(clientAStream)
 
@@ -158,8 +158,7 @@ type Service(deciderFor : string -> Handler) =
 
 (* See Counter.fsx and Cosmos.fsx for a more compact representation which makes the Handler wiring less obtrusive *)
 let streamFor (clientId: string) =
-    let [<Literal>] Category = "Favorites"
-    let streamId = Equinox.StreamId.gen id
+    let streamId = Equinox.StreamId.gen id clientId
     let decider = Equinox.Decider.resolve log cat Category streamId 
     Handler(decider)
 
