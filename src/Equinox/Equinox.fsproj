@@ -8,6 +8,7 @@
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="Core.fs" />
     <Compile Include="Decider.fs" />
+    <Compile Include="StreamId.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,6 +19,6 @@
       <ExcludeAssets>contentFiles</ExcludeAssets>
     </PackageReference>
     
-    <PackageReference Include="FSharp.UMX" Version="1.1.0"/>
+    <PackageReference Include="FSharp.UMX" Version="1.1.0" />
   </ItemGroup>
 </Project>
