@@ -19,8 +19,12 @@ type ActivityExtensions =
         act
 
     [<System.Runtime.CompilerServices.Extension>]
+<<<<<<< Updated upstream
     static member AddExpectedVersion(act: Activity, version: int64) =
         act.AddTag("eqx.expected_version", version)
+=======
+    static member AddExpectedVersion(act: Activity, version: int64 option) = act.AddTag("eqx.expected_version", version)
+>>>>>>> Stashed changes
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddLastVersion(act: Activity, version: int64) =

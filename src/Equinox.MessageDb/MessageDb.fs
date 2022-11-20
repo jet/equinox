@@ -1,8 +1,10 @@
 ﻿namespace Equinox.MessageDb
 
+open System.Text.Json
 open Equinox.Core
 open Equinox.MessageDb.Core
 open FsCodec
+open FsCodec.Core
 open Serilog
 open System
 open System.Diagnostics
@@ -124,9 +126,11 @@ module Log =
 
 module private Write =
 
-    let private writeEventsAsync (writer: MessageDbWriter) (streamName : string) (version : int64) (events : IEventData<EventBody> array)
-        : Async<MdbSyncResult> =
-        writer.WriteMessages(streamName, events, version, Async.DefaultCancellationToken) |> Async.AwaitTaskCorrect
+    let private writeEventsAsync (writer: MessageDbWriter) (streamName : string) (version : int64 option) (events : IEventData<EventBody> array)
+        : Async<MdbSyncResult> = async {
+        let! ct = Async.CancellationToken
+        return! writer.WriteMessages(streamName, events, ct, ?version = version) |> Async.AwaitTaskCorrect }
+
 
     let inline len (bytes: EventBody) = bytes.Length
     let private eventDataLen (x : IEventData<EventBody>) = len x.Data + len x.Meta
@@ -178,8 +182,8 @@ module Read =
         let isLast = int64 page.Length < batchSize
         return toSlice page isLast }
 
-    let private readLastEventAsync (reader : MessageDbReader) (streamName : string) (requiresLeader : bool) ct = task {
-        let! events = reader.ReadLastEvent(streamName, requiresLeader, ct)
+    let private readLastEventAsync (reader : MessageDbReader) (streamName : string) (requiresLeader : bool) (eventType: string option) ct = task {
+        let! events = reader.ReadLastEvent(streamName, requiresLeader, ct, ?eventType = eventType)
         return toSlice events false }
 
     let inline len (bytes : EventBody) = bytes.Length
@@ -238,14 +242,14 @@ module Read =
             "Mdb{action:l} stream={stream} count={count} version={version}",
             "ReadL", streamName, count, version)
 
-    let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName
+    let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName eventType
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
         let parentAct = Activity.Current
         if parentAct <> null then parentAct.AddLoadMethod("Last") |> ignore
         use act = source.StartActivity("ReadLast", ActivityKind.Client)
         if act <> null then act.AddStreamFromParent(parentAct).AddLeader(requiresLeader) |> ignore
         let! ct = Async.CancellationToken
-        let read _ = readLastEventAsync reader streamName requiresLeader ct |> Async.AwaitTaskCorrect
+        let read _ = readLastEventAsync reader streamName requiresLeader eventType ct |> Async.AwaitTaskCorrect
 
         let! t, page = Log.withLoggedRetries retryPolicy "readAttempt" read log |> Stopwatch.Time
 
@@ -281,6 +285,11 @@ module private Token =
           version = streamVersion + 1L
           streamBytes = -1 }
     let inline streamVersion (token : StreamToken) = unbox<int64> token.value
+    let shouldSnapshot batchSize prev next =
+        let previousVersion = prev.version
+        let nextVersion = next.version
+        let estimatedSnapshotPos = previousVersion - (previousVersion % batchSize)
+        nextVersion - estimatedSnapshotPos >= batchSize
 
     let supersedes struct (current, x) =
         x.version > current.version
@@ -311,8 +320,27 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName 0L requireLeader
         return Token.create version, Array.chooseV tryDecode events }
     member _.LoadLast(streamName, requireLeader, log, tryDecode) : Async<StreamToken * 'event array> = async {
-        let! version, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader streamName
+        let! version, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader streamName None
         return Token.create version, Array.chooseV tryDecode events }
+    member _.LoadSnapshot(category, streamId, requireLeader, log, tryDecode, eventType) = async {
+        let snapshotStream = StreamName.create (category + ":snapshot") streamId |> StreamName.toString
+        let! _, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader snapshotStream (Some eventType)
+        match events with
+        | [| event |] ->
+            let decoded = tryDecode event
+            match decoded with
+            | ValueSome decodedEvent ->
+                let meta = event.Meta
+                let meta = JsonSerializer.Deserialize<{| streamVersion: int64 |}>(meta.Span)
+                return ValueSome(Token.create meta.streamVersion, decodedEvent)
+            | ValueNone -> return ValueNone
+        | _ -> return ValueNone }
+
+    member _.StoreSnapshot(category, streamId, log, event) = async {
+        let snapshotStream = StreamName.create (category + ":snapshot") streamId |> StreamName.toString
+        do! Write.writeEvents log None connection.Writer snapshotStream None [| event |] |> Async.Ignore
+    }
+
     member _.Reload(streamName, requireLeader, log, token, tryDecode)
         : Async<StreamToken * 'event array> = async {
         let streamVersion = Token.streamVersion token
@@ -322,7 +350,7 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
 
     member _.TrySync(log, streamName, token, encodedEvents : IEventData<EventBody> array): Async<GatewaySyncResult> = async {
         let streamVersion = Token.streamVersion token
-        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName streamVersion encodedEvents with
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName (Some streamVersion) encodedEvents with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->
@@ -330,55 +358,86 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
             return GatewaySyncResult.Written token }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
-type AccessStrategy =
+type AccessStrategy<'event, 'state> =
     /// Load only the single most recent event defined in in a stream and trust that it'll be decoded and
     /// doing a <c>fold</c> from any such event will yield a correct and complete state
     /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</c> or <c>'event</c>s.
     | LatestKnownEvent
+    /// Ensures a snapshot/compaction event from which the state can be reconstituted upon decoding is always present
+    /// (embedded in a special snapshot stream as an event), generated every <c>batchSize</c> events using the supplied
+    /// <c>toSnapshot</c> function.
+    /// When loading the stream it'll first fetch the snapshot.
+    | RollingSnapshots of originType: string * toSnapshot : ('state -> 'event)
 
-type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : IEventCodec<_, _, 'context>, ?access) =
+type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : IEventCodec<_, _, 'context>, ?access: AccessStrategy<'event, 'state>) =
 
-    let loadAlgorithm streamName requireLeader log =
+    let loadAlgorithm category streamId streamName requireLeader log =
         match access with
         | None -> context.LoadBatched(streamName, requireLeader, log, codec.TryDecode)
         | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, requireLeader, log, codec.TryDecode)
+        | Some (AccessStrategy.RollingSnapshots (originType, _)) -> async {
+            let! latestSnapshotEvent = context.LoadSnapshot(category, streamId, requireLeader, log, codec.TryDecode, originType)
+            match latestSnapshotEvent with
+            | ValueSome (pos, ev) ->
+                let! token, rest = context.Reload(streamName, requireLeader, log, pos, codec.TryDecode)
+                return token, Array.append [| ev |] rest
+            | ValueNone -> return! context.LoadBatched(streamName, requireLeader, log, codec.TryDecode) }
 
     let load (fold : 'state -> 'event seq -> 'state) initial f : Async<struct (StreamToken * 'state)> = async {
         let! token, events = f
         return struct (token, fold initial events) }
 
-    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, stream, requireLeader, log : ILogger) =
-        load fold initial (loadAlgorithm stream requireLeader log)
+    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, category, streamId, streamName, requireLeader, log : ILogger) =
+        load fold initial (loadAlgorithm category streamId streamName requireLeader log)
     member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName, requireLeader, token, log : ILogger) =
         load fold state (context.Reload(streamName, requireLeader, log, token, codec.TryDecode))
 
+    member _.StoreSnapshot(category, streamId, log, ctx, token, snap) =
+        let encoded = codec.Encode(ctx, snap)
+        let meta = {| streamVersion = Token.streamVersion token; ``$correlationId`` = encoded.EventId; ``$causationId`` = encoded.EventId |}
+        let encoded = EventData.Create(
+            encoded.EventType,
+            encoded.Data,
+            meta = JsonSerializer.SerializeToUtf8Bytes(meta))
+
+        context.StoreSnapshot(category, streamId, log, encoded)
+
     member x.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
-            streamName, token, state : 'state, events : 'event array, ctx : 'context) : Async<SyncResult<'state>> = async {
+            categoryName, streamId, streamName, token, state : 'state, events : 'event array, ctx : 'context) : Async<SyncResult<'state>> = async {
         let encode e = codec.Encode(ctx, e)
         let encodedEvents : IEventData<EventBody> array = events |> Array.map encode
         match! context.TrySync(log, streamName, token, encodedEvents) with
         | GatewaySyncResult.ConflictUnknown ->
             return SyncResult.Conflict  (fun ct -> x.Reload(fold, state, streamName, (*requireLeader*)true, token, log) |> Async.startAsTask ct)
         | GatewaySyncResult.Written token' ->
-            return SyncResult.Written   (token', fold state (Seq.ofArray events)) }
+            let state' = fold state (Seq.ofArray events)
+            match access with
+            | None | Some AccessStrategy.LatestKnownEvent -> ()
+            | Some (AccessStrategy.RollingSnapshots(_, toSnap)) ->
+              if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
+                do! x.StoreSnapshot(categoryName, streamId, log, ctx, token', toSnap state')
+            return SyncResult.Written   (token', state') }
 
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
-    let batched log streamName requireLeader ct = category.Load(fold, initial, streamName, requireLeader, log) |> Async.startAsTask ct
+    let batched log categoryName streamId streamName requireLeader ct = category.Load(fold, initial, categoryName, streamId, streamName, requireLeader, log) |> Async.startAsTask ct
+
     interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, streamName, allowStale, requireLeader, ct) = task {
+        member _.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) = task {
             let act = Activity.Current
             match readCache with
-            | None -> return! batched log streamName requireLeader ct
+            | None -> return! batched log categoryName streamId streamName requireLeader ct
             | Some (cache : ICache, prefix : string) ->
                 let! cacheItem = cache.TryGet(prefix + streamName)
                 if act <> null then act.AddCacheHit(match cacheItem with ValueNone -> false | _ -> true) |> ignore
                 match cacheItem with
-                | ValueNone -> return! batched log streamName requireLeader ct
+                | ValueNone -> return! batched log categoryName streamId streamName requireLeader ct
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
                 | ValueSome (token, state) -> return! category.Reload(fold, state, streamName, requireLeader, token, log) }
-        member _.TrySync(log, _categoryName, _streamId, streamName, context, _init, token, originState, events, _ct) = task {
-            match! category.TrySync(log, fold, streamName, token, originState, events, context) with
+
+        member _.TrySync(log, categoryName, streamId, streamName, context, _init, token, originState, events, ct) = task {
+            let! result = category.TrySync(log, fold, categoryName, streamId, streamName, token, originState, events, context) |> Async.startAsTask ct
+            match result with
             | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 

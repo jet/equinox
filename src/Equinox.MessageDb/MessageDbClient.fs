@@ -13,6 +13,16 @@ open System.Threading.Tasks
 type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
 
+module private Sql =
+    let addNullableInt64 (name, value: int64 option) (p: NpgsqlParameterCollection) =
+        match value with
+        | Some value -> p.AddWithValue(name, NpgsqlDbType.Bigint, value) |> ignore
+        | None       -> p.AddWithValue(name, NpgsqlDbType.Bigint, DBNull.Value) |> ignore
+    let addNullableString (name, value: string option) (p: NpgsqlParameterCollection) =
+        match value with
+        | Some value -> p.AddWithValue(name, NpgsqlDbType.Text, value) |> ignore
+        | None       -> p.AddWithValue(name, NpgsqlDbType.Text, DBNull.Value) |> ignore
+
 module private Json =
   let private jsonNull = ReadOnlyMemory(JsonSerializer.SerializeToUtf8Bytes(null))
 
@@ -32,29 +42,31 @@ module private Npgsql =
 
 type MessageDbWriter(connectionString : string) =
 
-    let prepareAppend (streamName : string) (expectedVersion : int64) (e : IEventData<Format>) =
-        let cmd = NpgsqlBatchCommand(CommandText = "select 1 from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)")
+    let prepareAppend (streamName : string) (expectedVersion : int64 option) (e : IEventData<Format>) =
+        let cmd = NpgsqlBatchCommand(CommandText = "select * from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)")
 
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, e.EventId) |> ignore
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
         cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, e.EventType) |> ignore
         cmd.Parameters |> Json.addParameter "Data" e.Data
         cmd.Parameters |> Json.addParameter "Meta" e.Meta
-        cmd.Parameters.AddWithValue("ExpectedVersion", NpgsqlDbType.Bigint, expectedVersion) |> ignore
+        cmd.Parameters |> Sql.addNullableInt64("ExpectedVersion", expectedVersion)
 
         cmd
 
-    member _.WriteMessages(streamName, events : _ array, version : int64, ct) = task {
+    member _.WriteMessages(streamName, events : _ array, ct, ?version : int64) = task {
         use! conn = Npgsql.connect connectionString ct
         use transaction = conn.BeginTransaction()
         use batch = new NpgsqlBatch(conn, transaction)
         let toAppendCall i e =
-            let expectedVersion = version + int64 i
+            let expectedVersion = match version with None -> None | Some version -> Some(version + int64 i)
             prepareAppend streamName expectedVersion e
         events |> Seq.mapi toAppendCall |> Seq.iter batch.BatchCommands.Add
         try do! batch.ExecuteNonQueryAsync(ct) :> Task
             do! transaction.CommitAsync(ct)
-            return MdbSyncResult.Written (version + int64 events.Length)
+            match version with
+            | None -> return MdbSyncResult.Written(-1L)
+            | Some version -> return MdbSyncResult.Written (version + int64 events.Length)
         with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
             return MdbSyncResult.ConflictUnknown }
 
@@ -75,7 +87,7 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
             ?causationId = readNullableString 6,
             timestamp = DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)))
 
-    member _.ReadLastEvent(streamName : string, requiresLeader, ct) = task {
+    member _.ReadLastEvent(streamName : string, requiresLeader, ct, ?eventType) = task {
         use! conn = connect requiresLeader ct
         use cmd = conn.CreateCommand(CommandText =
             "select
@@ -83,8 +95,9 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
                (metadata::jsonb->>'$correlationId')::text,
                (metadata::jsonb->>'$causationId')::text,
                time
-             from get_last_stream_message(@StreamName)")
+             from get_last_stream_message(@StreamName, @EventType);")
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
+        cmd.Parameters |> Sql.addNullableString("EventType", eventType)
         use! reader = cmd.ExecuteReaderAsync(ct)
 
         if reader.Read() then return [| parseRow reader |]
