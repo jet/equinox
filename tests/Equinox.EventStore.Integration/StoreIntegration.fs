@@ -315,16 +315,6 @@ type Tests(testOutputHelper) =
     let singleBatchBackwards = [EsAct.ReadLast]
     let batchBackwardsAndAppend = [EsAct.ReadLast; EsAct.Append]
     let readSnapshotted = [EsAct.ReadLast; EsAct.SliceForward; EsAct.BatchForward]
-    (*
-   [0] = {SerilogHelpers.EsAct} ReadLast
-[1] = {SerilogHelpers.EsAct} SliceForward
-[2] = {SerilogHelpers.EsAct} BatchForward
-[3] = {SerilogHelpers.EsAct} Append
-[4] = {SerilogHelpers.EsAct} Append
-[5] = {SerilogHelpers.EsAct} ReadLast
-[6] = {SerilogHelpers.EsAct} SliceForward
-[7] = {SerilogHelpers.EsAct} BatchForward
-    *)
 #else
 #if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
     let sliceBackward = []
