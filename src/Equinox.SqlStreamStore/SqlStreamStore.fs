@@ -277,9 +277,11 @@ module UnionEncoderAdapters =
     let encodedEventOfResolvedEvent (e : StreamMessage) : FsCodec.ITimelineEvent<EventBody> =
         let (Bytes data) = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
         let (Bytes meta) = e.JsonMetadata
+        let ts = e.CreatedUtc |> DateTimeOffset
+        let size = data.Length + meta.Length + e.Type.Length
         // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, e.MessageId, null, null, let ts = e.CreatedUtc in DateTimeOffset ts)
+        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, e.MessageId, null, null, ts, size = size)
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<EventBody>) =
         // SQLStreamStore rejects IsNullOrEmpty data value.
         // TODO: Follow up on inconsistency with ES

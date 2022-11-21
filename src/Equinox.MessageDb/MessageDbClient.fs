@@ -1,7 +1,6 @@
 namespace Equinox.MessageDb.Core
 
 open FsCodec
-open FsCodec.Core
 open Npgsql
 open NpgsqlTypes
 open System
@@ -14,17 +13,19 @@ type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
 
 module private Json =
-  let private jsonNull = ReadOnlyMemory(JsonSerializer.SerializeToUtf8Bytes(null))
 
-  let fromReader idx (reader: DbDataReader) =
-      if reader.IsDBNull(idx) then jsonNull
-      else reader.GetString(idx) |> Text.Encoding.UTF8.GetBytes |> ReadOnlyMemory
+    let private jsonNull = ReadOnlyMemory(JsonSerializer.SerializeToUtf8Bytes(null))
 
-  let addParameter (name: string) (value: Format) (p: NpgsqlParameterCollection) =
-      if value.Length = 0 then p.AddWithValue(name, NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
-      else p.AddWithValue(name, NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
+    let fromReader idx (reader: DbDataReader) =
+        if reader.IsDBNull(idx) then jsonNull
+        else reader.GetString(idx) |> Text.Encoding.UTF8.GetBytes |> ReadOnlyMemory
+
+    let addParameter (name: string) (value: Format) (p: NpgsqlParameterCollection) =
+        if value.Length = 0 then p.AddWithValue(name, NpgsqlDbType.Jsonb, DBNull.Value) |> ignore
+        else p.AddWithValue(name, NpgsqlDbType.Jsonb, value.ToArray()) |> ignore
 
 module private Npgsql =
+
     let connect connectionString ct = task {
         let conn = new NpgsqlConnection(connectionString)
         do! conn.OpenAsync(ct)
@@ -64,16 +65,13 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
 
     let parseRow (reader : DbDataReader) : ITimelineEvent<Format> =
         let inline readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
-
-        TimelineEvent.Create(
+        let c, d, m = reader.GetString(1), reader |> Json.fromReader 2, reader |> Json.fromReader 3
+        FsCodec.Core.TimelineEvent.Create(
             index = reader.GetInt64(0),
-            eventType = reader.GetString(1),
-            data = (reader |> Json.fromReader 2),
-            meta = (reader |> Json.fromReader 3),
-            eventId = reader.GetGuid(4),
-            ?correlationId = readNullableString 5,
-            ?causationId = readNullableString 6,
-            timestamp = DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)))
+            eventType = c, data = d, meta = m, eventId = reader.GetGuid(4),
+            ?correlationId = readNullableString 5, ?causationId = readNullableString 6,
+            timestamp = DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)),
+            size = c.Length + d.Length + m.Length)
 
     member _.ReadLastEvent(streamName : string, requiresLeader, ct) = task {
         use! conn = connect requiresLeader ct
