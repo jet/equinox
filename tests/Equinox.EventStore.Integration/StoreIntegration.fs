@@ -507,7 +507,7 @@ type Tests(testOutputHelper) =
 
 #if STORE_MESSAGEDB
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can combine compaction with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
+    let ``Can combine snapshotting with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
         let batchSize = 10
