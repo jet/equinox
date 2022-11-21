@@ -136,13 +136,11 @@ module Cart =
         |> Equinox.Decider.resolve log
         |> Cart.create
 
-    #if !STORE_MESSAGEDB
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
-    #endif
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
@@ -507,7 +505,53 @@ type Tests(testOutputHelper) =
         test <@ [EsAct.AppendConflict; yield! sliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
     }
 
-#if !STORE_MESSAGEDB
+#if STORE_MESSAGEDB
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Can combine compaction with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
+        let log, capture = output.CreateLoggerWithCapture()
+        let! client = connectToLocalStore log
+        let batchSize = 10
+        let context = createContext client batchSize
+        let service1 = Cart.createServiceWithCompaction log context
+        let cache = Equinox.Cache("cart", sizeMb = 50)
+        let context = createContext client batchSize
+        let service2 = Cart.createServiceWithCompactionAndCaching log context cache
+
+        // Trigger 8 events, then reload
+        let cartId = % Guid.NewGuid()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 4
+        let! _ = service2.Read cartId
+
+        // ... should see a single append as we are inside the batch threshold
+        test <@ readSnapshotted @ [EsAct.Append] @ readSnapshotted = capture.ExternalCalls @>
+
+        // Add two more, which should push it over the threshold and hence trigger generation of a snapshot event
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
+        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] = capture.ExternalCalls @>
+
+        // We now have 10 events, we should be able to read them with a single snapshotted read
+        capture.Clear()
+        let! _ = service1.Read cartId
+        test <@ readSnapshotted = capture.ExternalCalls @>
+
+        // Add 8 more; total of 18 should not trigger snapshotting as the snapshot is at version 10
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 4
+        test <@ readSnapshotted @ [EsAct.Append] = capture.ExternalCalls @>
+
+        // While we now have 18 events, we should be able to read them with a single snapshotted read
+        capture.Clear()
+        let! _ = service1.Read cartId
+        test <@ readSnapshotted = capture.ExternalCalls @>
+        // ... trigger a second snapshotting
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
+        // and we _could_ reload the 20 events with a single read. However we are using the cache, which last saw it with 10 events, which necessitates two reads
+        let! _ = service2.Read cartId
+        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] @ sliceForward @ singleBatchForward = capture.ExternalCalls @>
+    }
+#else
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can combine compaction with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
