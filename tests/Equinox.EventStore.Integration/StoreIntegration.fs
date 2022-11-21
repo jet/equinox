@@ -126,7 +126,7 @@ module Cart =
         |> Cart.create
 
     let createServiceWithCompaction log context =
-        Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
+        Category(context, codec, fold, initial, access = AccessStrategy.AdjacentSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
@@ -138,7 +138,7 @@ module Cart =
 
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
+        Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
 

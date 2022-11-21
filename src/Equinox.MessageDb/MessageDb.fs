@@ -326,8 +326,7 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
         let! _, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader snapshotStream (Some eventType)
         match events with
         | [| event |] ->
-            let decoded = tryDecode event
-            match decoded with
+            match tryDecode event with
             | ValueSome decodedEvent ->
                 let meta = event.Meta
                 let meta = JsonSerializer.Deserialize<{| streamVersion: int64 |}>(meta.Span)
@@ -363,11 +362,16 @@ type AccessStrategy<'event, 'state> =
     /// doing a <c>fold</c> from any such event will yield a correct and complete state
     /// In other words, the <c>fold</c> function should not need to consider either the preceding <c>'state</c> or <c>'event</c>s.
     | LatestKnownEvent
-    /// Ensures a snapshot/compaction event from which the state can be reconstituted upon decoding is always present
-    /// (embedded in a special snapshot stream as an event), generated every <c>batchSize</c> events using the supplied
-    /// <c>toSnapshot</c> function.
-    /// When loading the stream it'll first fetch the snapshot.
-    | RollingSnapshots of originType: string * toSnapshot : ('state -> 'event)
+    /// <summary>
+    /// Generates and stores a snapshot event in an adjacent <c>{category}:snapshot-{stream_id}</c> stream
+    /// The generation happens every <c>batchSize</c> events.
+    /// This means the state of the stream can be reconstructed with exactly
+    /// 2 round-trips to the database.
+    /// The first round-trip fetches the most recent event of type <c>snapshotType</c> from the snapshot stream.
+    /// The second round-trip fetches <c>batchSize</c> events from the position of the snapshot
+    /// The snapshot is generated with the supplied <c>toSnapshot</c> function
+    /// </summary>
+    | AdjacentSnapshots of snapshotType: string * toSnapshot : ('state -> 'event)
 
 type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : IEventCodec<_, _, 'context>, ?access: AccessStrategy<'event, 'state>) =
 
@@ -375,9 +379,8 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
         match access with
         | None -> context.LoadBatched(streamName, requireLeader, log, codec.TryDecode)
         | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, requireLeader, log, codec.TryDecode)
-        | Some (AccessStrategy.RollingSnapshots (originType, _)) -> async {
-            let! latestSnapshotEvent = context.LoadSnapshot(category, streamId, requireLeader, log, codec.TryDecode, originType)
-            match latestSnapshotEvent with
+        | Some (AccessStrategy.AdjacentSnapshots (snapshotType, _)) -> async {
+            match! context.LoadSnapshot(category, streamId, requireLeader, log, codec.TryDecode, snapshotType) with
             | ValueSome (pos, ev) ->
                 let! token, rest = context.Reload(streamName, requireLeader, log, pos, codec.TryDecode)
                 return token, Array.append [| ev |] rest
@@ -414,7 +417,7 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
             let state' = fold state (Seq.ofArray events)
             match access with
             | None | Some AccessStrategy.LatestKnownEvent -> ()
-            | Some (AccessStrategy.RollingSnapshots(_, toSnap)) ->
+            | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
               if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
                 do! x.StoreSnapshot(categoryName, streamId, log, ctx, token', toSnap state')
             return SyncResult.Written   (token', state') }
@@ -436,8 +439,7 @@ type private Folder<'event, 'state, 'context>(category : Category<'event, 'state
                 | ValueSome (token, state) -> return! category.Reload(fold, state, streamName, requireLeader, token, log) }
 
         member _.TrySync(log, categoryName, streamId, streamName, context, _init, token, originState, events, ct) = task {
-            let! result = category.TrySync(log, fold, categoryName, streamId, streamName, token, originState, events, context) |> Async.startAsTask ct
-            match result with
+            match! category.TrySync(log, fold, categoryName, streamId, streamName, token, originState, events, context) |> Async.startAsTask ct with
             | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
             | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
 
