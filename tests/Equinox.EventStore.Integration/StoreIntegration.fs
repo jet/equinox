@@ -325,13 +325,11 @@ type Tests(testOutputHelper) =
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
 #endif
 
+    #if !STORE_MESSAGEDB
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
         #if NET
         use _ = source.StartActivity("Can roundtrip against Store, correctly compacting to avoid redundant reads")
-        #endif
-        #if STORE_MESSAGEDB
-        let singleBatchBackwards = readSnapshotted
         #endif
         let log, capture = output.CreateLoggerWithCapture()
         let! client = connectToLocalStore log
@@ -345,22 +343,12 @@ type Tests(testOutputHelper) =
         let! _ = service.Read cartId
 
         // ... should see a single read as we are inside the batch threshold
-        #if STORE_MESSAGEDB
-        // The number of events is equal to the batch size, so it will append
-        // a snapshot event
-        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] @ readSnapshotted = capture.ExternalCalls @>
-        #else
         test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-        #endif
 
         // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
-        #if STORE_MESSAGEDB
-        test <@ readSnapshotted @ [EsAct.Append] = capture.ExternalCalls @>
-        #else
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-        #endif
 
         // While we now have 13 events, we should be able to read them with a single call
         capture.Clear()
@@ -370,11 +358,7 @@ type Tests(testOutputHelper) =
         // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
         capture.Clear()
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
-        #if STORE_MESSAGEDB
-        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] = capture.ExternalCalls @>
-        #else
         test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-        #endif
 
         // While we now have 21 events, we should be able to read them with a single call
         capture.Clear()
@@ -383,12 +367,55 @@ type Tests(testOutputHelper) =
         do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
         // and reload the 24 events with a single read
         let! _ = service.Read cartId
-        #if STORE_MESSAGEDB
-        test <@ readSnapshotted @ readSnapshotted @ [EsAct.Append] @ readSnapshotted = capture.ExternalCalls @>
-        #else
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-        #endif
     }
+    #else
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Can roundtrip against Store, correctly snapshotting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        #if NET
+        use _ = source.StartActivity("Can roundtrip against Store, correctly snapshotting to avoid redundant reads")
+        #endif
+        let log, capture = output.CreateLoggerWithCapture()
+        let! client = connectToLocalStore log
+        let batchSize = 10
+        let context = createContext client batchSize
+        let service = Cart.createServiceWithCompaction log context
+
+        // Trigger 8 events, then reload
+        let cartId = % Guid.NewGuid()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
+        let! _ = service.Read cartId
+
+        test <@ readSnapshotted @ [EsAct.Append] @ readSnapshotted = capture.ExternalCalls @>
+
+        // Add two more, which should push it over the threshold and hence trigger an append of a snapshot event
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
+        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] = capture.ExternalCalls @>
+
+        // We now have 10 events and should be able to read them with a single call
+        capture.Clear()
+        let! _ = service.Read cartId
+        test <@ readSnapshotted = capture.ExternalCalls @>
+
+        // Add 8 more; total of 18 should not trigger snapshotting as we snapshotted at Event Number 10
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
+        test <@ readSnapshotted @ [EsAct.Append] = capture.ExternalCalls @>
+
+        // While we now have 18 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service.Read cartId
+        test <@ readSnapshotted = capture.ExternalCalls @>
+
+        // add two more events, triggering a snapshot, then read it in a single snapshotted read
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
+        // and reload the 20 events with a single read
+        let! _ = service.Read cartId
+        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] @ readSnapshotted = capture.ExternalCalls @>
+    }
+    #endif
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can correctly read and update against Store, with LatestKnownEvent Access Strategy`` id value = Async.RunSynchronously <| async {
