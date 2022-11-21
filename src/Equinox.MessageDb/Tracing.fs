@@ -20,7 +20,7 @@ type ActivityExtensions =
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddExpectedVersion(act: Activity, version: int64 option) =
-        act.AddTag("eqx.expected_version", version)
+        match version with Some v -> act.AddTag("eqx.expected_version", v) | None -> act
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddLastVersion(act: Activity, version: int64) =

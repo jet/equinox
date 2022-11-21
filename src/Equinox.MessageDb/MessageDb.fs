@@ -158,11 +158,10 @@ module private Write =
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
                                                  "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
-    let writeEvents log retryPolicy writer streamName version events
+    let writeEvents log retryPolicy writer (category, streamId, streamName) version events
         : Async<MdbSyncResult> = async {
-        let parent = Activity.Current
         use act = source.StartActivity("WriteEvents", ActivityKind.Client)
-        if act <> null then act.AddStreamFromParent(parent) |> ignore
+        if act <> null then act.AddStream(category, streamId, streamName) |> ignore
         let call = writeEventsLogged writer streamName version events act
         return! Log.withLoggedRetries retryPolicy "writeAttempt" call log }
 
@@ -337,8 +336,9 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
         | _ -> return ValueNone }
 
     member _.StoreSnapshot(category, streamId, log, event) = async {
-        let snapshotStream = StreamName.create (category + ":snapshot") streamId |> StreamName.toString
-        do! Write.writeEvents log None connection.Writer snapshotStream None [| event |] |> Async.Ignore
+        let category = category + ":snapshot"
+        let snapshotStream = Equinox.StreamId.renderStreamName category (Equinox.StreamId.ofRaw streamId)
+        do! Write.writeEvents log None connection.Writer (category, streamId, snapshotStream) None [| event |] |> Async.Ignore
     }
 
     member _.Reload(streamName, requireLeader, log, token, tryDecode)
@@ -348,9 +348,9 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
         let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName startPos requireLeader
         return Token.create (max streamVersion version), Array.chooseV tryDecode events }
 
-    member _.TrySync(log, streamName, token, encodedEvents : IEventData<EventBody> array): Async<GatewaySyncResult> = async {
+    member _.TrySync(log, category, streamId, streamName, token, encodedEvents : IEventData<EventBody> array): Async<GatewaySyncResult> = async {
         let streamVersion = Token.streamVersion token
-        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer streamName (Some streamVersion) encodedEvents with
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer (category, streamId, streamName) (Some streamVersion) encodedEvents with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->
@@ -407,7 +407,7 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
             categoryName, streamId, streamName, token, state : 'state, events : 'event array, ctx : 'context) : Async<SyncResult<'state>> = async {
         let encode e = codec.Encode(ctx, e)
         let encodedEvents : IEventData<EventBody> array = events |> Array.map encode
-        match! context.TrySync(log, streamName, token, encodedEvents) with
+        match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents) with
         | GatewaySyncResult.ConflictUnknown ->
             return SyncResult.Conflict  (fun ct -> x.Reload(fold, state, streamName, (*requireLeader*)true, token, log) |> Async.startAsTask ct)
         | GatewaySyncResult.Written token' ->
