@@ -172,8 +172,8 @@ module Batch =
         let events =
             Seq.zip x.c x.e
             |> Seq.mapi (fun i (c, e) ->
-                let d, m = InternalBody.ofStreamAndEncoding (e.d, e.D), InternalBody.ofStreamAndEncoding (e.m, e.M)
-                { i = baseIndex + i; t = e.t; d = d; m = m; correlationId = e.x; causationId = e.y; c = c })
+                let data, meta = InternalBody.ofStreamAndEncoding (e.d, e.D), InternalBody.ofStreamAndEncoding (e.m, e.M)
+                { i = baseIndex + i; t = e.t; d = data; m = meta; correlationId = e.x; causationId = e.y; c = c })
         { p = x.p; b = x.b; i = x.i; etag = Option.toObj x.etag; n = x.n; e = Seq.toArray events; u = x.u |> Array.map ofUnfoldSchema }
     let enumEvents (minIndex, maxIndex) (x : Batch) : Event seq =
         let indexMin, indexMax = defaultArg minIndex 0L, defaultArg maxIndex Int64.MaxValue

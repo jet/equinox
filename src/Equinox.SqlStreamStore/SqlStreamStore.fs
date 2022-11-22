@@ -277,15 +277,18 @@ module UnionEncoderAdapters =
     let encodedEventOfResolvedEvent (e : StreamMessage) : FsCodec.ITimelineEvent<EventBody> =
         let (Bytes data) = e.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
         let (Bytes meta) = e.JsonMetadata
-        // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
+        let ts = e.CreatedUtc |> DateTimeOffset
+        let inline len (xs : byte array) = if xs = null then 0 else xs.Length
+        let size = len data + len meta + e.Type.Length
+        // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta["$correlationId"] and ["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
-        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, e.MessageId, null, null, let ts = e.CreatedUtc in DateTimeOffset ts)
+        FsCodec.Core.TimelineEvent.Create(int64 e.StreamVersion, e.Type, data, meta, e.MessageId, null, null, ts, size = size)
     let eventDataOfEncodedEvent (x : FsCodec.IEventData<EventBody>) =
         // SQLStreamStore rejects IsNullOrEmpty data value.
         // TODO: Follow up on inconsistency with ES
         let mapData (x : EventBody) = if x.IsEmpty then "{}" else System.Text.Encoding.UTF8.GetString(x.Span)
         let mapMeta (x : EventBody) = if x.IsEmpty then null else System.Text.Encoding.UTF8.GetString(x.Span)
-        // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta.["$correlationId"] and .["$causationId"]
+        // TOCONSIDER wire x.CorrelationId, x.CausationId into x.Meta["$correlationId"] and ["$causationId"]
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
         NewStreamMessage(x.EventId, x.EventType, mapData x.Data, mapMeta x.Meta)
 
