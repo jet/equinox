@@ -293,6 +293,19 @@ module private Token =
     let supersedes struct (current, x) =
         x.version > current.version
 
+
+module private Snapshot =
+    let inline snapshotCategory original = original + ":snapshot"
+    let inline streamName category (streamId : string) = Equinox.Core.StreamName.render (snapshotCategory category) streamId
+    type Meta = {| streamVersion: int64 |} // STJ doesn't want to serialize it unless its anonymous
+    let private streamVersion (evt: ITimelineEvent<EventBody>) =
+        let meta = evt.Meta // avoid defensive copy
+        JsonSerializer.Deserialize<Meta>(meta.Span).streamVersion
+    let decode tryDecode (events : ITimelineEvent<EventBody> array) =
+        match events |> Array.tryExactlyOneV |> ValueOption.bind tryDecode with
+        | ValueSome decoded -> ValueSome struct(events[0] |> streamVersion |> Token.create, decoded)
+        | ValueNone -> ValueNone
+
 type MessageDbConnection(reader, writer, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
     member val Reader = reader
     member val ReadRetryPolicy = readRetryPolicy
@@ -322,23 +335,14 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
         let! version, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader streamName None
         return Token.create version, Array.chooseV tryDecode events }
     member _.LoadSnapshot(category, streamId, requireLeader, log, tryDecode, eventType) = async {
-        let snapshotStream = StreamName.create (category + ":snapshot") streamId |> StreamName.toString
+        let snapshotStream = Snapshot.streamName category streamId
         let! _, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader snapshotStream (Some eventType)
-        match events with
-        | [| event |] ->
-            match tryDecode event with
-            | ValueSome decodedEvent ->
-                let meta = event.Meta
-                let meta = JsonSerializer.Deserialize<{| streamVersion: int64 |}>(meta.Span)
-                return ValueSome(Token.create meta.streamVersion, decodedEvent)
-            | ValueNone -> return ValueNone
-        | _ -> return ValueNone }
+        return Snapshot.decode tryDecode events }
 
     member _.StoreSnapshot(category, streamId, log, event) = async {
-        let category = category + ":snapshot"
-        let snapshotStream = Equinox.StreamId.renderStreamName category (Equinox.StreamId.ofRaw streamId)
-        do! Write.writeEvents log None connection.Writer (category, streamId, snapshotStream) None [| event |] |> Async.Ignore
-    }
+        let snapshotStream = Snapshot.streamName category streamId
+        let category = Snapshot.snapshotCategory category
+        do! Write.writeEvents log None connection.Writer (category, streamId, snapshotStream) None [| event |] |> Async.Ignore }
 
     member _.Reload(streamName, requireLeader, log, token, tryDecode)
         : Async<StreamToken * 'event array> = async {
@@ -365,13 +369,13 @@ type AccessStrategy<'event, 'state> =
     /// <summary>
     /// Generates and stores a snapshot event in an adjacent <c>{category}:snapshot-{stream_id}</c> stream
     /// The generation happens every <c>batchSize</c> events.
-    /// This means the state of the stream can be reconstructed with exactly
-    /// 2 round-trips to the database.
-    /// The first round-trip fetches the most recent event of type <c>snapshotType</c> from the snapshot stream.
+    /// This means the state of the stream can be reconstructed with exactly 2 round-trips to the database.
+    /// The first round-trip fetches the most recent event of type <c>snapshotEventCaseName</c> from the snapshot stream.
     /// The second round-trip fetches <c>batchSize</c> events from the position of the snapshot
-    /// The snapshot is generated with the supplied <c>toSnapshot</c> function
+    /// The <c>toSnapshot</c> function is used to generate the event to store in the snapshot stream.
+    /// It should return the event case whose name matches <c>snapshotEventCaseName</c>
     /// </summary>
-    | AdjacentSnapshots of snapshotType: string * toSnapshot : ('state -> 'event)
+    | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot : ('state -> 'event)
 
 type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : IEventCodec<_, _, 'context>, ?access: AccessStrategy<'event, 'state>) =
 
@@ -381,9 +385,9 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
         | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, requireLeader, log, codec.TryDecode)
         | Some (AccessStrategy.AdjacentSnapshots (snapshotType, _)) -> async {
             match! context.LoadSnapshot(category, streamId, requireLeader, log, codec.TryDecode, snapshotType) with
-            | ValueSome (pos, ev) ->
+            | ValueSome (pos, snapshotEvent) ->
                 let! token, rest = context.Reload(streamName, requireLeader, log, pos, codec.TryDecode)
-                return token, Array.append [| ev |] rest
+                return token, Array.insertAt 0 snapshotEvent rest
             | ValueNone -> return! context.LoadBatched(streamName, requireLeader, log, codec.TryDecode) }
 
     let load (fold : 'state -> 'event seq -> 'state) initial f : Async<struct (StreamToken * 'state)> = async {
@@ -397,7 +401,7 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
 
     member _.StoreSnapshot(category, streamId, log, ctx, token, snap) =
         let encoded = codec.Encode(ctx, snap)
-        let meta = {| streamVersion = Token.streamVersion token; ``$correlationId`` = encoded.EventId; ``$causationId`` = encoded.EventId |}
+        let meta = {| streamVersion = Token.streamVersion token |}
         let encoded = EventData.Create(
             encoded.EventType,
             encoded.Data,

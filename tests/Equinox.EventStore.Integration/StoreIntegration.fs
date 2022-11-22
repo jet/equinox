@@ -115,20 +115,24 @@ module SimplestThing =
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let codec = Cart.Events.codec
-    #if STORE_MESSAGEDB
-    let snapshot = Cart.Fold.originEventType, Cart.Fold.snapshot
-    #else
-    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
-    #endif
     let createServiceWithoutOptimization log context =
         Category(context, codec, fold, initial)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
+    #if STORE_MESSAGEDB
+    let snapshot = Cart.Fold.snapshotEventCaseName, Cart.Fold.snapshot
+    let createServiceWithAdjacentSnapshotting log context =
+        Category(context, codec, fold, initial, access = AccessStrategy.AdjacentSnapshots snapshot)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
+    #else
+    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithCompaction log context =
         Category(context, codec, fold, initial, access = AccessStrategy.AdjacentSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
+    #endif
 
     let createServiceWithCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
@@ -377,7 +381,7 @@ type Tests(testOutputHelper) =
         let! client = connectToLocalStore log
         let batchSize = 10
         let context = createContext client batchSize
-        let service = Cart.createServiceWithCompaction log context
+        let service = Cart.createServiceWithAdjacentSnapshotting  log context
 
         // Trigger 8 events, then reload
         let cartId = % Guid.NewGuid()
@@ -512,7 +516,7 @@ type Tests(testOutputHelper) =
         let! client = connectToLocalStore log
         let batchSize = 10
         let context = createContext client batchSize
-        let service1 = Cart.createServiceWithCompaction log context
+        let service1 = Cart.createServiceWithAdjacentSnapshotting log context
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let context = createContext client batchSize
         let service2 = Cart.createServiceWithCompactionAndCaching log context cache

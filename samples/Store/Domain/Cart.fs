@@ -38,7 +38,7 @@ module Fold =
         let ofSnapshot (s: Events.Compaction.State) : State =
             { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
     let initial = { items = [] }
-    let originEventType = nameof Events.Snapshotted
+    let snapshotEventCaseName = nameof Events.Snapshotted
     let evolve (state : State) event =
         let updateItems f = { state with items = f state.items }
         match event with

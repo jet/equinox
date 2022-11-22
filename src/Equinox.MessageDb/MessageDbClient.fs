@@ -14,11 +14,11 @@ type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
 
 module private Sql =
-    let addNullableInt64 (name, value: int64 option) (p: NpgsqlParameterCollection) =
+    let addNullableInt64 name (value : int64 option) (p: NpgsqlParameterCollection) =
         match value with
         | Some value -> p.AddWithValue(name, NpgsqlDbType.Bigint, value) |> ignore
         | None       -> p.AddWithValue(name, NpgsqlDbType.Bigint, DBNull.Value) |> ignore
-    let addNullableString (name, value: string option) (p: NpgsqlParameterCollection) =
+    let addNullableString name (value : string option) (p: NpgsqlParameterCollection) =
         match value with
         | Some value -> p.AddWithValue(name, NpgsqlDbType.Text, value) |> ignore
         | None       -> p.AddWithValue(name, NpgsqlDbType.Text, DBNull.Value) |> ignore
@@ -50,7 +50,7 @@ type MessageDbWriter(connectionString : string) =
         cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, e.EventType) |> ignore
         cmd.Parameters |> Json.addParameter "Data" e.Data
         cmd.Parameters |> Json.addParameter "Meta" e.Meta
-        cmd.Parameters |> Sql.addNullableInt64("ExpectedVersion", expectedVersion)
+        cmd.Parameters |> Sql.addNullableInt64 "ExpectedVersion" expectedVersion
 
         cmd
 
@@ -97,7 +97,7 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
                time
              from get_last_stream_message(@StreamName, @EventType);")
         cmd.Parameters.AddWithValue("StreamName", NpgsqlDbType.Text, streamName) |> ignore
-        cmd.Parameters |> Sql.addNullableString("EventType", eventType)
+        cmd.Parameters |> Sql.addNullableString "EventType" eventType
         use! reader = cmd.ExecuteReaderAsync(ct)
 
         if reader.Read() then return [| parseRow reader |]
