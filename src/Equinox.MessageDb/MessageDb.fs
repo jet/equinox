@@ -384,6 +384,7 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
         | None -> context.LoadBatched(streamName, requireLeader, log, codec.TryDecode)
         | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, requireLeader, log, codec.TryDecode)
         | Some (AccessStrategy.AdjacentSnapshots (snapshotType, _)) -> async {
+
             match! context.LoadSnapshot(category, streamId, requireLeader, log, codec.TryDecode, snapshotType) with
             | ValueSome (pos, snapshotEvent) ->
                 let! token, rest = context.Reload(streamName, requireLeader, log, pos, codec.TryDecode)
