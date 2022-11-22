@@ -227,9 +227,9 @@ module ClientCodec =
         // TOCONSIDER wire e.Metadata["$correlationId"] and ["$causationId"] into correlationId and causationId
         // https://eventstore.org/docs/server/metadata-and-reserved-names/index.html#event-metadata
         let n, eu, ts = x.EventNumber, x.EventId, DateTimeOffset x.Created
-        let c, d, m = x.EventType, x.Data, x.Metadata
-        let size = c.Length + d.Length + m.Length
-        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), c, d, m, eu.ToGuid(), correlationId = null, causationId = null, timestamp = ts, size = size)
+        let et, data, meta = x.EventType, x.Data, x.Metadata
+        let size = et.Length + data.Length + meta.Length
+        FsCodec.Core.TimelineEvent.Create(n.ToInt64(), et, data, meta, eu.ToGuid(), correlationId = null, causationId = null, timestamp = ts, size = size)
     let isSystemEvent (x : EventRecord) = x.EventStreamId.StartsWith '$'
     let isJson (x : EventRecord) = x.ContentType = "application/json"
 

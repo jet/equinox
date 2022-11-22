@@ -65,13 +65,13 @@ type MessageDbReader internal (connectionString : string, leaderConnectionString
 
     let parseRow (reader : DbDataReader) : ITimelineEvent<Format> =
         let inline readNullableString idx = if reader.IsDBNull(idx) then None else Some (reader.GetString idx)
-        let c, d, m = reader.GetString(1), reader |> Json.fromReader 2, reader |> Json.fromReader 3
+        let et, data, meta = reader.GetString(1), reader |> Json.fromReader 2, reader |> Json.fromReader 3
         FsCodec.Core.TimelineEvent.Create(
             index = reader.GetInt64(0),
-            eventType = c, data = d, meta = m, eventId = reader.GetGuid(4),
+            eventType = et, data = data, meta = meta, eventId = reader.GetGuid(4),
             ?correlationId = readNullableString 5, ?causationId = readNullableString 6,
             timestamp = DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)),
-            size = c.Length + d.Length + m.Length)
+            size = et.Length + data.Length + meta.Length)
 
     member _.ReadLastEvent(streamName : string, requiresLeader, ct) = task {
         use! conn = connect requiresLeader ct
