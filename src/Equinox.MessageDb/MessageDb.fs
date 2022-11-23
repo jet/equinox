@@ -1,14 +1,14 @@
 ﻿namespace Equinox.MessageDb
 
-open System.Text.Json
 open Equinox.Core
+open Equinox.Core.Tracing
 open Equinox.MessageDb.Core
 open FsCodec
 open FsCodec.Core
 open Serilog
 open System
 open System.Diagnostics
-open Equinox.Core.Tracing
+open System.Text.Json
 
 type EventBody = ReadOnlyMemory<byte>
 
