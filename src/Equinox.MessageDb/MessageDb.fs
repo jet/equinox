@@ -9,6 +9,7 @@ open Serilog
 open System
 open System.Diagnostics
 open System.Text.Json
+open System.Threading.Tasks
 
 type EventBody = ReadOnlyMemory<byte>
 
@@ -126,10 +127,8 @@ module Log =
 
 module private Write =
 
-    let private writeEventsAsync (writer : MessageDbWriter) (streamName : string) (version : int64 option) (events : IEventData<EventBody> array)
-        : Async<MdbSyncResult> = async {
-        let! ct = Async.CancellationToken
-        return! writer.WriteMessages(streamName, events, ct, ?version = version) |> Async.AwaitTaskCorrect }
+    let private writeEventsAsync (writer : MessageDbWriter) streamName version events ct : Task<MdbSyncResult> =
+        writer.WriteMessages(streamName, events, ct, ?version = version)
 
 
     let inline len (bytes: EventBody) = bytes.Length
@@ -141,7 +140,8 @@ module private Write =
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
         if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
-        let! t, result = writeEventsAsync writer streamName version events |> Stopwatch.Time
+        let! ct = Async.CancellationToken
+        let! t, result = writeEventsAsync writer streamName version events ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result with
