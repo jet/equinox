@@ -126,7 +126,7 @@ module Log =
 
 module private Write =
 
-    let private writeEventsAsync (writer: MessageDbWriter) (streamName : string) (version : int64 option) (events : IEventData<EventBody> array)
+    let private writeEventsAsync (writer : MessageDbWriter) (streamName : string) (version : int64 option) (events : IEventData<EventBody> array)
         : Async<MdbSyncResult> = async {
         let! ct = Async.CancellationToken
         return! writer.WriteMessages(streamName, events, ct, ?version = version) |> Async.AwaitTaskCorrect }
@@ -181,7 +181,7 @@ module Read =
         let isLast = int64 page.Length < batchSize
         return toSlice page isLast }
 
-    let private readLastEventAsync (reader : MessageDbReader) (streamName : string) (requiresLeader : bool) (eventType: string option) ct = task {
+    let private readLastEventAsync (reader : MessageDbReader) (streamName : string) (requiresLeader : bool) (eventType : string option) ct = task {
         let! events = reader.ReadLastEvent(streamName, requiresLeader, ct, ?eventType = eventType)
         return toSlice events false }
 
@@ -297,7 +297,7 @@ module private Token =
 module private Snapshot =
     let inline snapshotCategory original = original + ":snapshot"
     let inline streamName category (streamId : string) = Equinox.Core.StreamName.render (snapshotCategory category) streamId
-    type Meta = {| streamVersion: int64 |} // STJ doesn't want to serialize it unless its anonymous
+    type Meta = {| streamVersion : int64 |} // STJ doesn't want to serialize it unless its anonymous
     let private streamVersion (evt: ITimelineEvent<EventBody>) =
         let meta = evt.Meta // avoid defensive copy
         JsonSerializer.Deserialize<Meta>(meta.Span).streamVersion
