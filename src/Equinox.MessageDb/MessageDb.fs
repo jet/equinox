@@ -302,7 +302,7 @@ module private Snapshot =
         let meta = evt.Meta // avoid defensive copy
         JsonSerializer.Deserialize<Meta>(meta.Span).streamVersion
     let decode tryDecode (events : ITimelineEvent<EventBody> array) =
-        match events |> Array.tryExactlyOneV |> ValueOption.bind tryDecode with
+        match events |> Array.tryFirstV |> ValueOption.bind tryDecode with
         | ValueSome decoded -> ValueSome struct(events[0] |> streamVersion |> Token.create, decoded)
         | ValueNone -> ValueNone
 
