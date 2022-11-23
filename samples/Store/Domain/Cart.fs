@@ -38,6 +38,7 @@ module Fold =
         let ofSnapshot (s: Events.Compaction.State) : State =
             { items = [ for i in s.items -> { skuId = i.skuId; quantity = i.quantity; returnsWaived = i.returnsWaived } ] }
     let initial = { items = [] }
+    // Should match the event type that is stored, which does not necessarily match the case name
     let snapshotEventCaseName = nameof Events.Snapshotted
     let evolve (state : State) event =
         let updateItems f = { state with items = f state.items }
