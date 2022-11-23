@@ -54,7 +54,7 @@ type MessageDbWriter(connectionString : string) =
 
         cmd
 
-    member _.WriteMessages(streamName, events : _ array, ct, ?version : int64) = task {
+    member _.WriteMessages(streamName, events : _ array, version, ct) = task {
         use! conn = Npgsql.connect connectionString ct
         use transaction = conn.BeginTransaction()
         use batch = new NpgsqlBatch(conn, transaction)

@@ -128,9 +128,7 @@ module Log =
 module private Write =
 
     let private writeEventsAsync (writer : MessageDbWriter) streamName version events ct : Task<MdbSyncResult> =
-        writer.WriteMessages(streamName, events, ct, ?version = version)
-
-
+        writer.WriteMessages(streamName, events, version, ct)
     let inline len (bytes: EventBody) = bytes.Length
     let private eventDataLen (x : IEventData<EventBody>) = len x.Data + len x.Meta
     let private eventDataBytes events = events |> Array.sumBy eventDataLen
