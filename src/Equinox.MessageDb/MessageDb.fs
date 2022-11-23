@@ -340,7 +340,7 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
     member _.StoreSnapshot(category, streamId, log, event) = async {
         let snapshotStream = Snapshot.streamName category streamId
         let category = Snapshot.snapshotCategory category
-        do! Write.writeEvents log None connection.Writer (category, streamId, snapshotStream) None [| event |] |> Async.Ignore }
+        do! Write.writeEvents log None connection.Writer (category, streamId, snapshotStream) Any [| event |] |> Async.Ignore }
 
     member _.Reload(streamName, requireLeader, log, token, tryDecode)
         : Async<StreamToken * 'event array> = async {
@@ -351,7 +351,7 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
 
     member _.TrySync(log, category, streamId, streamName, token, encodedEvents : IEventData<EventBody> array): Async<GatewaySyncResult> = async {
         let streamVersion = Token.streamVersion token
-        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer (category, streamId, streamName) (Some streamVersion) encodedEvents with
+        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer (category, streamId, streamName) (StreamVersion streamVersion) encodedEvents with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->

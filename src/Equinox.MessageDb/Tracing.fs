@@ -3,6 +3,7 @@ module internal Equinox.MessageDb.Tracing
 
 open Equinox.Core.Tracing
 open System.Diagnostics
+open Equinox.MessageDb.Core
 
 let source = new ActivitySource("Equinox.MessageDb")
 
@@ -19,8 +20,8 @@ type ActivityExtensions =
         act
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddExpectedVersion(act: Activity, version: int64 option) =
-        match version with Some v -> act.AddTag("eqx.expected_version", v) | None -> act
+    static member AddExpectedVersion(act: Activity, version) =
+        match version with StreamVersion v -> act.AddTag("eqx.expected_version", v) | Any -> act
 
     [<System.Runtime.CompilerServices.Extension>]
     static member AddLastVersion(act: Activity, version: int64) =

@@ -12,12 +12,14 @@ open System.Threading.Tasks
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type MdbSyncResult = Written of int64 | ConflictUnknown
 type private Format = ReadOnlyMemory<byte>
+[<Struct>]
+type ExpectedVersion = Any | StreamVersion of int64
 
 module private Sql =
-    let addNullableInt64 name (value : int64 option) (p: NpgsqlParameterCollection) =
+    let addExpectedVersion name (value : ExpectedVersion) (p: NpgsqlParameterCollection) =
         match value with
-        | Some value -> p.AddWithValue(name, NpgsqlDbType.Bigint, value) |> ignore
-        | None       -> p.AddWithValue(name, NpgsqlDbType.Bigint, DBNull.Value) |> ignore
+        | StreamVersion value -> p.AddWithValue(name, NpgsqlDbType.Bigint, value) |> ignore
+        | Any           -> p.AddWithValue(name, NpgsqlDbType.Bigint, DBNull.Value) |> ignore
     let addNullableString name (value : string option) (p: NpgsqlParameterCollection) =
         match value with
         | Some value -> p.AddWithValue(name, NpgsqlDbType.Text, value) |> ignore
@@ -42,7 +44,7 @@ module private Npgsql =
 
 type MessageDbWriter(connectionString : string) =
 
-    let prepareAppend (streamName : string) (expectedVersion : int64 option) (e : IEventData<Format>) =
+    let prepareAppend (streamName : string) (expectedVersion : ExpectedVersion) (e : IEventData<Format>) =
         let cmd = NpgsqlBatchCommand(CommandText = "select * from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)")
 
         cmd.Parameters.AddWithValue("Id", NpgsqlDbType.Uuid, e.EventId) |> ignore
@@ -50,7 +52,7 @@ type MessageDbWriter(connectionString : string) =
         cmd.Parameters.AddWithValue("EventType", NpgsqlDbType.Text, e.EventType) |> ignore
         cmd.Parameters |> Json.addParameter "Data" e.Data
         cmd.Parameters |> Json.addParameter "Meta" e.Meta
-        cmd.Parameters |> Sql.addNullableInt64 "ExpectedVersion" expectedVersion
+        cmd.Parameters |> Sql.addExpectedVersion "ExpectedVersion" expectedVersion
 
         cmd
 
@@ -59,14 +61,14 @@ type MessageDbWriter(connectionString : string) =
         use transaction = conn.BeginTransaction()
         use batch = new NpgsqlBatch(conn, transaction)
         let toAppendCall i e =
-            let expectedVersion = match version with None -> None | Some version -> Some(version + int64 i)
+            let expectedVersion = match version with Any -> Any | StreamVersion version -> StreamVersion (version + int64 i)
             prepareAppend streamName expectedVersion e
         events |> Seq.mapi toAppendCall |> Seq.iter batch.BatchCommands.Add
         try do! batch.ExecuteNonQueryAsync(ct) :> Task
             do! transaction.CommitAsync(ct)
             match version with
-            | None -> return MdbSyncResult.Written(-1L)
-            | Some version -> return MdbSyncResult.Written (version + int64 events.Length)
+            | Any -> return MdbSyncResult.Written(-1L)
+            | StreamVersion version -> return MdbSyncResult.Written (version + int64 events.Length)
         with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
             return MdbSyncResult.ConflictUnknown }
 
