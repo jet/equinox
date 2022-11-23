@@ -129,7 +129,7 @@ module Cart =
     #else
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithCompaction log context =
-        Category(context, codec, fold, initial, access = AccessStrategy.AdjacentSnapshots snapshot)
+        Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
     #endif
@@ -140,11 +140,19 @@ module Cart =
         |> Equinox.Decider.resolve log
         |> Cart.create
 
+    #if STORE_MESSAGEDB
+    let createServiceWithSnapshottingAndCaching log context cache =
+            let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+            Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
+            |> Equinox.Decider.resolve log
+            |> Cart.create
+    #else
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
-        Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
+        Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
+    #endif
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
@@ -519,7 +527,7 @@ type Tests(testOutputHelper) =
         let service1 = Cart.createServiceWithAdjacentSnapshotting log context
         let cache = Equinox.Cache("cart", sizeMb = 50)
         let context = createContext client batchSize
-        let service2 = Cart.createServiceWithCompactionAndCaching log context cache
+        let service2 = Cart.createServiceWithSnapshottingAndCaching log context cache
 
         // Trigger 8 events, then reload
         let cartId = % Guid.NewGuid()
