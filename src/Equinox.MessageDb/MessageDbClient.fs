@@ -19,7 +19,7 @@ module private Sql =
     let addExpectedVersion name (value : ExpectedVersion) (p: NpgsqlParameterCollection) =
         match value with
         | StreamVersion value -> p.AddWithValue(name, NpgsqlDbType.Bigint, value) |> ignore
-        | Any           -> p.AddWithValue(name, NpgsqlDbType.Bigint, DBNull.Value) |> ignore
+        | Any                 -> p.AddWithValue(name, NpgsqlDbType.Bigint, DBNull.Value) |> ignore
     let addNullableString name (value : string option) (p: NpgsqlParameterCollection) =
         match value with
         | Some value -> p.AddWithValue(name, NpgsqlDbType.Text, value) |> ignore
