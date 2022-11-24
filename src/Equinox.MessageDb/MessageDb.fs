@@ -420,8 +420,8 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
             match access with
             | None | Some AccessStrategy.LatestKnownEvent -> ()
             | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
-              if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
-                do! x.StoreSnapshot(categoryName, streamId, log, ctx, token', toSnap state')
+                if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
+                    do! x.StoreSnapshot(categoryName, streamId, log, ctx, token', toSnap state')
             return SyncResult.Written   (token', state') }
 
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
