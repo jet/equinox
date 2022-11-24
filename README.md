@@ -125,7 +125,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 - [Amazon Dynamo DB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html): Shares most features with `Equinox.CosmosStore` ([from which it was ported in #321](https://github.com/jet/equinox/pull/321)). See above for detailed comparison.
 - [Azure Cosmos DB](https://docs.microsoft.com/en-us/azure/cosmos-db): contains some fragments of code dating back to 2016, however [the storage model](DOCUMENTATION.md#Cosmos-Storage-Model) was arrived at based on intensive benchmarking (squash-merged in [#42](https://github.com/jet/equinox/pull/42)). The V2 and V3 release lines are being used in production systems. (The V3 release provides support for significantly more efficient packing of events ([storing events in the 'Tip'](https://github.com/jet/equinox/pull/251))).
 - [EventStoreDB](https://eventstore.org/): this codebase itself has been in production since 2017 (see commit history), with key elements dating back to approx 2016. Current versions require EventStoreDB Server editions `21.10` or later, and communicate over the modern gRPC interface.
-- [message-db](http://docs.eventide-project.org/user-guide/message-db): bindings for the `message-db` Postgres event storage system. [See `message-db` docs](http://docs.eventide-project.org/user-guide/message-db). :pray: [@nordfjord](https://github.com/nordfjord)
+- [MessageDB](http://docs.eventide-project.org/user-guide/message-db): bindings for the `message-db` Postgres event storage system. [See `MessageDB` docs](http://docs.eventide-project.org/user-guide/message-db). :pray: [@nordfjord](https://github.com/nordfjord)
 - [SqlStreamStore](https://github.com/SQLStreamStore/SQLStreamStore): bindings for the powerful and widely used (**but presently unmaintained**) SQL-backed Event Storage system, derived from the EventStoreDB adapter. [See SqlStreamStore docs](https://sqlstreamstore.readthedocs.io/en/latest/#introduction). :pray: [@rajivhost](https://github.com/rajivhost)
 
   __NOTE: The underlying `SqlStreamStore` project is presently unmaintained; as such its hard to recommend using it for production scenarios__
@@ -133,7 +133,7 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
 
   - For MySql, it's pretty much the same as for SQL Server, with the proviso that it's likely that it's had (and has) significantly lower adoption and/or proper scrutiny.
   
-  - For Postgres, _`Equinox.MessageDb`_ is a better choice as the underlying [message-db](http://docs.eventide-project.org/user-guide/message-db/) project is actively maintained and has significantly better documentation than SqlStreamStore. The other thing to point out is that `Equinox.SqlStreamStore.Postgres` does not depend on the final version of `SqlStreamStore.Postgres` as there are no equivalent releases of the `.Mysql` and `.SqlServer` variants.
+  - For Postgres, _`Equinox.MessageDb`_ is a better choice as the underlying [MessageDB](http://docs.eventide-project.org/user-guide/message-db/) project is actively maintained and has significantly better documentation than SqlStreamStore. The other thing to point out is that `Equinox.SqlStreamStore.Postgres` does not depend on the final version of `SqlStreamStore.Postgres` as there are no equivalent releases of the `.Mysql` and `.SqlServer` variants.
 
 # Components
 
@@ -184,7 +184,7 @@ Equinox does not focus on projection logic - each store brings its own strengths
 - `Propulsion.DynamoStore.Lambda` [![Propulsion.DynamoStore.Lambda NuGet](https://img.shields.io/nuget/v/Propulsion.DynamoStore.Lambda.svg)](https://www.nuget.org/packages/Propulsion.DynamoStore.Lambda/): Indexes events written by `Equinox.DynamoStore` via a DynamoDB Streams-triggered Lambda. (Depends on `Propulsion.DynamoStore`)
 - `Propulsion.EventStore` [![Propulsion.EventStore NuGet](https://img.shields.io/nuget/v/Propulsion.EventStore.svg)](https://www.nuget.org/packages/Propulsion.EventStore/) Used in the [`propulsion project es`](dotnet-tool-provisioning--benchmarking-tool) tool command; see [`dotnet new proSync` to generate a sample app](#quickstart) using it. ([depends](https://www.fuget.org/packages/Propulsion.EventStore) on `Equinox.EventStore`)
 - `Propulsion.EventStoreDb` [![Propulsion.EventStoreDb NuGet](https://img.shields.io/nuget/v/Propulsion.EventStoreDb.svg)](https://www.nuget.org/packages/Propulsion.EventStoreDb/) Consumes from `EventStoreDB` v `21.10` or later using the gRPC interface. ([depends](https://www.fuget.org/packages/Propulsion.EventStoreDb) on `Equinox.EventStoreDb`)
-- `Propulsion.MessageDb` [![Propulsion.MessageDb NuGet](https://img.shields.io/nuget/v/Propulsion.MessageDb.svg)](https://www.nuget.org/packages/Propulsion.MessageDb) Consumes from a `message-db` store (in Postgres) using `Npgsql`. ([depends](https://www.fuget.org/packages/Propulsion.MessageDb) on `Npgsql`, `Propulsion.Feed`)
+- `Propulsion.MessageDb` [![Propulsion.MessageDb NuGet](https://img.shields.io/nuget/v/Propulsion.MessageDb.svg)](https://www.nuget.org/packages/Propulsion.MessageDb) Consumes from a `MessageDB` store (in Postgres) using `Npgsql`. ([depends](https://www.fuget.org/packages/Propulsion.MessageDb) on `Npgsql`, `Propulsion.Feed`)
 - `Propulsion.Kafka` [![Propulsion.Kafka NuGet](https://img.shields.io/nuget/v/Propulsion.Kafka.svg)](https://www.nuget.org/packages/Propulsion.Kafka/): Provides a canonical `RenderedSpan` that can be used as a default format when projecting events via e.g. the Producer/Consumer pair in `dotnet new proProjector -k; dotnet new proConsumer`. ([depends](https://www.fuget.org/packages/Propulsion.Kafka) on `Newtonsoft.Json >= 11.0.2`, `Propulsion`, `FsKafka`)
 
 ## `dotnet tool` provisioning / benchmarking tool
@@ -513,7 +513,20 @@ MessageDb support is provided in the samples and the `eqx` tool:
 - being able to supply `mdb` flag to `eqx dump`, e.g. `eqx dump -CU "Favorites-ab25cc9f24464d39939000aeb37ea11a" mdb -c "pgconnectionstring"`
 - being able to supply `mdb` flag to Web sample, e.g. `dotnet run --project samples/Web/ -- mdb -c "pgconnectionstring"`
 
-Equinox does not provide utilities for configuring or installing message-db. See [MessageDB's installation documentation](http://docs.eventide-project.org/user-guide/message-db/install.html).
+Equinox does not provide utilities for configuring or installing MessageDB. See [MessageDB's installation documentation](http://docs.eventide-project.org/user-guide/message-db/install.html).
+
+In addition to the default access strategy of reading the whole stream forwards in batches, the following access strategies are supported in MessageDb:
+
+`AccesStrategy.LatestKnownEvent`
+- Uses message-db's `get_last_stream_message` API to only ever fetch the last event in a stream
+- This is useful for aggregates whose entire state can be constructed from the latest event (e.g. a stream that stores checkpoints)
+- NOTE: The last event MUST be decodable by the supplied codec. Otherwise the stream is assumed to be empty
+
+`AccessStrategy.AdjacentSnapshots`
+- Generates and stores a snapshot event in an adjacent `{Category}:snapshot-{StreamId}` stream
+- The generation happens every `batchSize` events. This means the state of the stream can be reconstructed with exactly 2 round-trips to the database.
+  - The first round-trip fetches the most recent event of type `snapshotEventCaseName` from the snapshot stream.
+  - The second round-trip fetches `batchSize` events from the position of the snapshot
 
 <a name="dynamodb"></a>
 ### Use [Amazon DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html)
