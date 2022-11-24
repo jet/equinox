@@ -520,7 +520,7 @@ In addition to the default access strategy of reading the whole stream forwards 
 `AccesStrategy.LatestKnownEvent`
 - Uses message-db's `get_last_stream_message` API to only ever fetch the last event in a stream
 - This is useful for aggregates whose entire state can be constructed from the latest event (e.g. a stream that stores checkpoints)
-- NOTE: The last event MUST be decodable by the supplied codec. Otherwise the stream is assumed to be empty
+- NOTE: The last event should be decodable by the supplied codec. Otherwise you'll receive the initial state.
 
 `AccessStrategy.AdjacentSnapshots`
 - Generates and stores a snapshot event in an adjacent `{Category}:snapshot-{StreamId}` stream
