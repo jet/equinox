@@ -299,6 +299,8 @@ module private Snapshot =
     let private streamVersion (evt: ITimelineEvent<EventBody>) =
         let meta = evt.Meta // avoid defensive copy
         JsonSerializer.Deserialize<Meta>(meta.Span).streamVersion
+
+    let meta token = {| streamVersion = Token.streamVersion token |} |> JsonSerializer.SerializeToUtf8Bytes |> ReadOnlyMemory
     let decode tryDecode (events : ITimelineEvent<EventBody> array) =
         match events |> Array.tryFirstV |> ValueOption.bind tryDecode with
         | ValueSome decoded -> ValueSome struct(events[0] |> streamVersion |> Token.create, decoded)
@@ -399,12 +401,10 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
 
     member _.StoreSnapshot(category, streamId, log, ctx, token, snap) =
         let encoded = codec.Encode(ctx, snap)
-        let meta = {| streamVersion = Token.streamVersion token |}
         let encoded = EventData.Create(
             encoded.EventType,
             encoded.Data,
-            meta = JsonSerializer.SerializeToUtf8Bytes(meta))
-
+            meta = Snapshot.meta token)
         context.StoreSnapshot(category, streamId, log, encoded)
 
     member x.TrySync<'context>
