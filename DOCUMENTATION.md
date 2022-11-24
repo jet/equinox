@@ -2466,6 +2466,11 @@ rich relative to the need of consumers to date. Some things remain though:
   [the proposed comparable `Equinox.CosmosStore` facility](https://github.com/jet/equinox/issues/61)
 - Provide a facility in `FsCodec.IEventCodec` to walk the Event DU to generate a list of event types; use that to generate the server-side event loading filter e.g. when a Decider used a highly selective subset of the known Event Types
 - (If Server started to support it), provide a hint when loading as to the `isOrigin` Event Type so backward load can stop when it meets an Embedded Snapshot or Reset (e.g. `CartCleared`) event
+- Port `MessageDb.AccessStrategy.AdjacentSnapshots`, automatically configuring the metadata of the snapshots stream to a `maxCount` of 1 event for automatic purging of superseded snapshots
+
+## Wouldn't it be nice - `Equinox.MessageDb`
+
+- provide a [clean way to derive the `snapshotEventTypeCaseName` in a safe manner](https://github.com/jet/equinox/pull/356#discussion_r1030448285)
 
 ## Wouldn't it be nice - `Equinox.SqlStreamStore`
 

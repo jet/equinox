@@ -80,11 +80,16 @@ _If you're looking to learn more about and/or discuss Event Sourcing and it's my
   - Minimize round trips (pluggable via [`ICache`](https://github.com/jet/equinox/blob/master/src/Equinox.Core/Cache.fs#L22) :pray: [@DSilence](https://github.com/jet/equinox/pull/161)
   - Minimize latency and bandwidth / Request Charges by maintaining the folded state, without making the Domain Model folded state serializable
 - Mature and comprehensive logging (using [Serilog](https://github.com/serilog/serilog) internally), with optimal performance and pluggable integration with your apps hosting context (we ourselves typically feed log info to Splunk and the metrics embedded in the `Serilog.Events.LogEvent` Properties to Prometheus; see relevant tests for examples)
-- **`Equinox.EventStore` In-stream Rolling Snapshots**:
+- OpenTelemetry Integration (presently only implemented in `Equinox.Core` and `Equinox.MessageDb` ... `#help-wanted`)
+- **`Equinox.EventStore`, `Equinox.SqlStreamStore`: In-stream Rolling Snapshots**:
   - No additional round trips to the store needed at either the Load or Sync points in the flow
   - Support for multiple co-existing compaction schemas for a given stream (A 'compaction' event/snapshot is an Event). This is done by the [`FsCodec.IEventCodec`](https://github.com/jet/FsCodec#IEventCodec)
-    - Compaction events typically do not get deleted (consistent with how EventStoreDB works), although it is safe to do so in concept
+    - Compaction events typically do not get deleted (consistent with how EventStoreDB works), although it is safe to do so in concept (there are no assumptions that the events must be contiguous and/or that the number of events implies a specific version etc)
   - While snapshotting can deliver excellent performance especially when allied with the Cache, [it's not a panacea, as noted in this EventStore article on the topic](https://eventstore.org/docs/event-sourcing-basics/rolling-snapshots/index.html)
+- **`Equinox.MessageDb`: Adjacent Snapshots**:
+  - Maintains snapshot events in an adjacent, separated `{Category}:snapshot-{StreamId}` stream (in contrast to the EventStoreDb and SqlStreamStore `RollingState` strategy, which embeds the snapshots directly within the stream in question)
+  - Generating & storing the snapshot takes place subsequent to the normal appending of events, once every `batchSize` events. This means the state of the stream can be reconstructed with exactly 2 round-trips to the database (caching can of course remove the snapshot reads on subsequent calls)
+  - Note there's no logic in the system (or in message-db as a whole) to prune snapshots (although it's safe to remove them at any time, including for the 'current' one - a fresh one will get rewritten upon the next successful event append)
 - **`Equinox.CosmosStore` 'Tip with Unfolds' schema**: 
   - In contrast to `Equinox.EventStore`'s `AccessStrategy.RollingSnapshots`, when using `Equinox.CosmosStore`, optimized command processing is managed via the `Tip` - a document per stream with an identity enabling syncing the read/write position via a single [point-read](https://devblogs.microsoft.com/cosmosdb/point-reads-versus-queries). The `Tip` maintains the following: 
     - It records the current write position for the stream which is used for [optimistic concurrency control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control) - i.e. the index at which the next events will be appended for a given stream (events and the Tip share a common logical partition key)
@@ -753,7 +758,7 @@ Having said that, getting good logging, some integration tests and getting lots 
 
 ### What client languages are supported ?
 
-The main language in mind for consumption is of course F# - many would say that F# and event sourcing are a dream pairing; little direct effort has been expended polishing it to be comfortable to consume from other .NET languages, the `dotnet new eqxwebcs` template represents the current state.
+The main language in mind for consumption is of course F# - many would say that F# and event sourcing are a dream pairing; little direct effort has been expended polishing it to be comfortable to consume from other .NET languages, the `dotnet new eqxwebcs` template represents the current state. In Equinox V4, the `DeciderCore` interface offers an interface that uses C#-friendly `Task` and `Func` types (compared to `Decider`, which uses `async` and curried function signatures to provide an idiomatic F# experience, which is possible, but very cumbersome to use from C#) 
 
 ## You say I can use volatile memory for integration tests, could this also be used for learning how to get started building event sourcing programs with equinox? 
 
