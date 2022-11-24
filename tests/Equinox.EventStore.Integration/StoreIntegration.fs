@@ -115,25 +115,38 @@ module SimplestThing =
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let codec = Cart.Events.codec
-    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithoutOptimization log context =
         Category(context, codec, fold, initial)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
-    #if !STORE_MESSAGEDB
+    #if STORE_MESSAGEDB
+    let snapshot = Cart.Fold.snapshotEventCaseName, Cart.Fold.snapshot
+    let createServiceWithAdjacentSnapshotting log context =
+        Category(context, codec, fold, initial, access = AccessStrategy.AdjacentSnapshots snapshot)
+        |> Equinox.Decider.resolve log
+        |> Cart.create
+    #else
+    let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
     let createServiceWithCompaction log context =
         Category(context, codec, fold, initial, access = AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
     #endif
+
     let createServiceWithCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
-    #if !STORE_MESSAGEDB
+    #if STORE_MESSAGEDB
+    let createServiceWithSnapshottingAndCaching log context cache =
+            let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+            Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
+            |> Equinox.Decider.resolve log
+            |> Cart.create
+    #else
     let createServiceWithCompactionAndCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
@@ -155,7 +168,20 @@ module ContactPreferences =
         |> Equinox.Decider.resolve log
         |> ContactPreferences.create
 
-type Tests(testOutputHelper) =
+let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
+        service.ExecuteManyAsync(cartId, optimistic, seq {
+            for i in 1..count do
+                yield Cart.SyncItem (context, skuId, Some i, None)
+                if not exceptTheLastOne || i <> count then
+                    yield Cart.SyncItem (context, skuId, Some 0, None) })
+let addAndThenRemoveItemsManyTimes context cartId skuId service count =
+    addAndThenRemoveItems false false context cartId skuId service count
+let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
+    addAndThenRemoveItems false true context cartId skuId service count
+let addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service count =
+    addAndThenRemoveItems true true context cartId skuId service count
+
+type GeneralTests(testOutputHelper) =
     #if STORE_MESSAGEDB
     let sdk =
         Sdk.CreateTracerProviderBuilder()
@@ -169,19 +195,6 @@ type Tests(testOutputHelper) =
     #endif
 
     let output = TestContext(testOutputHelper)
-
-    let addAndThenRemoveItems optimistic exceptTheLastOne context cartId skuId (service: Cart.Service) count =
-        service.ExecuteManyAsync(cartId, optimistic, seq {
-            for i in 1..count do
-                yield Cart.SyncItem (context, skuId, Some i, None)
-                if not exceptTheLastOne || i <> count then
-                    yield Cart.SyncItem (context, skuId, Some 0, None) })
-    let addAndThenRemoveItemsManyTimes context cartId skuId service count =
-        addAndThenRemoveItems false false context cartId skuId service count
-    let addAndThenRemoveItemsManyTimesExceptTheLastOne context cartId skuId service count =
-        addAndThenRemoveItems false true context cartId skuId service count
-    let addAndThenRemoveItemsOptimisticManyTimesExceptTheLastOne context cartId skuId service count =
-        addAndThenRemoveItems true true context cartId skuId service count
 
 #if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
     let sliceForward = []
@@ -308,63 +321,17 @@ type Tests(testOutputHelper) =
         test <@ [1; 1] = [for c in [capture1; capture2] -> c.ChooseCalls hadConflict |> List.length] @>
     }
 
-#if STORE_MESSAGEDB // MessageDB doesn't report Batches for "Read Last Event" scenarios
-    let singleBatchBackwards = [EsAct.ReadLast]
-    let batchBackwardsAndAppend = [EsAct.ReadLast; EsAct.Append]
-#else
 #if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
     let sliceBackward = []
 #else
     let sliceBackward = [EsAct.SliceBackward]
 #endif
+#if STORE_MESSAGEDB // MessageDB doesn't report Batches for "Read Last Event" scenarios
+    let singleBatchBackwards = [EsAct.ReadLast]
+    let batchBackwardsAndAppend = [EsAct.ReadLast; EsAct.Append]
+#else
     let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
     let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
-#endif
-
-#if !STORE_MESSAGEDB
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
-        #if NET
-        use _ = source.StartActivity("Can roundtrip against Store, correctly compacting to avoid redundant reads")
-        #endif
-        let log, capture = output.CreateLoggerWithCapture()
-        let! client = connectToLocalStore log
-        let batchSize = 10
-        let context = createContext client batchSize
-        let service = Cart.createServiceWithCompaction log context
-
-        // Trigger 10 events, then reload
-        let cartId = % Guid.NewGuid()
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 5
-        let! _ = service.Read cartId
-
-        // ... should see a single read as we are inside the batch threshold
-        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
-        capture.Clear()
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 13 events, we should be able to read them with a single call
-        capture.Clear()
-        let! _ = service.Read cartId
-        test <@ singleBatchBackwards = capture.ExternalCalls @>
-
-        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
-        capture.Clear()
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
-        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
-
-        // While we now have 21 events, we should be able to read them with a single call
-        capture.Clear()
-        let! _ = service.Read cartId
-        // ... and trigger a second snapshotting (inducing a single additional read + write)
-        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
-        // and reload the 24 events with a single read
-        let! _ = service.Read cartId
-        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
-    }
 #endif
 
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
@@ -457,7 +424,94 @@ type Tests(testOutputHelper) =
         test <@ [EsAct.AppendConflict; yield! sliceForward; EsAct.BatchForward] = capture.ExternalCalls @>
     }
 
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Version is 0-based`` () = Async.RunSynchronously <| async {
+        #if NET
+        use _ = source.StartActivity("Version is 0-based")
+        #endif
+        let log, _ = output.CreateLoggerWithCapture()
+        let! connection = connectToLocalStore log
+
+        let batchSize = 3
+        let context = createContext connection batchSize
+        let id = Guid.NewGuid()
+        let toStreamId (x : Guid) = x.ToString "N"
+        let decider = SimplestThing.resolve log context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
+
+        let! before, after = decider.TransactEx(
+            (fun state -> state.Version, [SimplestThing.StuffHappened]),
+            mapResult = (fun result ctx-> result, ctx.Version))
+        test <@ [before; after] = [0L; 1L] @>
+    }
+
+#if STORE_MESSAGEDB
+    interface IDisposable with
+      member _.Dispose() = sdk.Shutdown() |> ignore
+#endif
+
+
 #if !STORE_MESSAGEDB
+type RollingSnapshotTests(testOutputHelper) =
+    let output = TestContext(testOutputHelper)
+#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
+    let sliceForward = []
+#else
+    let sliceForward = [EsAct.SliceForward]
+#endif
+    let singleBatchForward = sliceForward @ [EsAct.BatchForward]
+
+#if STORE_EVENTSTOREDB // gRPC does not expose slice metrics
+    let sliceBackward = []
+#else
+    let sliceBackward = [EsAct.SliceBackward]
+#endif
+    let singleBatchBackwards = sliceBackward @ [EsAct.BatchBackward]
+    let batchBackwardsAndAppend = singleBatchBackwards @ [EsAct.Append]
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Can roundtrip against Store, correctly compacting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        #if NET
+        use _ = source.StartActivity("Can roundtrip against Store, correctly compacting to avoid redundant reads")
+        #endif
+        let log, capture = output.CreateLoggerWithCapture()
+        let! client = connectToLocalStore log
+        let batchSize = 10
+        let context = createContext client batchSize
+        let service = Cart.createServiceWithCompaction log context
+
+        // Trigger 10 events, then reload
+        let cartId = % Guid.NewGuid()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 5
+        let! _ = service.Read cartId
+
+        // ... should see a single read as we are inside the batch threshold
+        test <@ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+
+        // Add two more, which should push it over the threshold and hence trigger inclusion of a snapshot event (but not incurr extra roundtrips)
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
+        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
+
+        // While we now have 13 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service.Read cartId
+        test <@ singleBatchBackwards = capture.ExternalCalls @>
+
+        // Add 8 more; total of 21 should not trigger snapshotting as Event Number 12 (the 13th one) is a shapshot
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
+        test <@ batchBackwardsAndAppend = capture.ExternalCalls @>
+
+        // While we now have 21 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service.Read cartId
+        // ... and trigger a second snapshotting (inducing a single additional read + write)
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
+        // and reload the 24 events with a single read
+        let! _ = service.Read cartId
+        test <@ singleBatchBackwards @ batchBackwardsAndAppend @ singleBatchBackwards = capture.ExternalCalls @>
+    }
+
     [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
     let ``Can combine compaction with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
         let log, capture = output.CreateLoggerWithCapture()
@@ -503,27 +557,118 @@ type Tests(testOutputHelper) =
         test <@ singleBatchBackwards @ batchBackwardsAndAppend @ suboptimalExtraSlice @ singleBatchForward = capture.ExternalCalls @>
     }
 #endif
-    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
-    let ``Version is 0-based`` () = Async.RunSynchronously <| async {
-        #if NET
-        use _ = source.StartActivity("Version is 0-based")
-        #endif
-        let log, _ = output.CreateLoggerWithCapture()
-        let! connection = connectToLocalStore log
 
-        let batchSize = 3
-        let context = createContext connection batchSize
-        let id = Guid.NewGuid()
-        let toStreamId (x : Guid) = x.ToString "N"
-        let decider = SimplestThing.resolve log context SimplestThing.Category (Equinox.StreamId.gen toStreamId id)
-
-        let! before, after = decider.TransactEx(
-            (fun state -> state.Version, [SimplestThing.StuffHappened]),
-            mapResult = (fun result ctx-> result, ctx.Version))
-        test <@ [before; after] = [0L; 1L] @>
-    }
 
 #if STORE_MESSAGEDB
+type AdjacentSnapshotTests(testOutputHelper) =
+    let sdk =
+        Sdk.CreateTracerProviderBuilder()
+           .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName = "mdbi"))
+           .AddSource("Equinox")
+           .AddSource("Equinox.MessageDb")
+           .AddSource("StoreIntegration")
+           .AddSource("Npqsl")
+           .AddOtlpExporter(fun opts -> opts.Endpoint <- Uri("http://localhost:4317"))
+           .Build()
+
+    let output = TestContext(testOutputHelper)
+
+    let sliceForward = [EsAct.SliceForward]
+    let singleBatchForward = [EsAct.SliceForward; EsAct.BatchForward]
+    let readSnapshotted = [EsAct.ReadLast; EsAct.SliceForward; EsAct.BatchForward]
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Can roundtrip against Store, correctly snapshotting to avoid redundant reads`` (ctx, skuId) = Async.RunSynchronously <| async {
+        #if NET
+        use _ = source.StartActivity("Can roundtrip against Store, correctly snapshotting to avoid redundant reads")
+        #endif
+        let log, capture = output.CreateLoggerWithCapture()
+        let! client = connectToLocalStore log
+        let batchSize = 10
+        let context = createContext client batchSize
+        let service = Cart.createServiceWithAdjacentSnapshotting  log context
+
+        // Trigger 8 events, then reload
+        let cartId = % Guid.NewGuid()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
+        let! _ = service.Read cartId
+
+        test <@ readSnapshotted @ [EsAct.Append] @ readSnapshotted = capture.ExternalCalls @>
+
+        // Add two more, which should push it over the threshold and hence trigger an append of a snapshot event
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
+        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] = capture.ExternalCalls @>
+
+        // We now have 10 events and should be able to read them with a single call
+        capture.Clear()
+        let! _ = service.Read cartId
+        test <@ readSnapshotted = capture.ExternalCalls @>
+
+        // Add 8 more; total of 18 should not trigger snapshotting as we snapshotted at Event Number 10
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 4
+        test <@ readSnapshotted @ [EsAct.Append] = capture.ExternalCalls @>
+
+        // While we now have 18 events, we should be able to read them with a single call
+        capture.Clear()
+        let! _ = service.Read cartId
+        test <@ readSnapshotted = capture.ExternalCalls @>
+
+        // add two more events, triggering a snapshot, then read it in a single snapshotted read
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service 1
+        // and reload the 20 events with a single read
+        let! _ = service.Read cartId
+        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] @ readSnapshotted = capture.ExternalCalls @>
+    }
+
+    [<AutoData(SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_EVENTSTORE")>]
+    let ``Can combine snapshotting with caching against Store`` (ctx, skuId) = Async.RunSynchronously <| async {
+        let log, capture = output.CreateLoggerWithCapture()
+        let! client = connectToLocalStore log
+        let batchSize = 10
+        let context = createContext client batchSize
+        let service1 = Cart.createServiceWithAdjacentSnapshotting log context
+        let cache = Equinox.Cache("cart", sizeMb = 50)
+        let context = createContext client batchSize
+        let service2 = Cart.createServiceWithSnapshottingAndCaching log context cache
+
+        // Trigger 8 events, then reload
+        let cartId = % Guid.NewGuid()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 4
+        let! _ = service2.Read cartId
+
+        // ... should see a single append as we are inside the batch threshold
+        test <@ readSnapshotted @ [EsAct.Append] @ readSnapshotted = capture.ExternalCalls @>
+
+        // Add two more, which should push it over the threshold and hence trigger generation of a snapshot event
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
+        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] = capture.ExternalCalls @>
+
+        // We now have 10 events, we should be able to read them with a single snapshotted read
+        capture.Clear()
+        let! _ = service1.Read cartId
+        test <@ readSnapshotted = capture.ExternalCalls @>
+
+        // Add 8 more; total of 18 should not trigger snapshotting as the snapshot is at version 10
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 4
+        test <@ readSnapshotted @ [EsAct.Append] = capture.ExternalCalls @>
+
+        // While we now have 18 events, we should be able to read them with a single snapshotted read
+        capture.Clear()
+        let! _ = service1.Read cartId
+        test <@ readSnapshotted = capture.ExternalCalls @>
+        // ... trigger a second snapshotting
+        capture.Clear()
+        do! addAndThenRemoveItemsManyTimes ctx cartId skuId service1 1
+        // and we _could_ reload the 20 events with a single read. However we are using the cache, which last saw it with 10 events, which necessitates two reads
+        let! _ = service2.Read cartId
+        test <@ readSnapshotted @ [EsAct.Append; EsAct.Append] @ sliceForward @ singleBatchForward = capture.ExternalCalls @>
+    }
+
     interface IDisposable with
       member _.Dispose() = sdk.Shutdown() |> ignore
 #endif
