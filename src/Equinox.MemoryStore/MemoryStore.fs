@@ -21,9 +21,7 @@ type VolatileStore<'Format>() =
         (obj.ReferenceEquals(Array.last res, Array.last events), res)
 
     let committed = Event<_>()
-    /// Notifies re batches of events being committed to a given Stream.
-    /// Commits are guaranteed to be notified in correct order, with max one notification in flight per stream
-    /// NOTE current impl locks on a global basis rather than at stream level
+    /// Notifies re batches of events being committed to a given Stream. Commits are guaranteed to be notified in correct order at stream level
     [<CLIEvent>] member _.Committed : IEvent<struct (string * string * FsCodec.ITimelineEvent<'Format>[])> = committed.Publish
 
     /// Loads events from a given stream, null if none yet written
@@ -38,6 +36,7 @@ type VolatileStore<'Format>() =
         // If we don't serialize the publishing of the events, its possible for handlers to observe the Events out of order
         // NOTE while a Channels based impl might offer better throughput at load, in practical terms serializing all Committed event notifications
         //      works very well as long as the handlers don't do a lot of processing, instead offloading to a private work queue
+        // NOTE the lock could be more granular, the guarantee of notification ordering is/needs to be at stream level only
         lock streams <| fun () ->
             let struct (succeeded, _) as outcome = trySync streamName expectedCount events
             if succeeded then committed.Trigger(categoryName, streamId, events)
@@ -64,8 +63,7 @@ type private Category<'event, 'state, 'context, 'Format>(store : VolatileStore<'
             | null -> struct (Token.ofEmpty, initial) |> Task.FromResult
             | xs -> struct (Token.ofValue xs, fold initial (Seq.chooseV codec.TryDecode xs)) |> Task.FromResult
         member _.TrySync(_log, categoryName, streamId, streamName, context, _init, Token.Unpack eventCount, state, events, _ct) =
-            let inline map i (e : FsCodec.IEventData<'Format>) =
-                FsCodec.Core.TimelineEvent.Create(int64 i, e.EventType, e.Data, e.Meta, e.EventId, e.CorrelationId, e.CausationId, e.Timestamp)
+            let inline map i (e : FsCodec.IEventData<'Format>) = FsCodec.Core.TimelineEvent.Create(int64 i, e)
             let encoded = Array.ofSeq events |> Array.mapi (fun i e -> map (eventCount + i) (codec.Encode(context, e)))
             match store.TrySync(streamName, categoryName, streamId, eventCount, encoded) with
             | true, streamEvents' ->

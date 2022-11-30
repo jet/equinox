@@ -45,6 +45,6 @@ let ``Can roundtrip, rendering correctly`` (x: SimpleDu) =
     let serialized = codec.Encode((), x)
     let d = serialized.Data
     render x =! if d.IsEmpty then null else System.Text.Encoding.UTF8.GetString(d.Span)
-    let adapted = FsCodec.Core.TimelineEvent.Create(-1L, serialized.EventType, d)
+    let adapted = FsCodec.Core.TimelineEvent.Create(-1L, serialized)
     let deserialized = codec.TryDecode adapted |> ValueOption.get
     deserialized =! x
