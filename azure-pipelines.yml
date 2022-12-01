@@ -50,7 +50,7 @@ jobs:
     env:
       EQUINOX_INTEGRATION_SKIP_EVENTSTORE: true
       EQUINOX_INTEGRATION_SKIP_COSMOS: true
-      MDB_CONN_STRING: "Host=message_db; Username=message_store; Password=; Database=message_store; Port=5432; Maximum Pool Size=10"
+      MDB_CONN_STRING: "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5432; Maximum Pool Size=10"
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'VSTest'
