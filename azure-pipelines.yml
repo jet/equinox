@@ -4,7 +4,7 @@ resources:
   - container: message_db
     image: ethangarofolo/message-db
     # The message-db container doesn't provide a healthcheck
-    options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries
+    options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     ports:
     - 5433:5432
 jobs:
