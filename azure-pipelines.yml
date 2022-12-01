@@ -5,6 +5,7 @@ resources:
     image: ethangarofolo/message-db
     ports:
     - 5432:5432
+    options: --platform linux/amd64
 jobs:
 - job: Windows
   pool:
