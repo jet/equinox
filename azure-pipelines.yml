@@ -38,7 +38,9 @@ jobs:
   steps:
   # This is to give message_db time to initialize as it's impossible to override the healthcheck timings in AZP
   # https://developercommunity.visualstudio.com/t/cant-change-service-container-healthcheck-timings/1164638
-  - script: sleep 8
+  - script: |
+      sleep 8
+      psql postgres://message_store:@localhost:5433/message_store -c 'select 1' --csv
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
     env:
