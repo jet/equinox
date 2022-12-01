@@ -202,10 +202,10 @@ module Read =
             "Read", count, slice.LastVersion)
         return slice }
 
-    let private readBatches (log : ILogger) (readSlice : int64 -> int -> ILogger -> Async<StreamEventsSlice>)
+    let private readBatches (log : ILogger) (readSlice : int64 -> int -> ILogger -> Task<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int64)
-        : AsyncSeq<int64 * ITimelineEvent<EventBody> array> =
-        let rec loop batchCount pos : AsyncSeq<int64 * ITimelineEvent<EventBody> array> = asyncSeq {
+        : taskSeq<int64 * ITimelineEvent<EventBody> array> =
+        let rec loop batchCount pos : taskSeq<int64 * ITimelineEvent<EventBody> array> = taskSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
@@ -255,21 +255,23 @@ module Read =
 
     let internal loadForwardsFrom (log : ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader
         : Async<int64 * ITimelineEvent<EventBody> array> = async {
-        let mergeBatches (batches : AsyncSeq<int64 * ITimelineEvent<EventBody> array>) = async {
+        let mergeBatches (batches : taskSeq<int64 * ITimelineEvent<EventBody> array>) = async {
             let mutable versionFromStream = -1L
             let! (events : ITimelineEvent<EventBody> array) =
                 batches
-                |> AsyncSeq.map (fun (reportedVersion, events)-> versionFromStream <- max reportedVersion versionFromStream; events)
-                |> AsyncSeq.concatSeq
-                |> AsyncSeq.toArrayAsync
+                |> TaskSeq.map (fun (reportedVersion, events)-> versionFromStream <- max reportedVersion versionFromStream; events)
+                |> TaskSeq.collectSeq id
+                |> TaskSeq.toArrayAsync
+                |> Async.AwaitTaskCorrect
             let version = versionFromStream
             return version, events }
         let act = Activity.Current
         if act <> null then act.AddBatchSize(batchSize).AddStartPosition(startPosition).AddLoadMethod("BatchForward") |> ignore
         let call pos batchIndex = loggedReadSlice reader streamName batchSize batchIndex pos requiresLeader
-        let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
+        let! ct = Async.CancellationToken
+        let retryingLoggingReadSlice pos batchIndex log = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex) log |> Async.startAsTask ct
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let batches : AsyncSeq<int64 * ITimelineEvent<EventBody> array> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
+        let batches : taskSeq<int64 * ITimelineEvent<EventBody> array> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
         let! t, (version, events) = mergeBatches batches |> Stopwatch.Time
         log |> logBatchRead act streamName t events batchSize version
         return version, events }
