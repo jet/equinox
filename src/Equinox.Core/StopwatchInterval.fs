@@ -3,6 +3,8 @@ namespace Equinox.Core
 open System
 open System.Diagnostics
 open System.Runtime.CompilerServices
+open System.Threading
+open System.Threading.Tasks
 
 type Stopwatch =
 
@@ -29,3 +31,11 @@ and [<Struct; NoEquality; NoComparison>] StopwatchInterval(startTicks : int64, e
     member _.Elapsed = Stopwatch.TicksToSeconds(endTicks - startTicks) |> TimeSpan.FromSeconds
     member _.ElapsedMilliseconds = Stopwatch.TicksToSeconds(endTicks - startTicks) * 1000.
     override x.ToString () = sprintf "%g ms" x.ElapsedMilliseconds
+
+module Stopwatch =
+    [<DebuggerStepThrough>]
+    let time (ct : CancellationToken) (f : CancellationToken -> Task<'T>) : Task<struct (StopwatchInterval * 'T)> = task {
+        let startTicks = Stopwatch.GetTimestamp()
+        let! result = f ct
+        let endTicks = Stopwatch.GetTimestamp()
+        return StopwatchInterval(startTicks, endTicks), result }
