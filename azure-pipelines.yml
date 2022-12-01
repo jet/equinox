@@ -27,6 +27,12 @@ jobs:
 - job: Linux
   pool:
     vmImage: 'ubuntu-latest'
+  resources:
+    containers:
+    - container: message_db
+      image: ethangarofolo/message-db
+      ports:
+      - 5433:5432
   steps:
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
