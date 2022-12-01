@@ -6,6 +6,7 @@ resources:
     env:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
+      POSTGRES_HOST_AUTH_METHOD: trust # allows passwordless login
     options: --health-cmd pg_isready
     ports:
     - 5432:5432
