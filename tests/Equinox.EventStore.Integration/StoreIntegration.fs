@@ -55,7 +55,7 @@ open OpenTelemetry.Trace
 open OpenTelemetry.Resources
 
 let connectToLocalStore _ = async {
-  let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5433; Maximum Pool Size=10"
+  let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5432; Maximum Pool Size=10"
   let connector = MessageDbConnector(connectionString)
   return connector.Establish()
 }
