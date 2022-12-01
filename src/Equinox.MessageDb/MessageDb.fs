@@ -138,7 +138,7 @@ module private Write =
         let bytes, count = eventDataBytes events, events.Length
         let log = log |> Log.prop "bytes" bytes
         if act <> null then act.AddExpectedVersion(version).IncMetric(count, bytes) |> ignore
-        let! t, result = writeEventsAsync writer streamName version events ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
+        let! t, result = writeEventsAsync writer streamName version events |> Stopwatch.time ct
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result with
@@ -188,7 +188,7 @@ module Read =
         let parentAct = Activity.Current
         use act = source.StartActivity("ReadSlice", ActivityKind.Client)
         if act <> null then act.AddStreamFromParent(parentAct).AddBatch(batchSize, batchIndex).AddStartPosition(startPos).AddLeader(requiresLeader) |> ignore
-        let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader ct |> Async.AwaitTaskCorrect |> Stopwatch.Time
+        let! t, slice = readSliceAsync reader streamName batchSize startPos requiresLeader |> Stopwatch.time ct
         let bytes, count = slice.Messages |> resolvedEventBytes, slice.Messages.Length
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let evt = Log.Slice reqMetric
