@@ -1,4 +1,10 @@
 name: $(Rev:r)
+resources:
+  containers:
+  - container: message_db
+    image: ethangarofolo/message-db
+    ports:
+    - 5433:5432
 jobs:
 - job: Windows
   pool:
@@ -26,13 +32,9 @@ jobs:
 
 - job: Linux
   pool:
-    vmImage: 'ubuntu-latest'
-  resources:
-    containers:
-    - container: message_db
-      image: ethangarofolo/message-db
-      ports:
-      - 5433:5432
+    vmImage: 'ubuntu-latest' 
+  services:
+    message_db: message_db
   steps:
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
