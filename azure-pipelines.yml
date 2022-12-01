@@ -2,10 +2,9 @@ name: $(Rev:r)
 resources:
   containers:
   - container: message_db
-    image: ethangarofolo/message-db
+    image: postgres:15 
     ports:
     - 5432:5432
-    options: --platform linux/amd64
 jobs:
 - job: Windows
   pool:
