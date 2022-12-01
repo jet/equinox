@@ -38,4 +38,4 @@ module Stopwatch =
         let startTicks = Stopwatch.GetTimestamp()
         let! result = f ct
         let endTicks = Stopwatch.GetTimestamp()
-        return StopwatchInterval(startTicks, endTicks), result }
+        return struct (StopwatchInterval(startTicks, endTicks), result) }
