@@ -105,6 +105,11 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.MessageDb", "src\Eq
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Equinox.MessageDb.Integration", "tests\Equinox.MessageDb.Integration\Equinox.MessageDb.Integration.fsproj", "{60348FC6-1403-491D-9547-35F594D92320}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{FF276C0E-60A4-43C4-A6FF-5E421A6DC27C}"
+	ProjectSection(SolutionItems) = preProject
+		scripts\install-messagedb.sh = scripts\install-messagedb.sh
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -254,6 +259,7 @@ Global
 		{8CDE1CC3-8619-44DE-8B4D-4102CE476C35} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
 		{D82AAB2E-7264-421A-A893-63A37E5F08B6} = {8F3EB30C-8BA3-4CC0-8361-0EA47C19ABB9}
 		{596FFDD5-8B3C-4D5E-865A-962AFBB210FF} = {7E3A7020-AE75-4513-B81A-57FD3E0D0D84}
+		{FF276C0E-60A4-43C4-A6FF-5E421A6DC27C} = {7E3A7020-AE75-4513-B81A-57FD3E0D0D84}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {177E1E7B-E275-4FC6-AE3C-2C651ECCF71E}

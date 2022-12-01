@@ -3,6 +3,10 @@ resources:
   containers:
   - container: message_db
     image: postgres:15 
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    options: --health-cmd pg_isready
     ports:
     - 5432:5432
 jobs:
@@ -36,6 +40,11 @@ jobs:
   services:
     message_db: message_db
   steps:
+  - script: bash ./scripts/install-messagedb.sh 
+    env:
+      PGHOST: localhost
+      PGPASSWORD: password
+      PGUSER: postgres
   - script: dotnet test build.proj -v n
     displayName: dotnet test build.proj
     env:
