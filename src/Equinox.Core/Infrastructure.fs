@@ -54,6 +54,7 @@ type Async with
 module Async =
 
     let startAsTask ct computation = Async.StartAsTask(computation, cancellationToken = ct)
+    let startTask computation ct = Async.StartAsTask(computation, cancellationToken = ct)
 
 module ValueTuple =
 
