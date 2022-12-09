@@ -550,7 +550,7 @@ let main argv =
         Log.Logger <- createDomainLog verbose verboseConsole maybeSeq
         try let log = Log.Logger
             try match p.GetSubCommand() with
-                | Init a ->     (CosmosInit.containerAndOrDb log a CancellationToken.None).Wait()
+                | Init a ->     CosmosInit.containerAndOrDb log a |> Async.RunSynchronously
                 | InitAws a ->  DynamoInit.table log a |> Async.RunSynchronously
                 | Config a ->   SqlInit.databaseOrSchema log a |> Async.RunSynchronously
                 | Dump a ->     Dump.run (log, verboseConsole, maybeSeq) a
