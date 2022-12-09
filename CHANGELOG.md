@@ -38,10 +38,10 @@ The `Unreleased` section name is replaced by the expected version of next releas
 - `CosmosStore.AccessStrategy.MultiSnapshot`,`Custom`: Change `list` and `seq` types to `array` [#338](https://github.com/jet/equinox/pull/338)
 - `EventStore`: Target `EventStore.Client` v `22.0.0-preview`; rename `Connector` -> `EventStoreConnector` [#317](https://github.com/jet/equinox/pull/317)
 - `Equinox.Tool`/`samples/`: switched to use `Equinox.EventStoreDb` [#196](https://github.com/jet/equinox/pull/196)
-- Update all non-Client dependencies except `FSharp.Core`, `FSharp.Control.AsyncSeq` [#310](https://github.com/jet/equinox/pull/310)
-- Replace `AsyncSeq` usage with `FSharp.Control.TaskSeq` [#361](https://github.com/jet/equinox/pull/361)
-- `FSharp.Core` requirement to `6.0.0` [#337](https://github.com/jet/equinox/pull/337)
+- Replace `AsyncSeq` usage with `FSharp.Control.TaskSeq` v `0.3.0` [#361](https://github.com/jet/equinox/pull/361)
+- Raise `FSharp.Core` requirement to `6.0.7` [#337](https://github.com/jet/equinox/pull/337) [#33](https://github.com/jet/equinox/pull/362)
 - Update all Stores to use `FsCodec` v `3.0.0`, with [`EventBody` types switching from `byte[]` to `ReadOnlyMemory<byte>` and/or `JsonElement` see FsCodec#75](https://github.com/jet/FsCodec/pull/75) [#323](https://github.com/jet/equinox/pull/323)
+- Update all non-Client dependencies except `FSharp.Core`, `FSharp.Control.AsyncSeq` [#310](https://github.com/jet/equinox/pull/310)
 - `CosmosStore.Core.Initialization.initAux`: Replace hard-coded manual 400 RU with `mode` parameter [#328](https://github.com/jet/equinox/pull/328) :pray: [@brihadish](https://github.com/brihadish)
 
 ### Removed
