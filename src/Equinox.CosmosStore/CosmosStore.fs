@@ -1,12 +1,12 @@
 namespace Equinox.CosmosStore.Core
 
-open System.Collections.Generic
 open Equinox.Core
 open FsCodec
 open FSharp.Control
 open Microsoft.Azure.Cosmos
 open Serilog
 open System
+open System.Collections.Generic
 open System.Text.Json
 open System.Threading
 open System.Threading.Tasks

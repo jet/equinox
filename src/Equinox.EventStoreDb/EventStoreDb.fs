@@ -1,5 +1,6 @@
 ﻿namespace Equinox.EventStoreDb
 
+open System.Threading
 open Equinox.Core
 open EventStore.Client
 open Serilog

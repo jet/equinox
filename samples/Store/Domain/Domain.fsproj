@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="6.0.2" />
+    <PackageReference Include="FSharp.Core" Version="6.0.7" />
 
     <PackageReference Include="FsCodec.NewtonsoftJson" Version="3.0.0-rc.9" />
     <PackageReference Include="FsCodec.SystemTextJson" Version="3.0.0-rc.9" />
