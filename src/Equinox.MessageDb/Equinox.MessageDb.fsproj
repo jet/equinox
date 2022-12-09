@@ -26,7 +26,7 @@
 
     <ItemGroup>
         <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
-        <PackageReference Include="FSharp.Core" Version="6.0.0" />
+        <PackageReference Include="FSharp.Core" Version="6.0.7" />
         <PackageReference Include="FSharp.Control.TaskSeq" Version="0.3.0" />
         <PackageReference Include="FsCodec" Version="3.0.0-rc.9" />
         <PackageReference Include="Npgsql" Version="6.0.7" />

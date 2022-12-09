@@ -7,6 +7,7 @@ open FSharp.Control
 open Serilog
 open System
 open System.IO
+open System.Threading
 open System.Threading.Tasks
 
 [<Struct; NoEquality; NoComparison>]
@@ -284,9 +285,9 @@ module Log =
                  { mutable rux100 : int64; mutable count : int64; mutable ms : int64 }
                  static member Create() = { rux100 = 0L; count = 0L; ms = 0L }
                  member x.Ingest(ms, ru) =
-                     System.Threading.Interlocked.Increment(&x.count) |> ignore
-                     System.Threading.Interlocked.Add(&x.rux100, int64 (ru * 100.)) |> ignore
-                     System.Threading.Interlocked.Add(&x.ms, ms) |> ignore
+                     Interlocked.Increment(&x.count) |> ignore
+                     Interlocked.Add(&x.rux100, int64 (ru * 100.)) |> ignore
+                     Interlocked.Add(&x.ms, ms) |> ignore
             type internal Counters() =
                  let tables = System.Collections.Concurrent.ConcurrentDictionary<string, Counter>()
                  let create (_name : string) = Counter.Create()
@@ -312,7 +313,7 @@ module Log =
                 static let mutable epoch = Epoch()
                 static member Restart() =
                     let fresh = Epoch()
-                    let outgoing = System.Threading.Interlocked.Exchange(&epoch, fresh)
+                    let outgoing = Interlocked.Exchange(&epoch, fresh)
                     outgoing.Stop()
                     outgoing
                 interface Serilog.Core.ILogEventSink with
@@ -458,8 +459,7 @@ type Container(tableName, createContext : (RequestMetrics -> unit) -> TableConte
             yield i, t, Array.map Batch.ofSchema res.Records, rm.Consumed
             match res.LastEvaluatedKey with
             | None -> ()
-            | le -> yield! aux (i + 1, le)
-        }
+            | le -> yield! aux (i + 1, le) }
         aux (0, None)
     member internal _.QueryIAndNOrderByNAscending(stream, maxItems) : AsyncSeq<int * StopwatchInterval * BatchIndices array * RequestConsumption> =
         let rec aux (index, lastEvaluated) = asyncSeq {
@@ -777,7 +777,7 @@ module internal Query =
             |> AsyncSeq.map (mapPage direction (container, stream) (minIndex, maxIndex, maxItems) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = mergeBatches log batches |> Stopwatch.Time
         let raws = Array.map ValueTuple.fst events
-        let decoded = if direction = Direction.Forward then Array.chooseV ValueTuple.snd events else Seq.chooseV ValueTuple.snd events |> Seq.rev |> Array.ofSeq
+        let decoded = if direction = Direction.Forward then Array.chooseV ValueTuple.snd events else let xs = Array.chooseV ValueTuple.snd events in Array.Reverse xs; xs
         let minMax = (None, raws) ||> Array.fold (fun acc x -> let i = int64 x.i in Some (match acc with None -> i, i | Some (n, x) -> min n i, max x i))
         let version =
             match maybeTipPos, minMax with
@@ -786,7 +786,7 @@ module internal Query =
             | None, None -> 0L
         log |> logQuery (direction, minIndex, maxIndex) (container, stream) t (responseCount, raws) version ru
         match minMax, maybeTipPos with
-        | Some (i, m), _ -> return Some { found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded }
+        | Some (i, m), _ -> return Some ({ found = found; minIndex = i; next = m + 1L; maybeTipPos = maybeTipPos; events = decoded } : ScanResult<_>)
         | None, Some { index = tipI } -> return Some { found = found; minIndex = tipI; next = tipI; maybeTipPos = maybeTipPos; events = [||] }
         | None, _ -> return None }
 
@@ -901,8 +901,7 @@ module internal Prune =
             let reqMetric = Log.metric container.TableName stream t -1 count rc
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
             log.Information("EqxDynamo {action:l} {i} {ms:f1}ms {ru}RU", "Delete", i, t.ElapsedMilliseconds, rc)
-            return rc
-        }
+            return rc }
         let trimTip expectedN count = async {
             match! container.TryGetTip(stream, consistentRead = false) with
             | None, _rc -> return failwith "unexpected NotFound"
@@ -919,8 +918,7 @@ module internal Prune =
             let reqMetric = Log.metric container.TableName stream t -1 count rc
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
             log.Information("EqxDynamo {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, t.ElapsedMilliseconds, rc.total)
-            return rc
-        }
+            return rc }
         let log = log |> Log.prop "index" indexInclusive
         // need to sort by n to guarantee we don't ever leave an observable gap in the sequence
         let query = container.QueryIAndNOrderByNAscending(stream, maxItems)
@@ -956,18 +954,17 @@ module internal Prune =
                         eventsDeferred <- eventsDeferred + eligibleEvents
                         if lwm = None then
                             lwm <- Some x.index
-                return (rc, delCharges, trimCharges), lwm, (batchesDeleted + batchesTrimmed, eventsDeleted, eventsDeferred)
-            }
+                return (rc, delCharges, trimCharges), lwm, (batchesDeleted + batchesTrimmed, eventsDeleted, eventsDeferred) }
             let hasRelevantItems (batches, _rc) = batches |> Array.exists isRelevant
-            query
-            |> AsyncSeq.map mapPage
-            |> AsyncSeq.takeWhile hasRelevantItems
-            |> AsyncSeq.mapAsync handle
-            |> AsyncSeq.toArrayAsync
-            |> Stopwatch.Time
-        let mutable queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = 0., 0., 0., 0, 0, 0, 0
-        let mutable lwm = None
-        for (qc, dc, tc), bLwm, (bCount, eDel, eDef) in outcomes do
+            let load query =
+                query
+                |> AsyncSeq.map mapPage
+                |> AsyncSeq.takeWhile hasRelevantItems
+                |> AsyncSeq.mapAsync handle
+                |> AsyncSeq.toArrayAsync
+            load query |> Stopwatch.Time
+        let mutable lwm, queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = None, 0., 0., 0., 0, 0, 0, 0
+        let accumulate ((qc, dc, tc), bLwm, (bCount, eDel, eDef)) =
             lwm <- max lwm bLwm
             queryCharges <- queryCharges + qc.total
             delCharges <- delCharges + dc
@@ -976,13 +973,13 @@ module internal Prune =
             batches <- batches + bCount
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
+        outcomes |> Array.iter accumulate
         let reqMetric = Log.metric container.TableName stream pt eventsDeleted batches { total = queryCharges }
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxDynamo {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
                         "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
-        return eventsDeleted, eventsDeferred, lwm
-    }
+        return eventsDeleted, eventsDeferred, lwm }
 
 type [<NoComparison; NoEquality>] Token = { pos : Position option }
 module Token =
@@ -1139,13 +1136,13 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
 module internal Caching =
 
     let applyCacheUpdatesWithSlidingExpiration (cache : ICache, prefix : string) (slidingExpiration : TimeSpan) =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
+        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
         let options = CacheItemOptions.RelativeExpiration slidingExpiration
         fun streamName value ->
             cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
 
     let applyCacheUpdatesWithFixedTimeSpan (cache : ICache, prefix : string) (period : TimeSpan) =
-        let mkCacheEntry (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
+        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
         fun streamName value ->
             let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
             let options = CacheItemOptions.AbsoluteExpiration expirationPoint
@@ -1154,25 +1151,25 @@ module internal Caching =
     type CachingCategory<'event, 'state, 'context>
         (   category : Category<'event, 'state, 'context>,
             fold : 'state -> 'event seq -> 'state, initial : 'state, isOrigin : 'event -> bool,
-            tryReadCache, updateCache : string -> _ -> Task<unit>,
+            tryReadCache : string -> Task<voption<struct(_ * _)>>, updateCache : string -> struct (_ * _) -> Task<unit>,
             checkUnfolds, mapUnfolds : Choice<unit, 'event array -> 'state -> 'event array, 'event array -> 'state -> 'event array * 'event array>) =
         let cache streamName (inner : unit -> Task<_>) = task {
-            let! struct (token, state) = inner ()
-            do! updateCache streamName (token, state)
-            return struct (token, state) }
+            let! tokenAndState = inner ()
+            do! updateCache streamName tokenAndState
+            return tokenAndState }
         interface ICategory<'event, 'state, 'context> with
-            member _.Load(log, _categoryName, _streamId, streamName, allowStale, requireLeader, ct) : Task<struct (StreamToken * 'state)> = task {
-                match! tryReadCache streamName : Task<voption<_>> with
-                | ValueNone -> return! (fun () -> category.Load(log, streamName, requireLeader, initial, checkUnfolds, fold, isOrigin)) |> cache streamName
-                | ValueSome struct (token, state) when allowStale -> return struct (token, state) // read already updated TTL, no need to write
-                | ValueSome struct (token, state) -> return! (fun () -> category.Reload(log, streamName, requireLeader, token, state, fold, isOrigin, ct)) |> cache streamName }
-            member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, _maybeInit, streamToken, state, events, ct) : Task<SyncResult<'state>> = task {
-                match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context) |> Async.startAsTask ct with
+            member _.Load(log, _categoryName, _streamId, streamName, allowStale, requireLeader, ct) = task {
+                match! tryReadCache streamName with
+                | ValueNone -> return! cache streamName (fun () -> category.Load(log, streamName, requireLeader, initial, checkUnfolds, fold, isOrigin))
+                | ValueSome tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
+                | ValueSome (token, state) -> return! cache streamName (fun () -> category.Reload(log, streamName, requireLeader, token, state, fold, isOrigin, ct)) }
+            member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, _maybeInit, streamToken, state, events, ct) = task {
+                match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context) with
                 | SyncResult.Conflict resync ->
-                    return SyncResult.Conflict (fun ct -> (fun () -> resync ct) |> cache streamName)
-                | SyncResult.Written (token', state') ->
-                    do! updateCache streamName (token', state')
-                    return SyncResult.Written (token', state') }
+                    return SyncResult.Conflict (fun ct -> cache streamName (fun () -> resync ct))
+                | SyncResult.Written tokenAndState' ->
+                    do! updateCache streamName tokenAndState'
+                    return SyncResult.Written tokenAndState' }
 
 namespace Equinox.DynamoStore
 

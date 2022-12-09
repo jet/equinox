@@ -421,21 +421,18 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
             return SyncResult.Written   (token', state') }
 
 type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
-    let batched log categoryName streamId streamName requireLeader ct = category.Load(fold, initial, categoryName, streamId, streamName, requireLeader, log, ct)
-
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) = task {
-            let act = Activity.Current
             match readCache with
-            | None -> return! batched log categoryName streamId streamName requireLeader ct
+            | None -> return! category.Load(fold, initial, categoryName, streamId, streamName, requireLeader, log, ct)
             | Some (cache : ICache, prefix : string) ->
                 let! cacheItem = cache.TryGet(prefix + streamName)
+                let act = Activity.Current
                 if act <> null then act.AddCacheHit(match cacheItem with ValueNone -> false | _ -> true) |> ignore
                 match cacheItem with
-                | ValueNone -> return! batched log categoryName streamId streamName requireLeader ct
+                | ValueNone -> return! category.Load(fold, initial, categoryName, streamId, streamName, requireLeader, log, ct)
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
                 | ValueSome (token, state) -> return! category.Reload(fold, state, streamName, requireLeader, token, log, ct) }
-
         member _.TrySync(log, categoryName, streamId, streamName, context, _init, token, originState, events, ct) = task {
             match! category.TrySync(log, fold, categoryName, streamId, streamName, token, originState, events, context, ct) with
             | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
