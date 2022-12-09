@@ -51,10 +51,6 @@ type Async with
                     sc ())
             |> ignore)
 
-module Async =
-
-    let startAsTask ct computation = Async.StartAsTask(computation, cancellationToken = ct)
-
 module ValueTuple =
 
     let inline fst struct (f, _s) = f

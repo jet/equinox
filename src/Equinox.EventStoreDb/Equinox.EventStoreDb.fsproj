@@ -22,7 +22,7 @@
 
     <PackageReference Include="EventStore.Client.Grpc.Streams" Version="22.0.0" />
     <PackageReference Include="FsCodec" Version="3.0.0-rc.9" />
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
+    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.3.0" />
   </ItemGroup>
 
 </Project>

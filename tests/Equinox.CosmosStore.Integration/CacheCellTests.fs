@@ -13,7 +13,7 @@ let ``AsyncLazy correctness`` () = async {
     let mutable count = 0
     let cell = AsyncLazy(fun () -> task { return Interlocked.Increment &count })
     false =! cell.IsValid(ValueNone)
-    let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.Await() |> Async.AwaitTask) |> Async.Parallel
+    let! accessResult = [|1 .. 100|] |> Array.map (fun _ -> cell.Await() |> Async.AwaitTaskCorrect) |> Async.Parallel
     true =! cell.IsValid(ValueNone)
     test <@ accessResult |> Array.forall ((=) 1) @>
 }
@@ -27,13 +27,13 @@ let ``AsyncCacheCell correctness`` () = async {
 
     false =! cell.IsValid()
 
-    let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.Await CancellationToken.None |> Async.AwaitTask) |> Async.Parallel
+    let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.Await CancellationToken.None |> Async.AwaitTaskCorrect) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 1) @>
     true =! cell.IsValid()
 
     expectedValue <- expectedValue + 1
 
-    let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.Await CancellationToken.None |> Async.AwaitTask) |> Async.Parallel
+    let! accessResult = [|1 .. 100|] |> Array.map (fun _i -> cell.Await CancellationToken.None |> Async.AwaitTaskCorrect) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 2) @>
     true =! cell.IsValid()
 }
@@ -63,7 +63,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
         throwing <- false
         false =! cell.IsValid()
     else
-        let! r = cell.Await CancellationToken.None |> Async.AwaitTask
+        let! r = cell.Await CancellationToken.None |> Async.AwaitTaskCorrect
         true =! cell.IsValid()
         test <@ 1 = r @>
 
@@ -87,7 +87,7 @@ let ``AsyncCacheCell correctness with throwing`` initiallyThrowing = async {
 
     expectedValue <- expectedValue + 1
 
-    let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.Await CancellationToken.None |> Async.AwaitTask) |> Async.Parallel
+    let! accessResult = [|1 .. 10|] |> Array.map (fun _ -> cell.Await CancellationToken.None |> Async.AwaitTaskCorrect) |> Async.Parallel
     test <@ accessResult |> Array.forall ((=) 4) @>
     true =! cell.IsValid()
 }

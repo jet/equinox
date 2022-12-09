@@ -29,7 +29,7 @@
 #r "Equinox.dll"
 #r "TypeShape.dll"
 #r "FsCodec.SystemTextJson.dll"
-//#r "FSharp.Control.AsyncSeq.dll"
+//#r "FSharp.Control.TaskSeq.dll"
 //#r "System.Net.Http"
 //#r "EventStore.Client.dll"
 //#r "EventStore.Client.Streams.dll"

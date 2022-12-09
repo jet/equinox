@@ -8,15 +8,6 @@ open System.Threading.Tasks
 
 type Stopwatch =
 
-    /// <summary>Times an async computation, returning the result with a time range measurement.</summary>
-    /// <param name="f">Function to execute / time.</param>
-    [<DebuggerStepThrough>]
-    static member Time(f : Async<'T>) : Async<struct (StopwatchInterval * 'T)> = async {
-        let startTicks = Stopwatch.GetTimestamp()
-        let! result = f
-        let endTicks = Stopwatch.GetTimestamp()
-        return StopwatchInterval(startTicks, endTicks), result }
-
     /// Converts a tick count (derived from two Stopwatch.GetTimeStamp() Tick Counters) into a number of seconds
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     static member TicksToSeconds(ticks : int64) : double =
@@ -33,6 +24,7 @@ and [<Struct; NoEquality; NoComparison>] StopwatchInterval(startTicks : int64, e
     override x.ToString () = sprintf "%g ms" x.ElapsedMilliseconds
 
 module Stopwatch =
+
     [<DebuggerStepThrough>]
     let time (ct : CancellationToken) (f : CancellationToken -> Task<'T>) : Task<struct (StopwatchInterval * 'T)> = task {
         let startTicks = Stopwatch.GetTimestamp()

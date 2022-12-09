@@ -98,12 +98,7 @@ type Tests(testOutputHelper) =
         let service = Cart.createServiceWithoutOptimization log context
         let expectedResponses n =
             let tipItem = 1
-#if STORE_DYNAMO // For Cosmos, we supply a full query and it notices it is at the end - for Dynamo, another query is required
-            let finalEmptyPage = 1
-#else
-            let finalEmptyPage = 0
-#endif
-            let expectedItems = tipItem + (if eventsInTip then n / 2 else n) + finalEmptyPage
+            let expectedItems = tipItem + (if eventsInTip then n / 2 else n)
             max 1 (int (ceil (float expectedItems / float queryMaxItems)))
 
         let cartId = % Guid.NewGuid()
@@ -257,11 +252,7 @@ type Tests(testOutputHelper) =
                 | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no Archive Container supplied"
                                   || e.Message.StartsWith "Origin event not found; no Archive Table supplied"
                 | x -> failwithf "Unexpected %A" x @>
-#if STORE_DYNAMO // Extra null query
-        test <@ [EqxAct.ResponseForward; EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-#else
         test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
-#endif
         verifyRequestChargesMax 3 // 2.99
 
         // But not forgotten

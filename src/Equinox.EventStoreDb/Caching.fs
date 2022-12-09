@@ -2,10 +2,11 @@ module Equinox.Core.Caching
 
 open System.Threading.Tasks
 
-type internal Decorator<'event, 'state, 'context>(
-        inner : ICategory<'event, 'state, 'context>, updateCache : string -> struct (StreamToken * 'state) -> Task<unit>) =
+type internal Decorator<'event, 'state, 'context>
+    (   inner : ICategory<'event, 'state, 'context>,
+        updateCache : string -> struct (StreamToken * 'state) -> Task<unit>) =
 
-    let cache streamName (inner : Task<_>) = task {
+    let cache streamName (inner : Task<struct (StreamToken * 'state)>) = task {
         let! tokenAndState = inner
         do! updateCache streamName tokenAndState
         return tokenAndState }
@@ -13,7 +14,6 @@ type internal Decorator<'event, 'state, 'context>(
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) =
             inner.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) |> cache streamName
-
         member _.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) = task {
             match! inner.TrySync((log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct)) with
             | SyncResult.Conflict resync -> return SyncResult.Conflict (fun ct -> resync ct |> cache streamName)
