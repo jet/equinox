@@ -240,7 +240,7 @@ type Tests(testOutputHelper) =
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
         let! seq = Events.getAll ctx streamName 0L 1
-        let! res = seq |> TaskSeq.takeWhileInclusive (fun _ -> false) |> TaskSeq.collectSeq id |> TaskSeq.toArrayAsync |> Async.AwaitTask
+        let! res = seq |> TaskSeq.takeWhileInclusive (fun _ -> false) |> TaskSeq.collectSeq id |> TaskSeq.toArrayAsync |> Async.AwaitTaskCorrect
         let expected = expected |> Array.take 1
 
         verifyCorrectEvents 0L expected res
@@ -301,7 +301,7 @@ type Tests(testOutputHelper) =
             res
             |> TaskSeq.collectSeq id
             |> TaskSeq.takeWhileInclusive (fun x -> x.Index <> 4L)
-            |> TaskSeq.toArrayAsync |> Async.AwaitTask
+            |> TaskSeq.toArrayAsync |> Async.AwaitTaskCorrect
         let expected = expected |> Array.skip 4 // omit index 0, 1 as we vote to finish at 2L
 
         verifyCorrectEventsBackward 5L expected res
