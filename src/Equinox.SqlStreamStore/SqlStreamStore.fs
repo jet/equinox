@@ -50,7 +50,7 @@ module Log =
     let propResolvedEvents name (events : ResolvedEvent[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
-                let data = x.GetJsonData().Result
+                let data = x.GetJsonData() |> Async.AwaitTaskCorrect |> Async.RunSynchronously
                 yield System.Collections.Generic.KeyValuePair<_, _>(x.Type, data) })
 
     let withLoggedRetries<'t> retryPolicy (contextLabel : string) (f : ILogger -> CancellationToken -> Task<'t>) log ct : Task<'t> =
