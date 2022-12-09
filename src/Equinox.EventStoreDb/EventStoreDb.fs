@@ -400,14 +400,15 @@ type private Category<'event, 'state, 'context>(context : EventStoreContext, cod
         let! struct (token, events) = f
         return struct (token, fold initial events) }
 
-    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, streamName : string, requireLeader, log : ILogger, ct) =
+    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, streamName : string, requireLeader, log, ct) =
         load fold initial (loadAlgorithm streamName requireLeader log ct)
-    member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName : string, requireLeader, token, log : ILogger, ct) =
+    member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName : string, requireLeader, token, log, ct) =
         load fold state (context.Reload(streamName, requireLeader, log, token, tryDecode, compactionPredicate, ct))
 
     member x.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
-            streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event array, ctx : 'context, ct) : Task<SyncResult<'state>> = task {
+            streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event array, ctx : 'context, ct)
+        : Task<SyncResult<'state>> = task {
         let encode e = codec.Encode(ctx, e)
         let events =
             match access with

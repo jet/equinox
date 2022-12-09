@@ -1162,9 +1162,9 @@ module internal Caching =
     type CachingCategory<'event, 'state, 'context>
         (   category : Category<'event, 'state, 'context>,
             fold : 'state -> 'event seq -> 'state, initial : 'state, isOrigin : 'event -> bool,
-            tryReadCache : string -> Task<voption<struct(_ * _)>>, updateCache : string -> struct (_ * _) -> Task<unit>,
+            tryReadCache : string -> Task<voption<struct (StreamToken * 'state)>>, updateCache : string -> struct (StreamToken * 'state) -> Task<unit>,
             checkUnfolds, mapUnfolds : Choice<unit, 'event array -> 'state -> 'event array, 'event array -> 'state -> 'event array * 'event array>) =
-        let cache streamName (inner : CancellationToken -> Task<_>) ct = task {
+        let cache streamName (inner : CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {
             let! tokenAndState = inner ct
             do! updateCache streamName tokenAndState
             return tokenAndState }

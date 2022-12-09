@@ -232,7 +232,7 @@ module private Read =
             let version = match versionFromStream with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
             return version, events }
 
-        let call pos log = loggedReadSlice conn streamName Direction.Forward batchSize pos log
+        let call = loggedReadSlice conn streamName Direction.Forward batchSize
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let direction = Direction.Forward
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
@@ -271,7 +271,7 @@ module private Read =
             let version = match versionFromStream.Value with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
             return version, eventsForward }
 
-        let call pos = loggedReadSlice conn streamName Direction.Backward batchSize pos
+        let call = loggedReadSlice conn streamName Direction.Backward batchSize
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let startPosition = int64 StreamPosition.End

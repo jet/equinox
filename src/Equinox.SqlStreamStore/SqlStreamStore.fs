@@ -223,8 +223,8 @@ module private Read =
                 |> TaskSeq.toArrayAsync
             let version = match versionFromStream with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
             return version, events }
-        let call pos = loggedReadSlice conn streamName Direction.Forward batchSize pos
-        let retryingLoggingReadSlice pos ct = Log.withLoggedRetries retryPolicy "readAttempt" (call pos) ct
+        let call = loggedReadSlice conn streamName Direction.Forward batchSize
+        let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let direction = Direction.Forward
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
         let batches ct : IAsyncEnumerable<int64 option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition ct
@@ -259,7 +259,7 @@ module private Read =
             let eventsForward = Array.Reverse(tempBackward); tempBackward // sic - relatively cheap, in-place reverse of something we own
             let version = match versionFromStream.Value with Some version -> version | None -> invalidOp "no version encountered in event batch stream"
             return version, eventsForward }
-        let call pos = loggedReadSlice conn streamName Direction.Backward batchSize pos
+        let call = loggedReadSlice conn streamName Direction.Backward batchSize
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
         let startPosition = int64 Position.End
@@ -434,20 +434,20 @@ type private Category<'event, 'state, 'context>(context : SqlStreamStoreContext,
         | None -> context.LoadBatched(streamName, requireLeader, log, tryDecode, None, ct)
         | Some AccessStrategy.LatestKnownEvent
         | Some (AccessStrategy.RollingSnapshots _) -> context.LoadBackwardsStoppingAtCompactionEvent(streamName, requireLeader, log, tryDecode, isOrigin, ct)
-    let load (fold : 'state -> 'event seq -> 'state) initial f = task {
+
+    let load (fold : 'state -> 'event seq -> 'state) initial f : Task<struct (StreamToken * 'state)> = task {
         let! token, events = f
         return struct (token, fold initial events) }
 
-    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, streamName : string, requireLeader, log : ILogger, ct)
-        : Task<struct (StreamToken * 'state)> =
+    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, streamName : string, requireLeader, log, ct) =
         load fold initial (loadAlgorithm streamName requireLeader log ct)
-    member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName : string, requireLeader, token, log : ILogger, ct)
-        : Task<struct (StreamToken * 'state)> =
+    member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName : string, requireLeader, token, log, ct) =
         load fold state (context.Reload(streamName, requireLeader, log, token, tryDecode, compactionPredicate, ct))
 
     member _.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
-            streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event array, ctx : 'context, ct) : Task<SyncResult<'state>> = task {
+            streamName, (Token.Unpack token as streamToken), state : 'state, events : 'event array, ctx : 'context, ct)
+        : Task<SyncResult<'state>> = task {
         let encode e = codec.Encode(ctx, e)
         let events =
             match access with

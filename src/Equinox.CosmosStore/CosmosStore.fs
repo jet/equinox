@@ -1116,7 +1116,7 @@ module internal Caching =
             tryReadCache : string -> Task<voption<struct (StreamToken * 'state)>>, updateCache : string -> struct (StreamToken * 'state) -> Task<unit>,
             checkUnfolds, compressUnfolds,
             mapUnfolds : Choice<unit, 'event array -> 'state -> 'event array, 'event array -> 'state -> 'event array * 'event array>) =
-        let cache streamName (inner : CancellationToken -> Task<_>) ct = task {
+        let cache streamName (inner : CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {
             let! tokenAndState = inner ct
             do! updateCache streamName tokenAndState
             return tokenAndState }
