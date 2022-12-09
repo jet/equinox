@@ -630,7 +630,7 @@ module internal Query =
         use _ = query // see https://github.com/jet/equinox/issues/225 - in the Cosmos V4 SDK, all this is managed IAsyncEnumerable
         let mutable i = 0
         while query.HasMoreResults do
-            let! t, (res : FeedResponse<'t>) = Stopwatch.time ct (fun ct -> query.ReadNextAsync ct)
+            let! t, (res : FeedResponse<'t>) = (fun ct -> query.ReadNextAsync(ct)) |> Stopwatch.time ct
             yield map i t res }
     let private mkQuery (log : ILogger) (container : Container, stream : string) includeTip (maxItems : int) (direction : Direction, minIndex, maxIndex) : FeedIterator<Batch> =
         let order = if direction = Direction.Forward then "ASC" else "DESC"
@@ -762,7 +762,7 @@ module internal Query =
 
     let walkLazy<'event> (log : ILogger) (container, stream) maxItems maxRequests
         (tryDecode : ITimelineEvent<EventBody> -> 'event option, isOrigin : 'event -> bool)
-        (direction, minIndex, maxIndex, ct)
+        (direction, minIndex, maxIndex, ct : CancellationToken)
         : IAsyncEnumerable<'event[]> = taskSeq {
         let query = mkQuery log (container, stream) true maxItems (direction, minIndex, maxIndex)
 
@@ -885,7 +885,7 @@ module Prune =
 
             let tip = { tip with i = tip.i + int64 count; e = Array.skip count tip.e }
             let ro = ItemRequestOptions(EnableContentResponseOnWrite = false, IfMatchEtag = tip._etag)
-            let! t, updateRes = container.ReplaceItemAsync(tip, tip.id, PartitionKey stream, ro, ct) |> Async.AwaitTaskCorrect |> Stopwatch.Time
+            let! t, updateRes = (fun ct -> container.ReplaceItemAsync(tip, tip.id, PartitionKey stream, ro, ct)) |> Stopwatch.time ct
             let rc, ms = tipRu + updateRes.RequestCharge, t.ElapsedMilliseconds
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
@@ -1599,9 +1599,8 @@ module Events =
     /// NB typically, it is recommended to ensure idempotency of operations by using the `append` and related API as
     /// this facilitates ensuring consistency is maintained, and yields reduced latency and Request Charges impacts
     /// (See equivalent APIs on `Context` that yield `Position` values)
-    let appendAtEnd (ctx : EventsContext) (streamName : string) (events : IEventData<_>[]) : Async<int64> = async {
-        let! ct = Async.CancellationToken
-        return! ctx.NonIdempotentAppend(ctx.StreamId streamName, events) |> stripPosition }
+    let appendAtEnd (ctx : EventsContext) (streamName : string) (events : IEventData<_>[]) : Async<int64> =
+        ctx.NonIdempotentAppend(ctx.StreamId streamName, events) |> stripPosition
 
     /// Requests deletion of events up and including the specified <c>index</c>.
     /// Due to the need to preserve ordering of data in the stream, only complete Batches will be removed.

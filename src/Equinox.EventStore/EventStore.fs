@@ -236,8 +236,8 @@ module private Read =
         let retryingLoggingReadSlice pos = Log.withLoggedRetries retryPolicy "readAttempt" (call pos)
         let direction = Direction.Forward
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
-        let batches : IAsyncEnumerable<int64 option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
-        let! t, (version, events) = Stopwatch.time CancellationToken.None <| fun _ct -> mergeBatches batches
+        let batches _ct : IAsyncEnumerable<int64 option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition
+        let! t, (version, events) = (batches >> mergeBatches) |> Stopwatch.time CancellationToken.None
         log |> logBatchRead direction streamName t events batchSize version
         return version, events }
 

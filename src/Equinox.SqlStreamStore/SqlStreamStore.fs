@@ -228,7 +228,7 @@ module private Read =
         let direction = Direction.Forward
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "direction" direction |> Log.prop "stream" streamName
         let batches ct : IAsyncEnumerable<int64 option * ResolvedEvent[]> = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition ct
-        let! t, (version, events) = (fun ct -> batches ct |> mergeBatches) |> Stopwatch.time ct
+        let! t, (version, events) = (batches >> mergeBatches) |> Stopwatch.time ct
         log |> logBatchRead direction streamName t events batchSize version
         return version, events }
     let partitionPayloadFrom firstUsedEventNumber : ResolvedEvent[] -> int * int =
@@ -266,7 +266,7 @@ module private Read =
         let direction = Direction.Backward
         let readlog = log |> Log.prop "direction" direction
         let batchesBackward ct : IAsyncEnumerable<int64 option * ResolvedEvent[]> = readBatches readlog retryingLoggingReadSlice maxPermittedBatchReads startPosition ct
-        let! t, (version, events) = (fun ct -> batchesBackward ct |> mergeFromCompactionPointOrStartFromBackwardsStream log) |> Stopwatch.time ct
+        let! t, (version, events) = (batchesBackward >> mergeFromCompactionPointOrStartFromBackwardsStream log) |> Stopwatch.time ct
         log |> logBatchRead direction streamName t (Array.map ValueTuple.fst events) batchSize version
         return version, events }
 
