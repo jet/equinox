@@ -14,8 +14,11 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="6.0.7" />
-    
+    <PackageReference Include="FSharp.Core" Version="6.0.7">
+      <!-- Workaround for malformed FSharp.Core packages https://github.com/dotnet/fsharp/issues/12706 via https://github.com/fsprojects/Paket/issues/4149-->
+      <!-- Removal triggers issues in dotnet publish, e.g. for Lambda projects -->
+      <ExcludeAssets>contentFiles</ExcludeAssets>
+    </PackageReference>    
     <PackageReference Include="FSharp.UMX" Version="1.1.0" />
   </ItemGroup>
 </Project>

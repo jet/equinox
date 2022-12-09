@@ -13,7 +13,11 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="6.0.7" />
+    <PackageReference Include="FSharp.Core" Version="6.0.7">
+      <!-- Workaround for malformed FSharp.Core packages https://github.com/dotnet/fsharp/issues/12706 via https://github.com/fsprojects/Paket/issues/4149-->
+      <!-- Removal triggers issues in dotnet publish, e.g. for Lambda projects -->
+      <ExcludeAssets>contentFiles</ExcludeAssets>
+    </PackageReference>
 
     <PackageReference Include="FsCodec" Version="3.0.0-rc.9" />
     <PackageReference Include="FSharp.AWS.DynamoDB" Version="0.11.2-beta" />
