@@ -549,7 +549,7 @@ module Initialization =
             return c }
 
     let private createStoredProcIfNotExists (c : Container) (name, body) ct : Task<float> = task {
-        try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct) |> Async.AwaitTaskCorrect
+        try let! r = c.Scripts.CreateStoredProcedureAsync(Scripts.StoredProcedureProperties(id = name, body = body), cancellationToken = ct)
             return r.RequestCharge
         with :? CosmosException as ce when ce.StatusCode = System.Net.HttpStatusCode.Conflict -> return ce.RequestCharge }
     let private applyBatchAndTipContainerProperties (cp : ContainerProperties) =
