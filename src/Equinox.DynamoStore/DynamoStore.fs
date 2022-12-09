@@ -906,7 +906,7 @@ module internal Query =
 module internal Prune =
 
     let until (log : ILogger) (container : Container, stream : string) maxItems indexInclusive ct : Task<int * int * int64> = task {
-        let log = log |> Log.prop "stream" stream
+        let log = log |> Log.prop "stream2" stream
         let deleteItem i count : Task<RequestConsumption> = task {
             let! t, rc = (fun ct -> container.DeleteItem(stream, i, ct)) |> Stopwatch.time ct
             let reqMetric = Log.metric container.TableName stream t -1 count rc
@@ -967,15 +967,15 @@ module internal Prune =
                             lwm <- Some x.index
                 return (rc, delCharges, trimCharges), lwm, (batchesDeleted + batchesTrimmed, eventsDeleted, eventsDeferred) }
             let hasRelevantItems (batches, _rc) = batches |> Array.exists isRelevant
-            query
-            >> TaskSeq.map mapPage
-            >> TaskSeq.takeWhile hasRelevantItems
-            >> TaskSeq.mapAsync handle
-            >> TaskSeq.toArrayAsync
-            |> Stopwatch.time ct
-        let mutable queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = 0., 0., 0., 0, 0, 0, 0
-        let mutable lwm = None
-        for (qc, dc, tc), bLwm, (bCount, eDel, eDef) in outcomes do
+            let load ct =
+                query ct
+                |> TaskSeq.map mapPage
+                |> TaskSeq.takeWhile hasRelevantItems
+                |> TaskSeq.mapAsync handle
+                |> TaskSeq.toArrayAsync
+            load |> Stopwatch.time ct
+        let mutable lwm, queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = None, 0., 0., 0., 0, 0, 0, 0
+        let accumulate ((qc, dc, tc), bLwm, (bCount, eDel, eDef)) =
             lwm <- max lwm bLwm
             queryCharges <- queryCharges + qc.total
             delCharges <- delCharges + dc
@@ -984,13 +984,13 @@ module internal Prune =
             batches <- batches + bCount
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
+        outcomes |> Array.iter accumulate
         let reqMetric = Log.metric container.TableName stream pt eventsDeleted batches { total = queryCharges }
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxDynamo {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
                         "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
-        return eventsDeleted, eventsDeferred, lwm
-    }
+        return eventsDeleted, eventsDeferred, lwm }
 
 type [<NoComparison; NoEquality>] Token = { pos : Position option }
 module Token =

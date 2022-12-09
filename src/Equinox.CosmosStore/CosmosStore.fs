@@ -931,14 +931,14 @@ module Prune =
                             lwm <- Some x.i
                 return (rc, delCharges, trimCharges), lwm, (batchesDeleted + batchesTrimmed, eventsDeleted, eventsDeferred) }
             let hasRelevantItems (batches, _rc) = batches |> Array.exists isRelevant
-            Query.feedIteratorMapTi mapPage query
-            >> TaskSeq.takeWhile hasRelevantItems
-            >> TaskSeq.mapAsync handle
-            >> TaskSeq.toArrayAsync
-            |> Stopwatch.time ct
-        let mutable queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = 0., 0., 0., 0, 0, 0, 0
-        let mutable lwm = None
-        for (qc, dc, tc), bLwm, (bCount, eDel, eDef) in outcomes do
+            let loadOutcomes ct =
+                Query.feedIteratorMapTi mapPage query ct
+                |> TaskSeq.takeWhile hasRelevantItems
+                |> TaskSeq.mapAsync handle
+                |> TaskSeq.toArrayAsync
+            loadOutcomes |> Stopwatch.time ct
+        let mutable lwm, queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = None, 0., 0., 0., 0, 0, 0, 0
+        let accumulate ((qc, dc, tc), bLwm, (bCount, eDel, eDef)) =
             lwm <- max lwm bLwm
             queryCharges <- queryCharges + qc
             delCharges <- delCharges + dc
@@ -947,13 +947,13 @@ module Prune =
             batches <- batches + bCount
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
+        outcomes |> Array.iter accumulate
         let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
-                "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
-        return eventsDeleted, eventsDeferred, lwm
-    }
+                        "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
+        return eventsDeleted, eventsDeferred, lwm }
 
 type [<NoComparison>] Token = { pos : Position }
 module Token =
