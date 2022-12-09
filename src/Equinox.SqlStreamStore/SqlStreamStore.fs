@@ -2,9 +2,10 @@
 
 open Equinox.Core
 open Serilog
-open System
 open SqlStreamStore
 open SqlStreamStore.Streams
+open System
+open System.Threading
 
 type EventBody = ReadOnlyMemory<byte>
 type EventData = NewStreamMessage
@@ -78,8 +79,8 @@ module Log =
                 { mutable count : int64; mutable ms : int64 }
                 static member Create() = { count = 0L; ms = 0L }
                 member x.Ingest(ms) =
-                    System.Threading.Interlocked.Increment(&x.count) |> ignore
-                    System.Threading.Interlocked.Add(&x.ms, ms) |> ignore
+                    Interlocked.Increment(&x.count) |> ignore
+                    Interlocked.Add(&x.ms, ms) |> ignore
             type LogSink() =
                 static let epoch = System.Diagnostics.Stopwatch.StartNew()
                 static member val Read = Counter.Create() with get, set

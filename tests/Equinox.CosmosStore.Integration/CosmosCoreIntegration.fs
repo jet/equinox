@@ -151,12 +151,12 @@ type Tests(testOutputHelper) =
         else verifyRequestChargesMax 448 // 447.5 // 463.01 observed
         capture.Clear()
 
-        let! pos = ctx.Sync(stream,?position=None)
+        let! pos = ctx.Sync(stream, ?position = None)
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 5 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
         capture.Clear()
 
-        let! _pos = ctx.Sync(stream,pos)
+        let! _pos = ctx.Sync(stream, pos)
         test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
         verifyRequestChargesMax 1 // for a 304 by definition - when an etag IfNotMatch is honored, you only pay one RU
     }

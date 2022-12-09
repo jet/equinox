@@ -882,8 +882,7 @@ module Prune =
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Delete reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {id} {ms:f1}ms {ru}RU", "Delete", id, ms, rc)
-            return rc
-        }
+            return rc }
         let trimTip expectedI count = async {
             match! container.TryReadItem<Tip>(PartitionKey stream, Tip.WellKnownDocumentId) with
             | _, ReadResult.NotModified -> return failwith "unexpected NotModified; no etag supplied"
@@ -898,8 +897,7 @@ module Prune =
             let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = t; bytes = -1; count = count; ru = rc }
             let log = let evt = Log.Metric.Trim reqMetric in log |> Log.event evt
             log.Information("EqxCosmos {action:l} {count} {ms:f1}ms {ru}RU", "Trim", count, ms, rc)
-            return rc
-        }
+            return rc }
         let log = log |> Log.prop "index" indexInclusive
         let query : FeedIterator<BatchIndices> =
              let qro = QueryRequestOptions(PartitionKey = PartitionKey stream, MaxItemCount = maxItems)
@@ -938,18 +936,16 @@ module Prune =
                         eventsDeferred <- eventsDeferred + eligibleEvents
                         if lwm = None then
                             lwm <- Some x.i
-                return (rc, delCharges, trimCharges), lwm, (batchesDeleted + batchesTrimmed, eventsDeleted, eventsDeferred)
-            }
+                return (rc, delCharges, trimCharges), lwm, (batchesDeleted + batchesTrimmed, eventsDeleted, eventsDeferred) }
             let hasRelevantItems (batches, _rc) = batches |> Array.exists isRelevant
-            query
-            |> Query.feedIteratorMapTi mapPage
-            |> AsyncSeq.takeWhile hasRelevantItems
-            |> AsyncSeq.mapAsync handle
-            |> AsyncSeq.toArrayAsync
-            |> Stopwatch.Time
-        let mutable queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = 0., 0., 0., 0, 0, 0, 0
-        let mutable lwm = None
-        for (qc, dc, tc), bLwm, (bCount, eDel, eDef) in outcomes do
+            let loadOutcomes query =
+                Query.feedIteratorMapTi mapPage query
+                |> AsyncSeq.takeWhile hasRelevantItems
+                |> AsyncSeq.mapAsync handle
+                |> AsyncSeq.toArrayAsync
+            loadOutcomes query |> Stopwatch.Time
+        let mutable lwm, queryCharges, delCharges, trimCharges, responses, batches, eventsDeleted, eventsDeferred = None, 0., 0., 0., 0, 0, 0, 0
+        let accumulate ((qc, dc, tc), bLwm, (bCount, eDel, eDef)) =
             lwm <- max lwm bLwm
             queryCharges <- queryCharges + qc
             delCharges <- delCharges + dc
@@ -958,13 +954,13 @@ module Prune =
             batches <- batches + bCount
             eventsDeleted <- eventsDeleted + eDel
             eventsDeferred <- eventsDeferred + eDef
+        outcomes |> Array.iter accumulate
         let reqMetric : Log.Measurement = { database = container.Database.Id; container = container.Id; stream = stream; interval = pt; bytes = eventsDeleted; count = batches; ru = queryCharges }
         let log = let evt = Log.Metric.Prune (responses, reqMetric) in log |> Log.event evt
         let lwm = lwm |> Option.defaultValue 0L // If we've seen no batches at all, then the write position is 0L
         log.Information("EqxCosmos {action:l} {events}/{batches} lwm={lwm} {ms:f1}ms queryRu={queryRu} deleteRu={deleteRu} trimRu={trimRu}",
-                "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
-        return eventsDeleted, eventsDeferred, lwm
-    }
+                        "Prune", eventsDeleted, batches, lwm, pt.ElapsedMilliseconds, queryCharges, delCharges, trimCharges)
+        return eventsDeleted, eventsDeferred, lwm }
 
 type [<NoComparison>] Token = { pos : Position }
 module Token =
@@ -1087,7 +1083,6 @@ type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IE
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ?preview = preloaded) |> Async.startAsTask ct with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-
     member cat.Sync(log, streamName, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) : Async<SyncResult<'state>> = async {
         let state' = fold state (Seq.ofArray events)
         let encode e = codec.Encode(context, e)
@@ -1125,27 +1120,27 @@ module internal Caching =
     type CachingCategory<'event, 'state, 'context>
         (   category : Category<'event, 'state, 'context>,
             fold : 'state -> 'event seq -> 'state, initial : 'state, isOrigin : 'event -> bool,
-            tryReadCache, updateCache : _ -> struct (_*_) -> Task<unit>,
+            tryReadCache : string -> Task<voption<struct (StreamToken * 'state)>>, updateCache : string -> struct (StreamToken * 'state) -> Task<unit>,
             checkUnfolds, compressUnfolds,
-            mapUnfolds : Choice<unit, ('event array -> 'state -> 'event array), 'event array -> 'state -> 'event array * 'event array>) =
-        let cache streamName (inner : unit -> Task<_>) = task {
-            let! struct (token, state) = inner ()
-            do! updateCache streamName (token, state)
-            return struct (token, state) }
+            mapUnfolds : Choice<unit, 'event array -> 'state -> 'event array, 'event array -> 'state -> 'event array * 'event array>) =
+        let cache streamName (inner : CancellationToken -> Task<_>) ct = task {
+            let! tokenAndState = inner ct
+            do! updateCache streamName tokenAndState
+            return tokenAndState }
         interface ICategory<'event, 'state, 'context> with
-            member _.Load(log, _categoryName, _streamId, streamName, allowStale, _requireLeader, ct) : Task<struct (StreamToken * 'state)> = task {
-                match! tryReadCache streamName : Task<struct (_*_) voption> with
-                | ValueNone -> return! (fun () -> category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin, ct)) |> cache streamName
-                | ValueSome struct (token, state) when allowStale -> return struct (token, state) // read already updated TTL, no need to write
-                | ValueSome (token, state) -> return! (fun () -> category.Reload(log, streamName, token, state, fold, isOrigin, ct)) |> cache streamName }
+            member _.Load(log, _categoryName, _streamId, streamName, allowStale, _requireLeader, ct) = task {
+                match! tryReadCache streamName with
+                | ValueNone -> return! cache streamName (fun ct -> category.Load(log, streamName, initial, checkUnfolds, fold, isOrigin, ct)) ct
+                | ValueSome tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
+                | ValueSome (token, state) -> return! cache streamName (fun ct -> category.Reload(log, streamName, token, state, fold, isOrigin, ct)) ct }
             member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, maybeInit, streamToken, state, events, ct) : Task<SyncResult<'state>> = task {
                 match maybeInit with ValueNone -> () | ValueSome i -> do! i ct
-                match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) |> Async.startAsTask ct with
+                match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds) with
                 | SyncResult.Conflict resync ->
-                    return SyncResult.Conflict (fun ct -> cache streamName (fun () -> resync ct))
-                | SyncResult.Written (token', state') ->
-                    do! updateCache streamName struct (token', state')
-                    return SyncResult.Written (token', state') }
+                    return SyncResult.Conflict (cache streamName resync)
+                | SyncResult.Written tokenAndState' ->
+                    do! updateCache streamName tokenAndState'
+                    return SyncResult.Written tokenAndState' }
 
 module ConnectionString =
 
@@ -1224,7 +1219,7 @@ type CosmosClientFactory
     /// Creates and validates a Client [including loading metadata](https://devblogs.microsoft.com/cosmosdb/improve-net-sdk-initialization) for the specified containers
     member x.CreateAndInitialize(discovery : Discovery, containers) = async {
         let! ct = Async.CancellationToken
-       match discovery with //
+        match discovery with
         | Discovery.AccountUriAndKey (accountUri = uri; key = key) -> return! CosmosClient.CreateAndInitializeAsync(string uri, key, containers, x.Options, ct) |> Async.AwaitTaskCorrect
         | Discovery.ConnectionString cs -> return! CosmosClient.CreateAndInitializeAsync(cs, containers, x.Options) |> Async.AwaitTaskCorrect }
 

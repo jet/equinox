@@ -2,11 +2,11 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <DisableImplicitFSharpCoreReference>false</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="..\..\src\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
+    <Compile Include="..\..\src\Equinox.Core\Internal.fs" Link="Internal.fs" />
     <Compile Include="..\..\samples\Store\Integration\TestOutput.fs" Link="TestOutput.fs" />
     <Compile Include="CosmosFixtures.fs" />
     <Compile Include="CosmosFixturesInfrastructure.fs" />
