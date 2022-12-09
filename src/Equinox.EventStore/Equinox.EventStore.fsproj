@@ -18,11 +18,11 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="6.0.0" />
+    <PackageReference Include="FSharp.Core" Version="6.0.2" />
 
     <PackageReference Include="EventStore.Client" Version="22.0.0-preview" />
     <PackageReference Include="FsCodec" Version="3.0.0-rc.9" />
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
+    <PackageReference Include="FSharp.Control.TaskSeq" Version="0.3.0" />
   </ItemGroup>
 
 </Project>

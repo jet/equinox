@@ -13,7 +13,7 @@ let private archiveTableName = tryRead "EQUINOX_DYNAMO_TABLE_ARCHIVE" |> Option.
 
 let discoverConnection () =
     match tryRead "EQUINOX_DYNAMO_CONNECTION" with
-    | None -> "dynamodb-local", "http://localhost:8000"
+    | None -> "dynamodb-local", "http://localhost:8000" // OR: change to "https://dynamodb.eu-west-1.amazonaws.com" to hit prod instance
     | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString
 
 let createClient (log : Serilog.ILogger) name serviceUrl =
@@ -21,6 +21,7 @@ let createClient (log : Serilog.ILogger) name serviceUrl =
     let clientConfig = AmazonDynamoDBConfig(ServiceURL = serviceUrl)
     log.Information("DynamoStore {name} {endpoint}", name, serviceUrl)
     // Credentials are not validated if connecting to local instance so anything will do (this avoids it looking for profiles to be configured)
+    // OR: don't pass credentials to ctor to use keychain configured access
     let credentials = Amazon.Runtime.BasicAWSCredentials("A", "A")
     new AmazonDynamoDBClient(credentials, clientConfig) :> IAmazonDynamoDB
 

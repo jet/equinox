@@ -12,7 +12,7 @@
   <ItemGroup>
     <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
 
-    <PackageReference Include="FSharp.Core" Version="6.0.0" />
+    <PackageReference Include="FSharp.Core" Version="6.0.2" />
 
     <PackageReference Include="SqlStreamStore.Postgres" Version="1.2.0-beta.8" />
   </ItemGroup>

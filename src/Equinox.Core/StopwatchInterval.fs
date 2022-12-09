@@ -34,7 +34,7 @@ and [<Struct; NoEquality; NoComparison>] StopwatchInterval(startTicks : int64, e
 
 module Stopwatch =
     [<DebuggerStepThrough>]
-    let time (ct : CancellationToken) (f : CancellationToken -> Task<'T>) : Task<struct (StopwatchInterval * 'T)> = task {
+    let time (ct : 'a) (f : 'a -> Task<'T>) : Task<struct (StopwatchInterval * 'T)> = task {
         let startTicks = Stopwatch.GetTimestamp()
         let! result = f ct
         let endTicks = Stopwatch.GetTimestamp()

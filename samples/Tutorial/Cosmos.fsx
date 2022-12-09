@@ -14,7 +14,7 @@
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
 #r "FsCodec.SystemTextJson.dll"
-#r "FSharp.Control.AsyncSeq.dll"
+#r "FSharp.Control.TaskSeq.dll"
 #r "Microsoft.Azure.Cosmos.Client.dll"
 #r "System.Net.Http"
 #r "Serilog.Sinks.Seq.dll"

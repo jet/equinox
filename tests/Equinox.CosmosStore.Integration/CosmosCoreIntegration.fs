@@ -1,5 +1,6 @@
 ﻿module Equinox.CosmosStore.Integration.CosmosCoreIntegration
 
+open Equinox.Core // TaskSeq extensions
 open Equinox.CosmosStore.Core
 open FsCodec
 open FSharp.Control
@@ -151,12 +152,12 @@ type Tests(testOutputHelper) =
         else verifyRequestChargesMax 448 // 447.5 // 463.01 observed
         capture.Clear()
 
-        let! pos = ctx.Sync(stream,?position=None)
+        let! pos = ctx.Sync(stream, ?position = None)
         test <@ [EqxAct.Tip] = capture.ExternalCalls @>
         verifyRequestChargesMax 5 // 41 observed // for a 200, you'll pay a lot (we omitted to include the position that NonIdempotentAppend yielded)
         capture.Clear()
 
-        let! _pos = ctx.Sync(stream,pos)
+        let! _pos = ctx.Sync(stream, pos)
         test <@ [EqxAct.TipNotModified] = capture.ExternalCalls @>
         verifyRequestChargesMax 1 // for a 304 by definition - when an etag IfNotMatch is honored, you only pay one RU
     }
@@ -238,7 +239,8 @@ type Tests(testOutputHelper) =
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
-        let! res = Events.getAll ctx streamName 0L 1 |> AsyncSeq.concatSeq |> AsyncSeq.takeWhileInclusive (fun _ -> false) |> AsyncSeq.toArrayAsync
+        let! seq = Events.getAll ctx streamName 0L 1
+        let! res = seq |> TaskSeq.takeWhileInclusive (fun _ -> false) |> TaskSeq.collectSeq id |> TaskSeq.toArrayAsync |> Async.AwaitTask
         let expected = expected |> Array.take 1
 
         verifyCorrectEvents 0L expected res
@@ -294,11 +296,12 @@ type Tests(testOutputHelper) =
 
         let! expected = add6EventsIn2BatchesEx ctx streamName 4
 
+        let! res = Events.getAllBackwards ctx streamName 10L 1
         let! res =
-            Events.getAllBackwards ctx streamName 10L 1
-            |> AsyncSeq.concatSeq
-            |> AsyncSeq.takeWhileInclusive (fun x -> x.Index <> 4L)
-            |> AsyncSeq.toArrayAsync
+            res
+            |> TaskSeq.collectSeq id
+            |> TaskSeq.takeWhileInclusive (fun x -> x.Index <> 4L)
+            |> TaskSeq.toArrayAsync |> Async.AwaitTask
         let expected = expected |> Array.skip 4 // omit index 0, 1 as we vote to finish at 2L
 
         verifyCorrectEventsBackward 5L expected res
