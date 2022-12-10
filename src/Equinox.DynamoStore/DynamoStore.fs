@@ -1388,8 +1388,14 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
 
 module Exceptions =
 
+    let rec private anyInnerHas predicate (x : AggregateException) =
+        match x.InnerException with
+        | :? AggregateException as iae -> anyInnerHas predicate iae
+        | ie -> predicate ie
+
     let [<return: Struct>] (|ProvisionedThroughputExceeded|_|) : exn -> unit voption = function
         | :? Amazon.DynamoDBv2.Model.ProvisionedThroughputExceededException -> ValueSome ()
+        | :? AggregateException as e when e |> anyInnerHas (fun x -> x :? Amazon.DynamoDBv2.Model.ProvisionedThroughputExceededException) -> ValueSome ()
         | _ -> ValueNone
 
 namespace Equinox.DynamoStore.Core
