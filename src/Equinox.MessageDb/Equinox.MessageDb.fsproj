@@ -29,7 +29,7 @@
         <PackageReference Include="FSharp.Core" Version="6.0.7" />
         <PackageReference Include="FSharp.Control.TaskSeq" Version="0.3.0" />
         <PackageReference Include="FsCodec" Version="3.0.0-rc.9" />
-        <PackageReference Include="Npgsql" Version="6.0.7" />
+        <PackageReference Include="Npgsql" Version="7.0.0" />
     </ItemGroup>
 
 </Project>
