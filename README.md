@@ -35,6 +35,7 @@ It does not and will not handle projections and subscriptions. See [Propulsion](
 
 - If you want to start with code samples that run in F# interactive, [there's a simple `Counter` example using `Equinox.MemoryStore`](https://github.com/jet/equinox/blob/master/samples/Tutorial/Counter.fsx#L20)
 - If you are experienced with event sourcing, CosmosDB and F#, you might gain most from this [100 LOC end-to-end example using CosmosDB](https://github.com/jet/equinox/blob/master/samples/Tutorial/Cosmos.fsx#L42) 
+- If you are familiar with basic event sourcing mechanisms and want a meatier example of applying Equinox to a problem, [Einar Norðfjörð](https://github.com/nordfjord)'s article, [The Equinox Programming model](https://nordfjord.io/2022/12/05/equinox.html) walks through a [complete end-to-end sample](https://github.com/nordfjord/minimal-equinox) covering the key design considerations.
 - If you are experienced with CosmosDB and something like [CosmoStore](https://github.com/Dzoukr/CosmoStore), but want to understand what sort of facilities Equinox adds on top of raw event management, see the [Access Strategies guide](https://github.com/jet/equinox/blob/master/DOCUMENTATION.md#access-strategies)
 
 # Design Motivation
