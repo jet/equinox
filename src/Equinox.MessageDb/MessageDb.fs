@@ -303,11 +303,21 @@ module private Snapshot =
         | ValueSome decoded -> ValueSome struct(events[0] |> streamVersion |> Token.create, decoded)
         | ValueNone -> ValueNone
 
-type MessageDbConnection(reader, writer, [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-    member val Reader = reader
+type MessageDbConnection internal (reader, writer, ?readRetryPolicy, ?writeRetryPolicy) =
+    member val internal Reader = reader
     member val ReadRetryPolicy = readRetryPolicy
-    member val Writer = writer
+    member val internal Writer = writer
     member val WriteRetryPolicy = writeRetryPolicy
+    new(connectionString : string,
+        // Can be used to divert reads to a replica
+        // Conflicts detected on write trigger a resync, reading via the `connectionString` to maximize the freshness of the data for the retry
+        [<O; D(null)>]?readConnectionString : string,
+        [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
+
+        let readConnectionString = defaultArg readConnectionString connectionString
+        let reader = MessageDbReader(readConnectionString, connectionString)
+        let writer = MessageDbWriter(connectionString)
+        MessageDbConnection(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
 
 type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
     new (batchSize) = BatchOptions(fun () -> batchSize)
@@ -479,17 +489,3 @@ type MessageDbCategory<'event, 'state, 'context>(resolveInner, empty) =
         let resolveInner categoryName streamId = struct (category, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         MessageDbCategory(resolveInner, empty)
-
-type MessageDbConnector
-    (   connectionString : string,
-        // Can be used to divert reads to a replica
-        // Conflicts detected on write trigger a resync, reading via the `connectionString` to maximize the freshness of the data for the retry
-        [<O; D(null)>]?readConnectionString : string,
-        [<O; D(null)>]?readRetryPolicy, [<O; D(null)>]?writeRetryPolicy) =
-
-    let readConnectionString = defaultArg readConnectionString connectionString
-
-    member _.Establish() : MessageDbConnection =
-        let reader = MessageDbReader(readConnectionString, connectionString)
-        let writer = MessageDbWriter(connectionString)
-        MessageDbConnection(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
