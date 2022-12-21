@@ -727,25 +727,25 @@ All non-alpha releases derive from tagged commits on `master`. The tag defines t
 OK, I've read the README and the tagline. I still don't know what it does! Really, what's the TL;DR ?
 
 - supports storing events in [EventStore](https://eventstore.org), including working with existing data you may have (that's where it got its start)
-- includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDB account to get going
+- includes a proprietary optimized Store implementation that only needs an empty Azure CosmosDB Account or Amazon DynamoDB Table to get going
 - provides all the necessary infrastructure to build idempotent synchronous command processing against all of the stores; your Domain code intentionally doesn't need to reference *any* Equinox modules whatsoever (although for smaller systems, you'll often group `Events`+`Fold`+`interpret`/`decide`+`Service` in a single `module`, which implies a reference to [the core `Equinox` package](src/Equinox)).
 - following on from the previous point: you just write the unit tests without any Equinox-specific hoops to jump through; this really works very well indeed, assuming you're writing the domain code and the tests in F#. If you're working in a more verbose language, you may end up building some test helpers. We don't envisage Equinox mandating a specific pattern on the unit testing side (consistent naming such as `Events.Event`+`evolve`+`fold`+`Command`+`interpret`/`decide` can help though).
 - it helps with integration testing decision processes by
   - staying out of your way as much as possible
-  - providing an in-memory store that implements the same interface as the EventStore and CosmosDB stores do
-- There is a projection story, but it's not the last word - any 3 proper architects can come up with at least 3 wrong and 3 right ways of running those perfectly
-  - For EventStore, you use its' projections; they're great. There's a `Propulsion.EventStore` which serves the needs of `dotnet new proSync`, [but it's not intended for application level projections as yet](https://github.com/jet/propulsion/issues/8).
-  - for CosmosDB, you use the `Propulsion.CosmosStore.*` libraries to work off the CosmosDB ChangeFeed using the `Microsoft.Azure.Cosmos` library's change feed support (and, optionally, project to/consume from Kafka) using the sample app templates (`dotnet new proProjector`).
+  - providing an in-memory store that implements the same interface as the concrete stores (CosmosDB, EventStore, etc.)  stores do
+- There is a projection story, but it's not baked in - any 3 proper architects can come up with at least 3 wrong and 3 right ways of running those:-
+  - For EventStore, you can use its' projections facilities directly. There's also a `Propulsion.EventStore` that serves the needs of `dotnet new proSync`..
+  - for CosmosDB, you use the `Propulsion.CosmosStore` libraries to consume the CosmosDB ChangeFeed using the `Microsoft.Azure.Cosmos` library's change feed support (and, optionally, project to/consume from Kafka) using the sample app templates (`dotnet new proProjector`).
 
 ### Should I use Equinox to learn event sourcing ?
 
-You _could_. However the Equinox codebase here is not designed to be a tutorial; it's also extracted from systems with no pedagogical mission whatsoever. [FsUno.Prod](https://github.com/thinkbeforecoding/FsUno.Prod) on the other hand has this specific intention, walking though it is highly recommended. Also [EventStore](https://eventstore.org/), being a widely implemented and well-respected open source system has some excellent learning materials and documentation with a wide usage community (search for `DDD-CQRS-ES` mailing list and Discord).
+You _could_. However the Equinox codebase itself is not designed to be a tutorial; it's extracted from production systems and optimized; there is no pedagogical mission. [FsUno.Prod](https://github.com/thinkbeforecoding/FsUno.Prod) on the other hand has this specific intention, walking though that is highly recommended. Also [EventStore](https://eventstore.org/), being a widely implemented and well-respected open source system has some excellent learning materials and documentation with a wide usage community (search for `DDD-CQRS-ES` Discord).
 
 Having said that, we'd love to see a set of tutorials written by people looking from different angles, and over time will likely do one too ... there's no reason why the answer to this question can't become "**of course!**"
 
 ### Can I use it for really big projects?
 
-You can. Folks in Jet do; we also have systems where we have no plans to use it, or anything like it. That's OK; there are systems where having precise control over one's data access is critical. And (shush, don't tell anyone!) some find writing this sort of infrastructure to be a very fun design challenge that beats doing domain modelling any day ...
+You can. Folks in Jet do; we also have systems where we have no plans to use it, or anything like it. That's OK; there are systems where having precise control over one's data access is critical. And (shush, don't tell anyone!) some find writing this sort of infrastructure to be a very fun design challenge that beats doing domain modelling any day...
 
 ### Can I use it for really small projects and tiny microservices?
 
@@ -759,13 +759,13 @@ Having said that, getting good logging, some integration tests and getting lots 
 
 ### What client languages are supported ?
 
-The main language in mind for consumption is of course F# - many would say that F# and event sourcing are a dream pairing; little direct effort has been expended polishing it to be comfortable to consume from other .NET languages, the `dotnet new eqxwebcs` template represents the current state. In Equinox V4, the `DeciderCore` interface offers an interface that uses C#-friendly `Task` and `Func` types (compared to `Decider`, which uses `async` and curried function signatures to provide an idiomatic F# experience, which is possible, but very cumbersome to use from C#) 
+The main language in mind for consumption is of course F# - many would say that F# and event sourcing are a dream pairing; little direct effort has been expended polishing it to be comfortable to consume from other .NET languages, the `dotnet new eqxwebcs` template represents the current state. In Equinox V4, the `DeciderCore` interface offers an interface that uses C#-friendly `Task` and `Func` types (compared to `Decider`, which uses `async` and curried function signatures to provide an idiomatic F# experience, which is possible, but cumbersome to use from C#) 
 
 ## You say I can use volatile memory for integration tests, could this also be used for learning how to get started building event sourcing programs with equinox? 
 
-The `MemoryStore` is intended to implement the complete semantics of a durable store (aside from caching). The main benefit of using it is that any tests using it have zero environment dependencies. In some cases this can be very useful for demo apps or generators (rather than assuming a specific store at a specific endpoint and/or credentials, there is something to point at which does not require configuration or assumptions.). The single problem of course is that it's all in-process; the minute you stop the host, the items on your list will of course disappear. In general, EventStore is a very attractive option for prototyping; the open source edition is trivial to install and has a nice UI that lets you navigate events being produced etc.
+The `MemoryStore` is intended to implement the complete semantics of a durable store (aside from caching). The main benefit of using it is that any tests using it have zero environment dependencies. In some cases this can be very useful for demo apps or generators (rather than assuming a specific store at a specific endpoint and/or credentials, there is something to point at which does not require configuration or assumptions.). The single problem of course is that it's all in-process; the minute you stop the host, the items on your list will of course disappear. In general, EventStore is also an attractive option for prototyping; the open source edition is trivial to install and has a Web UI that lets you navigate events being produced etc.
 
-### OK, so it supports CosmosDB, EventStoreDB and might even support more in the future. I really don't intend to shift datastores. Period. Why would I take on this complexity only to get the lowest common denominator ?
+### OK, so it supports CosmosDB, DynamoDB, EventStoreDB, MessageDB and SqlStreamStore and might even support more in the future. I really don't intend to shift datastores. Period. Why would I take on this complexity only to get the lowest common denominator ?
 
 Yes, you have decisions to make; Equinox is not a panacea - there is no one size fits all. While the philosophy of Equinox is a) provide an opinionated store-neutral [Programming Model](DOCUMENTATION.md#Programming-Model) with a good pull toward a big [pit of success](https://blog.codinghorror.com/falling-into-the-pit-of-success/), while not closing the door to using store-specific features where relevant, having a dedicated interaction is always going to afford you more power and control.
 
@@ -801,6 +801,8 @@ Initially, `Equinox.CosmosStore` implemented the same strategy as the `Equinox.E
 I expand (too much!) on some more of the considerations in https://github.com/jet/equinox/blob/master/DOCUMENTATION.md
 
 The other thing that should be pointed out is the caching can typically cover a lot of perf stuff as long as stream lengths stay sane - Snapshotting (esp polluting the stream with snapshot events should definitely be toward the bottom of your list of tactics for managing a stream efficiently given long streams are typically a design smell)
+
+NOTE The newer `Equinox.MessageDb` store binding implements snapshotting as separated events in a separate category.
 
 <a name="changing-access-strategy"></a>
 ### Changing Access / Representation strategies in `Equinox.CosmosStore` - what happens?

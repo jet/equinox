@@ -27,8 +27,7 @@ which is [not surprising given there's input from Jérémie Chassaing](https://g
 [_Functional Event Sourcing Decider_](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider), [Jérémie Chassaing](https://twitter.com/thinkb4coding), 2021.
 Precursor to an excellent book covering this space more broadly. There's teasers with extensive code walk-through and discussion in [this 2h45m video](https://www.youtube.com/watch?v=kgYGMVDHQHs) on [Event Driven Information Systems](https://www.youtube.com/channel/UCSoUh4ikepF3LkMchruSSaQ)
 
-- **Your link here** - Please add materials that helped you on your journey so
-  far here via PRs!
+- **Your link here** - Please add notable materials that helped you on your journey here via PRs!
 
 # Overview
 
