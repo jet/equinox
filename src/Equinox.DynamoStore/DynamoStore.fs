@@ -1258,6 +1258,7 @@ type DynamoStoreClient
             // Table name to use for archive store. Default: (if <c>archiveClient</c> specified) use same <c>tableName</c> but via <c>archiveClient</c>.
             [<O; D null>] ?archiveTableName,
             // Client to use for archive store. Default: (if <c>archiveTableName</c> specified) use same <c>archiveTableName</c> but via <c>client</c>.
+            // Events that have been archived and purged (and hence are missing from the primary) are retrieved from this Table
             [<O; D null>] ?archiveClient : Amazon.DynamoDBv2.IAmazonDynamoDB) =
         let genStreamName (categoryName, streamId) = if categoryName = null then streamId else StreamName.render categoryName streamId
         let catAndStreamToTableStream (categoryName, streamId) = tableName, genStreamName (categoryName, streamId)
@@ -1270,9 +1271,9 @@ type DynamoStoreClient
         let tableName, streamName = categoryAndStreamIdToTableAndStreamNames (categoryName, streamId)
         let fallbackTableName = primaryTableToSecondary tableName
         createContainer tableName, createFallbackContainer fallbackTableName, streamName
-    /// Connect to an Equinox.DynamoStore in the specified Table
-    /// Events that have been archived and purged (and hence are missing from the primary) are retrieved from the archive where that is provided
-    static member Connect(client, tableName : string, [<O; D null>] ?archiveTableName, [<O; D null>] ?mode : ConnectMode) : Async<DynamoStoreClient> = async {
+
+    /// Verifies or Creates the underlying Tables comprising the Store before creating a `DynamoStoreClient`
+    static member Establish(client, tableName : string, [<O; D null>] ?archiveTableName, [<O; D null>] ?mode : ConnectMode) : Async<DynamoStoreClient> = async {
         let init t = ConnectMode.apply client t (defaultArg mode ConnectMode.Verify)
         do! init tableName
         match archiveTableName with None -> () | Some archiveTable-> do! init archiveTable

@@ -49,7 +49,7 @@ type DynamoTablesFixture() =
             let client = createClient Serilog.Log.Logger name serviceUrl
             let throughput = ProvisionedThroughput (100L, 100L)
             let throughput = Throughput.Provisioned throughput
-            DynamoStoreClient.Connect(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
+            DynamoStoreClient.Establish(client, tableName, archiveTableName = archiveTableName, mode = CreateIfNotExists throughput)
             |> Async.StartImmediateAsTask
             :> System.Threading.Tasks.Task
         member _.DisposeAsync() = task { () }
