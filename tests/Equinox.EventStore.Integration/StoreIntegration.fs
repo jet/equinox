@@ -56,7 +56,7 @@ open OpenTelemetry.Resources
 
 let connectToLocalStore _ = async {
   let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5433; Maximum Pool Size=10"
-  return MessageDbConnection(connectionString)
+  return MessageDbClient(connectionString)
 }
 type Context = MessageDbContext
 type Category<'event, 'state, 'context> = MessageDbCategory<'event, 'state, 'context>

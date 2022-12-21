@@ -303,7 +303,7 @@ module private Snapshot =
         | ValueSome decoded -> ValueSome struct(events[0] |> streamVersion |> Token.create, decoded)
         | ValueNone -> ValueNone
 
-type MessageDbConnection internal (reader, writer, ?readRetryPolicy, ?writeRetryPolicy) =
+type MessageDbClient internal (reader, writer, ?readRetryPolicy, ?writeRetryPolicy) =
     member val internal Reader = reader
     member val ReadRetryPolicy = readRetryPolicy
     member val internal Writer = writer
@@ -317,7 +317,7 @@ type MessageDbConnection internal (reader, writer, ?readRetryPolicy, ?writeRetry
         let readConnectionString = defaultArg readConnectionString connectionString
         let reader = MessageDbReader(readConnectionString, connectionString)
         let writer = MessageDbWriter(connectionString)
-        MessageDbConnection(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
+        MessageDbClient(reader, writer, ?readRetryPolicy = readRetryPolicy, ?writeRetryPolicy = writeRetryPolicy)
 
 type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
     new (batchSize) = BatchOptions(fun () -> batchSize)
@@ -327,34 +327,34 @@ type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
 [<RequireQualifiedAccess; NoComparison; NoEquality>]
 type internal GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
-type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOptions) =
-    new (   connection : MessageDbConnection,
+type MessageDbContext(client : MessageDbClient, batchOptions : BatchOptions) =
+    new (   client : MessageDbClient,
             // Max number of Events to retrieve in a single batch. Also affects frequency of Snapshots. Default: 500.
             [<O; D null>] ?batchSize) =
-        MessageDbContext(connection, BatchOptions(batchSize = defaultArg batchSize 500))
+        MessageDbContext(client, BatchOptions(batchSize = defaultArg batchSize 500))
     member val BatchOptions = batchOptions
 
     member _.TokenEmpty = Token.create -1L
     member _.LoadBatched(streamName, requireLeader, log, tryDecode, ct) : Task<StreamToken * 'event array> = task {
-        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName 0L requireLeader ct
+        let! version, events = Read.loadForwardsFrom log client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName 0L requireLeader ct
         return Token.create version, Array.chooseV tryDecode events }
     member _.LoadLast(streamName, requireLeader, log, tryDecode, ct) : Task<StreamToken * 'event array> = task {
-        let! version, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader streamName None ct
+        let! version, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader streamName None ct
         return Token.create version, Array.chooseV tryDecode events }
     member _.LoadSnapshot(category, streamId, requireLeader, log, tryDecode, eventType, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
-        let! _, events = Read.loadLastEvent log connection.ReadRetryPolicy connection.Reader requireLeader snapshotStream (Some eventType) ct
+        let! _, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader snapshotStream (Some eventType) ct
         return Snapshot.decode tryDecode events }
 
     member _.Reload(streamName, requireLeader, log, token, tryDecode, ct) : Task<StreamToken * 'event array> = task {
         let streamVersion = Token.streamVersion token
         let startPos = streamVersion + 1L // Reading a stream uses {inclusive} positions, but the streamVersion is `-1`-based
-        let! version, events = Read.loadForwardsFrom log connection.ReadRetryPolicy connection.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName startPos requireLeader ct
+        let! version, events = Read.loadForwardsFrom log client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName startPos requireLeader ct
         return Token.create (max streamVersion version), Array.chooseV tryDecode events }
 
     member internal _.TrySync(log, category, streamId, streamName, token, encodedEvents : IEventData<EventBody> array, ct): Task<GatewaySyncResult> = task {
         let streamVersion = Token.streamVersion token
-        match! Write.writeEvents log connection.WriteRetryPolicy connection.Writer (category, streamId, streamName) (StreamVersion streamVersion) encodedEvents ct with
+        match! Write.writeEvents log client.WriteRetryPolicy client.Writer (category, streamId, streamName) (StreamVersion streamVersion) encodedEvents ct with
         | MdbSyncResult.ConflictUnknown ->
             return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->
@@ -364,7 +364,7 @@ type MessageDbContext(connection : MessageDbConnection, batchOptions : BatchOpti
     member _.StoreSnapshot(category, streamId, log, event, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
         let category = Snapshot.snapshotCategory category
-        do! Write.writeEvents log None connection.Writer (category, streamId, snapshotStream) Any [| event |] ct :> Task }
+        do! Write.writeEvents log None client.Writer (category, streamId, snapshotStream) Any [| event |] ct :> Task }
 
 [<NoComparison; NoEquality; RequireQualifiedAccess>]
 type AccessStrategy<'event, 'state> =
