@@ -43,7 +43,7 @@ module private Npgsql =
         do! conn.OpenAsync(ct)
         return conn }
 
-type MessageDbWriter(connectionString : string) =
+type internal MessageDbWriter(connectionString : string) =
 
     let prepareAppend (streamName : string) (expectedVersion : ExpectedVersion) (e : IEventData<Format>) =
         let cmd = NpgsqlBatchCommand(CommandText = "select * from write_message(@Id::text, @StreamName, @EventType, @Data, @Meta, @ExpectedVersion)")
@@ -73,7 +73,7 @@ type MessageDbWriter(connectionString : string) =
         with :? PostgresException as ex when ex.Message.Contains("Wrong expected version") ->
             return MdbSyncResult.ConflictUnknown }
 
-type MessageDbReader internal (connectionString : string, leaderConnectionString : string) =
+type internal MessageDbReader (connectionString : string, leaderConnectionString : string) =
 
     let connect requiresLeader = Npgsql.connect (if requiresLeader then leaderConnectionString else connectionString)
 

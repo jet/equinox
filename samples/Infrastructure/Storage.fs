@@ -360,7 +360,7 @@ module MessageDb =
          member _.BatchSize =        p.GetResult(BatchSize, 500)
     let connect (log : ILogger) (connectionString: string) =
         log.Information("MessageDB Connection {connectionString}", connectionString)
-        MessageDbConnector(connectionString).Establish()
+        MessageDbClient(connectionString)
     let config (log : ILogger) cache (p : ParseResults<Parameters>) =
         let a = Arguments(p)
         let connection = connect log a.ConnectionString
