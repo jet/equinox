@@ -262,7 +262,8 @@ and MaxResyncsExhaustedException(count) =
 
 
 /// Exposed by TransactEx / QueryEx, providing access to extended state information for cases where that's required
-and ISyncContext<'state> =
+and [<NoComparison; NoEquality>]
+    ISyncContext<'state> =
 
     /// Exposes the underlying Store's internal Version for the underlying stream.
     /// An empty stream is Version 0; one with a single event is Version 1 etc.
