@@ -91,8 +91,7 @@ type Tests(testOutputHelper) =
     // when you hit the max count as you read the final item in a stream. Leaving it ugly in the hope we get to delete it.
     let expectFinalExtraPage () =
 #if STORE_DYNAMO
-       let _, url = discoverConnection ()
-       url.Contains "localhost"
+        discoverConnection () |> snd |> isSimulatorServiceUrl
 #else
         false
 #endif

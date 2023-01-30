@@ -15,12 +15,13 @@ let discoverConnection () =
     match tryRead "EQUINOX_DYNAMO_SERVICE_URL" with // NOT USING EQUINOX_DYNAMO_SERVICE_URL env var as we don't want to go provisioning 2 tables in a random DB
     | None -> "dynamodb-local", "http://localhost:8000"
     | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString
+let isSimulatorServiceUrl url = Uri(url).IsLoopback
 
 let createClient (log : Serilog.ILogger) name serviceUrl =
     // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html#docker for details of how to deploy a simulator instance
     let clientConfig = AmazonDynamoDBConfig(ServiceURL = serviceUrl)
     log.Information("DynamoStore {name} {endpoint}", name, serviceUrl)
-    if serviceUrl.Contains "localhost" then
+    if isSimulatorServiceUrl serviceUrl then
         // Credentials are not validated if connecting to local instance so anything will do (this avoids it looking for profiles to be configured)
         let credentials = Amazon.Runtime.BasicAWSCredentials("A", "A")
         new AmazonDynamoDBClient(credentials, clientConfig) :> IAmazonDynamoDB
