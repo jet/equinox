@@ -263,8 +263,8 @@ type Tests(testOutputHelper) =
                 | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no Archive Container supplied"
                                   || e.Message.StartsWith "Origin event not found; no Archive Table supplied"
                 | x -> failwithf "Unexpected %A" x @>
-        let expectedResponses = if expectFinalExtraPage () then 2 else 1
-        test <@ [yield! Seq.replicate expectedResponses EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        let finalEmptyPage = if expectFinalExtraPage () then 1 else 0
+        test <@ [yield! Seq.replicate (1 + finalEmptyPage) EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.99
 
         // But not forgotten
