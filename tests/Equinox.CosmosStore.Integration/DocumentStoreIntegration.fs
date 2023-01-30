@@ -87,6 +87,16 @@ type Tests(testOutputHelper) =
         let tripRequestCharges = [ for e, c in capture.RequestCharges -> sprintf "%A" e, c ]
         test <@ float rus >= Seq.sum (Seq.map snd tripRequestCharges) @>
 
+    // There's currently a discrepancy between real DynamoDb and the similar wrt whether a continuation token is returned
+    // when you hit the max count as you read the final item in a stream. Leaving it ugly in the hope we get to delete it.
+    let expectFinalExtraPage () =
+#if STORE_DYNAMO
+       let _, url = discoverConnection ()
+       url.Contains "localhost"
+#else
+        false
+#endif
+
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against DocStore, correctly batching the reads`` (eventsInTip, cartContext, skuId) = Async.RunSynchronously <| async {
         capture.Clear() // for re-runs of the test
@@ -97,8 +107,9 @@ type Tests(testOutputHelper) =
 
         let service = Cart.createServiceWithoutOptimization log context
         let expectedResponses n =
+            let finalEmptyPage = if expectFinalExtraPage () then 1 else 0
             let tipItem = 1
-            let expectedItems = tipItem + (if eventsInTip then n / 2 else n)
+            let expectedItems = tipItem + (if eventsInTip then n / 2 else n) + finalEmptyPage
             max 1 (int (ceil (float expectedItems / float queryMaxItems)))
 
         let cartId = % Guid.NewGuid()
@@ -252,7 +263,8 @@ type Tests(testOutputHelper) =
                 | Choice2Of2 e -> e.Message.StartsWith "Origin event not found; no Archive Container supplied"
                                   || e.Message.StartsWith "Origin event not found; no Archive Table supplied"
                 | x -> failwithf "Unexpected %A" x @>
-        test <@ [EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
+        let expectedResponses = if expectFinalExtraPage () then 2 else 1
+        test <@ [yield! Seq.replicate expectedResponses EqxAct.ResponseForward; EqxAct.QueryForward] = capture.ExternalCalls @>
         verifyRequestChargesMax 3 // 2.99
 
         // But not forgotten
