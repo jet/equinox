@@ -12,18 +12,22 @@ let private tableName = tryRead "EQUINOX_DYNAMO_TABLE" |> Option.defaultValue "e
 let private archiveTableName = tryRead "EQUINOX_DYNAMO_TABLE_ARCHIVE" |> Option.defaultValue "equinox-test-archive"
 
 let discoverConnection () =
-    match tryRead "EQUINOX_DYNAMO_CONNECTION" with
-    | None -> "dynamodb-local", "http://localhost:8000" // OR: change to "https://dynamodb.eu-west-1.amazonaws.com" to hit prod instance
+    match tryRead "EQUINOX_DYNAMO_SERVICE_URL" with // NOT USING EQUINOX_DYNAMO_SERVICE_URL env var as we don't want to go provisioning 2 tables in a random DB
+    | None -> "dynamodb-local", "http://localhost:8000"
     | Some connectionString -> "EQUINOX_DYNAMO_CONNECTION", connectionString
+let isSimulatorServiceUrl url = Uri(url).IsLoopback
 
 let createClient (log : Serilog.ILogger) name serviceUrl =
     // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html#docker for details of how to deploy a simulator instance
     let clientConfig = AmazonDynamoDBConfig(ServiceURL = serviceUrl)
     log.Information("DynamoStore {name} {endpoint}", name, serviceUrl)
-    // Credentials are not validated if connecting to local instance so anything will do (this avoids it looking for profiles to be configured)
-    // OR: don't pass credentials to ctor to use keychain configured access
-    let credentials = Amazon.Runtime.BasicAWSCredentials("A", "A")
-    new AmazonDynamoDBClient(credentials, clientConfig) :> IAmazonDynamoDB
+    if isSimulatorServiceUrl serviceUrl then
+        // Credentials are not validated if connecting to local instance so anything will do (this avoids it looking for profiles to be configured)
+        let credentials = Amazon.Runtime.BasicAWSCredentials("A", "A")
+        new AmazonDynamoDBClient(credentials, clientConfig) :> IAmazonDynamoDB
+    else
+        // omitting credentials to ctor in order to trigger use of keychain configured access
+        new AmazonDynamoDBClient(clientConfig) :> IAmazonDynamoDB
 
 let connectPrimary log =
     let name, serviceUrl = discoverConnection ()
@@ -40,7 +44,7 @@ let connectWithFallback log =
     let client = createClient log name serviceUrl
     DynamoStoreClient(client, tableName, archiveTableName = archiveTableName)
 
-// Prepares the two required tables that the test lea on via connectPrimary/Archive/WithFallback
+// Prepares the two required tables that the tests use via connectPrimary/Archive/WithFallback
 type DynamoTablesFixture() =
 
     interface Xunit.IAsyncLifetime with
