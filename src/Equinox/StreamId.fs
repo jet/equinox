@@ -1,5 +1,6 @@
 namespace Equinox.Core
 
+open FSharp.UMX
 open System
 
 module StreamName =
@@ -21,28 +22,40 @@ module StreamName =
         validateCategoryName categoryName
         String.Concat(categoryName, '-', streamId)
 
-namespace Equinox
-
-open FSharp.UMX
-
 /// Represents the second half of a canonical StreamName, i.e., the streamId in "{categoryName}-{streamId}"
 type StreamId = string<streamId>
 and [<Measure>] streamId
 /// Helpers for composing and rendering StreamId values
 module StreamId =
+
     /// Create a StreamId, trusting the input to be well-formed (see the gen* functions for composing with validation)
-    let inline ofRaw (raw : string) : StreamId = UMX.tag raw
+    let ofRaw (raw : string) : StreamId = UMX.tag raw
     /// Render as a string for external use
     let toString : StreamId -> string = UMX.untag
     /// Render as a canonical "{categoryName}-{streamId}" StreamName. Throws if the categoryName embeds `-` chars.
-    let renderStreamName categoryName (x : StreamId) : string = toString x |> Core.StreamName.render categoryName
+    let renderStreamName categoryName (x : StreamId) : string = toString x |> StreamName.render categoryName
+
+namespace Equinox
+
+/// Helpers for composing and rendering StreamId values
+type StreamId =
 
     /// Generate a StreamId from a single application-level id, given a rendering function that maps to a non empty fragment without embedded `_` chars
-    let gen (f : 'a -> string) (id : 'a) : StreamId =
+    static member Map(f : 'a -> string) = System.Func<'a, Core.StreamId>(fun id ->
         let element = f id
         Core.StreamName.validateStreamIdFragment element
-        ofRaw element
+        Core.StreamId.ofRaw element)
     /// Generate a StreamId from a tuple of application-level ids, given two rendering functions that map to a non empty fragment without embedded `_` chars
-    let gen2 f f2 struct (id1, id2) : StreamId = seq { yield f id1; yield f2 id2 } |> Core.StreamName.combineStreamIdFragments |> ofRaw
+    static member Map(f, f2) = System.Func<_, _, _>(fun id1 id2 -> seq { yield f id1; yield f2 id2 } |> Core.StreamName.combineStreamIdFragments |> Core.StreamId.ofRaw)
     /// Generate a StreamId from a triple of application-level ids, given three rendering functions that map to a non empty fragment without embedded `_` chars
-    let gen3 f f2 f3 struct (id1, id2, id3) = seq { yield f id1; yield f2 id2; yield f3 id3 } |> Core.StreamName.combineStreamIdFragments |> ofRaw
+    static member Map(f1, f2, f3) = System.Func<_, _, _, _>(fun id1 id2 id3 -> seq { yield f1 id1; yield f2 id2; yield f3 id3 } |> Core.StreamName.combineStreamIdFragments |> Core.StreamId.ofRaw)
+
+/// Helpers for composing and rendering StreamId values
+module StreamId =
+
+    /// Generate a StreamId from a single application-level id, given a rendering function that maps to a non empty fragment without embedded `_` chars
+    let gen (f : 'a -> string) : 'a -> Core.StreamId = StreamId.Map(f).Invoke
+    /// Generate a StreamId from a tuple of application-level ids, given two rendering functions that map to a non empty fragment without embedded `_` chars
+    let gen2 f1 f2 : 'a * 'b -> Core.StreamId = StreamId.Map(f1, f2).Invoke
+    /// Generate a StreamId from a triple of application-level ids, given three rendering functions that map to a non empty fragment without embedded `_` chars
+    let gen3 f1 f2 f3 : 'a * 'b * 'c -> Core.StreamId = StreamId.Map(f1, f2, f3).Invoke
