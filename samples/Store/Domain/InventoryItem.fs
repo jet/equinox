@@ -1,4 +1,4 @@
-/// This is not part of the Store; it's ported from https://gyyhub.com/gregoryyoung/m-r/tree/master/SimpleCQRS for fun
+/// This is not part of the Store; it's ported from https://github.com/gregoryyoung/m-r/tree/master/SimpleCQRS for fun
 module Domain.InventoryItem
 
 open System
