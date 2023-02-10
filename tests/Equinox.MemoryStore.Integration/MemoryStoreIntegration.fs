@@ -71,7 +71,7 @@ type ChangeFeed(testOutputHelper) =
             List.ofArray xs
         use _ = store.Committed.Subscribe(fun struct (cn, sid, xs) -> events.Add(Equinox.Core.StreamName.render cn sid, List.ofArray xs))
         let service = createFavoritesServiceMemory store log
-        let expectedStream = Favorites.streamId clientId |> Equinox.StreamId.renderStreamName Favorites.Category
+        let expectedStream = Favorites.streamId clientId |> Equinox.Core.StreamId.renderStreamName Favorites.Category
 
         do! service.Favorite(clientId, [sku])
         let written = takeCaptured ()

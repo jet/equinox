@@ -249,7 +249,7 @@ type Tests(testOutputHelper) =
         // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
         // If we run on an independent context, we won't see (and hence prune) the full set of events
         let ctx = Core.EventsContext(context, log)
-        let streamName = ContactPreferences.streamId id |> Equinox.StreamId.renderStreamName ContactPreferences.Category
+        let streamName = ContactPreferences.streamId id |> Equinox.Core.StreamId.renderStreamName ContactPreferences.Category
 
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 14L

@@ -52,16 +52,16 @@ type Category<'event, 'state, 'context>
                 return! inner.TrySync(log, categoryName, streamId, streamName, context, init, token, originState, events, ct) } }
 
 type private Stream =
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<string, StreamId, Core.IStream<'event, 'state>> =
-        System.Func<string, StreamId, _>(fun categoryName streamId -> cat.Stream(log, context, categoryName, StreamId.toString streamId))
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<string, Core.StreamId, Core.IStream<'event, 'state>> =
+        System.Func<string, Core.StreamId, _>(fun categoryName streamId -> cat.Stream(log, context, categoryName, Core.StreamId.toString streamId))
 
 [<System.Runtime.CompilerServices.Extension>]
 type DeciderCore =
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<string, StreamId, DeciderCore<'event, 'state>> =
-         System.Func<_, _, _>(fun c s -> Stream.Resolve(cat, log, context).Invoke(c,s) |> DeciderCore)
+    static member Resolve(cat : Category<'event, 'state, 'context>, log, context) : System.Func<string, Core.StreamId, DeciderCore<'event, 'state>> =
+         System.Func<_, _, _>(fun c s -> Stream.Resolve(cat, log, context).Invoke(c, s) |> DeciderCore)
     [<System.Runtime.CompilerServices.Extension>]
-    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<string, StreamId, DeciderCore<'event, 'state>> =
+    static member Resolve(cat : Category<'event, 'state, unit>, log) : System.Func<string, Core.StreamId, DeciderCore<'event, 'state>> =
         DeciderCore.Resolve(cat, log, ())
 
 module Decider =
