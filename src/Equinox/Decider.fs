@@ -5,7 +5,7 @@ open System
 open System.Threading
 open System.Threading.Tasks
 
-/// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
+/// Central Application-facing API for F#. Wraps the handling of decision or query flows in a manner that is store agnostic
 /// NOTE: For C#, direct usage of DeciderCore is recommended
 type Decider<'event, 'state>(inner : DeciderCore<'event, 'state>) =
 
@@ -109,6 +109,7 @@ type Decider<'event, 'state>(inner : DeciderCore<'event, 'state>) =
         return! inner.TransactExAsync(decide = decide', mapResult = mapResult, ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
+/// For F#, the async and FSharpFunc signatures in Decider tend to work better, but the API set is equivalent
 and DeciderCore<'event, 'state>(stream : IStream<'event, 'state>) =
 
     let (|Context|) = SyncContext<'state>.Map
