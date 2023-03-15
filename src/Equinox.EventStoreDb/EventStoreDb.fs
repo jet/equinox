@@ -183,20 +183,23 @@ module private Read =
     let private loadBackwardsUntilOrigin (log : ILogger) (conn : EventStoreClient) batchSize streamName (tryDecode, isOrigin) ct
         : Task<int64 * struct (ResolvedEvent * 'event voption)[]> = task {
         let res = conn.ReadStreamAsync(Direction.Backwards, streamName, StreamPosition.End, int64 batchSize, resolveLinkTos = false, cancellationToken = ct)
-        try let! events =
-                res
-                |> TaskSeq.map (fun x -> struct (x, tryDecode x))
-                |> TaskSeq.takeWhileInclusive (function
-                    | x, ValueSome e when isOrigin e ->
-                        log.Information("EsdbStop stream={stream} at={eventNumber}", streamName, let en = x.Event.EventNumber in en.ToInt64())
-                        false
-                    | _ -> true)
-                |> TaskSeq.toArrayAsync
-            let v = match Seq.tryHead events with Some (r, _) -> let en = r.Event.EventNumber in en.ToInt64() | None -> -1
-            Array.Reverse events
-            return v, events
-        with :? AggregateException as e when (e.InnerExceptions.Count = 1 && e.InnerExceptions[0] :? StreamNotFoundException) ->
-            return -1L, [||] }
+        match! res.ReadState with
+        | ReadState.StreamNotFound -> return (-1L, [||])
+        | _ ->
+
+        let! events =
+            res
+            |> TaskSeq.map (fun x -> struct (x, tryDecode x))
+            |> TaskSeq.takeWhileInclusive (function
+                | x, ValueSome e when isOrigin e ->
+                    log.Information("EsdbStop stream={stream} at={eventNumber}", streamName, let en = x.Event.EventNumber in en.ToInt64())
+                    false
+                | _ -> true)
+            |> TaskSeq.toArrayAsync
+        let v = match Seq.tryHead events with Some (r, _) -> let en = r.Event.EventNumber in en.ToInt64() | None -> -1
+        Array.Reverse events
+        return v, events }
+
     let loadBackwards (log : ILogger) (conn : EventStoreClient) batchSize streamName (tryDecode, isOrigin) ct
         : Task<int64 * struct (ResolvedEvent * 'event voption)[]> = task {
         let! t, (version, events) = loadBackwardsUntilOrigin log conn batchSize streamName (tryDecode, isOrigin) |> Stopwatch.time ct
@@ -206,11 +209,14 @@ module private Read =
 
     let private loadForward (conn : EventStoreClient) streamName startPosition ct : Task<int64 * ResolvedEvent[]> = task {
         let res = conn.ReadStreamAsync(Direction.Forwards, streamName, startPosition, Int64.MaxValue, resolveLinkTos = false, cancellationToken = ct)
-        try let! events = TaskSeq.toArrayAsync res
-            let v = match Seq.tryLast events with Some r -> let en = r.Event.EventNumber in en.ToInt64() | None -> startPosition.ToInt64() - 1L
-            return v, events
-        with :? AggregateException as e when (e.InnerExceptions.Count = 1 && e.InnerExceptions[0] :? StreamNotFoundException) ->
-            return -1L, [||] }
+        match! res.ReadState with
+        | ReadState.StreamNotFound -> return (-1L, [||])
+        | _ ->
+
+        let! events = TaskSeq.toArrayAsync res
+        let v = match Seq.tryLast events with Some r -> let en = r.Event.EventNumber in en.ToInt64() | None -> startPosition.ToInt64() - 1L
+        return v, events }
+
     let loadForwards log conn streamName startPosition ct : Task<int64 * ResolvedEvent[]> = task {
         let direction = Direction.Forward
         let! t, (version, events) = loadForward conn streamName startPosition |> Stopwatch.time ct
