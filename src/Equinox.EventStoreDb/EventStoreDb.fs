@@ -168,7 +168,6 @@ module private Write =
 
 module private Read =
     open FSharp.Control
-
     let resolvedEventBytes (x : ResolvedEvent) = let Log.BlobLen bytes, Log.BlobLen metaBytes = x.Event.Data, x.Event.Metadata in bytes + metaBytes
     let resolvedEventsBytes events = events |> Array.sumBy resolvedEventBytes
     let private logBatchRead direction streamName t events batchSize version (log : ILogger) =
