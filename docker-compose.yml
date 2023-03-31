@@ -2,7 +2,8 @@ version: '3.7'
 
 services:
 
-  # NOTE requires initialization (trust cert, create 2 databases) via: bash docker-compose-cosmos.sh 
+  # NOTE requires initialization (trust emulator's self-signed cert, create 2 databases)
+  #      after `docker compose up equinox-cosmos`, run `bash docker-compose-cosmos.sh`
   equinox-cosmos:
     container_name: equinox-cosmos
     image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator
@@ -27,7 +28,7 @@ services:
       - "5432:5432"
 
   # NOTE MANUAL STEP until MS get with the program https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719
-  # after `docker compose up`, run `bash docker-compose-mssql.sh`
+  #      after `docker compose up`, run `bash docker-compose-mssql.sh`
   equinox-mssql:
     container_name: equinox-mssql
     image: mcr.microsoft.com/mssql/server:2019-latest
