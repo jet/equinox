@@ -41,6 +41,7 @@ let private defaultWithEnvVar varName argName = function
 // 1) replace connection below with a connection string or Uri+Key for an initialized Equinox instance with a database and collection named "equinox-test"
 // 2) Set the 3x environment variables and create a local Equinox using tools/Equinox.Tool/bin/Release/net6.0/eqx.exe `
 //     init -ru 1000 cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
+// see https://github.com/jet/equinox#provisioning-cosmosdb
 module Cosmos =
 
     open Equinox.CosmosStore
@@ -260,6 +261,7 @@ module EventStore =
         let cacheStrategy = cache |> Option.map (fun c -> CachingStrategy.SlidingWindow (c, TimeSpan.FromMinutes 20.))
         StorageConfig.Es (EventStoreContext(connection, batchSize = a.BatchSize), cacheStrategy, unfolds)
 
+// see https://github.com/jet/equinox#provisioning-mssql
 module Sql =
 
     open Equinox.SqlStreamStore

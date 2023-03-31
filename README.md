@@ -651,7 +651,10 @@ There's a `docker-compose.yml` file in the root, so installing `docker-compose` 
 
 For more complete instructions, follow https://developers.eventstore.com/server/v21.10/installation.html#use-docker-compose
 
-### Provisioning CosmosDB (when not using -sc)
+<a name="provisioning-cosmosdb"></a>
+### Provisioning CosmosDB (when not using build.ps1 -sc to skip verification)
+
+#### Using Azure Cosmos DB Service
 
     dotnet run --project tools/Equinox.Tool -- init -ru 400 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER
@@ -660,19 +663,26 @@ For more complete instructions, follow https://developers.eventstore.com/server/
     dotnet run --project tools/Equinox.Tool -- init -ru 400 `
         cosmos -s $env:EQUINOX_COSMOS_CONNECTION -d $env:EQUINOX_COSMOS_DATABASE -c $env:EQUINOX_COSMOS_CONTAINER_ARCHIVE
 
+#### Using Cosmos Emulator on an Intel Mac 
+
+NOTE There's [no Apple Silicon emulator available as yet](https://github.com/Azure/azure-cosmos-db-emulator-docker/issues/54#issuecomment-1399067365).
+
+NOTE Have not tested with the Windows Emulator, but it should work with analogous steps.
+
+    docker compose up equinox-cosmos -d
+    bash docker-compose-cosmos.sh
+
 ### Provisioning SqlStreamStore
 
 There's a `docker-compose.yml` file in the root, so installing `docker-compose` and then running `docker-compose up` rigs local `equinox-mssql`, `equinox-mysql` and `equinox-postgres` servers and databases at known ports. _NOTE The `Equinox.SqlStreamStore.*.Integration` suites currently assume this is in place and will otherwise fail_.
 
+<a name="provisioning-mssql"></a>
 ### Provisioning `mcr.microsoft.com/mssql/server:2019-latest` for `SqlStreamStore.MsSql`
 
 Until https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719 is resolved (see [#315](https://github.com/jet/equinox/pull/315), after the `docker compose up` one needs to manually:
 
-```zsh
-docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
-    -S localhost -U sa -P mssql1Ipw \
-    -Q "CREATE database EQUINOX_TEST_DB"
-```
+    docker compose up equinox-mssql
+    bash docker-compose-mssql.sh
 
 (PRs welcome to automate the hack, but ideally the image will allow parameterizing it as handled by the Postgres and MySql images when common sense prevails re [`mssql-docker#2`](https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719))
 
