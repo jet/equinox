@@ -107,6 +107,38 @@ type Decider<'event, 'state>(inner : DeciderCore<'event, 'state>) =
         let! ct = Async.CancellationToken
         let inline decide' c ct = task { let! r, es = Async.StartImmediateAsTask(decide c, ct) in return struct (r, Seq.ofList es) }
         return! inner.TransactExAsync(decide = decide', mapResult = mapResult, ?load = load, ?attempts = attempts, ct = ct) |> Async.AwaitTaskCorrect }
+/// 1. Invoke the supplied <c>Async</c> <c>interpret</c> function with the present state
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Uses <c>render</c> to generate a 'view from the persisted final state
+    member _.TransactTask(interpret : 'state -> CancellationToken -> Task<'event list>, render : 'state -> 'view, ?load, ?attempts, ?ct) : Task<'view> =  task {
+        let inline interpret' s ct = task { let! es = interpret s ct in return Seq.ofList es }
+        return! inner.TransactAsync(interpret', render, ?load = load, ?attempts = attempts, ?ct = ct) }
+
+    /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the present state, holding the <c>'result</c>
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Yield result
+    member _.TransactTask(decide : 'state -> CancellationToken -> Task<'result * 'event list>, ?load, ?attempts, ?ct) : Task<'result> =  task {
+        let inline decide' s ct = task { let! r, es = decide s ct in return struct (r, Seq.ofList es) }
+        return! inner.TransactAsync(decide = decide', ?load = load, ?attempts = attempts, ?ct = ct) }
+
+    /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Yield result
+    member _.TransactExTask(decide : ISyncContext<'state> -> CancellationToken -> Task<'result * 'event list>, ?load, ?attempts, ?ct) : Task<'result> =  task {
+        let decide' c ct = task { let! r, es = decide c ct in return struct (r, Seq.ofList es) }
+        return! inner.TransactExAsync(decide = decide', ?load = load, ?attempts = attempts, ?ct = ct) |> Async.AwaitTaskCorrect }
+
+    /// 1. Invoke the supplied <c>Async</c> <c>decide</c> function with the current complete context, holding the <c>'result</c>
+    /// 2. (if events yielded) Attempt to sync the yielded events to the stream.
+    ///    (Restarts up to <c>maxAttempts</c> times with updated state per attempt, throwing <c>MaxResyncsExhaustedException</c> on failure of final attempt.)
+    /// 3. Yields a final 'view produced by <c>mapResult</c> from the <c>'result</c> and/or the final persisted <c>ISyncContext</c>
+    member _.TransactExTask(decide : ISyncContext<'state> -> CancellationToken -> Task<'result * 'event list>, mapResult : 'result -> ISyncContext<'state> -> 'view,
+                             ?load, ?attempts, ?ct) : Task<'view> =  task {
+        let inline decide' c ct = task { let! r, es = decide c ct in return struct (r, Seq.ofList es) }
+        return! inner.TransactExAsync(decide = decide', mapResult = mapResult, ?load = load, ?attempts = attempts, ?ct = ct) }
 
 /// Central Application-facing API. Wraps the handling of decision or query flows in a manner that is store agnostic
 /// For F#, the async and FSharpFunc signatures in Decider tend to work better, but the API set is equivalent
