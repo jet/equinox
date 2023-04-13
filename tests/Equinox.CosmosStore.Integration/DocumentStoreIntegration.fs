@@ -1,6 +1,7 @@
 ﻿module Equinox.Store.Integration.DocumentStoreIntegration
 
 open Domain
+open Equinox.Core
 open FSharp.UMX
 open Swensen.Unquote
 open System
@@ -137,6 +138,32 @@ type Tests(testOutputHelper) =
 #endif
         else verifyRequestChargesMax 15 // 14.01
     }
+
+
+#if STORE_DYNAMO
+    [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
+    let ``Can read stream without tip in batch`` (cartContext, skuId) = Async.RunSynchronously <| async {
+        capture.Clear() // for re-runs of the test
+        let addRemoveCount = 40
+        let expectedEvents = addRemoveCount * 2 - 1
+        // Read only one batch, that does not contain the tip
+        let queryMaxBatches = 1
+        let eventsInTip = 0
+        let context = createPrimaryContextEx log queryMaxBatches eventsInTip
+        let service = Cart.createServiceWithSnapshotStrategy log context
+
+        let eventsContext = Equinox.DynamoStore.Core.EventsContext(context, log)
+        let cartId : CartId = % Guid.NewGuid()
+
+        do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
+
+        let sn = FsCodec.StreamName.create Domain.Cart.Category  (cartId |> Domain.Cart.streamId |> string)
+        let! ct = Async.CancellationToken
+        let! pos, events =  eventsContext.Read(FsCodec.StreamName.toString sn, ct, 0L, maxCount = expectedEvents) |> Async.AwaitTask
+        // an exception is thrown by the above read
+        test <@ events.Length = expectedEvents @>
+        }
+#endif
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
     let ``Can roundtrip against DocStore, managing sync conflicts by retrying`` (eventsInTip, ctx, initialState) = Async.RunSynchronously <| async {
