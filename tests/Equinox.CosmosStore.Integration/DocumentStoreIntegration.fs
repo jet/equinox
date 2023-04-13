@@ -14,8 +14,6 @@ open Equinox.CosmosStore
 open Equinox.CosmosStore.Integration.CosmosFixtures
 #endif
 
-module StreamName = let render categoryName streamId = String.Concat(categoryName, '-', streamId)
-
 module Cart =
     let fold, initial = Cart.Fold.fold, Cart.Fold.initial
     let snapshot = Cart.Fold.isOrigin, Cart.Fold.snapshot
@@ -48,6 +46,7 @@ module Cart =
         StoreCategory(context, codec, fold, initial, CachingStrategy.NoCaching, access)
         |> Equinox.Decider.resolve log
         |> Cart.create
+    let streamName = Cart.streamId >> StreamName.render Cart.Category
 
 module ContactPreferences =
     let fold, initial = ContactPreferences.Fold.fold, ContactPreferences.Fold.initial
@@ -65,6 +64,7 @@ module ContactPreferences =
     let createServiceWithCaching log context cache =
         let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         createServiceWithLatestKnownEvent context log sliding20m
+    let streamName = ContactPreferences.streamId >> StreamName.render ContactPreferences.Category
 
 [<Xunit.Collection "DocStore">]
 type Tests(testOutputHelper) =
@@ -139,30 +139,29 @@ type Tests(testOutputHelper) =
         else verifyRequestChargesMax 15 // 14.01
     }
 
-
 #if STORE_DYNAMO
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
-    let ``Can read stream without tip in batch`` (cartContext, skuId) = Async.RunSynchronously <| async {
+    let ``Can read stream without traversing tip`` (cartContext, skuId, countToTry) = Async.RunSynchronously <| async {
         capture.Clear() // for re-runs of the test
         let addRemoveCount = 40
-        let expectedEvents = addRemoveCount * 2 - 1
+        let _expectedEvents = addRemoveCount * 2 - 1
         // Read only one batch, that does not contain the tip
         let queryMaxBatches = 1
         let eventsInTip = 0
         let context = createPrimaryContextEx log queryMaxBatches eventsInTip
         let service = Cart.createServiceWithSnapshotStrategy log context
 
-        let eventsContext = Equinox.DynamoStore.Core.EventsContext(context, log)
         let cartId : CartId = % Guid.NewGuid()
 
         do! addAndThenRemoveItemsManyTimesExceptTheLastOne cartContext cartId skuId service addRemoveCount
 
-        let sn = FsCodec.StreamName.create Domain.Cart.Category  (cartId |> Domain.Cart.streamId |> string)
         let! ct = Async.CancellationToken
-        let! pos, events =  eventsContext.Read(FsCodec.StreamName.toString sn, ct, 0L, maxCount = expectedEvents) |> Async.AwaitTask
-        // an exception is thrown by the above read
-        test <@ events.Length = expectedEvents @>
-        }
+        let eventsContext = Equinox.DynamoStore.Core.EventsContext(context, log)
+        let streamName = Cart.streamName cartId
+        let countToTry = max addRemoveCount countToTry
+        let! events = eventsContext.Read(FsCodec.StreamName.parse streamName, ct, 1L, maxCount = countToTry) |> Async.AwaitTask
+        [| 1..1+countToTry-1 |] =! [| for e in events -> int e.Index |]
+    }
 #endif
 
     [<AutoData(MaxTest = 2, SkipIfRequestedViaEnvironmentVariable="EQUINOX_INTEGRATION_SKIP_COSMOS")>]
@@ -276,7 +275,7 @@ type Tests(testOutputHelper) =
         // Needs to share the same context (with inner CosmosClient) for the session token to be threaded through
         // If we run on an independent context, we won't see (and hence prune) the full set of events
         let ctx = Core.EventsContext(context, log)
-        let streamName = ContactPreferences.streamId id |> Equinox.Core.StreamId.renderStreamName ContactPreferences.Category
+        let streamName = ContactPreferences.streamName id
 
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 14L
@@ -441,8 +440,8 @@ type Tests(testOutputHelper) =
         (* Verify pruning does not affect snapshots, though Tip is re-read in this scenario due to lack of caching *)
 
         let ctx = Core.EventsContext(context, log)
-        let streamName = Cart.streamId cartId |> StreamName.render Cart.Category
         // Prune all the events
+        let streamName = Cart.streamName cartId
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 11L
         test <@ deleted = 12 && deferred = 0 && trimmedPos = 12L @>
 
@@ -502,7 +501,7 @@ type Tests(testOutputHelper) =
         (* Verify pruning does not affect snapshots, and does not touch the Tip *)
 
         let ctx = Core.EventsContext(context, log)
-        let streamName = Cart.streamId cartId |> StreamName.render Cart.Category
+        let streamName = Cart.streamName cartId
         // Prune all the events
         let! deleted, deferred, trimmedPos = Core.Events.pruneUntil ctx streamName 12L
         test <@ deleted = 13 && deferred = 0 && trimmedPos = 13L @>
