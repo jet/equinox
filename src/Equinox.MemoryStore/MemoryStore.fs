@@ -31,7 +31,7 @@ type VolatileStore<'Format>() =
         events
 
     /// Attempts a synchronization operation - yields conflicting value if expectedCount does not match
-    member this.TrySync(streamName, categoryName, streamId, expectedCount, events) : struct (bool * FsCodec.ITimelineEvent<'Format>[]) =
+    member _.TrySync(streamName, categoryName, streamId, expectedCount, events) : struct (bool * FsCodec.ITimelineEvent<'Format>[]) =
         // Where attempts overlap on the same stream, there's a race to raise the Committed event for each 'commit'
         // If we don't serialize the publishing of the events, its possible for handlers to observe the Events out of order
         // NOTE while a Channels based impl might offer better throughput at load, in practical terms serializing all Committed event notifications
