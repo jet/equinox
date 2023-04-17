@@ -1,6 +1,20 @@
 version: '3.7'
 
 services:
+
+  # NOTE requires initialization (trust emulator's self-signed cert, create 2 databases)
+  #      after `docker compose up equinox-cosmos`, run `bash docker-compose-cosmos.sh`
+  equinox-cosmos:
+    container_name: equinox-cosmos
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator
+    restart: unless-stopped
+    environment:
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=3
+      - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
+    ports:
+      - "8081:8081" # so docker-cosmos-init.sh can get the cert and/or humans can use https://localhost:8081/_explorer/index.html
+      - "10250-10256:10250-10256" # tests connect using Direct mode
+
   equinox-postgres:
     container_name: equinox-postgres
     image: postgres
@@ -13,6 +27,8 @@ services:
     ports:
       - "5432:5432"
 
+  # NOTE MANUAL STEP until MS get with the program https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719
+  #      after `docker compose up`, run `bash docker-compose-mssql.sh`
   equinox-mssql:
     container_name: equinox-mssql
     image: mcr.microsoft.com/mssql/server:2019-latest
@@ -22,11 +38,6 @@ services:
     environment:
       - SA_PASSWORD=mssql1Ipw
       - ACCEPT_EULA=Y
-
-#  MANUAL STEP re https://github.com/microsoft/mssql-docker/issues/2#issuecomment-1059819719; after docker compose up, run:
-#  docker exec -it equinox-mssql /opt/mssql-tools/bin/sqlcmd \
-#    -S localhost -U sa -P "!Passw0rd" \
-#    -Q "CREATE database EQUINOX_TEST_DB"
 
   equinox-mysql:
     container_name: equinox-mysql
@@ -92,8 +103,6 @@ services:
   node2.eventstore:
       <<: *template
       container_name: node2.eventstore
-      env_file:
-        - docker-compose.env
       environment:
         - EVENTSTORE_INT_IP=172.30.240.12
         - EVENTSTORE_ADVERTISE_HTTP_PORT_TO_CLIENT_AS=2112
