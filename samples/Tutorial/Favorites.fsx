@@ -1,14 +1,16 @@
-#if LOCAL
+#if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
-#I "bin/Debug/netstandard2.1/"
+#I "bin/Debug/net6.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"
+#r "Equinox.Core.dll"
 #r "Equinox.MemoryStore.dll"
 #r "FSharp.UMX.dll"
 #r "FSCodec.dll"
 #else
+#r "nuget:Equinox, *-*"
 #r "nuget:Equinox.MemoryStore, *-*"
 #r "nuget:Serilog.Sinks.Console"
 #endif
@@ -108,7 +110,8 @@ let codec =
     let encode = function
         | Added x -> struct ("Add",box x)
         | Removed x -> "Remove",box x
-    let tryDecode : struct (string * obj) -> Event voption = function
+    let tryDecode name (e : obj) : Event voption =
+        match name, e with
         | "Add", (:? string as x) -> Added x |> ValueSome
         | "Remove", (:? string as x) -> Removed x |> ValueSome
         | _ -> ValueNone

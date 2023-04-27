@@ -11,7 +11,7 @@
 // - the same general point applies to over-using querying of streams for read purposes as we do here;
 //   applying CQRS principles can often lead to a better model regardless of raw necessity
 
-#if LOCAL
+#if !LOCAL
 // Compile Tutorial.fsproj by either a) right-clicking or b) typing
 // dotnet build samples/Tutorial before attempting to send this to FSI with Alt-Enter
 #if VISUALSTUDIO
@@ -31,10 +31,10 @@
 #r "FsCodec.SystemTextJson.dll"
 //#r "FSharp.Control.TaskSeq.dll"
 //#r "System.Net.Http"
-//#r "EventStore.Client.dll"
-//#r "EventStore.Client.Streams.dll"
+#r "EventStore.Client.dll"
+#r "EventStore.Client.Streams.dll"
 #r "Equinox.EventStoreDb.dll"
-//#r "Microsoft.Azure.Cosmos.Client.dll"
+#r "Microsoft.Azure.Cosmos.Client.dll"
 #r "Equinox.CosmosStore.dll"
 #else
 #r "nuget:Serilog.Sinks.Console"
@@ -62,7 +62,7 @@ module Events =
     type Event = int64 * Contract
 
     // our upconversion function doesn't actually fit the term - it just tuples the underlying event
-    let up struct (evt : FsCodec.ITimelineEvent<_>, e) : Event =
+    let up (evt : FsCodec.ITimelineEvent<_>) e : Event =
         evt.Index, e
     // as per the `up`, the downConverter needs to drop the index (which is only there for symmetry), add null metadata
     let down (_index, e) : struct (Contract * _ voption * DateTimeOffset voption) =

@@ -485,13 +485,14 @@ module Dump =
         let initial = List.empty
         let fold state events = (events, state) ||> Seq.foldBack (fun e l -> e :: l)
         let tryDecode (x : FsCodec.ITimelineEvent<ReadOnlyMemory<byte>>) = ValueSome x
-        let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ -> failwith "No mapCausation"))
+        let idCodec = FsCodec.Codec.Create((fun _ -> failwith "No encoding required"), tryDecode, (fun _ _ -> failwith "No mapCausation"))
         let isOriginAndSnapshot = (fun (event : FsCodec.ITimelineEvent<_>) -> not doE && event.IsUnfold), fun _state -> failwith "no snapshot required"
+        let indentedOptions = FsCodec.SystemTextJson.Options.Create(indent = true)
         let formatUnfolds, formatEvents =
-            let indentedOptions = FsCodec.SystemTextJson.Options.Create(indent = true)
-            let prettify (json : string) =
+            let prettify (json : string) : string =
                 use parsed = System.Text.Json.JsonDocument.Parse json
-                System.Text.Json.JsonSerializer.Serialize(parsed, indentedOptions)
+                let prettySerdes = FsCodec.SystemTextJson.Serdes indentedOptions
+                prettySerdes.Serialize parsed
             if p.Contains FlattenUnfolds then id else prettify
             , if p.Contains Pretty then prettify else id
         let mutable payloadBytes = 0
