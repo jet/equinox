@@ -6,8 +6,12 @@ namespace Equinox.MemoryStore
 open Equinox.Core
 open System.Threading.Tasks
 
-/// Maintains a dictionary of ITimelineEvent<'Format>[] per stream-name, allowing one to vary the encoding used to match that of a given concrete store, or optimize test run performance
-type VolatileStore<'Format>() =
+/// Each Sync that results in an append to the store is notified via the Store's `Committed` event
+type Commit<'Format> = (struct (FsCodec.StreamName * FsCodec.ITimelineEvent<'Format>[]))
+
+/// Maintains a dictionary of ITimelineEvent<'Format>[] per stream-name, allowing one to vary the encoding used to match
+/// that of a given concrete store, or optimize test run performance
+type VolatileStore<'Format> private (lock) =
 
     let streams = System.Collections.Concurrent.ConcurrentDictionary<string, FsCodec.ITimelineEvent<'Format>[]>()
 
@@ -20,9 +24,12 @@ type VolatileStore<'Format>() =
         let res = streams.AddOrUpdate(streamName, seedStream, updateValue, (expectedCount, events))
         (obj.ReferenceEquals(Array.last res, Array.last events), res)
 
-    let committed = Event<_>()
-    /// Notifies re batches of events being committed to a given Stream. Commits are guaranteed to be notified in correct order at stream level
-    [<CLIEvent>] member _.Committed : IEvent<struct (string * string * FsCodec.ITimelineEvent<'Format>[])> = committed.Publish
+    let committed = Event<Commit<'Format>>()
+    /// Notifies re batches of events being committed to a given Stream.
+    /// Commits are guaranteed to be notified in correct order at stream level under concurrent Equinox Transact calls.
+    /// NOTE the caller should inspect and/or copy the event efficiently and immediately
+    /// NOTE blocking and/or running reactions synchronously will hamper test performance and/or may result in deadlock
+    [<CLIEvent>] member _.Committed : IEvent<Commit<'Format>> = committed.Publish
 
     /// Loads events from a given stream, null if none yet written
     member _.Load(streamName) =
@@ -31,7 +38,7 @@ type VolatileStore<'Format>() =
         events
 
     /// Attempts a synchronization operation - yields conflicting value if expectedCount does not match
-    member _.TrySync(streamName, categoryName, streamId, expectedCount, events) : struct (bool * FsCodec.ITimelineEvent<'Format>[]) =
+    member _.TrySync(streamName, _categoryName, _streamId, expectedCount, events) : struct (bool * FsCodec.ITimelineEvent<'Format>[]) =
         // Where attempts overlap on the same stream, there's a race to raise the Committed event for each 'commit'
         // If we don't serialize the publishing of the events, its possible for handlers to observe the Events out of order
         // NOTE while a Channels based impl might offer better throughput at load, in practical terms serializing all Committed event notifications
@@ -39,8 +46,15 @@ type VolatileStore<'Format>() =
         // NOTE the lock could be more granular, the guarantee of notification ordering is/needs to be at stream level only
         lock streams <| fun () ->
             let struct (succeeded, _) as outcome = trySync streamName expectedCount events
-            if succeeded then committed.Trigger(categoryName, streamId, events)
+            if succeeded then committed.Trigger(FSharp.UMX.UMX.tag streamName, events)
             outcome
+
+    /// As per note in TrySync, it's a really bad idea to trigger callbacks (and especially nested ones) in reaction to the Committed event
+    /// It's recommended to make use of the constructs in Propulsion.MemoryStore instead of resorting to that
+    /// This hack will be removed in V4
+    [<System.Obsolete>]
+    static member WithOrderingGuaranteesDisabled() = VolatileStore(fun _ f -> f ())
+    new () = VolatileStore(lock)
 
 type Token = int
 

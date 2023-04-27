@@ -1,15 +1,17 @@
-#if LOCAL
+#if !LOCAL
 // Compile Tutorial.fsproj before attempting to send this to FSI with Alt-Enter by either:
 // a) right-clicking or
 // b) typing dotnet build samples/Tutorial
-#I "bin/Debug/netstandard2.1/"
+#I "bin/Debug/net6.0/"
 #r "Serilog.dll"
 #r "Serilog.Sinks.Console.dll"
 #r "Equinox.dll"
+#r "Equinox.Core.dll"
 #r "Equinox.MemoryStore.dll"
 #r "TypeShape.dll"
 #r "FSharp.UMX.dll"
 #r "FsCodec.dll"
+#r "FsCodec.Box.dll"
 #r "FsCodec.NewtonsoftJson.dll"
 #else
 #r "nuget:Equinox.MemoryStore, *-*"
@@ -88,19 +90,19 @@ type Service internal (resolve : string -> Equinox.Decider<Event, State>) =
 
 open Serilog
 let log = LoggerConfiguration().WriteTo.Console().CreateLogger()
-let logEvents c s (events : FsCodec.ITimelineEvent<_>[]) =
-    log.Information("Committed to {categoryName}-{streamId}, events: {@events}", c, s, seq { for x in events -> x.EventType })
+let logEvents sn (events : FsCodec.ITimelineEvent<_>[]) =
+    log.Information("Committed to {streamName}, events: {@events}", sn, seq { for x in events -> x.EventType })
 
 (* We can integration test using an in-memory store
    See other examples such as Cosmos.fsx to see how we integrate with CosmosDB and/or other concrete stores *)
 
 let store = Equinox.MemoryStore.VolatileStore()
-let _ = store.Committed.Subscribe(fun struct (c, s, xs) -> logEvents c s xs)
+let _ = store.Committed.Subscribe(fun struct (sn, xs) -> logEvents sn xs)
 let codec = FsCodec.Box.Codec.Create()
 let resolve =
     Equinox.MemoryStore.MemoryStoreCategory(store, codec, fold, initial)
-    |> Equinox.Decider.resolveWithContext log
-let service = Service(streamId >> resolve Category ())
+    |> Equinox.Decider.resolve log
+let service = Service(streamId >> resolve Category)
 
 let clientId = "ClientA"
 service.Read(clientId) |> Async.RunSynchronously
