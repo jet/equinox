@@ -273,7 +273,7 @@ Stored Procedure         | JavaScript code stored in a Container that (repeatedl
 
 Term                     | Description
 -------------------------|------------
-Table                    | Defined storage in DynamoDB, defining a schema and (optionally), a Streams configuration. (There's no notion of a Database)
+Table                    | Defined storage area in DynamoDB, defining a schema and (optionally), a Streams configuration. (There's no notion of a Database)
 Streams                  | Buffer used to record information about all changes with a 24h retention window
 Transactions             | Feature allowing up to 100 atomic updates across multiple tables and logical partitions. Doubles the RU cost of a write 
 
@@ -294,6 +294,7 @@ Term       | Description
 -----------|------------
 Cache      | `System.Net.MemoryCache` or equivalent holding _State_ and/or `etag` information for a Stream with a view to reducing roundtrips, latency and/or Request Charges
 Unfolds    | Snapshot information, stored in an appropriate storage location (not as a Stream's actual Events), _but represented as Events_, to minimize Queries and the attendant Request Charges when there is a Cache miss
+Version    | When a decision function is invoked, it's presented with a State derived from the Stream's Events and/or Unfolds up to a given position. If the newest event has Index `9` (or it was loaded from an Unfold with `i=9`) the Version is `10`
 
 # Programming Model
 

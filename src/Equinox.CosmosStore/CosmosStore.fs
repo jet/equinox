@@ -78,7 +78,7 @@ type Batch = // TODO for STJ v5: All fields required unless explicitly optional
 /// Compaction/Snapshot/Projection Event based on the state at a given point in time `i`
 [<NoEquality; NoComparison>]
 type Unfold =
-    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated
+    {   /// Base: Stream Position (Version) of State from which this Unfold Event was generated. An unfold from State Version 1 is i=1 and includes event i=1
         i: int64
 
         /// Generation datetime

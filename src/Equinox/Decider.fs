@@ -264,19 +264,18 @@ and internal AttemptsPolicy() =
 and MaxResyncsExhaustedException(count) =
    inherit exn(sprintf "Concurrency violation; aborting after %i attempts." count)
 
-
 /// Exposed by TransactEx / QueryEx, providing access to extended state information for cases where that's required
 and [<NoComparison; NoEquality>]
     ISyncContext<'state> =
 
-    /// Exposes the underlying Store's internal Version for the underlying stream.
+    /// Store-independent Version associated with the present <c>State</c>, based on the underlying Stream's write position.
     /// An empty stream is Version 0; one with a single event is Version 1 etc.
-    /// It's important to consider that this Version is more authoritative than counting the events seen, or adding 1 to
-    ///   the `Index` of the last event passed to your `fold` function - the codec may opt to ignore events
+    /// NOTE Version is more authoritative than counting the events seen, or adding 1 to the `Index` of the last event
+    ///      passed to your `fold` function; the codec may opt to filter out some events
     abstract member Version : int64
 
     /// The Storage occupied by the Events written to the underlying stream at the present time.
-    /// Specific stores may vary whether this is available, the basis and preciseness for how it is computed.
+    /// Specific stores may vary whether this is available, or the basis and preciseness for how it is computed.
     abstract member StreamEventBytes : int64 voption
 
     /// The present State of the stream within the context of this Flow
