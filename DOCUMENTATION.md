@@ -275,7 +275,9 @@ Term                     | Description
 -------------------------|------------
 Table                    | Defined storage area in DynamoDB, defining a schema and (optionally), a Streams configuration. (There's no notion of a Database)
 Streams                  | Buffer used to record information about all changes with a 24h retention window
-Transactions             | Feature allowing up to 100 atomic updates across multiple tables and logical partitions. Doubles the RU cost of a write 
+Transactions             | Feature allowing up to 100 atomic updates across multiple tables and logical partitions. Doubles the RU cost of a write
+DynamoStore Index        | Custom implementation (in Propulsion) that indexes the DynamoDB Streams output to enable traversing all the events in the store akin to how the CosmosDB ChangeFeed enables that
+Export                   | A Table can be exported in full to an S3 bucket as a set of json files containing all items
 
 ## EventStore
 
