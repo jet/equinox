@@ -20,7 +20,7 @@
 
     <PackageReference Include="FSharp.Core" Version="6.0.7" />
 
-    <PackageReference Include="FsCodec" Version="3.0.0-rc.9.5" />
+    <PackageReference Include="FsCodec" Version="3.0.0-rc.9.6" />
     <PackageReference Include="FSharp.Control.TaskSeq" Version="0.3.0" />
     <PackageReference Include="SqlStreamStore" Version="1.2.0-beta.8" />
   </ItemGroup>

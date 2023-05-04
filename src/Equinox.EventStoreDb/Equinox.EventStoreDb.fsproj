@@ -21,7 +21,7 @@
     <PackageReference Include="FSharp.Core" Version="6.0.7" />
 
     <PackageReference Include="EventStore.Client.Grpc.Streams" Version="22.0.0" />
-    <PackageReference Include="FsCodec" Version="3.0.0-rc.9.5" />
+    <PackageReference Include="FsCodec" Version="3.0.0-rc.9.6" />
     <PackageReference Include="FSharp.Control.TaskSeq" Version="0.3.0" />
   </ItemGroup>
 
