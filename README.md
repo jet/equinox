@@ -983,7 +983,7 @@ With the Equinox `type Decider`, the typical `decide` signature used with the `T
 
       context -> inputsAndOrCommand -> 'State -> Event list
 
-> NOTE: There are more advanced forms that allow the `decide` function to be `Async` and/or to also return a `'result`, which will be yielded to the caller driving the Decision as the return value of the `Transact` function.
+> NOTE: There are more advanced forms that allow the `decide` function to be `Async`, inspect the State's `Version` and/or to also return a `'result`, which will be yielded to the caller driving the Decision as the return value of the `Transact` function.
 
 #### So what kind of a thing is a Decider then?
 
