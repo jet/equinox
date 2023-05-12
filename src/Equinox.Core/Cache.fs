@@ -3,9 +3,9 @@
 open System
 open System.Threading.Tasks
 
-type [<NoEquality; NoComparison>] CacheItemOptions =
-    | AbsoluteExpiration of DateTimeOffset
-    | RelativeExpiration of TimeSpan
+type [<NoEquality; NoComparison; Struct>] CacheItemOptions =
+    | AbsoluteExpiration of ae: DateTimeOffset
+    | RelativeExpiration of re: TimeSpan
 
 [<AllowNullLiteral>]
 type CacheEntry<'state>(initialToken: StreamToken, initialState: 'state) =
@@ -39,15 +39,13 @@ type Cache(name, sizeMb: int) =
         config.Add("cacheMemoryLimitMegabytes", string sizeMb);
         new MemoryCache(name, config)
 
-    let toPolicy (cacheItemOption: CacheItemOptions) =
-        match cacheItemOption with
+    let toPolicy = function
         | AbsoluteExpiration absolute -> CacheItemPolicy(AbsoluteExpiration = absolute)
         | RelativeExpiration relative -> CacheItemPolicy(SlidingExpiration = relative)
 
     interface ICache with
         member _.UpdateIfNewer(key, options, supersedes, entry) =
-            let policy = toPolicy options
-            match cache.AddOrGetExisting(key, box entry, policy) with
+            match cache.AddOrGetExisting(key, box entry, toPolicy options) with
             | null -> Task.FromResult()
             | :? CacheEntry<'state> as existingEntry -> existingEntry.UpdateIfNewer(supersedes, entry); Task.FromResult()
             | x -> failwithf "UpdateIfNewer Incompatible cache entry %A" x
