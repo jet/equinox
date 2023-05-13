@@ -407,7 +407,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             reload (log, streamName, requireLeader, streamToken, state) ct
         member x.TrySync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
             let encode e = codec.Encode(ctx, e)
-            let encodedEvents: IEventData<EventBody> array = events |> Array.map encode
+            let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
             | GatewaySyncResult.ConflictUnknown ->
                 return SyncResult.Conflict  (reload (log, streamName, (*requireLeader*)true, token, state))
