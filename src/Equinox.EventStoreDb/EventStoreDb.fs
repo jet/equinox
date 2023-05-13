@@ -416,8 +416,8 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
             let encode e = codec.Encode(ctx, e)
             let encodedEvents: EventData[] = events |> Array.map (encode >> ClientCodec.eventData)
             match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
-            | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state))
-            | GatewaySyncResult.Written token' ->    return SyncResult.Written  (token', fold state events) }
+            | GatewaySyncResult.Written token' ->    return SyncResult.Written  (token', fold state events)
+            | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
 
 /// For EventStoreDB, caching is less critical than it is for e.g. CosmosDB
 /// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained

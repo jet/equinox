@@ -1142,15 +1142,14 @@ type internal Category<'event, 'state, 'context>
                 let encode e = codec.Encode(ctx, e)
                 let expVer = Position.toIndex >> Sync.Exp.Version
                 match mapUnfolds with
-                | Choice1Of3 () ->     expVer, events, Array.map encode events, Array.empty
-                | Choice2Of3 unfold -> expVer, events, Array.map encode events, Array.map encode (unfold events state')
-                | Choice3Of3 transmute ->
-                    let events', unfolds = transmute events state'
-                    Position.toEtag >> Sync.Exp.Etag, events', Array.map encode events', Array.map encode unfolds
+                | Choice1Of3 () ->        expVer, events, Array.map encode events, Array.empty
+                | Choice2Of3 unfold ->    expVer, events, Array.map encode events, Array.map encode (unfold events state')
+                | Choice3Of3 transmute -> let events', unfolds = transmute events state'
+                                          Position.toEtag >> Sync.Exp.Etag, events', Array.map encode events', Array.map encode unfolds
             let baseVer = Position.toIndex pos + int64 (Array.length events)
             match! store.Sync(log, streamName, pos, exp, baseVer, eventsEncoded, unfoldsEncoded, ct) with
-            | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, true, streamToken, state))
-            | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
+            | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')
+            | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, true, streamToken, state)) }
 
 namespace Equinox.DynamoStore
 

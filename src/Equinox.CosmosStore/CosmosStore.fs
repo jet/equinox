@@ -1073,7 +1073,7 @@ type internal Category<'event, 'state, 'context>
         fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
 
-    member _.Reload(log, streamName, (Token.Unpack pos as streamToken), state, ct, ?preloaded): Task<struct (StreamToken * 'state)> = task {
+    let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct : Task<struct (StreamToken * 'state)> = task {
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
@@ -1082,17 +1082,16 @@ type internal Category<'event, 'state, 'context>
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
         member cat.Reload(log, stream, _requireLeader, streamToken, state, ct): Task<struct (StreamToken * 'state)> =
-            cat.Reload(log, stream, streamToken, state, ct, ?preloaded = None)
+            reload (log, stream, streamToken, state) None ct
         member cat.TrySync(log, _categoryName, _streamId, streamName, ctx, maybeInit, (Token.Unpack pos as streamToken), state, events, ct): Task<SyncResult<'state>> = task {
             let state' = fold state events
             let exp, events, eventsEncoded, projectionsEncoded =
                 let encode e = codec.Encode(ctx, e)
                 match mapUnfolds with
-                | Choice1Of3 () ->     SyncExp.Version pos.index, events, Array.map encode events, Seq.empty
-                | Choice2Of3 unfold -> SyncExp.Version pos.index, events, Array.map encode events, Array.map encode (unfold events state')
-                | Choice3Of3 transmute ->
-                    let events', unfolds = transmute events state'
-                    SyncExp.Etag (defaultArg pos.etag null), events', Array.map encode events', Seq.map encode unfolds
+                | Choice1Of3 () ->        SyncExp.Version pos.index, events, Array.map encode events, Seq.empty
+                | Choice2Of3 unfold ->    SyncExp.Version pos.index, events, Array.map encode events, Array.map encode (unfold events state')
+                | Choice3Of3 transmute -> let events', unfolds = transmute events state'
+                                          SyncExp.Etag (defaultArg pos.etag null), events', Array.map encode events', Seq.map encode unfolds
             let baseIndex = pos.index + int64 (Array.length events)
             let renderElement = if compressUnfolds then JsonElement.undefinedToNull >> JsonElement.deflate else JsonElement.undefinedToNull
             let projections = projectionsEncoded |> Seq.map (Sync.mkUnfold renderElement baseIndex)
@@ -1100,8 +1099,9 @@ type internal Category<'event, 'state, 'context>
             match maybeInit with ValueNone -> () | ValueSome i -> do! i ct
             match! store.Sync(log, streamName, exp, batch, ct) with
             | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')
-            | InternalSyncResult.Conflict (pos', tipEvents) -> return SyncResult.Conflict (fun ct -> cat.Reload(log, streamName, streamToken, state, ct, (pos', pos.index, tipEvents)))
-            | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (fun ct -> cat.Reload(log, streamName, streamToken, state, ct)) }
+            | InternalSyncResult.ConflictUnknown _token' -> return SyncResult.Conflict (reload (log, streamName, streamToken, state) None)
+            | InternalSyncResult.Conflict (pos', tipEvents) ->
+                return SyncResult.Conflict (reload (log, streamName, streamToken, state) (Some (pos', pos.index, tipEvents))) }
 
 module ConnectionString =
 

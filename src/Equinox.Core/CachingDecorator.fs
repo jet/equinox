@@ -29,11 +29,11 @@ type CachingDecorator<'event, 'state, 'context>
             | ValueSome (token, state) -> return! cache streamName (fun ct -> category.Reload(log, streamName, requireLeader, token, state, ct)) ct }
         member _.TrySync(log : ILogger, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) = task {
             match! category.TrySync(log, categoryName, streamId, streamName, context, maybeInit, streamToken, state, events, ct) with
-            | SyncResult.Conflict resync ->
-                return SyncResult.Conflict (cache streamName resync)
             | SyncResult.Written tokenAndState' ->
                 do! updateCache streamName tokenAndState'
-                return SyncResult.Written tokenAndState' }
+                return SyncResult.Written tokenAndState'
+            | SyncResult.Conflict resync ->
+                return SyncResult.Conflict (cache streamName resync) }
 
 module internal Cache =
 

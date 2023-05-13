@@ -449,8 +449,8 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
             let encode e = codec.Encode(ctx, e)
             let encodedEvents: EventData[] = events |> Array.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent)
             match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
-            | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state))
-            | GatewaySyncResult.Written token' ->  return SyncResult.Written  (token', fold state events) }
+            | GatewaySyncResult.Written token' ->  return SyncResult.Written  (token', fold state events)
+            | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
 
 /// For SqlStreamStore, caching is less critical than it is for e.g. CosmosDB
 /// As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
