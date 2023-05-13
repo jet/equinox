@@ -382,7 +382,8 @@ type private CompactionContext(eventsLen: int, capacityBeforeCompaction: int) =
     /// Determines whether writing a Compaction event is warranted (based on the existing state and the current accumulated changes)
     member _.IsCompactionDue = eventsLen > capacityBeforeCompaction
 
-type private Category<'event, 'state, 'context>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, access) =
+type private Category<'event, 'state, 'context>(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial, access) =
+
     let tryDecode (e: ResolvedEvent) = e.Event |> ClientCodec.timelineEvent |> codec.TryDecode
     let isOrigin =
         match access with
@@ -399,47 +400,28 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
         | None -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
-    let load (fold: 'state -> 'event seq -> 'state) initial f: Task<struct (StreamToken * 'state)> = task {
-        let! struct (token, events) = f
-        return struct (token, fold initial events) }
+    let reload (log, streamName, requireLeader, streamToken, state) ct = task {
+        let! token', events = context.Reload(log, streamName, requireLeader, streamToken, tryDecode, compactionPredicate, ct)
+        return struct (token', fold state (Seq.ofArray events)) }
 
-    member _.Load(log, fold: 'state -> 'event seq -> 'state, initial: 'state, streamName: string, requireLeader, ct) =
-        load fold initial (loadAlgorithm log streamName requireLeader ct)
-    member _.Reload(log, fold: 'state -> 'event seq -> 'state, state: 'state, streamName: string, requireLeader, token, ct) =
-        load fold state (context.Reload(log, streamName, requireLeader, token, tryDecode, compactionPredicate, ct))
-
-    member x.TrySync<'context>
-        (   log: ILogger, fold: 'state -> 'event seq -> 'state,
-            streamName, (Token.Unpack token as streamToken), state: 'state, events: 'event array, ctx: 'context, ct)
-        : Task<SyncResult<'state>> = task {
-        let encode e = codec.Encode(ctx, e)
-        let events =
-            match access with
-            | None | Some AccessStrategy.LatestKnownEvent -> events
-            | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
-                let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
-                if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
-        let encodedEvents: EventData[] = events |> Array.map (encode >> ClientCodec.eventData)
-        match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
-        | GatewaySyncResult.Written token' ->
-            return SyncResult.Written   (token', fold state (Seq.ofArray events))
-        | GatewaySyncResult.ConflictUnknown _ ->
-            return SyncResult.Conflict  (fun ct -> x.Reload(log, fold, state, streamName, (*requireLeader*)true, streamToken, ct)) }
-
-type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
-    interface ICategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, streamName, allowStale, requireLeader, ct) = task {
-            match readCache with
-            | None -> return! category.Load(log, fold, initial, streamName, requireLeader, ct)
-            | Some (cache : ICache, prefix : string) ->
-                match! cache.TryGet(prefix + streamName) with
-                | ValueNone -> return! category.Load(log, fold, initial, streamName, requireLeader, ct)
-                | ValueSome tokenAndState when allowStale -> return tokenAndState
-                | ValueSome (token, state) -> return! category.Reload(log, fold, state, streamName, requireLeader, token, ct) }
-        member _.TrySync(log, _categoryName, _streamId, streamName, context, _maybeInit, streamToken, initialState, events, ct) = task {
-            match! category.TrySync(log, fold, streamName, streamToken, initialState, events, context, ct) with
-            | SyncResult.Written (token', state') -> return SyncResult.Written (token', state')
-            | SyncResult.Conflict resync ->          return SyncResult.Conflict resync }
+    interface IReloadableCategory<'event, 'state, 'context> with
+        member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) = task {
+            let! struct (token, events) = loadAlgorithm log streamName requireLeader ct
+            return struct (token, fold initial events) }
+        member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
+            reload (log, streamName, requireLeader, streamToken, state) ct
+        member x.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, ct) = task {
+            let encode e = codec.Encode(ctx, e)
+            let events =
+                match access with
+                | None | Some AccessStrategy.LatestKnownEvent -> events
+                | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
+                    let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
+                    if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
+            let encodedEvents: EventData[] = events |> Array.map (encode >> ClientCodec.eventData)
+            match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
+            | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state))
+            | GatewaySyncResult.Written token' ->    return SyncResult.Written  (token', fold state events) }
 
 /// For EventStoreDB, caching is less critical than it is for e.g. CosmosDB
 /// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
@@ -471,24 +453,15 @@ type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty)
                 + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
                 |> invalidOp
             | _ -> ()
-        let inner = Category<'event, 'state, 'context>(context, codec, access)
-        let readCacheOption =
+        let raw = Category<'event, 'state, 'context>(context, codec, fold, initial, access)
+        let tryReadCache, updateCache =
             match caching with
-            | None -> None
-            | Some (CachingStrategy.SlidingWindow (cache, _))
-            | Some (CachingStrategy.FixedTimeSpan (cache, _)) -> Some (cache, null)
-            | Some (CachingStrategy.SlidingWindowPrefixed (cache, _, prefix)) -> Some (cache, prefix)
-        let folder = Folder<'event, 'state, 'context>(inner, fold, initial, ?readCache = readCacheOption)
-        let category: ICategory<_, _, 'context> =
-            match caching with
-            | None -> folder :> _
-            | Some (CachingStrategy.SlidingWindow (cache, window)) ->
-                Caching.applyCacheUpdatesWithSlidingExpiration cache null window folder Token.supersedes
-            | Some (CachingStrategy.FixedTimeSpan (cache, period)) ->
-                Caching.applyCacheUpdatesWithFixedTimeSpan cache null period folder Token.supersedes
-            | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) ->
-                Caching.applyCacheUpdatesWithSlidingExpiration cache prefix window folder Token.supersedes
-        let resolveInner categoryName streamId = struct (category, StreamName.render categoryName streamId, ValueNone)
+            | None -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
+            | Some (CachingStrategy.SlidingWindow (cache, window)) -> cache.TryGet, Cache.updateWithSlidingExpiration (cache, null) window Token.supersedes
+            | Some (CachingStrategy.FixedTimeSpan (cache, period)) -> cache.TryGet, Cache.updateWithFixedTimeSpan (cache, null) period Token.supersedes
+            | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) -> cache.TryGet, Cache.updateWithSlidingExpiration (cache, prefix) window Token.supersedes
+        let cached = CachingDecorator<'event, 'state, 'context>(raw, tryReadCache, updateCache) : ICategory<_, _, _>
+        let resolveInner categoryName streamId = struct (cached, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         EventStoreCategory(resolveInner, empty)
 

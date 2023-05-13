@@ -717,7 +717,7 @@ module internal Query =
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, rc
 
-    let private logQuery (direction, minIndex, maxIndex) (container: Container, stream) interval (responsesCount, events: Event[]) n (rc: RequestConsumption) (log: ILogger) =
+    let private logQuery (direction, minIndex, maxIndex) (container : Container, stream) interval (responsesCount, events : Event[]) n (rc : RequestConsumption) (log : ILogger) =
         let count, bytes = events.Length, Event.arrayBytes events
         let reqMetric = Log.metric container.TableName stream interval bytes count rc
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
@@ -726,7 +726,7 @@ module internal Query =
             "EqxDynamo {action:l} {stream:l} v{n} {ms:f1}ms {ru}RU {count}e/{responses} {bytes}b >{minN} <{maxI}",
             action, stream, n, interval.ElapsedMilliseconds, rc.total, count, responsesCount, bytes, Option.toNullable minIndex, Option.toNullable maxIndex)
 
-    let private calculateUsedVersusDroppedPayload stopIndex (xs: Event[]): int * int =
+    let private calculateUsedVersusDroppedPayload stopIndex (xs : Event[]) : int * int =
         let mutable used, dropped = 0, 0
         let mutable found = false
         for x in xs do
@@ -737,9 +737,9 @@ module internal Query =
         used, dropped
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type ScanResult<'event> = { found: bool; minIndex: int64; next: int64; maybeTipPos: Position option; events: 'event[] }
+    type ScanResult<'event> = { found : bool; minIndex : int64; next : int64; maybeTipPos : Position option; events : 'event[] }
 
-    let scanTip (tryDecode: ITimelineEvent<EncodedBody> -> 'event voption, isOrigin: 'event -> bool) (pos: Position, i: int64, xs: ITimelineEvent<InternalBody>[])
+    let scanTip (tryDecode : ITimelineEvent<EncodedBody> -> 'event voption, isOrigin : 'event -> bool) (pos : Position, i : int64, xs : ITimelineEvent<InternalBody>[])
         : ScanResult<'event> =
         let items = ResizeArray(xs.Length)
         let isOrigin' e =
@@ -757,7 +757,7 @@ module internal Query =
         : Task<ScanResult<'event> option> = task {
         let mutable found = false
         let mutable responseCount = 0
-        let mergeBatches (log: ILogger) (batchesBackward: taskSeq<Event[] * Position option * RequestConsumption>) = task {
+        let mergeBatches (log : ILogger) (batchesBackward : taskSeq<Event[] * Position option * RequestConsumption>) = task {
             let mutable lastResponse, maybeTipPos, ru = None, None, 0.
             let! events =
                 batchesBackward
@@ -782,7 +782,7 @@ module internal Query =
             return events, maybeTipPos, { total = ru } }
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
-        let batches ct: taskSeq<Event[] * Position option * RequestConsumption> =
+        let batches ct : taskSeq<Event[] * Position option * RequestConsumption> =
             mkQuery readLog (container, stream) consistentRead maxItems (direction, minIndex, maxIndex) ct
             |> TaskSeq.map (mapPage direction (container, stream) (minIndex, maxIndex, maxItems) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = batches >> mergeBatches log |> Stopwatch.time ct
@@ -1123,67 +1123,34 @@ type internal StoreClient(container: Container, fallback: Container option, quer
         Prune.until log (container, stream) query.MaxItems index ct
 
 type internal Category<'event, 'state, 'context>
-    (   store: StoreClient, codec: IEventCodec<'event, EncodedBody, 'context>) =
-    member _.Load(log, streamName, requireLeader, initial, checkUnfolds, fold, isOrigin, ct): Task<struct (StreamToken * 'state)> = task {
-        let! token, events = store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct)
-        return struct (token, fold initial events) }
-    member _.Reload(log, streamName, requireLeader, (Token.Unpack pos as streamToken), state, fold, isOrigin, ct, ?preloaded): Task<struct (StreamToken * 'state)> = task {
-        match! store.Reload(log, (streamName, pos), requireLeader, (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
+    (   store: StoreClient, codec: IEventCodec<'event, EncodedBody, 'context>,
+        fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
+        checkUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
+    let reload (log, stream, requireLeader, (Token.Unpack pos as streamToken), state, ct): Task<struct (StreamToken * 'state)> = task {
+        match! store.Reload(log, (stream, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    member cat.Sync(log, stream, (Token.Unpack pos as streamToken), state, events, mapUnfolds, fold, isOrigin, context, ct): Task<SyncResult<'state>> = task {
-        let state' = fold state (Seq.ofArray events)
-        let exp, events, eventsEncoded, unfoldsEncoded =
-            let encode e = codec.Encode(context, e)
-            let expVer = Position.toIndex >> Sync.Exp.Version
-            match mapUnfolds with
-            | Choice1Of3 () ->     expVer, events, Array.map encode events, Array.empty
-            | Choice2Of3 unfold -> expVer, events, Array.map encode events, Array.map encode (unfold events state')
-            | Choice3Of3 transmute ->
-                let events', unfolds = transmute events state'
-                Position.toEtag >> Sync.Exp.Etag, events', Array.map encode events', Array.map encode unfolds
-        let baseVer = Position.toIndex pos + int64 (Array.length events)
-        match! store.Sync(log, stream, pos, exp, baseVer, eventsEncoded, unfoldsEncoded, ct) with
-        | InternalSyncResult.Written token' -> return SyncResult.Written (token', state')
-        | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (fun ct -> cat.Reload(log, stream, true, streamToken, state, fold, isOrigin, ct)) }
-
-module internal Caching =
-
-    let applyCacheUpdatesWithSlidingExpiration (cache : ICache, prefix : string) (slidingExpiration : TimeSpan) =
-        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
-        let options = CacheItemOptions.RelativeExpiration slidingExpiration
-        fun streamName value ->
-            cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
-
-    let applyCacheUpdatesWithFixedTimeSpan (cache : ICache, prefix : string) (period : TimeSpan) =
-        let mkCacheEntry struct (initialToken : StreamToken, initialState : 'state) = CacheEntry<'state>(initialToken, initialState)
-        fun streamName value ->
-            let expirationPoint = let creationDate = DateTimeOffset.UtcNow in creationDate.Add period
-            let options = CacheItemOptions.AbsoluteExpiration expirationPoint
-            cache.UpdateIfNewer(prefix + streamName, options, Token.supersedes, mkCacheEntry value)
-
-    type CachingCategory<'event, 'state, 'context>
-        (   category : Category<'event, 'state, 'context>,
-            fold : 'state -> 'event seq -> 'state, initial : 'state, isOrigin : 'event -> bool,
-            tryReadCache : string -> Task<voption<struct (StreamToken * 'state)>>, updateCache : string -> struct (StreamToken * 'state) -> Task<unit>,
-            checkUnfolds, mapUnfolds : Choice<unit, 'event array -> 'state -> 'event array, 'event array -> 'state -> 'event array * 'event array>) =
-        let cache streamName (inner : CancellationToken -> Task<struct (StreamToken * 'state)>) ct = task {
-            let! tokenAndState = inner ct
-            do! updateCache streamName tokenAndState
-            return tokenAndState }
-        interface ICategory<'event, 'state, 'context> with
-            member _.Load(log, _categoryName, _streamId, streamName, allowStale, requireLeader, ct) = task {
-                match! tryReadCache streamName with
-                | ValueNone -> return! cache streamName (fun ct -> category.Load(log, streamName, requireLeader, initial, checkUnfolds, fold, isOrigin, ct)) ct
-                | ValueSome tokenAndState when allowStale -> return tokenAndState // read already updated TTL, no need to write
-                | ValueSome (token, state) -> return! cache streamName (fun ct -> category.Reload(log, streamName, requireLeader, token, state, fold, isOrigin, ct)) ct }
-            member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, _maybeInit, streamToken, state, events, ct) = task {
-                match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context, ct) with
-                | SyncResult.Written tokenAndState' ->
-                    do! updateCache streamName tokenAndState'
-                    return SyncResult.Written tokenAndState'
-                | SyncResult.Conflict resync ->
-                    return SyncResult.Conflict (cache streamName resync) }
+    interface IReloadableCategory<'event, 'state, 'context> with
+        member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
+            let! token, events = store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct)
+            return struct (token, fold initial events) }
+        member _.Reload(log, stream, requireLeader, streamToken, state, ct): Task<struct (StreamToken * 'state)> =
+            reload (log, stream, requireLeader, streamToken, state, ct)
+        member _.TrySync(log, _categoryName, _streamId, streamName, context, _maybeInit, (Token.Unpack pos as streamToken), state, events, ct): Task<SyncResult<'state>> = task {
+            let state' = fold state events
+            let exp, events, eventsEncoded, unfoldsEncoded =
+                let encode e = codec.Encode(context, e)
+                let expVer = Position.toIndex >> Sync.Exp.Version
+                match mapUnfolds with
+                | Choice1Of3 () ->     expVer, events, Array.map encode events, Array.empty
+                | Choice2Of3 unfold -> expVer, events, Array.map encode events, Array.map encode (unfold events state')
+                | Choice3Of3 transmute ->
+                    let events', unfolds = transmute events state'
+                    Position.toEtag >> Sync.Exp.Etag, events', Array.map encode events', Array.map encode unfolds
+            let baseVer = Position.toIndex pos + int64 (Array.length events)
+            match! store.Sync(log, streamName, pos, exp, baseVer, eventsEncoded, unfoldsEncoded, ct) with
+            | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (fun ct -> reload (log, streamName, true, streamToken, state, ct))
+            | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 namespace Equinox.DynamoStore
 
@@ -1367,12 +1334,7 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
     new(context: DynamoStoreContext, codec, fold, initial, caching, access) =
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveCategory (categoryName, container) =
-            let createCategory _name: ICategory<_, _, 'context> =
-                let tryReadCache, updateCache =
-                    match caching with
-                    | CachingStrategy.NoCaching -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
-                    | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Caching.applyCacheUpdatesWithSlidingExpiration (cache, null) window
-                    | CachingStrategy.FixedTimeSpan (cache, period) -> cache.TryGet, Caching.applyCacheUpdatesWithFixedTimeSpan (cache, null) period
+            let createCategory _name : ICategory<_, _, 'context> =
                 let isOrigin, checkUnfolds, mapUnfolds =
                     match access with
                     | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
@@ -1381,8 +1343,13 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
                     | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ (state: 'state) -> unfold state)
                     | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
                     | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-                let cosmosCat = Category<'event, 'state, 'context>(container, codec)
-                Caching.CachingCategory<'event, 'state, 'context>(cosmosCat, fold, initial, isOrigin, tryReadCache, updateCache, checkUnfolds, mapUnfolds) :> _
+                let raw = Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, mapUnfolds)
+                let tryReadCache, updateCache =
+                    match caching with
+                    | CachingStrategy.NoCaching -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
+                    | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Cache.updateWithSlidingExpiration (cache, null) window Token.supersedes
+                    | CachingStrategy.FixedTimeSpan (cache, period) -> cache.TryGet, Cache.updateWithFixedTimeSpan (cache, null) period Token.supersedes
+                CachingDecorator<'event, 'state, 'context>(raw, tryReadCache, updateCache) :> _
             categories.GetOrAdd(categoryName, createCategory)
         let resolveInner categoryName streamId =
             let struct (container, streamName) = context.ResolveContainerClientAndStreamName(categoryName, streamId)
