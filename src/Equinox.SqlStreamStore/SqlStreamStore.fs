@@ -432,24 +432,21 @@ type private Category<'event, 'state, 'context>(context: SqlStreamStoreContext, 
         | None -> None
         | Some AccessStrategy.LatestKnownEvent -> Some (fun _ -> true)
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
-    let reload (log, streamName, requireLeader, streamToken, state) ct = task {
-        let! token', events = context.Reload(log, streamName, requireLeader, streamToken, tryDecode, compactionPredicate, ct)
-        return struct (token', fold state (Seq.ofArray events)) }
-
+    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
     interface IReloadableCategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) = task {
-            let! token, events = loadAlgorithm log streamName requireLeader ct
-            return struct (token, fold initial events) }
+        member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) =
+            fetch initial (loadAlgorithm log streamName requireLeader ct)
         member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
             reload (log, streamName, requireLeader, streamToken, state) ct
-        member x.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, ct) = task {
-            let encode e = codec.Encode(ctx, e)
+        member _.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack token as streamToken), state, events, ct) = task {
             let events =
                 match access with
                 | None | Some AccessStrategy.LatestKnownEvent -> events
                 | Some (AccessStrategy.RollingSnapshots (_, compact)) ->
                     let cc = CompactionContext(Array.length events, token.batchCapacityLimit.Value)
                     if cc.IsCompactionDue then Array.append events (fold state events |> compact |> Array.singleton) else events
+            let encode e = codec.Encode(ctx, e)
             let encodedEvents: EventData[] = events |> Array.map (encode >> UnionEncoderAdapters.eventDataOfEncodedEvent)
             match! context.TrySync(log, streamName, streamToken, events, encodedEvents, compactionPredicate, ct) with
             | GatewaySyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state))

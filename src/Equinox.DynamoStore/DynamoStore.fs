@@ -1126,20 +1126,20 @@ type internal Category<'event, 'state, 'context>
     (   store: StoreClient, codec: IEventCodec<'event, EncodedBody, 'context>,
         fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
-    let reload (log, stream, requireLeader, (Token.Unpack pos as streamToken), state, ct): Task<struct (StreamToken * 'state)> = task {
-        match! store.Reload(log, (stream, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
+    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let reload (log, streamNam, requireLeader, (Token.Unpack pos as streamToken), state) ct: Task<struct (StreamToken * 'state)> = task {
+        match! store.Reload(log, (streamNam, pos), requireLeader, (codec.TryDecode, isOrigin), ct) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     interface IReloadableCategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
-            let! token, events = store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct)
-            return struct (token, fold initial events) }
-        member _.Reload(log, stream, requireLeader, streamToken, state, ct): Task<struct (StreamToken * 'state)> =
-            reload (log, stream, requireLeader, streamToken, state, ct)
-        member _.TrySync(log, _categoryName, _streamId, streamName, context, _maybeInit, (Token.Unpack pos as streamToken), state, events, ct): Task<SyncResult<'state>> = task {
+        member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) =
+            fetch initial (store.Load(log, (streamName, None), requireLeader, (codec.TryDecode, isOrigin), checkUnfolds, ct))
+        member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
+            reload (log, streamName, requireLeader, streamToken, state) ct
+        member _.TrySync(log, _categoryName, _streamId, streamName, ctx, _maybeInit, (Token.Unpack pos as streamToken), state, events, ct) = task {
             let state' = fold state events
             let exp, events, eventsEncoded, unfoldsEncoded =
-                let encode e = codec.Encode(context, e)
+                let encode e = codec.Encode(ctx, e)
                 let expVer = Position.toIndex >> Sync.Exp.Version
                 match mapUnfolds with
                 | Choice1Of3 () ->     expVer, events, Array.map encode events, Array.empty
@@ -1149,7 +1149,7 @@ type internal Category<'event, 'state, 'context>
                     Position.toEtag >> Sync.Exp.Etag, events', Array.map encode events', Array.map encode unfolds
             let baseVer = Position.toIndex pos + int64 (Array.length events)
             match! store.Sync(log, streamName, pos, exp, baseVer, eventsEncoded, unfoldsEncoded, ct) with
-            | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (fun ct -> reload (log, streamName, true, streamToken, state, ct))
+            | InternalSyncResult.ConflictUnknown -> return SyncResult.Conflict (reload (log, streamName, true, streamToken, state))
             | InternalSyncResult.Written token' -> return SyncResult.Written (token', state') }
 
 namespace Equinox.DynamoStore

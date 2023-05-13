@@ -384,8 +384,7 @@ type AccessStrategy<'event, 'state> =
     | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot: ('state -> 'event)
 
 type private Category<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial, access) =
-
-    let loadAlgorithm category streamId streamName requireLeader log ct =
+    let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
         | None -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct)
         | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(log, streamName, requireLeader, codec.TryDecode, ct)
@@ -395,22 +394,17 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
                 let! token, rest = context.Reload(log, streamName, requireLeader, pos, codec.TryDecode, ct)
                 return token, Array.insertAt 0 snapshotEvent rest
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct) }
-    let reload (log, streamName, requireLeader, streamToken, state) ct = task {
-        let! token', events = context.Reload(log, streamName, requireLeader, streamToken, codec.TryDecode, ct)
-        return struct (token', fold state (Seq.ofArray events)) }
-
+    let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
+    let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, codec.TryDecode, ct))
     interface IReloadableCategory<'event, 'state, 'context> with
-        member _.Load(log, categoryName, streamId, streamName, _allowStale, requireLeader, ct) = task {
-            let! token, events = loadAlgorithm categoryName streamId streamName requireLeader log ct
-            return struct (token, fold initial events) }
+        member _.Load(log, categoryName, streamId, streamName, _allowStale, requireLeader, ct) =
+            fetch initial (loadAlgorithm log categoryName streamId streamName requireLeader ct)
         member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
             reload (log, streamName, requireLeader, streamToken, state) ct
         member x.TrySync(log, categoryName, streamId, streamName, ctx, _maybeInit, token, state, events, ct) = task {
             let encode e = codec.Encode(ctx, e)
             let encodedEvents: IEventData<EventBody>[] = events |> Array.map encode
             match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
-            | GatewaySyncResult.ConflictUnknown ->
-                return SyncResult.Conflict  (reload (log, streamName, (*requireLeader*)true, token, state))
             | GatewaySyncResult.Written token' ->
                 let state' = fold state (Seq.ofArray events)
                 match access with
@@ -418,7 +412,9 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
                 | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
                     if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
                         do! x.StoreSnapshot(log, categoryName, streamId, ctx, token', toSnap state', ct)
-                return SyncResult.Written   (token', state') }
+                return SyncResult.Written (token', state')
+            | GatewaySyncResult.ConflictUnknown ->
+                return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, token, state)) }
 
     member _.StoreSnapshot(log, category, streamId, ctx, token, snapshotEvent, ct) =
         let encodedWithMeta =
@@ -446,8 +442,8 @@ type CachingStrategy =
 type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
     new(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial,
-            [<O; D(null)>]?caching,
-            [<O; D(null)>]?access) =
+        [<O; D(null)>]?caching,
+        [<O; D(null)>]?access) =
         let raw = Category<'event, 'state, 'context>(context, codec, fold, initial, access)
         let tryReadCache, updateCache =
             let tryGet (cache : ICache) key = task {
