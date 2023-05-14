@@ -15,7 +15,7 @@ open Equinox.SqlStreamStore
 open Equinox.SqlStreamStore.Postgres
 
 let connectToLocalStore (_: ILogger) =
-    Connector("Host=localhost;User Id=postgres;password=password;database=EQUINOX_TEST_DB",autoCreate=true).Establish()
+    Connector("Host=localhost;Username=postgres;password=postgres;database=postgres",autoCreate=true).Establish()
 
 type Context = SqlStreamStoreContext
 type Category<'event, 'state, 'context> = SqlStreamStoreCategory<'event, 'state, 'context>
@@ -50,7 +50,7 @@ open OpenTelemetry.Trace
 open OpenTelemetry.Resources
 
 let connectToLocalStore _ = async {
-  let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5433; Maximum Pool Size=10"
+  let connectionString = "Host=localhost; Username=message_store; Password=; Database=message_store; Port=5432; Maximum Pool Size=10"
   return MessageDbClient(connectionString)
 }
 type Context = MessageDbContext

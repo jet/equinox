@@ -198,16 +198,16 @@ module Read =
             "Read", count, slice.LastVersion)
         return slice }
 
-    let private readBatches (log: ILogger) (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
-            (maxPermittedBatchReads: int option) (startPosition: int64) ct
-        : taskSeq<int64 * ITimelineEvent<EventBody>[]> =
-        let rec loop batchCount pos: taskSeq<int64 * ITimelineEvent<EventBody>[]> = taskSeq {
+    let private readBatches (log : ILogger) (readSlice : int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
+            (maxPermittedBatchReads : int option) (startPosition : int64) ct
+        : AsyncSeq<int64 * ITimelineEvent<EventBody>[]> =
+        let rec loop batchCount pos : AsyncSeq<int64 * ITimelineEvent<EventBody>[]> = asyncSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
 
             let batchLog = log |> Log.prop "batchIndex" batchCount
-            let! slice = readSlice pos batchCount batchLog ct
+            let! slice = readSlice pos batchCount batchLog ct |> Async.AwaitTaskCorrect
             yield slice.LastVersion, slice.Messages
             if not slice.IsEnd then
                 yield! loop (batchCount + 1) (slice.LastVersion + 1L) }
@@ -250,12 +250,13 @@ module Read =
 
     let internal loadForwardsFrom (log: ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {
-        let mergeBatches (batches: taskSeq<int64 * ITimelineEvent<EventBody>[]>) = task {
+        let mergeBatches (batches : AsyncSeq<int64 * ITimelineEvent<EventBody>[]>) = task {
             let mutable versionFromStream = -1L
             let! (events: ITimelineEvent<EventBody>[]) =
                 batches
-                |> TaskSeq.collectSeq (fun (reportedVersion, events)-> versionFromStream <- max reportedVersion versionFromStream; events)
-                |> TaskSeq.toArrayAsync
+                |> AsyncSeq.collect (fun (reportedVersion, events)-> versionFromStream <- max reportedVersion versionFromStream; AsyncSeq.ofSeq events)
+                |> AsyncSeq.toArrayAsync
+                |> Async.startImmediateAsTask ct
             let version = versionFromStream
             return version, events }
         let act = Activity.Current
