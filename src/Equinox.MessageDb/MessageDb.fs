@@ -196,8 +196,8 @@ module Read =
             "Read", count, slice.LastVersion)
         return slice }
 
-    let private readBatches (log : ILogger) batchSize (readSlice : int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
-            (maxPermittedBatchReads : int option) (startPosition : int64) ct
+    let private readBatches (log: ILogger) batchSize (readSlice: int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
+            (maxPermittedBatchReads: int option) (startPosition: int64) ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {
         let mutable batchCount, pos = 0, startPosition
         let mutable version = -1L
