@@ -69,4 +69,4 @@ type CachingStrategy =
     | FixedTimeSpan of ICache * period: System.TimeSpan
     /// Prefix is used to segregate multiple folds per stream when they are stored in the cache.
     /// Semantics are otherwise identical to <c>SlidingWindow</c>.
-    | SlidingWindowPrefixed of ICache * window: System.TimeSpan * prefix : string
+    | SlidingWindowPrefixed of ICache * window: System.TimeSpan * prefix: string
