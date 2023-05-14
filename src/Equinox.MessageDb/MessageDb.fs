@@ -196,12 +196,12 @@ module Read =
             "Read", count, slice.LastVersion)
         return slice }
 
-    let private readBatches (log : ILogger) (readSlice : int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
+    let private readBatches (log : ILogger) batchSize (readSlice : int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int64) ct
         : Task<int64 * ITimelineEvent<EventBody>[]> = task {
         let mutable batchCount, pos = 0, startPosition
         let mutable version = -1L
-        let result = ResizeArray()
+        let result = ResizeArray(int batchSize) // pre allocate batchSize as the vast majority of reads will only have a single batch
         let rec loop () : Task<unit> = task {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
@@ -262,7 +262,7 @@ module Read =
         let call = loggedReadSlice reader streamName batchSize requiresLeader
         let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let! t, (version, events) = readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition |> Stopwatch.time ct
+        let! t, (version, events) = readBatches log batchSize retryingLoggingReadSlice maxPermittedBatchReads startPosition |> Stopwatch.time ct
         log |> logBatchRead act streamName t events batchSize version
         return version, events }
 
