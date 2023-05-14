@@ -1073,12 +1073,12 @@ type internal Category<'event, 'state, 'context>
         fold: 'state -> 'event seq -> 'state, initial: 'state, isOrigin: 'event -> bool,
         checkUnfolds, compressUnfolds, mapUnfolds: Choice<unit, 'event[] -> 'state -> 'event[], 'event[] -> 'state -> 'event[] * 'event[]>) =
 
-    let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct : Task<struct (StreamToken * 'state)> = task {
+    let reload (log, streamName, (Token.Unpack pos as streamToken), state) preloaded ct: Task<struct (StreamToken * 'state)> = task {
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
     interface Caching.IReloadableCategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, stream, _allowStale, _requireLeader, ct) : Task<struct (StreamToken * 'state)> = task {
+        member _.Load(log, _categoryName, _streamId, stream, _allowStale, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
         member cat.Reload(log, stream, _requireLeader, streamToken, state, ct): Task<struct (StreamToken * 'state)> =
@@ -1392,7 +1392,7 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
             | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveCategory (categoryName, container) =
-            let createCategory _name : ICategory<_, _, 'context> =
+            let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
                 |> Caching.apply Token.supersedes caching
             categories.GetOrAdd(categoryName, createCategory)
