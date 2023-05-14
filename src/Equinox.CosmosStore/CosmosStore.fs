@@ -1077,8 +1077,8 @@ type internal Category<'event, 'state, 'context>
         match! store.Reload(log, (streamName, pos), (codec.TryDecode, isOrigin), ct, ?preview = preloaded) with
         | LoadFromTokenResult.Unchanged -> return struct (streamToken, state)
         | LoadFromTokenResult.Found (token', events) -> return token', fold state events }
-    interface IReloadableCategory<'event, 'state, 'context> with
-        member _.Load(log, _categoryName, _streamId, stream, _allowStale, _requireLeader, ct): Task<struct (StreamToken * 'state)> = task {
+    interface Caching.IReloadableCategory<'event, 'state, 'context> with
+        member _.Load(log, _categoryName, _streamId, stream, _allowStale, _requireLeader, ct) : Task<struct (StreamToken * 'state)> = task {
             let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
             return struct (token, fold initial events) }
         member cat.Reload(log, stream, _requireLeader, streamToken, state, ct): Task<struct (StreamToken * 'state)> =
@@ -1378,24 +1378,23 @@ type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty
         // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
         [<O; D null>] ?compressUnfolds) =
         let compressUnfolds = defaultArg compressUnfolds true
+        let isOrigin, checkUnfolds, mapUnfolds =
+            match access with
+            | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
+            | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> events |> Array.last |> Array.singleton)
+            | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Array.singleton)
+            | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
+            | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
+            | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
+        let caching = caching |> function
+            | CachingStrategy.NoCaching -> None
+            | CachingStrategy.SlidingWindow (cache, window) -> Some (Equinox.CachingStrategy.SlidingWindow (cache, window))
+            | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveCategory (categoryName, container) =
-            let createCategory _name: ICategory<_, _, 'context> =
-                let isOrigin, checkUnfolds, mapUnfolds =
-                    match access with
-                    | AccessStrategy.Unoptimized ->                      (fun _ -> false), false, Choice1Of3 ()
-                    | AccessStrategy.LatestKnownEvent ->                 (fun _ -> true),  true,  Choice2Of3 (fun events _ -> events |> Array.last |> Array.singleton)
-                    | AccessStrategy.Snapshot (isOrigin, toSnapshot) ->  isOrigin,         true,  Choice2Of3 (fun _ state  -> toSnapshot state |> Array.singleton)
-                    | AccessStrategy.MultiSnapshot (isOrigin, unfold) -> isOrigin,         true,  Choice2Of3 (fun _ state  -> unfold state)
-                    | AccessStrategy.RollingState toSnapshot ->          (fun _ -> true),  true,  Choice3Of3 (fun _ state  -> Array.empty, toSnapshot state |> Array.singleton)
-                    | AccessStrategy.Custom (isOrigin, transmute) ->     isOrigin,         true,  Choice3Of3 transmute
-                let raw = Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
-                let tryReadCache, updateCache =
-                    match caching with
-                    | CachingStrategy.NoCaching -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
-                    | CachingStrategy.SlidingWindow (cache, window) -> cache.TryGet, Cache.updateWithSlidingExpiration (cache, null) window Token.supersedes
-                    | CachingStrategy.FixedTimeSpan (cache, period) -> cache.TryGet, Cache.updateWithFixedTimeSpan (cache, null) period Token.supersedes
-                CachingDecorator<'event, 'state, 'context>(raw, tryReadCache, updateCache):> _
+            let createCategory _name : ICategory<_, _, 'context> =
+                Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, compressUnfolds, mapUnfolds)
+                |> Caching.apply Token.supersedes caching
             categories.GetOrAdd(categoryName, createCategory)
         let resolveInner categoryName streamId =
             let struct (container, streamName, maybeContainerInitializationGate) = context.ResolveContainerClientAndStreamIdAndInit(categoryName, streamId)

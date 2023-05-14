@@ -129,20 +129,20 @@ module Cart =
     #endif
 
     let createServiceWithCaching log context cache =
-        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m)
         |> Equinox.Decider.resolve log
         |> Cart.create
 
     #if STORE_MESSAGEDB
     let createServiceWithSnapshottingAndCaching log context cache =
-            let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+            let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
             Category(context, codec, fold, initial, sliding20m, AccessStrategy.AdjacentSnapshots snapshot)
             |> Equinox.Decider.resolve log
             |> Cart.create
     #else
     let createServiceWithCompactionAndCaching log context cache =
-        let sliding20m = CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
+        let sliding20m = Equinox.CachingStrategy.SlidingWindow (cache, TimeSpan.FromMinutes 20.)
         Category(context, codec, fold, initial, sliding20m, AccessStrategy.RollingSnapshots snapshot)
         |> Equinox.Decider.resolve log
         |> Cart.create
