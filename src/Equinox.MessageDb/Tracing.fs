@@ -48,10 +48,6 @@ type ActivityExtensions =
         act.AddTag("eqx.allow_stale", allowStale)
 
     [<System.Runtime.CompilerServices.Extension>]
-    static member AddCacheHit(act: Activity, hit: bool) =
-        act.AddTag("eqx.cache_hit", hit)
-
-    [<System.Runtime.CompilerServices.Extension>]
     static member AddLoadMethod(act: Activity, method: string) =
         act.AddTag("eqx.load_method", method)
 

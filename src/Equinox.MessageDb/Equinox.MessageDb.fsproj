@@ -6,7 +6,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="..\Equinox.Core\CachingDecorator.fs" Link="CachingDecorator.fs" />
         <Compile Include="..\Equinox.Core\Infrastructure.fs">
             <Link>Infrastructure.fs</Link>
         </Compile>

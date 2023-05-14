@@ -401,7 +401,7 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
         | Some (AccessStrategy.RollingSnapshots (isValid, _)) -> Some isValid
     let fetch state f = task { let! struct (token', events) = f in return struct (token', fold state (Seq.ofArray events)) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, tryDecode, compactionPredicate, ct))
-    interface IReloadableCategory<'event, 'state, 'context> with
+    interface Caching.IReloadableCategory<'event, 'state, 'context> with
         member _.Load(log, _categoryName, _streamId, streamName, _allowStale, requireLeader, ct) =
             fetch initial (loadAlgorithm log streamName requireLeader ct)
         member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
@@ -419,23 +419,6 @@ type private Category<'event, 'state, 'context>(context: EventStoreContext, code
             | GatewaySyncResult.Written token' ->    return SyncResult.Written  (token', fold state events)
             | GatewaySyncResult.ConflictUnknown _ -> return SyncResult.Conflict (reload (log, streamName, (*requireLeader*)true, streamToken, state)) }
 
-/// For EventStoreDB, caching is less critical than it is for e.g. CosmosDB
-/// As such, it can often be omitted, particularly if streams are short or there are snapshots being maintained
-[<NoComparison; NoEquality; RequireQualifiedAccess>]
-type CachingStrategy =
-    /// Retain a single 'state per streamName.
-    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
-    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | SlidingWindow of ICache * window : TimeSpan
-    /// Retain a single 'state per streamName.
-    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | FixedTimeSpan of ICache * period : TimeSpan
-    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache.
-    /// Semantics are identical to <c>SlidingWindow</c>.
-    | SlidingWindowPrefixed of ICache * window : TimeSpan * prefix : string
-
 type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
     new(context: EventStoreContext, codec: FsCodec.IEventCodec<_, _, 'context>, fold, initial,
@@ -449,15 +432,8 @@ type EventStoreCategory<'event, 'state, 'context> internal (resolveInner, empty)
                 + "mixing AccessStrategy.LatestKnownEvent with Caching at present."
                 |> invalidOp
             | _ -> ()
-        let raw = Category<'event, 'state, 'context>(context, codec, fold, initial, access)
-        let tryReadCache, updateCache =
-            match caching with
-            | None -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
-            | Some (CachingStrategy.SlidingWindow (cache, window)) -> cache.TryGet, Cache.updateWithSlidingExpiration (cache, null) window Token.supersedes
-            | Some (CachingStrategy.FixedTimeSpan (cache, period)) -> cache.TryGet, Cache.updateWithFixedTimeSpan (cache, null) period Token.supersedes
-            | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) -> cache.TryGet, Cache.updateWithSlidingExpiration (cache, prefix) window Token.supersedes
-        let cached = CachingDecorator<'event, 'state, 'context>(raw, tryReadCache, updateCache) : ICategory<_, _, _>
-        let resolveInner categoryName streamId = struct (cached, StreamName.render categoryName streamId, ValueNone)
+        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.supersedes caching
+        let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         EventStoreCategory(resolveInner, empty)
 

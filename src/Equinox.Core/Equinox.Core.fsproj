@@ -8,7 +8,7 @@
     <Compile Include="Tracing.fs" />
     <Compile Include="Category.fs" />
     <Compile Include="Cache.fs" />
-    <None Include="CachingDecorator.fs" />
+    <Compile Include="Caching.fs" />
     <Compile Include="Infrastructure.fs" />
     <Compile Include="StopwatchInterval.fs" />
     <Compile Include="Retry.fs" />

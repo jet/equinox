@@ -28,6 +28,10 @@ type ActivityExtensions =
         act.AddTag("eqx.stream_name", streamName).AddTag("eqx.stream_id", streamId).AddTag("eqx.category", category)
 
     [<System.Runtime.CompilerServices.Extension>]
+    static member AddCacheHit(act: Activity, hit: bool) =
+        act.AddTag("eqx.cache_hit", hit)
+
+    [<System.Runtime.CompilerServices.Extension>]
     static member IncMetric(act: Activity, count: int, bytes: int) =
         let currentCount = act.GetTagItem("eqx.count") |> ValueOption.ofObj |> ValueOption.map unbox<int> |> ValueOption.defaultValue 0
         let currentBytes = act.GetTagItem("eqx.bytes") |> ValueOption.ofObj |> ValueOption.map unbox<int> |> ValueOption.defaultValue 0

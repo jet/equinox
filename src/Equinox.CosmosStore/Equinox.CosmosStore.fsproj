@@ -5,7 +5,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Equinox.Core\CachingDecorator.fs" Link="CachingDecorator.fs" />
     <Compile Include="..\Equinox.Core\Infrastructure.fs" Link="Infrastructure.fs" />
     <Compile Include="..\Equinox.Core\Internal.fs" Link="Internal.fs" />
     <Compile Include="CosmosStoreSerialization.fs" />

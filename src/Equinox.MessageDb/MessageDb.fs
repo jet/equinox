@@ -396,7 +396,7 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct) }
     let fetch state f = task { let! token', events = f in return struct (token', fold state (Seq.ofArray events)) }
     let reload (log, sn, leader, token, state) ct = fetch state (context.Reload(log, sn, leader, token, codec.TryDecode, ct))
-    interface IReloadableCategory<'event, 'state, 'context> with
+    interface Caching.IReloadableCategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, _allowStale, requireLeader, ct) =
             fetch initial (loadAlgorithm log categoryName streamId streamName requireLeader ct)
         member _.Reload(log, streamName, requireLeader, streamToken, state, ct) =
@@ -422,41 +422,14 @@ type private Category<'event, 'state, 'context>(context: MessageDbContext, codec
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
         context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
-/// For MessageDb, caching is less critical than it is for e.g. CosmosDB
-/// As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
-[<NoComparison; NoEquality; RequireQualifiedAccess>]
-type CachingStrategy =
-    /// Retain a single 'state per streamName.
-    /// Each cache hit for a stream renews the retention period for the defined <c>window</c>.
-    /// Upon expiration of the defined <c>window</c> from the point at which the cache was entry was last used, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | SlidingWindow of ICache * window : TimeSpan
-    /// Retain a single 'state per streamName
-    /// Upon expiration of the defined <c>period</c>, a full reload is triggered.
-    /// Unless <c>LoadOption.AllowStale</c> is used, each cache hit still incurs a roundtrip to load any subsequently-added events.
-    | FixedTimeSpan of ICache * period : TimeSpan
-    /// Prefix is used to segregate multiple folds per stream when they are stored in the cache.
-    /// Semantics are identical to <c>SlidingWindow</c>.
-    | SlidingWindowPrefixed of ICache * window : TimeSpan * prefix : string
-
 type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
     new(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial,
+        // For MessageDb, caching is less critical than it is for e.g. CosmosDB
+        // As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
         [<O; D(null)>]?caching,
         [<O; D(null)>]?access) =
-        let raw = Category<'event, 'state, 'context>(context, codec, fold, initial, access)
-        let tryReadCache, updateCache =
-            let tryGet (cache : ICache) key = task {
-                let! cacheItem = cache.TryGet key
-                let act = Activity.Current
-                if act <> null then act.AddCacheHit(ValueOption.isSome cacheItem) |> ignore
-                return cacheItem }
-            match caching with
-            | None -> (fun _ -> Task.FromResult ValueNone), fun _ _ -> Task.FromResult ()
-            | Some (CachingStrategy.SlidingWindow (cache, window)) -> tryGet cache, Cache.updateWithSlidingExpiration (cache, null) window Token.supersedes
-            | Some (CachingStrategy.FixedTimeSpan (cache, period)) -> tryGet cache, Cache.updateWithFixedTimeSpan (cache, null) period Token.supersedes
-            | Some (CachingStrategy.SlidingWindowPrefixed (cache, window, prefix)) -> tryGet cache, Cache.updateWithSlidingExpiration (cache, prefix) window Token.supersedes
-        let cached = CachingDecorator<'event, 'state, 'context>(raw, tryReadCache, updateCache) : ICategory<_, _, _>
-        let resolveInner categoryName streamId = struct (cached, StreamName.render categoryName streamId, ValueNone)
+        let cat = Category<'event, 'state, 'context>(context, codec, fold, initial, access) |> Caching.apply Token.supersedes caching
+        let resolveInner categoryName streamId = struct (cat, StreamName.render categoryName streamId, ValueNone)
         let empty = struct (context.TokenEmpty, initial)
         MessageDbCategory(resolveInner, empty)
