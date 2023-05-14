@@ -717,7 +717,7 @@ module internal Query =
         let maybePosition = batches |> Array.tryPick Position.tryFromBatch
         events, maybePosition, rc
 
-    let private logQuery (direction, minIndex, maxIndex) (container : Container, stream) interval (responsesCount, events : Event[]) n (rc : RequestConsumption) (log : ILogger) =
+    let private logQuery (direction, minIndex, maxIndex) (container: Container, stream) interval (responsesCount, events: Event[]) n (rc: RequestConsumption) (log: ILogger) =
         let count, bytes = events.Length, Event.arrayBytes events
         let reqMetric = Log.metric container.TableName stream interval bytes count rc
         let evt = Log.Metric.Query (direction, responsesCount, reqMetric)
@@ -726,7 +726,7 @@ module internal Query =
             "EqxDynamo {action:l} {stream:l} v{n} {ms:f1}ms {ru}RU {count}e/{responses} {bytes}b >{minN} <{maxI}",
             action, stream, n, interval.ElapsedMilliseconds, rc.total, count, responsesCount, bytes, Option.toNullable minIndex, Option.toNullable maxIndex)
 
-    let private calculateUsedVersusDroppedPayload stopIndex (xs : Event[]) : int * int =
+    let private calculateUsedVersusDroppedPayload stopIndex (xs: Event[]) : int * int =
         let mutable used, dropped = 0, 0
         let mutable found = false
         for x in xs do
@@ -737,9 +737,9 @@ module internal Query =
         used, dropped
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    type ScanResult<'event> = { found : bool; minIndex : int64; next : int64; maybeTipPos : Position option; events : 'event[] }
+    type ScanResult<'event> = { found: bool; minIndex: int64; next: int64; maybeTipPos: Position option; events: 'event[] }
 
-    let scanTip (tryDecode : ITimelineEvent<EncodedBody> -> 'event voption, isOrigin : 'event -> bool) (pos : Position, i : int64, xs : ITimelineEvent<InternalBody>[])
+    let scanTip (tryDecode: ITimelineEvent<EncodedBody> -> 'event voption, isOrigin: 'event -> bool) (pos: Position, i: int64, xs: ITimelineEvent<InternalBody>[])
         : ScanResult<'event> =
         let items = ResizeArray(xs.Length)
         let isOrigin' e =
@@ -757,7 +757,7 @@ module internal Query =
         : Task<ScanResult<'event> option> = task {
         let mutable found = false
         let mutable responseCount = 0
-        let mergeBatches (log : ILogger) (batchesBackward : taskSeq<Event[] * Position option * RequestConsumption>) = task {
+        let mergeBatches (log: ILogger) (batchesBackward: taskSeq<Event[] * Position option * RequestConsumption>) = task {
             let mutable lastResponse, maybeTipPos, ru = None, None, 0.
             let! events =
                 batchesBackward
@@ -782,7 +782,7 @@ module internal Query =
             return events, maybeTipPos, { total = ru } }
         let log = log |> Log.prop "batchSize" maxItems |> Log.prop "stream" stream
         let readLog = log |> Log.prop "direction" direction
-        let batches ct : taskSeq<Event[] * Position option * RequestConsumption> =
+        let batches ct: taskSeq<Event[] * Position option * RequestConsumption> =
             mkQuery readLog (container, stream) consistentRead maxItems (direction, minIndex, maxIndex) ct
             |> TaskSeq.map (mapPage direction (container, stream) (minIndex, maxIndex, maxItems) maxRequests readLog)
         let! t, (events, maybeTipPos, ru) = batches >> mergeBatches log |> Stopwatch.time ct
@@ -1345,7 +1345,7 @@ type DynamoStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
             | CachingStrategy.FixedTimeSpan (cache, period) -> Some (Equinox.CachingStrategy.FixedTimeSpan (cache, period))
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveCategory (categoryName, container) =
-            let createCategory _name : ICategory<_, _, 'context> =
+            let createCategory _name: ICategory<_, _, 'context> =
                 Category<'event, 'state, 'context>(container, codec, fold, initial, isOrigin, checkUnfolds, mapUnfolds)
                 |> Caching.apply Token.supersedes caching
             categories.GetOrAdd(categoryName, createCategory)
