@@ -214,8 +214,7 @@ module Read =
             if not slice.IsEnd then
               batchCount <- batchCount + 1
               pos <- slice.LastVersion  + 1L
-              do! loop ()
-        }
+              do! loop () }
 
         do! loop ()
         return version, Array.ofSeq result }
