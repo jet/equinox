@@ -9,7 +9,7 @@ open System.Collections.Concurrent
 // Load tests are abstracted under a simple pattern that uses session factories and load tests
 // that are parameterized by sessions. The simplified signature looks as follows:
 //
-//    val runLoadTest : sessionFactory:Async<'Session> -> singleTest:('Session -> Async<unit>) -> throughput:int -> Async<unit>
+//    val runLoadTest: sessionFactory:Async<'Session> -> singleTest:('Session -> Async<unit>) -> throughput:int -> Async<unit>
 //
 // Each session instance can be reused for multiple test runs, but is guaranteed to be consumed by at most
 // one test run at any given point in time. Sessions are managed by a session pool which pre-emptively
@@ -20,7 +20,7 @@ module private LocalLoadTestImpl =
 //    do if not <| System.Threading.ThreadPool.SetMinThreads(768, 768) then exit 1
 
     /// asynchronously executes action after supplied delay
-    let delay : TimeSpan -> (unit -> unit) -> unit =
+    let delay: TimeSpan -> (unit -> unit) -> unit =
         fun waitTime action ->
             Task.Delay(waitTime).ContinueWith(fun (_:Task) -> action ())
             |> ignore
@@ -39,13 +39,13 @@ module private LocalLoadTestImpl =
         member _.Value = count
 
     /// Atomic enum cell
-    type EnumAtom<'Enum when 'Enum : enum<int>>(init : 'Enum) =
+    type EnumAtom<'Enum when 'Enum: enum<int>>(init: 'Enum) =
         static let toInt x = LanguagePrimitives.EnumToValue<'Enum, int> x
         static let fromInt x = LanguagePrimitives.EnumOfValue<int, 'Enum> x
         let mutable state = toInt init
         /// Atomically updates to newValue assuming that cell is currentValue,
         /// returning a boolean indicating success
-        member _.CompareExchange (currentValue : 'Enum) (newValue : 'Enum) : bool =
+        member _.CompareExchange (currentValue: 'Enum) (newValue: 'Enum): bool =
             Interlocked.CompareExchange(&state, toInt newValue, toInt currentValue) = toInt currentValue
 
         member _.Value
@@ -54,21 +54,21 @@ module private LocalLoadTestImpl =
 
     type SessionContext<'Session> =
         {
-            SessionId : string
-            Session   : 'Session
-            TestCount : int64
+            SessionId: string
+            Session  : 'Session
+            TestCount: int64
         }
 
     and private SessionContextInner<'Session> =
         {
-            SessionId : string
-            Session : 'Session
-            mutable TestCount : int64
-            mutable IsLeased : bool
+            SessionId: string
+            Session: 'Session
+            mutable TestCount: int64
+            mutable IsLeased: bool
         }
 
     /// Manages a pool of reusable load test sessions that get allocated on demand
-    type SessionPool<'Session> private (factory : Async<'Session>, eventSink : LoadTestEvent -> unit, throughput : int, minSessions : int, maxSessions : int) =
+    type SessionPool<'Session> private (factory: Async<'Session>, eventSink: LoadTestEvent -> unit, throughput: int, minSessions: int, maxSessions: int) =
         static let mkSessionId() = let f = Guid.NewGuid() in string f
         let sessions = ConcurrentDictionary<string, SessionContextInner<'Session>>()
         let pooledSessions = ConcurrentQueue<string>()
@@ -108,7 +108,7 @@ module private LocalLoadTestImpl =
                 return None
         }
 
-        let exportAsLease (ctx : SessionContextInner<'Session>) : SessionContext<'Session> =
+        let exportAsLease (ctx: SessionContextInner<'Session>): SessionContext<'Session> =
             ctx.IsLeased <- true
             ctx.TestCount <- ctx.TestCount + 1L
             let _ = leaseCount.Increment()
@@ -149,7 +149,7 @@ module private LocalLoadTestImpl =
         member _.AvailableSessions = sessions.Count - int leaseCount.Value
 
         /// Request a session from the pool
-        member _.TryRequestSession() : Async<SessionContext<'Session> option> = async {
+        member _.TryRequestSession(): Async<SessionContext<'Session> option> = async {
             let foundPooledSession, sessionId = pooledSessions.TryDequeue()
             if foundPooledSession then
                 let ctx = sessions.[sessionId]
@@ -168,7 +168,7 @@ module private LocalLoadTestImpl =
         }
 
         /// Release a session lease back to the pool
-        member _.YieldSession(sessionId : string) : unit =
+        member _.YieldSession(sessionId: string): unit =
             let ok,ctx = sessions.TryGetValue sessionId
             if not ok || not ctx.IsLeased then invalidArg "sessionId" "Invalid session id"
             ctx.IsLeased <- false
@@ -183,7 +183,7 @@ module private LocalLoadTestImpl =
                     | :? IDisposable as d -> d.Dispose()
                     | _ -> ()
 
-        static member Create(sessionFactory : Async<'Session>, eventSink : LoadTestEvent -> unit, throughput : int, minSessions : int, maxSessions : int) = async {
+        static member Create(sessionFactory: Async<'Session>, eventSink: LoadTestEvent -> unit, throughput: int, minSessions: int, maxSessions: int) = async {
             eventSink (SessionPoolCreating minSessions)
             let pool = new SessionPool<'Session>(sessionFactory, eventSink, throughput, minSessions, maxSessions)
             // poll until min number of sessions has been allocated
@@ -193,16 +193,16 @@ module private LocalLoadTestImpl =
         }
 
     type SessionPool<'T> with
-        member pool.AwaitAllLeases(?timeout : TimeSpan) = async {
+        member pool.AwaitAllLeases(?timeout: TimeSpan) = async {
             let awaiter = async { while pool.LeaseCount > 0 do do! Async.Sleep 200 }
             match timeout with
             | None -> return! awaiter
             | Some t -> return! Async.choose awaiter (Async.Sleep (int t.TotalMilliseconds))
         }
 
-    let runSingleLoadTest (pool : SessionPool<'Session>)
-                          (eventSink : LoadTestEvent -> unit)
-                          (singleTestRunner : 'Session -> Async<'T>) : Async<unit> = async {
+    let runSingleLoadTest (pool: SessionPool<'Session>)
+                          (eventSink: LoadTestEvent -> unit)
+                          (singleTestRunner: 'Session -> Async<'T>): Async<unit> = async {
 
         let! sessionResult = pool.TryRequestSession()
 
@@ -236,14 +236,14 @@ module private LocalLoadTestImpl =
     }
 
     // executes lambda on given MS interval
-    let runOnInterval : int -> (unit -> unit) -> IDisposable =
+    let runOnInterval: int -> (unit -> unit) -> IDisposable =
         fun intervalMS f -> new Timer(TimerCallback(fun _ -> f ()), null, 0, intervalMS) :> _
 
     // Load tests are being sent in batches every 50ms. Compute the batch size based
     // on given requests/sec target and current slot
     let [<Literal>] batchIntervalMilliseconds = 50
     let [<Literal>] batchesPerSecond = 20
-    let calculateNextBatchSize (batchIndex : int64) (targetRequestsPerSecond : int) =
+    let calculateNextBatchSize (batchIndex: int64) (targetRequestsPerSecond: int) =
         let q,r = targetRequestsPerSecond / batchesPerSecond, targetRequestsPerSecond % batchesPerSecond
         if r = 0 then q else
 
@@ -257,9 +257,9 @@ module private LocalLoadTestImpl =
         setter, awaiter
 
     // the main load test runner implementation
-    let runLoadTest (sessionFactory : Async<'Session>) (singleTestRunner : 'Session -> Async<'T>)
-                    (targetTestsPerSecond : int) (minSessions : int) (maxSessions : int)
-                    (completionToken : Async<string option>) (eventSink : LoadTestEvent -> unit) : Async<unit> = async {
+    let runLoadTest (sessionFactory: Async<'Session>) (singleTestRunner: 'Session -> Async<'T>)
+                    (targetTestsPerSecond: int) (minSessions: int) (maxSessions: int)
+                    (completionToken: Async<string option>) (eventSink: LoadTestEvent -> unit): Async<unit> = async {
 
         use! sessionPool = SessionPool<'Session>.Create(sessionFactory, eventSink, targetTestsPerSecond, minSessions, maxSessions)
         let singleRunner = runSingleLoadTest sessionPool eventSink singleTestRunner
@@ -294,7 +294,7 @@ type LoadTestRunnerState =
     | Completed     = 3
 
 [<Sealed; AutoSerializable(false)>]
-type LoadTestRunner private (runner : Async<string option> -> (LoadTestEvent -> unit) -> Async<unit>) =
+type LoadTestRunner private (runner: Async<string option> -> (LoadTestEvent -> unit) -> Async<unit>) =
     let hostname = Environment.MachineName
     let complete, token = mkCompletionToken<string option>()
     let event = Event<Envelope<LoadTestEvent>>()
@@ -314,7 +314,7 @@ type LoadTestRunner private (runner : Async<string option> -> (LoadTestEvent -> 
             task <- Some t
 
     /// Stops the load test runner
-    member _.Stop(?reason : string) =
+    member _.Stop(?reason: string) =
         if state.CompareExchange LoadTestRunnerState.Running LoadTestRunnerState.Completing then
             complete reason
 
@@ -334,7 +334,7 @@ type LoadTestRunner private (runner : Async<string option> -> (LoadTestEvent -> 
     /// <param name="targetTestsPerSecond">Target load throughput in requests per second.</param>
     /// <param name="minSessions">Minimum sessions to be allocated by the session pool. Defaults to 2 * targetTestsPerSecond.</param>
     /// <param name="maxSessions">Maximum number of sessions to be allocated by the session pool. Defaults to 20 * targetTestsPerSecond.</param>
-    static member Create(sessionFactory : Async<'Session>, testRunner : 'Session -> Async<'T>, targetTestsPerSecond : int, ?minSessions : int, ?maxSessions : int) =
+    static member Create(sessionFactory: Async<'Session>, testRunner: 'Session -> Async<'T>, targetTestsPerSecond: int, ?minSessions: int, ?maxSessions: int) =
         let minSessions = defaultArg minSessions (2 * targetTestsPerSecond)
         let maxSessions = defaultArg maxSessions (20 * targetTestsPerSecond)
 
@@ -352,7 +352,7 @@ type LoadTestRunner private (runner : Async<string option> -> (LoadTestEvent -> 
 type LoadTestRunner with
 
     /// Specifies a duration for the load test
-    member runner.WithDuration(duration : TimeSpan) : LoadTestRunner =
+    member runner.WithDuration(duration: TimeSpan): LoadTestRunner =
         if duration < TimeSpan.FromSeconds 1. then invalidArg "duration" "must be at least one second"
         let sub = ref Unchecked.defaultof<IDisposable>
         let latch = Latch()
@@ -366,7 +366,7 @@ type LoadTestRunner with
         runner
 
     /// Specifies a threshold after which the load test should be aborted
-    member runner.WithErrorCutoff(errorThreshold : int64) : LoadTestRunner =
+    member runner.WithErrorCutoff(errorThreshold: int64): LoadTestRunner =
         let errors = ConcurrentCounter()
         let callback e =
             if LoadTestEvent.IsErrorEvent e.payload &&

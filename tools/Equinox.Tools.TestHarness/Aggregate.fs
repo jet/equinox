@@ -8,7 +8,7 @@ open System.Reactive.Linq
 open System.Text
 
 type TestResultAggregate with
-    static member FromEventBucket (span : TimeSpan) (bucket : seq<LoadTestEvent>) =
+    static member FromEventBucket (span: TimeSpan) (bucket: seq<LoadTestEvent>) =
         let sessionErrorCount =
             bucket
             |> Seq.choose (function SessionCreationFailed e -> Some e | _ -> None)
@@ -54,10 +54,10 @@ type TestResultAggregate with
             latency = latency
         }
 
-    static member Render(e : Envelope<TestResultAggregate>) =
+    static member Render(e: Envelope<TestResultAggregate>) =
         let sb = new StringBuilder()
 
-        let renderOutcome (sb:StringBuilder) (kvs : OutcomeDistribution) =
+        let renderOutcome (sb:StringBuilder) (kvs: OutcomeDistribution) =
             for k,v in kvs |> Seq.sortBy fst do sb.Appendf " %s=%d" k.Id v
             sb.AppendLine() |> ignore
 
@@ -86,7 +86,7 @@ type TestResultAggregate with
 module Observable =
 
     /// Aggregates a stream of load test events into a stream of bucketed aggregates with given timespan
-    let aggregateLoadTests (bucketSize : TimeSpan) (source : IObservable<Envelope<LoadTestEvent>>) =
+    let aggregateLoadTests (bucketSize: TimeSpan) (source: IObservable<Envelope<LoadTestEvent>>) =
         Observable.Buffer(source, bucketSize)
         |> Observable.filter (fun bucket -> bucket.Count > 0)
         |> Observable.map (fun bucket ->
@@ -96,14 +96,14 @@ module Observable =
         |> Observable.filter (fun agg -> agg.payload.count > 0 || agg.payload.sessionErrors.Length > 0)
 
     /// Logs a stream of aggregates using supplied logger function
-    let logAggregate (log: ILogger) (source : IObservable<Envelope<TestResultAggregate>>) : IDisposable =
+    let logAggregate (log: ILogger) (source: IObservable<Envelope<TestResultAggregate>>): IDisposable =
         source
         |> Observable.map TestResultAggregate.Render
         |> Observable.subscribe (fun r -> log.Information("Aggregate: {result:l}",r))
 
     /// Logs load test events with provided log level
-    let logEvents (log : ILogger) (events : IObservable<Envelope<LoadTestEvent>>) =
-        let eventLogger (e : Envelope<LoadTestEvent>) =
+    let logEvents (log: ILogger) (events: IObservable<Envelope<LoadTestEvent>>) =
+        let eventLogger (e: Envelope<LoadTestEvent>) =
             match e.payload with
             | SessionCreated _ -> ()
             | SingleTestRun _ -> ()

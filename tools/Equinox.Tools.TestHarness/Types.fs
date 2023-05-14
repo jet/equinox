@@ -8,7 +8,7 @@ open HttpHelpers
 
 /// Generic message envelope
 [<NoEquality; NoComparison>]
-type Envelope<'T> = { payload : 'T ; timestamp : DateTimeOffset ; hostname : string }
+type Envelope<'T> = { payload: 'T; timestamp: DateTimeOffset; hostname: string }
 
 /// Load Test outcome classification
 type LoadTestOutcomeType =
@@ -23,7 +23,7 @@ type LoadTestOutcomeType =
         | InvalidHttpResponse s -> sprintf "HttpStatusCode.%O" s
         | OtherError e -> e
 
-    static member FromException(e : exn) =
+    static member FromException(e: exn) =
         match e with
         | InnermostExn (:? TimeoutException | :? TaskCanceledException) -> Timeout
         | InnermostExn (:? InvalidHttpResponseException as e) -> InvalidHttpResponse e.StatusCode

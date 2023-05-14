@@ -1061,14 +1061,15 @@ type StoreClient(container : Container, archive : Container option, query : Quer
     member internal _.Sync(log, stream, exp, batch : Tip, ct) : Task<InternalSyncResult> = task {
         if Array.isEmpty batch.e && Array.isEmpty batch.u then invalidOp "Must write either events or unfolds."
         match! Sync.batch log (tip.WriteRetryPolicy, tip.MaxEvents, tip.MaxJsonLength) (container, stream) (exp, batch) ct with
+        | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create pos')
         | Sync.Result.Conflict (pos', events) -> return InternalSyncResult.Conflict (pos', events)
-        | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create pos')
-        | Sync.Result.Written pos' -> return InternalSyncResult.Written (Token.create pos') }
+        | Sync.Result.ConflictUnknown pos' -> return InternalSyncResult.ConflictUnknown (Token.create pos') }
 
     member _.Prune(log, stream, index, ct) =
         Prune.until log (container, stream) query.MaxItems index ct
 
-type internal Category<'event, 'state, 'context>(store : StoreClient, codec : IEventCodec<'event, EventBody, 'context>) =
+type internal Category<'event, 'state, 'context>
+    (   store: StoreClient, codec: IEventCodec<'event, EventBody, 'context>) =
     member _.Load(log, stream, initial, checkUnfolds, fold, isOrigin, ct) : Task<struct (StreamToken * 'state)> = task {
         let! token, events = store.Load(log, (stream, None), (codec.TryDecode, isOrigin), checkUnfolds, ct)
         return struct (token, fold initial events) }
@@ -1129,11 +1130,11 @@ module internal Caching =
             member _.TrySync(log : ILogger, _categoryName, _streamId, streamName, context, maybeInit, streamToken, state, events, ct) : Task<SyncResult<'state>> = task {
                 match maybeInit with ValueNone -> () | ValueSome i -> do! i ct
                 match! category.Sync(log, streamName, streamToken, state, events, mapUnfolds, fold, isOrigin, context, compressUnfolds, ct) with
-                | SyncResult.Conflict resync ->
-                    return SyncResult.Conflict (cache streamName resync)
                 | SyncResult.Written tokenAndState' ->
                     do! updateCache streamName tokenAndState'
-                    return SyncResult.Written tokenAndState' }
+                    return SyncResult.Written tokenAndState'
+                | SyncResult.Conflict resync ->
+                    return SyncResult.Conflict (cache streamName resync) }
 
 module ConnectionString =
 
@@ -1324,18 +1325,18 @@ type CosmosStoreClient
 
 /// Defines a set of related access policies for a given CosmosDB, together with a Containers map defining mappings from (category,id) to (databaseId,containerId,streamName)
 type CosmosStoreContext(storeClient : CosmosStoreClient, tipOptions, queryOptions) =
-    new(    storeClient : CosmosStoreClient,
-            // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
-            // NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
-            tipMaxEvents,
-            // Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
-            [<O; D null>] ?tipMaxJsonLength,
-            // Inhibit throwing when events are missing, but no Archive Container has been supplied as a fallback.
-            [<O; D null>] ?ignoreMissingEvents,
-            // Max number of Batches to return per paged query response. Default: 10.
-            [<O; D null>] ?queryMaxItems,
-            // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
-            [<O; D null>] ?queryMaxRequests) =
+    new(storeClient : CosmosStoreClient,
+        // Maximum number of events permitted in Tip. When this is exceeded, events are moved out to a standalone Batch.
+        // NOTE <c>Equinox.Cosmos</c> versions <= 3.0.0 cannot read events in Tip, hence using a non-zero value will not be interoperable.
+        tipMaxEvents,
+        // Maximum serialized size (length of `JSON.stringify` representation) permitted in Tip before they get moved out to a standalone Batch. Default: 30_000.
+        [<O; D null>] ?tipMaxJsonLength,
+        // Inhibit throwing when events are missing, but no Archive Container has been supplied as a fallback.
+        [<O; D null>] ?ignoreMissingEvents,
+        // Max number of Batches to return per paged query response. Default: 10.
+        [<O; D null>] ?queryMaxItems,
+        // Maximum number of trips to permit when slicing the work into multiple responses limited by `queryMaxItems`. Default: unlimited.
+        [<O; D null>] ?queryMaxRequests) =
         let tipOptions = TipOptions(maxEvents = tipMaxEvents, ?maxJsonLength = tipMaxJsonLength, ?ignoreMissingEvents = ignoreMissingEvents)
         let queryOptions = QueryOptions(?maxItems = queryMaxItems, ?maxRequests = queryMaxRequests)
         CosmosStoreContext(storeClient, tipOptions, queryOptions)
@@ -1392,7 +1393,7 @@ type AccessStrategy<'event, 'state> =
     /// Allow any events that pass the `isOrigin` test to be used in lieu of folding all the events from the start of the stream
     /// When writing, uses `toSnapshots` to 'unfold' the <c>'state</c>, representing it as one or more Event records to be stored in
     /// the Tip with efficient read cost.
-    | MultiSnapshot of isOrigin : ('event -> bool) * toSnapshots : ('state -> 'event array)
+    | MultiSnapshot of isOrigin : ('event -> bool) * toSnapshots : ('state -> 'event[])
     /// Instead of actually storing the events representing the decisions, only ever update a snapshot stored in the Tip document
     /// <remarks>In this mode, Optimistic Concurrency Control is necessarily based on the _etag</remarks>
     | RollingState of toSnapshot : ('state -> 'event)
@@ -1401,14 +1402,14 @@ type AccessStrategy<'event, 'state> =
     /// In this mode, Optimistic Concurrency Control is based on the _etag (rather than the normal Expected Version strategy)
     /// in order that conflicting updates to the state not involving the writing of an event can trigger retries.
     /// </remarks>
-    | Custom of isOrigin : ('event -> bool) * transmute : ('event array -> 'state -> 'event array * 'event array)
+    | Custom of isOrigin : ('event -> bool) * transmute : ('event[] -> 'state -> 'event[] * 'event[])
 
-type CosmosStoreCategory<'event, 'state, 'context>(resolveInner, empty) =
+type CosmosStoreCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new (   context : CosmosStoreContext, codec, fold, initial, caching, access,
-            // Compress Unfolds in Tip. Default: <c>true</c>.
-            // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
-            [<O; D null>] ?compressUnfolds) =
+    new(context : CosmosStoreContext, codec, fold, initial, caching, access,
+        // Compress Unfolds in Tip. Default: <c>true</c>.
+        // NOTE when set to <c>false</c>, requires Equinox.CosmosStore or Equinox.Cosmos Version >= 2.3.0 to be able to read
+        [<O; D null>] ?compressUnfolds) =
         let compressUnfolds = defaultArg compressUnfolds true
         let categories = System.Collections.Concurrent.ConcurrentDictionary<string, ICategory<'event, 'state, 'context>>()
         let resolveCategory (categoryName, container) =

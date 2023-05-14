@@ -39,11 +39,11 @@ module Log =
     let propEvents name (kvps : System.Collections.Generic.KeyValuePair<string, string> seq) (log : ILogger) =
         let items = seq { for kv in kvps do yield sprintf "{\"%s\": %s}" kv.Key kv.Value }
         log.ForContext(name, sprintf "[%s]" (String.concat ",\n\r" items))
-    let propEventData name (events : IEventData<EventBody> array) (log : ILogger) =
+    let propEventData name (events : IEventData<EventBody>[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
                 yield System.Collections.Generic.KeyValuePair<_, _>(x.EventType, bytesToString x.Data) })
-    let propResolvedEvents name (events : ITimelineEvent<EventBody> array) (log : ILogger) =
+    let propResolvedEvents name (events : ITimelineEvent<EventBody>[]) (log : ILogger) =
         log |> propEvents name (seq {
             for x in events do
                 yield System.Collections.Generic.KeyValuePair<_, _>(x.EventType, bytesToString x.Data) })
@@ -141,16 +141,16 @@ module private Write =
         let reqMetric : Log.Measurement = { stream = streamName; interval = t; bytes = bytes; count = count}
         let resultLog, evt =
             match result with
+            | MdbSyncResult.Written x ->
+                if act <> null then
+                    act.SetStatus(ActivityStatusCode.Ok).AddTag("eqx.new_version", x) |> ignore
+                log |> Log.prop "currentPosition" x, Log.WriteSuccess reqMetric
             | MdbSyncResult.ConflictUnknown ->
                 let eventTypes = [| for x in events -> x.EventType |]
                 if act <> null then act.RecordConflict().AddTag("eqx.event_types", eventTypes) |> ignore
                 let writeLog = log |> Log.prop "stream" streamName |> Log.prop "count" count
                 writeLog.Information("MdbTrySync WrongExpectedVersionException writing {eventTypes}, expected {expectedVersion}", eventTypes, version)
                 log, Log.WriteConflict reqMetric
-            | MdbSyncResult.Written x ->
-                if act <> null then
-                    act.SetStatus(ActivityStatusCode.Ok).AddTag("eqx.new_version", x) |> ignore
-                log |> Log.prop "currentPosition" x, Log.WriteSuccess reqMetric
         (resultLog |> Log.event evt).Information("Mdb{action:l} count={count} conflict={conflict}",
                                                  "Write", count, match evt with Log.WriteConflict _ -> true | _ -> false)
         return result }
@@ -163,11 +163,11 @@ module private Write =
 module Read =
 
     [<NoComparison;NoEquality>]
-    type StreamEventsSlice = { Messages : ITimelineEvent<EventBody> array; IsEnd : bool; LastVersion : int64 }
+    type StreamEventsSlice = { Messages : ITimelineEvent<EventBody>[]; IsEnd : bool; LastVersion : int64 }
 
     open FSharp.Control
 
-    let private toSlice (events : ITimelineEvent<EventBody> array) isLast : StreamEventsSlice=
+    let private toSlice (events : ITimelineEvent<EventBody>[]) isLast : StreamEventsSlice=
         let lastVersion = match Array.tryLast events with Some ev -> ev.Index | None -> -1L
         { Messages = events; IsEnd = isLast; LastVersion = lastVersion }
 
@@ -200,8 +200,8 @@ module Read =
 
     let private readBatches (log : ILogger) (readSlice : int64 -> int -> ILogger -> CancellationToken -> Task<StreamEventsSlice>)
             (maxPermittedBatchReads : int option) (startPosition : int64) ct
-        : taskSeq<int64 * ITimelineEvent<EventBody> array> =
-        let rec loop batchCount pos : taskSeq<int64 * ITimelineEvent<EventBody> array> = taskSeq {
+        : taskSeq<int64 * ITimelineEvent<EventBody>[]> =
+        let rec loop batchCount pos : taskSeq<int64 * ITimelineEvent<EventBody>[]> = taskSeq {
             match maxPermittedBatchReads with
             | Some mpbr when batchCount >= mpbr -> log.Information "batch Limit exceeded"; invalidOp "batch Limit exceeded"
             | _ -> ()
@@ -236,7 +236,7 @@ module Read =
             "ReadL", streamName, count, version)
 
     let internal loadLastEvent (log : ILogger) retryPolicy (reader : MessageDbReader) requiresLeader streamName eventType ct
-        : Task<int64 * ITimelineEvent<EventBody> array> = task {
+        : Task<int64 * ITimelineEvent<EventBody>[]> = task {
         let parentAct = Activity.Current
         if parentAct <> null then parentAct.AddLoadMethod("Last") |> ignore
         use act = source.StartActivity("ReadLast", ActivityKind.Client)
@@ -249,10 +249,10 @@ module Read =
         return page.LastVersion, page.Messages }
 
     let internal loadForwardsFrom (log : ILogger) retryPolicy reader batchSize maxPermittedBatchReads streamName startPosition requiresLeader ct
-        : Task<int64 * ITimelineEvent<EventBody> array> = task {
-        let mergeBatches (batches : taskSeq<int64 * ITimelineEvent<EventBody> array>) = task {
+        : Task<int64 * ITimelineEvent<EventBody>[]> = task {
+        let mergeBatches (batches : taskSeq<int64 * ITimelineEvent<EventBody>[]>) = task {
             let mutable versionFromStream = -1L
-            let! (events : ITimelineEvent<EventBody> array) =
+            let! (events : ITimelineEvent<EventBody>[]) =
                 batches
                 |> TaskSeq.collectSeq (fun (reportedVersion, events)-> versionFromStream <- max reportedVersion versionFromStream; events)
                 |> TaskSeq.toArrayAsync
@@ -263,7 +263,7 @@ module Read =
         let call = loggedReadSlice reader streamName batchSize requiresLeader
         let retryingLoggingReadSlice pos batchIndex = Log.withLoggedRetries retryPolicy "readAttempt" (call pos batchIndex)
         let log = log |> Log.prop "batchSize" batchSize |> Log.prop "stream" streamName
-        let batches ct : Task<int64 * ITimelineEvent<EventBody> array> =
+        let batches ct : Task<int64 * ITimelineEvent<EventBody>[]> =
             readBatches log retryingLoggingReadSlice maxPermittedBatchReads startPosition ct
             |> mergeBatches
         let! t, (version, events) = batches |> Stopwatch.time ct
@@ -298,7 +298,7 @@ module private Snapshot =
         JsonSerializer.Deserialize<Meta>(meta.Span).streamVersion
 
     let meta token = {| streamVersion = Token.streamVersion token |} |> JsonSerializer.SerializeToUtf8Bytes |> ReadOnlyMemory
-    let decode tryDecode (events : ITimelineEvent<EventBody> array) =
+    let decode tryDecode (events : ITimelineEvent<EventBody>[]) =
         match events |> Array.tryFirstV |> ValueOption.bind tryDecode with
         | ValueSome decoded -> ValueSome struct(events[0] |> streamVersion |> Token.create, decoded)
         | ValueNone -> ValueNone
@@ -328,40 +328,40 @@ type BatchOptions(getBatchSize : Func<int>, [<O; D(null)>]?batchCountLimit) =
 type internal GatewaySyncResult = Written of StreamToken | ConflictUnknown
 
 type MessageDbContext(client : MessageDbClient, batchOptions : BatchOptions) =
-    new (   client : MessageDbClient,
-            // Max number of Events to retrieve in a single batch. Also affects frequency of Snapshots. Default: 500.
-            [<O; D null>] ?batchSize) =
+    new(client : MessageDbClient,
+        // Max number of Events to retrieve in a single batch. Also affects frequency of Snapshots. Default: 500.
+        [<O; D null>] ?batchSize) =
         MessageDbContext(client, BatchOptions(batchSize = defaultArg batchSize 500))
     member val BatchOptions = batchOptions
 
     member _.TokenEmpty = Token.create -1L
-    member _.LoadBatched(streamName, requireLeader, log, tryDecode, ct) : Task<StreamToken * 'event array> = task {
+    member _.LoadBatched(log, streamName, requireLeader, tryDecode, ct) : Task<StreamToken * 'event[]> = task {
         let! version, events = Read.loadForwardsFrom log client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName 0L requireLeader ct
         return Token.create version, Array.chooseV tryDecode events }
-    member _.LoadLast(streamName, requireLeader, log, tryDecode, ct) : Task<StreamToken * 'event array> = task {
+    member _.LoadLast(log, streamName, requireLeader, tryDecode, ct) : Task<StreamToken * 'event[]> = task {
         let! version, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader streamName None ct
         return Token.create version, Array.chooseV tryDecode events }
-    member _.LoadSnapshot(category, streamId, requireLeader, log, tryDecode, eventType, ct) = task {
+    member _.LoadSnapshot(log, category, streamId, requireLeader, tryDecode, eventType, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
         let! _, events = Read.loadLastEvent log client.ReadRetryPolicy client.Reader requireLeader snapshotStream (Some eventType) ct
         return Snapshot.decode tryDecode events }
 
-    member _.Reload(streamName, requireLeader, log, token, tryDecode, ct) : Task<StreamToken * 'event array> = task {
+    member _.Reload(log, streamName, requireLeader, token, tryDecode, ct) : Task<StreamToken * 'event[]> = task {
         let streamVersion = Token.streamVersion token
         let startPos = streamVersion + 1L // Reading a stream uses {inclusive} positions, but the streamVersion is `-1`-based
         let! version, events = Read.loadForwardsFrom log client.ReadRetryPolicy client.Reader batchOptions.BatchSize batchOptions.MaxBatches streamName startPos requireLeader ct
         return Token.create (max streamVersion version), Array.chooseV tryDecode events }
 
-    member internal _.TrySync(log, category, streamId, streamName, token, encodedEvents : IEventData<EventBody> array, ct): Task<GatewaySyncResult> = task {
+    member internal _.TrySync(log, category, streamId, streamName, token, encodedEvents : IEventData<EventBody>[], ct): Task<GatewaySyncResult> = task {
         let streamVersion = Token.streamVersion token
         match! Write.writeEvents log client.WriteRetryPolicy client.Writer (category, streamId, streamName) (StreamVersion streamVersion) encodedEvents ct with
-        | MdbSyncResult.ConflictUnknown ->
-            return GatewaySyncResult.ConflictUnknown
         | MdbSyncResult.Written version' ->
             let token = Token.create version'
-            return GatewaySyncResult.Written token }
+            return GatewaySyncResult.Written token
+        | MdbSyncResult.ConflictUnknown ->
+            return GatewaySyncResult.ConflictUnknown }
 
-    member _.StoreSnapshot(category, streamId, log, event, ct) = task {
+    member _.StoreSnapshot(log, category, streamId, event, ct) = task {
         let snapshotStream = Snapshot.streamName category streamId
         let category = Snapshot.snapshotCategory category
         do! Write.writeEvents log None client.Writer (category, streamId, snapshotStream) Any [| event |] ct :> Task }
@@ -383,27 +383,26 @@ type AccessStrategy<'event, 'state> =
     /// </summary>
     | AdjacentSnapshots of snapshotEventCaseName: string * toSnapshot : ('state -> 'event)
 
-type private Category<'event, 'state, 'context>(context : MessageDbContext, codec : IEventCodec<_, _, 'context>, ?access: AccessStrategy<'event, 'state>) =
-
-    let loadAlgorithm category streamId streamName requireLeader log ct =
+type private Category<'event, 'state, 'context>(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, access) =
+    let loadAlgorithm log category streamId streamName requireLeader ct =
         match access with
-        | None -> context.LoadBatched(streamName, requireLeader, log, codec.TryDecode, ct)
-        | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(streamName, requireLeader, log, codec.TryDecode, ct)
+        | None -> context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct)
+        | Some AccessStrategy.LatestKnownEvent -> context.LoadLast(log, streamName, requireLeader, codec.TryDecode, ct)
         | Some (AccessStrategy.AdjacentSnapshots (snapshotType, _)) -> task {
-            match! context.LoadSnapshot(category, streamId, requireLeader, log, codec.TryDecode, snapshotType, ct) with
+            match! context.LoadSnapshot(log, category, streamId, requireLeader, codec.TryDecode, snapshotType, ct) with
             | ValueSome (pos, snapshotEvent) ->
-                let! token, rest = context.Reload(streamName, requireLeader, log, pos, codec.TryDecode, ct)
+                let! token, rest = context.Reload(log, streamName, requireLeader, pos, codec.TryDecode, ct)
                 return token, Array.insertAt 0 snapshotEvent rest
-            | ValueNone -> return! context.LoadBatched(streamName, requireLeader, log, codec.TryDecode, ct) }
+            | ValueNone -> return! context.LoadBatched(log, streamName, requireLeader, codec.TryDecode, ct) }
 
     let load (fold : 'state -> 'event seq -> 'state) initial (f : Task<_>) : Task<struct (StreamToken * 'state)> = task {
         let! token, events = f
         return struct (token, fold initial events) }
 
-    member _.Load(fold : 'state -> 'event seq -> 'state, initial : 'state, category, streamId, streamName, requireLeader, log, ct) =
-        load fold initial (loadAlgorithm category streamId streamName requireLeader log ct)
-    member _.Reload(fold : 'state -> 'event seq -> 'state, state : 'state, streamName, requireLeader, token, log, ct) =
-        load fold state (context.Reload(streamName, requireLeader, log, token, codec.TryDecode, ct))
+    member _.Load(log, fold : 'state -> 'event seq -> 'state, initial : 'state, category, streamId, streamName, requireLeader, ct) =
+        load fold initial (loadAlgorithm log category streamId streamName requireLeader ct)
+    member _.Reload(log, fold : 'state -> 'event seq -> 'state, state : 'state, streamName, requireLeader, token, ct) =
+        load fold state (context.Reload(log, streamName, requireLeader, token, codec.TryDecode, ct))
 
     member x.TrySync<'context>
         (   log : ILogger, fold : 'state -> 'event seq -> 'state,
@@ -412,40 +411,40 @@ type private Category<'event, 'state, 'context>(context : MessageDbContext, code
         let encode e = codec.Encode(ctx, e)
         let encodedEvents : IEventData<EventBody> array = events |> Array.map encode
         match! context.TrySync(log, categoryName, streamId, streamName, token, encodedEvents, ct) with
-        | GatewaySyncResult.ConflictUnknown ->
-            return SyncResult.Conflict  (fun ct -> x.Reload(fold, state, streamName, (*requireLeader*)true, token, log, ct))
         | GatewaySyncResult.Written token' ->
             let state' = fold state (Seq.ofArray events)
             match access with
             | None | Some AccessStrategy.LatestKnownEvent -> ()
             | Some (AccessStrategy.AdjacentSnapshots(_, toSnap)) ->
                 if Token.shouldSnapshot context.BatchOptions.BatchSize token token' then
-                    do! x.StoreSnapshot(categoryName, streamId, log, ctx, token', toSnap state', ct)
-            return SyncResult.Written   (token', state') }
+                    do! x.StoreSnapshot(log, categoryName, streamId, ctx, token', toSnap state', ct)
+            return SyncResult.Written   (token', state')
+        | GatewaySyncResult.ConflictUnknown ->
+            return SyncResult.Conflict  (fun ct -> x.Reload(log, fold, state, streamName, (*requireLeader*)true, token, ct)) }
 
-    member _.StoreSnapshot(category, streamId, log, ctx, token, snapshotEvent, ct) =
+    member _.StoreSnapshot(log, category, streamId, ctx, token, snapshotEvent, ct) =
         let encodedWithMeta =
             let rawEvent = codec.Encode(ctx, snapshotEvent)
             FsCodec.Core.EventData.Create(rawEvent.EventType, rawEvent.Data, meta = Snapshot.meta token)
-        context.StoreSnapshot(category, streamId, log, encodedWithMeta, ct)
+        context.StoreSnapshot(log, category, streamId, encodedWithMeta, ct)
 
-type private Folder<'event, 'state, 'context>(category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
+type private Folder<'event, 'state, 'context> internal (category : Category<'event, 'state, 'context>, fold : 'state -> 'event seq -> 'state, initial : 'state, ?readCache) =
     interface ICategory<'event, 'state, 'context> with
         member _.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) = task {
             match readCache with
-            | None -> return! category.Load(fold, initial, categoryName, streamId, streamName, requireLeader, log, ct)
+            | None -> return! category.Load(log, fold, initial, categoryName, streamId, streamName, requireLeader, ct)
             | Some (cache : ICache, prefix : string) ->
                 let! cacheItem = cache.TryGet(prefix + streamName)
                 let act = Activity.Current
                 if act <> null then act.AddCacheHit(match cacheItem with ValueNone -> false | _ -> true) |> ignore
                 match cacheItem with
-                | ValueNone -> return! category.Load(fold, initial, categoryName, streamId, streamName, requireLeader, log, ct)
+                | ValueNone -> return! category.Load(log, fold, initial, categoryName, streamId, streamName, requireLeader, ct)
                 | ValueSome tokenAndState when allowStale -> return tokenAndState
-                | ValueSome (token, state) -> return! category.Reload(fold, state, streamName, requireLeader, token, log, ct) }
+                | ValueSome (token, state) -> return! category.Reload(log, fold, state, streamName, requireLeader, token, ct) }
         member _.TrySync(log, categoryName, streamId, streamName, context, _init, token, originState, events, ct) = task {
             match! category.TrySync(log, fold, categoryName, streamId, streamName, token, originState, events, context, ct) with
-            | SyncResult.Conflict resync ->          return SyncResult.Conflict resync
-            | SyncResult.Written (token', state') -> return SyncResult.Written (token', state') }
+            | SyncResult.Written (token', state') -> return SyncResult.Written (token', state')
+            | SyncResult.Conflict resync ->          return SyncResult.Conflict resync }
 
 /// For MessageDb, caching is less critical than it is for e.g. CosmosDB
 /// As such, it can often be omitted, particularly if streams are short, or events are small and/or database latency aligns with request latency requirements
@@ -464,12 +463,12 @@ type CachingStrategy =
     /// Semantics are identical to <c>SlidingWindow</c>.
     | SlidingWindowPrefixed of ICache * window : TimeSpan * prefix : string
 
-type MessageDbCategory<'event, 'state, 'context>(resolveInner, empty) =
+type MessageDbCategory<'event, 'state, 'context> internal (resolveInner, empty) =
     inherit Equinox.Category<'event, 'state, 'context>(resolveInner, empty)
-    new (   context : MessageDbContext, codec : IEventCodec<_, _, 'context>, fold, initial,
+    new(context: MessageDbContext, codec: IEventCodec<_, _, 'context>, fold, initial,
             [<O; D(null)>]?caching,
             [<O; D(null)>]?access) =
-        let inner = Category<'event, 'state, 'context>(context, codec, ?access = access)
+        let inner = Category<'event, 'state, 'context>(context, codec, access)
         let readCacheOption =
             match caching with
             | None -> None

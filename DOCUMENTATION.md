@@ -714,7 +714,7 @@ follow!
 #### Decider Members
 
 ```fsharp
-type Equinox.Decider(stream : IStream<'event, 'state>, log, maxAttempts) =
+type Equinox.Decider(...) =
 StoreIntegration
     // Run interpret function with present state, retrying with Optimistic Concurrency
     member _.Transact(interpret : State -> Event list) : Async<unit>
@@ -2446,16 +2446,12 @@ The pruner cyclically (i.e., when it reaches the end, it loops back to the start
 This is a very loose laundry list of items that have occurred to us to do,
 given infinite time. No conclusions of likelihood of starting, finishing, or
 even committing to adding a feature should be inferred, but most represent
-things that would be likely to be accepted into the codebase (please [read and]
-raise Issues first though ;) ).
+things that would be likely to be accepted into the codebase.
 
 - Extend samples and templates; see
   [#57](https://github.com/jet/equinox/issues/57)
 
 ## Wouldn't it be nice - `Equinox.EventStoreDb`
-
-EventStore, and it's Store adapter is the most proven and is pretty feature
-rich relative to the need of consumers to date. Some things remain though:
 
 - Provide a low level walking events in F# API akin to
   `Equinox.CosmosStore.Core.Events`; this would allow consumers to jump from direct
@@ -2492,4 +2488,5 @@ rich relative to the need of consumers to date. Some things remain though:
   that's no longer in use gets removed)
   [#108](https://github.com/jet/equinox/issues/108)
 - low level performance improvements in loading logic (reducing allocations etc)
-- `Propulsion.CosmosStore`: provide a Serverless mode that can be used with Azure Functions to execute batch of projections based on a set of documents from the change feed
+- `Propulsion.CosmosStore`: provide a Serverless mode that can be used with Azure
+  Functions to execute batch of projections based on a set of documents from the change feed

@@ -20,9 +20,9 @@ type Async with
     /// </summary>
     /// <param name="task">Task to be awaited.</param>
     [<DebuggerStepThrough>]
-    static member AwaitTaskCorrect(task : Task<'T>) : Async<'T> =
+    static member AwaitTaskCorrect(task: Task<'T>): Async<'T> =
         Async.FromContinuations(fun (sc, ec, _cc) ->
-            task.ContinueWith(fun (t : Task<'T>) ->
+            task.ContinueWith(fun (t: Task<'T>) ->
                 if t.IsFaulted then
                     let e = t.Exception
                     if e.InnerExceptions.Count = 1 then ec e.InnerExceptions[0]
@@ -38,9 +38,9 @@ type Async with
     /// </summary>
     /// <param name="task">Task to be awaited.</param>
     [<DebuggerStepThrough>]
-    static member AwaitTaskCorrect(task : Task) : Async<unit> =
+    static member AwaitTaskCorrect(task: Task): Async<unit> =
         Async.FromContinuations(fun (sc, ec, _cc) ->
-            task.ContinueWith(fun (task : Task) ->
+            task.ContinueWith(fun (task: Task) ->
                 if task.IsFaulted then
                     let e = task.Exception
                     if e.InnerExceptions.Count = 1 then ec e.InnerExceptions[0]
@@ -63,4 +63,4 @@ module Seq =
 module Array =
 
     let inline chooseV f xs = [| for item in xs do match f item with ValueSome v -> yield v | ValueNone -> () |]
-    let inline tryFirstV (xs : _ array) = if xs.Length = 0 then ValueNone else ValueSome xs[0]
+    let inline tryFirstV (xs: _[]) = if xs.Length = 0 then ValueNone else ValueSome xs[0]

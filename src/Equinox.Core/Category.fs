@@ -18,7 +18,7 @@ type ICategory<'event, 'state, 'context> =
     ///    where the precondition is not met, the SyncResult.Conflict bears a [lazy] async result (in a specific manner optimal for the store)
     abstract TrySync : log: ILogger * categoryName: string * streamId: string * streamName: string * 'context
                        * maybeInit: (CancellationToken -> Task<unit>) voption
-                       * originToken: StreamToken * originState: 'state * events: 'event array
+                       * originToken: StreamToken * originState: 'state * events: 'event[]
                        * CancellationToken -> Task<SyncResult<'state>>
 
 // Low level stream impl, used by Store-specific Category types that layer policies such as Caching in
@@ -41,7 +41,7 @@ type Category<'event, 'state, 'context>
         { new Core.IStream<'event, 'state> with
             member _.LoadEmpty() =
                 empty
-            member x.Load(allowStale, requireLeader, ct) = task {
+            member _.Load(allowStale, requireLeader, ct) = task {
                 use act = source.StartActivity("Load", ActivityKind.Client)
                 if act <> null then act.AddStream(categoryName, streamId, streamName).AddLeader(requireLeader).AddStale(allowStale) |> ignore
                 return! inner.Load(log, categoryName, streamId, streamName, allowStale, requireLeader, ct) }
